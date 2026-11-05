@@ -188,9 +188,11 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={openDialog} className="gap-1.5 max-sm:h-11">
+      {/* Auf dem Handy nur „Log“, damit die Hub-Tasten in einer Zeile stehen
+          (docs/design-regeln.md, Abschnitt 13); der volle Text bleibt als Name der Taste. */}
+      <Button variant="outline" size="sm" onClick={openDialog} className="gap-1.5 max-sm:h-11" aria-label="Log abrufen">
         <FileText className="h-3.5 w-3.5" />
-        Log abrufen
+        <span>Log<span className="max-sm:hidden"> abrufen</span></span>
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

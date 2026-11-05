@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -115,24 +115,28 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
 
   return (
     <Card flush>
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-        <CardTitle className="tabular-nums">VLANs ({vlans.length})</CardTitle>
-        <Button onClick={openAdd} className="gap-2 max-sm:h-11">
-          <Plus className="h-4 w-4" />
-          VLAN hinzufügen
-        </Button>
+      {/* Kopf: Titel links, Primärhandlung oben rechts; auf dem Handy „+ VLAN“ (docs/design-regeln.md, Abschnitt 13). */}
+      <CardHeader>
+        <CardTitle className="tabular-nums row-span-2 self-center">VLANs ({vlans.length})</CardTitle>
+        <CardAction>
+          <Button onClick={openAdd} className="gap-2 max-sm:h-11" aria-label="VLAN hinzufügen">
+            <Plus className="h-4 w-4" />
+            <span>VLAN<span className="max-sm:hidden"> hinzufügen</span></span>
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent>
-        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17).
+            Handy (326 px): VLAN, Name und Tasten; die Nutzung steht als Nebenzeile unter dem Namen. */}
         <div className="-mx-4 sm:-mx-[18px]">
           <Table edge>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-20">VLAN</TableHead>
-                <TableHead className="min-w-[140px]">Name</TableHead>
+                <TableHead className="sm:min-w-[140px]">Name</TableHead>
                 <TableHead className="hidden md:table-cell">Subnetz</TableHead>
                 <TableHead className="hidden lg:table-cell">Gateway</TableHead>
-                <TableHead>Nutzung</TableHead>
+                <TableHead className="max-sm:hidden">Nutzung</TableHead>
                 <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
@@ -151,9 +155,14 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
                   <TableCell>
                     <Badge className={cn("text-xs font-mono", vlanColor(v.id, vlans))}>{v.vlanId}</Badge>
                   </TableCell>
-                  <TableCell>
-                    <p className="font-medium text-sm text-foreground">{v.name}</p>
+                  {/* Name – auf dem Handy nimmt die Spalte den Rest der Breite und kürzt. */}
+                  <TableCell className="max-sm:w-full max-sm:max-w-0">
+                    <p className="font-medium text-sm text-foreground max-sm:truncate">{v.name}</p>
                     {v.description && <p className="text-xs text-muted-foreground truncate max-w-[220px]">{v.description}</p>}
+                    {/* Handy: Nutzung als Nebenzeile (ab sm eigene Spalte). */}
+                    <p className="text-xs text-muted-foreground tabular-nums sm:hidden">
+                      {v.portCount + v.taggedPortCount} Ports · {v.clientCount} Geräte
+                    </p>
                   </TableCell>
                   <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">
                     {v.subnet || <span className="text-muted-foreground">–</span>}
@@ -161,7 +170,7 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
                   <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
                     {v.gateway || <span className="text-muted-foreground">–</span>}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-sm:hidden">
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <EthernetPort className="h-3 w-3 text-muted-foreground/70" />

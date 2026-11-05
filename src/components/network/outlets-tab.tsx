@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -117,23 +117,27 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
 
   return (
     <Card flush>
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-        <CardTitle className="tabular-nums">Anschlüsse ({outlets.length})</CardTitle>
-        <Button onClick={openAdd} className="gap-2 max-sm:h-11">
-          <Plus className="h-4 w-4" />
-          Anschluss hinzufügen
-        </Button>
+      {/* Kopf: Titel links, Primärhandlung oben rechts; auf dem Handy „+ Anschluss“ (docs/design-regeln.md, Abschnitt 13). */}
+      <CardHeader>
+        <CardTitle className="tabular-nums row-span-2 self-center">Anschlüsse ({outlets.length})</CardTitle>
+        <CardAction>
+          <Button onClick={openAdd} className="gap-2 max-sm:h-11" aria-label="Anschluss hinzufügen">
+            <Plus className="h-4 w-4" />
+            <span>Anschluss<span className="max-sm:hidden"> hinzufügen</span></span>
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent>
-        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17).
+            Handy (326 px): Beschriftung und Tasten; Typ und Verbindung stehen als Nebenzeile darunter. */}
         <div className="-mx-4 sm:-mx-[18px]">
           <Table edge>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[140px]">Beschriftung</TableHead>
-                <TableHead>Typ</TableHead>
+                <TableHead className="sm:min-w-[140px]">Beschriftung</TableHead>
+                <TableHead className="max-sm:hidden">Typ</TableHead>
                 <TableHead className="hidden sm:table-cell">Standort</TableHead>
-                <TableHead>Verbunden mit</TableHead>
+                <TableHead className="max-sm:hidden">Verbunden mit</TableHead>
                 <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
@@ -149,13 +153,31 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
               )}
               {outlets.map((o) => (
                 <TableRow key={o.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
+                  {/* Beschriftung – auf dem Handy nimmt die Spalte den Rest der Breite. */}
+                  <TableCell className="max-sm:w-full max-sm:max-w-0">
+                    <div className="flex min-w-0 items-center gap-3">
                       <IconChip icon={Cable} />
-                      <p className="font-medium text-sm text-foreground">{o.label}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm text-foreground max-sm:truncate">{o.label}</p>
+                        {/* Handy: Typ und Verbindung als Nebenzeile (ab sm eigene Spalten); lange Namen brechen um. */}
+                        <p className="text-xs text-muted-foreground whitespace-normal sm:hidden">
+                          {OUTLET_TYPES.find((t) => t.value === o.type)?.label ?? o.type}
+                          {" · "}
+                          {o.port ? (
+                            <Link
+                              href={`/network/${o.port.deviceId}`}
+                              className="text-primary hover:underline"
+                            >
+                              {o.port.deviceName} · Port {o.port.number}
+                            </Link>
+                          ) : (
+                            "Nicht verbunden"
+                          )}
+                        </p>
+                      </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-sm:hidden">
                     <Badge variant="secondary" className="text-xs">
                       {OUTLET_TYPES.find((t) => t.value === o.type)?.label ?? o.type}
                     </Badge>
@@ -170,7 +192,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
                       <span className="text-muted-foreground">–</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-sm:hidden">
                     {o.port ? (
                       <Link
                         href={`/network/${o.port.deviceId}`}

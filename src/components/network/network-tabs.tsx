@@ -42,7 +42,9 @@ export function NetworkTabs({
 
   return (
     <Tabs defaultValue="devices">
-      <TabsList className="w-full sm:w-auto overflow-x-auto">
+      {/* Kein seitliches Scrollen: auf dem Handy zwei gleich breite Spalten (2 × 2), ab sm eine Zeile
+          (docs/design-regeln.md, Abschnitt 6). */}
+      <TabsList className="w-full max-sm:grid max-sm:grid-cols-2 sm:w-auto">
         <TabsTrigger value="devices" className="gap-1.5">
           <Server className="h-4 w-4" />
           <span className="hidden sm:inline">Switches &amp; Router</span>

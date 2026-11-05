@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -163,27 +163,32 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
 
   return (
     <Card flush>
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-        <CardTitle className="tabular-nums">
+      {/* Kopf: Titel links, Primärhandlung oben rechts; auf dem Handy „+ Hardware“ (docs/design-regeln.md, Abschnitt 13). */}
+      <CardHeader>
+        <CardTitle className="tabular-nums row-span-2 self-center">
           Switches &amp; Router ({devices.length})
         </CardTitle>
-        <Button onClick={openAdd} className="gap-2 max-sm:h-11">
-          <Plus className="h-4 w-4" />
-          Hardware hinzufügen
-        </Button>
+        <CardAction>
+          <Button onClick={openAdd} className="gap-2 max-sm:h-11" aria-label="Hardware hinzufügen">
+            <Plus className="h-4 w-4" />
+            <span>Hardware<span className="max-sm:hidden"> hinzufügen</span></span>
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent>
-        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17).
+            Handy (326 px): Gerät und Tasten; Status und Ports stehen als Nebenzeile unter dem Namen,
+            der Pfeil entfällt (der Name führt schon zur Detailseite). */}
         <div className="-mx-4 sm:-mx-[18px]">
           <Table edge>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[180px]">Gerät</TableHead>
+                <TableHead className="sm:min-w-[180px]">Gerät</TableHead>
                 <TableHead className="hidden md:table-cell">Modell</TableHead>
                 <TableHead className="hidden lg:table-cell">IP-Adresse</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead className="max-sm:hidden">Status</TableHead>
                 <TableHead className="hidden sm:table-cell">Standort</TableHead>
-                <TableHead>Ports</TableHead>
+                <TableHead className="max-sm:hidden">Ports</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
@@ -200,12 +205,14 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
               {devices.map((d) => {
                 const meta = TYPE_META[d.type] ?? TYPE_META.OTHER;
                 const Icon = meta.icon;
+                const online = scanOnline(d.lastSeenAt);
                 return (
                   <TableRow
                     key={d.id}
                     className="group"
                   >
-                    <TableCell>
+                    {/* Gerät – auf dem Handy nimmt die Spalte den Rest der Breite und kürzt den Namen. */}
+                    <TableCell className="max-sm:w-full max-sm:max-w-0">
                       <Link href={`/network/${d.id}`} className="flex items-center gap-3 min-w-0">
                         <IconChip icon={Icon} />
                         <div className="min-w-0">
@@ -213,6 +220,21 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                             {d.name}
                           </p>
                           <p className="text-xs text-muted-foreground">{meta.label}</p>
+                          {/* Handy: Status und belegte Ports als Nebenzeile (ab sm eigene Spalten). */}
+                          {(online !== null || d.portCount > 0) && (
+                            <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground sm:hidden">
+                              {online !== null && (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <StatusDot tone={online ? "success" : "neutral"} size="xs" />
+                                  {online ? "Online" : "Offline"}
+                                </span>
+                              )}
+                              {online !== null && d.portCount > 0 && <span aria-hidden>·</span>}
+                              {d.portCount > 0 && (
+                                <span className="tabular-nums">{d.usedPorts} / {d.portCount} Ports</span>
+                              )}
+                            </p>
+                          )}
                         </div>
                       </Link>
                     </TableCell>
@@ -222,9 +244,8 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                     <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
                       {d.ipAddress || <span className="text-muted-foreground">–</span>}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-sm:hidden">
                       {(() => {
-                        const online = scanOnline(d.lastSeenAt);
                         if (online === true) {
                           return (
                             <Badge
@@ -266,7 +287,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                         <span className="text-muted-foreground">–</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-sm:hidden">
                       {d.portCount > 0 ? (
                         <Badge variant="secondary" className="gap-1 text-xs tabular-nums">
                           <EthernetPort className="h-3 w-3" />
@@ -299,10 +320,11 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                             ? <Loader2 className="h-4 w-4 animate-spin" />
                             : <Trash2 className="h-4 w-4" />}
                         </Button>
+                        {/* Pfeil erst ab sm: auf dem Handy führt der Name zur Detailseite. */}
                         <Link
                           href={`/network/${d.id}`}
                           aria-label={d.name}
-                          className="inline-flex size-8 items-center justify-center rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:size-11"
+                          className="inline-flex size-8 items-center justify-center rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:hidden"
                         >
                           <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary" />
                         </Link>

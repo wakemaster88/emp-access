@@ -944,15 +944,24 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
         </Notice>
       )}
 
+      {/* Statuszeile: die Zustände als eine Gruppe, die Taste für die go2rtc-Adresse dahinter.
+          Auf dem Handy brechen nur die Zustände um (zusammen mit der Taste rund 375 px auf 328 px),
+          die Taste bleibt rechts und das Eingabefeld steht in voller Breite darunter. */}
       <div className="flex items-center gap-2 flex-wrap">
-        <Badge variant="secondary" className="gap-1.5 tabular-nums">
-          <Cctv className="h-3.5 w-3.5" />
-          {cameras.length} Kameras
-        </Badge>
-        <Badge variant={go2rtc.reachable ? "success" : "neutral"} className="gap-1.5">
-          <Radio className="h-3.5 w-3.5" />
-          {go2rtc.reachable ? "Live-Video aktiv" : "Nur Standbilder"}
-        </Badge>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-none">
+          <Badge variant="secondary" className="gap-1.5 tabular-nums">
+            <Cctv className="h-3.5 w-3.5" />
+            {cameras.length} Kameras
+          </Badge>
+          <Badge variant={go2rtc.reachable ? "success" : "neutral"} className="gap-1.5">
+            <Radio className="h-3.5 w-3.5" />
+            {go2rtc.reachable ? "Live-Video aktiv" : "Nur Standbilder"}
+          </Badge>
+          <Badge variant={(online ?? 0) > 0 ? "success" : "neutral"} className="gap-1.5 tabular-nums">
+            <StatusDot tone={(online ?? 0) > 0 ? "success" : "neutral"} size="xs" />
+            {online ?? "–"} online
+          </Badge>
+        </div>
         <Button
           variant="ghost"
           size="icon"
@@ -983,10 +992,6 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
             <Button type="submit" size="sm" className="h-11 sm:h-8">Speichern</Button>
           </form>
         )}
-        <Badge variant={(online ?? 0) > 0 ? "success" : "neutral"} className="gap-1.5 tabular-nums">
-          <StatusDot tone={(online ?? 0) > 0 ? "success" : "neutral"} size="xs" />
-          {online ?? "–"} online
-        </Badge>
       </div>
 
       {cameras.length === 0 ? (

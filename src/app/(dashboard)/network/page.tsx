@@ -231,7 +231,9 @@ export default async function NetworkPage() {
                   })}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Weitere Handlungen: auf dem Handy eine eigene Zeile unter Titel und Status
+                  (docs/design-regeln.md, Abschnitt 13), sonst drückt die Zeile den Titel zusammen. */}
+              <div className="flex flex-wrap items-center gap-2 max-sm:basis-full">
                 <HubLogButton hubName={hubAgents.length === 1 ? hubAgents[0].name : undefined} />
                 <HubRestartButton
                   service="tracker"

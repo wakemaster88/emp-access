@@ -220,8 +220,10 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                   <TableHead className="hidden md:table-cell">Tagged</TableHead>
                   <TableHead className="hidden sm:table-cell">Anschluss</TableHead>
                   {/* Unter lg ist „Gerät“ die letzte sichtbare Spalte; edge trifft nur die letzte
-                      Zelle im DOM (Status), darum behält „Gerät“ den eigenen Randabstand. */}
-                  <TableHead className="pr-4 sm:pr-[18px] lg:pr-2">Gerät</TableHead>
+                      Zelle im DOM (Status), darum behält „Gerät“ den eigenen Randabstand.
+                      Auf dem Handy nimmt die Spalte den Rest der Breite, lange Namen brechen um
+                      (vorher 348 px Tabelle auf 326 px Karte). */}
+                  <TableHead className="pr-4 sm:pr-[18px] lg:pr-2 max-sm:w-full">Gerät</TableHead>
                   <TableHead className="hidden lg:table-cell w-20">Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -268,7 +270,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                     <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
                       {p.outlet?.label || <span className="text-muted-foreground">–</span>}
                     </TableCell>
-                    <TableCell className="text-xs pr-4 sm:pr-[18px] lg:pr-2">
+                    <TableCell className="text-xs pr-4 sm:pr-[18px] lg:pr-2 max-sm:w-full max-sm:max-w-0 max-sm:whitespace-normal max-sm:wrap-anywhere">
                       {p.client ? (
                         <span className="text-foreground/80">{p.client.name}</span>
                       ) : (

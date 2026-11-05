@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -327,12 +327,16 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
       )}
 
       <Card>
-        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="tabular-nums">Kameras ({cameras.length})</CardTitle>
-          <Button onClick={openAdd} className="h-11 gap-2 sm:h-9">
-            <Plus className="h-4 w-4" />
-            Kamera hinzufügen
-          </Button>
+        {/* Kopf: Titel links, Primärhandlung oben rechts (docs/design-regeln.md, Abschnitt 13);
+            der volle Text passt auch auf dem Handy neben den Titel. */}
+        <CardHeader>
+          <CardTitle className="tabular-nums row-span-2 self-center">Kameras ({cameras.length})</CardTitle>
+          <CardAction>
+            <Button onClick={openAdd} className="h-11 gap-2 sm:h-9">
+              <Plus className="h-4 w-4" />
+              Kamera hinzufügen
+            </Button>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {cameras.length === 0 ? (
@@ -493,11 +497,13 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
         </CardHeader>
         <CardContent className="px-0 sm:px-0">
           <div className="border-t border-border">
+            {/* Handy (326 px): Zeitpunkt und Ereignis; Kamera und Dauer stehen als Nebenzeile unter
+                dem Zeitpunkt (vorher 422 px Tabelle auf 326 px Karte). */}
             <Table edge>
               <TableHeader>
                 <TableRow>
                   <TableHead>Zeitpunkt</TableHead>
-                  <TableHead>Kamera</TableHead>
+                  <TableHead className="max-sm:hidden">Kamera</TableHead>
                   {/* Auf dem Handy ist „Ereignis“ die letzte sichtbare Spalte; edge trifft nur „Dauer“. */}
                   <TableHead className="pr-4 sm:pr-2">Ereignis</TableHead>
                   <TableHead className="hidden sm:table-cell">Dauer</TableHead>
@@ -517,10 +523,14 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                   const Icon = meta.icon;
                   return (
                     <TableRow key={e.id} className="max-sm:h-11">
-                      <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {/* Auf dem Handy nimmt die Spalte den Rest der Breite; die Nebenzeile kürzt. */}
+                      <TableCell className="font-mono text-xs tabular-nums text-muted-foreground max-sm:w-full max-sm:max-w-0">
                         {fmtTime(e.startedAt)}
+                        <div className="truncate font-sans sm:hidden">
+                          {e.camera.name} · {duration(e.startedAt, e.endedAt)}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-sm text-foreground/80">
+                      <TableCell className="text-sm text-foreground/80 max-sm:hidden">
                         {e.camera.name}
                       </TableCell>
                       <TableCell className="pr-4 sm:pr-2">

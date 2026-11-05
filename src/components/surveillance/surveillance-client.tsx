@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -327,65 +327,66 @@ export function SurveillanceClient({ initial, cameras }: Props) {
       </Card>
 
       <Card>
+        {/* Kopf: Titel und Fenster links, Zeitraumwahl (Pfeil, Auswahl, Pfeil) oben rechts
+            (docs/design-regeln.md, Abschnitt 13). Auf dem Handy steht die Zeitraumwahl als eigene
+            Zeile in voller Breite unter Titel und Fenster, nicht zwischen den beiden. */}
         <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              Nachtbericht
-              {report?.period.inProgress && (
-                <Badge variant="warning">läuft</Badge>
-              )}
-            </CardTitle>
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                className="max-sm:size-11"
-                disabled={reportLoading || periodIndex < 0 || periodIndex >= (report?.periods.length ?? 0) - 1}
-                onClick={() => goPeriod(1)}
-                title="Ältere Periode"
-                aria-label="Ältere Periode"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              {/* Natives Auswahlfeld (NativeSelect) in Glas-Optik wie Input, 32 px hoch wie die Pfeiltasten daneben.
-                  Handy: Breite 0 plus flex-1, sonst gibt die längste Option die Breite vor und schiebt den Kopf über den Kartenrand. */}
-              <NativeSelect
-                containerClassName="w-auto max-w-[220px] max-sm:w-0 max-sm:max-w-none max-sm:flex-1"
-                className="h-8 md:text-xs max-sm:h-11"
-                aria-label="Periode"
-                value={reportKey ?? ""}
-                disabled={reportLoading || !report}
-                onChange={(e) => void loadReport(e.target.value)}
-              >
-                {(report?.periods ?? []).map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}
-                    {p.inProgress ? " (läuft)" : ""}
-                  </option>
-                ))}
-              </NativeSelect>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                className="max-sm:size-11"
-                disabled={reportLoading || periodIndex <= 0}
-                onClick={() => goPeriod(-1)}
-                title="Neuere Periode"
-                aria-label="Neuere Periode"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            Nachtbericht
+            {report?.period.inProgress && (
+              <Badge variant="warning">läuft</Badge>
+            )}
+          </CardTitle>
           {report && (
-            <p className="text-xs text-muted-foreground mt-1">
+            <CardDescription className="text-xs">
               Fenster {report.windowStart}–{report.windowEnd} · nur klare
               Personen-/Fahrzeug-Erkennungen mit Snapshot
-            </p>
+            </CardDescription>
           )}
+          <CardAction className="flex items-center gap-1 max-sm:col-span-full max-sm:row-[3] max-sm:mt-1.5 max-sm:justify-self-stretch">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              className="max-sm:size-11"
+              disabled={reportLoading || periodIndex < 0 || periodIndex >= (report?.periods.length ?? 0) - 1}
+              onClick={() => goPeriod(1)}
+              title="Ältere Periode"
+              aria-label="Ältere Periode"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {/* Natives Auswahlfeld (NativeSelect) in Glas-Optik wie Input, 32 px hoch wie die Pfeiltasten daneben.
+                Handy: Breite 0 plus flex-1, sonst gibt die längste Option die Breite vor und schiebt den Kopf über den Kartenrand. */}
+            <NativeSelect
+              containerClassName="w-auto max-w-[220px] max-sm:w-0 max-sm:max-w-none max-sm:flex-1"
+              className="h-8 md:text-xs max-sm:h-11"
+              aria-label="Periode"
+              value={reportKey ?? ""}
+              disabled={reportLoading || !report}
+              onChange={(e) => void loadReport(e.target.value)}
+            >
+              {(report?.periods ?? []).map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.label}
+                  {p.inProgress ? " (läuft)" : ""}
+                </option>
+              ))}
+            </NativeSelect>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              className="max-sm:size-11"
+              disabled={reportLoading || periodIndex <= 0}
+              onClick={() => goPeriod(-1)}
+              title="Neuere Periode"
+              aria-label="Neuere Periode"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </CardAction>
         </CardHeader>
         <CardContent className="space-y-4">
           {reportLoading && (
