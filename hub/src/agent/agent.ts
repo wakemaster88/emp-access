@@ -18,6 +18,7 @@ import { CONFIG, api, log } from "../config.js";
 import { recordHubEvent } from "../state.js";
 import { LLM, LLM_LOADED, VISION, askVision, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
 import { SENTINEL, startSentinel } from "./sentinel.js";
+import { stripThinking } from "./think.js";
 import {
   answerCallback,
   downloadFile,
@@ -101,7 +102,16 @@ function chatIds(): string[] {
 
 async function systemPrompt(): Promise<string> {
   const now = new Date();
-  const when = now.toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "long", dateStyle: "medium", timeStyle: "short" } as Intl.DateTimeFormatOptions);
+  // weekday zusammen mit dateStyle/timeStyle wirft in Node („Invalid option“).
+  const when = now.toLocaleString("de-DE", {
+    timeZone: "Europe/Berlin",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   const notes = await readNotes();
   const open = openFindings(watch);
   return [
@@ -122,6 +132,8 @@ async function systemPrompt(): Promise<string> {
     "Anlage in Kürze: VLAN 1 Management, 20 Kasse, 30 Kameras (ohne Internet), 40 Betrieb (Shelly), 41 Anlage-Audio, 70 Verwaltung, 80 Personal. Kameras Reolink, Tor mit DoorBird, Audio Soundweb London, Mäher Mammotion Luba. Räume, Geräte und Regeln pflegt die Cloud (EMP-Access), der Hub spiegelt und schaltet im LAN.",
     open.length ? `\nOffene Befunde des Wächters: ${open.map((f) => f.title).join("; ")}` : "",
     notes ? `\nGemerkt (remember):\n${notes}` : "",
+    // Hybrides Qwen3 ohne Instruct: Denkmodus per Schalter aus (sonst Denktext in der Antwort).
+    /qwen3/i.test(LLM.model) && !/instruct/i.test(LLM.model) ? "/no_think" : "",
   ].join("\n");
 }
 
@@ -166,7 +178,7 @@ async function converse(chatId: string, history: ChatMessage[], allowAct = true)
     const reply = await chat([sys, ...history], tools);
     history.push({ role: "assistant", content: reply.content ?? "", tool_calls: reply.tool_calls });
     const calls = reply.tool_calls ?? [];
-    if (calls.length === 0) return (reply.content ?? "").trim();
+    if (calls.length === 0) return stripThinking(reply.content ?? "");
     for (const call of calls) {
       const name = call.function?.name ?? "";
       const args = parseArgs(call.function?.arguments);

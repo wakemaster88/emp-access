@@ -37,3 +37,11 @@ test("Ruhezeit über Mitternacht", () => {
   assert.equal(inQuietHours("0", 3), false);
   assert.equal(inQuietHours("1-5", 2), true);
 });
+
+import { stripThinkingForTest } from "./think.js";
+
+test("Denkblöcke werden entfernt", () => {
+  assert.equal(stripThinkingForTest("<think>hm</think>\nAlles ruhig."), "Alles ruhig.");
+  assert.equal(stripThinkingForTest("Okay, also …</think>Antwort"), "Antwort");
+  assert.equal(stripThinkingForTest("Nur Text"), "Nur Text");
+});
