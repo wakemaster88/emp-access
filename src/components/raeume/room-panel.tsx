@@ -450,7 +450,7 @@ export function RoomPanel({
                   <span
                     className={cn(
                       "rounded-full px-1.5 text-[9px] font-semibold tabular-nums",
-                      t.alert ? "bg-destructive text-white" : t.live ? "bg-emerald-500 text-white" : "bg-foreground/10 text-foreground/70",
+                      t.alert ? "bg-destructive-fill text-white" : t.live ? "bg-emerald-500 text-white" : "bg-foreground/10 text-foreground/70",
                     )}
                   >
                     {t.badge}
@@ -537,7 +537,7 @@ export function RoomPanel({
                         <button
                           type="button"
                           onClick={onClimate}
-                          className="h-8 shrink-0 rounded-full bg-primary px-3 text-[11px] font-semibold text-primary-foreground"
+                          className="h-8 shrink-0 rounded-full bg-primary-fill px-3 text-[11px] font-semibold text-primary-foreground"
                         >
                           Einrichten
                         </button>
@@ -765,7 +765,7 @@ const QUICK_ICON_ON: Record<QuickTone, string> = {
   heat: "bg-orange-500 text-white shadow-sm shadow-orange-500/40",
   air: "bg-sky-500 text-white shadow-sm shadow-sky-500/40",
   live: "bg-emerald-500 text-white shadow-sm shadow-emerald-500/40",
-  danger: "bg-destructive text-white",
+  danger: "bg-destructive-fill text-white",
 };
 
 /** Grosse Schnellkachel: Symbol, Wert, Zustand. Antippen schaltet bzw. oeffnet. */

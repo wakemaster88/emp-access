@@ -109,7 +109,7 @@ export function AutomationWidget({
                 <div
                   className={cn(
                     "flex w-14 shrink-0 flex-col items-center justify-center rounded-control py-1.5 text-center",
-                    next ? (soon ? "bg-primary text-primary-foreground" : "bg-foreground/8") : "bg-foreground/5",
+                    next ? (soon ? "bg-primary-fill text-primary-foreground" : "bg-foreground/8") : "bg-foreground/5",
                   )}
                 >
                   {next ? (

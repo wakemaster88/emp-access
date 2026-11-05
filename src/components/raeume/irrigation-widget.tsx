@@ -422,7 +422,7 @@ function WaitingCard({
             disabled={busy}
             className={cn(
               "flex h-8 shrink-0 items-center gap-1 rounded-full px-3 text-[11px] font-semibold disabled:opacity-60",
-              skipped ? "border border-border bg-background/60 text-foreground" : "bg-primary text-primary-foreground",
+              skipped ? "border border-border bg-background/60 text-foreground" : "bg-primary-fill text-primary-foreground",
             )}
           >
             {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}

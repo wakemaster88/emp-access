@@ -195,7 +195,7 @@ const TONE_ICON_ON: Record<Tone, string> = {
   light: "bg-amber-400 text-white shadow-[0_0_16px_rgba(251,191,36,0.8)]",
   heat: "bg-orange-500 text-white shadow-[0_0_16px_rgba(249,115,22,0.7)]",
   air: "bg-sky-500 text-white shadow-[0_0_16px_rgba(14,165,233,0.6)]",
-  default: "bg-primary text-primary-foreground",
+  default: "bg-primary-fill text-primary-foreground",
 };
 
 function TileIcon({ device, tone, className }: { device: RoomDevice; tone: Tone; className?: string }) {
@@ -373,7 +373,7 @@ export function PulseTile({
             />
           )}
         </svg>
-        <span className={cn("flex h-6 w-6 items-center justify-center rounded-full", running ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+        <span className={cn("flex h-6 w-6 items-center justify-center rounded-full", running ? "bg-primary-fill text-primary-foreground" : "bg-muted text-muted-foreground")}>
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CircleDot className="h-3.5 w-3.5" />}
         </span>
       </span>
@@ -469,7 +469,7 @@ export function ZoneCard({
             aria-label={playing ? "Wiedergabe stoppen" : "Wiedergabe starten"}
             className={cn(
               "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform active:scale-90 disabled:opacity-60",
-              playing ? "bg-white text-violet-700" : "bg-primary text-primary-foreground shadow-md",
+              playing ? "bg-white text-violet-700" : "bg-primary-fill text-primary-foreground shadow-md",
             )}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}

@@ -438,7 +438,7 @@ export function Overview({
                       <span
                         className={cn(
                           "w-14 shrink-0 rounded-xl py-1 text-center text-[12px] font-bold tabular-nums",
-                          soon ? "bg-primary text-primary-foreground" : "bg-foreground/5 text-foreground",
+                          soon ? "bg-primary-fill text-primary-foreground" : "bg-foreground/5 text-foreground",
                         )}
                       >
                         {next.time}

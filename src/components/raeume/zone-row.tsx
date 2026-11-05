@@ -92,7 +92,7 @@ export function ZoneRow({
                 disabled={busy !== null}
                 onClick={() => run("PLAY")}
                 title="Wiedergabe starten"
-                className="inline-flex items-center gap-1 rounded bg-primary px-2 py-1 text-[11px] font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded bg-primary-fill px-2 py-1 text-[11px] font-medium text-white transition-colors hover:bg-primary-fill/90 disabled:opacity-50"
               >
                 {busy === "PLAY" ? (
                   <Loader2 className="h-3 w-3 animate-spin" />

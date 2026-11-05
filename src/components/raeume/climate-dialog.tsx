@@ -5,14 +5,14 @@ import { useRouter } from "next/navigation";
 import { Loader2, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { ErrorLine, apiRequest, shortDeviceName } from "@/components/raeume/shared";
 import type { RoomClimateView, RoomDevice, ScheduleOption } from "@/components/raeume/types";
 import { cn } from "@/lib/utils";
-
-const fieldClass =
-  "h-9 w-full rounded-md border border-border bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring dark:bg-card";
 
 const HEATER_RE = /heiz|klima|radiator|ofen/i;
 const FAN_RE = /l(ü|ue)ft|ventil/i;
@@ -136,14 +136,13 @@ export function ClimateDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">Solltemperatur (°C)</Label>
-              <input inputMode="decimal" value={targetC} onChange={(e) => setTargetC(e.target.value)} className={fieldClass} />
+              <Input inputMode="decimal" value={targetC} onChange={(e) => setTargetC(e.target.value)} />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Gilt während</Label>
-              <select
+              <NativeSelect
                 value={scheduleId ?? ""}
                 onChange={(e) => setScheduleId(e.target.value ? Number(e.target.value) : null)}
-                className={fieldClass}
               >
                 <option value="">
                   {roomScheduleName ? `Betriebszeit des Raums (${roomScheduleName})` : "immer (Raum ohne Betriebszeit)"}
@@ -153,7 +152,7 @@ export function ClimateDialog({
                     {o.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
           </div>
 
@@ -162,11 +161,11 @@ export function ClimateDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Vorlauf (Min. vor Öffnung)</Label>
-                  <input inputMode="numeric" value={preheat} onChange={(e) => setPreheat(e.target.value)} className={fieldClass} />
+                  <Input inputMode="numeric" value={preheat} onChange={(e) => setPreheat(e.target.value)} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Nachlauf (Min. nach Schluss)</Label>
-                  <input inputMode="numeric" value={afterrun} onChange={(e) => setAfterrun(e.target.value)} className={fieldClass} />
+                  <Input inputMode="numeric" value={afterrun} onChange={(e) => setAfterrun(e.target.value)} />
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground">
@@ -181,13 +180,12 @@ export function ClimateDialog({
                     <Switch size="sm" checked={setbackOn} onCheckedChange={setSetbackOn} aria-label="Absenkung" />
                   </span>
                 </Label>
-                <input
+                <Input
                   inputMode="decimal"
                   value={setbackOn ? setbackC : ""}
                   placeholder="aus"
                   disabled={!setbackOn}
                   onChange={(e) => setSetbackC(e.target.value)}
-                  className={cn(fieldClass, "disabled:opacity-50")}
                 />
               </div>
             </div>
@@ -195,10 +193,9 @@ export function ClimateDialog({
 
           <div className="space-y-1">
             <Label className="text-xs">Temperaturfühler</Label>
-            <select
+            <NativeSelect
               value={sensorId ?? ""}
               onChange={(e) => setSensorId(e.target.value ? Number(e.target.value) : null)}
-              className={fieldClass}
             >
               <option value="">Fühler wählen …</option>
               {(sensorChoices.length ? sensorChoices : shellys).map((d) => (
@@ -207,7 +204,7 @@ export function ClimateDialog({
                   {inRoom.has(d.id) ? "" : " (anderer Raum)"}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className="space-y-1">
@@ -234,19 +231,19 @@ export function ClimateDialog({
               <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-muted/30 p-3 sm:grid-cols-4">
                 <div className="space-y-1">
                   <Label className="text-[11px]">An ab (%)</Label>
-                  <input inputMode="decimal" value={fanOn} onChange={(e) => setFanOn(e.target.value)} className={fieldClass} />
+                  <Input inputMode="decimal" value={fanOn} onChange={(e) => setFanOn(e.target.value)} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[11px]">Aus unter (%)</Label>
-                  <input inputMode="decimal" value={fanOff} onChange={(e) => setFanOff(e.target.value)} className={fieldClass} />
+                  <Input inputMode="decimal" value={fanOff} onChange={(e) => setFanOff(e.target.value)} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[11px]">Nachlauf (Min.)</Label>
-                  <input inputMode="numeric" value={fanAfterrun} onChange={(e) => setFanAfterrun(e.target.value)} className={fieldClass} />
+                  <Input inputMode="numeric" value={fanAfterrun} onChange={(e) => setFanAfterrun(e.target.value)} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[11px]">Nie unter (°C)</Label>
-                  <input inputMode="decimal" value={fanMinTemp} onChange={(e) => setFanMinTemp(e.target.value)} className={fieldClass} />
+                  <Input inputMode="decimal" value={fanMinTemp} onChange={(e) => setFanMinTemp(e.target.value)} />
                 </div>
                 <p className="col-span-full text-[11px] text-muted-foreground">
                   Lüftet ab {fanOn} % bis unter {fanOff} %, nach Betriebsende immer {fanAfterrun} Min. zum Trocknen. Unter{" "}
@@ -259,7 +256,7 @@ export function ClimateDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">Spielraum (± °C)</Label>
-              <input inputMode="decimal" value={hysteresis} onChange={(e) => setHysteresis(e.target.value)} className={fieldClass} />
+              <Input inputMode="decimal" value={hysteresis} onChange={(e) => setHysteresis(e.target.value)} />
             </div>
             <label className="flex items-end gap-2 pb-2 text-xs">
               <Switch checked={isActive} onCheckedChange={setIsActive} />
@@ -313,14 +310,13 @@ function SwitchList({
           <label
             key={d.id}
             className={cn(
-              "flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs",
+              "flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-xs max-sm:min-h-11",
               checked ? "bg-primary/10" : "hover:bg-muted/50",
             )}
           >
-            <input
-              type="checkbox"
+            <Checkbox
               checked={checked}
-              onChange={() => onChange(checked ? selected.filter((x) => x !== d.id) : [...selected, d.id])}
+              onCheckedChange={() => onChange(checked ? selected.filter((x) => x !== d.id) : [...selected, d.id])}
             />
             <span className="min-w-0 flex-1 break-words">{label(d)}</span>
             {!inRoom.has(d.id) && <span className="shrink-0 text-[10px] text-muted-foreground">anderer Raum</span>}

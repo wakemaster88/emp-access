@@ -9,31 +9,23 @@
 
 import { useMemo, useState } from "react";
 import { Cctv, Check, ChevronDown, ChevronRight, Cpu, Loader2, Plus, Sparkles, Volume2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { NativeSelect } from "@/components/ui/native-select";
 import { ErrorLine } from "@/components/raeume/shared";
 import type { LooseGroup, LooseItem, NamedRoom } from "@/lib/room-overview";
 import { cn } from "@/lib/utils";
 
 const KIND_ICON = { device: Cpu, camera: Cctv, zone: Volume2 } as const;
 
-function Checkbox({ checked, mixed, onChange, label }: { checked: boolean; mixed?: boolean; onChange: () => void; label: string }) {
+/** Kästchen in einer antippbaren Zeile: der Tipp bleibt beim Kästchen. */
+function PickBox({ checked, mixed, onChange, label }: { checked: boolean; mixed?: boolean; onChange: () => void; label: string }) {
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={mixed ? "mixed" : checked}
+    <Checkbox
+      checked={mixed && !checked ? "indeterminate" : checked}
       aria-label={label}
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange();
-      }}
-      className={cn(
-        "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors",
-        checked || mixed ? "border-primary bg-primary text-primary-foreground" : "border-foreground/30 bg-transparent",
-      )}
-    >
-      {checked && <Check className="h-3 w-3" strokeWidth={3} />}
-      {mixed && !checked && <span className="h-0.5 w-2.5 rounded bg-current" />}
-    </button>
+      onClick={(e) => e.stopPropagation()}
+      onCheckedChange={onChange}
+    />
   );
 }
 
@@ -178,7 +170,7 @@ export function AssignView({
                 }}
               >
                 {!readonly && (
-                  <Checkbox
+                  <PickBox
                     checked={chosen === g.items.length}
                     mixed={chosen > 0 && chosen < g.items.length}
                     onChange={() => toggleGroup(g)}
@@ -241,7 +233,7 @@ export function AssignView({
                     const Icon = KIND_ICON[i.kind];
                     return (
                       <li key={i.key} className="flex items-center gap-3 px-3 py-1.5 pl-[22px] text-[12px] sm:pl-11">
-                        {!readonly && <Checkbox checked={selected.has(i.key)} onChange={() => toggle(i.key)} label={`${i.name} auswählen`} />}
+                        {!readonly && <PickBox checked={selected.has(i.key)} onChange={() => toggle(i.key)} label={`${i.name} auswählen`} />}
                         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 truncate">{i.name}</span>
                         <span className="hidden truncate text-[11px] text-muted-foreground sm:inline">{i.meta}</span>
@@ -258,11 +250,11 @@ export function AssignView({
       {!readonly && selectedItems.length > 0 && (
         <div className="fixed inset-x-3 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-20 mx-auto flex max-w-xl items-center gap-2 glass-card p-2 pl-4 md:bottom-6">
           <span className="text-[12px] font-semibold tabular-nums">{selectedItems.length} ausgewählt</span>
-          <select
+          <NativeSelect
             value={target}
             onChange={(e) => setTarget(e.target.value ? Number(e.target.value) : "")}
             aria-label="Zielraum"
-            className="ml-auto h-9 min-w-0 max-w-[45%] rounded-control border border-border/70 bg-background/70 px-2 text-[12px] focus:outline-none focus:ring-1 focus:ring-ring"
+            containerClassName="ml-auto w-auto max-w-[45%]"
           >
             <option value="">Raum wählen …</option>
             {rooms.map((r) => (
@@ -270,12 +262,12 @@ export function AssignView({
                 {r.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
           <button
             type="button"
             disabled={target === "" || !!busy}
             onClick={() => target !== "" && void assign(selectedItems, target, "bar")}
-            className="flex h-9 items-center gap-1 rounded-control bg-primary px-3 text-[12px] font-bold text-primary-foreground disabled:opacity-50"
+            className="flex h-9 items-center gap-1 rounded-control bg-primary-fill px-3 text-[12px] font-bold text-primary-foreground disabled:opacity-50"
           >
             {busy === "bar" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             Zuweisen

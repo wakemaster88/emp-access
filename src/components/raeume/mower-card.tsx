@@ -337,10 +337,10 @@ function ActionButton({
         "inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 text-xs font-semibold transition-all active:scale-[0.97] disabled:opacity-50 [&_svg]:shrink-0",
         armed
           ? kind === "danger"
-            ? "bg-destructive text-white shadow-sm ring-2 ring-destructive/30"
+            ? "bg-destructive-fill text-white shadow-sm ring-2 ring-destructive/30"
             : "bg-amber-500 text-white shadow-sm ring-2 ring-amber-500/30"
           : kind === "primary"
-            ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+            ? "bg-primary-fill text-primary-foreground shadow-sm hover:bg-primary-fill/90"
             : kind === "danger"
               ? "border border-border bg-background/60 text-muted-foreground hover:border-destructive/40 hover:text-destructive"
               : "border border-border bg-background/60 text-foreground hover:bg-muted",

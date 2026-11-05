@@ -2,6 +2,8 @@
 
 /** Gemeinsame Anzeige- und Fetch-Helfer des Raum-Leitstands. */
 
+import { Notice } from "@/components/ui/notice";
+
 const DEVICE_TYPE_LABELS: Record<string, string> = {
   RASPBERRY_PI: "Raspberry Pi",
   SHELLY: "Shelly",
@@ -117,11 +119,12 @@ export async function apiRequest<T = unknown>(
   }
 }
 
+/** Fehler einer Aktion als Hinweis-Kachel (ui/Notice, Tönung „danger“). */
 export function ErrorLine({ message }: { message: string }) {
   if (!message) return null;
   return (
-    <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+    <Notice tone="danger" compact>
       {message}
-    </p>
+    </Notice>
   );
 }
