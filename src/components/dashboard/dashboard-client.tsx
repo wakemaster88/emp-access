@@ -4,7 +4,13 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { setAppBadge } from "@/lib/app-badge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
+import { StatCard } from "@/components/ui/stat-card";
+import { StatusDot } from "@/components/ui/status-dot";
 import {
   Camera,
   ChevronLeft,
@@ -201,14 +207,14 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
 
   return (
     <div
-      className="flex items-center gap-2 py-1 cursor-pointer rounded px-1 -mx-1 hover:bg-muted/50 transition-colors"
+      className="flex items-center gap-2 py-1.5 sm:py-1 cursor-pointer rounded-[10px] px-1 -mx-1 hover:bg-glass-tile transition-colors"
       onClick={onClick}
     >
       {ticket.profileImage ? (
         <img src={ticket.profileImage} alt="" className="h-6 w-6 rounded-full object-cover shrink-0" />
       ) : (
         <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center shrink-0">
-          <span className="text-[10px] font-bold text-muted-foreground/70">
+          <span className="text-[10px] font-bold text-muted-foreground">
             {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
           </span>
         </div>
@@ -217,10 +223,10 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
         {personName(ticket)}
       </span>
       {!inSlot && !hideType && ticket.ticketTypeName && (
-        <span className="text-[10px] text-muted-foreground/70 truncate max-w-[90px] hidden sm:inline">{ticket.ticketTypeName}</span>
+        <span className="text-[11px] text-muted-foreground truncate max-w-[90px] hidden sm:inline">{ticket.ticketTypeName}</span>
       )}
       {time && (
-        <span className="text-[10px] text-primary font-mono shrink-0">{time}</span>
+        <span className="text-[11px] text-primary tabular-nums shrink-0">{time}</span>
       )}
       {ticket.needsPhoto && (
         <Camera className="h-3 w-3 text-warning shrink-0" />
@@ -228,78 +234,84 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
       {ticket.needsRfid && (
         <ScanLine className="h-3 w-3 text-warning shrink-0" />
       )}
-      <div
-        className={cn(
-          "h-1.5 w-1.5 rounded-full shrink-0",
+      <StatusDot
+        size="xs"
+        tone={
           ticket.status === "VALID"
-            ? "bg-success"
+            ? "success"
             : ticket.status === "REDEEMED"
-              ? "bg-info"
-              : "bg-slate-300"
-        )}
+              ? "info"
+              : "neutral"
+        }
       />
     </div>
   );
 }
 
+// Diagramme nur aus Tokens (docs/design-regeln.md, Abschnitt 15): Kurzinfo
+// deckend wie ein Menü, Gitter in --border, Achsentext gedämpft.
 const CHART_TOOLTIP_STYLE = {
-  backgroundColor: "#1e293b",
-  border: "none",
-  borderRadius: "8px",
+  backgroundColor: "var(--popover)",
+  border: "1px solid var(--border)",
+  borderRadius: "12px",
+  boxShadow: "0 12px 32px -14px oklch(0 0 0 / 45%)",
   fontSize: "12px",
-  color: "#e2e8f0",
+  color: "var(--popover-foreground)",
   padding: "6px 10px",
 };
+const CHART_GRID = "var(--border)";
+const CHART_AXIS = "var(--muted-foreground)";
+const CHART_CURSOR = { fill: "var(--primary)", fillOpacity: 0.08 };
 
 function HourlyChart({ data, peakHour }: { data: HourlyBucket[]; peakHour: { hour: string; count: number } | null }) {
   const total = data.reduce((s, b) => s + b.total, 0);
   return (
-    <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-          <BarChart3 className="h-3.5 w-3.5 text-primary shrink-0" />
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5">
+          <BarChart3 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           Scan-Verlauf (Tag)
-        </span>
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        </CardTitle>
+        <CardAction className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-full bg-success" /> Erlaubt
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-rose-400" /> Abgelehnt
+            <span className="h-2 w-2 rounded-full bg-destructive" /> Abgelehnt
           </span>
-        </div>
-      </div>
-      <div className="px-3 pt-3 pb-2">
+        </CardAction>
+      </CardHeader>
+      <CardContent>
         {total === 0 ? (
-          <p className="py-10 text-center text-xs text-muted-foreground/70">Keine Scans an diesem Tag.</p>
+          <EmptyState compact title="Keine Scans an diesem Tag." />
         ) : (
           <>
             <div className="h-[180px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
                   <XAxis
                     dataKey="hour"
-                    tick={{ fontSize: 9, fill: "#94a3b8" }}
+                    tick={{ fontSize: 9, fill: CHART_AXIS }}
                     tickLine={false}
                     axisLine={false}
                     interval={2}
                   />
-                  <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: "rgba(99, 102, 241, 0.08)" }} />
-                  <Bar dataKey="granted" name="Erlaubt" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="denied" name="Abgelehnt" stackId="a" fill="#f87171" radius={[2, 2, 0, 0]} />
+                  <YAxis tick={{ fontSize: 9, fill: CHART_AXIS }} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={CHART_CURSOR} />
+                  <Bar dataKey="granted" name="Erlaubt" stackId="a" fill="var(--success)" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="denied" name="Abgelehnt" stackId="a" fill="var(--destructive)" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
             {peakHour && (
-              <p className="text-[10px] text-muted-foreground mt-1 text-center">
-                Spitze um <span className="font-semibold text-foreground/80">{peakHour.hour}</span> mit {peakHour.count} Scans
+              <p className="text-[11px] text-muted-foreground mt-1 text-center">
+                Spitze um <span className="font-semibold text-foreground">{peakHour.hour}</span> mit {peakHour.count} Scans
               </p>
             )}
           </>
         )}
-      </div>
+      </CardContent>
     </Card>
   );
 }
@@ -307,29 +319,31 @@ function HourlyChart({ data, peakHour }: { data: HourlyBucket[]; peakHour: { hou
 function ScanResultDonut({ results }: { results: { granted: number; denied: number; protected: number } }) {
   const total = results.granted + results.denied + results.protected;
   const data = [
-    { name: "Erlaubt", value: results.granted, color: "#10b981" },
-    { name: "Abgelehnt", value: results.denied, color: "#f87171" },
-    { name: "Geschützt", value: results.protected, color: "#fbbf24" },
+    { name: "Erlaubt", value: results.granted, color: "var(--success)" },
+    { name: "Abgelehnt", value: results.denied, color: "var(--destructive)" },
+    { name: "Geschützt", value: results.protected, color: "var(--warning)" },
   ].filter((d) => d.value > 0);
 
   return (
-    <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-          <PieChartIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5">
+          <PieChartIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           Scan-Ergebnisse
-        </span>
-        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{total}</Badge>
-      </div>
-      <div className="px-3 pt-3 pb-2">
+        </CardTitle>
+        <CardAction>
+          <Badge variant="secondary" className="tabular-nums">{total}</Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
         {total === 0 ? (
-          <p className="py-10 text-center text-xs text-muted-foreground/70">Noch keine Scans an diesem Tag.</p>
+          <EmptyState compact title="Noch keine Scans an diesem Tag." />
         ) : (
           <div className="flex items-center gap-3">
             <div className="h-[160px] w-[160px] shrink-0 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2}>
+                  <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2} stroke="none">
                     {data.map((d) => <Cell key={d.name} fill={d.color} />)}
                   </Pie>
                   <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
@@ -337,7 +351,7 @@ function ScanResultDonut({ results }: { results: { granted: number; denied: numb
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <span className="text-2xl font-bold text-foreground tabular-nums leading-none">{total}</span>
-                <span className="text-[10px] text-muted-foreground/70 mt-0.5">Scans</span>
+                <span className="text-[11px] text-muted-foreground mt-0.5">Scans</span>
               </div>
             </div>
             <div className="flex-1 space-y-1.5 min-w-0">
@@ -348,14 +362,14 @@ function ScanResultDonut({ results }: { results: { granted: number; denied: numb
                     <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                     <span className="text-[11px] text-muted-foreground truncate flex-1">{d.name}</span>
                     <span className="text-[11px] font-semibold text-foreground/80 tabular-nums">{d.value}</span>
-                    <span className="text-[10px] text-muted-foreground/70 tabular-nums w-8 text-right">{pct}%</span>
+                    <span className="text-[11px] text-muted-foreground tabular-nums w-8 text-right">{pct}%</span>
                   </div>
                 );
               })}
             </div>
           </div>
         )}
-      </div>
+      </CardContent>
     </Card>
   );
 }
@@ -364,60 +378,60 @@ function WeekTrendChart({ data, selectedDate }: { data: WeekTrendDay[]; selected
   const totalScans = data.reduce((s, d) => s + d.scans, 0);
   const totalTickets = data.reduce((s, d) => s + d.tickets, 0);
   return (
-    <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-          <Activity className="h-3.5 w-3.5 text-primary shrink-0" />
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5">
+          <Activity className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           7-Tage-Trend
-        </span>
-        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+        </CardTitle>
+        <CardAction className="flex items-center gap-3 text-[11px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-primary" /> Scans
+            <span className="h-2 w-2 rounded-full bg-chart-1" /> Scans
             <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">{totalScans}</span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-success" /> Neue Tickets
+            <span className="h-2 w-2 rounded-full bg-chart-2" /> Neue Tickets
             <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">{totalTickets}</span>
           </span>
-        </div>
-      </div>
-      <div className="px-3 pt-3 pb-2">
+        </CardAction>
+      </CardHeader>
+      <CardContent>
         {totalScans === 0 && totalTickets === 0 ? (
-          <p className="py-10 text-center text-xs text-muted-foreground/70">Keine Aktivität in den letzten 7 Tagen.</p>
+          <EmptyState compact title="Keine Aktivität in den letzten 7 Tagen." />
         ) : (
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
                 <defs>
                   <linearGradient id="scansGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity={0.05} />
+                    <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0.05} />
                   </linearGradient>
                   <linearGradient id="ticketsGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+                    <stop offset="0%" stopColor="var(--chart-2)" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="var(--chart-2)" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
                 <XAxis
                   dataKey="dayName"
                   tickFormatter={(value: string, index: number) => {
                     const isSelected = data[index]?.date === selectedDate;
                     return isSelected ? `▸${value}` : value;
                   }}
-                  tick={{ fontSize: 10, fill: "#94a3b8" }}
+                  tick={{ fontSize: 10, fill: CHART_AXIS }}
                   tickLine={false}
                   axisLine={false}
                 />
-                <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <YAxis tick={{ fontSize: 9, fill: CHART_AXIS }} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                <Area type="monotone" dataKey="scans" name="Scans" stroke="#6366f1" strokeWidth={2} fill="url(#scansGradient)" />
-                <Area type="monotone" dataKey="tickets" name="Neue Tickets" stroke="#10b981" strokeWidth={2} fill="url(#ticketsGradient)" />
+                <Area type="monotone" dataKey="scans" name="Scans" stroke="var(--chart-1)" strokeWidth={2} fill="url(#scansGradient)" />
+                <Area type="monotone" dataKey="tickets" name="Neue Tickets" stroke="var(--chart-2)" strokeWidth={2} fill="url(#ticketsGradient)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         )}
-      </div>
+      </CardContent>
     </Card>
   );
 }
@@ -425,17 +439,19 @@ function WeekTrendChart({ data, selectedDate }: { data: WeekTrendDay[]; selected
 function TopDevicesCard({ devices }: { devices: TopDevice[] }) {
   const max = devices.reduce((m, d) => Math.max(m, d.total), 0);
   return (
-    <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-          <Smartphone className="h-3.5 w-3.5 text-warning shrink-0" />
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5">
+          <Smartphone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           Top-Geräte heute
-        </span>
-        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{devices.length}</Badge>
-      </div>
-      <div className="px-3 pt-2 pb-2 space-y-2">
+        </CardTitle>
+        <CardAction>
+          <Badge variant="secondary" className="tabular-nums">{devices.length}</Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="space-y-2">
         {devices.length === 0 ? (
-          <p className="py-8 text-center text-xs text-muted-foreground/70">Noch keine Scans an diesem Tag.</p>
+          <EmptyState compact title="Noch keine Scans an diesem Tag." />
         ) : (
           devices.map((d) => {
             const grantedPct = max > 0 ? (d.granted / max) * 100 : 0;
@@ -445,7 +461,7 @@ function TopDevicesCard({ devices }: { devices: TopDevice[] }) {
               <div key={d.id} className="space-y-1">
                 <div className="flex items-center gap-2 text-[11px]">
                   <span className="font-medium text-foreground/80 truncate flex-1 min-w-0">{d.name}</span>
-                  <span className="text-muted-foreground/70 tabular-nums">{d.total}</span>
+                  <span className="text-muted-foreground tabular-nums">{d.total}</span>
                   <span className={cn(
                     "tabular-nums w-10 text-right font-semibold",
                     rate >= 90 ? "text-success" : rate >= 70 ? "text-warning" : "text-destructive",
@@ -453,26 +469,27 @@ function TopDevicesCard({ devices }: { devices: TopDevice[] }) {
                 </div>
                 <div className="h-1.5 bg-muted rounded-full overflow-hidden flex">
                   <div className="bg-success h-full" style={{ width: `${grantedPct}%` }} />
-                  <div className="bg-rose-400 h-full" style={{ width: `${deniedPct}%` }} />
+                  <div className="bg-destructive h-full" style={{ width: `${deniedPct}%` }} />
                 </div>
               </div>
             );
           })
         )}
-      </div>
+      </CardContent>
     </Card>
   );
 }
 
+// Gruppenfarben aus der Diagramm-Reihe (keine Zustandsfarben als Dekor).
 const MEMBERSHIP_PALETTE = [
-  { bar: "bg-violet-500", dot: "bg-violet-500" },
-  { bar: "bg-primary", dot: "bg-primary" },
-  { bar: "bg-info", dot: "bg-info" },
-  { bar: "bg-success", dot: "bg-success" },
-  { bar: "bg-warning", dot: "bg-warning" },
-  { bar: "bg-destructive", dot: "bg-destructive" },
-  { bar: "bg-teal-500", dot: "bg-teal-500" },
-  { bar: "bg-pink-500", dot: "bg-pink-500" },
+  { bar: "bg-chart-5", dot: "bg-chart-5" },
+  { bar: "bg-chart-1", dot: "bg-chart-1" },
+  { bar: "bg-chart-4", dot: "bg-chart-4" },
+  { bar: "bg-chart-2", dot: "bg-chart-2" },
+  { bar: "bg-chart-3", dot: "bg-chart-3" },
+  { bar: "bg-chart-5/50", dot: "bg-chart-5/50" },
+  { bar: "bg-chart-1/50", dot: "bg-chart-1/50" },
+  { bar: "bg-chart-4/50", dot: "bg-chart-4/50" },
 ] as const;
 
 function MembershipsCard({
@@ -517,19 +534,19 @@ function MembershipsCard({
   }
 
   return (
-    <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+    <Card className="gap-3">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5">
           {icon}
           {title}
-        </span>
-        <span className="text-xs font-bold tabular-nums text-foreground/80">
-          {total}
-        </span>
-      </div>
+        </CardTitle>
+        <CardAction>
+          <Badge variant="secondary" className="tabular-nums">{total}</Badge>
+        </CardAction>
+      </CardHeader>
 
       {colored.length > 1 && (
-        <div className="px-3 pt-2.5">
+        <CardContent>
           <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
             {colored.map((c) => (
               <div
@@ -540,16 +557,14 @@ function MembershipsCard({
               />
             ))}
           </div>
-        </div>
+        </CardContent>
       )}
 
-      <div className="max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar min-h-[60px]">
+      <div className="max-h-[360px] overflow-y-auto scrollbar-thin min-h-[60px]">
         {colored.length === 0 ? (
-          <p className="px-3 py-6 text-center text-xs text-muted-foreground/70">
-            Keine aktiven Einträge am gewählten Tag.
-          </p>
+          <EmptyState compact title="Keine aktiven Einträge am gewählten Tag." />
         ) : (
-          <div className="px-2 py-2 space-y-0.5">
+          <div className="px-2 sm:px-2.5 space-y-0.5">
             {colored.map(({ name, group, color, pct }) => {
               const isOpen = openGroups.has(name);
               return (
@@ -557,13 +572,13 @@ function MembershipsCard({
                   <button
                     type="button"
                     onClick={() => toggle(name)}
-                    className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded hover:bg-muted/50 transition-colors"
+                    className="w-full flex items-center gap-2 px-2 py-2.5 sm:py-1.5 rounded-[10px] hover:bg-glass-tile transition-colors"
                   >
                     <span className={cn("h-2 w-2 rounded-full shrink-0", color.dot)} aria-hidden />
                     <span className="text-xs font-medium text-foreground/80 truncate flex-1 min-w-0 text-left">
                       {name}
                     </span>
-                    <span className="text-[10px] tabular-nums text-muted-foreground/70 shrink-0">
+                    <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">
                       {Math.round(pct)}%
                     </span>
                     <span className="text-xs font-semibold tabular-nums text-foreground/80 shrink-0 min-w-[1.5rem] text-right">
@@ -571,7 +586,7 @@ function MembershipsCard({
                     </span>
                     <ChevronDown
                       className={cn(
-                        "h-3 w-3 text-muted-foreground/70 shrink-0 transition-transform",
+                        "h-3 w-3 text-muted-foreground shrink-0 transition-transform",
                         isOpen && "rotate-180",
                       )}
                     />
@@ -611,70 +626,49 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
   return (
     <Card
       className={cn(
-        "relative border-border overflow-hidden gap-0 py-0 shadow-sm",
-        "transition-shadow hover:shadow-md",
+        "gap-3",
+        // Über dem Limit bzw. ab 80 % Auslastung: Karte in der Zustandsfarbe getönt.
+        overLimit
+          ? "border-destructive/40 bg-gradient-to-b from-destructive/10 to-transparent"
+          : utilTone === "amber" && "border-warning/45 bg-gradient-to-b from-warning/10 to-transparent",
         area.id === null && "border-dashed",
       )}>
-      <span
-        aria-hidden
-        className={cn(
-          "absolute left-0 top-0 bottom-0 w-1",
-          overLimit
-            ? "bg-destructive"
-            : utilTone === "amber"
-              ? "bg-warning"
-              : count > 0
-                ? "bg-primary"
-                : "bg-border dark:bg-muted",
-        )}
-      />
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60 pl-3.5">
-        <span className="text-sm font-semibold flex items-center gap-1.5 min-w-0 truncate text-foreground">
-          <MapPin className={cn(
-            "h-3.5 w-3.5 shrink-0",
-            count > 0 ? "text-primary" : "text-muted-foreground/70",
-          )} />
-          {area.name}
-        </span>
-        <div className="flex items-center gap-1.5 shrink-0">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5 min-w-0">
+          <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="truncate">{area.name}</span>
+        </CardTitle>
+        <CardAction className="flex items-center gap-1.5">
           {area.openingHours && (
-            <span className="text-[10px] text-muted-foreground/70 font-mono hidden sm:inline">
+            <span className="text-[11px] text-muted-foreground tabular-nums hidden sm:inline">
               {area.openingHours}
             </span>
           )}
           {limit != null ? (
             <Badge
-              variant="outline"
-              className={cn(
-                "text-[10px] px-1.5 py-0 font-mono tabular-nums",
+              variant={
                 overLimit
-                  ? "border-destructive/30 text-destructive "
+                  ? "danger"
                   : utilTone === "amber"
-                    ? "border-warning/30 text-warning "
+                    ? "warning"
                     : count > 0
-                      ? "border-primary/30 text-primary "
-                      : "border-border text-muted-foreground/70 dark:border-border",
-              )}
+                      ? "secondary"
+                      : "neutral"
+              }
+              className="tabular-nums"
             >
               {count}/{limit}
             </Badge>
           ) : (
-            <Badge
-              className={cn(
-                "text-[10px] px-1.5 py-0 tabular-nums",
-                count > 0
-                  ? "bg-primary/10 text-primary "
-                  : "bg-muted text-muted-foreground/70 dark:bg-muted dark:text-muted-foreground/70",
-              )}
-            >
+            <Badge variant={count > 0 ? "secondary" : "neutral"} className="tabular-nums">
               {count}
             </Badge>
           )}
-        </div>
-      </div>
+        </CardAction>
+      </CardHeader>
 
       {utilPct != null && count > 0 && (
-        <div className="px-3.5 pt-2">
+        <CardContent>
           <div className="h-1 rounded-full bg-muted overflow-hidden">
             <div
               className={cn(
@@ -683,25 +677,26 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
                   ? "bg-destructive"
                   : utilTone === "amber"
                     ? "bg-warning"
-                    : "bg-gradient-to-r from-primary to-violet-500",
+                    : "bg-primary",
               )}
               style={{ width: `${utilPct}%` }}
             />
           </div>
-        </div>
+        </CardContent>
       )}
 
       {(hasResources || hasOther) && (
-        <div className="px-3 pb-2 pt-1 pl-3.5 max-h-[320px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
+        <CardContent className="max-h-[320px] overflow-y-auto scrollbar-thin">
           {area.resources.map((res, ri) => (
             <div key={res.resourceName} className={cn(ri > 0 && "mt-2")}>
-              <div className="flex items-center gap-1.5 py-1 border-b border-border/60">
-                <Clock className="h-2.5 w-2.5 text-primary shrink-0" />
-                <span className="text-[11px] font-semibold text-muted-foreground truncate">
+              {/* Viele Zeitfenster rutschen in eine zweite Zeile statt die Zeile zu sprengen. */}
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 py-1 border-b border-border/60">
+                <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="text-label truncate">
                   {res.resourceName}
                 </span>
                 {res.slots.length > 0 && (
-                  <span className="text-[10px] text-muted-foreground/70 font-mono shrink-0 ml-auto">
+                  <span className="text-[11px] text-muted-foreground tabular-nums ml-auto">
                     {res.slots.map((s) => `${s.startTime}–${s.endTime}`).join(" · ")}
                   </span>
                 )}
@@ -720,7 +715,7 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
             <div className={cn(hasResources && "mt-2")}>
               {hasResources && (
                 <div className="py-1 border-b border-border/60">
-                  <span className="text-[11px] font-semibold text-muted-foreground/70">Sonstige</span>
+                  <span className="text-label">Sonstige</span>
                 </div>
               )}
               {area.otherTickets.map((ticket) => (
@@ -728,7 +723,7 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
               ))}
             </div>
           )}
-        </div>
+        </CardContent>
       )}
     </Card>
   );
@@ -737,37 +732,39 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
 function QuietAreasCard({ areas }: { areas: AreaData[] }) {
   if (areas.length === 0) return null;
   return (
-    <Card className="py-0 gap-0 overflow-hidden border-dashed">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-dashed border-border">
-        <span className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground uppercase tracking-wide">
-          <MapPin className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+    <Card className="gap-3">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5 text-muted-foreground">
+          <MapPin className="h-3.5 w-3.5 shrink-0" />
           Ruhige Bereiche
-        </span>
-        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
-          {areas.length}
-        </Badge>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-px bg-muted">
+        </CardTitle>
+        <CardAction>
+          <Badge variant="secondary" className="tabular-nums">
+            {areas.length}
+          </Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
         {areas.map((area, i) => (
           <div
             key={area.id ?? `unassigned-${i}`}
-            className="flex items-center gap-2 px-3 py-2 min-w-0 bg-background"
+            className="glass-tile flex items-center gap-2 px-3 py-2 min-w-0 min-h-11"
           >
-            <MapPin className="h-3 w-3 text-slate-300 dark:text-slate-600 shrink-0" />
-            <span className="text-xs font-medium text-muted-foreground truncate flex-1 min-w-0">
-              {area.name}
-            </span>
-            {area.openingHours && (
-              <span className="text-[10px] text-muted-foreground/70 font-mono shrink-0 hidden md:inline">
-                {area.openingHours}
-              </span>
-            )}
-            <span className="text-[10px] font-mono tabular-nums text-muted-foreground/70 shrink-0">
+            <MapPin className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+            {/* Öffnungszeiten unter dem Namen: neben ihm ließen lange Zeiten
+                vom Namen nur „Sau…“ übrig. */}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-muted-foreground truncate">{area.name}</p>
+              {area.openingHours && (
+                <p className="text-[11px] text-muted-foreground tabular-nums truncate">{area.openingHours}</p>
+              )}
+            </div>
+            <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">
               {area.personLimit != null ? `0/${area.personLimit}` : "0"}
             </span>
           </div>
         ))}
-      </div>
+      </CardContent>
     </Card>
   );
 }
@@ -909,27 +906,23 @@ export function DashboardClient() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 sm:space-y-5">
       {/* Date navigation */}
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => shiftDate(-7)}>
+            <Button variant="outline" size="icon" aria-label="Vorherige Woche" onClick={() => shiftDate(-7)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <button
-              type="button"
+            {/* Der gewählte Tag steht in der Segmentwahl darunter; Primärfarbe bleibt Handlungen vorbehalten. */}
+            <Button
+              variant="outline"
+              aria-pressed={isToday(date)}
               onClick={() => setDate(toLocaleDateStr(new Date()))}
-              className={cn(
-                "h-8 px-3 rounded-md text-xs font-semibold transition-colors",
-                isToday(date)
-                  ? "bg-primary text-white"
-                  : "bg-muted text-muted-foreground hover:bg-primary/10 "
-              )}
             >
               Heute
-            </button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => shiftDate(7)}>
+            </Button>
+            <Button variant="outline" size="icon" aria-label="Nächste Woche" onClick={() => shiftDate(7)}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -937,30 +930,37 @@ export function DashboardClient() {
             {fmtDisplayDate(date)}
           </span>
           <div className="ml-auto flex items-center gap-2">
-            {(loading || ticketLoading) && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/70" />}
+            {(loading || ticketLoading) && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Lädt …
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-7 gap-1">
-          {weekDays.map((wd) => (
-            <button
-              key={wd.date}
-              type="button"
-              onClick={() => setDate(wd.date)}
-              className={cn(
-                "flex flex-col items-center py-1.5 rounded-lg text-center transition-all",
-                wd.isSelected
-                  ? "bg-primary text-white shadow-sm"
-                  : wd.isToday
-                    ? "bg-primary/8 text-primary hover:bg-primary/10 "
-                    : "hover:bg-muted text-muted-foreground"
-              )}
-            >
-              <span className="text-[10px] font-medium uppercase">{wd.dayName}</span>
-              <span className={cn("text-base font-bold leading-tight", wd.isSelected ? "text-white" : "")}>{wd.dayNum}</span>
-            </button>
-          ))}
-        </div>
+        {/* Wochentage als Segmentwahl; zweizeilig, daher 44 px hoch */}
+        <Segmented
+          value={date}
+          onValueChange={setDate}
+          aria-label="Tag"
+          stretch
+          className="[&>button]:h-11 [&>button]:px-1"
+          options={weekDays.map((wd) => ({
+            value: wd.date,
+            label: (
+              <span
+                className={cn(
+                  "flex flex-col items-center gap-0.5 leading-none",
+                  wd.isToday && !wd.isSelected && "text-primary",
+                )}
+              >
+                <span className="text-[10px] font-medium uppercase">{wd.dayName}</span>
+                <span className="text-[15px] font-bold tabular-nums">{wd.dayNum}</span>
+              </span>
+            ),
+          }))}
+        />
       </div>
 
       <OpsStrip ops={ops} />
@@ -968,55 +968,52 @@ export function DashboardClient() {
         const noShowCount = Math.max(0, totalTickets - data.checkedInCount);
         const checkInRate = totalTickets > 0 ? Math.round((data.checkedInCount / totalTickets) * 100) : 0;
         return (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Card className="py-3 px-4 gap-0">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-muted-foreground">Tickets</span>
-                <Ticket className="h-3.5 w-3.5 text-primary" />
-              </div>
-              <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">{totalTickets}</p>
-              {totalTickets > 0 && (
-                <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                  {noShowCount > 0 ? <><span className="text-destructive font-medium">{noShowCount}</span> No-Show</> : "Alle eingecheckt"}
-                </p>
-              )}
-            </Card>
-            <Card className="py-3 px-4 gap-0">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-muted-foreground">Scans</span>
-                <ScanLine className="h-3.5 w-3.5 text-info" />
-              </div>
-              <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">{data.scansToday}</p>
-              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                {data.scansToday > 0 ? (
-                  <><span className="text-success font-medium">{data.grantRate}%</span> Erfolgsrate</>
-                ) : "Keine Scans"}
-              </p>
-            </Card>
-            <Card className="py-3 px-4 gap-0">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-muted-foreground">Eingecheckt</span>
-                <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-              </div>
-              <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">{data.checkedInCount}</p>
-              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                {totalTickets > 0 ? (
-                  <><span className="font-medium text-muted-foreground">{checkInRate}%</span> der Tickets</>
-                ) : data.peakHour ? (
-                  <>Spitze {data.peakHour.hour}</>
-                ) : "—"}
-              </p>
-            </Card>
-            <Card className="py-3 px-4 gap-0">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-muted-foreground">Geräte</span>
-                <Wifi className="h-3.5 w-3.5 text-warning" />
-              </div>
-              <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">{data.activeDevices}</p>
-              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                {data.peakHour ? <>Spitze {data.peakHour.hour} ({data.peakHour.count})</> : "online"}
-              </p>
-            </Card>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <StatCard
+              label="Tickets"
+              icon={Ticket}
+              tone="primary"
+              value={totalTickets}
+              hint={
+                totalTickets > 0
+                  ? noShowCount > 0
+                    ? <><span className="font-medium text-destructive">{noShowCount}</span> No-Show</>
+                    : "Alle eingecheckt"
+                  : undefined
+              }
+            />
+            <StatCard
+              label="Scans"
+              icon={ScanLine}
+              tone="info"
+              value={data.scansToday}
+              hint={
+                data.scansToday > 0
+                  ? <><span className="font-medium text-success">{data.grantRate}%</span> Erfolgsrate</>
+                  : "Keine Scans"
+              }
+            />
+            <StatCard
+              label="Eingecheckt"
+              icon={CheckCircle2}
+              tone="success"
+              value={data.checkedInCount}
+              hint={
+                totalTickets > 0
+                  ? `${checkInRate}% der Tickets`
+                  : data.peakHour
+                    ? `Spitze ${data.peakHour.hour}`
+                    : "—"
+              }
+              progress={totalTickets > 0 ? data.checkedInCount / totalTickets : undefined}
+            />
+            <StatCard
+              label="Geräte"
+              icon={Wifi}
+              tone="neutral"
+              value={data.activeDevices}
+              hint={data.peakHour ? `Spitze ${data.peakHour.hour} (${data.peakHour.count})` : "online"}
+            />
           </div>
         );
       })()}
@@ -1032,79 +1029,89 @@ export function DashboardClient() {
         const hasErrors = (s.errors ?? 0) > 0;
         const details = s.errorDetails ?? [];
         return (
-          <div className={cn(
-            "rounded-xl border text-sm",
-            hasErrors
-              ? "border-destructive/30 bg-destructive/10 "
-              : isStale
-                ? "border-warning/30 bg-warning/10 "
-                : "border-success/30 bg-success/10 ",
-          )}>
-            <div
-              className={cn("flex items-center gap-3 px-4 py-2.5", hasErrors && details.length > 0 && "cursor-pointer")}
-              onClick={() => { if (hasErrors && details.length > 0) setSyncErrorsOpen((v) => !v); }}
-            >
-              <RefreshCw className={cn(
-                "h-4 w-4 shrink-0",
-                hasErrors ? "text-destructive" : isStale ? "text-warning" : "text-success",
-              )} />
-              <div className="flex-1 min-w-0">
-                <span className="font-semibold text-foreground/90">ANNY Sync</span>
-                <span className="text-muted-foreground ml-2">
+          <Notice
+            tone={hasErrors ? "danger" : isStale ? "warning" : "success"}
+            icon={RefreshCw}
+            role="status"
+            compact
+            title={
+              <>
+                ANNY Sync
+                <span className="font-normal text-muted-foreground ml-2">
                   {fmtSyncAgo(s.lastSync)}
                   {s.lastSync && (
                     <span className="hidden sm:inline"> ({new Date(s.lastSync).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" })} Uhr)</span>
                   )}
                 </span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 text-xs">
-                {s.total != null && (
-                  <span className="text-muted-foreground">{s.total} Buchungen</span>
-                )}
-                {(s.created ?? 0) > 0 && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-success/12 text-success">
-                    +{s.created} neu
-                  </Badge>
-                )}
-                {(s.updated ?? 0) > 0 && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-info/12 text-info">
-                    {s.updated} aktualisiert
-                  </Badge>
-                )}
-                {hasErrors && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-destructive/12 text-destructive">
-                    {s.errors} Fehler {details.length > 0 && (syncErrorsOpen ? "▲" : "▼")}
-                  </Badge>
-                )}
-                {!s.lastSync && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-warning/14 text-warning">
-                    Kein Sync
-                  </Badge>
-                )}
-              </div>
+              </>
+            }
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
+              {s.total != null && (
+                <span className="mr-0.5">{s.total} Buchungen</span>
+              )}
+              {(s.created ?? 0) > 0 && (
+                <Badge variant="success">
+                  +{s.created} neu
+                </Badge>
+              )}
+              {(s.updated ?? 0) > 0 && (
+                <Badge variant="info">
+                  {s.updated} aktualisiert
+                </Badge>
+              )}
+              {hasErrors && (
+                <Badge variant="danger">
+                  {s.errors} Fehler
+                </Badge>
+              )}
+              {!s.lastSync && (
+                <Badge variant="warning">
+                  Kein Sync
+                </Badge>
+              )}
+              {/* Fehlerliste per Taste aufklappen (Tastatur und Screenreader erreichen sie).
+                  Steht in der Zeile der Fehlerzahl statt im action-Platz der Notice: dort
+                  sitzt sie mittig und springt beim Aufklappen nach unten. */}
+              {hasErrors && details.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-my-2 h-9"
+                  aria-expanded={syncErrorsOpen}
+                  onClick={() => setSyncErrorsOpen((v) => !v)}
+                >
+                  Details
+                  <ChevronDown className={cn("transition-transform", syncErrorsOpen && "rotate-180")} />
+                </Button>
+              )}
             </div>
             {syncErrorsOpen && details.length > 0 && (
-              <div className="px-4 pb-3 space-y-1 border-t border-destructive/30/50 pt-2">
+              <div className="mt-2 space-y-1 border-t border-destructive/30 pt-2">
                 {details.map((d, i) => (
-                  <p key={i} className="text-xs text-destructive font-mono truncate">{d}</p>
+                  <p key={i} className="text-xs text-destructive font-mono break-words">{d}</p>
                 ))}
               </div>
             )}
-          </div>
+          </Notice>
         );
       })()}
 
       {/* Area cards: aktive zuerst, ruhige Bereiche kompakt darunter */}
       {data && allAreas.length === 0 && (
-        <div className="text-center py-12 text-muted-foreground/70">
-          <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p className="text-xs">Keine Resourcen für dieses Datum</p>
-        </div>
+        <Card>
+          <EmptyState
+            icon={MapPin}
+            title="Keine Resourcen für dieses Datum"
+            description="Anderes Datum oben wählen."
+          />
+        </Card>
       )}
 
       {loading && !data && (
-        <div className="flex justify-center py-16">
-          <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
+        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Lädt …
         </div>
       )}
 
@@ -1113,9 +1120,9 @@ export function DashboardClient() {
         const quietAreas = allAreas.filter((a) => a._count.tickets === 0 && a.occupancyRelevant !== false);
         if (activeAreas.length === 0 && quietAreas.length === 0) return null;
         return (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {activeAreas.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 {activeAreas.map((area) => (
                   <AreaCard key={area.id ?? "unassigned"} area={area} openTicket={openTicket} />
                 ))}
@@ -1128,7 +1135,7 @@ export function DashboardClient() {
 
       {/* Charts: Stundenverlauf + Scan-Ergebnisse */}
       {data && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
             <HourlyChart data={data.hourly} peakHour={data.peakHour} />
           </div>
@@ -1138,7 +1145,7 @@ export function DashboardClient() {
 
       {/* 7-Tage-Trend + Top-Geräte */}
       {data && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
             <WeekTrendChart data={data.weekTrend} selectedDate={data.date} />
           </div>
@@ -1148,11 +1155,11 @@ export function DashboardClient() {
 
       {/* Abos & Services: separate Bereiche, unabhängig von Tages-Areas */}
       {data && (data.subscriptions.length > 0 || data.services.length > 0) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {data.subscriptions.length > 0 && (
             <MembershipsCard
               title="Abos"
-              icon={<CreditCard className="h-3.5 w-3.5 text-violet-500 shrink-0" />}
+              icon={<CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
               tickets={data.subscriptions}
               openTicket={openTicket}
               fallbackGroupName="Abo"
@@ -1161,7 +1168,7 @@ export function DashboardClient() {
           {data.services.length > 0 && (
             <MembershipsCard
               title="Services"
-              icon={<Users className="h-3.5 w-3.5 text-primary shrink-0" />}
+              icon={<Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
               tickets={data.services}
               openTicket={openTicket}
               fallbackGroupName="Service"
@@ -1172,58 +1179,54 @@ export function DashboardClient() {
 
       {/* Live feeds: Recent scans + New bookings (immer sichtbar; Inhalt für gewähltes Datum) */}
       {data && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <Card className="py-0 gap-0 overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
-              <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-                <ScanLine className="h-3.5 w-3.5 text-info shrink-0" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card className="gap-3">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-1.5">
+                <ScanLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                 Letzte Scans
-              </span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
-                {data.scansToday}
-              </Badge>
-            </div>
-            <div className="divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
+              </CardTitle>
+              <CardAction>
+                <Badge variant="secondary" className="tabular-nums">
+                  {data.scansToday}
+                </Badge>
+              </CardAction>
+            </CardHeader>
+            <div className="px-2 sm:px-2.5 divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto scrollbar-thin">
               {data.recentScans.length === 0 ? (
-                <div className="flex flex-col items-center justify-center px-6 py-10 gap-2 text-center">
-                  <div className="h-10 w-10 rounded-full bg-muted/60 flex items-center justify-center">
-                    <ScanLine className="h-5 w-5 text-slate-300 dark:text-slate-600" />
-                  </div>
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Keine Scans an diesem Tag
-                  </p>
-                  <p className="text-[11px] text-muted-foreground/70 max-w-[260px]">
-                    Anderes Datum oben wählen oder die vollständige Historie öffnen.
-                  </p>
-                </div>
+                <EmptyState
+                  compact
+                  icon={ScanLine}
+                  title="Keine Scans an diesem Tag"
+                  description="Anderes Datum oben wählen oder die vollständige Historie öffnen."
+                />
               ) : (
                 data.recentScans.map((scan) => (
-                  <div key={scan.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted/50 transition-colors">
+                  <div key={scan.id} className="flex items-center gap-2.5 px-2 py-2 hover:bg-glass-tile transition-colors">
                     {scan.profileImage ? (
                       <img src={scan.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
                     ) : (
-                      <div className={cn(
-                        "h-7 w-7 rounded-full flex items-center justify-center shrink-0",
-                        scan.result === "GRANTED" ? "bg-success/10 " : "bg-destructive/10 "
-                      )}>
-                        {scan.result === "GRANTED"
-                          ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                          : <XCircle className="h-3.5 w-3.5 text-destructive" />}
-                      </div>
+                      <IconChip
+                        icon={scan.result === "GRANTED" ? CheckCircle2 : XCircle}
+                        tone={scan.result === "GRANTED" ? "success" : "danger"}
+                        size="sm"
+                        className="rounded-full"
+                      />
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-foreground/90 truncate">{scan.ticketName}</p>
-                      <p className="text-[10px] text-muted-foreground/70 truncate">
+                      <p className="text-[11px] text-muted-foreground truncate">
                         {scan.ticketTypeName && <>{scan.ticketTypeName} · </>}
                         {scan.deviceName || "Unbekannt"}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="text-[10px] font-mono text-muted-foreground/70">{fmtScanTime(scan.scanTime)}</span>
-                      <div className={cn(
-                        "h-1.5 w-1.5 rounded-full ml-auto mt-0.5",
-                        scan.result === "GRANTED" ? "bg-success" : scan.result === "DENIED" ? "bg-destructive" : "bg-warning"
-                      )} />
+                      <span className="text-[11px] tabular-nums text-muted-foreground">{fmtScanTime(scan.scanTime)}</span>
+                      <StatusDot
+                        size="xs"
+                        className="flex ml-auto mt-0.5"
+                        tone={scan.result === "GRANTED" ? "success" : scan.result === "DENIED" ? "danger" : "warning"}
+                      />
                     </div>
                   </div>
                 ))
@@ -1231,53 +1234,52 @@ export function DashboardClient() {
             </div>
           </Card>
 
-          <Card className="py-0 gap-0 overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
-              <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-                <TrendingUp className="h-3.5 w-3.5 text-success shrink-0" />
+          <Card className="gap-3">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-1.5">
+                <TrendingUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                 Neueste Tickets
-              </span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
-                {data.newTicketsCount}
-              </Badge>
-            </div>
-            <div className="divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
+              </CardTitle>
+              <CardAction>
+                <Badge variant="secondary" className="tabular-nums">
+                  {data.newTicketsCount}
+                </Badge>
+              </CardAction>
+            </CardHeader>
+            <div className="px-2 sm:px-2.5 divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto scrollbar-thin">
               {data.newTickets.length === 0 ? (
-                <div className="flex flex-col items-center justify-center px-6 py-10 gap-2 text-center">
-                  <div className="h-10 w-10 rounded-full bg-muted/60 flex items-center justify-center">
-                    <Ticket className="h-5 w-5 text-slate-300 dark:text-slate-600" />
-                  </div>
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Keine neuen Tickets an diesem Tag
-                  </p>
-                  <p className="text-[11px] text-muted-foreground/70 max-w-[260px]">
-                    Hier erscheinen Tickets, sobald sie für diesen Tag angelegt wurden.
-                  </p>
-                </div>
+                <EmptyState
+                  compact
+                  icon={Ticket}
+                  title="Keine neuen Tickets an diesem Tag"
+                  description="Hier erscheinen Tickets, sobald sie für diesen Tag angelegt wurden."
+                />
               ) : (
                 data.newTickets.map((ticket) => (
                   <div
                     key={ticket.id}
-                    className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+                    className="flex items-center gap-2.5 px-2 py-2 cursor-pointer hover:bg-glass-tile transition-colors"
                     onClick={() => openTicket(ticket.id)}
                   >
                     {ticket.profileImage ? (
                       <img src={ticket.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
                     ) : (
-                      <div className="h-7 w-7 rounded-full bg-primary/12 flex items-center justify-center shrink-0">
-                        <span className="text-[10px] font-bold text-primary">
+                      // Neutral wie die Personenzeilen der Bereichskarten: Akzent-Initiale auf
+                      // Akzent-Tönung erreicht im Dunkeln nur 3,7:1.
+                      <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0">
+                        <span className="text-[10px] font-bold text-muted-foreground">
                           {(ticket.name[0] || "?").toUpperCase()}
                         </span>
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-foreground/90 truncate">{ticket.name}</p>
-                      <p className="text-[10px] text-muted-foreground/70 truncate">
+                      <p className="text-[11px] text-muted-foreground truncate">
                         {ticket.typeName || "Ticket"}
                         {ticket.source && <> · {ticket.source === "ANNY" ? "anny.co" : ticket.source === "EMP_CONTROL" ? "Mitarbeiter" : ticket.source}</>}
                       </p>
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground/70 shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
+                    <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
                   </div>
                 ))
               )}

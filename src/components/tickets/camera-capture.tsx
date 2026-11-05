@@ -94,8 +94,10 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     onClose();
   }
 
+  // Kamerabild: schwarzer Grund und weiße Bedienelemente sind hier erlaubt
+  // (docs/design-regeln.md, Abschnitt 15 – Video- und Kamerabilder).
   return (
-    <div className="rounded-lg border border-border overflow-hidden bg-black">
+    <div className="rounded-tile border border-border overflow-hidden bg-black">
       <input
         ref={fileInputRef}
         type="file"
@@ -111,9 +113,9 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
       <div className="relative aspect-[4/3] bg-black flex items-center justify-center">
         {error ? (
           <div className="text-center p-4">
-            <p className="text-sm text-muted-foreground/70 mb-3">{error}</p>
+            <p className="text-sm text-white/70 mb-3">{error}</p>
             <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-              <ImageIcon className="h-4 w-4 mr-1.5" />
+              <ImageIcon className="h-4 w-4" />
               Bild auswählen
             </Button>
           </div>
@@ -134,21 +136,22 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         <button
           type="button"
           onClick={handleClose}
-          className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/70 transition-colors"
+          aria-label="Kamera schließen"
+          className="press absolute top-2 right-2 inline-flex size-8 items-center justify-center rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/70 outline-none focus-visible:ring-[3px] focus-visible:ring-white/50"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="flex items-center justify-between p-2 bg-slate-900">
+      <div className="flex items-center justify-between p-2 border-t border-white/10 bg-black">
         <Button
           type="button"
           variant="ghost"
           size="sm"
           onClick={() => fileInputRef.current?.click()}
-          className="text-muted-foreground/70 hover:text-white hover:bg-slate-800"
+          className="text-white/75 hover:text-white hover:bg-white/10"
         >
-          <ImageIcon className="h-4 w-4 mr-1.5" />
+          <ImageIcon className="h-4 w-4" />
           Datei
         </Button>
 
@@ -156,7 +159,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           type="button"
           onClick={capture}
           disabled={!stream}
-          className="h-12 w-12 rounded-full border-4 border-white bg-white/20 hover:bg-white/40 transition-colors disabled:opacity-30 flex items-center justify-center"
+          aria-label="Foto aufnehmen"
+          className="press h-12 w-12 rounded-full border-4 border-white bg-white/20 hover:bg-white/40 disabled:opacity-30 flex items-center justify-center outline-none focus-visible:ring-[3px] focus-visible:ring-white/50"
         >
           <Camera className="h-5 w-5 text-white" />
         </button>
@@ -166,10 +170,10 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           variant="ghost"
           size="sm"
           onClick={() => setFacingMode((m) => m === "user" ? "environment" : "user")}
-          className="text-muted-foreground/70 hover:text-white hover:bg-slate-800"
+          className="text-white/75 hover:text-white hover:bg-white/10"
           disabled={!stream}
         >
-          <RotateCcw className="h-4 w-4 mr-1.5" />
+          <RotateCcw className="h-4 w-4" />
           Drehen
         </Button>
       </div>

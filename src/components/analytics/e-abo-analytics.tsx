@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -21,6 +20,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { StatCard } from "@/components/ui/stat-card";
+// Ticket-Status in denselben Zustandsfarben wie die Tickettabelle.
+import { statusBadge } from "@/components/tickets/edit-ticket-dialog";
+import { cn } from "@/lib/utils";
 import {
   Loader2,
   CreditCard,
@@ -33,7 +39,6 @@ import {
   TrendingUp,
   Clock,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import {
   Area,
   AreaChart,
@@ -45,6 +50,21 @@ import {
   BarChart,
   Bar,
 } from "recharts";
+
+// Diagramme nur aus Tokens (docs/design-regeln.md, Abschnitt 15).
+const CHART_TOOLTIP_STYLE = {
+  backgroundColor: "var(--popover)",
+  border: "1px solid var(--border)",
+  borderRadius: "12px",
+  boxShadow: "0 12px 32px -14px oklch(0 0 0 / 45%)",
+  fontSize: "12px",
+  color: "var(--popover-foreground)",
+};
+const CHART_GRID = "var(--border)";
+const CHART_AXIS = "var(--muted-foreground)";
+
+// Tabellen in Karten: Zeilen auf dem Handy mindestens 44 px hoch.
+const TABLE_ROWS = "[&_td]:py-3 sm:[&_td]:py-2";
 
 interface SubOption {
   id: number;
@@ -116,54 +136,6 @@ function fmtDateTime(iso: string | null | undefined): string {
   });
 }
 
-function statusLabel(s: string): string {
-  switch (s) {
-    case "VALID":
-      return "Gültig";
-    case "REDEEMED":
-      return "Eingelöst";
-    case "INVALID":
-      return "Ungültig";
-    case "PAUSED":
-      return "Pausiert";
-    case "CANCELED":
-      return "Gekündigt";
-    case "PROTECTED":
-      return "Geschützt";
-    default:
-      return s;
-  }
-}
-
-function StatMini({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  color,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string | number;
-  sub?: string;
-  color: string;
-}) {
-  return (
-    <Card className="py-0">
-      <CardContent className="p-3 sm:p-4 flex items-center gap-3">
-        <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center shrink-0", color)}>
-          <Icon className="h-4 w-4 text-white" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-base sm:text-lg font-bold text-foreground tabular-nums">{value}</p>
-          <p className="text-[10px] text-muted-foreground truncate">{label}</p>
-          {sub && <p className="text-[9px] text-muted-foreground/70 truncate">{sub}</p>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export function EaboAnalytics() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [data, setData] = useState<EaboData | null>(null);
@@ -192,21 +164,21 @@ export function EaboAnalytics() {
   const s = data?.summary;
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-primary/30/60 bg-primary/10 px-3 py-2.5 text-xs text-muted-foreground">
-        <strong className="text-foreground/90">E-Abo Auswertung:</strong> Zählt Scans nur
+    <div className="space-y-4 sm:space-y-5">
+      <Notice tone="info" compact>
+        <strong className="text-foreground">E-Abo Auswertung:</strong> Zählt Scans nur
         innerhalb der jeweiligen Ticket-Gültigkeit (Start–Ende bzw. Abo-Standardzeitraum). So siehst du
         Besuchsverhalten pro elektronischem Abonnement.
-      </div>
+      </Notice>
 
       <div className="flex flex-col sm:flex-row sm:items-end gap-3">
         <div className="space-y-1.5 flex-1 max-w-md">
-          <Label className="text-xs">Abo auswählen</Label>
+          <Label>Abo auswählen</Label>
           <Select
             value={selectedId || "__all__"}
             onValueChange={(v) => setSelectedId(v === "__all__" ? "" : v)}
           >
-            <SelectTrigger className="h-9 text-sm">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Alle Abos (Übersicht)" />
             </SelectTrigger>
             <SelectContent>
@@ -219,43 +191,48 @@ export function EaboAnalytics() {
             </SelectContent>
           </Select>
         </div>
-        <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => fetchData()} disabled={loading}>
+        <Button type="button" variant="outline" onClick={() => fetchData()} disabled={loading}>
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Aktualisieren"}
         </Button>
       </div>
 
       {loading && !data && (
-        <div className="flex justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Lädt …
         </div>
       )}
 
       {!loading && subs.length === 0 && (
         <Card>
-          <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            Noch keine Abos angelegt. Unter <strong>Abos</strong> kannst du Produkte definieren und Tickets
-            zuordnen.
-          </CardContent>
+          <EmptyState
+            icon={CreditCard}
+            title="Noch keine Abos angelegt."
+            description="Unter Abos kannst du Produkte definieren und Tickets zuordnen."
+          />
         </Card>
       )}
 
       {data && !selectedId && overview && overview.length === 0 && subs.length > 0 && (
         <Card>
-          <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            Keine Tickets mit Abo-Zuordnung. Verknüpfe Tickets unter <strong>Tickets</strong> oder per
-            Integration mit einem Abo.
-          </CardContent>
+          <EmptyState
+            icon={CreditCard}
+            title="Keine Tickets mit Abo-Zuordnung."
+            description="Verknüpfe Tickets unter Tickets oder per Integration mit einem Abo."
+          />
         </Card>
       )}
 
       {data && !selectedId && overview && overview.length > 0 && (
-        <Card>
-          <CardContent className="p-0 sm:p-0">
-            <div className="px-4 py-3 border-b border-border/60 flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-primary" />
-              <h3 className="text-sm font-semibold text-foreground/90">Übersicht aller Abos</h3>
-            </div>
-            <Table>
+        <Card className="gap-0 py-0 sm:py-0 overflow-hidden">
+          <CardHeader className="border-b pt-4 sm:pt-[18px]">
+            <CardTitle className="flex items-center gap-1.5">
+              <CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <h3>Übersicht aller Abos</h3>
+            </CardTitle>
+          </CardHeader>
+          <div className="px-2 sm:px-2.5">
+            <Table className={TABLE_ROWS}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Abo</TableHead>
@@ -272,10 +249,11 @@ export function EaboAnalytics() {
                     <TableCell className="font-medium">{row.name}</TableCell>
                     <TableCell className="text-right tabular-nums">{row.ticketCount}</TableCell>
                     <TableCell className="text-right tabular-nums hidden sm:table-cell">{row.activeTickets}</TableCell>
-                    <TableCell className="text-right tabular-nums text-success">
+                    {/* Zustandsfarbe nur, wenn es etwas zu melden gibt; 0 bleibt ruhig. */}
+                    <TableCell className={cn("text-right tabular-nums", row.grantedScans > 0 ? "text-success" : "text-muted-foreground")}>
                       {row.grantedScans}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-destructive hidden md:table-cell">
+                    <TableCell className={cn("text-right tabular-nums hidden md:table-cell", row.deniedScans > 0 ? "text-destructive" : "text-muted-foreground")}>
                       {row.deniedScans}
                     </TableCell>
                     <TableCell className="text-right tabular-nums hidden lg:table-cell">
@@ -285,84 +263,86 @@ export function EaboAnalytics() {
                 ))}
               </TableBody>
             </Table>
-            <p className="text-[11px] text-muted-foreground px-4 py-2 border-t border-border/60">
-              Wähle oben ein Abo für Tagesverlauf, Wochentage, Geräte und Besucherliste.
-            </p>
-          </CardContent>
+          </div>
+          <p className="text-[11px] text-muted-foreground px-4 sm:px-[18px] py-3 border-t border-border/60">
+            Wähle oben ein Abo für Tagesverlauf, Wochentage, Geräte und Besucherliste.
+          </p>
         </Card>
       )}
 
       {data && selectedId && s && (
         <>
-          <div>
-            <h3 className="text-sm font-semibold text-foreground/90 flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-violet-500" />
-              {data.selectedSubscription?.name ?? "Abo"}
-            </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Auswertungsfenster (Gültigkeiten): {fmtDate(data.rangeStart)} – {fmtDate(data.rangeEnd)}
-            </p>
-          </div>
+          <SectionHeading
+            title={data.selectedSubscription?.name ?? "Abo"}
+            icon={CreditCard}
+            description={`Auswertungsfenster (Gültigkeiten): ${fmtDate(data.rangeStart)} – ${fmtDate(data.rangeEnd)}`}
+          />
 
           {s.totalTickets === 0 ? (
             <Card>
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                Für dieses Abo sind keine Tickets vorhanden.
-              </CardContent>
+              <EmptyState compact title="Für dieses Abo sind keine Tickets vorhanden." />
             </Card>
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-                <StatMini
+                <StatCard
+                  size="sm"
                   icon={Users}
                   label="Abo-Tickets"
                   value={s.totalTickets}
-                  sub={`${s.activeTickets} aktiv`}
-                  color="bg-violet-500"
+                  hint={`${s.activeTickets} aktiv`}
+                  tone="primary"
                 />
-                <StatMini
+                <StatCard
+                  size="sm"
                   icon={ScanLine}
                   label="Besuche (erlaubt)"
                   value={s.totalVisits}
-                  sub={`${s.grantRate}% aller Scans erlaubt`}
-                  color="bg-success"
+                  hint={`${s.grantRate}% aller Scans erlaubt`}
+                  tone="success"
                 />
-                <StatMini
+                <StatCard
+                  size="sm"
                   icon={ShieldX}
                   label="Abgelehnt"
                   value={s.deniedCount}
-                  sub="im Gültigkeitszeitraum"
-                  color="bg-destructive"
+                  hint="im Gültigkeitszeitraum"
+                  tone="danger"
                 />
-                <StatMini
+                <StatCard
+                  size="sm"
                   icon={ShieldCheck}
                   label="Inhaber mit Besuch"
                   value={s.uniqueHoldersWithVisits}
-                  sub={`Ø ${s.avgVisitsPerHolder} Besuche`}
-                  color="bg-info"
+                  hint={`Ø ${s.avgVisitsPerHolder} Besuche`}
+                  tone="info"
                 />
-                <StatMini
+                <StatCard
+                  size="sm"
                   icon={TrendingUp}
                   label="Stärkster Tag"
                   value={s.busiestDay ? fmtDate(s.busiestDay) : "–"}
-                  sub={s.busiestDayCount ? `${s.busiestDayCount} Scans` : undefined}
-                  color="bg-warning"
+                  hint={s.busiestDayCount ? `${s.busiestDayCount} Scans` : undefined}
+                  tone="neutral"
                 />
-                <StatMini
+                <StatCard
+                  size="sm"
                   icon={CalendarDays}
                   label="Zeitraum"
                   value={`${fmtDate(data.rangeStart)}`}
-                  sub={fmtDate(data.rangeEnd)}
-                  color="bg-primary"
+                  hint={fmtDate(data.rangeEnd)}
+                  tone="neutral"
                 />
               </div>
 
-              <Card className="bg-muted/50 dark:bg-card/40">
-                <CardContent className="p-3 sm:p-4 text-xs text-muted-foreground space-y-1.5">
-                  <p className="font-medium text-foreground/90 flex items-center gap-1.5">
-                    <BarChart3 className="h-3.5 w-3.5" />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-1.5">
+                    <BarChart3 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     Kurzanalyse
-                  </p>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-[13px] text-muted-foreground">
                   <ul className="list-disc pl-4 space-y-0.5">
                     <li>
                       <strong>{s.uniqueHoldersWithVisits}</strong> von <strong>{s.totalTickets}</strong>{" "}
@@ -380,7 +360,7 @@ export function EaboAnalytics() {
               </Card>
 
               <Tabs defaultValue="verlauf" className="w-full">
-                <TabsList variant="line" className="w-full sm:w-auto">
+                <TabsList className="w-full sm:w-fit">
                   <TabsTrigger value="verlauf">Tagesverlauf</TabsTrigger>
                   <TabsTrigger value="wochentag">Wochentag</TabsTrigger>
                   <TabsTrigger value="besucher">Besucher</TabsTrigger>
@@ -388,35 +368,27 @@ export function EaboAnalytics() {
                 <TabsContent value="verlauf" className="mt-3">
                   {data.timeline.length > 0 ? (
                     <Card>
-                      <CardContent className="p-3 sm:p-5">
+                      <CardContent>
                         <div className="h-[240px] sm:h-[280px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={data.timeline} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
                               <XAxis
                                 dataKey="label"
-                                tick={{ fontSize: 9, fill: "#94a3b8" }}
+                                tick={{ fontSize: 9, fill: CHART_AXIS }}
                                 tickLine={false}
                                 axisLine={false}
                                 interval="preserveStartEnd"
                               />
-                              <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                              <Tooltip
-                                contentStyle={{
-                                  backgroundColor: "#1e293b",
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  fontSize: "12px",
-                                  color: "#e2e8f0",
-                                }}
-                              />
+                              <YAxis tick={{ fontSize: 10, fill: CHART_AXIS }} tickLine={false} axisLine={false} />
+                              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
                               <Area
                                 type="monotone"
                                 dataKey="granted"
                                 name="Erlaubt"
                                 stackId="1"
-                                stroke="#10b981"
-                                fill="#10b981"
+                                stroke="var(--success)"
+                                fill="var(--success)"
                                 fillOpacity={0.35}
                               />
                               <Area
@@ -424,8 +396,8 @@ export function EaboAnalytics() {
                                 dataKey="denied"
                                 name="Abgelehnt"
                                 stackId="1"
-                                stroke="#f87171"
-                                fill="#f87171"
+                                stroke="var(--destructive)"
+                                fill="var(--destructive)"
                                 fillOpacity={0.35}
                               />
                             </AreaChart>
@@ -434,35 +406,29 @@ export function EaboAnalytics() {
                       </CardContent>
                     </Card>
                   ) : (
-                    <p className="text-sm text-muted-foreground py-6 text-center">Keine Scans im angezeigten Zeitraum.</p>
+                    <Card>
+                      <EmptyState compact title="Keine Scans im angezeigten Zeitraum." />
+                    </Card>
                   )}
                 </TabsContent>
                 <TabsContent value="wochentag" className="mt-3">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <Card>
-                      <CardContent className="p-3 sm:p-5">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Clock className="h-4 w-4 text-warning" />
-                          <h4 className="text-xs font-semibold text-foreground/80">
-                            Besuche nach Wochentag
-                          </h4>
-                        </div>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-1.5">
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <h4>Besuche nach Wochentag</h4>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
                         <div className="h-[200px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={data.byWeekday} margin={{ top: 0, right: 5, left: -20, bottom: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94a3b8" }} />
-                              <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} />
-                              <Tooltip
-                                contentStyle={{
-                                  backgroundColor: "#1e293b",
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  fontSize: "12px",
-                                  color: "#e2e8f0",
-                                }}
-                              />
-                              <Bar dataKey="visits" name="Erlaubte Scans" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
+                              <XAxis dataKey="label" tick={{ fontSize: 10, fill: CHART_AXIS }} tickLine={false} axisLine={false} />
+                              <YAxis tick={{ fontSize: 10, fill: CHART_AXIS }} tickLine={false} axisLine={false} />
+                              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                              <Bar dataKey="visits" name="Erlaubte Scans" fill="var(--chart-5)" radius={[4, 4, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
@@ -470,37 +436,36 @@ export function EaboAnalytics() {
                     </Card>
                     {data.byDevice.length > 0 && (
                       <Card>
-                        <CardContent className="p-3 sm:p-5">
-                          <div className="flex items-center gap-2 mb-2">
-                            <ScanLine className="h-4 w-4 text-primary" />
-                            <h4 className="text-xs font-semibold text-foreground/80">Nach Gerät</h4>
-                          </div>
-                          <div className="h-[200px]">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-1.5">
+                            <ScanLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <h4>Nach Gerät</h4>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {/* Eine Zeile je Gerät, damit Recharts keine Beschriftung ausblendet. */}
+                          <div style={{ height: Math.max(200, data.byDevice.length * 28 + 30) }}>
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart
                                 data={data.byDevice}
                                 layout="vertical"
                                 margin={{ top: 0, right: 5, left: 0, bottom: 0 }}
                               >
-                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                                <XAxis type="number" tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} horizontal={false} />
+                                <XAxis type="number" tick={{ fontSize: 10, fill: CHART_AXIS }} tickLine={false} axisLine={false} />
                                 <YAxis
                                   type="category"
                                   dataKey="name"
-                                  width={100}
-                                  tick={{ fontSize: 9, fill: "#94a3b8" }}
+                                  width={110}
+                                  interval={0}
+                                  // style: Recharts misst Umbrüche nur darüber (sonst mit 16 px).
+                                  tick={{ fontSize: 10, fill: CHART_AXIS, style: { fontSize: "10px" } }}
+                                  tickLine={false}
+                                  axisLine={false}
                                 />
-                                <Tooltip
-                                  contentStyle={{
-                                    backgroundColor: "#1e293b",
-                                    border: "none",
-                                    borderRadius: "8px",
-                                    fontSize: "12px",
-                                    color: "#e2e8f0",
-                                  }}
-                                />
-                                <Bar dataKey="granted" stackId="a" fill="#10b981" name="Erlaubt" />
-                                <Bar dataKey="denied" stackId="a" fill="#f87171" name="Abgelehnt" />
+                                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                                <Bar dataKey="granted" stackId="a" fill="var(--success)" name="Erlaubt" />
+                                <Bar dataKey="denied" stackId="a" fill="var(--destructive)" name="Abgelehnt" />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
@@ -510,9 +475,9 @@ export function EaboAnalytics() {
                   </div>
                 </TabsContent>
                 <TabsContent value="besucher" className="mt-3">
-                  <Card>
-                    <CardContent className="p-0 sm:p-0">
-                      <Table>
+                  <Card className="gap-0 py-0 sm:py-0 overflow-hidden">
+                    <div className="px-2 sm:px-2.5 py-1">
+                      <Table className={TABLE_ROWS}>
                         <TableHeader>
                           <TableRow>
                             <TableHead>Inhaber</TableHead>
@@ -530,12 +495,8 @@ export function EaboAnalytics() {
                               <TableCell className="font-medium">{t.displayName}</TableCell>
                               <TableCell className="hidden sm:table-cell text-xs">{fmtDate(t.validFrom)}</TableCell>
                               <TableCell className="hidden sm:table-cell text-xs">{fmtDate(t.validTo)}</TableCell>
-                              <TableCell>
-                                <Badge variant="secondary" className="text-[10px] font-normal">
-                                  {statusLabel(t.status)}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums text-success">
+                              <TableCell>{statusBadge(t.status)}</TableCell>
+                              <TableCell className={cn("text-right tabular-nums", t.grantedVisits > 0 ? "text-success" : "text-muted-foreground")}>
                                 {t.grantedVisits}
                               </TableCell>
                               <TableCell className="text-right tabular-nums hidden md:table-cell">
@@ -548,7 +509,7 @@ export function EaboAnalytics() {
                           ))}
                         </TableBody>
                       </Table>
-                    </CardContent>
+                    </div>
                   </Card>
                 </TabsContent>
               </Tabs>

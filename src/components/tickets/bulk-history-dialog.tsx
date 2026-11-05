@@ -4,13 +4,18 @@ import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   History,
   Printer,
@@ -24,7 +29,6 @@ import {
   Scissors,
   Radio,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import {
   printTicketsBulk,
   type PrintableTicket,
@@ -62,26 +66,29 @@ interface BulkHistoryDialogProps {
   accountName?: string | null;
 }
 
-const STATUS_LABELS: Record<string, { label: string; tone: string }> = {
+// Status als Badge-Variante in der festen Zustandsfarbe (wie in der Tickettabelle).
+type StatusTone = "success" | "info" | "neutral" | "danger" | "warning";
+
+const STATUS_LABELS: Record<string, { label: string; tone: StatusTone }> = {
   VALID: {
     label: "Gültig",
-    tone: "bg-success/10 text-success border-success/30 ",
+    tone: "success",
   },
   REDEEMED: {
     label: "Eingelöst",
-    tone: "bg-primary/10 text-primary border-primary/30 ",
+    tone: "info",
   },
   EXPIRED: {
     label: "Abgelaufen",
-    tone: "bg-muted text-muted-foreground border-border dark:bg-muted dark:text-foreground/80 dark:border-border",
+    tone: "neutral",
   },
   CANCELED: {
     label: "Storniert",
-    tone: "bg-destructive/10 text-destructive border-destructive/30 ",
+    tone: "danger",
   },
   PAUSED: {
     label: "Pausiert",
-    tone: "bg-warning/10 text-warning border-warning/30 ",
+    tone: "warning",
   },
 };
 
@@ -237,7 +244,7 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button variant="outline" className="gap-1.5">
           <History className="h-4 w-4" />
           <span className="hidden xs:inline">Bulk-Verlauf</span>
           <span className="xs:hidden">Verlauf</span>
@@ -250,11 +257,11 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
             <Layers className="h-5 w-5 text-primary" />
             Bulk-Verlauf
           </DialogTitle>
-          <p className="text-xs text-muted-foreground pt-1">
+          <DialogDescription>
             Übersicht aller per Bulk erstellten Tickets. Bondrucker-Bulks
             lassen sich erneut ausdrucken (z. B. wenn der Drucker einen Bon
             verschluckt hat). RFID-Bulks werden separat gelistet.
-          </p>
+          </DialogDescription>
         </DialogHeader>
 
         {(() => {
@@ -266,97 +273,77 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
           return (
             <>
               {!loading && !error && bulks.length > 0 && (
-                <Tabs
+                // Filter derselben Liste, kein eigener Inhaltsbereich: Segmentwahl statt Reiter.
+                <Segmented
+                  aria-label="Bulk-Art"
+                  stretch
                   value={filter}
-                  onValueChange={(v) => setFilter(v as BulkFilter)}
+                  onValueChange={setFilter}
                   className="mt-2"
-                >
-                  <TabsList className="w-full">
-                    <TabsTrigger value="PRINT" className="gap-1.5">
-                      <Printer className="h-3.5 w-3.5" />
-                      Druck-Bulks
-                      <Badge
-                        variant="secondary"
-                        className="ml-1 px-1.5 h-5 text-[10px] font-normal"
-                      >
-                        {printBulks.length}
-                      </Badge>
-                    </TabsTrigger>
-                    <TabsTrigger value="RFID" className="gap-1.5">
-                      <Radio className="h-3.5 w-3.5" />
-                      RFID-Bulks
-                      <Badge
-                        variant="secondary"
-                        className="ml-1 px-1.5 h-5 text-[10px] font-normal"
-                      >
-                        {rfidBulks.length}
-                      </Badge>
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
+                  options={[
+                    {
+                      value: "PRINT",
+                      label: <><Printer className="h-3.5 w-3.5" />Druck-Bulks</>,
+                      count: printBulks.length,
+                    },
+                    {
+                      value: "RFID",
+                      label: <><Radio className="h-3.5 w-3.5" />RFID-Bulks</>,
+                      count: rfidBulks.length,
+                    },
+                  ]}
+                />
               )}
 
-              <div className="flex-1 overflow-y-auto -mx-6 px-6 mt-2">
+              <div className="flex-1 overflow-y-auto overscroll-contain scrollbar-thin -mx-5 px-5 sm:-mx-6 sm:px-6 mt-2">
                 {loading && (
-                  <div className="flex items-center justify-center py-12 text-muted-foreground">
-                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin" />
                     Lade Bulks…
                   </div>
                 )}
 
                 {!loading && error && (
-                  <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                    {error}
-                  </p>
+                  <Notice tone="danger" compact title={error} />
                 )}
 
                 {!loading && !error && bulks.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                    <Inbox className="h-10 w-10 mb-3 text-muted-foreground/70" />
-                    <p className="text-sm font-medium">Noch keine Bulks erstellt.</p>
-                    <p className="text-xs text-muted-foreground/70 mt-1">
-                      Sobald du über &quot;Bulk &amp; Drucken&quot; oder
-                      &quot;Bändchen-Bulk&quot; mehrere Tickets auf einmal
-                      erstellst, erscheinen sie hier.
-                    </p>
-                  </div>
+                  <EmptyState
+                    icon={Inbox}
+                    title="Noch keine Bulks erstellt."
+                    description={"Sobald du über \"Bulk & Drucken\" oder \"Bändchen-Bulk\" mehrere Tickets auf einmal erstellst, erscheinen sie hier."}
+                  />
                 )}
 
                 {!loading && !error && bulks.length > 0 && visibleBulks.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
-                    <Inbox className="h-8 w-8 mb-2 text-muted-foreground/70" />
-                    <p className="text-sm font-medium">
-                      {isRfidView
+                  <EmptyState
+                    compact
+                    icon={Inbox}
+                    title={
+                      isRfidView
                         ? "Noch keine RFID-Bulks erstellt."
-                        : "Noch keine Druck-Bulks erstellt."}
-                    </p>
-                  </div>
+                        : "Noch keine Druck-Bulks erstellt."
+                    }
+                  />
                 )}
 
                 {!loading && !error && !isRfidView && visibleBulks.length > 0 && (
-                  <label
-                    htmlFor="reprint-cut-mode"
-                    className={cn(
-                      "mb-3 flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors text-xs",
-                      cutPerTicket
-                        ? "border-primary/30 bg-primary/10 "
-                        : "border-border bg-muted/50 dark:border-border dark:bg-card/40",
-                    )}
-                  >
-                    <input
+                  // Häkchen aus dem Baustein, Beschriftung daneben; ein Tipp auf die
+                  // Beschriftung schaltet das Häkchen mit.
+                  <div className="glass-tile mb-3 flex items-center gap-3 px-3 py-2.5">
+                    <Checkbox
                       id="reprint-cut-mode"
-                      type="checkbox"
                       checked={cutPerTicket}
-                      onChange={(e) => toggleCutPerTicket(e.target.checked)}
-                      className="mt-0.5 h-3.5 w-3.5 accent-primary"
+                      onCheckedChange={(v) => toggleCutPerTicket(v === true)}
                     />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-foreground/90 flex items-center gap-1.5">
-                        <Scissors className="h-3 w-3 text-primary" />
-                        Nach jedem Ticket schneiden (eigener Druckjob pro Bon)
-                      </p>
-                    </div>
-                  </label>
+                    <Label
+                      htmlFor="reprint-cut-mode"
+                      className="flex-1 min-w-0 gap-1.5 cursor-pointer text-xs leading-snug text-foreground/90"
+                    >
+                      <Scissors className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      Nach jedem Ticket schneiden (eigener Druckjob pro Bon)
+                    </Label>
+                  </div>
                 )}
                 {!loading && !error && visibleBulks.length > 0 && (
             <ul className="space-y-3 pb-2">
@@ -378,7 +365,7 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
                 return (
                   <li
                     key={b.id}
-                    className="border border-border rounded-lg p-3 bg-card/40 hover:border-indigo-200 transition-colors"
+                    className="glass-tile p-3"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                       <div className="min-w-0 flex-1">
@@ -386,22 +373,12 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
                           <span className="font-semibold text-foreground">
                             {b.namePrefix ?? "Tickets"}
                           </span>
-                          <Badge
-                            variant="secondary"
-                            className={cn(
-                              isRfid
-                                ? "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900"
-                                : "bg-primary/10 text-primary border-primary/30 ",
-                            )}
-                          >
+                          <Badge variant="secondary" className="tabular-nums">
                             {b.count}× {isRfid ? "Bändchen" : "Tickets"}
                           </Badge>
                           {isRfid && (
-                            <Badge
-                              variant="outline"
-                              className="gap-1 font-normal border-violet-200 text-violet-700 dark:border-violet-900 dark:text-violet-300"
-                            >
-                              <Radio className="h-3 w-3" />
+                            <Badge variant="neutral" className="font-normal">
+                              <Radio />
                               RFID-Bulk
                             </Badge>
                           )}
@@ -417,45 +394,29 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {describeValidity(b)}
                         </p>
-                        <p className="text-[11px] text-muted-foreground/70 mt-1">
+                        <p className="text-[11px] text-muted-foreground tabular-nums mt-1">
                           Erstellt {fmtDateTime(b.createdAt)}
                         </p>
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {valid > 0 && (
-                            <span
-                              className={cn(
-                                "px-2 py-0.5 rounded-full text-[11px] border",
-                                STATUS_LABELS.VALID.tone,
-                              )}
-                            >
+                            <Badge variant={STATUS_LABELS.VALID.tone} className="tabular-nums">
                               {valid} {STATUS_LABELS.VALID.label}
-                            </span>
+                            </Badge>
                           )}
                           {redeemed > 0 && (
-                            <span
-                              className={cn(
-                                "px-2 py-0.5 rounded-full text-[11px] border",
-                                STATUS_LABELS.REDEEMED.tone,
-                              )}
-                            >
+                            <Badge variant={STATUS_LABELS.REDEEMED.tone} className="tabular-nums">
                               {redeemed} {STATUS_LABELS.REDEEMED.label}
-                            </span>
+                            </Badge>
                           )}
                           {otherStatuses.map(([k, n]) => {
                             const meta = STATUS_LABELS[k] ?? {
                               label: k,
-                              tone: "bg-muted text-muted-foreground border-border dark:bg-muted dark:text-foreground/80 dark:border-border",
+                              tone: "neutral" as StatusTone,
                             };
                             return (
-                              <span
-                                key={k}
-                                className={cn(
-                                  "px-2 py-0.5 rounded-full text-[11px] border",
-                                  meta.tone,
-                                )}
-                              >
+                              <Badge key={k} variant={meta.tone} className="tabular-nums">
                                 {n} {meta.label}
-                              </span>
+                              </Badge>
                             );
                           })}
                         </div>
@@ -464,16 +425,18 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
                       <div className="flex flex-col items-stretch sm:items-end gap-2 sm:min-w-44">
                         {isRfid ? (
                           <p className="text-xs text-muted-foreground flex items-center gap-1.5 sm:justify-end">
-                            <Radio className="h-3.5 w-3.5 text-violet-600" />
+                            <Radio className="h-3.5 w-3.5" />
                             Kein Druck – RFID-Bändchen
                           </p>
                         ) : (
+                          // Auf dem Handy volle Breite mit 44 px Tippfläche. Eine Taste je
+                          // Eintrag, daher keine Primärtaste.
                           <Button
                             type="button"
-                            size="sm"
+                            variant="outline"
                             onClick={() => handleReprint(b)}
                             disabled={isReprinting}
-                            className="bg-primary hover:bg-primary/90 gap-1.5"
+                            className="gap-1.5 max-sm:h-11"
                           >
                             {isReprinting ? (
                               <Loader2 className="h-4 w-4 animate-spin" />

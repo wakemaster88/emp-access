@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -12,6 +13,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -39,6 +42,10 @@ import {
   type PrintMode,
 } from "@/lib/print-tickets";
 import { Scissors } from "lucide-react";
+
+// Dialog auf dem Handy: Felder und Tasten 44 px hoch (docs/design-regeln.md, Abschnitt 16).
+const FIELD = "h-11 sm:h-9";
+const SELECT_FIELD = "w-full data-[size=default]:h-11 sm:data-[size=default]:h-9";
 
 interface Area {
   id: number;
@@ -273,14 +280,15 @@ export function BulkTicketDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button variant="outline" className="gap-1.5">
           <Layers className="h-4 w-4" />
           <span className="hidden xs:inline">Bulk &amp; Drucken</span>
           <span className="xs:hidden">Bulk</span>
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="sm:max-w-md">
+      {/* Breite wie der Dialog-Standard (lg): drei Tasten passen nebeneinander. */}
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Layers className="h-5 w-5 text-primary" />
@@ -296,7 +304,7 @@ export function BulkTicketDialog({
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-9 w-9 shrink-0"
+                className="size-11 sm:size-9 shrink-0"
                 onClick={() => setCount((c) => clampCount(c - 1))}
                 disabled={loading || count <= 1}
                 aria-label="Anzahl verringern"
@@ -311,14 +319,14 @@ export function BulkTicketDialog({
                 max={MAX_COUNT}
                 value={count}
                 onChange={(e) => setCount(clampCount(Number(e.target.value)))}
-                className="text-center font-semibold tabular-nums text-base h-9"
+                className={cn("text-center font-semibold tabular-nums text-base", FIELD)}
                 disabled={loading}
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-9 w-9 shrink-0"
+                className="size-11 sm:size-9 shrink-0"
                 onClick={() => setCount((c) => clampCount(c + 1))}
                 disabled={loading || count >= MAX_COUNT}
                 aria-label="Anzahl erhoehen"
@@ -328,23 +336,21 @@ export function BulkTicketDialog({
             </div>
             <div className="flex flex-wrap gap-1.5 pt-1">
               {QUICK_COUNTS.map((n) => (
-                <button
+                <Button
                   key={n}
                   type="button"
+                  size="sm"
+                  variant={count === n ? "default" : "outline"}
+                  aria-pressed={count === n}
                   onClick={() => setCount(n)}
                   disabled={loading}
-                  className={cn(
-                    "px-2.5 py-1 rounded-md text-xs font-medium border transition-colors",
-                    count === n
-                      ? "bg-primary text-white border-primary"
-                      : "bg-muted/50 text-muted-foreground border-border hover:border-primary/60",
-                  )}
+                  className="min-w-11 rounded-full tabular-nums max-sm:h-9"
                 >
                   {n}
-                </button>
+                </Button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground/70">Max. {MAX_COUNT} Tickets pro Bulk.</p>
+            <p className="text-xs text-muted-foreground">Max. {MAX_COUNT} Tickets pro Bulk.</p>
           </div>
 
           <div className="space-y-1.5">
@@ -355,8 +361,9 @@ export function BulkTicketDialog({
               onChange={(e) => setNamePrefix(e.target.value)}
               placeholder="Tagesgast"
               disabled={loading}
+              className={FIELD}
             />
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               Wird durchnummeriert: <span className="font-mono">{namePrefix.trim() || "Ticket"} 1</span>,{" "}
               <span className="font-mono">{namePrefix.trim() || "Ticket"} 2</span> …
             </p>
@@ -364,12 +371,15 @@ export function BulkTicketDialog({
 
           {allOptions.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Ticket-Typ <span className="text-muted-foreground/70 font-normal">(optional)</span></Label>
+              <Label>Ticket-Typ <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <div className="flex flex-wrap gap-2">
                 {allOptions.map((opt) => (
-                  <button
+                  <Button
                     key={`${opt.type}-${opt.id}`}
                     type="button"
+                    size="sm"
+                    variant={selectedId === opt.id && selectedType === opt.type ? "default" : "outline"}
+                    aria-pressed={selectedId === opt.id && selectedType === opt.type}
                     disabled={loading}
                     onClick={() => {
                       if (selectedId === opt.id && selectedType === opt.type) {
@@ -385,19 +395,14 @@ export function BulkTicketDialog({
                         setAreaId("none");
                       }
                     }}
-                    className={cn(
-                      "px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
-                      selectedId === opt.id && selectedType === opt.type
-                        ? "bg-primary text-white border-primary"
-                        : "bg-muted/50 text-foreground/80 border-border hover:border-primary/60 hover:text-primary",
-                    )}
+                    className="rounded-full max-sm:h-9"
                   >
                     {opt.name}
-                  </button>
+                  </Button>
                 ))}
               </div>
               {selectedOpt && (
-                <p className="text-xs text-muted-foreground/70">
+                <p className="text-xs text-muted-foreground">
                   Gueltigkeits-Defaults werden uebernommen.
                 </p>
               )}
@@ -408,7 +413,7 @@ export function BulkTicketDialog({
             <div className="space-y-1.5">
               <Label htmlFor="bulk-area">
                 {isService ? "Hauptressource" : "Bereich"}{" "}
-                <span className="text-muted-foreground/70 font-normal">
+                <span className="text-muted-foreground font-normal">
                   {isService && serviceAreaIds.length > 1 ? "(empfohlen)" : "(optional)"}
                 </span>
               </Label>
@@ -416,9 +421,9 @@ export function BulkTicketDialog({
                 <SelectTrigger
                   id="bulk-area"
                   className={cn(
-                    "h-9 text-sm",
+                    SELECT_FIELD,
                     needsExplicitMainArea
-                      ? "border-warning "
+                      ? "border-warning"
                       : "",
                   )}
                 >
@@ -441,7 +446,7 @@ export function BulkTicketDialog({
                     "text-[11px]",
                     needsExplicitMainArea
                       ? "text-warning"
-                      : "text-muted-foreground/70",
+                      : "text-muted-foreground",
                   )}
                 >
                   Hier startet die Zeitg&uuml;ltigkeit (DURATION) und wird das Ticket
@@ -453,78 +458,73 @@ export function BulkTicketDialog({
             </div>
           )}
 
-          <label
-            htmlFor="bulk-cut-mode"
-            className={cn(
-              "flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors",
-              cutPerTicket
-                ? "border-primary/30 bg-primary/10 "
-                : "border-border bg-muted/50 dark:border-border dark:bg-card/40",
-            )}
-          >
-            <input
+          {/* Häkchen aus dem Baustein wie im Bulk-Verlauf; Titel und Erklärung bilden die
+              Beschriftung daneben, ein Tipp darauf schaltet das Häkchen mit. */}
+          <div className="glass-tile flex items-start gap-3 px-3 py-2.5">
+            <Checkbox
               id="bulk-cut-mode"
-              type="checkbox"
               checked={cutPerTicket}
-              onChange={(e) => toggleCutPerTicket(e.target.checked)}
+              onCheckedChange={(v) => toggleCutPerTicket(v === true)}
               disabled={loading}
-              className="mt-0.5 h-4 w-4 accent-primary"
+              className="mt-px"
             />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground/90 flex items-center gap-1.5">
-                <Scissors className="h-3.5 w-3.5 text-primary" />
+            <Label
+              htmlFor="bulk-cut-mode"
+              className="flex-1 min-w-0 flex-col items-start gap-0.5 cursor-pointer leading-snug"
+            >
+              <span className="flex items-center gap-1.5 text-foreground/90">
+                <Scissors className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 Nach jedem Ticket schneiden
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              </span>
+              <span className="text-xs font-normal text-muted-foreground">
                 Druckt jeden Bon als eigenen Druckjob – der Bondrucker schneidet
                 garantiert dazwischen. Achtung: der Druckdialog kann pro Bon
                 erscheinen.
-              </p>
-            </div>
-          </label>
+              </span>
+            </Label>
+          </div>
 
           {error && (
-            <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-              {error}
-            </p>
+            <Notice tone="danger" compact title={error} />
           )}
 
           {doneCount != null && !error && !printResult && (
-            <p className="text-sm text-success bg-success/10 px-3 py-2 rounded-lg flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              {doneCount} Tickets erstellt.
-            </p>
+            <Notice tone="success" compact icon={CheckCircle2} title={<>{doneCount} Tickets erstellt.</>} />
           )}
 
           {doneCount != null && printResult && (
             <div className="space-y-2">
               {printResult.ok && printResult.transport === "iframe" && (
-                <p className="text-sm text-success bg-success/10 px-3 py-2 rounded-lg flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  {doneCount} Tickets erstellt. Druckdialog wurde geöffnet.
-                </p>
+                <Notice
+                  tone="success"
+                  compact
+                  icon={CheckCircle2}
+                  title={<>{doneCount} Tickets erstellt. Druckdialog wurde geöffnet.</>}
+                />
               )}
 
               {printResult.ok && printResult.transport === "newTab" && (
-                <div className="text-sm text-warning bg-warning/10 px-3 py-2 rounded-lg space-y-1">
-                  <p className="flex items-center gap-2 font-medium">
-                    <ExternalLink className="h-4 w-4 shrink-0" />
-                    {doneCount} Tickets erstellt. PDF wurde im neuen Tab geöffnet.
-                  </p>
-                  <p className="text-xs text-warning/80">
+                <Notice
+                  tone="warning"
+                  compact
+                  icon={ExternalLink}
+                  title={<>{doneCount} Tickets erstellt. PDF wurde im neuen Tab geöffnet.</>}
+                >
+                  <p>
                     Drucken funktioniert über Strg/⌘+P im neuen Tab. Direkter Druckdialog war nicht möglich
                     {printResult.error ? ` (${printResult.error})` : ""}.
                   </p>
-                </div>
+                </Notice>
               )}
 
               {!printResult.ok && printResult.transport === "download" && (
-                <div className="text-sm text-warning bg-warning/10 px-3 py-2 rounded-lg space-y-2">
-                  <p className="flex items-center gap-2 font-medium">
-                    <AlertTriangle className="h-4 w-4 shrink-0" />
-                    {doneCount} Tickets erstellt. Druck konnte nicht direkt gestartet werden.
-                  </p>
-                  <p className="text-xs text-warning/80">
+                <Notice
+                  tone="warning"
+                  compact
+                  icon={AlertTriangle}
+                  title={<>{doneCount} Tickets erstellt. Druck konnte nicht direkt gestartet werden.</>}
+                >
+                  <p>
                     Das PDF wurde stattdessen heruntergeladen
                     {printResult.error ? ` (${printResult.error})` : ""}. Öffne es manuell und drucke es aus dem
                     Reader (z. B. Adobe oder Vorschau) – dort kannst du auch das richtige Druckerprofil
@@ -534,30 +534,33 @@ export function BulkTicketDialog({
                     <a
                       href={printResult.fallbackUrl}
                       download={printResult.fallbackFilename}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-warning underline underline-offset-2 hover:text-amber-900"
+                      className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80"
                     >
                       <Download className="h-3.5 w-3.5" />
                       PDF erneut herunterladen
                     </a>
                   )}
-                </div>
+                </Notice>
               )}
 
               {!printResult.ok && printResult.transport !== "download" && (
-                <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  Druck fehlgeschlagen{printResult.error ? `: ${printResult.error}` : ""}.
-                </p>
+                <Notice
+                  tone="danger"
+                  compact
+                  icon={AlertTriangle}
+                  title={<>Druck fehlgeschlagen{printResult.error ? `: ${printResult.error}` : ""}.</>}
+                />
               )}
             </div>
           )}
 
-          <div className="flex flex-col sm:flex-row sm:justify-end gap-2 pt-2">
+          <DialogFooter className="pt-2 sm:flex-wrap">
             <Button
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
               disabled={loading}
+              className={FIELD}
             >
               Schliessen
             </Button>
@@ -566,7 +569,7 @@ export function BulkTicketDialog({
               variant="outline"
               onClick={() => handleSubmit({ print: false })}
               disabled={loading || !namePrefix.trim()}
-              className="gap-1.5"
+              className={cn("gap-1.5", FIELD)}
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListPlus className="h-4 w-4" />}
               Nur erstellen
@@ -575,7 +578,7 @@ export function BulkTicketDialog({
               type="button"
               onClick={() => handleSubmit({ print: true })}
               disabled={loading || !namePrefix.trim()}
-              className="bg-primary hover:bg-primary/90 gap-1.5 min-w-44"
+              className={cn("gap-1.5 min-w-44", FIELD)}
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -584,7 +587,7 @@ export function BulkTicketDialog({
               )}
               {loading ? "Erstelle…" : `${count} erstellen & drucken`}
             </Button>
-          </div>
+          </DialogFooter>
         </div>
       </DialogContent>
     </Dialog>

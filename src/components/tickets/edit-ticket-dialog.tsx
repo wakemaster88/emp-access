@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -19,8 +20,50 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera, CalendarDays, MapPin } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChevronDown, Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera, CalendarDays, MapPin, X } from "lucide-react";
 import { cn, fmtDateTime } from "@/lib/utils";
+
+// Dialog auf dem Handy: Felder und Tasten 44 px hoch (docs/design-regeln.md, Abschnitt 16).
+const FIELD = "h-11 sm:h-9";
+const SELECT_FIELD = "w-full data-[size=default]:h-11 sm:data-[size=default]:h-9";
+
+function isExpired(ticket: { endDate?: string | Date | null }): boolean {
+  if (!ticket.endDate) return false;
+  return new Date(ticket.endDate) < new Date();
+}
+
+/**
+ * Ticket-Status als Badge in der festen Zustandsfarbe – eine Quelle für
+ * Tickettabelle, diesen Dialog und die E-Abo-Auswertung.
+ */
+export function statusBadge(status: string, ticket?: { endDate?: string | Date | null; extras?: Record<string, unknown> | null }) {
+  if (ticket && (status === "VALID" || status === "REDEEMED") && isExpired(ticket)) {
+    return <Badge variant="danger">Abgelaufen</Badge>;
+  }
+  switch (status) {
+    case "VALID":
+      return <Badge variant="success">Gültig</Badge>;
+    case "REDEEMED":
+      return <Badge variant="info">Eingelöst</Badge>;
+    case "INVALID":
+      return <Badge variant="destructive">Ungültig</Badge>;
+    case "PAUSED":
+      // Zahlungs-Pause (Auto-Pause bei offener Rechnung) deutlich kennzeichnen.
+      if (ticket?.extras && (ticket.extras as Record<string, unknown>).paymentPause) {
+        return <Badge variant="danger">Zahlung offen</Badge>;
+      }
+      return <Badge variant="warning">Pausiert</Badge>;
+    case "CANCELED":
+      return <Badge variant="danger">Gekündigt</Badge>;
+    case "PROTECTED":
+      return <Badge variant="warning">Geschützt</Badge>;
+    default:
+      return <Badge variant="secondary">{status}</Badge>;
+  }
+}
 
 interface AnnyBookingEntry {
   id: string;
@@ -70,7 +113,7 @@ function fmtBookingTime(iso: string | null): string {
 }
 
 function annyStatusLabel(status: string | null): { label: string; color: string } {
-  if (!status) return { label: "–", color: "text-muted-foreground/70" };
+  if (!status) return { label: "–", color: "text-muted-foreground" };
   const s = status.toLowerCase();
   if (s === "confirmed" || s === "pending") return { label: "Bestätigt", color: "text-success" };
   if (s === "checked_in") return { label: "Eingecheckt", color: "text-info" };
@@ -185,6 +228,8 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
   const [cameraOpen, setCameraOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Löschen fragt im Dialog nach (kein Browser-Dialog, keine zweite Ebene).
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
   const [pendingConflict, setPendingConflict] = useState<{
     label: string;
@@ -228,6 +273,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
       });
       setProfileImage(ticket.profileImage ?? null);
       setError("");
+      setConfirmDelete(false);
       setTab("edit");
       setScans([]);
       setCameraOpen(false);
@@ -358,7 +404,8 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
   }
 
   async function handleDelete() {
-    if (!ticket || !confirm(`Ticket "${ticket.name}" wirklich löschen?`)) return;
+    if (!ticket) return;
+    setConfirmDelete(false);
     setDeleting(true);
     try {
       await fetch(`/api/tickets/${ticket.id}`, { method: "DELETE" });
@@ -371,12 +418,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
     }
   }
 
-  const statusColor = {
-    VALID: "bg-success/12 text-success",
-    REDEEMED: "bg-info/12 text-info",
-    INVALID: "bg-destructive/12 text-destructive",
-    PROTECTED: "bg-warning/14 text-warning",
-  }[ticket?.status ?? "VALID"] ?? "";
+  const annyEntries = ticket?.source === "ANNY" ? parseAnnyEntries(ticket.qrCode) : [];
 
   const resultIcon = (result: string) => {
     if (result === "GRANTED") return <CheckCircle2 className="h-4 w-4 text-success" />;
@@ -392,32 +434,44 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
 
   return (
     <Dialog open={!!ticket} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto p-0 gap-0">
+      <DialogContent className="sm:max-w-md">
         {/* Header */}
-        <div className="px-5 pt-5 pb-3">
+        <div>
           <div className="flex items-start gap-3">
-            <div
-              className={`relative group h-14 w-14 rounded-xl ${needsPhoto ? "ring-2 ring-warning ring-offset-2 dark:ring-offset-slate-950" : ""} bg-muted border border-border flex items-center justify-center cursor-pointer overflow-hidden hover:border-primary/60 transition-all shrink-0`}
-              onClick={() => setCameraOpen(true)}
-            >
-              {profileImage ? (
-                <>
-                  <img src={profileImage} alt="" className="h-full w-full object-cover" />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <Camera className="h-4 w-4 text-white" />
-                  </div>
-                </>
-              ) : (
-                <Camera className={`h-5 w-5 ${needsPhoto ? "text-warning" : "text-muted-foreground/70"}`} />
-              )}
+            {/* Foto-Kachel als Taste; „Foto entfernen“ daneben, mit Touch immer sichtbar. */}
+            <div className="relative group shrink-0">
+              <button
+                type="button"
+                onClick={() => setCameraOpen(true)}
+                aria-label="Kamera öffnen"
+                className={cn(
+                  "relative h-14 w-14 rounded-tile border border-input bg-field flex items-center justify-center cursor-pointer overflow-hidden hover:border-primary/60 transition-all outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  needsPhoto && "ring-2 ring-warning ring-offset-2 ring-offset-popover",
+                )}
+              >
+                {profileImage ? (
+                  <>
+                    <img src={profileImage} alt="" className="h-full w-full object-cover" />
+                    {/* Abdunklung über dem Foto: schwarz und weiß sind auf Bildern erlaubt. */}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Camera className="h-4 w-4 text-white" />
+                    </div>
+                  </>
+                ) : (
+                  <Camera className={`h-5 w-5 ${needsPhoto ? "text-warning" : "text-muted-foreground"}`} />
+                )}
+              </button>
               {profileImage && (
-                <button
+                <Button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); setProfileImage(null); }}
-                  className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-slate-700 text-white flex items-center justify-center text-[8px] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-500"
+                  variant="secondary"
+                  size="icon-sm"
+                  onClick={() => setProfileImage(null)}
+                  aria-label="Foto entfernen"
+                  className="absolute -top-2.5 -right-2.5 rounded-full pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-visible:opacity-100"
                 >
-                  ✕
-                </button>
+                  <X className="size-3.5" />
+                </Button>
               )}
             </div>
             <div className="flex-1 min-w-0 pt-0.5">
@@ -426,32 +480,30 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                   {[ticket?.firstName, ticket?.lastName].filter(Boolean).join(" ") || ticket?.name}
                 </DialogTitle>
               </DialogHeader>
-              <div className="flex items-center gap-1.5 mt-1">
+              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                 {ticket?.source && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{ticket.source}</Badge>
+                  <Badge variant="neutral">{ticket.source}</Badge>
                 )}
-                <Badge className={`text-[10px] px-1.5 py-0 ${statusColor}`}>
-                  {ticket?.status === "VALID" ? "Gültig" : ticket?.status === "REDEEMED" ? "Eingelöst" : ticket?.status === "INVALID" ? "Ungültig" : "Geschützt"}
-                </Badge>
+                {ticket && statusBadge(ticket.status, ticket)}
                 {needsPhoto && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-warning/14 text-warning">
+                  <Badge variant="warning">
                     Foto fehlt
                   </Badge>
                 )}
                 {needsCard && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-warning/14 text-warning">
+                  <Badge variant="warning">
                     Karte fehlt
                   </Badge>
                 )}
               </div>
               {ticket?.ticketTypeName && (
-                <p className="text-xs text-muted-foreground/70 mt-0.5 truncate">{ticket.ticketTypeName}</p>
+                <p className="text-xs text-muted-foreground mt-1 truncate">{ticket.ticketTypeName}</p>
               )}
               {ticket?.source === "EMP_CONTROL" && ticket.ticketAreas && ticket.ticketAreas.length > 0 && (
-                <div className="flex items-center gap-1 flex-wrap mt-1">
+                <div className="flex items-center gap-1 flex-wrap mt-1.5">
                   {ticket.ticketAreas.map((ta) => (
-                    <Badge key={ta.accessArea.id} variant="outline" className="text-[9px] px-1.5 py-0 border-success/30 text-success font-normal gap-0.5">
-                      <MapPin className="h-2 w-2" />
+                    <Badge key={ta.accessArea.id} variant="secondary" className="font-normal">
+                      <MapPin />
                       {ta.accessArea.name}
                     </Badge>
                   ))}
@@ -461,368 +513,380 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
           </div>
         </div>
 
-        {/* Tabs */}
-        {(() => {
-          const isAnny = ticket?.source === "ANNY";
-          const annyEntries = isAnny ? parseAnnyEntries(ticket?.qrCode ?? null) : [];
-          const tabClass = (active: boolean) =>
-            `flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium transition-colors border-b-2 ${
-              active
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`;
-
-          return (
-            <div className="flex border-b border-border px-5">
-              <button type="button" onClick={() => setTab("edit")} className={tabClass(tab === "edit")}>
-                <Pencil className="h-3 w-3" />
-                Bearbeiten
-              </button>
-              {isAnny && annyEntries.length > 0 && (
-                <button type="button" onClick={() => setTab("bookings")} className={tabClass(tab === "bookings")}>
-                  <CalendarDays className="h-3 w-3" />
-                  Buchungen ({annyEntries.length})
-                </button>
-              )}
-              <button type="button" onClick={() => setTab("scans")} className={tabClass(tab === "scans")}>
-                <ScanLine className="h-3 w-3" />
-                Scans ({ticket?._count.scans ?? 0})
-              </button>
-            </div>
-          );
-        })()}
-
-        {tab === "edit" && (
-          <form onSubmit={handleSave} className="px-5 py-4 space-y-3">
-            {cameraOpen && (
-              <CameraCapture
-                onCapture={(dataUrl) => { setProfileImage(dataUrl); setCameraOpen(false); }}
-                onClose={() => setCameraOpen(false)}
-              />
+        {/* Reiter als Kapsel; jeder Reiter hat seinen Inhaltsbereich (TabsContent). */}
+        <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="gap-4">
+          <TabsList className="w-full">
+            <TabsTrigger value="edit" className="px-2.5">
+              <Pencil className="size-3.5" />
+              Bearbeiten
+            </TabsTrigger>
+            {annyEntries.length > 0 && (
+              <TabsTrigger value="bookings" className="px-2.5">
+                <CalendarDays className="size-3.5" />
+                Buchungen ({annyEntries.length})
+              </TabsTrigger>
             )}
+            <TabsTrigger value="scans" className="px-2.5">
+              <ScanLine className="size-3.5" />
+              Scans ({ticket?._count.scans ?? 0})
+            </TabsTrigger>
+          </TabsList>
 
-            {/* 1. Code (primary) */}
-            <div className="space-y-1">
-              <Label htmlFor="e-code" className="text-xs flex items-center gap-1 font-medium">
-                <ScanLine className="h-3.5 w-3.5 text-primary" />Code
-              </Label>
-              <Input id="e-code" value={form.code} onChange={(e) => set("code", e.target.value)} className="font-mono text-sm h-10" placeholder="Scannen oder eingeben …" autoComplete="off" autoFocus={autoFocusCode} />
-              {needsCard && (
-                <p className="text-[11px] text-warning">
-                  Dieser Tarif verlangt eine Karte. Ohne Code ist das Ticket nicht
-                  scanbar – hängt die Karte noch am alten Ticket, hier einscannen
-                  und „Bändchen umhängen“ bestätigen.
-                </p>
+          <TabsContent value="edit">
+            <form onSubmit={handleSave} className="space-y-4">
+              {cameraOpen && (
+                <CameraCapture
+                  onCapture={(dataUrl) => { setProfileImage(dataUrl); setCameraOpen(false); }}
+                  onClose={() => setCameraOpen(false)}
+                />
               )}
-            </div>
 
-            {/* 2. Name */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label htmlFor="e-first" className="text-xs">Vorname</Label>
-                <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Vorname" required className="h-9" />
+              {/* 1. Code (primary) */}
+              <div className="space-y-1.5">
+                <Label htmlFor="e-code" className="flex items-center gap-1.5">
+                  <ScanLine className="h-3.5 w-3.5 text-primary" />Code
+                </Label>
+                <Input id="e-code" value={form.code} onChange={(e) => set("code", e.target.value)} className={cn("font-mono", FIELD)} placeholder="Scannen oder eingeben …" autoComplete="off" autoFocus={autoFocusCode} />
+                {needsCard && (
+                  <Notice tone="warning" compact>
+                    Dieser Tarif verlangt eine Karte. Ohne Code ist das Ticket nicht
+                    scanbar – hängt die Karte noch am alten Ticket, hier einscannen
+                    und „Bändchen umhängen“ bestätigen.
+                  </Notice>
+                )}
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="e-last" className="text-xs">Nachname</Label>
-                <Input id="e-last" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Nachname" required className="h-9" />
+
+              {/* 2. Name */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="e-first">Vorname</Label>
+                  <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Vorname" required className={FIELD} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="e-last">Nachname</Label>
+                  <Input id="e-last" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Nachname" required className={FIELD} />
+                </div>
               </div>
-            </div>
 
-            {/* 2b. Email (für automatische Mails) */}
-            <div className="space-y-1">
-              <Label htmlFor="e-email" className="text-xs flex items-center gap-1.5">
-                Email
-                <span className="text-muted-foreground/70 font-normal text-[10px]">– für automatische Mails</span>
-              </Label>
-              <Input
-                id="e-email"
-                type="email"
-                value={form.email}
-                onChange={(e) => set("email", e.target.value)}
-                placeholder="name@example.com"
-                className="h-9"
-                autoComplete="email"
-              />
-            </div>
+              {/* 2b. Email (für automatische Mails) */}
+              <div className="space-y-1.5">
+                <Label htmlFor="e-email" className="flex items-center gap-1.5">
+                  Email
+                  <span className="text-muted-foreground font-normal text-xs">– für automatische Mails</span>
+                </Label>
+                <Input
+                  id="e-email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => set("email", e.target.value)}
+                  placeholder="name@example.com"
+                  className={FIELD}
+                  autoComplete="email"
+                />
+              </div>
 
-            {/* 3. Ticket-Typ (Service) */}
-            <div className="space-y-1">
-              <Label className="text-xs font-medium">Ticket-Typ / Service</Label>
-              {services.length > 0 ? (
-                <Select value={form.serviceId} onValueChange={(v) => {
-                  set("serviceId", v);
-                  if (v !== "none") {
-                    const svc = services.find((s) => String(s.id) === v);
-                    if (svc) {
-                      set("ticketTypeName", svc.name);
-                      if (svc.areaIds?.length && form.accessAreaId === "none") {
-                        set("accessAreaId", String(svc.areaIds[0]));
+              {/* 3. Ticket-Typ (Service) */}
+              <div className="space-y-1.5">
+                <Label>Ticket-Typ / Service</Label>
+                {services.length > 0 ? (
+                  <Select value={form.serviceId} onValueChange={(v) => {
+                    set("serviceId", v);
+                    if (v !== "none") {
+                      const svc = services.find((s) => String(s.id) === v);
+                      if (svc) {
+                        set("ticketTypeName", svc.name);
+                        if (svc.areaIds?.length && form.accessAreaId === "none") {
+                          set("accessAreaId", String(svc.areaIds[0]));
+                        }
                       }
                     }
-                  }
-                }}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Kein Service" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Kein Service</SelectItem>
-                    {services.map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input id="e-type" value={form.ticketTypeName} onChange={(e) => set("ticketTypeName", e.target.value)} placeholder="z.B. Tageskarte" className="h-9" />
-              )}
-            </div>
+                  }}>
+                    <SelectTrigger className={SELECT_FIELD}><SelectValue placeholder="Kein Service" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Kein Service</SelectItem>
+                      {services.map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input id="e-type" value={form.ticketTypeName} onChange={(e) => set("ticketTypeName", e.target.value)} placeholder="z.B. Tageskarte" className={FIELD} />
+                )}
+              </div>
 
-            {/* 4. Details (einklappbar) */}
-            <div className="rounded-lg border border-border overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setDetailsOpen(!detailsOpen)}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
-              >
-                <span>Details (Resource, Status, Gültigkeit)</span>
-                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", detailsOpen && "rotate-180")} />
-              </button>
+              {/* 4. Details (einklappbar) */}
+              <div className="rounded-tile border border-border overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setDetailsOpen(!detailsOpen)}
+                  aria-expanded={detailsOpen}
+                  className="w-full flex items-center justify-between gap-2 px-3 min-h-11 sm:min-h-9 text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 focus-visible:bg-muted/50 outline-none transition-colors"
+                >
+                  <span>Details (Resource, Status, Gültigkeit)</span>
+                  <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", detailsOpen && "rotate-180")} />
+                </button>
 
-              {detailsOpen && (
-                <div className="px-3 pb-3 space-y-2 border-t border-border/60 pt-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-[11px] text-muted-foreground">Resource</Label>
-                      <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Keine" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Keine Resource</SelectItem>
-                          {areas.map((a) => (
-                            <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-[11px] text-muted-foreground">Abo</Label>
-                      <Select value={form.subscriptionId} onValueChange={(v) => {
-                        set("subscriptionId", v);
-                        if (v !== "none") {
-                          const sub = subscriptions.find((s) => String(s.id) === v);
-                          if (sub?.areaIds?.length && form.accessAreaId === "none") {
-                            set("accessAreaId", String(sub.areaIds[0]));
+                {detailsOpen && (
+                  <div className="px-3 pb-3 pt-3 space-y-3 border-t border-border">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Resource</Label>
+                        <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
+                          <SelectTrigger className={SELECT_FIELD}><SelectValue placeholder="Keine" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Keine Resource</SelectItem>
+                            {areas.map((a) => (
+                              <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Abo</Label>
+                        <Select value={form.subscriptionId} onValueChange={(v) => {
+                          set("subscriptionId", v);
+                          if (v !== "none") {
+                            const sub = subscriptions.find((s) => String(s.id) === v);
+                            if (sub?.areaIds?.length && form.accessAreaId === "none") {
+                              set("accessAreaId", String(sub.areaIds[0]));
+                            }
                           }
-                        }
-                      }}>
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Kein Abo" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Kein Abo</SelectItem>
-                          {subscriptions.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-[11px] text-muted-foreground">Status</Label>
-                      <Select value={form.status} onValueChange={(v) => set("status", v)}>
-                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="VALID">Gültig</SelectItem>
-                          <SelectItem value="REDEEMED">Eingelöst</SelectItem>
-                          <SelectItem value="INVALID">Ungültig</SelectItem>
-                          <SelectItem value="PROTECTED">Geschützt</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-[11px] text-muted-foreground">Gültigkeit</Label>
-                      <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
-                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="DATE_RANGE">Zeitraum</SelectItem>
-                          <SelectItem value="TIME_SLOT">Zeitslot</SelectItem>
-                          <SelectItem value="DURATION">Dauer</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {vereine.length > 0 && (
-                    <div className="space-y-1">
-                      <Label className="text-[11px] text-muted-foreground">Verein (Bulk-Zutritt)</Label>
-                      <Select value={form.vereinId} onValueChange={(v) => set("vereinId", v)}>
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Kein Verein" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Kein Verein</SelectItem>
-                          {vereine.map((v) => (
-                            <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-[10px] text-muted-foreground/70">Mitglied erbt automatisch alle Resourcen des Vereins.</p>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label htmlFor="e-start" className="text-[11px] text-muted-foreground">Gültig ab</Label>
-                      <Input id="e-start" type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} className="h-8 text-xs" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor="e-end" className="text-[11px] text-muted-foreground">Gültig bis</Label>
-                      <Input id="e-end" type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} className="h-8 text-xs" />
-                    </div>
-                  </div>
-
-                  {form.validityType === "TIME_SLOT" && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label htmlFor="e-slot-start" className="text-[11px] text-muted-foreground">Slot von</Label>
-                        <Input id="e-slot-start" type="time" value={form.slotStart} onChange={(e) => set("slotStart", e.target.value)} className="h-8 text-xs" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor="e-slot-end" className="text-[11px] text-muted-foreground">Slot bis</Label>
-                        <Input id="e-slot-end" type="time" value={form.slotEnd} onChange={(e) => set("slotEnd", e.target.value)} className="h-8 text-xs" />
+                        }}>
+                          <SelectTrigger className={SELECT_FIELD}><SelectValue placeholder="Kein Abo" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Kein Abo</SelectItem>
+                            {subscriptions.map((s) => (
+                              <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
-                  )}
 
-                  {form.validityType === "DURATION" && (
-                    <div className="space-y-1">
-                      <Label htmlFor="e-duration" className="text-[11px] text-muted-foreground">Dauer (Minuten)</Label>
-                      <div className="flex gap-2 items-center">
-                        <Input id="e-duration" type="number" min="1" placeholder="z.B. 120" value={form.validityDurationMinutes} onChange={(e) => set("validityDurationMinutes", e.target.value)} className="h-8 text-xs flex-1" />
-                        <Button type="button" variant="outline" size="sm" className="h-8 text-xs shrink-0" onClick={() => set("validityDurationMinutes", "1440")}>
-                          1 Tag
-                        </Button>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Status</Label>
+                        <Select value={form.status} onValueChange={(v) => set("status", v)}>
+                          <SelectTrigger className={SELECT_FIELD}><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="VALID">Gültig</SelectItem>
+                            <SelectItem value="REDEEMED">Eingelöst</SelectItem>
+                            <SelectItem value="INVALID">Ungültig</SelectItem>
+                            <SelectItem value="PROTECTED">Geschützt</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      {ticket?.firstScanAt && (
-                        <p className="text-[10px] text-muted-foreground/70">1. Scan: {fmtDateTime(ticket.firstScanAt)}</p>
-                      )}
+                      <div className="space-y-1.5">
+                        <Label>Gültigkeit</Label>
+                        <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
+                          <SelectTrigger className={SELECT_FIELD}><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="DATE_RANGE">Zeitraum</SelectItem>
+                            <SelectItem value="TIME_SLOT">Zeitslot</SelectItem>
+                            <SelectItem value="DURATION">Dauer</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                  )}
+
+                    {vereine.length > 0 && (
+                      <div className="space-y-1.5">
+                        <Label>Verein (Bulk-Zutritt)</Label>
+                        <Select value={form.vereinId} onValueChange={(v) => set("vereinId", v)}>
+                          <SelectTrigger className={SELECT_FIELD}><SelectValue placeholder="Kein Verein" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Kein Verein</SelectItem>
+                            {vereine.map((v) => (
+                              <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">Mitglied erbt automatisch alle Resourcen des Vereins.</p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="e-start">Gültig ab</Label>
+                        <Input id="e-start" type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} className={FIELD} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="e-end">Gültig bis</Label>
+                        <Input id="e-end" type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} className={FIELD} />
+                      </div>
+                    </div>
+
+                    {form.validityType === "TIME_SLOT" && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="e-slot-start">Slot von</Label>
+                          <Input id="e-slot-start" type="time" value={form.slotStart} onChange={(e) => set("slotStart", e.target.value)} className={FIELD} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="e-slot-end">Slot bis</Label>
+                          <Input id="e-slot-end" type="time" value={form.slotEnd} onChange={(e) => set("slotEnd", e.target.value)} className={FIELD} />
+                        </div>
+                      </div>
+                    )}
+
+                    {form.validityType === "DURATION" && (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="e-duration">Dauer (Minuten)</Label>
+                        <div className="flex gap-2 items-center">
+                          <Input id="e-duration" type="number" min="1" placeholder="z.B. 120" value={form.validityDurationMinutes} onChange={(e) => set("validityDurationMinutes", e.target.value)} className={cn("flex-1", FIELD)} />
+                          <Button type="button" variant="outline" className={cn("shrink-0", FIELD)} onClick={() => set("validityDurationMinutes", "1440")}>
+                            1 Tag
+                          </Button>
+                        </div>
+                        {ticket?.firstScanAt && (
+                          <p className="text-xs text-muted-foreground tabular-nums">1. Scan: {fmtDateTime(ticket.firstScanAt)}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {pendingConflict && (
+                <Notice tone="warning" title="Code bereits vergeben">
+                  <p>
+                    Der Code ist aktuell Ticket{" "}
+                    <span className="font-semibold text-foreground">{pendingConflict.label}</span>
+                    {pendingConflict.type ? (
+                      <span className="opacity-80"> ({pendingConflict.type})</span>
+                    ) : null}{" "}
+                    zugeordnet. Auf dieses Ticket umhängen? Das andere Ticket
+                    verliert dann seinen Code.
+                  </p>
+                  {/* Auf dem Handy gestapelt, Bestätigen oben; der Hinweis trägt schon die Warnfarbe. */}
+                  <div className="flex flex-col-reverse gap-2 pt-3 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPendingConflict(null)}
+                      disabled={saving}
+                      className={cn("sm:flex-1", FIELD)}
+                    >
+                      Abbrechen
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={confirmTransfer}
+                      disabled={saving}
+                      className={cn("sm:flex-1", FIELD)}
+                    >
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Code umhängen"}
+                    </Button>
+                  </div>
+                </Notice>
+              )}
+
+              {error && (
+                <Notice tone="danger" compact title={error} />
+              )}
+
+              {confirmDelete && (
+                <Notice tone="danger" title={`Ticket "${ticket?.name}" wirklich löschen?`}>
+                  <div className="flex flex-col-reverse gap-2 pt-3 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={deleting}
+                      autoFocus
+                      className={cn("sm:flex-1", FIELD)}
+                    >
+                      Abbrechen
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={handleDelete}
+                      disabled={deleting}
+                      className={cn("sm:flex-1", FIELD)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Löschen
+                    </Button>
+                  </div>
+                </Notice>
+              )}
+
+              {/* Löschen links, Abbrechen und Speichern rechts; auf dem Handy gestapelt, Speichern oben. */}
+              <DialogFooter className="pt-1">
+                <Button type="button" variant="ghost" onClick={() => setConfirmDelete(true)} disabled={deleting || saving}
+                  className={cn("text-muted-foreground hover:text-destructive hover:bg-destructive/10 sm:mr-auto", FIELD)}>
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Löschen
+                </Button>
+                <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting} className={FIELD}>Abbrechen</Button>
+                <Button type="submit" disabled={saving || deleting || pendingConflict !== null || (!form.firstName.trim() && !form.lastName.trim())} className={cn("min-w-24", FIELD)}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4" />Speichern</>}
+                </Button>
+              </DialogFooter>
+            </form>
+          </TabsContent>
+
+          {annyEntries.length > 0 && (
+            <TabsContent value="bookings">
+              <div className="divide-y divide-border max-h-[350px] overflow-y-auto overscroll-contain scrollbar-thin">
+                {annyEntries.map((entry, i) => {
+                  const st = annyStatusLabel(entry.status);
+                  const startTime = fmtBookingTime(entry.start);
+                  const endTime = fmtBookingTime(entry.end);
+                  const timeRange = startTime && endTime ? `${startTime}–${endTime}` : startTime || endTime || "";
+
+                  return (
+                    <div key={entry.id || i} className="flex items-center gap-2.5 py-2.5 px-1">
+                      <div className="h-6 w-6 rounded-[8px] bg-muted flex items-center justify-center shrink-0">
+                        <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{i + 1}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-foreground">
+                          {fmtBookingDate(entry.start)}
+                          {timeRange && <span className="text-muted-foreground font-normal tabular-nums ml-1.5">{timeRange}</span>}
+                        </p>
+                      </div>
+                      <span className={`text-[11px] font-medium shrink-0 ${st.color}`}>{st.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </TabsContent>
+          )}
+
+          <TabsContent value="scans">
+            <div>
+              {scansLoading && (
+                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Lädt …
+                </div>
+              )}
+              {!scansLoading && scans.length === 0 && (
+                <EmptyState compact icon={ScanLine} title="Keine Scans vorhanden" />
+              )}
+              {!scansLoading && scans.length > 0 && (
+                <div className="divide-y divide-border max-h-[350px] overflow-y-auto overscroll-contain scrollbar-thin">
+                  {scans.map((scan) => (
+                    <div key={scan.id} className="flex items-center gap-2.5 py-2.5 px-1">
+                      {resultIcon(scan.result)}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-foreground">
+                          {resultLabel(scan.result)}
+                          {scan.device?.name && <span className="text-muted-foreground font-normal ml-1.5">· {scan.device.name}</span>}
+                        </p>
+                      </div>
+                      <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+                        {fmtDateTime(scan.scanTime)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-
-            {pendingConflict && (
-              <div className="bg-warning/10 border border-warning/40/60 rounded-lg p-3 text-sm space-y-2">
-                <p className="font-semibold text-warning">
-                  Code bereits vergeben
-                </p>
-                <p className="text-warning">
-                  Der Code ist aktuell Ticket{" "}
-                  <span className="font-semibold">{pendingConflict.label}</span>
-                  {pendingConflict.type ? (
-                    <span className="opacity-80"> ({pendingConflict.type})</span>
-                  ) : null}{" "}
-                  zugeordnet. Auf dieses Ticket umhängen? Das andere Ticket
-                  verliert dann seinen Code.
-                </p>
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPendingConflict(null)}
-                    disabled={saving}
-                    className="flex-1 h-8"
-                  >
-                    Abbrechen
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={confirmTransfer}
-                    disabled={saving}
-                    className="flex-1 h-8 bg-warning hover:bg-warning/90 text-warning-foreground"
-                  >
-                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Code umhängen"}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{error}</p>
-            )}
-
-            <div className="flex items-center justify-between pt-1">
-              <Button type="button" variant="ghost" size="sm" onClick={handleDelete} disabled={deleting || saving}
-                className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 h-8 text-xs">
-                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
-                Löschen
-              </Button>
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-8">Abbrechen</Button>
-                <Button type="submit" size="sm" disabled={saving || deleting || pendingConflict !== null || (!form.firstName.trim() && !form.lastName.trim())} className="min-w-24 h-8">
-                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Save className="h-3.5 w-3.5 mr-1" />Speichern</>}
-                </Button>
-              </div>
-            </div>
-          </form>
-        )}
-
-        {tab === "bookings" && ticket?.source === "ANNY" && (() => {
-          const entries = parseAnnyEntries(ticket.qrCode);
-          return (
-            <div className="divide-y divide-border/60 max-h-[350px] overflow-y-auto px-5 py-2">
-              {entries.map((entry, i) => {
-                const st = annyStatusLabel(entry.status);
-                const startTime = fmtBookingTime(entry.start);
-                const endTime = fmtBookingTime(entry.end);
-                const timeRange = startTime && endTime ? `${startTime}–${endTime}` : startTime || endTime || "";
-
-                return (
-                  <div key={entry.id || i} className="flex items-center gap-2.5 py-2 px-1">
-                    <div className="h-6 w-6 rounded bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                      <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400">{i + 1}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-foreground/80">
-                        {fmtBookingDate(entry.start)}
-                        {timeRange && <span className="text-muted-foreground/70 font-mono ml-1.5">{timeRange}</span>}
-                      </p>
-                    </div>
-                    <span className={`text-[11px] font-medium shrink-0 ${st.color}`}>{st.label}</span>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
-
-        {tab === "scans" && (
-          <div className="px-5 py-2">
-            {scansLoading && (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" />
-              </div>
-            )}
-            {!scansLoading && scans.length === 0 && (
-              <p className="text-xs text-muted-foreground/70 text-center py-6">Keine Scans vorhanden</p>
-            )}
-            {!scansLoading && scans.length > 0 && (
-              <div className="divide-y divide-border/60 max-h-[350px] overflow-y-auto">
-                {scans.map((scan) => (
-                  <div key={scan.id} className="flex items-center gap-2.5 py-2 px-1">
-                    {resultIcon(scan.result)}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-foreground/80">
-                        {resultLabel(scan.result)}
-                        {scan.device?.name && <span className="text-muted-foreground/70 ml-1.5">· {scan.device.name}</span>}
-                      </p>
-                    </div>
-                    <span className="text-[11px] text-muted-foreground/70 font-mono shrink-0">
-                      {fmtDateTime(scan.scanTime)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

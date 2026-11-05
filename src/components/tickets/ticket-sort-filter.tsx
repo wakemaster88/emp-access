@@ -11,6 +11,10 @@ import {
 import { ArrowUpDown, Filter, CreditCard, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Wert direkt hinter dem Symbol: Der Auswahl-Baustein verteilt Symbol, Wert und
+// Pfeil mit justify-between, kurze Werte („Alle“) stünden sonst mittig.
+const TRIGGER = "h-9 text-sm *:data-[slot=select-value]:flex-1";
+
 const SORT_OPTIONS = [
   { value: "date_desc", label: "Neueste zuerst", sort: "date", order: "desc" as const },
   { value: "date_asc", label: "Älteste zuerst", sort: "date", order: "asc" as const },
@@ -97,8 +101,8 @@ export function TicketSortFilter({
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <Select value={sortValue} onValueChange={handleSortChange}>
-        <SelectTrigger className="w-[180px] h-9 text-sm">
-          <ArrowUpDown className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70 shrink-0" />
+        <SelectTrigger className={cn("w-[180px]", TRIGGER)}>
+          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <SelectValue placeholder="Sortieren" />
         </SelectTrigger>
         <SelectContent>
@@ -110,8 +114,8 @@ export function TicketSortFilter({
         </SelectContent>
       </Select>
       <Select value={currentSource || "all"} onValueChange={handleSourceChange}>
-        <SelectTrigger className="w-[160px] h-9 text-sm">
-          <Filter className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70 shrink-0" />
+        <SelectTrigger className={cn("w-[160px]", TRIGGER)}>
+          <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <SelectValue placeholder="Quelle" />
         </SelectTrigger>
         <SelectContent>
@@ -124,8 +128,8 @@ export function TicketSortFilter({
       </Select>
       {subscriptions.length > 0 && (
         <Select value={currentSub || "none"} onValueChange={(v) => updateParams({ sub: v })}>
-          <SelectTrigger className={cn("w-[170px] h-9 text-sm", currentSub && "border-primary/30 ")}>
-            <CreditCard className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70 shrink-0" />
+          <SelectTrigger className={cn("w-[170px]", TRIGGER, currentSub && "border-primary/30")}>
+            <CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <SelectValue placeholder="Alle Abos" />
           </SelectTrigger>
           <SelectContent>
@@ -139,8 +143,8 @@ export function TicketSortFilter({
       )}
       {services.length > 0 && (
         <Select value={currentSvc || "none"} onValueChange={(v) => updateParams({ svc: v })}>
-          <SelectTrigger className={cn("w-[170px] h-9 text-sm", currentSvc && "border-primary/30 ")}>
-            <Package className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70 shrink-0" />
+          <SelectTrigger className={cn("w-[170px]", TRIGGER, currentSvc && "border-primary/30")}>
+            <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <SelectValue placeholder="Alle Services" />
           </SelectTrigger>
           <SelectContent>

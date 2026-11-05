@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -12,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import {
   Select,
   SelectContent,
@@ -65,6 +68,10 @@ interface BulkRfidDialogProps {
 }
 
 const MAX_CODES = 100;
+
+// Dialog auf dem Handy: Felder und Tasten 44 px hoch (docs/design-regeln.md, Abschnitt 16).
+const FIELD = "h-11 sm:h-9";
+const SELECT_FIELD = "w-full data-[size=default]:h-11 sm:data-[size=default]:h-9";
 
 export function BulkRfidDialog({
   areas,
@@ -277,7 +284,7 @@ export function BulkRfidDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button variant="outline" className="gap-1.5">
           <Radio className="h-4 w-4" />
           <span className="hidden xs:inline">Bändchen-Bulk</span>
           <span className="xs:hidden">RFID</span>
@@ -290,16 +297,16 @@ export function BulkRfidDialog({
             <Radio className="h-5 w-5 text-primary" />
             RFID-Bändchen bulk erfassen
           </DialogTitle>
-          <p className="text-xs text-muted-foreground pt-1">
+          <DialogDescription>
             Bändchen einfach nacheinander am RFID-Reader scannen – jedes
             wird hier in der Liste eingetragen. Kein Druck, keine Bons.
-          </p>
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 mt-2">
           <div className="space-y-1.5">
             <Label htmlFor="rfid-scan" className="flex items-center gap-1.5">
-              <ScanLine className="h-3.5 w-3.5 text-muted-foreground/70" />
+              <ScanLine className="h-3.5 w-3.5 text-muted-foreground" />
               Bändchen scannen
             </Label>
             <Input
@@ -310,9 +317,10 @@ export function BulkRfidDialog({
               onKeyDown={handleScanKeyDown}
               placeholder="RFID-Code …"
               className={cn(
-                "font-mono text-sm",
+                "font-mono",
+                FIELD,
                 duplicateFlash &&
-                  "border-warning focus-visible:ring-amber-400/40",
+                  "border-warning focus-visible:border-warning focus-visible:ring-warning/30",
               )}
               autoComplete="off"
               autoFocus
@@ -326,41 +334,41 @@ export function BulkRfidDialog({
                 bereits gescannt.
               </p>
             ) : (
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 Reader sendet meist Code + Enter. Max. {MAX_CODES} Bändchen.
               </p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <Label className="flex items-center gap-1.5">
                 Gescannte Bändchen
-                <Badge
-                  variant="secondary"
-                  className="bg-primary/10 text-primary border-primary/30 font-normal"
-                >
+                <Badge variant="secondary" className="tabular-nums">
                   {scannedCodes.length}
                 </Badge>
               </Label>
               {scannedCodes.length > 0 && !loading && (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setScannedCodes([])}
-                  className="text-xs text-muted-foreground hover:text-destructive inline-flex items-center gap-1"
+                  className="max-sm:h-9 text-muted-foreground hover:text-destructive"
                 >
-                  <Eraser className="h-3 w-3" />
+                  <Eraser />
                   Liste leeren
-                </button>
+                </Button>
               )}
             </div>
 
+            {/* Gescannte Codes als Feld-Mulde; neue Einträge laufen unten nach. */}
             <div
               ref={codesListRef}
-              className="border border-border rounded-lg bg-muted/50/40 px-2 py-2 max-h-48 overflow-y-auto"
+              className="glass-field max-h-48 overflow-y-auto overscroll-contain scrollbar-thin p-1.5"
             >
               {scannedCodes.length === 0 ? (
-                <p className="text-xs text-muted-foreground/70 italic px-1 py-2">
+                <p className="text-xs text-muted-foreground px-1.5 py-2">
                   Noch keine Bändchen gescannt.
                 </p>
               ) : (
@@ -371,13 +379,13 @@ export function BulkRfidDialog({
                       <li
                         key={c}
                         className={cn(
-                          "flex items-center gap-2 px-2 py-1 rounded-md text-sm",
+                          "flex items-center gap-2 pl-2 pr-1 py-0.5 rounded-[10px] text-sm",
                           isConflict
                             ? "bg-destructive/10 text-destructive"
-                            : "bg-card",
+                            : "bg-glass-tile",
                         )}
                       >
-                        <span className="text-[10px] tabular-nums text-muted-foreground/70 w-6 shrink-0 text-right">
+                        <span className="text-[11px] tabular-nums text-muted-foreground w-6 shrink-0 text-right">
                           {i + 1}.
                         </span>
                         <span className="font-mono text-xs flex-1 truncate">
@@ -388,15 +396,17 @@ export function BulkRfidDialog({
                             vergeben
                           </span>
                         )}
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon-sm"
                           onClick={() => removeCode(c)}
                           disabled={loading}
-                          className="text-muted-foreground/70 hover:text-destructive shrink-0"
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
                           aria-label={`${c} entfernen`}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                          <Trash2 className="size-3.5" />
+                        </Button>
                       </li>
                     );
                   })}
@@ -413,8 +423,9 @@ export function BulkRfidDialog({
               onChange={(e) => setNamePrefix(e.target.value)}
               placeholder="Bändchen"
               disabled={loading}
+              className={FIELD}
             />
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               Ticket-Name wird zu{" "}
               <span className="font-mono">
                 {namePrefix.trim() || "Ticket"}{" "}
@@ -428,13 +439,16 @@ export function BulkRfidDialog({
             <div className="space-y-1.5">
               <Label>
                 Ticket-Typ{" "}
-                <span className="text-muted-foreground/70 font-normal">(optional)</span>
+                <span className="text-muted-foreground font-normal">(optional)</span>
               </Label>
               <div className="flex flex-wrap gap-2">
                 {allOptions.map((opt) => (
-                  <button
+                  <Button
                     key={`${opt.type}-${opt.id}`}
                     type="button"
+                    size="sm"
+                    variant={selectedId === opt.id && selectedType === opt.type ? "default" : "outline"}
+                    aria-pressed={selectedId === opt.id && selectedType === opt.type}
                     disabled={loading}
                     onClick={() => {
                       if (selectedId === opt.id && selectedType === opt.type) {
@@ -445,19 +459,14 @@ export function BulkRfidDialog({
                         setSelectedType(opt.type);
                       }
                     }}
-                    className={cn(
-                      "px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
-                      selectedId === opt.id && selectedType === opt.type
-                        ? "bg-primary text-white border-primary"
-                        : "bg-muted/50 text-foreground/80 border-border hover:border-primary/60 hover:text-primary",
-                    )}
+                    className="rounded-full max-sm:h-9"
                   >
                     {opt.name}
-                  </button>
+                  </Button>
                 ))}
               </div>
               {selectedOpt && (
-                <p className="text-xs text-muted-foreground/70">
+                <p className="text-xs text-muted-foreground">
                   Gültigkeits-Defaults werden übernommen.
                 </p>
               )}
@@ -468,10 +477,10 @@ export function BulkRfidDialog({
             <div className="space-y-1.5">
               <Label htmlFor="rfid-area">
                 Bereich{" "}
-                <span className="text-muted-foreground/70 font-normal">(optional)</span>
+                <span className="text-muted-foreground font-normal">(optional)</span>
               </Label>
               <Select value={areaId} onValueChange={setAreaId} disabled={loading}>
-                <SelectTrigger id="rfid-area" className="h-9 text-sm">
+                <SelectTrigger id="rfid-area" className={SELECT_FIELD}>
                   <SelectValue placeholder="Kein Bereich" />
                 </SelectTrigger>
                 <SelectContent>
@@ -486,25 +495,24 @@ export function BulkRfidDialog({
             </div>
           )}
 
-          {error && (
-            <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" compact title={error} />}
 
           {doneCount != null && !error && (
-            <p className="text-sm text-success bg-success/10 px-3 py-2 rounded-lg flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              {doneCount} Bändchen-Tickets erstellt.
-            </p>
+            <Notice
+              tone="success"
+              compact
+              icon={CheckCircle2}
+              title={<>{doneCount} Bändchen-Tickets erstellt.</>}
+            />
           )}
 
-          <div className="flex flex-col sm:flex-row sm:justify-end gap-2 pt-2">
+          <DialogFooter className="pt-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
               disabled={loading}
+              className={FIELD}
             >
               Schließen
             </Button>
@@ -512,7 +520,7 @@ export function BulkRfidDialog({
               type="button"
               onClick={handleSubmit}
               disabled={loading || scannedCodes.length === 0 || !namePrefix.trim()}
-              className="gap-1.5 min-w-44"
+              className={cn("gap-1.5 min-w-44", FIELD)}
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -525,7 +533,7 @@ export function BulkRfidDialog({
                     scannedCodes.length === 1 ? "Bändchen" : "Bändchen"
                   } erstellen`.trim()}
             </Button>
-          </div>
+          </DialogFooter>
         </div>
       </DialogContent>
     </Dialog>

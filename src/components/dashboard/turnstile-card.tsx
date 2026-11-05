@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import {
-  ArrowDownRight,
-  ArrowUpRight,
+  Ban,
   BarChart3,
+  CalendarDays,
   CheckCircle2,
   Loader2,
   RotateCw,
@@ -22,7 +22,11 @@ import {
   YAxis,
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { StatCard } from "@/components/ui/stat-card";
+import { StatusDot } from "@/components/ui/status-dot";
 import {
   Select,
   SelectContent,
@@ -94,14 +98,18 @@ export interface TurnstileData {
   weekTrend?: TrendDay[];
 }
 
+// Diagramm nur aus Tokens (docs/design-regeln.md, Abschnitt 15).
 const CHART_TOOLTIP_STYLE = {
-  backgroundColor: "#1e293b",
-  border: "none",
-  borderRadius: "8px",
+  backgroundColor: "var(--popover)",
+  border: "1px solid var(--border)",
+  borderRadius: "12px",
+  boxShadow: "0 12px 32px -14px oklch(0 0 0 / 45%)",
   fontSize: "12px",
-  color: "#e2e8f0",
+  color: "var(--popover-foreground)",
   padding: "6px 10px",
 };
+const CHART_GRID = "var(--border)";
+const CHART_AXIS = "var(--muted-foreground)";
 
 const DIRECTION_LABEL: Record<TurnstileDevice["direction"], string> = {
   IN: "Eingang",
@@ -126,44 +134,6 @@ function fmtTime(iso: string | null): string | null {
   }
 }
 
-function Kpi({
-  label,
-  value,
-  icon,
-  hint,
-  delta,
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  hint?: React.ReactNode;
-  delta?: number | null;
-}) {
-  return (
-    <div className="px-3 py-2.5 min-w-0">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium text-muted-foreground truncate">{label}</span>
-        {icon}
-      </div>
-      <div className="flex items-baseline gap-1.5 mt-1">
-        <p className="text-2xl font-bold text-foreground tabular-nums leading-none">{value}</p>
-        {delta != null && (
-          <span
-            className={cn(
-              "flex items-center text-[10px] font-semibold tabular-nums",
-              delta >= 0 ? "text-success" : "text-destructive",
-            )}
-          >
-            {delta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-            {Math.abs(delta)}%
-          </span>
-        )}
-      </div>
-      {hint && <p className="text-[10px] text-muted-foreground/70 mt-1 truncate">{hint}</p>}
-    </div>
-  );
-}
-
 /** Waagerechte Balkenliste (Ticket-Typen, Ablehnungsgründe). */
 function BarList({
   rows,
@@ -176,7 +146,7 @@ function BarList({
 }) {
   const max = rows.reduce((m, r) => Math.max(m, r.value), 0);
   if (rows.length === 0) {
-    return <p className="py-8 text-center text-xs text-muted-foreground/70">{emptyText}</p>;
+    return <EmptyState compact title={emptyText} />;
   }
   return (
     <div className="space-y-2">
@@ -184,7 +154,7 @@ function BarList({
         <div key={row.key} className="space-y-1">
           <div className="flex items-center gap-2 text-[11px]">
             <span className="font-medium text-foreground/80 truncate flex-1 min-w-0">{row.label}</span>
-            {row.sub && <span className="text-muted-foreground/70 tabular-nums shrink-0">{row.sub}</span>}
+            {row.sub && <span className="text-muted-foreground tabular-nums shrink-0">{row.sub}</span>}
             <span className="font-semibold text-foreground/80 tabular-nums shrink-0">
               {fmtNum(row.value)}
             </span>
@@ -195,14 +165,6 @@ function BarList({
         </div>
       ))}
     </div>
-  );
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-2">
-      {children}
-    </p>
   );
 }
 
@@ -251,10 +213,11 @@ export function TurnstileCard({ date }: { date: string }) {
 
   if (!data) {
     return (
-      <Card className="py-0 gap-0 overflow-hidden">
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-300" />
-        </div>
+      <Card>
+        <CardContent className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Lädt …
+        </CardContent>
       </Card>
     );
   }
@@ -270,25 +233,38 @@ export function TurnstileCard({ date }: { date: string }) {
   const maxTrendRides = weekTrend.reduce((m, d) => Math.max(m, d.rides), 0);
   const openFrom = fmtTime(totals.firstScanAt);
   const openUntil = fmtTime(totals.lastScanAt);
+  const perGuest =
+    totals.guests > 0
+      ? `Ø ${totals.ridesPerGuest.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Fahrten/Gast`
+      : null;
+  // Abweichung zum Durchschnitt als Trendzeile (grün/rot mit Vorzeichen).
+  // StatCard blendet dann den Hinweis aus, darum steht dessen Text mit darin.
+  const ridesTrend =
+    ridesDelta != null && average
+      ? { value: ridesDelta, label: `zum Ø ${fmtNum(average.rides)} an ${average.days} Vergleichstagen` }
+      : undefined;
+  const guestsTrend =
+    guestsDelta != null && average
+      ? { value: guestsDelta, label: `zum Ø ${fmtNum(average.guests)}${perGuest ? ` · ${perGuest}` : ""}` }
+      : undefined;
 
   return (
-    <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/60">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground min-w-0">
-          <RotateCw className="h-3.5 w-3.5 text-teal-500 shrink-0" />
-          <span className="truncate">Drehkreuz {area.name}</span>
-        </span>
-        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums shrink-0">
-          echte Fahrten
-        </Badge>
+    <section className="space-y-3 sm:space-y-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <SectionHeading
+          title={`Drehkreuz ${area.name}`}
+          icon={RotateCw}
+          aside={<Badge variant="secondary">echte Fahrten</Badge>}
+          className="min-w-0"
+        />
         <div className="ml-auto shrink-0">
           <Select value={String(area.id)} onValueChange={selectArea}>
-            <SelectTrigger size="sm" className="text-xs w-[150px]">
+            <SelectTrigger className="w-[150px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {data.areas.map((a) => (
-                <SelectItem key={a.id} value={String(a.id)} className="text-xs">
+                <SelectItem key={a.id} value={String(a.id)}>
                   {a.name}
                 </SelectItem>
               ))}
@@ -297,182 +273,205 @@ export function TurnstileCard({ date }: { date: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 border-b border-border/60">
-        <Kpi
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <StatCard
           label="Fahrten"
           value={fmtNum(totals.rides)}
-          icon={<CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />}
-          delta={ridesDelta}
+          icon={CheckCircle2}
+          tone="success"
+          trend={ridesTrend}
           hint={
             average
-              ? <>Ø {fmtNum(average.rides)} an {average.days} Vergleichstagen</>
+              ? `Ø ${fmtNum(average.rides)} an ${average.days} Vergleichstagen`
               : openFrom && openUntil
-                ? <>Betrieb {openFrom}–{openUntil} Uhr</>
+                ? `Betrieb ${openFrom}–${openUntil} Uhr`
                 : "Drehkreuz-Durchgänge"
           }
         />
-        <Kpi
+        <StatCard
           label="Gäste"
           value={fmtNum(totals.guests)}
-          icon={<Users className="h-3.5 w-3.5 text-primary shrink-0" />}
-          delta={guestsDelta}
-          hint={
-            totals.guests > 0
-              ? <>Ø {totals.ridesPerGuest.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Fahrten/Gast</>
-              : "eindeutige Tickets am Drehkreuz"
-          }
+          icon={Users}
+          tone="primary"
+          trend={guestsTrend}
+          hint={perGuest ?? "eindeutige Tickets am Drehkreuz"}
         />
-        <Kpi
+        <StatCard
           label="Tickets"
           value={fmtNum(totals.soldTickets)}
-          icon={<TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />}
+          icon={TicketIcon}
+          tone="primary"
           hint={
             totals.ridesWithoutTicket > 0
-              ? <>heute angelegt · +{fmtNum(totals.ridesWithoutTicket)} ohne Ticket</>
+              ? `heute angelegt · +${fmtNum(totals.ridesWithoutTicket)} ohne Ticket`
               : "heute für diesen Bereich angelegt"
           }
         />
-        <Kpi
+        <StatCard
           label="Scans"
           value={fmtNum(totals.scans)}
-          icon={<ScanLine className="h-3.5 w-3.5 text-info shrink-0" />}
+          icon={ScanLine}
+          tone="info"
           hint={
             totals.scans > 0
               ? totals.denied > 0
-                ? <><span className="text-success font-medium">{totals.grantRate}%</span> Erfolg · {fmtNum(totals.denied)} abgelehnt</>
-                : <><span className="text-success font-medium">{totals.grantRate}%</span> Erfolg, keine Ablehnung</>
+                ? <><span className="font-medium text-success">{totals.grantRate}%</span> Erfolg · {fmtNum(totals.denied)} abgelehnt</>
+                : <><span className="font-medium text-success">{totals.grantRate}%</span> Erfolg, keine Ablehnung</>
               : "Keine Scans"
           }
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-border/60">
-        <div className="lg:col-span-2 px-3 py-3">
-          <SectionTitle>
-            <span className="flex items-center gap-1.5">
-              <BarChart3 className="h-3 w-3 text-teal-500" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               Fahrten im Tagesverlauf
-            </span>
-          </SectionTitle>
-          {totals.scans === 0 ? (
-            <p className="py-14 text-center text-xs text-muted-foreground/70">Keine Scans an diesem Tag.</p>
-          ) : (
-            <>
-              <div className="h-[190px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={hourly} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                    <XAxis dataKey="hour" tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} axisLine={false} interval={2} />
-                    <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
-                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: "rgba(20, 184, 166, 0.08)" }} />
-                    <Bar dataKey="granted" name="Fahrten" stackId="a" fill="#14b8a6" />
-                    <Bar dataKey="denied" name="Abgelehnt" stackId="a" fill="#f87171" radius={[2, 2, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              {totals.peakHour && (
-                <p className="text-[10px] text-muted-foreground mt-1 text-center">
-                  Spitze um <span className="font-semibold text-foreground/80">{totals.peakHour.hour}</span> mit {fmtNum(totals.peakHour.count)} Scans
-                </p>
-              )}
-            </>
-          )}
-        </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {totals.scans === 0 ? (
+              <EmptyState compact title="Keine Scans an diesem Tag." />
+            ) : (
+              <>
+                <div className="h-[190px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={hourly} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
+                      <XAxis dataKey="hour" tick={{ fontSize: 9, fill: CHART_AXIS }} tickLine={false} axisLine={false} interval={2} />
+                      <YAxis tick={{ fontSize: 9, fill: CHART_AXIS }} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: "var(--primary)", fillOpacity: 0.08 }} />
+                      <Bar dataKey="granted" name="Fahrten" stackId="a" fill="var(--success)" />
+                      <Bar dataKey="denied" name="Abgelehnt" stackId="a" fill="var(--destructive)" radius={[2, 2, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                {totals.peakHour && (
+                  <p className="text-[11px] text-muted-foreground mt-1 text-center">
+                    Spitze um <span className="font-semibold text-foreground">{totals.peakHour.hour}</span> mit {fmtNum(totals.peakHour.count)} Scans
+                  </p>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
 
-        <div className="px-3 py-3">
-          <SectionTitle>
-            <span className="flex items-center gap-1.5">
-              <TicketIcon className="h-3 w-3 text-primary" />
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              <TicketIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               Ticket-Typen
-            </span>
-          </SectionTitle>
-          <BarList
-            rows={ticketTypes.map((t) => ({
-              key: t.name,
-              label: t.name,
-              value: t.rides,
-              sub: `${fmtNum(t.guests)} Gäste`,
-            }))}
-            emptyText="Keine Fahrten an diesem Tag."
-            barClass="bg-primary"
-          />
-        </div>
-      </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BarList
+              rows={ticketTypes.map((t) => ({
+                key: t.name,
+                label: t.name,
+                value: t.rides,
+                sub: `${fmtNum(t.guests)} Gäste`,
+              }))}
+              emptyText="Keine Fahrten an diesem Tag."
+              barClass="bg-primary"
+            />
+          </CardContent>
+        </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-border/60 border-t border-border/60">
-        <div className="px-3 py-3">
-          <SectionTitle>Leser</SectionTitle>
-          <div className="space-y-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              <ScanLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              Leser
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
             {devices.map((d) => {
               const rate = d.total > 0 ? Math.round((d.rides / d.total) * 100) : 0;
               const last = fmtTime(d.lastScanAt);
+              const onlineLabel = d.online ? "Online" : "Kein Heartbeat";
               return (
                 <div key={d.id} className="space-y-1">
                   <div className="flex items-center gap-1.5 text-[11px]">
-                    <span
-                      className={cn("h-1.5 w-1.5 rounded-full shrink-0", d.online ? "bg-success" : "bg-slate-300 dark:bg-slate-600")}
-                      title={d.online ? "Online" : "Kein Heartbeat"}
-                    />
+                    <span title={onlineLabel} className="inline-flex shrink-0">
+                      <StatusDot size="xs" tone={d.online ? "success" : "neutral"} label={onlineLabel} />
+                    </span>
                     <span className="font-medium text-foreground/80 truncate flex-1 min-w-0">{d.name}</span>
-                    <span className="text-[9px] text-muted-foreground/70 shrink-0 hidden sm:inline">{DIRECTION_LABEL[d.direction]}</span>
+                    <span className="text-[11px] text-muted-foreground shrink-0 hidden sm:inline">{DIRECTION_LABEL[d.direction]}</span>
                     <span className="font-semibold text-foreground/80 tabular-nums shrink-0">{fmtNum(d.rides)}</span>
                   </div>
                   <div className="h-1.5 bg-muted rounded-full overflow-hidden flex">
-                    <div className="bg-teal-500 h-full" style={{ width: `${totals.rides > 0 ? (d.rides / totals.rides) * 100 : 0}%` }} />
+                    <div className="bg-primary h-full" style={{ width: `${totals.rides > 0 ? (d.rides / totals.rides) * 100 : 0}%` }} />
                   </div>
-                  <p className="text-[9px] text-muted-foreground/70">
+                  <p className="text-[11px] text-muted-foreground">
                     {d.total > 0 ? <>{rate}% erfolgreich{last && <> · letzter Scan {last}</>}</> : "Keine Scans an diesem Tag"}
                   </p>
                 </div>
               );
             })}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="px-3 py-3">
-          <SectionTitle>Ablehnungsgründe</SectionTitle>
-          <BarList
-            rows={denyReasons.map((r) => ({ key: r.reason, label: r.reason, value: r.count }))}
-            emptyText="Keine Ablehnungen an diesem Tag."
-            barClass="bg-rose-400"
-          />
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              <Ban className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              Ablehnungsgründe
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BarList
+              rows={denyReasons.map((r) => ({ key: r.reason, label: r.reason, value: r.count }))}
+              emptyText="Keine Ablehnungen an diesem Tag."
+              barClass="bg-destructive"
+            />
+          </CardContent>
+        </Card>
 
-        <div className="px-3 py-3">
-          <SectionTitle>7 Tage</SectionTitle>
-          {maxTrendRides === 0 ? (
-            <p className="py-8 text-center text-xs text-muted-foreground/70">Keine Fahrten in den letzten 7 Tagen.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {weekTrend.map((d) => (
-                <div key={d.date} className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "text-[10px] w-7 shrink-0 uppercase",
-                      d.date === data.date ? "font-bold text-foreground/80" : "text-muted-foreground/70",
-                    )}
-                  >
-                    {d.dayName}
-                  </span>
-                  <div className="h-2 flex-1 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full", d.date === data.date ? "bg-teal-500" : "bg-teal-500/40")}
-                      style={{ width: `${(d.rides / maxTrendRides) * 100}%` }}
-                    />
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              7 Tage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {maxTrendRides === 0 ? (
+              <EmptyState compact title="Keine Fahrten in den letzten 7 Tagen." />
+            ) : (
+              <div className="space-y-1.5">
+                {weekTrend.map((d) => (
+                  <div key={d.date} className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "text-[11px] w-7 shrink-0 uppercase",
+                        d.date === data.date ? "font-bold text-foreground/80" : "text-muted-foreground",
+                      )}
+                    >
+                      {d.dayName}
+                    </span>
+                    <div className="h-2 flex-1 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full", d.date === data.date ? "bg-primary" : "bg-primary/40")}
+                        style={{ width: `${(d.rides / maxTrendRides) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] tabular-nums text-muted-foreground w-9 text-right shrink-0">
+                      {fmtNum(d.rides)}
+                    </span>
+                    <span className="text-[11px] tabular-nums text-muted-foreground w-7 text-right shrink-0 hidden sm:inline">
+                      {fmtNum(d.guests)}
+                    </span>
                   </div>
-                  <span className="text-[10px] tabular-nums text-muted-foreground w-9 text-right shrink-0">
-                    {fmtNum(d.rides)}
-                  </span>
-                  <span className="text-[10px] tabular-nums text-muted-foreground/70 w-7 text-right shrink-0 hidden sm:inline">
-                    {fmtNum(d.guests)}
-                  </span>
-                </div>
-              ))}
-              <p className="text-[9px] text-muted-foreground/70 pt-1">Fahrten · Gäste je Tag</p>
-            </div>
-          )}
-        </div>
+                ))}
+                <p className="text-[11px] text-muted-foreground pt-1">
+                  Fahrten<span className="hidden sm:inline"> · Gäste</span> je Tag
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </Card>
+    </section>
   );
 }

@@ -79,7 +79,9 @@ export default async function TicketsPage({ searchParams }: Props) {
 
   const [tickets, areas, subscriptions, services, vereine, inactiveCount] = await Promise.all([
     db.ticket.findMany({
-      where: { ...baseWhere, ...statusFilter, ...areaFilter, ...subFilter, ...svcFilter, ...codeFilter, ...sourceFilter },
+      // Code- und Quellenfilter bringen beide ein OR mit; als AND-Liste
+      // überschreibt der Quellenfilter die Code-Suche nicht mehr.
+      where: { ...baseWhere, ...statusFilter, ...areaFilter, ...subFilter, ...svcFilter, AND: [codeFilter, sourceFilter] },
       include: {
         accessArea: true,
         subscription: true,
@@ -170,14 +172,15 @@ export default async function TicketsPage({ searchParams }: Props) {
     <>
       <Header title="Tickets" accountName={session.user.accountName} />
       <div className="page-content">
-        <Card>
+        {/* Tabelle läuft bis an den unteren Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        <Card className="pb-0 sm:pb-0 overflow-hidden">
           <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 flex-wrap">
             <div className="flex items-center gap-3">
-              <CardTitle className="text-base sm:text-lg">
+              <CardTitle>
                 {showInactive ? "Alle Tickets" : "Aktive Tickets"} ({tickets.length})
               </CardTitle>
               {!showInactive && inactiveCount > 0 && (
-                <Badge variant="secondary" className="text-xs font-normal">
+                <Badge variant="secondary" className="tabular-nums">
                   + {inactiveCount} inaktive
                 </Badge>
               )}
@@ -195,11 +198,12 @@ export default async function TicketsPage({ searchParams }: Props) {
               {areas.length > 0 && (
                 <AreaFilter areas={areas} current={area} />
               )}
-              <Button asChild variant="outline" size="sm" className={showInactive ? "border-primary/40 text-primary" : ""}>
+              {/* Der Filterzustand steht im Kartentitel („Alle“/„Aktive Tickets“); die Taste bleibt neutral. */}
+              <Button asChild variant="outline">
                 <Link href={toggleHref}>
                   {showInactive
-                    ? <><EyeOff className="h-4 w-4 mr-1.5" /><span className="hidden xs:inline">Nur aktive</span><span className="xs:hidden">Aktive</span></>
-                    : <><Eye className="h-4 w-4 mr-1.5" /><span className="hidden xs:inline">Auch inaktive</span><span className="xs:hidden">Alle</span></>}
+                    ? <><EyeOff className="h-4 w-4" /><span className="hidden xs:inline">Nur aktive</span><span className="xs:hidden">Aktive</span></>
+                    : <><Eye className="h-4 w-4" /><span className="hidden xs:inline">Auch inaktive</span><span className="xs:hidden">Alle</span></>}
                 </Link>
               </Button>
               {!isSuperAdmin && (
