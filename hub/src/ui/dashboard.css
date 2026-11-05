@@ -2374,3 +2374,58 @@ tr.is-off td:not(:last-child) { opacity: 0.55; }
 .mm-mower { fill: var(--accent); stroke: var(--popover); stroke-width: 2; }
 .mm-mower.is-active { fill: var(--ok); }
 .mm-label { font-size: 9px; font-weight: 600; fill: var(--text); text-anchor: middle; paint-order: stroke; stroke: var(--popover); stroke-width: 3; }
+
+/* ------------------------------------------- Erkannte Personen (Zentrale) */
+.badge .ico { width: 0.8rem; height: 0.8rem; flex: none; }
+.live-states .badge.ok, .cam-badge .badge.ok { background: var(--ok); color: var(--ok-on); }
+.live-states .badge.warn, .cam-badge .badge.warn { background: var(--warn); color: var(--warn-on, #fff); }
+
+.seen-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem;
+  margin: 0 0 0.75rem;
+}
+.seen-strip[hidden] { display: none; }
+.seen-title {
+  display: inline-flex; align-items: center; gap: 0.35rem; margin-right: 0.25rem;
+  font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted);
+}
+.seen-title .ico { width: 0.85rem; height: 0.85rem; }
+.seen-chip {
+  --tone: var(--sky);
+  display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; max-width: 100%;
+  min-height: 2rem; padding: 0.25rem 0.75rem 0.25rem 0.6rem;
+  border: 1px solid var(--glass-border); border-radius: 999px;
+  background: var(--glass-bg-strong); color: var(--text);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  font: inherit; font-size: 0.8125rem; cursor: pointer;
+}
+.seen-chip:hover { background: var(--glass-pill); }
+.seen-chip.k-face, .seen-chip.k-staff, .seen-chip.k-cleared { --tone: var(--ok); }
+.seen-chip.k-suspicious { --tone: var(--warn); }
+.seen-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--tone); flex: none; }
+.seen-chip.is-active .seen-dot { box-shadow: 0 0 0 0.2rem color-mix(in oklab, var(--tone) 30%, transparent); animation: seen-pulse 1.6s ease-in-out infinite; }
+@keyframes seen-pulse { 50% { box-shadow: 0 0 0 0.35rem color-mix(in oklab, var(--tone) 10%, transparent); } }
+.seen-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seen-meta { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (pointer: coarse) { .seen-chip { min-height: 2.5rem; } }
+/* Telefon: Ueberschrift eigene Zeile, Kapseln brechen um (nie seitlich wischen). */
+@media (max-width: 640px) { .seen-title { width: 100%; } }
+#view-zentrale:fullscreen .seen-strip { display: none; }
+
+/* Grossansicht: Boxen genau ueber dem Bildinhalt, folgen dem digitalen Zoom. */
+.cam-boxes-wrap { position: absolute; inset: 0; pointer-events: none; transition: transform 0.15s var(--ease); }
+.cam-stage.is-gesture .cam-boxes-wrap { transition: none; }
+.cam-boxes { position: absolute; }
+.cam-box {
+  --tone: var(--sky);
+  position: absolute; border: 2px solid var(--tone); border-radius: 0.4rem;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(0 0 0 / 0.25);
+  transition: left 0.6s linear, top 0.6s linear, width 0.6s linear, height 0.6s linear;
+}
+.cam-box.k-face, .cam-box.k-staff, .cam-box.k-cleared { --tone: var(--ok); }
+.cam-box.k-suspicious { --tone: var(--warn); }
+.cam-box-tag {
+  position: absolute; left: -2px; bottom: 100%; margin-bottom: 2px;
+  padding: 0.05rem 0.4rem; border-radius: 0.35rem;
+  background: var(--tone); color: #fff; font-size: 0.6875rem; font-weight: 600; white-space: nowrap;
+}

@@ -39,6 +39,7 @@ import { configuredVlans, routerHost } from "./netmap.js";
 import { soundwebSummary } from "./soundweb.js";
 import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
 import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
+import { personBoxes, seenPeople } from "./live-people.js";
 import { getFrame, startFrameWarmer } from "./frame-cache.js";
 import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
 import { isMowerStream } from "./mower-streams.js";
@@ -166,7 +167,7 @@ async function proxyGo2rtc(
       return json(res, 200, { reachable: true, streams });
     }
     const src = url.searchParams.get("src") ?? "";
-    if (!/^[\w.-]{1,80}$/.test(src)) return json(res, 400, { error: "src ungueltig" });
+    if (!/^[^\s/?#&]{1,80}$/.test(src)) return json(res, 400, { error: "src ungueltig" });
     if (req.method === "POST" && sub === "/webrtc") {
       const offer = await readRaw(req);
       const r = await fetch(`${GO2RTC_URL}/api/webrtc?src=${encodeURIComponent(src)}`, {
@@ -634,6 +635,20 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
 
     if (req.method === "GET" && url.pathname === "/api/overview") {
       return json(res, 200, overviewPayload());
+    }
+
+    // Zentrale: wer wurde gerade wo gesehen (eine Zeile je Kamera).
+    if (req.method === "GET" && url.pathname === "/api/live/people") {
+      return json(res, 200, { people: await seenPeople() });
+    }
+
+    // Zentrale, Grossansicht: Personen-Boxen im aktuellen Bild.
+    if (req.method === "GET" && url.pathname === "/api/live/boxes") {
+      const cameraId = Number(url.searchParams.get("cameraId"));
+      const src = url.searchParams.get("src") ?? "";
+      const cam = [...listCameraStatus(), ...listDoorbirdStatus()].find((c) => c.id === cameraId);
+      if (!cam || !src || !/^[^\s/?#&]{1,80}$/.test(src)) return json(res, 400, { error: "cameraId oder src fehlt" });
+      return json(res, 200, await personBoxes(GO2RTC_URL, cam.id, cam.name, src));
     }
 
     if (req.method === "GET" && url.pathname === "/api/events") {

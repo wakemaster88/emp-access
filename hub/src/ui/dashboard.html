@@ -162,6 +162,7 @@
           <button type="button" class="btn head-icon" id="liveFull"><svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg><span class="btn-label">Vollbild</span></button>
         </div>
       </header>
+      <div class="seen-strip" id="liveSeen" hidden aria-label="Gerade erkannte Personen"></div>
       <div class="live-grid" id="liveGrid"></div>
     </section>
 
@@ -453,6 +454,7 @@
     <div class="cam-stage">
       <video id="camDlgVideo" autoplay muted playsinline></video>
       <img id="camDlgImg" alt="">
+      <div class="cam-boxes-wrap" id="camDlgBoxWrap" aria-hidden="true"><div class="cam-boxes" id="camDlgBoxes"></div></div>
       <div class="cam-badge" id="camDlgState"></div>
     </div>
     <aside class="cam-side">
