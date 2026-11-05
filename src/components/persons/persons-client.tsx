@@ -82,6 +82,17 @@ interface Props {
 
 type ListFilter = "WHITELIST" | "BLACKLIST";
 
+/** Liste einer Sichtung als Pille (Spalte „Liste“, auf dem Handy in der Nebenzeile der Person). */
+function SightingListBadge({ listType }: { listType: string | null }) {
+  return listType === "BLACKLIST" ? (
+    <Badge variant="danger" className="text-xs">Black</Badge>
+  ) : listType === "WHITELIST" ? (
+    <Badge variant="success" className="text-xs">White</Badge>
+  ) : (
+    <span className="text-muted-foreground text-xs">–</span>
+  );
+}
+
 const EMPTY = {
   name: "",
   listType: "WHITELIST" as ListFilter,
@@ -361,8 +372,10 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
     const isBlack = kind === "BLACKLIST";
     return (
       <div className="space-y-4 sm:space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
+        {/* Kopf wie bei Karten: Erklärung links, Primärhandlung oben rechts – auch auf dem Handy,
+            dort kürzer (docs/design-regeln.md, Abschnitt 13). */}
+        <div className="flex items-start sm:items-center justify-between gap-3">
+          <p className="min-w-0 text-sm text-muted-foreground">
             {isBlack
               ? "Blacklist z. B. für Hausverbot. Mit Kamera + „Bei Erkennung schalten“ kann ein Alarm-Shelly ausgelöst werden."
               : "Whitelist für Personen, deren Erscheinungen protokolliert und/oder mit Automation verknüpft werden sollen."}
@@ -371,8 +384,9 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
             onClick={() => openAdd(kind)}
             variant={isBlack ? "destructive" : "default"}
             className="gap-1.5 shrink-0 max-sm:h-11"
+            aria-label="Person hinzufügen"
           >
-            <Plus className="h-4 w-4" /> Person hinzufügen
+            <Plus className="h-4 w-4" /> <span>Person<span className="max-sm:hidden"> hinzufügen</span></span>
           </Button>
         </div>
 
@@ -501,11 +515,12 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                         <p className="text-label mb-2 flex items-center gap-1.5">
                           <History className="h-3.5 w-3.5" /> Letzte Sichtungen
                         </p>
-                        <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1">
+                        {/* Handy: Raster mit drei Spalten statt seitlich wischen; ab sm umbrechende Reihe fester Kacheln. */}
+                        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
                           {personSightings.map((s) => (
                             <div
                               key={s.id}
-                              className="glass-tile shrink-0 w-28 overflow-hidden"
+                              className="glass-tile shrink-0 overflow-hidden sm:w-28"
                             >
                               {s.hasSnapshot ? (
                                 <a
@@ -599,7 +614,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
         }}
       />
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="gap-4 sm:gap-5">
-        <TabsList>
+        {/* Handy: volle Breite, damit die umbrochenen Zeilen gleich breit sind (docs/design-regeln.md, Abschnitt 6). */}
+        <TabsList className="w-full sm:w-fit">
           <TabsTrigger value="whitelist" className="gap-1.5">
             <ShieldCheck className="h-4 w-4" /> Whitelist
             <Badge variant="secondary" className="ml-1 text-xs">{whitelist.length}</Badge>
@@ -649,17 +665,19 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
 
           {sightingError && <Notice tone="danger" compact title={sightingError} />}
 
-          {/* Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein. */}
+          {/* Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein.
+              Handy (326 px): Bild, Person und Aktion; Zeit und Liste stehen als Nebenzeile unter der
+              Person, Quelle erst ab sm (docs/design-regeln.md, Abschnitt 17). */}
           <Card flush="y">
                 <Table edge>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-16">Bild</TableHead>
-                      <TableHead>Zeit</TableHead>
+                      <TableHead className="max-sm:hidden">Zeit</TableHead>
                       <TableHead>Person</TableHead>
-                      <TableHead>Liste</TableHead>
+                      <TableHead className="max-sm:hidden">Liste</TableHead>
                       <TableHead className="hidden sm:table-cell">Kamera</TableHead>
-                      <TableHead>Quelle</TableHead>
+                      <TableHead className="max-sm:hidden">Quelle</TableHead>
                       <TableHead className="hidden md:table-cell">Shelly</TableHead>
                       <TableHead className="w-[1%] text-right">Aktion</TableHead>
                     </TableRow>
@@ -692,25 +710,23 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                        <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap max-sm:hidden">
                           {new Date(s.seenAt).toLocaleString("de-DE")}
                         </TableCell>
-                        <TableCell className="text-sm">
+                        <TableCell className="text-sm max-sm:whitespace-normal">
                           {s.listedPerson?.name ?? <span className="text-muted-foreground">unbekannt</span>}
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground sm:hidden">
+                            <span>{new Date(s.seenAt).toLocaleString("de-DE")}</span>
+                            {s.listType && <SightingListBadge listType={s.listType} />}
+                          </div>
                         </TableCell>
-                        <TableCell>
-                          {s.listType === "BLACKLIST" ? (
-                            <Badge variant="danger" className="text-xs">Black</Badge>
-                          ) : s.listType === "WHITELIST" ? (
-                            <Badge variant="success" className="text-xs">White</Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">–</span>
-                          )}
+                        <TableCell className="max-sm:hidden">
+                          <SightingListBadge listType={s.listType} />
                         </TableCell>
                         <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                           {s.camera?.name ?? "–"}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="text-xs text-muted-foreground max-sm:hidden">
                           {s.matchMethod === "FACE_EMBEDDING" ? (
                             <span className="inline-flex items-center gap-1">
                               <Badge variant="outline" className="text-[11px] px-1.5 py-0">Auto</Badge>
@@ -732,14 +748,16 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                         <TableCell className="text-right">
                           <div className="inline-flex items-center gap-1">
                             {!s.listedPerson && (
+                              // Handy: nur Symbol (wie „Suchen“ in den Personenkarten), damit die Zeile in 326 px passt.
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="gap-1 max-sm:h-11"
+                                className="gap-1 max-sm:size-11"
                                 onClick={() => openAssign(s)}
+                                aria-label="Zuordnen"
                               >
                                 <Link2 className="h-3.5 w-3.5" />
-                                Zuordnen
+                                <span className="hidden sm:inline">Zuordnen</span>
                               </Button>
                             )}
                             <Button

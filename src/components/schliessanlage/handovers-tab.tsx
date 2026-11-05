@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchInput } from "@/components/ui/search-input";
 import { Segmented } from "@/components/ui/segmented";
 import { HandoverDialog } from "@/components/schliessanlage/handover-dialog";
@@ -102,23 +102,21 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="tabular-nums">
-              {handovers.length} Protokolle
-              {overdueCount > 0 && (
-                <span className="ml-2 inline-flex items-center gap-1 text-sm font-normal text-destructive">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  {overdueCount} überfällig
-                </span>
-              )}
-            </CardTitle>
-            <CardDescription>
-              Ausgabe und Rücknahme von Schlüsseln. Die Belehrung wird per QR-Code digital
-              unterschrieben.
-            </CardDescription>
-          </div>
-          {!readonly && (
+        <CardTitle className="tabular-nums">
+          {handovers.length} Protokolle
+          {overdueCount > 0 && (
+            <span className="ml-2 inline-flex items-center gap-1 text-sm font-normal text-destructive">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {overdueCount} überfällig
+            </span>
+          )}
+        </CardTitle>
+        <CardDescription>
+          Ausgabe und Rücknahme von Schlüsseln. Die Belehrung wird per QR-Code digital
+          unterschrieben.
+        </CardDescription>
+        {!readonly && (
+          <CardAction>
             <Button
               size="sm"
               onClick={() => setCreateOpen(true)}
@@ -127,8 +125,8 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
               <Plus className="mr-1 h-3.5 w-3.5" />
               Ausgeben
             </Button>
-          )}
-        </div>
+          </CardAction>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">

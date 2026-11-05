@@ -333,7 +333,8 @@ export function VehiclesClient({
   return (
     <div className="space-y-4 sm:space-y-5 max-w-6xl">
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="gap-4 sm:gap-5">
-        <TabsList>
+        {/* Handy: volle Breite, damit die umbrochenen Zeilen gleich breit sind (docs/design-regeln.md, Abschnitt 6). */}
+        <TabsList className="w-full sm:w-fit">
           <TabsTrigger value="parking" className="gap-1.5">
             <ParkingSquare className="h-4 w-4" /> Parkplatz
           </TabsTrigger>
@@ -364,12 +365,14 @@ export function VehiclesClient({
         </TabsContent>
 
         <TabsContent value="vehicles" className="space-y-4 sm:space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
+          {/* Kopf wie bei Karten: Erklärung links, Primärhandlung oben rechts – auch auf dem Handy,
+              dort kürzer (docs/design-regeln.md, Abschnitt 13). */}
+          <div className="flex items-start sm:items-center justify-between gap-3">
+            <p className="min-w-0 text-sm text-muted-foreground">
               Kennzeichen-Whitelist. Hub speichert Schnappschüsse; Match steuert Shelly und optional Push.
             </p>
-            <Button onClick={openAdd} className="gap-1.5 shrink-0 max-sm:h-11">
-              <Plus className="h-4 w-4" /> Fahrzeug hinzufügen
+            <Button onClick={openAdd} className="gap-1.5 shrink-0 max-sm:h-11" aria-label="Fahrzeug hinzufügen">
+              <Plus className="h-4 w-4" /> <span>Fahrzeug<span className="max-sm:hidden"> hinzufügen</span></span>
             </Button>
           </div>
 
@@ -438,9 +441,10 @@ export function VehiclesClient({
                           <p className="text-label mb-2 flex items-center gap-1.5">
                             <History className="h-3.5 w-3.5" /> Letzte Sichtungen
                           </p>
-                          <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1">
+                          {/* Handy: Raster mit drei Spalten statt seitlich wischen; ab sm umbrechende Reihe fester Kacheln. */}
+                          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
                             {recent.map((s) => (
-                              <div key={s.id} className="glass-tile shrink-0 w-28 overflow-hidden">
+                              <div key={s.id} className="glass-tile shrink-0 overflow-hidden sm:w-28">
                                 {s.hasSnapshot ? (
                                   <a href={`/api/vehicle-sightings/${s.id}/snapshot`} target="_blank" rel="noreferrer" className="block aspect-square bg-muted">
                                     <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" loading="lazy" decoding="async" className={cn("h-full w-full object-cover", !v.isActive && "opacity-60")} />
@@ -503,17 +507,19 @@ export function VehiclesClient({
 
           {sightingError && <Notice tone="danger" compact title={sightingError} />}
 
-          {/* Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein. */}
+          {/* Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein.
+              Handy (326 px): Bild, Kennzeichen und Aktion; Fahrzeug und Zeit stehen als Nebenzeile unter
+              dem Kennzeichen, Match erst ab sm (docs/design-regeln.md, Abschnitt 17). */}
           <Card flush="y">
                 <Table edge>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-16">Bild</TableHead>
-                      <TableHead>Zeit</TableHead>
+                      <TableHead className="max-sm:hidden">Zeit</TableHead>
                       <TableHead>Kennzeichen</TableHead>
-                      <TableHead>Fahrzeug</TableHead>
+                      <TableHead className="max-sm:hidden">Fahrzeug</TableHead>
                       <TableHead className="hidden sm:table-cell">Kamera</TableHead>
-                      <TableHead>Match</TableHead>
+                      <TableHead className="max-sm:hidden">Match</TableHead>
                       <TableHead className="w-[1%] text-right">Aktion</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -534,19 +540,23 @@ export function VehiclesClient({
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                        <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap max-sm:hidden">
                           {new Date(s.seenAt).toLocaleString("de-DE")}
                         </TableCell>
                         <TableCell className="font-mono text-sm">
                           {s.plate ?? <span className="text-muted-foreground">–</span>}
+                          <div className="mt-0.5 font-sans text-xs whitespace-normal text-muted-foreground sm:hidden">
+                            <p>{s.allowedVehicle?.name ?? "unbekannt"}</p>
+                            <p>{new Date(s.seenAt).toLocaleString("de-DE")}</p>
+                          </div>
                         </TableCell>
-                        <TableCell className="text-sm">
+                        <TableCell className="text-sm max-sm:hidden">
                           {s.allowedVehicle?.name ?? <span className="text-muted-foreground">unbekannt</span>}
                         </TableCell>
                         <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                           {s.camera?.name ?? "–"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="max-sm:hidden">
                           {s.matched ? (
                             <Badge variant="success" className="gap-1 text-xs">
                               <CheckCircle2 className="h-3 w-3" /> ja
@@ -560,8 +570,9 @@ export function VehiclesClient({
                         <TableCell className="text-right">
                           <div className="inline-flex items-center gap-1">
                             {!s.matched && (
-                              <Button size="sm" variant="outline" className="gap-1 max-sm:h-11" onClick={() => openAssign(s)}>
-                                <Link2 className="h-3.5 w-3.5" /> Zuordnen
+                              // Handy: nur Symbol, damit die Zeile in 326 px passt.
+                              <Button size="sm" variant="outline" className="gap-1 max-sm:size-11" onClick={() => openAssign(s)} aria-label="Zuordnen">
+                                <Link2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Zuordnen</span>
                               </Button>
                             )}
                             <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive max-sm:size-11" title="Löschen" aria-label="Löschen" disabled={deletingId === s.id} onClick={() => askDelete("Diese Sichtung wirklich löschen?", () => deleteSighting(s))}>

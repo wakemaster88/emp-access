@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PolicyDialog } from "@/components/schliessanlage/policy-dialog";
 import { EmptyHint, ErrorLine, apiRequest, fmtDate } from "@/components/schliessanlage/shared";
 import type { PolicyRow } from "@/components/schliessanlage/types";
@@ -72,17 +72,15 @@ export function PoliciesTab({ policies, readonly }: Props) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="tabular-nums">
-              {groups.length} {groups.length === 1 ? "Vorlage" : "Vorlagen"}
-            </CardTitle>
-            <CardDescription>
-              Belehrung und Haftungserklärung. Änderungen erzeugen eine neue Version, damit bereits
-              unterschriebene Protokolle unverändert bleiben.
-            </CardDescription>
-          </div>
-          {!readonly && (
+        <CardTitle className="tabular-nums">
+          {groups.length} {groups.length === 1 ? "Vorlage" : "Vorlagen"}
+        </CardTitle>
+        <CardDescription>
+          Belehrung und Haftungserklärung. Änderungen erzeugen eine neue Version, damit bereits
+          unterschriebene Protokolle unverändert bleiben.
+        </CardDescription>
+        {!readonly && (
+          <CardAction>
             <Button
               size="sm"
               onClick={() => setDialog({ policy: null })}
@@ -91,8 +89,8 @@ export function PoliciesTab({ policies, readonly }: Props) {
               <Plus className="mr-1 h-3.5 w-3.5" />
               Vorlage
             </Button>
-          )}
-        </div>
+          </CardAction>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-2">

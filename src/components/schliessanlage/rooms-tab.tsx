@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { IconChip } from "@/components/ui/icon-chip";
 import { DoorDialog } from "@/components/schliessanlage/door-dialog";
 import { LockDialog } from "@/components/schliessanlage/lock-dialog";
@@ -219,44 +219,47 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
     </div>
   );
 
+  // Weitere Handlung „Tür“ (ohne Raum): ab sm neben der Primärtaste im Kopf, auf dem Handy in einer
+  // Zeile unter dem Kopf, damit der Kopf nur die Primärtaste trägt (docs/design-regeln.md, Abschnitt 13).
+  const looseDoorButton = (className: string) => (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={() => setDoorDialog({ door: null, roomId: null })}
+      className={className}
+    >
+      <DoorOpen className="mr-1 h-3.5 w-3.5" />
+      Tür
+    </Button>
+  );
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="tabular-nums">
-              {rooms.length} Räume · {doorCount} Türen
-            </CardTitle>
-            <CardDescription>
-              Struktur der Anlage: Räume enthalten Türen, Türen enthalten Schlösser. Türen ohne Raum
-              sind Gemeinschafts- oder Außentüren.
-            </CardDescription>
-          </div>
-          {!readonly && (
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setDoorDialog({ door: null, roomId: null })}
-                className="max-sm:h-11"
-              >
-                <DoorOpen className="mr-1 h-3.5 w-3.5" />
-                Tür
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => setRoomDialog({ room: null })}
-                className="max-sm:h-11"
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Raum
-              </Button>
-            </div>
-          )}
-        </div>
+        <CardTitle className="tabular-nums">
+          {rooms.length} Räume · {doorCount} Türen
+        </CardTitle>
+        <CardDescription>
+          Struktur der Anlage: Räume enthalten Türen, Türen enthalten Schlösser. Türen ohne Raum
+          sind Gemeinschafts- oder Außentüren.
+        </CardDescription>
+        {!readonly && (
+          <CardAction className="flex gap-2">
+            {looseDoorButton("max-sm:hidden")}
+            <Button
+              size="sm"
+              onClick={() => setRoomDialog({ room: null })}
+              className="max-sm:h-11"
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Raum
+            </Button>
+          </CardAction>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-2">
+        {!readonly && <div className="sm:hidden">{looseDoorButton("h-11")}</div>}
         <ErrorLine message={error} />
 
         {rooms.length === 0 && looseDoors.length === 0 && (

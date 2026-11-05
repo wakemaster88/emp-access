@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Crown, KeyRound, Layers, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SearchInput } from "@/components/ui/search-input";
 import {
@@ -31,6 +31,13 @@ interface Props {
   readonly: boolean;
 }
 
+/** „Schließt“ kurz: bis zu zwei Schlösser, sonst das erste und die Zahl der weiteren. */
+function lockSummary(labels: string[]): string {
+  if (labels.length === 0) return "kein Schloss";
+  if (labels.length <= 2) return labels.join(" · ");
+  return `${labels[0]} +${labels.length - 1} weitere`;
+}
+
 export function KeysTab({ keys, lockOptions, readonly }: Props) {
   const [query, setQuery] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
@@ -51,39 +58,43 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
   const grandCount = keys.filter((k) => k.level === "GRAND").length;
   const issuedCount = keys.filter((k) => k.status === "ISSUED").length;
 
+  // Weitere Handlung „Serie“: ab sm neben der Primärtaste im Kopf, auf dem Handy in einer Zeile
+  // unter dem Kopf, damit der Kopf nur die Primärtaste trägt (docs/design-regeln.md, Abschnitt 13).
+  const bulkButton = (className: string) => (
+    <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)} className={className}>
+      <Layers className="mr-1 h-3.5 w-3.5" />
+      Serie
+    </Button>
+  );
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="tabular-nums">
-              {keys.length} Schlüssel · {issuedCount} ausgegeben
-            </CardTitle>
-            <CardDescription>
-              Jede Kopie ist ein eigener Datensatz mit eigener Nummer.
-              {grandCount > 0 && ` Davon ${grandCount} Generalschlüssel.`}
-            </CardDescription>
-          </div>
-          {!readonly && (
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)} className="max-sm:h-11">
-                <Layers className="mr-1 h-3.5 w-3.5" />
-                Serie
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => setDialog({ keyItem: null })}
-                className="max-sm:h-11"
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Schlüssel
-              </Button>
-            </div>
-          )}
-        </div>
+        <CardTitle className="tabular-nums">
+          {/* Neben der Taste bricht der Titel auf dem Handy um: Zahl und Wort bleiben zusammen. */}
+          {keys.length} Schlüssel · <span className="whitespace-nowrap">{issuedCount} ausgegeben</span>
+        </CardTitle>
+        <CardDescription>
+          Jede Kopie ist ein eigener Datensatz mit eigener Nummer.
+          {grandCount > 0 && ` Davon ${grandCount} Generalschlüssel.`}
+        </CardDescription>
+        {!readonly && (
+          <CardAction className="flex gap-2">
+            {bulkButton("max-sm:hidden")}
+            <Button
+              size="sm"
+              onClick={() => setDialog({ keyItem: null })}
+              className="max-sm:h-11"
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Schlüssel
+            </Button>
+          </CardAction>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">
+        {!readonly && <div className="sm:hidden">{bulkButton("h-11")}</div>}
         <div className="flex flex-wrap gap-2">
           <SearchInput
             value={query}
@@ -131,15 +142,19 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
           </EmptyHint>
         ) : (
           // Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein.
+          // Handy (326 px): nur Nummer und Status; Bezeichnung und Schließt stehen als Nebenzeilen
+          // unter der Nummer, Art zeigt das Symbol (Krone = Generalschlüssel). Ab sm alle Spalten,
+          // lange Texte brechen um statt die Tabelle zu verbreitern (docs/design-regeln.md, Abschnitt 17).
           <div className="-mx-4 sm:-mx-[18px]">
             <Table edge>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-32">Nummer</TableHead>
-                  <TableHead>Bezeichnung</TableHead>
-                  <TableHead className="w-36">Art</TableHead>
-                  <TableHead className="w-28">Status</TableHead>
-                  <TableHead>Schließt</TableHead>
+                  <TableHead className="sm:w-32">Nummer</TableHead>
+                  <TableHead className="max-sm:hidden">Bezeichnung</TableHead>
+                  <TableHead className="w-36 max-sm:hidden">Art</TableHead>
+                  {/* Auf dem Handy die letzte sichtbare Spalte: Randabstand wie die Karte. */}
+                  <TableHead className="w-28 max-sm:pr-4">Status</TableHead>
+                  <TableHead className="max-sm:hidden">Schließt</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -158,28 +173,38 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                         )}
                         {k.keyNumber}
                       </span>
+                      <div className="mt-0.5 space-y-0.5 font-sans text-xs font-normal whitespace-normal sm:hidden">
+                        {(k.label || k.notes) && (
+                          <p>
+                            {k.label}
+                            {k.notes && (
+                              <span className="text-[11px] text-muted-foreground">
+                                {k.label ? " · " : ""}
+                                {k.notes}
+                              </span>
+                            )}
+                          </p>
+                        )}
+                        <p className="text-muted-foreground">{lockSummary(k.lockLabels)}</p>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="text-xs whitespace-normal max-sm:hidden">
                       {k.label || <span className="text-muted-foreground">—</span>}
                       {k.notes && (
                         <span className="ml-1 text-[11px] text-muted-foreground">· {k.notes}</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-sm:hidden">
                       <LevelBadge level={k.level} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-sm:pr-4">
                       <KeyStatusBadge status={k.status} />
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {k.lockLabels.length === 0 ? (
-                        <span className="text-muted-foreground">kein Schloss</span>
-                      ) : k.lockLabels.length <= 2 ? (
-                        k.lockLabels.join(" · ")
+                    <TableCell className="text-xs whitespace-normal text-muted-foreground max-sm:hidden sm:min-w-40">
+                      {k.lockLabels.length > 2 ? (
+                        <span title={k.lockLabels.join("\n")}>{lockSummary(k.lockLabels)}</span>
                       ) : (
-                        <span title={k.lockLabels.join("\n")}>
-                          {k.lockLabels[0]} +{k.lockLabels.length - 1} weitere
-                        </span>
+                        lockSummary(k.lockLabels)
                       )}
                     </TableCell>
                   </TableRow>

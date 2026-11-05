@@ -24,7 +24,8 @@ export function SchliessanlageClient({ data, readonly }: Props) {
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="gap-4 sm:gap-5">
-      <TabsList>
+      {/* Handy: volle Breite, damit die umbrochenen Zeilen gleich breit sind (docs/design-regeln.md, Abschnitt 6). */}
+      <TabsList className="w-full sm:w-fit">
         <TabsTrigger value="struktur" className="gap-1.5">
           <DoorOpen className="h-3.5 w-3.5" />
           Räume &amp; Türen
