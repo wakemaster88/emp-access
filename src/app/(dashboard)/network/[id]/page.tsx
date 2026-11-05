@@ -117,7 +117,7 @@ export default async function NetworkDeviceDetailPage({ params }: Props) {
         </Card>
 
         {/* Die Port-Tabelle läuft bis an den unteren Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader>
             <CardTitle>Ports</CardTitle>
           </CardHeader>

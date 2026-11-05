@@ -17,11 +17,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { StatusDot } from "@/components/ui/status-dot";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Plus, Loader2, Pencil, Trash2, Cctv, RefreshCw, AlertTriangle,
@@ -73,17 +75,18 @@ export interface CameraEventRow {
   camera: { id: number; name: string };
 }
 
-// Kamera-Erkennungen in Himmelblau (Zustandsvokabular), Klingel = jemand da (Violett),
-// Sonstiges gedämpft. Art und Symbol unterscheiden die Erkennungen, nicht die Farbe.
-const DETECTION = "bg-sky-500/15 text-sky-700 dark:text-sky-300";
+// Kamera-Erkennungen in Himmelblau (Zustandsvokabular, Badge `water`), Klingel = jemand da
+// (Violett, Badge `music`), Sonstiges gedämpft (`neutral`). Art und Symbol unterscheiden die
+// Erkennungen, nicht die Farbe.
+const DETECTION = "water";
 
-const EVENT_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  MOTION:  { label: "Bewegung", icon: Activity, color: DETECTION },
-  PERSON:  { label: "Person",   icon: User,     color: DETECTION },
-  VEHICLE: { label: "Fahrzeug", icon: Car,      color: DETECTION },
-  ANIMAL:  { label: "Tier",     icon: PawPrint, color: DETECTION },
-  DOORBELL:{ label: "Klingel",  icon: Bell,     color: "bg-violet-500/15 text-violet-700 dark:text-violet-300" },
-  OTHER:   { label: "Sonstiges", icon: Activity, color: "bg-foreground/[0.06] text-muted-foreground" },
+const EVENT_META: Record<string, { label: string; icon: React.ElementType; variant: "water" | "music" | "neutral" }> = {
+  MOTION:  { label: "Bewegung", icon: Activity, variant: DETECTION },
+  PERSON:  { label: "Person",   icon: User,     variant: DETECTION },
+  VEHICLE: { label: "Fahrzeug", icon: Car,      variant: DETECTION },
+  ANIMAL:  { label: "Tier",     icon: PawPrint, variant: DETECTION },
+  DOORBELL:{ label: "Klingel",  icon: Bell,     variant: "music" },
+  OTHER:   { label: "Sonstiges", icon: Activity, variant: "neutral" },
 };
 
 const EMPTY = {
@@ -358,26 +361,22 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                       ) : (
                         <Cctv className="h-10 w-10 text-white/25" />
                       )}
+                      {/* Über dem Kamerabild als dunkle Glaspille (Badge `media`); den Zustand trägt der Punkt. */}
                       <div className="absolute top-2 left-2 flex items-center gap-1.5">
                         {online === true && (
-                          <Badge className="bg-success/90 text-success-foreground gap-1 text-xs h-5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-current" /> Online
+                          <Badge variant="media" className="gap-1 text-xs h-5">
+                            <StatusDot tone="success" size="xs" /> Online
                           </Badge>
                         )}
                         {/* Rot nur, wenn eine aktive Kamera nicht antwortet; eine deaktivierte
                             meldet sich gewollt nicht mehr (Aus = gedämpft). */}
                         {online === false && (
-                          <Badge
-                            className={cn(
-                              "gap-1 text-xs h-5",
-                              c.enabled ? "bg-destructive/90 text-white" : "bg-black/60 text-white/85"
-                            )}
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full bg-current" /> Offline
+                          <Badge variant="media" className="gap-1 text-xs h-5">
+                            <StatusDot tone={c.enabled ? "danger" : "neutral"} size="xs" /> Offline
                           </Badge>
                         )}
                         {!c.enabled && (
-                          <Badge className="bg-black/60 text-white/85 text-xs h-5">
+                          <Badge variant="media" className="text-xs h-5">
                             Deaktiviert
                           </Badge>
                         )}
@@ -391,9 +390,9 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                         )}
                       </div>
                       {c.snapshotAt && (
-                        <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-white font-mono tabular-nums">
+                        <Badge variant="media" className="absolute bottom-2 right-2 text-[10px] font-normal font-mono tabular-nums">
                           {fmtTime(c.snapshotAt)}
-                        </span>
+                        </Badge>
                       )}
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-2 p-3">
@@ -488,52 +487,49 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
         </CardContent>
       </Card>
 
-      <Card className="overflow-hidden pb-0 sm:pb-0">
+      <Card flush>
         <CardHeader>
           <CardTitle>Letzte Ereignisse</CardTitle>
         </CardHeader>
         <CardContent className="px-0 sm:px-0">
           <div className="border-t border-border">
-            <Table>
+            <Table edge>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-4 sm:pl-[18px]">Zeitpunkt</TableHead>
+                  <TableHead>Zeitpunkt</TableHead>
                   <TableHead>Kamera</TableHead>
+                  {/* Auf dem Handy ist „Ereignis“ die letzte sichtbare Spalte; edge trifft nur „Dauer“. */}
                   <TableHead className="pr-4 sm:pr-2">Ereignis</TableHead>
-                  <TableHead className="hidden sm:table-cell sm:pr-[18px]">Dauer</TableHead>
+                  <TableHead className="hidden sm:table-cell">Dauer</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {events.length === 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={4} className="p-0 whitespace-normal">
-                      <EmptyState
-                        compact
-                        icon={Activity}
-                        title="Noch keine Ereignisse"
-                        description="Sobald eine Kamera Bewegung oder eine Person erkennt, erscheint sie hier."
-                      />
-                    </TableCell>
-                  </TableRow>
+                  <TableEmpty
+                    colSpan={4}
+                    icon={Activity}
+                    title="Noch keine Ereignisse"
+                    description="Sobald eine Kamera Bewegung oder eine Person erkennt, erscheint sie hier."
+                  />
                 )}
                 {events.map((e) => {
                   const meta = EVENT_META[e.type] ?? EVENT_META.OTHER;
                   const Icon = meta.icon;
                   return (
                     <TableRow key={e.id} className="max-sm:h-11">
-                      <TableCell className="pl-4 font-mono text-xs tabular-nums text-muted-foreground sm:pl-[18px]">
+                      <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
                         {fmtTime(e.startedAt)}
                       </TableCell>
                       <TableCell className="text-sm text-foreground/80">
                         {e.camera.name}
                       </TableCell>
                       <TableCell className="pr-4 sm:pr-2">
-                        <Badge className={cn("gap-1 text-xs", meta.color)}>
+                        <Badge variant={meta.variant} className="gap-1 text-xs">
                           <Icon className="h-3 w-3" />
                           {meta.label}
                         </Badge>
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell sm:pr-[18px] text-xs tabular-nums text-muted-foreground">
+                      <TableCell className="hidden sm:table-cell text-xs tabular-nums text-muted-foreground">
                         {duration(e.startedAt, e.endedAt)}
                       </TableCell>
                     </TableRow>
@@ -722,15 +718,15 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
               <div className="glass-tile space-y-3 p-3">
                 <div className="space-y-1.5">
                   <Label className="leading-snug">Lieferdienste (DHL, UPS, GLS, Amazon, DPD, Hermes)</Label>
-                  <select
-                    className="glass-field h-11 w-full px-2 text-base outline-none hover:border-foreground/20 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 sm:h-9 md:text-sm"
+                  {/* Natives Auswahlfeld im Feld-Look (NativeSelect); im Dialog auf dem Handy 44 px (globals.css). */}
+                  <NativeSelect
                     value={form.deliveryMode}
                     onChange={(e) => set("deliveryMode", e.target.value)}
                   >
                     <option value="">Aus</option>
                     <option value="NOTIFY">Erkennen und melden</option>
                     <option value="OPEN">Erkennen und Tor öffnen</option>
-                  </select>
+                  </NativeSelect>
                   <p className="text-xs text-muted-foreground">
                     Der Hub liest die Aufschrift am Fahrzeug. Sie muss auf zwei Bildern stehen. Jeder
                     Treffer kommt als Push mit Foto.

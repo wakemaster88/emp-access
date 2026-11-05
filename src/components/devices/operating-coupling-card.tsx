@@ -40,6 +40,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { apiRequest, fmtAgo } from "@/components/raeume/shared";
 import { useNow } from "@/components/raeume/status";
@@ -58,7 +59,6 @@ import {
   type ScheduleSpec,
 } from "@/lib/operating-hours";
 import { tzYmd } from "@/lib/tz-time";
-import { cn } from "@/lib/utils";
 
 export interface CouplingDevice {
   id: number;
@@ -290,12 +290,10 @@ export function OperatingCouplingCard({
             </p>
           ) : (
             rules.map((rule) => (
+              // Pausierte Regel bleibt lesbar (keine Deckkraft auf Text); den Zustand sagt „· pausiert“.
               <div
                 key={rule.id}
-                className={cn(
-                  "glass-tile flex items-center gap-2 px-3 py-2 text-xs",
-                  !rule.isActive && "opacity-60",
-                )}
+                className="glass-tile flex items-center gap-2 px-3 py-2 text-xs"
               >
                 <Workflow className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
@@ -373,11 +371,11 @@ export function OperatingCouplingCard({
 
             <div className="space-y-1.5">
               <Label>Betriebszeit</Label>
-              {/* Eigene Auswahlfelder wie Eingabefelder: glass-field, 16 px Schrift auf dem Handy (Abschnitt 16). */}
-              <select
+              {/* Natives Auswahlfeld im Feld-Look (NativeSelect); auf dem Handy 44 px wie die übrigen Felder der Kachel. */}
+              <NativeSelect
                 value={scheduleId}
                 onChange={(e) => setScheduleId(e.target.value)}
-                className="glass-field h-9 w-full px-2 text-base text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11 md:text-sm"
+                className="max-sm:h-11"
               >
                 <option value="">
                   {room?.schedule
@@ -389,7 +387,7 @@ export function OperatingCouplingCard({
                     {s.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               {schedules.length === 0 && (
                 <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />

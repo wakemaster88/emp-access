@@ -62,7 +62,7 @@ export default async function DevicesPage({ searchParams }: Props) {
       <Header title="Geräte" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         {/* Tabelle läuft bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <CardTitle className="tabular-nums">Geräte ({devices.length})</CardTitle>

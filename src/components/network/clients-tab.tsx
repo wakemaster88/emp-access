@@ -20,9 +20,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
@@ -689,7 +688,7 @@ export function ClientsTab({
   }
 
   return (
-    <Card className="overflow-hidden pb-0 sm:pb-0">
+    <Card flush>
       {/* items-stretch: Titelzeile, Scan-Hinweis und Filter nehmen die volle Breite ein,
           damit die Tasten rechts stehen wie in den anderen Tabs (CardHeader setzt items-start). */}
       <CardHeader className="flex flex-col items-stretch gap-3">
@@ -760,34 +759,32 @@ export function ClientsTab({
 
         {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
         <div className="-mx-4 sm:-mx-[18px]">
-          <Table className="table-fixed w-full min-w-[640px]">
+          <Table edge className="table-fixed w-full min-w-[640px]">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[88px] pl-4 sm:pl-[18px]">Status</TableHead>
+                <TableHead className="w-[88px]">Status</TableHead>
                 <TableHead className="w-[28%]">Gerät</TableHead>
                 <TableHead className="w-[140px]">IP</TableHead>
                 <TableHead className="hidden xl:table-cell w-[140px]">MAC</TableHead>
                 <TableHead className="hidden lg:table-cell w-[130px]">Port</TableHead>
                 <TableHead className="w-[100px]">Bereich</TableHead>
                 {/* Breit genug für „Übernehmen“, sonst ragt die Taste in die Nachbarspalte. */}
-                <TableHead className="w-[152px] pr-4 sm:pr-[18px]" />
+                <TableHead className="w-[152px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {visibleCount === 0 && (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="p-0 whitespace-normal">
-                    <EmptyState
-                      icon={filter === "unknown" ? Radar : MonitorSmartphone}
-                      title={filter === "unknown"
-                        ? "Keine unbekannten Scan-Funde"
-                        : "Keine Geräte erfasst"}
-                      description={filter === "unknown"
-                        ? "Alle gescannten Hosts sind bereits zugeordnet."
-                        : "Erfasse Geräte manuell oder übernehme Funde vom Hub-Scan."}
-                    />
-                  </TableCell>
-                </TableRow>
+                <TableEmpty
+                  colSpan={7}
+                  compact={false}
+                  icon={filter === "unknown" ? Radar : MonitorSmartphone}
+                  title={filter === "unknown"
+                    ? "Keine unbekannten Scan-Funde"
+                    : "Keine Geräte erfasst"}
+                  description={filter === "unknown"
+                    ? "Alle gescannten Hosts sind bereits zugeordnet."
+                    : "Erfasse Geräte manuell oder übernehme Funde vom Hub-Scan."}
+                />
               )}
 
               {vlanGroups.map((group) => {
@@ -795,7 +792,7 @@ export function ClientsTab({
                 return (
                   <Fragment key={group.meta.vlanDbId ?? "none"}>
                     <TableRow className="bg-glass-tile hover:bg-glass-tile">
-                      <TableCell colSpan={7} className="py-2 pl-4 sm:pl-[18px]">
+                      <TableCell colSpan={7} className="py-2">
                         <div className="flex flex-wrap items-center gap-2">
                           {group.meta.vlanDbId != null ? (
                             <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId, vlans))}>
@@ -816,8 +813,9 @@ export function ClientsTab({
                       <Fragment key={`${group.meta.vlanDbId ?? "none"}-${areaGroup.meta.areaId ?? "none"}`}>
                         {group.showAreas && (
                           <TableRow className="hover:bg-transparent">
-                            <TableCell colSpan={7} className="py-1.5 pl-8 sm:pl-[34px]">
-                              <div className="flex flex-wrap items-center gap-2">
+                            <TableCell colSpan={7} className="py-1.5">
+                              {/* Eingerückt unter der VLAN-Zeile: Randabstand der Tabelle (edge) plus 16 px. */}
+                              <div className="flex flex-wrap items-center gap-2 pl-4">
                                 <span className="text-label">
                                   {areaGroup.meta.name}
                                 </span>
@@ -849,7 +847,7 @@ export function ClientsTab({
                             const verified = ipVerified(c.macAddress, ip);
                             return (
                               <TableRow key={`c-${c.id}`}>
-                                <TableCell className="pl-4 sm:pl-[18px]">
+                                <TableCell>
                                   <StatusBadge online={online} />
                                 </TableCell>
                                 <TableCell className="max-w-0">
@@ -905,7 +903,7 @@ export function ClientsTab({
                                     <span className="text-xs text-muted-foreground">–</span>
                                   )}
                                 </TableCell>
-                                <TableCell className="pr-4 sm:pr-[18px]">
+                                <TableCell>
                                   <div className="flex items-center justify-end gap-0.5">
                                     <Button
                                       variant="ghost"
@@ -941,7 +939,7 @@ export function ClientsTab({
                               : null;
                             return (
                               <TableRow key={`iot-${d.id}`}>
-                                <TableCell className="pl-4 sm:pl-[18px]">
+                                <TableCell>
                                   <StatusBadge online={online} />
                                 </TableCell>
                                 <TableCell className="max-w-0">
@@ -977,7 +975,7 @@ export function ClientsTab({
                                     <span className="text-xs text-muted-foreground">–</span>
                                   )}
                                 </TableCell>
-                                <TableCell className="pr-4 sm:pr-[18px]">
+                                <TableCell>
                                   <div className="flex items-center justify-end">
                                     <Button
                                       variant="outline"
@@ -1002,7 +1000,7 @@ export function ClientsTab({
                             || "Unbekanntes Gerät";
                           return (
                             <TableRow key={`scan-${d.id}`}>
-                              <TableCell className="pl-4 sm:pl-[18px]">
+                              <TableCell>
                                 <StatusBadge online={active} />
                               </TableCell>
                               <TableCell className="max-w-0">
@@ -1042,7 +1040,7 @@ export function ClientsTab({
                                   <span className="text-xs text-muted-foreground">–</span>
                                 )}
                               </TableCell>
-                              <TableCell className="pr-4 sm:pr-[18px]">
+                              <TableCell>
                                 <div className="flex items-center justify-end">
                                   <Button
                                     variant="outline"

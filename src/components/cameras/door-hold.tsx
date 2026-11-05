@@ -118,8 +118,9 @@ export function DoorHoldBadge({
     <span
       className={cn(
         "inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium leading-tight tabular-nums",
-        // Liegt auf dem Kamerabild: deckende Fläche. Offen = Smaragd, Fehler = Rot.
-        warn ? "bg-destructive/90 text-white" : "bg-emerald-400/90 text-emerald-950",
+        // Liegt auf dem Kamerabild: deckende Fläche. Offen = Smaragd, Fehler = Rot
+        // (destructive-fill, damit Weiß auch im Dunkeln 4,5:1 erreicht).
+        warn ? "bg-destructive-fill/90 text-white" : "bg-emerald-400/90 text-emerald-950",
         className
       )}
       title={`Tor offen halten bis ${fmtClock(hold.until!)} Uhr · ${pulse}`}

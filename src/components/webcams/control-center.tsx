@@ -237,7 +237,7 @@ function ScanOverlay({ scan }: { scan: ScanOverlayRow | null }) {
           granted
             ? "bg-success/90 text-success-foreground"
             : denied
-              ? "bg-destructive/90 text-white"
+              ? "bg-destructive-fill/90 text-white"
               : "bg-warning/90 text-warning-foreground"
         )}
       >
@@ -570,8 +570,9 @@ function CameraPanel({
         </div>
 
         {go2rtcUrl && streamBase && live && (
-          <Badge className="absolute top-1.5 left-1.5 h-4 gap-1 bg-emerald-400/90 px-1.5 text-[9px] text-emerald-950">
-            <Radio className="h-2.5 w-2.5" /> LIVE
+          // Über dem Video als dunkle Glaspille (Badge `media`); Smaragd (live) trägt das Symbol.
+          <Badge variant="media" className="absolute top-1.5 left-1.5 h-4 gap-1 px-1.5 text-[9px]">
+            <Radio className="h-2.5 w-2.5 text-emerald-400" /> LIVE
           </Badge>
         )}
 
@@ -612,7 +613,7 @@ function CameraPanel({
               size="sm"
               className={cn(
                 "h-11 px-2.5 text-[10px] font-semibold bg-black/50 hover:bg-black/70 sm:h-7 sm:px-1.5",
-                hd ? "bg-primary text-primary-foreground hover:bg-primary/90" : "text-white"
+                hd ? "bg-primary-fill text-primary-foreground hover:bg-primary-fill/90" : "text-white"
               )}
               title={hd ? "Auf Vorschau-Qualität (sub) wechseln" : "Auf volle Qualität (main) wechseln"}
               onClick={() => setHd((v) => !v)}
@@ -657,7 +658,7 @@ function CameraPanel({
                 onError={setError}
                 variant="secondary"
                 className="size-11 bg-black/50 hover:bg-black/70 text-white sm:size-7"
-                activeClassName="bg-emerald-400/90 text-emerald-950 hover:bg-destructive/90 hover:text-white"
+                activeClassName="bg-emerald-400/90 text-emerald-950 hover:bg-destructive-fill/90 hover:text-white"
                 iconClassName="h-3.5 w-3.5"
               />
             </>
@@ -676,7 +677,7 @@ function CameraPanel({
 
         {/* Fehler (z.B. Türöffner) kurz auf der Kachel anzeigen. */}
         {isDoorbird && error && (
-          <p className="absolute bottom-6 inset-x-2 rounded-lg bg-destructive/90 px-2 py-1 text-[10px] text-white">
+          <p className="absolute bottom-6 inset-x-2 rounded-lg bg-destructive-fill/90 px-2 py-1 text-[10px] text-white">
             {error}
           </p>
         )}
@@ -989,7 +990,7 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
       </div>
 
       {cameras.length === 0 ? (
-        <Card className="py-0 sm:py-0">
+        <Card flush="y">
           <EmptyState
             icon={Cctv}
             title="Keine aktiven Reolink-Kameras"

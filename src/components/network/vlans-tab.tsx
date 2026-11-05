@@ -15,9 +15,8 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
 import {
   Plus, Loader2, Network, Pencil, Trash2, EthernetPort, MonitorSmartphone,
@@ -115,7 +114,7 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
   }
 
   return (
-    <Card className="overflow-hidden pb-0 sm:pb-0">
+    <Card flush>
       <CardHeader className="flex flex-wrap items-center justify-between gap-3">
         <CardTitle className="tabular-nums">VLANs ({vlans.length})</CardTitle>
         <Button onClick={openAdd} className="gap-2 max-sm:h-11">
@@ -126,32 +125,30 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
       <CardContent>
         {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
         <div className="-mx-4 sm:-mx-[18px]">
-          <Table>
+          <Table edge>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-20 pl-4 sm:pl-[18px]">VLAN</TableHead>
+                <TableHead className="w-20">VLAN</TableHead>
                 <TableHead className="min-w-[140px]">Name</TableHead>
                 <TableHead className="hidden md:table-cell">Subnetz</TableHead>
                 <TableHead className="hidden lg:table-cell">Gateway</TableHead>
                 <TableHead>Nutzung</TableHead>
-                <TableHead className="w-20 pr-4 sm:pr-[18px]" />
+                <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {vlans.length === 0 && (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="p-0 whitespace-normal">
-                    <EmptyState
-                      icon={Network}
-                      title="Keine VLANs erfasst"
-                      description="Lege VLANs an, z. B. Management, IoT oder Gäste-WLAN."
-                    />
-                  </TableCell>
-                </TableRow>
+                <TableEmpty
+                  colSpan={6}
+                  compact={false}
+                  icon={Network}
+                  title="Keine VLANs erfasst"
+                  description="Lege VLANs an, z. B. Management, IoT oder Gäste-WLAN."
+                />
               )}
               {vlans.map((v) => (
                 <TableRow key={v.id}>
-                  <TableCell className="pl-4 sm:pl-[18px]">
+                  <TableCell>
                     <Badge className={cn("text-xs font-mono", vlanColor(v.id, vlans))}>{v.vlanId}</Badge>
                   </TableCell>
                   <TableCell>
@@ -176,7 +173,7 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="pr-4 sm:pr-[18px]">
+                  <TableCell>
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"

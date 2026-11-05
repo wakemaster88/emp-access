@@ -19,9 +19,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
 import {
@@ -117,7 +116,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
   }
 
   return (
-    <Card className="overflow-hidden pb-0 sm:pb-0">
+    <Card flush>
       <CardHeader className="flex flex-wrap items-center justify-between gap-3">
         <CardTitle className="tabular-nums">Anschlüsse ({outlets.length})</CardTitle>
         <Button onClick={openAdd} className="gap-2 max-sm:h-11">
@@ -128,31 +127,29 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
       <CardContent>
         {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
         <div className="-mx-4 sm:-mx-[18px]">
-          <Table>
+          <Table edge>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[140px] pl-4 sm:pl-[18px]">Beschriftung</TableHead>
+                <TableHead className="min-w-[140px]">Beschriftung</TableHead>
                 <TableHead>Typ</TableHead>
                 <TableHead className="hidden sm:table-cell">Standort</TableHead>
                 <TableHead>Verbunden mit</TableHead>
-                <TableHead className="w-20 pr-4 sm:pr-[18px]" />
+                <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {outlets.length === 0 && (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={5} className="p-0 whitespace-normal">
-                    <EmptyState
-                      icon={Cable}
-                      title="Keine Anschlüsse erfasst"
-                      description="Erfasse Wanddosen und Patchpanel-Ports, um die Verkabelung zu dokumentieren."
-                    />
-                  </TableCell>
-                </TableRow>
+                <TableEmpty
+                  colSpan={5}
+                  compact={false}
+                  icon={Cable}
+                  title="Keine Anschlüsse erfasst"
+                  description="Erfasse Wanddosen und Patchpanel-Ports, um die Verkabelung zu dokumentieren."
+                />
               )}
               {outlets.map((o) => (
                 <TableRow key={o.id}>
-                  <TableCell className="pl-4 sm:pl-[18px]">
+                  <TableCell>
                     <div className="flex items-center gap-3">
                       <IconChip icon={Cable} />
                       <p className="font-medium text-sm text-foreground">{o.label}</p>
@@ -186,7 +183,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
                       <span className="text-xs text-muted-foreground">Nicht verbunden</span>
                     )}
                   </TableCell>
-                  <TableCell className="pr-4 sm:pr-[18px]">
+                  <TableCell>
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"

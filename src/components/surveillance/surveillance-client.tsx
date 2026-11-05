@@ -8,9 +8,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { StatCard } from "@/components/ui/stat-card";
 import { Switch } from "@/components/ui/switch";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import {
   Dialog,
   DialogContent,
@@ -347,10 +349,11 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              {/* Natives Auswahlfeld in Glas-Optik (wie Input), Liste deckend auf der Popover-Fläche.
+              {/* Natives Auswahlfeld (NativeSelect) in Glas-Optik wie Input, 32 px hoch wie die Pfeiltasten daneben.
                   Handy: Breite 0 plus flex-1, sonst gibt die längste Option die Breite vor und schiebt den Kopf über den Kartenrand. */}
-              <select
-                className="glass-field h-8 min-w-0 max-w-[220px] px-2.5 text-base text-foreground outline-none transition-[color,box-shadow,border-color] hover:border-foreground/20 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 md:text-xs max-sm:h-11 max-sm:w-0 max-sm:max-w-none max-sm:flex-1 [&_option]:bg-popover [&_option]:text-popover-foreground"
+              <NativeSelect
+                containerClassName="w-auto max-w-[220px] max-sm:w-0 max-sm:max-w-none max-sm:flex-1"
+                className="h-8 md:text-xs max-sm:h-11"
                 value={reportKey ?? ""}
                 disabled={reportLoading || !report}
                 onChange={(e) => void loadReport(e.target.value)}
@@ -361,7 +364,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                     {p.inProgress ? " (läuft)" : ""}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               <Button
                 type="button"
                 variant="outline"
@@ -395,9 +398,11 @@ export function SurveillanceClient({ initial, cameras }: Props) {
           )}
           {!reportLoading && report && (
             <>
-              {/* Kennzahlen des Zeitraums; zwei Spalten, die dritte über die volle Breite, drei erst ab lg (schmaler kürzt die Versal-Beschriftung). */}
+              {/* Kennzahlen des Zeitraums; zwei Spalten, die dritte über die volle Breite, drei erst ab lg (schmaler kürzt die Versal-Beschriftung).
+                  In der Karte als Kachel (variant="tile"), kein Glas auf Glas. */}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                 <StatCard
+                  variant="tile"
                   size="sm"
                   tone="neutral"
                   icon={UserRound}
@@ -406,6 +411,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                   hint="mit Snapshot"
                 />
                 <StatCard
+                  variant="tile"
                   size="sm"
                   tone="neutral"
                   icon={Car}
@@ -414,6 +420,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                   hint="mit Snapshot"
                 />
                 <StatCard
+                  variant="tile"
                   size="sm"
                   tone="neutral"
                   icon={ImageIcon}
@@ -603,29 +610,21 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               </p>
               <div>
                 <Label>Wochentage</Label>
-                {/* Handy: sieben gleich breite Chips in einer Reihe, 44 px hoch (Tippfläche). */}
-                <div className="mt-1.5 grid grid-cols-7 gap-1 sm:flex sm:flex-wrap">
-                  {DAYS.map((d) => {
-                    const selected = ((form.daysOfWeek >> d.bit) & 1) === 1;
-                    return (
-                      <button
-                        type="button"
-                        key={d.bit}
-                        onClick={() => toggleDay(d.bit)}
-                        aria-pressed={selected}
-                        className={cn(
-                          "press h-8 min-w-10 px-2.5 rounded-full text-xs font-semibold outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:h-11 max-sm:min-w-0 max-sm:px-0",
-                          // Auswahl als weiche Tönung (Abschnitt 17), nicht deckend; Text in Vordergrundfarbe für Kontrast in Hell und Dunkel.
-                          selected
-                            ? "bg-primary/12 text-foreground ring-1 ring-inset ring-primary/40"
-                            : "bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border hover:text-foreground"
-                        )}
-                      >
-                        {d.short}
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* Umschalt-Chips (ToggleChip), gewählt in weicher Akzent-Tönung.
+                    Handy: sieben gleich breite Chips in einer Reihe, 44 px hoch (Tippfläche). */}
+                <ToggleChipGroup aria-label="Wochentage" className="mt-1.5 grid grid-cols-7 gap-1 sm:flex sm:flex-wrap">
+                  {DAYS.map((d) => (
+                    <ToggleChip
+                      key={d.bit}
+                      size="sm"
+                      pressed={((form.daysOfWeek >> d.bit) & 1) === 1}
+                      onPressedChange={() => toggleDay(d.bit)}
+                      className="min-w-10 px-2.5 max-sm:h-11 max-sm:min-w-0 max-sm:px-0"
+                    >
+                      {d.short}
+                    </ToggleChip>
+                  ))}
+                </ToggleChipGroup>
               </div>
             </>
           )}

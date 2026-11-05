@@ -4,11 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fmtDateTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { StatusDot } from "@/components/ui/status-dot";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Activity,
@@ -232,12 +231,12 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
       .catch(() => {});
   }, [devices]);
 
-  // Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein.
+  // Die Tabelle läuft bis an den Kartenrand (`edge`): erste und letzte Spalte rücken auf den Innenabstand der Karte ein.
   return (
-      <Table>
+      <Table edge>
         <TableHeader>
           <TableRow>
-            <TableHead className="pl-4 sm:min-w-[180px] sm:pl-[18px]">
+            <TableHead className="sm:min-w-[180px]">
               <span className="inline-flex items-center gap-1.5">
                 <Wifi className="h-4 w-4 text-muted-foreground/70" />
                 Gerät
@@ -279,20 +278,18 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                 Scans
               </span>
             </TableHead>
-            <TableHead className="hidden w-10 sm:table-cell sm:pr-[18px]" />
+            <TableHead className="hidden w-10 sm:table-cell" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {devices.length === 0 && (
-            <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={8} className="p-0 whitespace-normal">
-                <EmptyState
-                  icon={Cpu}
-                  title="Keine Geräte konfiguriert"
-                  description="Füge ein Gerät hinzu (Raspberry Pi, Shelly oder Nuki), um Zugang zu steuern."
-                />
-              </TableCell>
-            </TableRow>
+            <TableEmpty
+              colSpan={8}
+              compact={false}
+              icon={Cpu}
+              title="Keine Geräte konfiguriert"
+              description="Füge ein Gerät hinzu (Raspberry Pi, Shelly oder Nuki), um Zugang zu steuern."
+            />
           )}
 
         {devices.map((device) => {
@@ -352,14 +349,11 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                   {/* Ein Sensor hat keinen Ausgang. Steht er auf demselben
                       Shelly wie ein Schaltkanal, wuerde dessen Zustand hier
                       sonst als der des Sensors erscheinen. */}
-                  {/* Zustandsfarbe: Licht an = amber, sonst eingeschaltet = grün. */}
+                  {/* Zustandsfarbe: Licht an = amber (Badge `light`), sonst eingeschaltet = grün. */}
                   {shelly.online && !shelly.motion && !isSensor && shelly.output === true && (
                     <Badge
-                      variant={device.category === "BELEUCHTUNG" ? "neutral" : "success"}
-                      className={cn(
-                        "gap-1 text-xs h-5",
-                        device.category === "BELEUCHTUNG" && "bg-amber-500/15 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
-                      )}
+                      variant={device.category === "BELEUCHTUNG" ? "light" : "success"}
+                      className="gap-1 text-xs h-5"
                     >
                       <Power className="h-3 w-3" /> Ein
                     </Badge>
@@ -569,7 +563,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               className="group"
             >
               {/* Gerät – auf dem Handy nimmt die Spalte den Rest der Breite und kürzt den Namen. */}
-              <TableCell className="pl-4 max-sm:w-full max-sm:max-w-0 sm:pl-[18px]">
+              <TableCell className="max-sm:w-full max-sm:max-w-0">
                 <Link href={`/devices/${device.id}`} className="flex items-center gap-3 min-w-0">
                   {/* Symbol-Chip ruhig: die Geräteart ist kein Zustand, den zeigt die Spalte „Status“ (Abschnitt 3). */}
                   <IconChip
@@ -631,7 +625,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               </TableCell>
 
               {/* Pfeil – führt wie der Name zur Detailseite; für Tastatur und Screenreader reicht der Name-Link. */}
-              <TableCell className="hidden sm:table-cell sm:pr-[18px]">
+              <TableCell className="hidden sm:table-cell">
                 <Link href={`/devices/${device.id}`} tabIndex={-1} aria-hidden="true" className="flex">
                   <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary transition-colors" />
                 </Link>

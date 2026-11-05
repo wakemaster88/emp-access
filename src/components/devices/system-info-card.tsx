@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
+import { StatCard, type StatTone } from "@/components/ui/stat-card";
 import {
   Thermometer, Cpu, HardDrive, MemoryStick, Clock, Wifi,
   Server, AlertTriangle, Zap, Activity,
@@ -15,15 +16,6 @@ interface SystemInfoCardProps {
   systemInfo: Record<string, unknown>;
   lastUpdate: string | null;
   latestVersion?: string;
-}
-
-function ProgressBar({ value, max = 100, color }: { value: number; max?: number; color: string }) {
-  const pct = Math.min((value / max) * 100, 100);
-  return (
-    <div className="h-2 w-full rounded-full bg-foreground/10 overflow-hidden">
-      <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
-    </div>
-  );
 }
 
 function InfoRow({ icon, label, value, sub, className }: {
@@ -41,18 +33,19 @@ function InfoRow({ icon, label, value, sub, className }: {
   );
 }
 
-// Ab 60 °C Hinweis (warning), ab 80 °C Störung; darunter keine Zustandsfarbe (null),
+// Ab 60 °C Hinweis (warning), ab 80 °C Störung; darunter keine Zustandsfarbe (neutral),
 // dann gelten die ruhigen Farben der übrigen Werte.
-function tempColor(temp: number): string | null {
-  if (temp >= 80) return "text-destructive";
-  if (temp >= 60) return "text-warning";
-  return null;
+function tempTone(temp: number): StatTone {
+  if (temp >= 80) return "danger";
+  if (temp >= 60) return "warning";
+  return "neutral";
 }
 
-function barColor(pct: number): string {
-  if (pct >= 90) return "bg-destructive";
-  if (pct >= 75) return "bg-warning";
-  return "bg-primary";
+// Balken der Auslastung: ab 75 % Hinweis, ab 90 % Störung, sonst Akzentfarbe.
+function barTone(pct: number): StatTone {
+  if (pct >= 90) return "danger";
+  if (pct >= 75) return "warning";
+  return "primary";
 }
 
 export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: SystemInfoCardProps) {
@@ -132,72 +125,68 @@ export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: System
           )}
         </div>
 
-        {/* Temperatur + CPU: Kachel in der Karte */}
-        <div className="glass-tile p-4 space-y-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {cpuTemp !== undefined && (
-              <div className="text-center">
-                <Thermometer className={cn("h-5 w-5 mx-auto mb-1", tempColor(cpuTemp) ?? "text-muted-foreground")} />
-                <p className={cn("text-2xl font-bold tabular-nums", tempColor(cpuTemp) ?? "text-foreground/90")}>{cpuTemp}°</p>
-                <p className="text-xs text-muted-foreground">CPU Temp</p>
-              </div>
-            )}
-            {gpuTemp !== undefined && (
-              <div className="text-center">
-                <Thermometer className={cn("h-5 w-5 mx-auto mb-1", tempColor(gpuTemp) ?? "text-muted-foreground")} />
-                <p className={cn("text-2xl font-bold tabular-nums", tempColor(gpuTemp) ?? "text-foreground/90")}>{gpuTemp}°</p>
-                <p className="text-xs text-muted-foreground">GPU Temp</p>
-              </div>
-            )}
-            {cpuUsage !== undefined && (
-              <div className="text-center">
-                <Cpu className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                <p className="text-2xl font-bold text-foreground/90 tabular-nums">{cpuUsage}%</p>
-                <p className="text-xs text-muted-foreground">CPU Last</p>
-              </div>
-            )}
-            {cpuFreq !== undefined && (
-              <div className="text-center">
-                <Zap className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                <p className="text-2xl font-bold text-foreground/90 tabular-nums">{cpuFreq}</p>
-                <p className="text-xs text-muted-foreground">MHz</p>
-              </div>
-            )}
-          </div>
+        {/* Temperatur + CPU: Kennzahlen als Kacheln in der Karte (StatCard tile); Zustandsfarbe über den Ton. */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {cpuTemp !== undefined && (
+            <StatCard
+              variant="tile"
+              icon={Thermometer}
+              label="CPU Temp"
+              value={`${cpuTemp}°`}
+              tone={tempTone(cpuTemp)}
+              accentValue={tempTone(cpuTemp) !== "neutral"}
+            />
+          )}
+          {gpuTemp !== undefined && (
+            <StatCard
+              variant="tile"
+              icon={Thermometer}
+              label="GPU Temp"
+              value={`${gpuTemp}°`}
+              tone={tempTone(gpuTemp)}
+              accentValue={tempTone(gpuTemp) !== "neutral"}
+            />
+          )}
+          {cpuUsage !== undefined && (
+            <StatCard variant="tile" icon={Cpu} label="CPU Last" value={`${cpuUsage}%`} tone="neutral" />
+          )}
+          {cpuFreq !== undefined && (
+            <StatCard variant="tile" icon={Zap} label="MHz" value={cpuFreq} tone="neutral" />
+          )}
         </div>
 
-        {/* Speicher */}
+        {/* Speicher: Auslastung als Kennzahl mit Balken */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {memory && (
-            <div className="glass-tile p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <MemoryStick className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium text-foreground/80">RAM</span>
-                </div>
-                <span className="text-sm font-bold text-foreground/90 tabular-nums">{memory.percent}%</span>
-              </div>
-              <ProgressBar value={memory.percent} color={barColor(memory.percent)} />
-              <p className="text-xs text-muted-foreground tabular-nums">
-                {memory.used_mb} MB / {memory.total_mb} MB ({memory.available_mb} MB frei)
-              </p>
-            </div>
+            <StatCard
+              variant="tile"
+              icon={MemoryStick}
+              label="RAM"
+              value={`${memory.percent}%`}
+              tone={barTone(memory.percent)}
+              progress={memory.percent / 100}
+              hint={
+                <span className="tabular-nums">
+                  {memory.used_mb} MB / {memory.total_mb} MB ({memory.available_mb} MB frei)
+                </span>
+              }
+            />
           )}
 
           {disk && (
-            <div className="glass-tile p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <HardDrive className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium text-foreground/80">Speicher</span>
-                </div>
-                <span className="text-sm font-bold text-foreground/90 tabular-nums">{disk.percent}%</span>
-              </div>
-              <ProgressBar value={disk.percent} color={barColor(disk.percent)} />
-              <p className="text-xs text-muted-foreground tabular-nums">
-                {disk.used_gb} GB / {disk.total_gb} GB ({disk.free_gb} GB frei)
-              </p>
-            </div>
+            <StatCard
+              variant="tile"
+              icon={HardDrive}
+              label="Speicher"
+              value={`${disk.percent}%`}
+              tone={barTone(disk.percent)}
+              progress={disk.percent / 100}
+              hint={
+                <span className="tabular-nums">
+                  {disk.used_gb} GB / {disk.total_gb} GB ({disk.free_gb} GB frei)
+                </span>
+              }
+            />
           )}
         </div>
 

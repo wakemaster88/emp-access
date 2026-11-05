@@ -19,9 +19,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
 import { StatusDot } from "@/components/ui/status-dot";
@@ -163,7 +162,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
   }
 
   return (
-    <Card className="overflow-hidden pb-0 sm:pb-0">
+    <Card flush>
       <CardHeader className="flex flex-wrap items-center justify-between gap-3">
         <CardTitle className="tabular-nums">
           Switches &amp; Router ({devices.length})
@@ -176,29 +175,27 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
       <CardContent>
         {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
         <div className="-mx-4 sm:-mx-[18px]">
-          <Table>
+          <Table edge>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[180px] pl-4 sm:pl-[18px]">Gerät</TableHead>
+                <TableHead className="min-w-[180px]">Gerät</TableHead>
                 <TableHead className="hidden md:table-cell">Modell</TableHead>
                 <TableHead className="hidden lg:table-cell">IP-Adresse</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden sm:table-cell">Standort</TableHead>
                 <TableHead>Ports</TableHead>
-                <TableHead className="w-24 pr-4 sm:pr-[18px]" />
+                <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {devices.length === 0 && (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="p-0 whitespace-normal">
-                    <EmptyState
-                      icon={Server}
-                      title="Keine Netzwerk-Hardware erfasst"
-                      description="Lege Switches, Router oder Access Points an, um dein Netzwerk zu dokumentieren."
-                    />
-                  </TableCell>
-                </TableRow>
+                <TableEmpty
+                  colSpan={7}
+                  compact={false}
+                  icon={Server}
+                  title="Keine Netzwerk-Hardware erfasst"
+                  description="Lege Switches, Router oder Access Points an, um dein Netzwerk zu dokumentieren."
+                />
               )}
               {devices.map((d) => {
                 const meta = TYPE_META[d.type] ?? TYPE_META.OTHER;
@@ -208,7 +205,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                     key={d.id}
                     className="group"
                   >
-                    <TableCell className="pl-4 sm:pl-[18px]">
+                    <TableCell>
                       <Link href={`/network/${d.id}`} className="flex items-center gap-3 min-w-0">
                         <IconChip icon={Icon} />
                         <div className="min-w-0">
@@ -279,7 +276,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                         <span className="text-muted-foreground text-xs">–</span>
                       )}
                     </TableCell>
-                    <TableCell className="pr-4 sm:pr-[18px]">
+                    <TableCell>
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
