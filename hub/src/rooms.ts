@@ -133,6 +133,21 @@ function allDevices(): RoomDevice[] {
   return snapshot.rooms.flatMap((r) => r.devices).concat(snapshot.unassigned);
 }
 
+/** Alle Shellys mit IP (je Host einmal), fuer die Frueherkennung. */
+export function localShellyHosts(): Array<{ host: string; label: string }> {
+  const byHost = new Map<string, string[]>();
+  for (const d of allDevices()) {
+    if (d.type !== "SHELLY" || !d.ipAddress || !IPV4_RE.test(d.ipAddress)) continue;
+    const names = byHost.get(d.ipAddress) ?? [];
+    if (!names.includes(d.name)) names.push(d.name);
+    byHost.set(d.ipAddress, names);
+  }
+  return [...byHost].map(([host, names]) => ({
+    host,
+    label: `${names[0]}${names.length > 1 ? ` (+${names.length - 1})` : ""} ${host}`,
+  }));
+}
+
 /**
  * Klimafuehler, die der Hub im LAN lesen kann: Shellys mit IP, die als Fuehler
  * eingetragen sind oder die Temperatur eines Raumklimas liefern.

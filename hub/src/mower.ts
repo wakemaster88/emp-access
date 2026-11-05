@@ -392,9 +392,16 @@ async function syncMowerStreams(st: MowerStatus): Promise<void> {
 /* ------------------------------------------------------- Ereignis-Chronik */
 
 const lastSeen = new Map<string, { status: string; errors: string }>();
+let lastStatus: MowerStatus | null = null;
+
+/** Letzter Stand aus dem Mäher-Takt (ohne neue Abfrage), z. B. fuer die Frueherkennung. */
+export function lastMowerStatus(): MowerStatus | null {
+  return lastStatus;
+}
 
 async function watchOnce(): Promise<void> {
   const st = await mowerStatus();
+  lastStatus = st;
   await syncMowersToCloud(st);
   await syncMowerStreams(st);
   for (const m of st.mowers) {

@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { CONFIG, api, log } from "./config.js";
 import { improve } from "./improve-log.js";
+import { noteSwitchPoll } from "./health-trends.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,6 +15,8 @@ const OID_SYS_DESCR = "1.3.6.1.2.1.1.1.0";
 const OID_SYS_UPTIME = "1.3.6.1.2.1.1.3.0";
 const OID_IF_DESCR = "1.3.6.1.2.1.2.2.1.2";
 const OID_IF_OPER = "1.3.6.1.2.1.2.2.1.8";
+const OID_IF_LAST_CHANGE = "1.3.6.1.2.1.2.2.1.9";
+const OID_IF_IN_ERRORS = "1.3.6.1.2.1.2.2.1.14";
 const OID_PVID = "1.3.6.1.2.1.17.7.1.4.5.1.1";
 const OID_FDB_PORT = "1.3.6.1.2.1.17.7.1.2.2.1.2";
 const OID_FDB_PORT_LEGACY = "1.3.6.1.2.1.17.4.3.1.2";
@@ -23,6 +26,10 @@ export interface SwitchPort {
   descr: string;
   up: boolean;
   pvid: number | null;
+  /** ifInErrors (Zaehler seit Switch-Start), fuer die Frueherkennung. */
+  inErrors?: number | null;
+  /** ifLastChange in Timeticks: aendert sich bei jedem Link-Wechsel. */
+  lastChange?: number | null;
 }
 
 export interface MacEntry {
@@ -176,6 +183,18 @@ export async function pollSwitch(host: string): Promise<SwitchSnapshot> {
   const descrs = await snmpWalk(host, OID_IF_DESCR);
   const opers = await snmpWalk(host, OID_IF_OPER).catch(() => []);
   const pvids = await snmpWalk(host, OID_PVID).catch(() => []);
+  const lastChanges = await snmpWalk(host, OID_IF_LAST_CHANGE).catch(() => []);
+  const inErrors = await snmpWalk(host, OID_IF_IN_ERRORS).catch(() => []);
+  const numByIdx = (rows: Array<{ oid: string; value: string }>, prefix: string) => {
+    const m = new Map<string, number>();
+    for (const row of rows) {
+      const n = Number(row.value.match(/\((\d+)\)/)?.[1] ?? row.value.match(/^\d+/)?.[0]);
+      if (Number.isFinite(n)) m.set(oidSuffix(row.oid, prefix), n);
+    }
+    return m;
+  };
+  const lastChangeByIdx = numByIdx(lastChanges, OID_IF_LAST_CHANGE);
+  const inErrorsByIdx = numByIdx(inErrors, OID_IF_IN_ERRORS);
 
   const operByIdx = new Map<string, boolean>();
   for (const row of opers) {
@@ -201,6 +220,8 @@ export async function pollSwitch(host: string): Promise<SwitchSnapshot> {
       descr,
       up: operByIdx.get(idx) ?? false,
       pvid: pvidByIdx.get(idx) ?? pvidByIdx.get(String(n)) ?? null,
+      inErrors: inErrorsByIdx.get(idx) ?? null,
+      lastChange: lastChangeByIdx.get(idx) ?? null,
     });
   }
 
@@ -241,6 +262,7 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
         const snap = await pollSwitch(host);
         switches.push(snap);
         lastSnapshots.set(host, { ...snap, error: null });
+        noteSwitchPoll(host, snap, null);
         log(`${label}: ${host} ${snap.sysName ?? ""} – ${snap.ports.length} Ports, ${snap.macTable.length} MACs`);
       } catch (e) {
         const error = friendlySnmpError(e);
@@ -250,6 +272,7 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
           ...(prev ?? { host, sysName: null, ports: [], macTable: [] }),
           error,
         });
+        noteSwitchPoll(host, prev ?? null, error);
         firstError ??= error;
       }
     }

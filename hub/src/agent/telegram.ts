@@ -131,6 +131,7 @@ export async function setCommands(): Promise<void> {
     commands: [
       { command: "status", description: "Lage des Hubs" },
       { command: "befunde", description: "Offene Befunde des Wächters" },
+      { command: "vorwarnungen", description: "Was sich ankündigt (Verläufe 7 Tage)" },
       { command: "bericht", description: "Tagesbericht jetzt erstellen" },
       { command: "neu", description: "Gespräch neu beginnen" },
     ],

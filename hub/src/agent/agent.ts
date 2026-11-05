@@ -40,6 +40,8 @@ import { diffFindings, newWatchState, openFindings, type Finding } from "./findi
 import { berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
 import { VOICE, ensureWhisper, transcribe } from "./voice.js";
 import { handleUnknownChat, isPaired, newPairingState, type PairingState } from "./pairing.js";
+import { healthFindings, healthSummary } from "../health-trends.js";
+import { trendSummaryText } from "./early-warning.js";
 
 const ENV_CHAT_IDS = (process.env.HUB_AGENT_TELEGRAM_CHAT_IDS || "")
   .split(/[,\s]+/)
@@ -130,6 +132,7 @@ async function systemPrompt(): Promise<string> {
     "- Netzwerk (Router PR60X, Switches, VLANs, DHCP, WLAN, Firewall) änderst du nie. Du kannst Befunde lesen und Änderungen vorschlagen; umsetzen tut Aaron.",
     "- Kameras in Umkleiden/WC gibt es nicht und darf es nicht geben.",
     "- Mit look_at_camera siehst du dir ein aktuelles Kamerabild selbst an. Außerhalb des Betriebs bewertet der Wächter Personen- und Fahrzeugereignisse automatisch und meldet Auffälliges mit Bild.",
+    "- Frueherkennung: early_warnings zeigt, was sich ankündigt (gehäufte Zeitüberschreitungen, häufige Neustarts, Port-Fehler, Temperatur, Platte, abgelaufene Anmeldungen). Nenne dabei die Zahlen und die typische Ursache, schlage die Prüfung vor, ändere aber nichts.",
     "",
     "Anlage in Kürze: VLAN 1 Management, 20 Kasse, 30 Kameras (ohne Internet), 40 Betrieb (Shelly), 41 Anlage-Audio, 70 Verwaltung, 80 Personal. Kameras Reolink, Tor mit DoorBird, Audio Soundweb London, Mäher Mammotion Luba. Räume, Geräte und Regeln pflegt die Cloud (EMP-Access), der Hub spiegelt und schaltet im LAN.",
     open.length ? `\nOffene Befunde des Wächters: ${open.map((f) => f.title).join("; ")}` : "",
@@ -227,6 +230,7 @@ async function plainStatus(): Promise<string> {
   ];
   const open = openFindings(watch);
   if (open.length) lines.push("", "Offene Befunde:", ...open.map((f) => `• ${f.title}`));
+  lines.push("", "Frueherkennung:", trendSummaryText(healthSummary()));
   return lines.join("\n");
 }
 
@@ -249,6 +253,14 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
   if (cmd === "/befunde") {
     const open = openFindings(watch);
     await sendText(chatId, open.length ? open.map((f) => `• ${f.title}${f.detail ? ` (${f.detail})` : ""}`).join("\n") : "Keine offenen Befunde.");
+    return;
+  }
+  if (cmd === "/vorwarnungen") {
+    const active = healthFindings(new Set(openFindings(watch).map((f) => f.key)));
+    const head = active.length
+      ? active.map((f) => `⚠️ ${f.title}${f.detail ? `\n   ${f.detail}` : ""}`).join("\n")
+      : "Keine Vorwarnungen.";
+    await sendText(chatId, `${head}\n\nVerläufe:\n${trendSummaryText(healthSummary())}`);
     return;
   }
   if (cmd === "/status" && !LLM.ready) {
@@ -519,7 +531,11 @@ async function broadcast(text: string): Promise<void> {
 
 async function watchTick(): Promise<void> {
   AGENT.lastWatchAt = new Date().toISOString();
-  const diff = diffFindings(watch, collectFindings(), Date.now());
+  // Was jetzt kaputt ist (watch.ts) plus was sich ankuendigt (Verlaeufe).
+  const open = new Set(openFindings(watch).map((f) => f.key));
+  const findings = collectFindings();
+  if (process.uptime() >= 300) findings.push(...healthFindings(open));
+  const diff = diffFindings(watch, findings, Date.now());
   const quiet = inQuietHours(QUIET, berlinHour());
   const now: Finding[] = [];
   for (const f of diff.opened) (quiet && f.severity !== "alert" ? deferred : now).push(f);
@@ -546,10 +562,11 @@ async function dailyReport(): Promise<string> {
     {
       role: "user",
       content:
-        "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, improve_report und list_events (limit 60). " +
+        "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, early_warnings, improve_report und list_events (limit 60). " +
         "Aufbau: 1) Lage in zwei Sätzen. 2) Auffälligkeiten der letzten 24 Stunden (nur Belegtes). " +
-        "3) Höchstens drei konkrete Vorschläge zur Optimierung, jeweils mit Begründung aus den Daten und wer es umsetzen muss. " +
-        "Netzwerk-Änderungen nur als Vorschlag. Maximal 25 Zeilen.",
+        "3) Frueherkennung: was sich ankündigt (gehäufte Zeitüberschreitungen, häufige Neustarts, Port-Fehler/Flattern, Temperatur, Platte, abgelaufene Anmeldungen), mit Zahlen aus early_warnings und Vergleich zur Vorwoche; nichts erfinden, ohne Befund ein Satz. " +
+        "4) Höchstens drei konkrete Vorschläge zur Optimierung, jeweils mit Begründung aus den Daten und wer es umsetzen muss. " +
+        "Netzwerk-Änderungen nur als Vorschlag. Maximal 30 Zeilen.",
     },
   ];
   const text = await converse("report", history, false);
