@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Wifi, WifiOff, Power, PowerOff, Zap, Loader2, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ShellyStatus {
   online: boolean;
@@ -43,7 +44,7 @@ export function ShellyStatusBadge({ deviceId, category }: ShellyStatusBadgeProps
 
   if (loading && !status) {
     return (
-      <Badge variant="secondary" className="gap-1.5 animate-pulse">
+      <Badge variant="neutral" className="gap-1.5">
         <Loader2 className="h-3 w-3 animate-spin" />
         Lädt…
       </Badge>
@@ -61,31 +62,35 @@ export function ShellyStatusBadge({ deviceId, category }: ShellyStatusBadgeProps
       {status.online ? (
         <Badge variant="success" className="gap-1.5">
           <Wifi className="h-3 w-3" /> Online
-          {status.source === "local" && <span className="text-success/70 text-[10px]">(lokal)</span>}
-          {status.source === "cloud" && <span className="text-success/70 text-[10px]">(cloud)</span>}
+          {status.source === "local" && <span className="text-[10px] font-medium opacity-80">(lokal)</span>}
+          {status.source === "cloud" && <span className="text-[10px] font-medium opacity-80">(cloud)</span>}
         </Badge>
       ) : (
-        <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70">
+        <Badge variant="danger" className="gap-1.5">
           <WifiOff className="h-3 w-3" /> Offline
         </Badge>
       )}
 
       {/* Ein / Aus */}
+      {/* Zustandsfarbe: Licht an = amber, sonst eingeschaltet = grün. */}
       {status.output === true && (
-        <Badge variant="warning" className="gap-1.5">
+        <Badge
+          variant={isLight ? "neutral" : "success"}
+          className={cn("gap-1.5", isLight && "bg-amber-500/15 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300")}
+        >
           <Power className="h-3 w-3" /> {onLabel}
         </Badge>
       )}
       {status.output === false && (
-        <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70">
+        <Badge variant="neutral" className="gap-1.5">
           <PowerOff className="h-3 w-3" /> {offLabel}
         </Badge>
       )}
 
       {/* Leistung */}
       {status.power !== undefined && status.power > 0 && (
-        <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
-          <Zap className="h-3 w-3 text-warning" />
+        <Badge variant="outline" className="gap-1 text-xs text-muted-foreground tabular-nums">
+          <Zap className="h-3 w-3" />
           {status.power.toFixed(1)} W
         </Badge>
       )}
@@ -93,11 +98,12 @@ export function ShellyStatusBadge({ deviceId, category }: ShellyStatusBadgeProps
       {/* Refresh */}
       <Button
         variant="ghost"
-        size="sm"
+        size="icon-xs"
         onClick={fetch_status}
         disabled={loading}
-        className="h-6 w-6 p-0 text-muted-foreground/70 hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground"
         title="Status aktualisieren"
+        aria-label="Status aktualisieren"
       >
         <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
       </Button>

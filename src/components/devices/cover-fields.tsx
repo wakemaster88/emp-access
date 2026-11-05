@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -68,13 +69,14 @@ export function CoverFields({ category, values, onChange }: Props) {
   const error = validateCoverValues(values);
 
   return (
-    <div className="rounded-xl border border-border p-3 space-y-3">
-      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Antrieb</p>
+    // Gruppe im Dialog als Glas-Kachel (glass-tile, Radius 18 px); in der Ebene getönt (Abschnitt 18).
+    <div className="glass-tile p-3 space-y-3">
+      <p className="text-label">Antrieb</p>
       <p className="text-xs text-muted-foreground">
         Zwei getrennte Relais am selben Shelly – ein Kanal je Fahrtrichtung. Die
         Steuerung schaltet vor jeder Fahrt zuerst die Gegenrichtung ab.
       </p>
-      <p className="text-xs text-muted-foreground/70">
+      <p className="text-xs text-muted-foreground">
         Steht der Shelly selbst im Rollladen-Modus (Geräteprofil „Cover“), werden
         Kanäle und Fahrzeit nicht verwendet: Dann fährt das Gerät über seine
         eigenen Cover-Befehle und verriegelt die Richtungen in der Firmware. Das
@@ -83,14 +85,14 @@ export function CoverFields({ category, values, onChange }: Props) {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs flex items-center gap-1.5">
+          <Label className="flex items-center gap-1.5">
             <ArrowUpFromLine className="h-3.5 w-3.5" /> Kanal {labels.open}
           </Label>
           <Select
             value={values.coverUpChannel}
             onValueChange={(v) => onChange({ coverUpChannel: v })}
           >
-            <SelectTrigger><SelectValue placeholder="Kanal" /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue placeholder="Kanal" /></SelectTrigger>
             <SelectContent>
               {CHANNELS.map((c) => (
                 <SelectItem key={c} value={String(c)}>Kanal {c}</SelectItem>
@@ -100,14 +102,14 @@ export function CoverFields({ category, values, onChange }: Props) {
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs flex items-center gap-1.5">
+          <Label className="flex items-center gap-1.5">
             <ArrowDownToLine className="h-3.5 w-3.5" /> Kanal {labels.close}
           </Label>
           <Select
             value={values.coverDownChannel}
             onValueChange={(v) => onChange({ coverDownChannel: v })}
           >
-            <SelectTrigger><SelectValue placeholder="Kanal" /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue placeholder="Kanal" /></SelectTrigger>
             <SelectContent>
               {CHANNELS.map((c) => (
                 <SelectItem key={c} value={String(c)}>Kanal {c}</SelectItem>
@@ -118,7 +120,7 @@ export function CoverFields({ category, values, onChange }: Props) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="d-cover-runtime" className="text-xs flex items-center gap-1.5">
+        <Label htmlFor="d-cover-runtime" className="flex items-center gap-1.5">
           <Timer className="h-3.5 w-3.5" /> Fahrzeit in Sekunden
         </Label>
         <Input
@@ -130,19 +132,14 @@ export function CoverFields({ category, values, onChange }: Props) {
           onChange={(e) => onChange({ coverRuntimeSec: e.target.value })}
           className="font-mono"
         />
-        <p className="text-xs text-muted-foreground/70">
+        <p className="text-xs text-muted-foreground">
           Wie lange der Antrieb für eine volle Fahrt braucht, plus etwas Reserve.
           Der Shelly schaltet das Relais nach dieser Zeit selbst ab – auch wenn
           die Verbindung zwischendurch abreißt.
         </p>
       </div>
 
-      {error && (
-        <div className="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>{error}</span>
-        </div>
-      )}
+      {error && <Notice tone="warning" compact icon={AlertCircle} title={error} />}
     </div>
   );
 }

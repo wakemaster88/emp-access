@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -133,10 +134,13 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
   });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Rückfrage zum Löschen als Schritt im selben Dialog (Abschnitt 18), kein Browser-Dialog.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (device) {
+      setConfirmDelete(false);
       setForm({
         name: device.name,
         category: device.category ?? "",
@@ -247,7 +251,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
   }
 
   async function handleDelete() {
-    if (!device || !confirm(`Gerät "${device.name}" wirklich löschen?`)) return;
+    if (!device) return;
     setDeleting(true);
     try {
       await fetch(`/api/devices/${device.id}`, { method: "DELETE" });
@@ -266,7 +270,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
   return (
     <Dialog open={!!device} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Gerät bearbeiten</DialogTitle>
         </DialogHeader>
@@ -281,7 +285,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
           {!isAudio && (
           <div className="space-y-2">
             <Label>Funktion</Label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {DEVICE_CATEGORIES.map((cat) => {
                 const Icon = cat.icon;
                 const selected = form.category === cat.value;
@@ -291,11 +295,13 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
                     type="button"
                     onClick={() => set("category", selected ? "" : cat.value)}
                     className={cn(
-                      "flex flex-col items-center gap-1.5 rounded-lg border-2 px-1 py-2.5 text-center transition-all",
+                      // Auswahl als Kachel: gewählt in Akzentfarbe, sonst Glas-Kachel (in der Ebene getönt).
+                      "press flex flex-col items-center gap-1.5 rounded-tile border px-1 py-2.5 text-center",
                       selected
                         ? "border-primary bg-primary/10 text-primary"
-                        : "border-border text-muted-foreground/70 hover:border-input dark:hover:border-slate-600"
+                        : "glass-tile text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                     )}
+                    aria-pressed={selected}
                   >
                     <Icon className="h-4 w-4" />
                     <p className="text-xs font-medium leading-tight">{cat.label}</p>
@@ -315,13 +321,13 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> Raum</Label>
             <Select value={form.keyRoomId} onValueChange={(v) => set("keyRoomId", v)}>
-              <SelectTrigger><SelectValue placeholder="Kein Raum" /></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue placeholder="Kein Raum" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Kein Raum</SelectItem>
                 {rooms.map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               Regeln mit „Betriebsbeginn“ und „Betriebsende“ richten sich nach der Betriebszeit dieses Raums.
               {rooms.length === 0 && " Räume werden in der Schließanlage angelegt."}
             </p>
@@ -360,16 +366,18 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
           {/* GARDENA – Service-ID (Info) */}
           {isGardena && device?.gardenaServiceId && (
-            <div className="rounded-xl border border-success/30 bg-success/10 p-3 space-y-1">
-              <p className="text-xs font-medium text-success">GARDENA Service-ID</p>
+            // Reine Angabe, kein Erfolg: ruhige Glas-Kachel statt grüner Tönung.
+            <div className="glass-tile p-3 space-y-1">
+              <p className="text-label">GARDENA Service-ID</p>
               <p className="text-xs font-mono text-muted-foreground break-all">{device.gardenaServiceId}</p>
             </div>
           )}
 
           {/* Zugangsbereiche – nur Drehkreuz & Tür */}
           {CAT_HAS_ACCESS.has(form.category) && (
-            <div className="rounded-xl border border-border p-3 space-y-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Resource &amp; Richtung</p>
+            // Gruppe im Dialog als Glas-Kachel (glass-tile, Radius 18 px); in der Ebene getönt (Abschnitt 18).
+            <div className="glass-tile p-3 space-y-3">
+              <p className="text-label">Resource &amp; Richtung</p>
 
               <div className="grid grid-cols-3 gap-2">
                 {DIRECTIONS.map((d) => {
@@ -381,12 +389,13 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
                       type="button"
                       onClick={() => set("direction", d.value)}
                       className={cn(
-                        "flex flex-col items-center gap-1.5 rounded-lg border-2 px-2 py-2.5 text-center transition-all",
+                        "press flex flex-col items-center gap-1.5 rounded-tile border px-2 py-2.5 text-center",
                         selected
                           ? "border-primary bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:border-input dark:hover:border-slate-600"
+                          : "glass-tile text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                       )}
                       title={d.hint}
+                      aria-pressed={selected}
                     >
                       <Icon className="h-4 w-4" />
                       <p className="text-xs font-medium leading-tight">{d.label}</p>
@@ -397,9 +406,9 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
               {form.direction === "in" && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Eingang in Resource</Label>
+                  <Label>Eingang in Resource</Label>
                   <Select value={form.accessIn} onValueChange={(v) => set("accessIn", v)}>
-                    <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Keine Resource</SelectItem>
                       {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
@@ -410,9 +419,9 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
               {form.direction === "out" && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Ausgang aus Resource</Label>
+                  <Label>Ausgang aus Resource</Label>
                   <Select value={form.accessOut} onValueChange={(v) => set("accessOut", v)}>
-                    <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Keine Resource</SelectItem>
                       {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
@@ -423,11 +432,12 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
               {form.direction === "bidir" && (
                 <>
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Handy: untereinander, damit lange Resource-Namen nicht über den Rand laufen. */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Eingang in Resource</Label>
+                      <Label>Eingang in Resource</Label>
                       <Select value={form.accessIn} onValueChange={(v) => set("accessIn", v)}>
-                        <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">Keine Resource</SelectItem>
                           {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
@@ -435,9 +445,9 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Ausgang aus Resource</Label>
+                      <Label>Ausgang aus Resource</Label>
                       <Select value={form.accessOut} onValueChange={(v) => set("accessOut", v)}>
-                        <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">Keine Resource</SelectItem>
                           {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
@@ -445,10 +455,9 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
                       </Select>
                     </div>
                   </div>
-                  <div className="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <Notice tone="warning" compact icon={AlertCircle}>
                     <span>Bidirektionale Geräte können nicht eindeutig zwischen Eintritt und Austritt unterscheiden. Wenn möglich, lieber separate Geräte für Eingang und Ausgang anlegen.</span>
-                  </div>
+                  </Notice>
                 </>
               )}
             </div>
@@ -456,18 +465,18 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
           {/* Kamera-Zuordnung – nur Drehkreuz & Tür (Zugangsgeräte mit Scans) */}
           {CAT_HAS_ACCESS.has(form.category) && (
-            <div className="rounded-xl border border-border p-3 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+            <div className="glass-tile p-3 space-y-2">
+              <p className="text-label flex items-center gap-1.5">
                 <Cctv className="h-3.5 w-3.5" /> Kamera
               </p>
               <Select value={form.cameraId} onValueChange={(v) => set("cameraId", v)}>
-                <SelectTrigger><SelectValue placeholder="Keine Kamera" /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Keine Kamera" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Keine Kamera</SelectItem>
                   {cameras.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 Kamera, die diesen Zugang im Blick hat. Scans dieses Geräts werden mit dem Kamerabild verknüpft.
               </p>
             </div>
@@ -475,40 +484,45 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
           {/* Sensor-Hinweis */}
           {form.category === "SENSOR" && (
-            <div className="flex items-center gap-2 text-xs text-success bg-success/10 border border-success/30 rounded-lg px-3 py-2">
-              <Activity className="h-3.5 w-3.5 shrink-0" />
-              Sensor – zeigt Werte an, keine Steuerung oder Zugangsverwaltung.
-            </div>
+            <Notice
+              tone="info"
+              compact
+              icon={Activity}
+              title="Sensor – zeigt Werte an, keine Steuerung oder Zugangsverwaltung."
+            />
           )}
 
-          <div className="flex items-center justify-between rounded-lg border border-border p-3">
-            <div>
-              <p className="text-sm font-medium">Aktiv</p>
-              <p className="text-xs text-muted-foreground">Gerät ist in Betrieb</p>
+          {/* Schalter als gruppierte Zeilen in einer Glas-Kachel, durch Haarlinien getrennt. */}
+          <div className="glass-tile divide-y divide-border">
+            <div className="flex items-center justify-between gap-3 p-3">
+              <div>
+                <p className="text-sm font-medium">Aktiv</p>
+                <p className="text-xs text-muted-foreground">Gerät ist in Betrieb</p>
+              </div>
+              <Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} />
             </div>
-            <Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} />
+
+            {/* Offline-Push – nur für überwachbare Typen (Pi, Shelly, GARDENA) */}
+            {device?.type !== "NUKI_SMARTLOCK" && (
+              <div className="flex items-center justify-between gap-3 p-3">
+                <div>
+                  <p className="text-sm font-medium">Offline-Benachrichtigung</p>
+                  <p className="text-xs text-muted-foreground">Push senden, wenn das Gerät offline geht</p>
+                </div>
+                <Switch checked={form.offlineAlertsEnabled} onCheckedChange={(v) => set("offlineAlertsEnabled", v)} />
+              </div>
+            )}
+
+            {CAT_HAS_REENTRY.has(form.category) && (
+              <div className="flex items-center justify-between gap-3 p-3">
+                <div>
+                  <p className="text-sm font-medium">Mehrfachzugang</p>
+                  <p className="text-xs text-muted-foreground">Ticket mehrfach verwendbar</p>
+                </div>
+                <Switch checked={form.allowReentry} onCheckedChange={(v) => set("allowReentry", v)} />
+              </div>
+            )}
           </div>
-
-          {/* Offline-Push – nur für überwachbare Typen (Pi, Shelly, GARDENA) */}
-          {device?.type !== "NUKI_SMARTLOCK" && (
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
-              <div>
-                <p className="text-sm font-medium">Offline-Benachrichtigung</p>
-                <p className="text-xs text-muted-foreground">Push senden, wenn das Gerät offline geht</p>
-              </div>
-              <Switch checked={form.offlineAlertsEnabled} onCheckedChange={(v) => set("offlineAlertsEnabled", v)} />
-            </div>
-          )}
-
-          {CAT_HAS_REENTRY.has(form.category) && (
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
-              <div>
-                <p className="text-sm font-medium">Mehrfachzugang</p>
-                <p className="text-xs text-muted-foreground">Ticket mehrfach verwendbar</p>
-              </div>
-              <Switch checked={form.allowReentry} onCheckedChange={(v) => set("allowReentry", v)} />
-            </div>
-          )}
 
           {CAT_HAS_ACCESS.has(form.category) && (
             <ScanLockField
@@ -518,24 +532,41 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
           )}
 
           {error && (
-            <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
+            <Notice tone="danger" compact title={error} />
           )}
 
-          <Separator className="dark:bg-muted" />
+          <Separator />
 
-          <div className="flex items-center justify-between">
-            <Button type="button" variant="ghost" size="sm" onClick={handleDelete} disabled={deleting || saving}
-              className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10">
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
-              Löschen
-            </Button>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting}>Abbrechen</Button>
-              <Button type="submit" disabled={saving || deleting || !form.name.trim()} className="min-w-28">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4 mr-1.5" />Speichern</>}
-              </Button>
+          {confirmDelete && device ? (
+            // Rückfrage statt Fußzeile: Abbrechen oder endgültig löschen.
+            <div className="space-y-3">
+              <Notice tone="danger" compact title={`Gerät "${device.name}" wirklich löschen?`} />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setConfirmDelete(false)} disabled={deleting} autoFocus>
+                  Abbrechen
+                </Button>
+                <Button type="button" variant="destructive" onClick={handleDelete} disabled={deleting}>
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Löschen
+                </Button>
+              </DialogFooter>
             </div>
-          </div>
+          ) : (
+            /* Handy: Tasten volle Breite, Primärtaste oben (docs/design-regeln.md, Abschnitt 16). */
+            <DialogFooter className="sm:items-center sm:justify-between">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDelete(true)} disabled={deleting || saving}
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                <Trash2 className="h-4 w-4" />
+                Löschen
+              </Button>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting}>Abbrechen</Button>
+                <Button type="submit" disabled={saving || deleting || !form.name.trim()} className="min-w-28">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4" />Speichern</>}
+                </Button>
+              </div>
+            </DialogFooter>
+          )}
         </form>
       </DialogContent>
     </Dialog>
@@ -563,7 +594,8 @@ export function ScanLockField({
 }) {
   const seconds = Number(value);
   return (
-    <div className="rounded-lg border border-border p-3 space-y-2">
+    // Gruppe im Dialog (Gerät, Ressource) als Glas-Kachel; in der Ebene getönt (Abschnitt 18).
+    <div className="glass-tile p-3 space-y-2">
       <div>
         <p className="text-sm font-medium flex items-center gap-1.5">
           <Timer className="h-4 w-4" /> {title}
@@ -578,20 +610,21 @@ export function ScanLockField({
         onChange={(e) => onChange(e.target.value)}
         className="font-mono"
       />
+      {/* Vorgaben 36 px, auf dem Handy 44 px hoch (Abschnitt 16). */}
       <div className="flex flex-wrap gap-1.5">
         {SCAN_LOCK_PRESETS.map((s) => (
           <button
             key={s}
             type="button"
             onClick={() => onChange(String(s))}
-            className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:border-primary/60 hover:text-primary transition-colors"
+            className="press inline-flex h-9 items-center rounded-full border border-border px-3 text-xs text-muted-foreground tabular-nums hover:border-primary/60 hover:text-primary max-sm:h-11"
           >
             {formatScanLockPreset(s)}
           </button>
         ))}
       </div>
       {Number.isFinite(seconds) && seconds > 0 && (
-        <p className="text-xs text-muted-foreground/70">Sperre {formatScanLockPreset(seconds)} für dasselbe Ticket.</p>
+        <p className="text-xs text-muted-foreground">Sperre {formatScanLockPreset(seconds)} für dasselbe Ticket.</p>
       )}
     </div>
   );
