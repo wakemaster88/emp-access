@@ -1,18 +1,32 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -159,33 +173,36 @@ interface EmailSettingsProps {
   services?: NamedRef[];
 }
 
+// Felder und Tasten: auf dem Handy 44 px hoch, ab sm 36 px bzw. 32 px (docs/design-regeln.md, Abschnitt 16).
+const FIELD = "h-11 sm:h-9";
+const SELECT_FIELD = "w-full data-[size=default]:h-11 sm:data-[size=default]:h-9";
+const TOUCH_SM = "h-11 sm:h-8";
+
+// Regeltypen unterscheiden sich am Symbol, nicht an der Farbe: ein Typ ist kein
+// Zustand (Abschnitt 3, keine Farbe als Dekoration).
 const TRIGGER_META: Record<
   RuleTrigger,
-  { label: string; helper: string; icon: typeof CalendarClock; color: string }
+  { label: string; helper: string; icon: typeof CalendarClock }
 > = {
   SUBSCRIPTION_EXPIRING: {
     label: "Abo läuft aus",
     helper: "Tage VOR endDate",
     icon: CalendarClock,
-    color: "text-warning",
   },
   SUBSCRIPTION_EXPIRED: {
     label: "Abo abgelaufen",
     helper: "Tage NACH endDate",
     icon: CalendarX,
-    color: "text-destructive",
   },
   DAY_VISIT_FOLLOWUP: {
     label: "Tagesgast Followup",
     helper: "Tage NACH erstem Scan",
     icon: Smile,
-    color: "text-success",
   },
   TICKET_WELCOME: {
     label: "Welcome",
     helper: "Tage NACH Ticket-Anlage",
     icon: Sparkles,
-    color: "text-primary",
   },
 };
 
@@ -240,52 +257,55 @@ export function EmailSettings({ initialConfig, subscriptions = [], services = []
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 sm:space-y-5">
       <EmailConfigCard config={config} onConfigChange={setConfig} />
 
       {config && (
         <Card>
-          <CardContent className="pt-5 space-y-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">Automatische Mails</h3>
-                <p className="text-xs text-muted-foreground">
-                  Regelbasierte Mails zu Aboablauf, Followups und Welcome-Nachrichten.
-                </p>
-              </div>
-              <div className="flex gap-2 shrink-0">
-                <Button variant="outline" size="sm" onClick={() => setPresetPickerOpen(true)} className="gap-1.5">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  Aus Vorlage
-                </Button>
-                <Button size="sm" className="gap-1.5" onClick={handleNewBlank}>
-                  <Plus className="h-4 w-4" />
-                  Neue Regel
-                </Button>
-              </div>
-            </div>
+          <CardHeader>
+            <CardTitle>
+              <h3>Automatische Mails</h3>
+            </CardTitle>
+            <CardDescription>
+              Regelbasierte Mails zu Aboablauf, Followups und Welcome-Nachrichten.
+            </CardDescription>
+          </CardHeader>
 
+          <CardContent className="space-y-3">
+            {/* Werkzeugleiste statt CardAction: zwei Tasten passen auf dem Handy nicht neben den Titel. */}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPresetPickerOpen(true)} className={cn("gap-1.5", TOUCH_SM)}>
+                <Sparkles className="h-4 w-4 text-primary" />
+                Aus Vorlage
+              </Button>
+              <Button size="sm" className={cn("gap-1.5", TOUCH_SM)} onClick={handleNewBlank}>
+                <Plus className="h-4 w-4" />
+                Neue Regel
+              </Button>
+            </div>
             {rulesLoading && rules == null ? (
-              <div className="py-6 text-center text-sm text-muted-foreground/70">
-                <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+              <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Lädt …
               </div>
             ) : rules && rules.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border bg-muted/50/40 p-6 text-center">
-                <Mail className="h-8 w-8 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
-                <p className="text-sm font-medium text-muted-foreground">Noch keine Regeln</p>
-                <p className="text-xs text-muted-foreground/70 mt-1">
-                  Lege jetzt deine erste automatische Mail an – am schnellsten geht es mit einer Vorlage.
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3 gap-1.5"
-                  onClick={() => setPresetPickerOpen(true)}
-                >
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  Vorlage wählen
-                </Button>
-              </div>
+              <EmptyState
+                compact
+                icon={Mail}
+                title="Noch keine Regeln"
+                description="Lege jetzt deine erste automatische Mail an – am schnellsten geht es mit einer Vorlage."
+                action={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className={cn("gap-1.5", TOUCH_SM)}
+                    onClick={() => setPresetPickerOpen(true)}
+                  >
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Vorlage wählen
+                  </Button>
+                }
+              />
             ) : (
               <ul className="space-y-2">
                 {rules?.map((r) => (
@@ -448,43 +468,47 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
 
   return (
     <Card>
-      <CardContent className="pt-5 space-y-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
+      <CardHeader>
+        <CardTitle>
+          <h3 className="flex items-center gap-2">
             <History className="h-4 w-4 text-muted-foreground" />
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">Mail-Historie</h3>
-              <p className="text-xs text-muted-foreground">
-                Wer hat wann welche Mail bekommen – inkl. Cron, manuell ausgeloester Sends und Tests.
-              </p>
-            </div>
-          </div>
+            Mail-Historie
+          </h3>
+        </CardTitle>
+        <CardDescription>
+          Wer hat wann welche Mail bekommen – inkl. Cron, manuell ausgeloester Sends und Tests.
+        </CardDescription>
+        {/* Wie bei den Info-Anfragen: die Kopf-Taste sitzt im CardAction-Platz. */}
+        <CardAction>
           <Button
             variant="outline"
             size="sm"
             onClick={refresh}
             disabled={loading}
-            className="gap-1.5 shrink-0"
+            className={cn("gap-1.5", TOUCH_SM)}
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Aktualisieren
           </Button>
-        </div>
+        </CardAction>
+      </CardHeader>
 
+      <CardContent className="space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
+          {/* Handy: Suche in voller Breite, darunter beide Filter nebeneinander. */}
+          <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="E-Mail, Name oder Betreff…"
-              className="pl-8 h-9 text-sm"
+              className={cn("pl-8", search && "pr-10", FIELD)}
             />
             {search && (
               <button
                 type="button"
                 onClick={() => setSearch("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground"
+                className="absolute right-1 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground sm:size-7"
                 aria-label="Suche leeren"
               >
                 <X className="h-3.5 w-3.5" />
@@ -492,7 +516,7 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
             )}
           </div>
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-            <SelectTrigger className="h-9 w-[140px] text-sm">
+            <SelectTrigger className="min-w-0 flex-1 data-[size=default]:h-11 sm:w-[140px] sm:flex-none sm:data-[size=default]:h-9">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -503,7 +527,7 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
             </SelectContent>
           </Select>
           <Select value={ruleFilter} onValueChange={setRuleFilter}>
-            <SelectTrigger className="h-9 w-[200px] text-sm">
+            <SelectTrigger className="min-w-0 flex-1 data-[size=default]:h-11 sm:w-[200px] sm:flex-none sm:data-[size=default]:h-9">
               <SelectValue placeholder="Alle Regeln" />
             </SelectTrigger>
             <SelectContent>
@@ -518,20 +542,20 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
         </div>
 
         {loading && sends == null ? (
-          <div className="py-6 text-center text-sm text-muted-foreground/70">
-            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Lädt …
           </div>
         ) : sends && sends.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border bg-muted/50/40 p-6 text-center">
-            <Mail className="h-7 w-7 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
-            <p className="text-sm font-medium text-muted-foreground">Noch keine Sends</p>
-            <p className="text-xs text-muted-foreground/70 mt-1">
-              Sobald der Cron oder ein Test eine Mail verschickt, taucht sie hier auf.
-            </p>
-          </div>
+          <EmptyState
+            compact
+            icon={Mail}
+            title="Noch keine Sends"
+            description="Sobald der Cron oder ein Test eine Mail verschickt, taucht sie hier auf."
+          />
         ) : (
           <>
-            <ul className="divide-y divide-border/60 rounded-lg border border-border overflow-hidden">
+            <ul className="glass-tile divide-y divide-border overflow-hidden">
               {sends?.map((s) => <EmailSendRow key={s.id} send={s} />)}
             </ul>
             {hasMore && (
@@ -541,7 +565,7 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
                   size="sm"
                   onClick={loadMore}
                   disabled={loadingMore}
-                  className="gap-1.5"
+                  className={cn("gap-1.5", TOUCH_SM)}
                 >
                   {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Mehr laden
@@ -558,7 +582,7 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
 function StatusBadge({ status }: { status: string }) {
   if (status === "SENT") {
     return (
-      <Badge className="bg-success/10 text-success hover:bg-success/10 gap-1 font-medium">
+      <Badge variant="success">
         <CheckCircle2 className="h-3 w-3" />
         Versendet
       </Badge>
@@ -566,7 +590,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   if (status === "FAILED") {
     return (
-      <Badge className="bg-destructive/10 text-destructive hover:bg-destructive/10 gap-1 font-medium">
+      <Badge variant="danger">
         <AlertTriangle className="h-3 w-3" />
         Fehler
       </Badge>
@@ -574,13 +598,13 @@ function StatusBadge({ status }: { status: string }) {
   }
   if (status === "TEST") {
     return (
-      <Badge className="bg-warning/10 text-warning hover:bg-warning/10 gap-1 font-medium">
+      <Badge variant="warning">
         <FlaskConical className="h-3 w-3" />
         Test
       </Badge>
     );
   }
-  return <Badge variant="outline">{status}</Badge>;
+  return <Badge variant="neutral">{status}</Badge>;
 }
 
 function EmailSendRow({ send }: { send: EmailSendDTO }) {
@@ -598,18 +622,20 @@ function EmailSendRow({ send }: { send: EmailSendDTO }) {
     null;
 
   return (
-    <li className="px-4 py-3 bg-background hover:bg-muted/50/60 dark:hover:bg-card/40 transition-colors">
+    <li className="px-3 py-2.5 transition-colors hover:bg-glass-tile">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={send.status} />
-            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1 tabular-nums">
               <Clock className="h-3 w-3" />
               {dateLabel}
             </span>
             {send.rule && (
-              <span className="text-xs text-muted-foreground inline-flex items-center gap-1 truncate max-w-[200px]">
-                · {send.rule.name}
+              // Handy: der Regelname bricht in eine eigene Zeile, dort ohne führenden Mittelpunkt.
+              <span className="text-xs text-muted-foreground inline-flex min-w-0 items-center gap-1 max-w-[200px]">
+                <span aria-hidden className="max-sm:hidden">·</span>
+                <span className="truncate">{send.rule.name}</span>
               </span>
             )}
           </div>
@@ -622,23 +648,25 @@ function EmailSendRow({ send }: { send: EmailSendDTO }) {
               {recipientName ? (
                 <>
                   <span className="text-foreground/80 font-medium">{recipientName}</span>
-                  <span className="text-muted-foreground/70"> · {send.to}</span>
+                  <span className="text-muted-foreground"> · {send.to}</span>
                 </>
               ) : (
                 send.to
               )}
             </span>
             {send.voucher && (
-              <span className="inline-flex items-center gap-1 text-warning font-mono">
-                <GiftIcon className="h-3 w-3" />
+              // Gutschein ist kein Hinweis: Code in Vordergrundfarbe, Symbol gedämpft.
+              <span className="inline-flex items-center gap-1 text-foreground/80 font-mono">
+                <GiftIcon className="h-3 w-3 text-muted-foreground" />
                 {send.voucher.code}
               </span>
             )}
           </div>
           {send.status === "FAILED" && send.errorMessage && (
-            <div className="mt-1.5 text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-md px-2 py-1">
+            // Historischer Fehler: `status` statt `alert`, damit der Screenreader nicht jede Zeile ansagt.
+            <Notice tone="danger" compact role="status" className="mt-1.5 break-words">
               {send.errorMessage}
-            </div>
+            </Notice>
           )}
         </div>
       </div>
@@ -665,6 +693,7 @@ function EmailConfigCard({
   const [brandColor, setBrandColor] = useState(config?.brandColor ?? "#4F46E5");
   const [isActive, setIsActive] = useState<boolean>(config?.isActive ?? true);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
   const [testTo, setTestTo] = useState("");
   const [testing, setTesting] = useState(false);
@@ -728,13 +757,13 @@ function EmailConfigCard({
   }
 
   async function handleDelete() {
-    if (!confirm("Email-Konfiguration wirklich löschen? Aktive Regeln werden nicht ausgelöst.")) return;
     setSaving(true);
     try {
       await fetch("/api/email/config", { method: "DELETE" });
       onConfigChange(null);
     } finally {
       setSaving(false);
+      setConfirmDelete(false);
     }
   }
 
@@ -767,115 +796,112 @@ function EmailConfigCard({
 
   if (config && !editing) {
     return (
-      <Card>
-        <CardContent className="pt-5 space-y-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
+      <>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
               <Mail className="h-4 w-4 text-primary" />
-              <span className="text-sm font-semibold text-foreground">Versand-Konfiguration</span>
-            </div>
-            <Badge
-              className={cn(
-                "text-xs",
-                config.isActive && config.hasApiKey
-                  ? "bg-success/12 text-success"
-                  : "bg-border text-muted-foreground dark:bg-muted dark:text-muted-foreground",
-              )}
-            >
-              {config.isActive && config.hasApiKey ? "Aktiv" : config.hasApiKey ? "Deaktiviert" : "Kein API-Key"}
-            </Badge>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-            <Row
-              label="Provider"
-              value={config.provider === "GMAIL" ? "Gmail SMTP" : config.provider}
-            />
-            <Row label="Gmail-Adresse" value={config.fromEmail} />
-            {config.fromName && <Row label="Name" value={config.fromName} />}
-            {config.replyTo && <Row label="Reply-To" value={config.replyTo} />}
-            {config.websiteUrl && <Row label="Website" value={config.websiteUrl} />}
-            <Row
-              label="App-Passwort"
-              value={
-                config.hasApiKey ? config.apiKey ?? "•••" : <span className="text-destructive">fehlt</span>
-              }
-              mono
-            />
-          </div>
-          <div className="border-t border-border/60 pt-3 space-y-2">
-            <Label htmlFor="email-test-to" className="text-xs text-muted-foreground">
-              Test-Mail senden an
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                id="email-test-to"
-                type="email"
-                placeholder="dein@verein.de"
-                value={testTo}
-                onChange={(e) => setTestTo(e.target.value)}
-                className="h-9"
+              Versand-Konfiguration
+            </CardTitle>
+            <CardAction>
+              <Badge variant={config.isActive && config.hasApiKey ? "success" : "neutral"}>
+                {config.isActive && config.hasApiKey ? "Aktiv" : config.hasApiKey ? "Deaktiviert" : "Kein API-Key"}
+              </Badge>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+              <Row
+                label="Provider"
+                value={config.provider === "GMAIL" ? "Gmail SMTP" : config.provider}
               />
+              <Row label="Gmail-Adresse" value={config.fromEmail} />
+              {config.fromName && <Row label="Name" value={config.fromName} />}
+              {config.replyTo && <Row label="Reply-To" value={config.replyTo} />}
+              {config.websiteUrl && <Row label="Website" value={config.websiteUrl} />}
+              <Row
+                label="App-Passwort"
+                value={
+                  config.hasApiKey ? config.apiKey ?? "•••" : <span className="text-destructive">fehlt</span>
+                }
+                mono
+              />
+            </div>
+            <div className="border-t border-border pt-3 space-y-2">
+              <Label htmlFor="email-test-to" className="text-[13px] text-muted-foreground">
+                Test-Mail senden an
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="email-test-to"
+                  type="email"
+                  placeholder="dein@verein.de"
+                  value={testTo}
+                  onChange={(e) => setTestTo(e.target.value)}
+                  className={cn("min-w-0", FIELD)}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTest}
+                  disabled={testing || !testTo.trim() || !config.hasApiKey}
+                  className={cn("gap-1.5 shrink-0", FIELD)}
+                >
+                  {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Senden
+                </Button>
+              </div>
+              {testResult && (
+                <Notice
+                  tone={testResult === "ok" ? "success" : "danger"}
+                  icon={testResult === "ok" ? CheckCircle2 : XCircle}
+                  compact
+                  title={testMessage}
+                />
+              )}
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)} className={TOUCH_SM}>
+                <Pencil className="h-4 w-4 mr-1.5" />
+                Bearbeiten
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleTest}
-                disabled={testing || !testTo.trim() || !config.hasApiKey}
-                className="gap-1.5 shrink-0"
+                onClick={() => setConfirmDelete(true)}
+                disabled={saving}
+                aria-label="Konfiguration löschen"
+                title="Konfiguration löschen"
+                className={cn("text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60 ml-auto", TOUCH_SM)}
               >
-                {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Senden
+                <Trash2 className="h-4 w-4" />
               </Button>
             </div>
-            {testResult && (
-              <div
-                className={cn(
-                  "flex items-start gap-2 p-2.5 rounded-lg text-xs font-medium",
-                  testResult === "ok"
-                    ? "bg-success/10 text-success"
-                    : "bg-destructive/10 text-destructive",
-                )}
-              >
-                {testResult === "ok" ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                ) : (
-                  <XCircle className="h-4 w-4 shrink-0" />
-                )}
-                <span>{testMessage}</span>
-              </div>
-            )}
-          </div>
-          <div className="flex gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-              <Pencil className="h-4 w-4 mr-1.5" />
-              Bearbeiten
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDelete}
-              disabled={saving}
-              className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60 ml-auto"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+        <ConfirmDeleteDialog
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          title="Email-Konfiguration wirklich löschen?"
+          description="Aktive Regeln werden nicht ausgelöst."
+          busy={saving}
+          onConfirm={handleDelete}
+        />
+      </>
     );
   }
 
   return (
     <Card>
-      <CardContent className="pt-5 space-y-4">
-        <div className="flex items-center gap-2">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
           <Mail className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold text-foreground">
-            {config ? "Konfiguration bearbeiten" : "Email-Versand einrichten"}
-          </span>
-        </div>
-        <div className="rounded-lg border border-primary/30/40 bg-primary/10 px-3 py-2.5 text-xs text-foreground/80 space-y-1">
-          <p className="font-medium text-primary">So richtest du Gmail ein:</p>
-          <ol className="list-decimal list-inside space-y-0.5 text-muted-foreground">
+          {config ? "Konfiguration bearbeiten" : "Email-Versand einrichten"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Notice tone="info" compact title="So richtest du Gmail ein:">
+          <ol className="list-decimal list-inside space-y-0.5">
             <li>2-Faktor-Authentifizierung im Google-Konto aktivieren</li>
             <li>
               Unter{" "}
@@ -891,7 +917,7 @@ function EmailConfigCard({
             </li>
             <li>App-Passwort + Gmail-Adresse hier eintragen</li>
           </ol>
-        </div>
+        </Notice>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
@@ -906,8 +932,9 @@ function EmailConfigCard({
               onChange={(e) => setFromEmail(e.target.value)}
               required
               autoComplete="email"
+              className={FIELD}
             />
-            <p className="text-[11px] text-muted-foreground/70">
+            <p className="text-[11px] text-muted-foreground">
               Auch erlaubt: in Gmail verifizierter Alias (z. B. eigene Domain).
             </p>
           </div>
@@ -920,9 +947,10 @@ function EmailConfigCard({
               placeholder={keepKey ? "•••• gespeichert (leer = unverändert)" : "16-stelliges App-Passwort"}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
+              className={FIELD}
             />
             {keepKey && (
-              <p className="text-[11px] text-muted-foreground/70">
+              <p className="text-[11px] text-muted-foreground">
                 <button type="button" onClick={() => setKeepKey(false)} className="underline hover:text-destructive">
                   Gespeichertes Passwort entfernen
                 </button>
@@ -936,6 +964,7 @@ function EmailConfigCard({
               placeholder="Mein Verein"
               value={fromName}
               onChange={(e) => setFromName(e.target.value)}
+              className={FIELD}
             />
           </div>
           <div className="space-y-1.5">
@@ -946,6 +975,7 @@ function EmailConfigCard({
               placeholder="info@verein.de"
               value={replyTo}
               onChange={(e) => setReplyTo(e.target.value)}
+              className={FIELD}
             />
           </div>
           <div className="space-y-1.5">
@@ -956,6 +986,7 @@ function EmailConfigCard({
               placeholder="https://verein.de"
               value={websiteUrl}
               onChange={(e) => setWebsiteUrl(e.target.value)}
+              className={FIELD}
             />
           </div>
           <div className="space-y-1.5">
@@ -966,37 +997,38 @@ function EmailConfigCard({
                 type="color"
                 value={brandColor}
                 onChange={(e) => setBrandColor(e.target.value)}
-                className="h-9 w-12 p-1 shrink-0 cursor-pointer"
+                className={cn("w-12 p-1 shrink-0 cursor-pointer", FIELD)}
               />
               <Input
                 value={brandColor}
                 onChange={(e) => setBrandColor(e.target.value)}
                 placeholder="#4F46E5"
-                className="font-mono text-sm"
+                className={cn("font-mono", FIELD)}
               />
             </div>
           </div>
-          <div className="flex items-center justify-between sm:col-span-2 rounded-lg border border-border px-3 py-2">
+          <div className="glass-tile flex items-center justify-between gap-3 px-3 py-2.5 sm:col-span-2">
             <div>
-              <p className="text-sm font-medium text-foreground/80">Versand aktiv</p>
-              <p className="text-xs text-muted-foreground/70">Wenn aus, werden keine automatischen Mails versendet.</p>
+              <p className="text-sm font-medium text-foreground">Versand aktiv</p>
+              <p className="text-xs text-muted-foreground">Wenn aus, werden keine automatischen Mails versendet.</p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <Notice tone="danger" compact title={error} />}
 
-        <div className="flex gap-2">
-          <Button onClick={handleSave} disabled={saving || !fromEmail.trim()}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
-            Speichern
-          </Button>
+        {/* Tasten rechts, „Abbrechen“ links von der Primärtaste; Handy: volle Breite, Primärtaste oben (Abschnitt 16). */}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           {config && (
-            <Button variant="ghost" onClick={() => setEditing(false)} disabled={saving}>
+            <Button variant="ghost" onClick={() => setEditing(false)} disabled={saving} className={FIELD}>
               Abbrechen
             </Button>
           )}
+          <Button onClick={handleSave} disabled={saving || !fromEmail.trim()} className={FIELD}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+            Speichern
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -1011,6 +1043,55 @@ function Row({ label, value, mono }: { label: string; value: React.ReactNode; mo
         {value}
       </span>
     </div>
+  );
+}
+
+/**
+ * Rückfrage vor dem Löschen (Abschnitt 18): AlertDialog mit destruktiver Taste
+ * statt Browser-confirm. Die Taste bleibt offen und zeigt den Ladezustand, bis
+ * `onConfirm` fertig ist; schließen muss der Aufrufer.
+ */
+function ConfirmDeleteDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  busy,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description?: string;
+  busy: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent {...(description ? {} : { "aria-describedby": undefined })}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          {description && <AlertDialogDescription>{description}</AlertDialogDescription>}
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy} className={FIELD}>
+            Abbrechen
+          </AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={busy}
+            onClick={(e) => {
+              e.preventDefault();
+              onConfirm();
+            }}
+            className={cn("gap-1.5", FIELD)}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            Löschen
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -1031,6 +1112,7 @@ function RuleRow({
   const [testTo, setTestTo] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [diagnose, setDiagnose] = useState<DiagnoseResult | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const meta = TRIGGER_META[rule.trigger];
   const Icon = meta.icon;
 
@@ -1055,13 +1137,13 @@ function RuleRow({
   }
 
   async function remove() {
-    if (!confirm(`Regel "${rule.name}" löschen?`)) return;
     setBusy("delete");
     try {
       await fetch(`/api/email/rules/${rule.id}`, { method: "DELETE" });
       await onChanged();
     } finally {
       setBusy(null);
+      setConfirmDelete(false);
     }
   }
 
@@ -1140,38 +1222,43 @@ function RuleRow({
   return (
     <li
       className={cn(
-        "rounded-lg border bg-background transition-colors",
-        rule.isActive
-          ? "border-border"
-          : "border-border opacity-60",
+        "glass-tile overflow-hidden transition-opacity",
+        !rule.isActive && "opacity-60",
       )}
     >
       <div className="flex items-center gap-3 p-3 flex-wrap">
-        <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center bg-muted shrink-0")}>
-          <Icon className={cn("h-4 w-4", meta.color)} />
-        </div>
-        <div className="min-w-0 flex-1">
+        <IconChip icon={Icon} tone="neutral" />
+        {/* Mindestbreite für den Text: auf dem Handy rutschen die Tasten in eine eigene Zeile. */}
+        <div className="min-w-0 flex-1 basis-48">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-medium text-foreground truncate">{rule.name}</p>
             {rule.createVoucher && (
-              <Badge variant="warning" className="text-[10px] gap-1">
+              <Badge variant="secondary" className="tabular-nums">
                 <GiftIcon className="h-3 w-3" />
                 {rule.voucherDiscountPercent ?? 0}%
               </Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground truncate">
-            <span className={meta.color}>{meta.label}</span>
-            <span className="text-slate-300 mx-1.5">·</span>
-            {rule.daysOffset} Tage <span className="text-muted-foreground/70">({meta.helper})</span>
-            <span className="text-slate-300 mx-1.5">·</span>
+          <p className="text-xs text-muted-foreground tabular-nums sm:truncate">
+            <span>{meta.label}</span>
+            <span className="text-muted-foreground/50 mx-1.5">·</span>
+            {rule.daysOffset} Tage <span className="text-muted-foreground">({meta.helper})</span>
+            <span className="text-muted-foreground/50 mx-1.5">·</span>
             <Clock className="h-3 w-3 inline mb-0.5" /> Cooldown {rule.cooldownDays}d
-            <span className="text-slate-300 mx-1.5">·</span>
+            <span className="text-muted-foreground/50 mx-1.5">·</span>
             {rule.sentCount} versendet
           </p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <Switch checked={rule.isActive} onCheckedChange={toggle} disabled={busy !== null} size="sm" />
+        {/* Darf umbrechen: auf sehr schmalen Handys schneidet die Kachel (overflow-hidden) sonst „Löschen“ ab. */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+          <Switch
+            checked={rule.isActive}
+            onCheckedChange={toggle}
+            disabled={busy !== null}
+            size="sm"
+            aria-label="Regel aktiv"
+            className="mr-1"
+          />
           <Button
             variant="ghost"
             size="icon"
@@ -1181,11 +1268,21 @@ function RuleRow({
             }}
             disabled={busy !== null}
             title="Test-Mail mit Beispieldaten senden"
-            className={cn(testOpen && "bg-warning/10 text-warning")}
+            aria-label="Test-Mail mit Beispieldaten senden"
+            aria-pressed={testOpen}
+            className={cn("max-sm:size-11", testOpen && "bg-primary/10 text-primary")}
           >
             <TestTube2 className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={runNow} disabled={busy !== null} title="Jetzt ausführen">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={runNow}
+            disabled={busy !== null}
+            title="Jetzt ausführen"
+            aria-label="Jetzt ausführen"
+            className="max-sm:size-11"
+          >
             {busy === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
           </Button>
           <Button
@@ -1194,40 +1291,61 @@ function RuleRow({
             onClick={runDiagnose}
             disabled={busy !== null}
             title="Diagnose: warum sendet die Regel (nichts)?"
-            className={cn(diagnose && "bg-info/10 text-info")}
+            aria-label="Diagnose: warum sendet die Regel (nichts)?"
+            aria-pressed={diagnose !== null}
+            className={cn("max-sm:size-11", diagnose && "bg-primary/10 text-primary")}
           >
             {busy === "diagnose" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={onEdit} disabled={busy !== null} title="Bearbeiten">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onEdit}
+            disabled={busy !== null}
+            title="Bearbeiten"
+            aria-label="Bearbeiten"
+            className="max-sm:size-11"
+          >
             <Pencil className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            onClick={remove}
+            onClick={() => setConfirmDelete(true)}
             disabled={busy !== null}
-            className="text-destructive hover:text-destructive"
+            className="text-destructive hover:text-destructive max-sm:size-11"
             title="Löschen"
+            aria-label="Löschen"
           >
             {busy === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
           </Button>
         </div>
       </div>
+      <ConfirmDeleteDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Regel "${rule.name}" löschen?`}
+        busy={busy === "delete"}
+        onConfirm={remove}
+      />
       {testOpen && (
-        <div className="border-t border-warning/30/40 px-3 py-2.5 bg-warning/10 rounded-b-lg space-y-2">
+        // Test ist kein Hinweis: neutrale Gruppe, Symbol gedämpft.
+        <div className="space-y-2 border-t border-border bg-muted/30 px-3 py-2.5">
           <div className="flex items-center gap-2">
-            <TestTube2 className="h-3.5 w-3.5 text-warning shrink-0" />
-            <span className="text-xs font-medium text-warning">
+            <TestTube2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="text-xs font-medium text-foreground">
               Test-Mail mit Beispieldaten (Max Mustermann, fiktive Termine)
             </span>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setTestOpen(false)}
-              className="ml-auto text-warning/60 hover:text-warning"
+              className="ml-auto shrink-0 text-muted-foreground hover:text-foreground max-sm:size-9"
               aria-label="Test schließen"
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
+              <X className="size-3.5" />
+            </Button>
           </div>
           <div className="flex gap-2">
             <Input
@@ -1241,40 +1359,32 @@ function RuleRow({
                   sendTest();
                 }
               }}
-              className="h-9 bg-card"
+              className={cn("min-w-0", FIELD)}
               autoFocus
             />
             <Button
               size="sm"
+              variant="outline"
               onClick={sendTest}
               disabled={busy === "test" || !testTo.trim()}
-              className="bg-warning hover:bg-warning/90 gap-1.5 shrink-0"
+              className={cn("gap-1.5 shrink-0", FIELD)}
             >
               {busy === "test" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Senden
             </Button>
           </div>
           {testResult && (
-            <div
-              className={cn(
-                "flex items-start gap-2 p-2 rounded-md text-xs font-medium",
-                testResult.ok
-                  ? "bg-success/10 text-success"
-                  : "bg-destructive/10 text-destructive",
-              )}
-            >
-              {testResult.ok ? (
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              ) : (
-                <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              )}
-              <span>{testResult.msg}</span>
-            </div>
+            <Notice
+              tone={testResult.ok ? "success" : "danger"}
+              icon={testResult.ok ? CheckCircle2 : XCircle}
+              compact
+              title={testResult.msg}
+            />
           )}
         </div>
       )}
       {runMsg && (
-        <div className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground bg-muted/50/40 rounded-b-lg">
+        <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground tabular-nums">
           {runMsg}
         </div>
       )}
@@ -1324,10 +1434,6 @@ function DiagnoseBlock({
   }
 
   const wouldSend = f.ticketsWouldSend;
-  const tone =
-    wouldSend > 0
-      ? "border-success/30/40 bg-success/10 "
-      : "border-info/30/40 bg-info/10 ";
 
   function formatDate(iso: string | null): string {
     if (!iso) return "—";
@@ -1340,7 +1446,9 @@ function DiagnoseBlock({
     });
   }
 
-  const steps: { label: string; value: number; hint?: string }[] = [
+  // `blocksWhenPositive`: Cooldown hält nur auf, wenn er > 0 ist; alle anderen
+  // Stufen stoppen den Versand bei 0. Nur diese Stellen tragen die Hinweisfarbe.
+  const steps: { label: string; value: number; hint?: string; blocksWhenPositive?: boolean }[] = [
     { label: "Tickets gesamt", value: f.ticketsTotal },
     { label: "davon mit E-Mail", value: f.ticketsWithEmail, hint: "Ticket.email ist nicht NULL" },
     { label: "Status VALID/REDEEMED", value: f.ticketsValidStatus },
@@ -1354,27 +1462,31 @@ function DiagnoseBlock({
       value: f.ticketsInWindow,
       hint: `${formatDate(diagnose.triggerWindow.from)} – ${formatDate(diagnose.triggerWindow.to)}`,
     },
-    { label: "Cooldown blockiert", value: f.cooldownBlocked },
+    { label: "Cooldown blockiert", value: f.cooldownBlocked, blocksWhenPositive: true },
   ];
 
   return (
-    <div className={cn("border-t px-3 py-3 rounded-b-lg space-y-3", tone)}>
+    // Neutrale Gruppe; Farbe tragen nur die Stufen, die den Versand aufhalten, und das Ergebnis.
+    <div className="space-y-3 border-t border-border bg-muted/30 px-3 py-3">
       <div className="flex items-center gap-2">
-        <Stethoscope className="h-3.5 w-3.5 text-info shrink-0" />
-        <span className="text-xs font-semibold text-info">
+        <Stethoscope className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="text-xs font-semibold text-foreground">
           Diagnose
         </span>
-        <span className="text-xs text-muted-foreground">
+        {/* Bricht auf dem Handy um statt abzuschneiden: Lookback steht sonst nirgends. */}
+        <span className="min-w-0 text-xs text-muted-foreground tabular-nums">
           Lookback {diagnose.rule.lookbackDays}d · Cooldown {diagnose.rule.cooldownDays}d
         </span>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           onClick={onClose}
-          className="ml-auto text-info/60 hover:text-info/60"
+          className="ml-auto shrink-0 text-muted-foreground hover:text-foreground max-sm:size-9"
           aria-label="Diagnose schließen"
         >
-          <X className="h-3.5 w-3.5" />
-        </button>
+          <X className="size-3.5" />
+        </Button>
       </div>
 
       <div className="grid gap-1.5 text-xs">
@@ -1382,33 +1494,38 @@ function DiagnoseBlock({
           <div
             key={s.label}
             className={cn(
-              "flex items-center justify-between gap-2 px-2 py-1 rounded",
+              "flex items-center justify-between gap-2 px-2 py-1 rounded-sm",
               idx === steps.length - 1 || s.value === 0
-                ? "bg-white/60 dark:bg-background/40"
-                : "bg-white/30 dark:bg-background/20",
+                ? "bg-glass-tile"
+                : "bg-glass-tile/50",
             )}
           >
             <div className="min-w-0">
               <span className="text-foreground/80">{s.label}</span>
               {s.hint && (
-                <span className="text-muted-foreground/70 ml-1.5">({s.hint})</span>
+                <span className="text-muted-foreground ml-1.5 tabular-nums">({s.hint})</span>
               )}
             </div>
             <span
               className={cn(
                 "font-mono font-semibold tabular-nums shrink-0",
-                s.value === 0 ? "text-destructive" : "text-foreground",
+                (s.blocksWhenPositive ? s.value > 0 : s.value === 0) ? "text-warning" : "text-foreground",
               )}
             >
               {s.value}
             </span>
           </div>
         ))}
-        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded bg-success/10 border border-success/30">
-          <span className="font-medium text-success">
+        <div
+          className={cn(
+            "flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm border",
+            wouldSend > 0 ? "bg-success/10 border-success/30" : "bg-glass-tile border-glass-border",
+          )}
+        >
+          <span className={cn("font-medium", wouldSend > 0 ? "text-success" : "text-foreground")}>
             Würde jetzt versenden
           </span>
-          <span className="font-mono font-bold tabular-nums text-success">
+          <span className={cn("font-mono font-bold tabular-nums", wouldSend > 0 ? "text-success" : "text-foreground")}>
             {wouldSend}
           </span>
         </div>
@@ -1416,22 +1533,22 @@ function DiagnoseBlock({
 
       {diagnose.samplesInWindow.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+          <p className="text-label">
             Beispiele im Fenster
           </p>
           <ul className="space-y-0.5">
             {diagnose.samplesInWindow.slice(0, 5).map((s) => (
               <li
                 key={s.id}
-                className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-white/60 dark:bg-background/40"
+                className="flex items-center gap-2 text-xs px-2 py-1 rounded-sm bg-glass-tile"
               >
                 <span className="truncate flex-1">
                   {s.name ?? "—"} <span className="text-muted-foreground/70">·</span>{" "}
                   <span className="text-muted-foreground">{s.email ?? "kein Email"}</span>
                 </span>
-                <span className="text-muted-foreground shrink-0">{formatDate(s.triggerDate)}</span>
+                <span className="text-muted-foreground shrink-0 tabular-nums">{formatDate(s.triggerDate)}</span>
                 {s.cooldownBlocked && (
-                  <Badge variant="warning" className="text-[10px]">
+                  <Badge variant="warning">
                     Cooldown
                   </Badge>
                 )}
@@ -1443,20 +1560,20 @@ function DiagnoseBlock({
 
       {diagnose.samplesInWindow.length === 0 && diagnose.upcomingSample.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+          <p className="text-label">
             Nächste passende Tickets (außerhalb Fenster)
           </p>
           <ul className="space-y-0.5">
             {diagnose.upcomingSample.slice(0, 5).map((s) => (
               <li
                 key={s.id}
-                className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-white/60 dark:bg-background/40"
+                className="flex items-center gap-2 text-xs px-2 py-1 rounded-sm bg-glass-tile"
               >
                 <span className="truncate flex-1">
                   {s.name ?? "—"} <span className="text-muted-foreground/70">·</span>{" "}
                   <span className="text-muted-foreground">{s.email ?? "kein Email"}</span>
                 </span>
-                <span className="text-muted-foreground shrink-0">{formatDate(s.triggerDate)}</span>
+                <span className="text-muted-foreground shrink-0 tabular-nums">{formatDate(s.triggerDate)}</span>
               </li>
             ))}
           </ul>
@@ -1465,8 +1582,7 @@ function DiagnoseBlock({
 
       {f.ticketsTotal > 0 && f.ticketsWithEmail < f.ticketsTotal && (
         <div className="space-y-2">
-          <div className="flex items-start gap-2 p-2 rounded bg-warning/10 text-warning text-xs">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <Notice tone="warning" compact icon={AlertTriangle}>
             <span>
               {f.ticketsWithEmail === 0
                 ? `Keines der ${f.ticketsTotal} Tickets hat eine E-Mail-Adresse. `
@@ -1474,14 +1590,14 @@ function DiagnoseBlock({
               Anny-Sync pflegt E-Mails bei jedem Lauf nach – stoße ihn jetzt manuell an, um
               Altdaten zu backfillen.
             </span>
-          </div>
+          </Notice>
           <div className="flex items-center gap-2 flex-wrap">
             <Button
               size="sm"
               variant="outline"
               onClick={runAnnySync}
               disabled={backfillBusy}
-              className="gap-1.5"
+              className={cn("gap-1.5", TOUCH_SM)}
             >
               {backfillBusy ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1498,18 +1614,17 @@ function DiagnoseBlock({
       )}
 
       {f.ticketsScopeMatch > 0 && f.ticketsInWindow === 0 && (
-        <div className="flex items-start gap-2 p-2 rounded bg-info/10 text-info text-xs">
-          <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+        <Notice tone="info" compact icon={Clock}>
           <span>
             Es gibt {f.ticketsScopeMatch} grundsätzlich passende Tickets, aber gerade keines im
             Trigger-Fenster. Erhöhe „Nachhol-Fenster (Tage)“ in der Regel, wenn du verpasste Tage
             rückwirkend abdecken willst.
           </span>
-        </div>
+        </Notice>
       )}
 
       {diagnose.lastSend && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[11px] text-muted-foreground tabular-nums">
           Letzter Send: {formatDate(diagnose.lastSend.sentAt)} an {diagnose.lastSend.to} ·{" "}
           {diagnose.lastSend.status}
           {diagnose.lastSend.errorMessage ? ` · ${diagnose.lastSend.errorMessage}` : ""}
@@ -1548,24 +1663,23 @@ function PresetPickerDialog({
                 key={p.id}
                 type="button"
                 onClick={() => onPick(p)}
-                className="w-full text-left rounded-lg border border-border p-3 hover:border-primary/60 hover:bg-primary/10 transition-colors"
+                className="press glass-tile w-full text-left p-3 hover:border-primary/40 hover:bg-primary/10"
               >
                 <div className="flex items-start gap-3">
-                  <div className="h-9 w-9 rounded-lg flex items-center justify-center bg-muted shrink-0">
-                    <Icon className={cn("h-4 w-4", meta.color)} />
-                  </div>
+                  {/* Kachel und Chip ohne eigene Flächen: in der Ebene getönt (Abschnitt 18). */}
+                  <IconChip icon={Icon} tone="neutral" className="size-9" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">{p.label}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{p.description}</p>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline">
                         {meta.label}
                       </Badge>
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline" className="tabular-nums">
                         {p.defaults.daysOffset}d {p.defaults.trigger.startsWith("SUBSCRIPTION_EXPIRING") ? "vor" : "nach"}
                       </Badge>
                       {p.defaults.createVoucher && (
-                        <Badge variant="warning" className="text-[10px] gap-1">
+                        <Badge variant="secondary" className="tabular-nums">
                           <GiftIcon className="h-3 w-3" />
                           {p.defaults.voucherDiscountPercent}%
                         </Badge>
@@ -1817,7 +1931,7 @@ function RuleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Mail className="h-5 w-5 text-primary" />
@@ -1834,12 +1948,13 @@ function RuleDialog({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="z. B. Abo-Erinnerung 7 Tage vor Ablauf"
+                className={FIELD}
               />
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Trigger</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
                 {(Object.keys(TRIGGER_META) as RuleTrigger[]).map((t) => {
                   const m = TRIGGER_META[t];
                   const Icon = m.icon;
@@ -1848,17 +1963,19 @@ function RuleDialog({
                       key={t}
                       type="button"
                       onClick={() => setTrigger(t)}
+                      aria-pressed={trigger === t}
                       className={cn(
-                        "flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition-all",
+                        "press flex items-center gap-2.5 rounded-tile border p-2.5 text-left",
+                        // Auswahl in Akzentfarbe, sonst Glas-Kachel (in der Ebene getönt).
                         trigger === t
-                          ? "border-primary bg-primary/8"
-                          : "border-border hover:border-input",
+                          ? "border-primary/60 bg-primary/10"
+                          : "glass-tile hover:border-primary/40",
                       )}
                     >
-                      <Icon className={cn("h-4 w-4 shrink-0", m.color)} />
+                      <Icon className={cn("h-4 w-4 shrink-0", trigger === t ? "text-primary" : "text-muted-foreground")} />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-foreground truncate">{m.label}</p>
-                        <p className="text-xs text-muted-foreground/70 truncate">{m.helper}</p>
+                        <p className="text-xs text-muted-foreground truncate">{m.helper}</p>
                       </div>
                     </button>
                   );
@@ -1875,8 +1992,9 @@ function RuleDialog({
                 max={365}
                 value={daysOffset}
                 onChange={(e) => setDaysOffset(Number(e.target.value) || 0)}
+                className={cn("tabular-nums", FIELD)}
               />
-              <p className="text-xs text-muted-foreground/70">{triggerInfo.helper}</p>
+              <p className="text-xs text-muted-foreground">{triggerInfo.helper}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="rule-cooldown">Cooldown (Tage)</Label>
@@ -1887,8 +2005,9 @@ function RuleDialog({
                 max={365}
                 value={cooldownDays}
                 onChange={(e) => setCooldownDays(Number(e.target.value) || 0)}
+                className={cn("tabular-nums", FIELD)}
               />
-              <p className="text-xs text-muted-foreground/70">Mindestabstand pro Empfänger.</p>
+              <p className="text-xs text-muted-foreground">Mindestabstand pro Empfänger.</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="rule-lookback">Nachhol-Fenster (Tage)</Label>
@@ -1899,8 +2018,9 @@ function RuleDialog({
                 max={365}
                 value={lookbackDays}
                 onChange={(e) => setLookbackDays(Number(e.target.value) || 0)}
+                className={cn("tabular-nums", FIELD)}
               />
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 Holt verpasste Tage rückwirkend nach (0 = nur exakter Soll-Sendetag).
                 Cooldown verhindert Doppel-Sends.
               </p>
@@ -1911,7 +2031,7 @@ function RuleDialog({
                 <div className="space-y-1.5">
                   <Label>Nur für Abo</Label>
                   <Select value={subscriptionId} onValueChange={setSubscriptionId}>
-                    <SelectTrigger className="h-9 text-sm">
+                    <SelectTrigger className={SELECT_FIELD}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1927,7 +2047,7 @@ function RuleDialog({
                 <div className="space-y-1.5">
                   <Label>Nur für Service</Label>
                   <Select value={serviceId} onValueChange={setServiceId}>
-                    <SelectTrigger className="h-9 text-sm">
+                    <SelectTrigger className={SELECT_FIELD}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1951,15 +2071,16 @@ function RuleDialog({
                 placeholder="https://www.tuttenbrocksee.com"
                 value={renewUrl}
                 onChange={(e) => setRenewUrl(e.target.value)}
+                className={FIELD}
               />
-              <p className="text-xs text-muted-foreground/70">{renewUrlHelper}</p>
+              <p className="text-xs text-muted-foreground">{renewUrlHelper}</p>
             </div>
           </div>
 
-          <div className="rounded-lg border border-border p-3 space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="glass-tile p-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <GiftIcon className="h-4 w-4 text-warning" />
+                <GiftIcon className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">Rabatt-Voucher erzeugen</span>
               </div>
               <Switch checked={createVoucher} onCheckedChange={setCreateVoucher} />
@@ -1967,7 +2088,7 @@ function RuleDialog({
             {showVoucherFields && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <div className="space-y-1">
-                  <Label htmlFor="vd" className="text-xs">Rabatt %</Label>
+                  <Label htmlFor="vd" className="text-[13px]">Rabatt %</Label>
                   <Input
                     id="vd"
                     type="number"
@@ -1975,11 +2096,11 @@ function RuleDialog({
                     max={100}
                     value={voucherDiscount}
                     onChange={(e) => setVoucherDiscount(Number(e.target.value) || 0)}
-                    className="h-9"
+                    className={cn("tabular-nums", FIELD)}
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="vv" className="text-xs">Gültig (Tage)</Label>
+                  <Label htmlFor="vv" className="text-[13px]">Gültig (Tage)</Label>
                   <Input
                     id="vv"
                     type="number"
@@ -1987,17 +2108,17 @@ function RuleDialog({
                     max={730}
                     value={voucherDays}
                     onChange={(e) => setVoucherDays(Number(e.target.value) || 0)}
-                    className="h-9"
+                    className={cn("tabular-nums", FIELD)}
                   />
                 </div>
                 <div className="space-y-1 col-span-2 sm:col-span-1">
-                  <Label htmlFor="vt" className="text-xs">Voucher-Bezeichnung</Label>
+                  <Label htmlFor="vt" className="text-[13px]">Voucher-Bezeichnung</Label>
                   <Input
                     id="vt"
                     value={voucherTypeName}
                     onChange={(e) => setVoucherTypeName(e.target.value)}
                     placeholder="z. B. Folgebesuch"
-                    className="h-9"
+                    className={FIELD}
                   />
                 </div>
               </div>
@@ -2011,25 +2132,26 @@ function RuleDialog({
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="z. B. Dein Abo läuft bald ab"
+              className={FIELD}
             />
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="rule-body">HTML-Body</Label>
-            <textarea
+            <Textarea
               id="rule-body"
               value={bodyHtml}
               onChange={(e) => setBodyHtml(e.target.value)}
               rows={9}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring/50"
+              className="font-mono"
             />
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               {variableHints.map((v) => (
                 <button
                   key={v}
                   type="button"
                   onClick={() => setBodyHtml((prev) => prev + v)}
-                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted hover:bg-primary/10 dark:bg-muted text-muted-foreground transition-colors"
+                  className="press inline-flex h-9 items-center rounded-full bg-muted px-2.5 font-mono text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-primary sm:h-7"
                 >
                   {v}
                 </button>
@@ -2037,22 +2159,22 @@ function RuleDialog({
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+          <div className="glass-tile flex items-center justify-between gap-3 px-3 py-2.5">
             <div>
               <p className="text-sm font-medium">Regel aktiv</p>
-              <p className="text-xs text-muted-foreground/70">Inaktive Regeln werden vom Cron ignoriert.</p>
+              <p className="text-xs text-muted-foreground">Inaktive Regeln werden vom Cron ignoriert.</p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
 
-          <div className="rounded-lg border border-warning/30/40 bg-warning/10 px-3 py-3 space-y-2">
+          <div className="glass-tile p-3 space-y-2">
             <div className="flex items-center gap-2">
-              <TestTube2 className="h-4 w-4 text-warning" />
-              <span className="text-sm font-medium text-warning">
+              <TestTube2 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">
                 Test-Mail mit Beispieldaten senden
               </span>
             </div>
-            <p className="text-xs text-warning/80">
+            <p className="text-xs text-muted-foreground">
               Rendert Betreff &amp; Body mit Platzhaltern wie <code className="font-mono">Max Mustermann</code> und
               fiktiven Daten – ohne dass die Regel gespeichert oder Empfänger ausgewählt werden müssen.
             </p>
@@ -2068,45 +2190,38 @@ function RuleDialog({
                     handleTest();
                   }
                 }}
-                className="h-9 bg-card"
+                className={cn("min-w-0", FIELD)}
               />
               <Button
                 type="button"
                 size="sm"
+                variant="outline"
                 onClick={handleTest}
                 disabled={testing || !testTo.trim()}
-                className="bg-warning hover:bg-warning/90 gap-1.5 shrink-0"
+                className={cn("gap-1.5 shrink-0", FIELD)}
               >
                 {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Test senden
               </Button>
             </div>
             {testResult && (
-              <div
-                className={cn(
-                  "flex items-start gap-2 p-2 rounded-md text-xs font-medium",
-                  testResult.ok
-                    ? "bg-success/10 text-success"
-                    : "bg-destructive/10 text-destructive",
-                )}
-              >
-                {testResult.ok ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                ) : (
-                  <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                )}
-                <span>{testResult.msg}</span>
-              </div>
+              <Notice
+                tone={testResult.ok ? "success" : "danger"}
+                icon={testResult.ok ? CheckCircle2 : XCircle}
+                compact
+                title={testResult.msg}
+              />
             )}
           </div>
 
-          {error && <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <Notice tone="danger" compact title={error} />}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={onClose} disabled={saving}>
+          {/* Handy: Tasten in voller Breite, Primärtaste oben. */}
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={onClose} disabled={saving} className={FIELD}>
               Abbrechen
             </Button>
-            <Button onClick={handleSave} disabled={saving} className="min-w-32">
+            <Button onClick={handleSave} disabled={saving} className={cn("min-w-32", FIELD)}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Speichern"}
             </Button>
           </div>

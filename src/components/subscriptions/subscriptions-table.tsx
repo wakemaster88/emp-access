@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -58,6 +60,13 @@ function ticketValidity(t: TicketRow): "valid" | "expired" | "invalid" | "paused
   }
   return "valid";
 }
+
+/**
+ * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
+ * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
+ */
+const TABLE_EDGE =
+  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
 
 function formatDate(d: string | Date | null): string {
   if (!d) return "–";
@@ -120,42 +129,44 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
 
   const maxBadges = 4;
 
-  function AnnyBadges({ names }: { names: string[] }) {
+  function AnnyBadges({ names, className }: { names: string[]; className?: string }) {
     if (names.length === 0) return <span className="text-muted-foreground/70 text-sm">–</span>;
     const show = names.slice(0, maxBadges);
     const rest = names.length - maxBadges;
     return (
-      <div className="flex flex-wrap gap-1">
+      <div className={cn("flex flex-wrap gap-1", className)}>
         {show.map((n) => (
-          <span key={n} className="inline-flex items-center gap-1 rounded-md bg-violet-50 dark:bg-violet-950/30 px-2 py-0.5 text-xs text-violet-700 dark:text-violet-300">
+          // Verknüpfung ist eine Bezeichnung, kein Info-Zustand: Glas wie die Resourcen.
+          <Badge key={n} variant="secondary" className="font-medium text-foreground/80">
+            <Link2 className="h-3 w-3 text-muted-foreground/70 shrink-0" />
             {n}
-          </span>
+          </Badge>
         ))}
         {rest > 0 && (
-          <span className="inline-flex items-center rounded-md bg-border dark:bg-accent px-2 py-0.5 text-xs text-muted-foreground">
+          <Badge variant="neutral" className="tabular-nums">
             +{rest}
-          </span>
+          </Badge>
         )}
       </div>
     );
   }
 
-  function ResourceBadges({ areas: areaList }: { areas: AreaRef[] }) {
+  function ResourceBadges({ areas: areaList, className }: { areas: AreaRef[]; className?: string }) {
     if (!areaList?.length) return <span className="text-muted-foreground/70 text-sm">–</span>;
     const show = areaList.slice(0, maxBadges);
     const rest = areaList.length - maxBadges;
     return (
-      <div className="flex flex-wrap gap-1">
+      <div className={cn("flex flex-wrap gap-1", className)}>
         {show.map((a) => (
-          <span key={a.id} className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground/80">
+          <Badge key={a.id} variant="secondary" className="font-medium text-foreground/80">
             <MapPin className="h-3 w-3 text-muted-foreground/70 shrink-0" />
             {a.name}
-          </span>
+          </Badge>
         ))}
         {rest > 0 && (
-          <span className="inline-flex items-center rounded-md bg-border dark:bg-accent px-2 py-0.5 text-xs text-muted-foreground">
+          <Badge variant="neutral" className="tabular-nums">
             +{rest}
-          </span>
+          </Badge>
         )}
       </div>
     );
@@ -164,10 +175,10 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
   return (
     <>
       {!readonly && (
-        <div className="flex justify-end mb-4">
+        <div className="flex justify-end px-4 sm:px-[18px]">
           <Button
             onClick={() => { setSelected(null); setSelectedAreas([]); setAddOpen(true); }}
-            className="bg-primary hover:bg-primary/90 gap-2 shadow-sm"
+            className="h-11 sm:h-9"
           >
             <Plus className="h-4 w-4" />
             Abo anlegen
@@ -175,32 +186,33 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
         </div>
       )}
 
-      <div className="rounded-lg border border-border overflow-x-auto">
-        <Table>
+      <div className="border-t border-border">
+        <Table className={TABLE_EDGE}>
           <TableHeader>
-            <TableRow className="border-border hover:bg-transparent bg-muted/40">
-              <TableHead className="hidden sm:table-cell w-10 text-muted-foreground font-medium">#</TableHead>
-              <TableHead className="text-muted-foreground font-medium">
+            <TableRow>
+              <TableHead className="hidden sm:table-cell w-10">#</TableHead>
+              {/* Auf dem Handy ist „#“ ausgeblendet, daher bekommt „Name“ den Randabstand. */}
+              <TableHead className="max-sm:pl-4">
                 <span className="inline-flex items-center gap-1.5">
-                  <CreditCard className="h-4 w-4 text-muted-foreground/70" />
+                  <CreditCard className="h-3.5 w-3.5 text-muted-foreground/70" />
                   Name
                 </span>
               </TableHead>
-              <TableHead className="hidden lg:table-cell min-w-[160px] text-muted-foreground font-medium">
+              <TableHead className="hidden lg:table-cell min-w-[160px]">
                 <span className="inline-flex items-center gap-1.5">
-                  <Link2 className="h-4 w-4 text-muted-foreground/70" />
+                  <Link2 className="h-3.5 w-3.5 text-muted-foreground/70" />
                   anny Verknüpfungen
                 </span>
               </TableHead>
-              <TableHead className="hidden md:table-cell min-w-[140px] text-muted-foreground font-medium">
+              <TableHead className="hidden md:table-cell min-w-[140px]">
                 <span className="inline-flex items-center gap-1.5">
-                  <MapPin className="h-4 w-4 text-muted-foreground/70" />
+                  <MapPin className="h-3.5 w-3.5 text-muted-foreground/70" />
                   Resourcen
                 </span>
               </TableHead>
-              <TableHead className="w-[90px] text-right text-muted-foreground font-medium">
+              <TableHead className="w-[90px] text-right">
                 <span className="inline-flex items-center justify-end gap-1.5">
-                  <Ticket className="h-4 w-4 text-muted-foreground/70" />
+                  <Ticket className="h-3.5 w-3.5 text-muted-foreground/70" />
                   Tickets
                 </span>
               </TableHead>
@@ -208,13 +220,13 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
           </TableHeader>
           <TableBody>
             {subscriptions.length === 0 && (
-              <TableRow className="hover:bg-transparent border-border">
-                <TableCell colSpan={5} className="text-center py-16">
-                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                    <CreditCard className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                    <p className="font-medium text-muted-foreground">Noch keine Abos angelegt</p>
-                    <p className="text-sm">Lege ein Abo an, um Abonnements aus anny.co zu verknüpfen.</p>
-                  </div>
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5} className="whitespace-normal">
+                  <EmptyState
+                    icon={CreditCard}
+                    title="Noch keine Abos angelegt"
+                    description="Lege ein Abo an, um Abonnements aus anny.co zu verknüpfen."
+                  />
                 </TableCell>
               </TableRow>
             )}
@@ -246,198 +258,193 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                 return (a.firstName ?? a.name).localeCompare(b.firstName ?? b.name);
               });
 
+              const showTickets = isExpanded && tickets.length > 0;
+
               return (
-                <TableRow
-                  key={sub.id}
-                  className={cn(
-                    "border-border transition-colors group",
-                    readonly ? "hover:bg-muted/40" : "hover:bg-primary/10 ",
-                  )}
-                >
-                  <TableCell colSpan={5} className="p-0">
-                    {/* Main subscription row */}
-                    <div className="flex items-center w-full">
-                      <div className="hidden sm:flex w-10 shrink-0 items-center justify-center px-3 py-3 text-muted-foreground/70 text-sm tabular-nums">
-                        {i + 1}
-                      </div>
-                      <div
-                        className={cn("flex-1 flex items-center gap-0 min-w-0 py-3 px-3 sm:px-0", !readonly && "cursor-pointer")}
-                        onClick={() => !readonly && openEdit(sub)}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <span className="inline-flex items-center gap-2 font-medium text-foreground">
-                            <CreditCard className="h-4 w-4 text-primary shrink-0" />
-                            {sub.name}
-                          </span>
-                          <div className="md:hidden mt-0.5 ml-6">
-                            <ResourceBadges areas={sub.areas} />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="hidden lg:block min-w-[160px] py-2 px-3">
-                        <AnnyBadges names={annyNames} />
-                      </div>
-                      <div className="hidden md:block min-w-[140px] py-2 px-3">
+                <Fragment key={sub.id}>
+                  {/* Echte Zellen je Spalte, damit Zeilen und Tabellenkopf fluchten. Ausgeklappt hängt die
+                      Ticketliste als eigene Zeile ohne Trennlinie direkt darunter. */}
+                  <TableRow className={cn(showTickets && "border-b-0")}>
+                    <TableCell className="hidden sm:table-cell py-3 text-sm tabular-nums text-muted-foreground/70">
+                      {i + 1}
+                    </TableCell>
+                    {/* w-full + max-w-0: die Namensspalte nimmt den Rest und kürzt lange Namen, statt die Tabelle zu verbreitern.
+                        Auf dem Handy ist „#“ ausgeblendet, daher bekommt der Name den Randabstand. */}
+                    <TableCell
+                      className={cn("w-full max-w-0 py-3 max-sm:pl-4", !readonly && "cursor-pointer")}
+                      onClick={() => !readonly && openEdit(sub)}
+                    >
+                      <span className="flex min-w-0 items-center gap-2 font-medium text-foreground">
+                        <CreditCard className="h-4 w-4 text-primary shrink-0" />
+                        <span className="truncate" title={sub.name}>{sub.name}</span>
+                      </span>
+                      <div className="md:hidden mt-0.5 ml-6">
                         <ResourceBadges areas={sub.areas} />
                       </div>
-                      <div className="w-[90px] shrink-0 text-right pr-3">
-                        {tickets.length > 0 ? (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); toggleExpand(sub.id); }}
-                            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-                          >
-                            {tickets.length}
-                            {isExpanded
-                              ? <ChevronDown className="h-3.5 w-3.5" />
-                              : <ChevronRight className="h-3.5 w-3.5" />
-                            }
-                          </button>
-                        ) : (
-                          <span className="text-sm text-muted-foreground/70">0</span>
-                        )}
-                      </div>
-                    </div>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      <AnnyBadges names={annyNames} className="flex-nowrap" />
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <ResourceBadges areas={sub.areas} className="flex-nowrap" />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {tickets.length > 0 ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleExpand(sub.id); }}
+                          className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium tabular-nums text-primary hover:underline sm:min-h-0"
+                        >
+                          {tickets.length}
+                          {isExpanded
+                            ? <ChevronDown className="h-3.5 w-3.5" />
+                            : <ChevronRight className="h-3.5 w-3.5" />
+                          }
+                        </button>
+                      ) : (
+                        <span className="text-sm text-muted-foreground/70">0</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
 
-                    {/* Expanded ticket list */}
-                    {isExpanded && tickets.length > 0 && (
-                      <div className="border-t border-border/60 bg-muted/50 dark:bg-card/30 px-3 sm:px-6 py-4">
-                        {/* Summary + search */}
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
-                          <div className="flex gap-2 text-xs">
-                            <Badge variant="success" className="gap-1">
-                              <CheckCircle2 className="h-3 w-3" />
-                              {validCount} gültig
-                            </Badge>
-                            <Badge className="bg-destructive/10 text-destructive gap-1">
-                              <XCircle className="h-3 w-3" />
-                              {expiredCount} abgelaufen
-                            </Badge>
-                          </div>
-                          {tickets.length > 5 && (
-                            <div className="relative sm:ml-auto">
-                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-                              <input
-                                type="text"
-                                placeholder="Suchen..."
-                                value={searchMap[sub.id] ?? ""}
-                                onChange={(e) => setSearchMap(prev => ({ ...prev, [sub.id]: e.target.value }))}
-                                className="pl-8 pr-3 py-1.5 text-xs bg-card border border-border rounded-lg w-full sm:w-48 focus:outline-none focus:ring-1 focus:ring-ring"
-                              />
+                  {/* Expanded ticket list */}
+                  {showTickets && (
+                    <TableRow className="hover:bg-transparent">
+                      {/* max-w-0: die Ticketliste scrollt in ihrer Kachel, statt die Tabelle zu verbreitern. */}
+                      <TableCell colSpan={5} className="max-w-0 p-0 pb-3">
+                        <div className="glass-tile p-2 sm:p-3">
+                          {/* Summary + search */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-2 pt-1 pb-3">
+                            <div className="flex gap-2">
+                              <Badge variant="success">
+                                <CheckCircle2 className="h-3 w-3" />
+                                {validCount} gültig
+                              </Badge>
+                              {/* Rot nur, wenn wirklich etwas abgelaufen ist. */}
+                              <Badge variant={expiredCount > 0 ? "danger" : "neutral"}>
+                                <XCircle className="h-3 w-3" />
+                                {expiredCount} abgelaufen
+                              </Badge>
                             </div>
-                          )}
-                        </div>
+                            {tickets.length > 5 && (
+                              <div className="relative sm:ml-auto">
+                                <Search className="absolute left-2.5 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
+                                <Input
+                                  type="text"
+                                  placeholder="Suchen..."
+                                  value={searchMap[sub.id] ?? ""}
+                                  onChange={(e) => setSearchMap(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                                  className="w-full pl-8 sm:w-48"
+                                />
+                              </div>
+                            )}
+                          </div>
 
-                        {/* Ticket list */}
-                        <div className="rounded-lg border border-border overflow-hidden">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="bg-muted/80 dark:bg-muted/50 text-xs text-muted-foreground">
-                                <th className="text-left px-3 py-2 font-medium">Name</th>
-                                <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Typ</th>
-                                <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Gültig</th>
-                                <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">RFID / Barcode</th>
-                                <th className="text-right px-3 py-2 font-medium">Status</th>
-                                {!readonly && <th className="w-10 px-2 py-2" />}
-                              </tr>
-                            </thead>
-                            <tbody>
+                          {/* Ticket list */}
+                          <Table>
+                            {/* Trennlinie am Kopf selbst: die äußere Tabelle nimmt jeder letzten Zeile den Rand. */}
+                            <TableHeader className="border-b border-border">
+                              <TableRow>
+                                <TableHead>Name</TableHead>
+                                <TableHead className="hidden sm:table-cell">Typ</TableHead>
+                                <TableHead className="hidden md:table-cell">Gültig</TableHead>
+                                <TableHead className="hidden lg:table-cell">RFID / Barcode</TableHead>
+                                <TableHead className="text-right">Status</TableHead>
+                                {!readonly && <TableHead className="w-10" />}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
                               {sortedTickets.map((t) => {
                                 const v = ticketValidity(t);
                                 const isLoading = ticketLoadingId === t.id;
                                 return (
-                                  <tr
+                                  <TableRow
                                     key={t.id}
-                                    className={cn(
-                                      "border-t border-border/60",
-                                      readonly
-                                        ? "hover:bg-white dark:hover:bg-muted/40"
-                                        : "hover:bg-primary/10 cursor-pointer",
-                                    )}
+                                    className={cn("group max-sm:h-11", !readonly && "cursor-pointer")}
                                     onClick={() => openTicketEdit(t.id)}
                                   >
-                                    <td className="px-3 py-2">
+                                    <TableCell>
                                       <span className="font-medium text-foreground/90">
                                         {t.firstName ?? ""} {t.lastName ?? ""}
                                       </span>
                                       {!t.firstName && !t.lastName && (
                                         <span className="text-muted-foreground">{t.name}</span>
                                       )}
-                                    </td>
-                                    <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground hidden sm:table-cell">
                                       {t.ticketTypeName ?? "–"}
-                                    </td>
-                                    <td className="px-3 py-2 text-muted-foreground hidden md:table-cell whitespace-nowrap">
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground hidden md:table-cell tabular-nums">
                                       <span className="inline-flex items-center gap-1">
                                         <Clock className="h-3 w-3 text-muted-foreground/70" />
                                         {formatDate(t.startDate)} – {formatDate(t.endDate)}
                                       </span>
-                                    </td>
-                                    <td className="px-3 py-2 text-muted-foreground hidden lg:table-cell">
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground hidden lg:table-cell">
                                       <div className="flex items-center gap-2">
                                         {t.rfidCode && (
-                                          <span className="inline-flex items-center gap-1 text-xs bg-muted px-1.5 py-0.5 rounded">
+                                          <Badge variant="mono">
                                             <Fingerprint className="h-3 w-3" />
                                             {t.rfidCode}
-                                          </span>
+                                          </Badge>
                                         )}
                                         {t.barcode && (
-                                          <span className="inline-flex items-center gap-1 text-xs bg-muted px-1.5 py-0.5 rounded">
+                                          <Badge variant="mono">
                                             <ScanLine className="h-3 w-3" />
                                             {t.barcode}
-                                          </span>
+                                          </Badge>
                                         )}
                                         {!t.rfidCode && !t.barcode && "–"}
                                       </div>
-                                    </td>
-                                    <td className="px-3 py-2 text-right">
+                                    </TableCell>
+                                    <TableCell className="text-right">
                                       {v === "valid" ? (
-                                        <Badge variant="success" className="text-xs">
+                                        <Badge variant="success">
                                           Gültig
                                         </Badge>
                                       ) : v === "paused" ? (
-                                        <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300 text-xs">
+                                        <Badge variant="warning">
                                           Pausiert
                                         </Badge>
                                       ) : v === "canceled" ? (
-                                        <Badge variant="danger" className="text-xs">
+                                        <Badge variant="danger">
                                           Gekündigt
                                         </Badge>
                                       ) : v === "expired" ? (
-                                        <Badge className="bg-destructive/10 text-destructive text-xs">
+                                        <Badge variant="danger">
                                           Abgelaufen
                                         </Badge>
                                       ) : (
-                                        <Badge className="bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground text-xs">
+                                        <Badge variant="neutral">
                                           Ungültig
                                         </Badge>
                                       )}
-                                    </td>
+                                    </TableCell>
                                     {!readonly && (
-                                      <td className="px-2 py-2 text-right">
+                                      <TableCell className="text-right">
                                         {isLoading ? (
                                           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary inline-block" />
                                         ) : (
-                                          <Pencil className="h-3.5 w-3.5 text-muted-foreground/70 group-hover:text-indigo-500 inline-block" />
+                                          <Pencil className="h-3.5 w-3.5 text-muted-foreground/70 group-hover:text-primary inline-block" />
                                         )}
-                                      </td>
+                                      </TableCell>
                                     )}
-                                  </tr>
+                                  </TableRow>
                                 );
                               })}
                               {sortedTickets.length === 0 && (
-                                <tr>
-                                  <td colSpan={readonly ? 5 : 6} className="px-3 py-6 text-center text-muted-foreground/70 text-xs">
-                                    Keine Treffer
-                                  </td>
-                                </tr>
+                                <TableRow className="hover:bg-transparent">
+                                  <TableCell colSpan={readonly ? 5 : 6}>
+                                    <EmptyState compact icon={Search} title="Keine Treffer" />
+                                  </TableCell>
+                                </TableRow>
                               )}
-                            </tbody>
-                          </table>
+                            </TableBody>
+                          </Table>
                         </div>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
               );
             })}
           </TableBody>

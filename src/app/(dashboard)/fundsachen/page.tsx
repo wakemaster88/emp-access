@@ -21,15 +21,16 @@ export default async function FundsachenPage() {
   return (
     <>
       <Header title="Fundsachen" accountName={session.user.accountName} />
-      <div className="page-content">
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base sm:text-xl">Fundsachen & Verlustmeldungen ({items.length})</CardTitle>
+      <div className="page-content space-y-4 sm:space-y-5">
+        {/* Tabelle läuft bis an den Kartenrand: Karte unten und Inhalt seitlich ohne Innenabstand. */}
+        <Card className="overflow-hidden pb-0 sm:pb-0">
+          <CardHeader>
+            <CardTitle>Fundsachen & Verlustmeldungen ({items.length})</CardTitle>
             <CardDescription>
               Gefundene Gegenstände und Verlustmeldungen können hier im Backend oder am Shop-Monitor erfasst und als erledigt markiert werden.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-0 sm:px-0">
             <LostItemsTable
               items={items.map((it) => ({
                 id: it.id,

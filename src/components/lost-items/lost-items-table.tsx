@@ -4,6 +4,9 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Segmented } from "@/components/ui/segmented";
+import { IconChip } from "@/components/ui/icon-chip";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -12,6 +15,13 @@ import {
   Plus, PackageSearch, CheckCircle2, Clock, Phone, ImageOff, Undo2, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/**
+ * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
+ * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
+ */
+const TABLE_EDGE =
+  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
 
 interface LostItemsTableProps {
   items: LostItemData[];
@@ -63,37 +73,27 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
     }
   }
 
-  const filterButtons: { id: Filter; label: string }[] = [
-    { id: "all", label: `Alle (${items.length})` },
-    { id: "open", label: `Offen (${openCount})` },
-    { id: "pickedUp", label: `Erledigt (${items.length - openCount})` },
+  const filterButtons: { id: Filter; label: string; count: number }[] = [
+    { id: "all", label: "Alle", count: items.length },
+    { id: "open", label: "Offen", count: openCount },
+    { id: "pickedUp", label: "Erledigt", count: items.length - openCount },
   ];
 
   return (
     <>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
-        <div className="flex gap-1.5">
-          {filterButtons.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setFilter(f.id)}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors",
-                filter === f.id
-                  ? "bg-primary border-primary text-white"
-                  : "border-border text-muted-foreground hover:bg-muted/50"
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 px-4 sm:px-[18px]">
+        <Segmented
+          aria-label="Filter"
+          value={filter}
+          onValueChange={setFilter}
+          className="self-start sm:self-auto"
+          options={filterButtons.map((f) => ({ value: f.id, label: f.label, count: f.count }))}
+        />
         {!readonly && (
           <Button
             onClick={() => setAddOpen(true)}
             type="button"
-            className="bg-primary hover:bg-primary/90 gap-2 shadow-sm sm:ml-auto"
+            className="h-11 sm:h-9 sm:ml-auto"
           >
             <Plus className="h-4 w-4" />
             Eintrag anlegen
@@ -101,40 +101,49 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
         )}
       </div>
 
-      <div className="rounded-lg border border-border overflow-x-auto">
-        <Table>
+      <div className="border-t border-border">
+        <Table className={TABLE_EDGE}>
           <TableHeader>
-            <TableRow className="border-border hover:bg-transparent bg-muted/40">
-              <TableHead className="w-16 text-muted-foreground font-medium">Bild</TableHead>
-              <TableHead className="text-muted-foreground font-medium">Beschreibung</TableHead>
-              <TableHead className="hidden sm:table-cell w-[120px] text-muted-foreground font-medium">Datum</TableHead>
-              <TableHead className="hidden md:table-cell w-[200px] text-muted-foreground font-medium">Kontakt</TableHead>
-              <TableHead className="w-[120px] text-right text-muted-foreground font-medium">Status</TableHead>
-              {!readonly && <TableHead className="w-[130px] text-right text-muted-foreground font-medium" />}
+            <TableRow>
+              <TableHead className="w-16">Bild</TableHead>
+              {/* Ohne Taste ist auf dem Handy die Beschreibung die letzte sichtbare Spalte. */}
+              <TableHead className={cn(readonly && "max-sm:pr-4")}>Beschreibung</TableHead>
+              <TableHead className="hidden sm:table-cell w-[120px]">Datum</TableHead>
+              <TableHead className="hidden md:table-cell w-[200px]">Kontakt</TableHead>
+              <TableHead className="hidden sm:table-cell sm:w-[120px] text-right">Status</TableHead>
+              {!readonly && <TableHead className="sm:w-[130px] text-right" />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 && (
-              <TableRow className="hover:bg-transparent border-border">
-                <TableCell colSpan={readonly ? 5 : 6} className="text-center py-16">
-                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                    <PackageSearch className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                    <p className="font-medium text-muted-foreground">
-                      {filter === "all" ? "Noch keine Einträge erfasst" : "Keine Einträge in dieser Ansicht"}
-                    </p>
-                  </div>
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={readonly ? 5 : 6} className="whitespace-normal">
+                  <EmptyState
+                    icon={PackageSearch}
+                    title={filter === "all" ? "Noch keine Einträge erfasst" : "Keine Einträge in dieser Ansicht"}
+                  />
                 </TableCell>
               </TableRow>
             )}
             {filtered.map((item) => {
               const contact = contactLabel(item);
               const isLostReport = item.kind === "LOST_REPORT";
+              const statusBadge = item.pickedUp ? (
+                <Badge variant="success">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Erledigt
+                </Badge>
+              ) : (
+                <Badge variant="warning">
+                  <Clock className="h-3 w-3" />
+                  Offen
+                </Badge>
+              );
               return (
                 <TableRow
                   key={item.id}
                   className={cn(
-                    "border-border transition-colors",
-                    !readonly && "cursor-pointer hover:bg-primary/10 ",
+                    !readonly && "cursor-pointer",
                     item.pickedUp && "opacity-60"
                   )}
                   onClick={() => !readonly && setSelected(item)}
@@ -148,31 +157,26 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                         className="h-12 w-12 rounded-lg object-cover border border-border"
                       />
                     ) : (
-                      <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center">
-                        {isLostReport ? (
-                          <User className="h-5 w-5 text-muted-foreground/70" />
-                        ) : (
-                          <ImageOff className="h-5 w-5 text-muted-foreground/70" />
-                        )}
-                      </div>
+                      // Platzhalter ohne Bild: Symbol-Chip wie in Listenzeilen.
+                      <IconChip icon={isLostReport ? User : ImageOff} size="lg" className="size-12" />
                     )}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-start gap-2 min-w-0">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "shrink-0 text-[10px] px-1.5 py-0",
-                          isLostReport
-                            ? "border-violet-300 text-violet-700 dark:border-violet-800 dark:text-violet-300"
-                            : "border-warning/30 text-warning "
-                        )}
-                      >
+                  {/* Beschreibung bricht vollständig um, sonst wird die Tabelle so breit wie der längste Text. */}
+                  <TableCell className={cn("whitespace-normal", readonly && "max-sm:pr-4")}>
+                    <div className="flex items-start gap-2 min-w-0 sm:min-w-48">
+                      {/* Art ist ein Typ, kein Zustand: neutral, Gelb bleibt dem Status „Offen“.
+                          Handy: die Art steht in der Zeile darunter, damit die Beschreibung die volle Breite hat. */}
+                      <Badge variant="neutral" className="shrink-0 max-sm:hidden">
                         {isLostReport ? "Verlust" : "Fund"}
                       </Badge>
-                      <p className="font-medium text-foreground line-clamp-2">{item.description}</p>
+                      <p className="font-medium text-foreground">{item.description}</p>
                     </div>
-                    <p className="sm:hidden text-[11px] text-muted-foreground/70 mt-0.5">{formatDate(item.foundDate)}</p>
+                    {/* Handy: Datum und Status unter der Beschreibung statt eigener Spalten. */}
+                    <div className="sm:hidden mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <Badge variant="neutral">{isLostReport ? "Verlust" : "Fund"}</Badge>
+                      <span className="text-[11px] text-muted-foreground tabular-nums">{formatDate(item.foundDate)}</span>
+                      {statusBadge}
+                    </div>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell text-muted-foreground tabular-nums">
                     {formatDate(item.foundDate)}
@@ -187,18 +191,8 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                       <span className="text-muted-foreground/70">–</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
-                    {item.pickedUp ? (
-                      <Badge variant="success" className="gap-1">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Erledigt
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-warning/10 text-warning gap-1">
-                        <Clock className="h-3 w-3" />
-                        Offen
-                      </Badge>
-                    )}
+                  <TableCell className="hidden sm:table-cell text-right">
+                    {statusBadge}
                   </TableCell>
                   {!readonly && (
                     <TableCell className="text-right">
@@ -208,17 +202,18 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                         size="sm"
                         disabled={togglingId === item.id}
                         onClick={(e) => { e.stopPropagation(); togglePickedUp(item); }}
-                        className="gap-1.5 text-xs"
+                        className="gap-1.5 max-sm:size-11"
                       >
+                        {/* Handy: nur Symbol (44 px), die Beschriftung bleibt für Screenreader. */}
                         {item.pickedUp ? (
                           <>
                             <Undo2 className="h-3.5 w-3.5" />
-                            Zurücksetzen
+                            <span className="max-sm:sr-only">Zurücksetzen</span>
                           </>
                         ) : (
                           <>
                             <CheckCircle2 className="h-3.5 w-3.5" />
-                            {isLostReport ? "Erledigt" : "Abgeholt"}
+                            <span className="max-sm:sr-only">{isLostReport ? "Erledigt" : "Abgeholt"}</span>
                           </>
                         )}
                       </Button>

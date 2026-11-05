@@ -10,6 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Loader2, Trash2, Save, Lock, MapPin, Hash, Ticket as TicketIcon,
   CreditCard, FileText, Search, X, Check, Plus, Calendar, History, Pencil,
@@ -120,9 +123,10 @@ function DateField({
       type="date"
       defaultValue={value}
       onChange={(e) => onChange(e.target.value)}
+      // Gleiche Optik wie `Input`: getönte Glas-Füllung, Fokus in Akzentfarbe.
       className={cn(
-        "border-input dark:bg-input/30 selection:bg-primary selection:text-primary-foreground h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
-        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+        "glass-field selection:bg-primary selection:text-primary-foreground h-9 w-full min-w-0 px-3 py-1 text-base transition-[color,box-shadow,border-color,background-color] outline-none hover:border-foreground/20 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        "focus-visible:border-ring focus-visible:bg-glass-strong focus-visible:ring-ring/30 focus-visible:ring-[3px]",
         className,
       )}
     />
@@ -143,14 +147,15 @@ function ticketDisplayName(t: AboTicketRef): string {
   return personName || t.name;
 }
 
-function ticketStatusBadge(t: AboTicketRef): { label: string; cls: string } | null {
-  if (t.status === "PAUSED") return { label: "Pausiert", cls: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300" };
-  if (t.status === "CANCELED") return { label: "Gekündigt", cls: "bg-destructive/12 text-destructive" };
-  if (t.status === "INVALID") return { label: "Ungültig", cls: "bg-border text-muted-foreground dark:bg-accent dark:text-foreground/80" };
+/// Status-Pille eines Tickets als Badge-Variante (Pause = Hinweis, Ende = Störung, ungültig = neutral).
+function ticketStatusBadge(t: AboTicketRef): { label: string; variant: "warning" | "danger" | "neutral" } | null {
+  if (t.status === "PAUSED") return { label: "Pausiert", variant: "warning" };
+  if (t.status === "CANCELED") return { label: "Gekündigt", variant: "danger" };
+  if (t.status === "INVALID") return { label: "Ungültig", variant: "neutral" };
   if (t.endDate) {
     const end = new Date(t.endDate);
     if (!isNaN(end.getTime()) && end < new Date()) {
-      return { label: "Abgelaufen", cls: "bg-destructive/10 text-destructive " };
+      return { label: "Abgelaufen", variant: "danger" };
     }
   }
   return null;
@@ -191,33 +196,34 @@ function TicketPicker({
   if (selected && !open) {
     const sb = ticketStatusBadge(selected);
     return (
-      <div className="rounded-md border border-violet-200 dark:border-violet-900/40 bg-violet-50/30 dark:bg-violet-950/10 p-2">
+      <div className="rounded-tile border border-primary/30 bg-primary/10 p-2.5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-foreground/90 truncate inline-flex items-center gap-1.5">
-              <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+            <p className="text-sm font-medium text-foreground truncate inline-flex items-center gap-1.5">
+              <TicketIcon className="h-3.5 w-3.5 text-primary shrink-0" />
               {ticketDisplayName(selected)}
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-1">
               {selected.subscription && (
-                <Badge variant="success" className="gap-1 text-[10px] py-0">
-                  <CreditCard className="h-2.5 w-2.5" />
+                <Badge variant="secondary" className="font-medium text-foreground/80">
+                  <CreditCard className="h-2.5 w-2.5 text-muted-foreground/70" />
                   {selected.subscription.name}
                 </Badge>
               )}
               {selected.ticketTypeName && (
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground">
                   {selected.ticketTypeName}
                 </span>
               )}
-              {sb && <Badge className={cn("text-[10px] py-0", sb.cls)}>{sb.label}</Badge>}
+              {sb && <Badge variant={sb.variant}>{sb.label}</Badge>}
             </div>
           </div>
+          {/* Auf dem Handy 44 px Tippfläche, ab sm kompakt. */}
           <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="text-muted-foreground/70 hover:text-primary p-1"
+              className="inline-flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-glass-tile hover:text-primary max-sm:size-11"
               aria-label="Anderes Ticket wählen"
               title="Anderes Ticket wählen"
             >
@@ -226,7 +232,7 @@ function TicketPicker({
             <button
               type="button"
               onClick={() => onChange(null)}
-              className="text-muted-foreground/70 hover:text-destructive p-1"
+              className="inline-flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-glass-tile hover:text-destructive max-sm:size-11"
               aria-label="Ticket entfernen"
               title="Ticket entfernen"
             >
@@ -244,30 +250,31 @@ function TicketPicker({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="w-full text-left h-9 px-3 text-sm bg-card border border-border rounded-md text-muted-foreground hover:border-primary/60 transition-colors inline-flex items-center justify-between"
+          className="glass-field w-full text-left h-11 sm:h-9 px-3 text-sm text-muted-foreground hover:border-foreground/20 transition-colors inline-flex items-center justify-between"
         >
-          <span className="text-muted-foreground/70">{placeholder ?? "— Ticket wählen —"}</span>
+          <span className="text-muted-foreground">{placeholder ?? "— Ticket wählen —"}</span>
           <Search className="h-3.5 w-3.5 text-muted-foreground/70" />
         </button>
       )}
       {open && (
-        <div className="rounded-md border border-border p-1.5 space-y-1.5">
+        <div className="glass-tile p-1.5 space-y-1.5">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-            <input
+            <Search className="absolute left-2.5 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
+            <Input
               type="text"
               autoFocus={autoFocus ?? true}
               placeholder="Mieter, Abo, Tickettyp suchen…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-card border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+              className="h-11 pl-8 sm:h-9"
             />
           </div>
-          <div className="max-h-[220px] overflow-y-auto space-y-0.5">
+          <div className="max-h-[220px] overflow-y-auto overscroll-contain scrollbar-thin space-y-0.5">
             {filtered.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground/70 py-4 text-center">
-                {aboTickets.length === 0 ? "Noch keine Abo-Tickets vorhanden." : "Keine Treffer."}
-              </p>
+              <EmptyState
+                compact
+                title={aboTickets.length === 0 ? "Noch keine Abo-Tickets vorhanden." : "Keine Treffer."}
+              />
             ) : filtered.map((t) => {
               const isSel = t.id === value;
               const sb = ticketStatusBadge(t);
@@ -277,31 +284,31 @@ function TicketPicker({
                   type="button"
                   onClick={() => { onChange(t.id); setOpen(false); setQuery(""); }}
                   className={cn(
-                    "w-full flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
-                    isSel ? "bg-violet-50 dark:bg-violet-900/20" : "hover:bg-muted/50"
+                    "w-full flex min-h-11 items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left transition-colors sm:min-h-9",
+                    isSel ? "bg-primary/10" : "hover:bg-glass-tile"
                   )}
                 >
                   <div className={cn(
-                    "h-4 w-4 rounded-full border flex items-center justify-center shrink-0",
-                    isSel ? "bg-violet-500 border-violet-500" : "border-input"
+                    "size-[18px] rounded-full border flex items-center justify-center shrink-0",
+                    isSel ? "bg-primary border-primary text-primary-foreground" : "border-input bg-field"
                   )}>
-                    {isSel && <Check className="h-2.5 w-2.5 text-white" />}
+                    {isSel && <Check className="size-3" strokeWidth={3} />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-foreground/80 truncate">
+                    <p className="text-[13px] text-foreground truncate">
                       {ticketDisplayName(t)}
                     </p>
                     <div className="flex flex-wrap items-center gap-1 mt-0.5">
                       {t.subscription && (
-                        <span className="text-[10px] text-success inline-flex items-center gap-0.5">
+                        <span className="text-[11px] text-muted-foreground inline-flex items-center gap-0.5">
                           <CreditCard className="h-2.5 w-2.5" />
                           {t.subscription.name}
                         </span>
                       )}
                       {t.ticketTypeName && (
-                        <span className="text-[10px] text-muted-foreground/70 truncate">· {t.ticketTypeName}</span>
+                        <span className="text-[11px] text-muted-foreground truncate">· {t.ticketTypeName}</span>
                       )}
-                      {sb && <span className={cn("text-[9px] px-1 rounded", sb.cls)}>{sb.label}</span>}
+                      {sb && <Badge variant={sb.variant} className="px-1.5 py-0 text-[10px]">{sb.label}</Badge>}
                     </div>
                   </div>
                 </button>
@@ -313,7 +320,7 @@ function TicketPicker({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="text-[10px] text-muted-foreground/70 hover:text-foreground px-1"
+                className="min-h-11 px-1 text-xs font-medium text-muted-foreground hover:text-foreground sm:min-h-0"
               >
                 Abbrechen
               </button>
@@ -336,48 +343,38 @@ function RenterModeToggle({
   /// Wenn true wird ein dezenter "*"-Hinweis angezeigt.
   required?: boolean;
 }) {
+  // Segmentwahl ohne eigene Klassen; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
+  // Segmented kennt kein title je Option, daher sitzen die Tooltips an den Labels.
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[10px] text-muted-foreground">
+      <span className="text-xs text-muted-foreground">
         Mieter{required ? " *" : ""}
       </span>
-      <div
-        role="tablist"
-        className="inline-flex rounded-md border border-border bg-muted/50/40 p-0.5 gap-0.5"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === "ticket"}
-          onClick={() => onChange("ticket")}
-          className={cn(
-            "inline-flex items-center gap-1 px-2 h-6 rounded text-[10px] font-medium transition-colors",
-            mode === "ticket"
-              ? "bg-card text-violet-700 dark:text-violet-300 shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-          title="Mieter aus den Abo-Tickets auswählen"
-        >
-          <TicketIcon className="h-3 w-3" />
-          Abo-Ticket
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === "manual"}
-          onClick={() => onChange("manual")}
-          className={cn(
-            "inline-flex items-center gap-1 px-2 h-6 rounded text-[10px] font-medium transition-colors",
-            mode === "manual"
-              ? "bg-card text-warning shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-          title="Mietername frei eingeben (ohne Abo-Verknüpfung)"
-        >
-          <User className="h-3 w-3" />
-          Manuell
-        </button>
-      </div>
+      <Segmented
+        aria-label="Mieter"
+        value={mode}
+        onValueChange={onChange}
+        options={[
+          {
+            value: "ticket",
+            label: (
+              <span className="inline-flex items-center gap-1" title="Mieter aus den Abo-Tickets auswählen">
+                <TicketIcon className="h-3 w-3" />
+                Abo-Ticket
+              </span>
+            ),
+          },
+          {
+            value: "manual",
+            label: (
+              <span className="inline-flex items-center gap-1" title="Mietername frei eingeben (ohne Abo-Verknüpfung)">
+                <User className="h-3 w-3" />
+                Manuell
+              </span>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -421,6 +418,11 @@ export function LockerDialog({
   const [saving, setSaving] = useState(false);
   const [savingRental, setSavingRental] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Rückfragen als Schritt im selben Dialog (Abschnitt 18), kein Browser-Dialog:
+  // Löschen des Schließfachs in der Fußzeile, Entfernen einer Vermietung in ihrer Zeile.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmRentalId, setConfirmRentalId] = useState<number | null>(null);
+  const [deletingRental, setDeletingRental] = useState(false);
   const [error, setError] = useState("");
   const [rentalError, setRentalError] = useState("");
 
@@ -429,6 +431,8 @@ export function LockerDialog({
       setError("");
       setRentalError("");
       setEditor(null);
+      setConfirmDelete(false);
+      setConfirmRentalId(null);
       setInitialRentalTicketId(null);
       setInitialRentalRenterName("");
       setInitialRentalMode("ticket");
@@ -497,7 +501,7 @@ export function LockerDialog({
   }
 
   async function handleDelete() {
-    if (!locker || !confirm(`Schließfach "${locker.name}" (Nr. ${locker.number}) inkl. gesamter Vermietungs-Historie wirklich löschen?`)) return;
+    if (!locker) return;
     setDeleting(true);
     try {
       await fetch(`/api/lockers/${locker.id}`, { method: "DELETE" });
@@ -561,7 +565,7 @@ export function LockerDialog({
 
   async function handleDeleteRental(rental: RentalRow) {
     if (!locker) return;
-    if (!confirm(`Vermietung ${rental.year} (${rentalDisplayName(rental)}) wirklich entfernen?`)) return;
+    setDeletingRental(true);
     setRentalError("");
     try {
       const res = await fetch(`/api/lockers/${locker.id}/rentals/${rental.id}`, { method: "DELETE" });
@@ -574,11 +578,15 @@ export function LockerDialog({
       router.refresh();
     } catch (err) {
       setRentalError(`Netzwerkfehler: ${err instanceof Error ? err.message : "unbekannt"}`);
+    } finally {
+      setDeletingRental(false);
+      setConfirmRentalId(null);
     }
   }
 
   function startNewRental() {
     setRentalError("");
+    setConfirmRentalId(null);
     // Default-Jahr: nächstes freies Jahr nach dem höchsten bestehenden (mind. currentYear).
     const used = new Set(rentals.map((r) => r.year));
     let candidate = currentYear;
@@ -599,6 +607,7 @@ export function LockerDialog({
 
   function startEditRental(r: RentalRow) {
     setRentalError("");
+    setConfirmRentalId(null);
     setEditor({
       id: r.id,
       year: r.year,
@@ -643,117 +652,120 @@ export function LockerDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="pb-0">
-          <DialogTitle className="text-base">
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
             {isNew ? "Neues Schließfach anlegen" : "Schließfach bearbeiten"}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1 col-span-2">
-              <Label htmlFor="l-name" className="text-xs inline-flex items-center gap-1">
+          {/* Handy: eine Spalte, damit „Standort“ nicht abgeschnitten wird. */}
+          <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
+            <div className="space-y-1.5 xs:col-span-2">
+              <Label htmlFor="l-name" className="text-[13px] inline-flex items-center gap-1">
                 <Lock className="h-3 w-3 text-muted-foreground/70" />
                 Name <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="l-name" value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="z. B. Spind 12" required autoFocus className="h-9"
+                placeholder="z. B. Spind 12" required autoFocus className="h-11 sm:h-9"
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="l-number" className="text-xs inline-flex items-center gap-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="l-number" className="text-[13px] inline-flex items-center gap-1">
                 <Hash className="h-3 w-3 text-muted-foreground/70" />
                 Nummer <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="l-number" value={number} onChange={(e) => setNumber(e.target.value)}
-                placeholder="A12" required className="h-9"
+                placeholder="A12" required className="h-11 sm:h-9"
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="l-location" className="text-xs inline-flex items-center gap-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="l-location" className="text-[13px] inline-flex items-center gap-1">
                 <MapPin className="h-3 w-3 text-muted-foreground/70" />
                 Standort
               </Label>
               <Input
                 id="l-location" value={location} onChange={(e) => setLocation(e.target.value)}
-                placeholder="z. B. Umkleide UG" className="h-9"
+                placeholder="z. B. Umkleide UG" className="h-11 sm:h-9"
               />
             </div>
           </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="l-notes" className="text-xs inline-flex items-center gap-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="l-notes" className="text-[13px] inline-flex items-center gap-1">
               <FileText className="h-3 w-3 text-muted-foreground/70" />
               Notiz
             </Label>
             <Input
               id="l-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional, z. B. Schloss-Code" className="h-9"
+              placeholder="Optional, z. B. Schloss-Code" className="h-11 sm:h-9"
             />
           </div>
 
-          {/* Schlosstyp + Anzahl */}
-          <div className="grid grid-cols-[1fr_120px] gap-3 items-end">
-            <div className="space-y-1">
-              <Label className="text-xs inline-flex items-center gap-1">
+          {/* Schlosstyp + Anzahl; auf dem Handy untereinander */}
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-3 sm:items-end">
+            <div className="space-y-1.5">
+              <Label className="text-[13px] inline-flex items-center gap-1">
                 <KeyRound className="h-3 w-3 text-muted-foreground/70" />
                 Schlosstyp
               </Label>
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
+              {/* Segmentwahl statt zweier Kästen; die Anzahl passt sich wie bisher dem Typ an. */}
+              <Segmented
+                aria-label="Schlosstyp"
+                stretch
+                value={lockType}
+                onValueChange={(v) => {
+                  if (v === "KEY") {
                     setLockType("KEY");
                     if (keyCount === 0) setKeyCount(2);
-                  }}
-                  className={cn(
-                    "h-9 px-2 rounded-md border text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors",
-                    lockType === "KEY"
-                      ? "border-primary/30 bg-primary/10 text-primary "
-                      : "border-border text-muted-foreground hover:border-input dark:hover:border-slate-600"
-                  )}
-                >
-                  <Key className="h-3.5 w-3.5" />
-                  Schlüssel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
+                  } else {
                     setLockType("PADLOCK");
                     if (keyCount > 1) setKeyCount(1);
-                  }}
-                  className={cn(
-                    "h-9 px-2 rounded-md border text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors",
-                    lockType === "PADLOCK"
-                      ? "border-primary/30 bg-primary/10 text-primary "
-                      : "border-border text-muted-foreground hover:border-input dark:hover:border-slate-600"
-                  )}
-                >
-                  <Lock className="h-3.5 w-3.5" />
-                  Vorhängeschloss
-                </button>
-              </div>
+                  }
+                }}
+                options={[
+                  {
+                    value: "KEY",
+                    label: (
+                      <>
+                        <Key className="h-3.5 w-3.5" />
+                        Schlüssel
+                      </>
+                    ),
+                  },
+                  {
+                    value: "PADLOCK",
+                    label: (
+                      <>
+                        <Lock className="h-3.5 w-3.5" />
+                        Vorhängeschloss
+                      </>
+                    ),
+                  },
+                ]}
+              />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="l-keycount" className="text-xs">
+            <div className="space-y-1.5">
+              <Label htmlFor="l-keycount" className="text-[13px]">
                 Anzahl {itemLabel(lockType, true)}
               </Label>
+              {/* 44 px hoch wie die Segmentwahl daneben. */}
               <Input
                 id="l-keycount"
                 type="number" min={0} max={20}
                 value={keyCount}
                 onChange={(e) => setKeyCount(Math.max(0, Number(e.target.value) || 0))}
-                className="h-9 text-sm tabular-nums"
+                className="h-11 tabular-nums"
               />
             </div>
           </div>
 
           {lockType === "KEY" && (
-            <div className="space-y-1">
-              <Label htmlFor="l-locknumber" className="text-xs inline-flex items-center gap-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="l-locknumber" className="text-[13px] inline-flex items-center gap-1">
                 <Key className="h-3 w-3 text-muted-foreground/70" />
                 Schlossnummer
               </Label>
@@ -762,30 +774,31 @@ export function LockerDialog({
                 value={lockNumber}
                 onChange={(e) => setLockNumber(e.target.value)}
                 placeholder="z. B. 6897"
-                className="h-9 font-mono"
+                className="h-11 sm:h-9 font-mono"
               />
             </div>
           )}
         </div>
 
-        <Separator className="dark:bg-muted" />
+        <Separator />
 
         {/* Vermietungs-Block */}
         {isNew ? (
           <div className="space-y-2">
-            <Label className="text-xs inline-flex items-center gap-1.5 text-muted-foreground">
+            <Label className="text-[13px] inline-flex items-center gap-1.5 text-muted-foreground">
               <Calendar className="h-3 w-3 text-muted-foreground/70" />
               Erste Vermietung (optional)
             </Label>
-            <div className="grid grid-cols-[100px_1fr] gap-2 items-start">
+            <div className="grid grid-cols-1 sm:grid-cols-[100px_1fr] gap-3 items-start">
               <div className="space-y-1">
-                <span className="text-[10px] text-muted-foreground/70">Jahr</span>
+                <Label htmlFor="l-initial-year" className="text-xs font-normal text-muted-foreground">Jahr</Label>
                 <Input
+                  id="l-initial-year"
                   type="number"
                   value={initialRentalYear}
                   onChange={(e) => setInitialRentalYear(Number(e.target.value) || currentYear)}
                   min={2000} max={2100}
-                  className="h-9 text-sm"
+                  className="h-11 sm:h-9 tabular-nums"
                 />
               </div>
               <div className="space-y-1.5">
@@ -810,19 +823,19 @@ export function LockerDialog({
                     value={initialRentalRenterName}
                     onChange={(e) => setInitialRentalRenterName(e.target.value)}
                     placeholder="z. B. Familie Mustermann"
-                    className="h-9 text-sm"
+                    className="h-11 sm:h-9"
                   />
                 )}
               </div>
             </div>
-            <p className="text-[10px] text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               Weitere Jahre kannst du nach dem Anlegen hinzufügen.
             </p>
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs inline-flex items-center gap-1.5 text-muted-foreground">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-[13px] inline-flex items-center gap-1.5 text-muted-foreground">
                 <History className="h-3.5 w-3.5 text-muted-foreground/70" />
                 Vermietungs-Historie ({rentals.length})
               </Label>
@@ -830,7 +843,7 @@ export function LockerDialog({
                 <button
                   type="button"
                   onClick={startNewRental}
-                  className="text-[11px] text-primary hover:underline inline-flex items-center gap-0.5"
+                  className="min-h-11 text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 sm:min-h-0"
                 >
                   <Plus className="h-3 w-3" />
                   Jahr hinzufügen
@@ -839,9 +852,12 @@ export function LockerDialog({
             </div>
 
             {rentals.length === 0 && !editor && (
-              <p className="text-[11px] text-muted-foreground/70 py-3 text-center border border-dashed border-border rounded-md">
-                Noch keine Vermietung hinterlegt.
-              </p>
+              <EmptyState
+                compact
+                icon={History}
+                title="Noch keine Vermietung hinterlegt."
+                className="rounded-tile border border-dashed border-border"
+              />
             )}
 
             <div className="space-y-1.5">
@@ -849,40 +865,75 @@ export function LockerDialog({
                 const isCurrent = r.year === currentYear;
                 const isEditing = editor && editor.id === r.id;
                 if (isEditing) return null;
+                if (confirmRentalId === r.id && !editor) {
+                  // Rückfrage in der Zeile selbst: Abbrechen oder endgültig entfernen.
+                  return (
+                    <Notice
+                      key={r.id}
+                      tone="danger"
+                      compact
+                      title={`Vermietung ${r.year} (${rentalDisplayName(r)}) wirklich entfernen?`}
+                    >
+                      <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <Button
+                          type="button" variant="outline" size="sm"
+                          onClick={() => setConfirmRentalId(null)}
+                          disabled={deletingRental}
+                          autoFocus
+                          className="h-11 sm:h-8"
+                        >
+                          Abbrechen
+                        </Button>
+                        <Button
+                          type="button" variant="destructive" size="sm"
+                          onClick={() => handleDeleteRental(r)}
+                          disabled={deletingRental}
+                          className="h-11 sm:h-8"
+                        >
+                          {deletingRental
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <Trash2 className="h-3.5 w-3.5" />}
+                          Entfernen
+                        </Button>
+                      </div>
+                    </Notice>
+                  );
+                }
                 return (
                   <div
                     key={r.id}
                     className={cn(
-                      "rounded-md border p-2 flex items-center gap-2",
+                      "rounded-tile p-2.5 flex items-center gap-2.5",
+                      // Laufendes Jahr in Akzentfarbe (Auswahl), sonst Glas-Kachel; Grün bleibt „alle Schlüssel zurück“.
                       isCurrent
-                        ? "border-success/30 bg-success/10 "
-                        : "border-border bg-card/40"
+                        ? "border border-primary/30 bg-primary/10"
+                        : "glass-tile"
                     )}
                   >
                     <div className={cn(
-                      "shrink-0 px-2 py-1 rounded font-mono text-xs font-semibold tabular-nums",
+                      "shrink-0 px-2 py-1 rounded-lg font-mono text-xs font-semibold tabular-nums",
                       isCurrent
-                        ? "bg-success text-success-foreground"
-                        : "bg-muted text-muted-foreground"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-foreground/[0.06] text-muted-foreground dark:bg-white/[0.08]"
                     )}>
                       {r.year}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground/90 truncate inline-flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-foreground truncate inline-flex items-center gap-1.5">
                         {r.ticket
-                          ? <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                          ? <TicketIcon className="h-3.5 w-3.5 text-primary shrink-0" />
                           : <User className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />}
                         {rentalDisplayName(r)}
                       </p>
                       <div className="flex flex-wrap items-center gap-1 mt-0.5">
                         {r.ticket?.subscription && (
-                          <span className="text-[10px] text-success inline-flex items-center gap-0.5">
+                          <span className="text-[11px] text-muted-foreground inline-flex items-center gap-0.5">
                             <CreditCard className="h-2.5 w-2.5" />
                             {r.ticket.subscription.name}
                           </span>
                         )}
                         {!r.ticket && r.renterName && (
-                          <span className="text-[10px] text-muted-foreground inline-flex items-center gap-0.5">
+                          <span className="text-[11px] text-muted-foreground inline-flex items-center gap-0.5">
                             <User className="h-2.5 w-2.5" />
                             Manuell
                           </span>
@@ -891,13 +942,9 @@ export function LockerDialog({
                           const open = r.keysIssued - r.keysReturned;
                           const allBack = open <= 0;
                           return (
-                            <span
-                              className={cn(
-                                "text-[10px] inline-flex items-center gap-0.5 px-1 rounded",
-                                allBack
-                                  ? "bg-success/10 text-success "
-                                  : "bg-warning/10 text-warning "
-                              )}
+                            <Badge
+                              variant={allBack ? "success" : "warning"}
+                              className="tabular-nums"
                               title={
                                 allBack
                                   ? `Alle ${itemLabel(lockType, r.keysIssued !== 1)} zurück`
@@ -906,11 +953,11 @@ export function LockerDialog({
                             >
                               {lockType === "KEY" ? <Key className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
                               {r.keysReturned}/{r.keysIssued}
-                            </span>
+                            </Badge>
                           );
                         })()}
                         {r.notes && (
-                          <span className="text-[10px] text-muted-foreground/70 truncate">· {r.notes}</span>
+                          <span className="text-[11px] text-muted-foreground truncate">· {r.notes}</span>
                         )}
                       </div>
                     </div>
@@ -919,15 +966,15 @@ export function LockerDialog({
                         <button
                           type="button"
                           onClick={() => startEditRental(r)}
-                          className="text-muted-foreground/70 hover:text-primary p-1"
+                          className="inline-flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-glass-tile hover:text-primary max-sm:size-11"
                           title="Bearbeiten"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteRental(r)}
-                          className="text-muted-foreground/70 hover:text-destructive p-1"
+                          onClick={() => setConfirmRentalId(r.id)}
+                          className="inline-flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-glass-tile hover:text-destructive max-sm:size-11"
                           title="Entfernen"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -939,19 +986,24 @@ export function LockerDialog({
               })}
 
               {editor && (
-                <div className="rounded-md border border-primary/30/40 bg-primary/10 p-3 space-y-2">
-                  <div className="grid grid-cols-[100px_1fr] gap-2 items-start">
+                // Bearbeitungsblock: Rand in Akzentfarbe zeigt, welche Zeile gerade offen ist.
+                <div className="rounded-tile border border-primary/30 bg-glass-tile p-3 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-[100px_1fr] gap-3 items-start">
                     <div className="space-y-1">
-                      <span className="text-[10px] text-muted-foreground">Jahr</span>
+                      <Label htmlFor="l-rental-year" className="text-xs font-normal text-muted-foreground">Jahr</Label>
+                      {/* Belegtes Jahr sperrt das Speichern: Fehler am Feld (aria-invalid) statt Hinweisfarbe. */}
                       <Input
+                        id="l-rental-year"
                         type="number"
                         value={editor.year}
                         onChange={(e) => setEditor({ ...editor, year: Number(e.target.value) || currentYear })}
                         min={2000} max={2100}
-                        className="h-9 text-sm"
+                        aria-invalid={editorYearConflict ? true : undefined}
+                        aria-describedby={editorYearConflict ? "l-rental-year-error" : undefined}
+                        className="h-11 sm:h-9 tabular-nums"
                       />
                       {editorYearConflict && (
-                        <p className="text-[10px] text-warning">Jahr bereits vergeben.</p>
+                        <p id="l-rental-year-error" className="text-xs text-destructive">Jahr bereits vergeben.</p>
                       )}
                     </div>
                     <div className="space-y-1.5">
@@ -979,7 +1031,7 @@ export function LockerDialog({
                           onChange={(e) => setEditor({ ...editor, renterName: e.target.value })}
                           placeholder="z. B. Familie Mustermann"
                           autoFocus
-                          className="h-9 text-sm"
+                          className="h-11 sm:h-9"
                         />
                       )}
                     </div>
@@ -987,46 +1039,48 @@ export function LockerDialog({
 
                   {/* Schlüssel/Schloss-Ausgabe + Rücknahme */}
                   {keyCount > 0 && (
-                    <div className="rounded-md border border-warning/30/40 bg-warning/10 p-2 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium text-warning inline-flex items-center gap-1">
+                    // Neutrale Gruppe: Warnfarbe nur, wenn wirklich etwas draußen ist („Noch … draußen.“).
+                    <div className="glass-tile p-2.5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground inline-flex items-center gap-1">
                           {lockType === "KEY"
                             ? <Key className="h-3 w-3" />
                             : <Lock className="h-3 w-3" />}
                           {itemLabel(lockType, true)} (Soll: {keyCount})
                         </span>
                         <div className="flex items-center gap-1">
-                          <button
-                            type="button"
+                          <Button
+                            type="button" variant="outline" size="sm"
                             onClick={quickIssue}
                             disabled={editor.keysIssued >= editor.keysReturned && editor.keysReturned > 0}
-                            className="text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-success/10 text-success hover:bg-emerald-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="h-11 sm:h-8"
                             title="Ausgabe erfassen (heute, Soll-Anzahl)"
                           >
                             <ArrowRightCircle className="h-3 w-3" />
                             Ausgeben
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            type="button" variant="outline" size="sm"
                             onClick={quickReturn}
                             disabled={editor.keysIssued === 0 || editor.keysReturned >= editor.keysIssued}
-                            className="text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950/30 dark:text-blue-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="h-11 sm:h-8"
                             title="Komplette Rücknahme (heute)"
                           >
                             <ArrowLeftCircle className="h-3 w-3" />
                             Zurück
-                          </button>
+                          </Button>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <span className="text-[10px] text-muted-foreground inline-flex items-center gap-0.5">
+                          <Label htmlFor="l-keys-issued" className="gap-1 text-xs font-normal text-muted-foreground">
                             <ArrowRightCircle className="h-2.5 w-2.5" />
                             Ausgegeben
-                          </span>
-                          <div className="flex gap-1">
+                          </Label>
+                          <div className="flex gap-1.5">
                             <Input
+                              id="l-keys-issued"
                               type="number" min={0} max={20}
                               value={editor.keysIssued}
                               onChange={(e) => {
@@ -1037,42 +1091,43 @@ export function LockerDialog({
                                   keysReturned: Math.min(editor.keysReturned, v),
                                 });
                               }}
-                              className="h-7 w-12 text-xs tabular-nums"
+                              className="h-11 w-14 shrink-0 tabular-nums sm:h-9"
                             />
                             <DateField
                               value={editor.issuedAtDate}
                               onChange={(v) => setEditor({ ...editor, issuedAtDate: v })}
-                              className="h-7 text-xs flex-1 min-w-0"
+                              className="h-11 sm:h-9 flex-1 min-w-0"
                               instanceKey={`${editor.id ?? "new"}-issued`}
                             />
                           </div>
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] text-muted-foreground inline-flex items-center gap-0.5">
+                          <Label htmlFor="l-keys-returned" className="gap-1 text-xs font-normal text-muted-foreground">
                             <ArrowLeftCircle className="h-2.5 w-2.5" />
                             Zurückgegeben
-                          </span>
-                          <div className="flex gap-1">
+                          </Label>
+                          <div className="flex gap-1.5">
                             <Input
+                              id="l-keys-returned"
                               type="number" min={0} max={editor.keysIssued}
                               value={editor.keysReturned}
                               onChange={(e) => setEditor({
                                 ...editor,
                                 keysReturned: Math.min(editor.keysIssued, Math.max(0, Number(e.target.value) || 0)),
                               })}
-                              className="h-7 w-12 text-xs tabular-nums"
+                              className="h-11 w-14 shrink-0 tabular-nums sm:h-9"
                             />
                             <DateField
                               value={editor.returnedAtDate}
                               onChange={(v) => setEditor({ ...editor, returnedAtDate: v })}
-                              className="h-7 text-xs flex-1 min-w-0"
+                              className="h-11 sm:h-9 flex-1 min-w-0"
                               instanceKey={`${editor.id ?? "new"}-returned`}
                             />
                           </div>
                         </div>
                       </div>
                       {editor.keysIssued > 0 && editor.keysReturned < editor.keysIssued && (
-                        <p className="text-[10px] text-warning">
+                        <p className="text-xs text-warning">
                           Noch {editor.keysIssued - editor.keysReturned} {itemLabel(lockType, editor.keysIssued - editor.keysReturned !== 1)} draußen.
                         </p>
                       )}
@@ -1080,23 +1135,24 @@ export function LockerDialog({
                   )}
 
                   <div className="space-y-1">
-                    <span className="text-[10px] text-muted-foreground">Notiz (optional)</span>
+                    <Label htmlFor="l-rental-notes" className="text-xs font-normal text-muted-foreground">Notiz (optional)</Label>
                     <Input
+                      id="l-rental-notes"
                       value={editor.notes}
                       onChange={(e) => setEditor({ ...editor, notes: e.target.value })}
                       placeholder="z. B. Bezahlt am 15.03."
-                      className="h-8 text-xs"
+                      className="h-11 sm:h-9"
                     />
                   </div>
                   {rentalError && (
-                    <p className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">{rentalError}</p>
+                    <Notice tone="danger" compact title={rentalError} />
                   )}
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
                     <Button
                       type="button" variant="outline" size="sm"
                       onClick={() => { setEditor(null); setRentalError(""); }}
                       disabled={savingRental}
-                      className="h-7 text-xs"
+                      className="h-11 sm:h-9"
                     >
                       Abbrechen
                     </Button>
@@ -1110,7 +1166,7 @@ export function LockerDialog({
                           ? !editor.ticketId
                           : !editor.renterName.trim())
                       }
-                      className="h-7 text-xs"
+                      className="h-11 sm:h-9"
                     >
                       {savingRental
                         ? <Loader2 className="h-3 w-3 animate-spin" />
@@ -1122,46 +1178,77 @@ export function LockerDialog({
             </div>
 
             {rentalError && !editor && (
-              <p className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">{rentalError}</p>
+              <Notice tone="danger" compact title={rentalError} />
             )}
           </div>
         )}
 
         {error && (
-          <p className="text-sm text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{error}</p>
+          <Notice tone="danger" compact title={error} />
         )}
 
-        <Separator className="dark:bg-muted" />
+        <Separator />
 
-        <div className="flex items-center justify-between">
-          {!isNew ? (
-            <Button
-              type="button" variant="ghost" size="sm" onClick={handleDelete}
-              disabled={deleting || saving}
-              className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 h-8 text-xs"
-            >
-              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
-              Löschen
-            </Button>
-          ) : <div />}
-          <div className="flex gap-2">
-            <Button
-              type="button" variant="outline" size="sm" onClick={onClose}
-              disabled={saving || deleting} className="h-8"
-            >
-              {isNew ? "Abbrechen" : "Schließen"}
-            </Button>
-            <Button
-              type="button" size="sm" onClick={handleSaveLocker}
-              disabled={saving || deleting || !name.trim() || !number.trim()}
-              className="min-w-24 h-8"
-            >
-              {saving
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
-            </Button>
+        {confirmDelete && locker ? (
+          // Rückfrage statt Fußzeile: Abbrechen oder endgültig löschen.
+          <div className="space-y-3">
+            <Notice
+              tone="danger"
+              compact
+              title={`Schließfach "${locker.name}" (Nr. ${locker.number}) inkl. gesamter Vermietungs-Historie wirklich löschen?`}
+            />
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button" variant="outline" size="sm"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                autoFocus
+                className="h-11 sm:h-9"
+              >
+                Abbrechen
+              </Button>
+              <Button
+                type="button" variant="destructive" size="sm" onClick={handleDelete}
+                disabled={deleting}
+                className="h-11 sm:h-9"
+              >
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
+                Löschen
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Handy: volle Breite, Primärtaste oben. Ab sm: Löschen links, Handlungen rechts. */
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+            {!isNew ? (
+              <Button
+                type="button" variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}
+                disabled={deleting || saving}
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-11 sm:h-9"
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Löschen
+              </Button>
+            ) : <div className="hidden sm:block" />}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                type="button" variant="outline" size="sm" onClick={onClose}
+                disabled={saving || deleting} className="h-11 sm:h-9"
+              >
+                {isNew ? "Abbrechen" : "Schließen"}
+              </Button>
+              <Button
+                type="button" size="sm" onClick={handleSaveLocker}
+                disabled={saving || deleting || !name.trim() || !number.trim()}
+                className="min-w-24 h-11 sm:h-9"
+              >
+                {saving
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

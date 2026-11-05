@@ -14,6 +14,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, Check, ScanLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -67,11 +70,13 @@ function CheckList({
   emptyText: string;
 }) {
   if (items.length === 0) {
-    return <p className="text-[11px] text-muted-foreground/70 py-4 text-center">{emptyText}</p>;
+    return <EmptyState compact title={emptyText} />;
   }
 
+  // Auswahlliste als Glas-Kachel; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
+  // Zeilen: Auswahl bg-primary/10, Darüberfahren bg-glass-tile (Abschnitt 17); Kästchen wie der Baustein Checkbox.
   return (
-    <div className="max-h-[320px] overflow-y-auto space-y-0.5 rounded-lg border border-border p-1">
+    <div className="glass-tile max-h-[320px] overflow-y-auto overscroll-contain scrollbar-thin space-y-0.5 p-1">
       {items.map(({ key, label }) => {
         const isSelected = selected.has(key);
         return (
@@ -80,21 +85,21 @@ function CheckList({
             type="button"
             onClick={() => onToggle(key)}
             className={cn(
-              "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+              "w-full flex min-h-11 items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left transition-colors sm:min-h-9",
               isSelected
-                ? "bg-violet-50 dark:bg-violet-900/20"
-                : "hover:bg-muted/50"
+                ? "bg-primary/10"
+                : "hover:bg-glass-tile"
             )}
           >
             <div className={cn(
-              "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+              "size-[18px] rounded-[6px] border flex items-center justify-center shrink-0 transition-colors",
               isSelected
-                ? "bg-violet-500 border-violet-500"
-                : "border-input"
+                ? "bg-primary border-primary text-primary-foreground"
+                : "border-input bg-field"
             )}>
-              {isSelected && <Check className="h-3 w-3 text-white" />}
+              {isSelected && <Check className="size-3.5" strokeWidth={3} />}
             </div>
-            <span className="text-xs text-foreground/80 truncate flex-1">{label}</span>
+            <span className="text-[13px] text-foreground truncate flex-1">{label}</span>
           </button>
         );
       })}
@@ -123,6 +128,8 @@ export function SubscriptionDialog({
   const [requiresRfid, setRequiresRfid] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Rückfrage zum Löschen als Schritt im selben Dialog (Abschnitt 18), kein Browser-Dialog.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
 
   const hasAnny = annyServices.length > 0 || annyResources.length > 0 || annySubscriptions.length > 0;
@@ -130,6 +137,7 @@ export function SubscriptionDialog({
   useEffect(() => {
     if (open) {
       setError("");
+      setConfirmDelete(false);
       setTab("settings");
       if (subscription) {
         setName(subscription.name);
@@ -230,7 +238,7 @@ export function SubscriptionDialog({
   }
 
   async function handleDelete() {
-    if (!subscription || !confirm(`Abo "${subscription.name}" wirklich löschen?`)) return;
+    if (!subscription) return;
     setDeleting(true);
     try {
       await fetch(`/api/subscriptions/${subscription.id}`, { method: "DELETE" });
@@ -250,41 +258,35 @@ export function SubscriptionDialog({
   ];
   const areaItems = areas.map((a) => ({ key: String(a.id), label: a.name }));
 
-  const tabClass = (active: boolean) =>
-    `flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
-      active
-        ? "bg-card text-foreground shadow-sm"
-        : "text-muted-foreground hover:text-foreground"
-    }`;
-
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="pb-0">
-          <DialogTitle className="text-base">{isNew ? "Neues Abo anlegen" : "Abo bearbeiten"}</DialogTitle>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isNew ? "Neues Abo anlegen" : "Abo bearbeiten"}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex gap-0.5 bg-muted rounded-lg p-0.5">
-          <button type="button" onClick={() => setTab("settings")} className={tabClass(tab === "settings")}>
-            <Settings2 className="h-3 w-3" />
-            Einstellungen
-          </button>
-          {hasAnny && (
-            <button type="button" onClick={() => setTab("anny")} className={tabClass(tab === "anny")}>
-              <Link2 className="h-3 w-3" />
-              anny{selectedAnny.size > 0 && ` (${selectedAnny.size})`}
-            </button>
-          )}
-          <button type="button" onClick={() => setTab("areas")} className={tabClass(tab === "areas")}>
-            <MapPin className="h-3 w-3" />
-            Resourcen{selectedAreas.size > 0 && ` (${selectedAreas.size})`}
-          </button>
-        </div>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="gap-4">
+          {/* Kapsel ohne eigene Klassen, in der Ebene getönt (Abschnitt 18). Symbole erst ab sm, damit alles in eine Zeile passt. */}
+          <TabsList className="w-full">
+            <TabsTrigger value="settings" className="px-2.5 sm:px-3.5">
+              <Settings2 className="hidden size-3.5 sm:block" />
+              Einstellungen
+            </TabsTrigger>
+            {hasAnny && (
+              <TabsTrigger value="anny" className="px-2.5 sm:px-3.5">
+                <Link2 className="hidden size-3.5 sm:block" />
+                anny{selectedAnny.size > 0 && ` (${selectedAnny.size})`}
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="areas" className="px-2.5 sm:px-3.5">
+              <MapPin className="hidden size-3.5 sm:block" />
+              Resourcen{selectedAreas.size > 0 && ` (${selectedAreas.size})`}
+            </TabsTrigger>
+          </TabsList>
 
-        {tab === "settings" && (
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="s-name" className="text-xs">Name <span className="text-destructive">*</span></Label>
+          <TabsContent value="settings" className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="s-name" className="text-[13px]">Name <span className="text-destructive">*</span></Label>
               <Input
                 id="s-name"
                 value={name}
@@ -292,16 +294,17 @@ export function SubscriptionDialog({
                 placeholder="z.B. Ride Abo, Stundenkarte, Mitarbeiter"
                 required
                 autoFocus
-                className="h-9"
+                className="h-11 sm:h-9"
               />
             </div>
 
-            <div className="rounded-lg border border-border p-2.5 space-y-2">
-              <p className="text-[11px] font-medium text-muted-foreground">Standard-Gültigkeit für neue Tickets</p>
+            {/* Gruppen im Dialog als Glas-Kachel (glass-tile, Radius 18 px); in der Ebene getönt (Abschnitt 18). */}
+            <div className="glass-tile p-3 space-y-3">
+              <p className="text-label">Standard-Gültigkeit für neue Tickets</p>
               <div className="space-y-1.5">
-                <Label className="text-xs">Gültigkeitstyp</Label>
+                <Label className="text-[13px]">Gültigkeitstyp</Label>
                 <Select value={defaultValidityType} onValueChange={setDefaultValidityType}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Kein Standard" /></SelectTrigger>
+                  <SelectTrigger className="w-full data-[size=default]:h-11 sm:data-[size=default]:h-9"><SelectValue placeholder="Kein Standard" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Kein Standard</SelectItem>
                     <SelectItem value="DATE_RANGE">Zeitraum (Tage)</SelectItem>
@@ -312,89 +315,87 @@ export function SubscriptionDialog({
               </div>
               {defaultValidityType === "DATE_RANGE" && (
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Gültig ab</Label>
-                    <Input type="date" className="h-9 text-xs" value={defaultStartDate} onChange={(e) => setDefaultStartDate(e.target.value)} />
+                  <div className="space-y-1.5">
+                    <Label className="text-[13px]">Gültig ab</Label>
+                    <Input type="date" className="h-11 sm:h-9" value={defaultStartDate} onChange={(e) => setDefaultStartDate(e.target.value)} />
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Gültig bis</Label>
-                    <Input type="date" className="h-9 text-xs" value={defaultEndDate} onChange={(e) => setDefaultEndDate(e.target.value)} />
+                  <div className="space-y-1.5">
+                    <Label className="text-[13px]">Gültig bis</Label>
+                    <Input type="date" className="h-11 sm:h-9" value={defaultEndDate} onChange={(e) => setDefaultEndDate(e.target.value)} />
                   </div>
                 </div>
               )}
               {defaultValidityType === "TIME_SLOT" && (
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Slot von</Label>
-                    <Input type="time" className="h-9 text-xs" value={defaultSlotStart} onChange={(e) => setDefaultSlotStart(e.target.value)} />
+                  <div className="space-y-1.5">
+                    <Label className="text-[13px]">Slot von</Label>
+                    <Input type="time" className="h-11 sm:h-9" value={defaultSlotStart} onChange={(e) => setDefaultSlotStart(e.target.value)} />
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Slot bis</Label>
-                    <Input type="time" className="h-9 text-xs" value={defaultSlotEnd} onChange={(e) => setDefaultSlotEnd(e.target.value)} />
+                  <div className="space-y-1.5">
+                    <Label className="text-[13px]">Slot bis</Label>
+                    <Input type="time" className="h-11 sm:h-9" value={defaultSlotEnd} onChange={(e) => setDefaultSlotEnd(e.target.value)} />
                   </div>
                 </div>
               )}
               {defaultValidityType === "DURATION" && (
-                <div className="space-y-1">
-                  <Label className="text-xs">Dauer (Minuten)</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-[13px]">Dauer (Minuten)</Label>
                   <div className="flex gap-2 items-center">
-                    <Input type="number" min={1} className="h-9 text-xs flex-1" placeholder="z.B. 120" value={defaultValidityDurationMinutes} onChange={(e) => setDefaultValidityDurationMinutes(e.target.value)} />
-                    <Button type="button" variant="outline" size="sm" className="h-9 text-xs shrink-0" onClick={() => setDefaultValidityDurationMinutes("1440")}>
+                    <Input type="number" min={1} className="h-11 sm:h-9 flex-1" placeholder="z.B. 120" value={defaultValidityDurationMinutes} onChange={(e) => setDefaultValidityDurationMinutes(e.target.value)} />
+                    <Button type="button" variant="outline" size="sm" className="h-11 sm:h-9 shrink-0" onClick={() => setDefaultValidityDurationMinutes("1440")}>
                       1 Tag
                     </Button>
                   </div>
-                  <p className="text-[10px] text-muted-foreground/70">1 Tag = 1440 Minuten</p>
+                  <p className="text-xs text-muted-foreground">1 Tag = 1440 Minuten</p>
                 </div>
               )}
             </div>
 
-            <div className="rounded-lg border border-border divide-y divide-border">
-              <div className="flex items-center justify-between p-2.5">
-                <div>
-                  <p className="text-xs font-medium text-foreground/80 flex items-center gap-1.5">
-                    <Camera className="h-3.5 w-3.5 text-warning" /> Foto erforderlich
+            <div className="glass-tile divide-y divide-border">
+              <div className="flex items-center justify-between gap-3 p-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-foreground flex items-center gap-1.5">
+                    <Camera className="h-3.5 w-3.5 text-muted-foreground" /> Foto erforderlich
                   </p>
-                  <p className="text-[11px] text-muted-foreground">Kamera öffnet automatisch wenn kein Bild vorhanden</p>
+                  <p className="text-xs text-muted-foreground">Kamera öffnet automatisch wenn kein Bild vorhanden</p>
                 </div>
                 <Switch checked={requiresPhoto} onCheckedChange={setRequiresPhoto} />
               </div>
-              <div className="flex items-center justify-between p-2.5">
-                <div>
-                  <p className="text-xs font-medium text-foreground/80 flex items-center gap-1.5">
-                    <ScanLine className="h-3.5 w-3.5 text-warning" /> RFID erforderlich
+              <div className="flex items-center justify-between gap-3 p-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-foreground flex items-center gap-1.5">
+                    <ScanLine className="h-3.5 w-3.5 text-muted-foreground" /> RFID erforderlich
                   </p>
-                  <p className="text-[11px] text-muted-foreground">Warnung im Dashboard wenn kein RFID-Band verknüpft</p>
+                  <p className="text-xs text-muted-foreground">Warnung im Dashboard wenn kein RFID-Band verknüpft</p>
                 </div>
                 <Switch checked={requiresRfid} onCheckedChange={setRequiresRfid} />
               </div>
             </div>
 
             {subscription && (
-              <div className="rounded-lg border border-border p-2.5 space-y-1">
-                <p className="text-[11px] text-muted-foreground">Zusammenfassung</p>
+              <div className="glass-tile p-3 space-y-2">
+                <p className="text-label">Zusammenfassung</p>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedAnny.size > 0 && (
-                    <Badge variant="secondary" className="text-[10px]">
+                    <Badge variant="secondary">
                       {selectedAnny.size} anny {selectedAnny.size === 1 ? "Verknüpfung" : "Verknüpfungen"}
                     </Badge>
                   )}
                   {selectedAreas.size > 0 && (
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline">
                       {selectedAreas.size} {selectedAreas.size === 1 ? "Resource" : "Resourcen"}
                     </Badge>
                   )}
                   {selectedAnny.size === 0 && selectedAreas.size === 0 && (
-                    <span className="text-[10px] text-muted-foreground/70">Keine Verknüpfungen</span>
+                    <span className="text-xs text-muted-foreground">Keine Verknüpfungen</span>
                   )}
                 </div>
               </div>
             )}
-          </div>
-        )}
+          </TabsContent>
 
-        {tab === "anny" && (
-          <div className="space-y-2">
-            <p className="text-[11px] text-muted-foreground">
+          <TabsContent value="anny" className="space-y-2">
+            <p className="text-xs text-muted-foreground">
               Wähle anny Abos, Services und Ressourcen, die diesem Abo zugeordnet werden. Tickets mit diesen Namen werden beim Sync automatisch verknüpft.
             </p>
             <CheckList
@@ -405,22 +406,20 @@ export function SubscriptionDialog({
             />
             {selectedAnny.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[10px]">{selectedAnny.size} ausgewählt</Badge>
+                <Badge variant="outline" className="tabular-nums">{selectedAnny.size} ausgewählt</Badge>
                 <button
                   type="button"
                   onClick={() => setSelectedAnny(new Set())}
-                  className="text-[10px] text-muted-foreground/70 hover:text-destructive transition-colors"
+                  className="min-h-11 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors sm:min-h-0"
                 >
                   Alle abwählen
                 </button>
               </div>
             )}
-          </div>
-        )}
+          </TabsContent>
 
-        {tab === "areas" && (
-          <div className="space-y-2">
-            <p className="text-[11px] text-muted-foreground">
+          <TabsContent value="areas" className="space-y-2">
+            <p className="text-xs text-muted-foreground">
               Wähle die Resourcen, zu denen dieses Abo Zugang gewährt. Abo-Tickets erscheinen im Dashboard in allen ausgewählten Resourcen.
             </p>
             <CheckList
@@ -431,54 +430,82 @@ export function SubscriptionDialog({
             />
             {selectedAreas.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[10px]">{selectedAreas.size} ausgewählt</Badge>
+                <Badge variant="outline" className="tabular-nums">{selectedAreas.size} ausgewählt</Badge>
                 <button
                   type="button"
                   onClick={() => setSelectedAreas(new Set())}
-                  className="text-[10px] text-muted-foreground/70 hover:text-destructive transition-colors"
+                  className="min-h-11 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors sm:min-h-0"
                 >
                   Alle abwählen
                 </button>
               </div>
             )}
-          </div>
-        )}
+          </TabsContent>
+        </Tabs>
 
         {error && (
-          <p className="text-sm text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{error}</p>
+          <Notice tone="danger" compact title={error} />
         )}
 
-        <Separator className="dark:bg-muted" />
+        <Separator />
 
-        <div className="flex items-center justify-between">
-          {!isNew ? (
-            <Button
-              type="button" variant="ghost" size="sm"
-              onClick={handleDelete}
-              disabled={deleting || saving}
-              className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 h-8 text-xs"
-            >
-              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
-              Löschen
-            </Button>
-          ) : <div />}
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-8">
-              Abbrechen
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSave}
-              disabled={saving || deleting || !name.trim()}
-              className="min-w-24 h-8"
-            >
-              {saving
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
-            </Button>
+        {confirmDelete && subscription ? (
+          // Rückfrage statt Fußzeile: Abbrechen oder endgültig löschen.
+          <div className="space-y-3">
+            <Notice tone="danger" compact title={`Abo "${subscription.name}" wirklich löschen?`} />
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button" variant="outline" size="sm"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                autoFocus
+                className="h-11 sm:h-9"
+              >
+                Abbrechen
+              </Button>
+              <Button
+                type="button" variant="destructive" size="sm"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="h-11 sm:h-9"
+              >
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
+                Löschen
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Handy: volle Breite, Primärtaste oben. Ab sm: Löschen links, Handlungen rechts. */
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+            {!isNew ? (
+              <Button
+                type="button" variant="ghost" size="sm"
+                onClick={() => setConfirmDelete(true)}
+                disabled={deleting || saving}
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-11 sm:h-9"
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Löschen
+              </Button>
+            ) : <div className="hidden sm:block" />}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-11 sm:h-9">
+                Abbrechen
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSave}
+                disabled={saving || deleting || !name.trim()}
+                className="min-w-24 h-11 sm:h-9"
+              >
+                {saving
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
