@@ -4,6 +4,20 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Loader2, Send, Trash2, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +51,8 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
   const [config, setConfig] = useState(initialConfig);
   const [notifyNewDevices, setNotifyNewDevices] = useState(initialConfig?.notifyNewDevices ?? true);
   const [notifyOutages, setNotifyOutages] = useState(initialConfig?.notifyOutages ?? true);
+  // Rückfrage vor dem Entfernen der Verbindung (docs/design-regeln.md, Abschnitt 18).
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const toggleNotifyOutages = async () => {
     const next = !notifyOutages;
@@ -134,195 +150,208 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
       setChats([]);
       setSelectedChat("");
     } catch { /* ignore */ }
-    finally { setLoading(false); }
+    finally {
+      setLoading(false);
+      setConfirmDelete(false);
+    }
   };
 
   if (step === "done" && config) {
     return (
       <Card>
-        <CardContent className="pt-5 space-y-3">
-          <div className="flex items-center justify-between">
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted-foreground">Status</span>
-            <Badge variant="success" className="text-xs">Verbunden</Badge>
+            <Badge variant="success">Verbunden</Badge>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted-foreground">Chat-ID</span>
-            <Badge variant="outline" className="font-mono text-xs">{config.chatId}</Badge>
+            <Badge variant="mono">{config.chatId}</Badge>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted-foreground">Tagesbericht</span>
-            <span className="text-sm font-medium text-foreground">
+            <span className="text-sm font-medium text-foreground tabular-nums">
               {config.dailyReport ? `Täglich um ${config.dailyReportTime}` : "Deaktiviert"}
             </span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Neue Geräte im Netz melden</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={notifyNewDevices}
+          {/* Schalter wirken sofort (Baustein Switch); die Beschriftung ist mit dem Schalter verbunden und vergrößert die Tippfläche. */}
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="tg-notify-new-devices" className="flex-1 font-normal leading-snug text-muted-foreground cursor-pointer max-sm:min-h-11">
+              Neue Geräte im Netz melden
+            </Label>
+            <Switch
+              id="tg-notify-new-devices"
+              checked={notifyNewDevices}
+              onCheckedChange={toggleNotifyNewDevices}
               aria-label="Neue Geräte im Netz melden"
-              onClick={toggleNotifyNewDevices}
-              className={cn(
-                "relative h-6 w-11 rounded-full transition-colors",
-                notifyNewDevices ? "bg-primary" : "bg-slate-300 dark:bg-accent",
-              )}
-            >
-              <span className={cn(
-                "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform",
-                notifyNewDevices && "translate-x-5",
-              )} />
-            </button>
+            />
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Ausfälle melden (Hub, Kameras, Switch-Prüfung)</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={notifyOutages}
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="tg-notify-outages" className="flex-1 font-normal leading-snug text-muted-foreground cursor-pointer max-sm:min-h-11">
+              Ausfälle melden (Hub, Kameras, Switch-Prüfung)
+            </Label>
+            <Switch
+              id="tg-notify-outages"
+              checked={notifyOutages}
+              onCheckedChange={toggleNotifyOutages}
               aria-label="Ausfälle melden"
-              onClick={toggleNotifyOutages}
-              className={cn(
-                "relative h-6 w-11 rounded-full transition-colors",
-                notifyOutages ? "bg-primary" : "bg-slate-300 dark:bg-accent",
-              )}
-            >
-              <span className={cn(
-                "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform",
-                notifyOutages && "translate-x-5",
-              )} />
-            </button>
+            />
           </div>
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={handleTest} disabled={loading} className="flex-1">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
+            <Button variant="outline" size="sm" onClick={handleTest} disabled={loading} className="flex-1 max-sm:h-11">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Bericht testen
             </Button>
-            <Button variant="outline" size="sm" onClick={handleDelete} disabled={loading} className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmDelete(true)}
+              disabled={loading}
+              className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60 max-sm:size-11"
+              title="Verbindung entfernen"
+              aria-label="Verbindung entfernen"
+            >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
           {testResult && (
-            <div className={cn(
-              "flex items-center gap-2 p-2.5 rounded-lg text-xs font-medium",
-              testResult === "ok" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive",
-            )}>
-              {testResult === "ok" ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-              {testResult === "ok" ? "Tagesbericht erfolgreich gesendet!" : "Fehler beim Senden"}
-            </div>
+            <Notice
+              tone={testResult === "ok" ? "success" : "danger"}
+              icon={testResult === "ok" ? CheckCircle2 : XCircle}
+              compact
+              title={testResult === "ok" ? "Tagesbericht erfolgreich gesendet!" : "Fehler beim Senden"}
+            />
           )}
         </CardContent>
+
+        <AlertDialog open={confirmDelete} onOpenChange={(o) => { if (!loading) setConfirmDelete(o); }}>
+          <AlertDialogContent aria-describedby={undefined}>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Verbindung entfernen?</AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={loading}>Abbrechen</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={loading}
+                onClick={(e) => {
+                  // Offen lassen, bis das Entfernen fertig ist; handleDelete schließt den Dialog.
+                  e.preventDefault();
+                  void handleDelete();
+                }}
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Verbindung entfernen
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </Card>
     );
   }
 
   return (
     <Card>
-      <CardContent className="pt-5 space-y-4">
+      <CardContent className="space-y-4">
         {step === "idle" && (
           <>
             <p className="text-sm text-muted-foreground">
               Erstelle einen Telegram Bot via <a href="https://t.me/BotFather" target="_blank" rel="noopener" className="text-primary font-medium hover:underline">@BotFather</a>,
               fuege ihn zu einer Gruppe hinzu und sende dort eine Nachricht. Dann gib hier den Bot-Token ein.
             </p>
-            <Button size="sm" onClick={() => setStep("token")}>Bot einrichten</Button>
+            <Button size="sm" onClick={() => setStep("token")} className="max-sm:h-11">Bot einrichten</Button>
           </>
         )}
 
         {step === "token" && (
           <>
-            <div>
-              <label className="text-sm font-medium text-foreground/80">Bot Token</label>
-              <input
+            <div className="space-y-1.5">
+              <Label htmlFor="tg-bot-token">Bot Token</Label>
+              <Input
+                id="tg-bot-token"
                 type="text"
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
                 placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
             </div>
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleValidate} disabled={!botToken || loading}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+            {error && <Notice tone="danger" compact title={error} />}
+            {/* Primärtaste rechts, Abbrechen links davon; auf dem Handy volle Breite, Primärtaste oben (Abschnitt 16). */}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button size="sm" variant="ghost" onClick={() => { setStep("idle"); setError(""); }} className="max-sm:h-11">Abbrechen</Button>
+              <Button size="sm" onClick={handleValidate} disabled={!botToken || loading} className="max-sm:h-11">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Validieren
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setStep("idle"); setError(""); }}>Abbrechen</Button>
             </div>
           </>
         )}
 
         {step === "chat" && (
           <>
-            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-success/10 text-xs font-medium text-success">
-              <CheckCircle2 className="h-4 w-4" />
-              Bot @{botUsername} verbunden
-            </div>
+            <Notice tone="success" compact title={`Bot @${botUsername} verbunden`} />
 
             {chats.length > 0 ? (
-              <div>
-                <label className="text-sm font-medium text-foreground/80">Chat auswählen</label>
-                <div className="mt-1 space-y-1.5">
+              <div className="space-y-1.5">
+                <Label>Chat auswählen</Label>
+                {/* Auswahl in Akzentfarbe (docs/design-regeln.md, Abschnitt 17). */}
+                <div className="space-y-1.5">
                   {chats.map((chat) => (
                     <button
                       key={chat.id}
                       onClick={() => setSelectedChat(String(chat.id))}
+                      aria-pressed={selectedChat === String(chat.id)}
                       className={cn(
-                        "w-full text-left rounded-lg border px-3 py-2 text-sm transition-colors",
+                        "glass-tile press w-full text-left px-3 py-2 text-sm max-sm:min-h-11",
                         selectedChat === String(chat.id)
-                          ? "border-primary bg-primary/8 "
-                          : "border-border hover:border-input dark:hover:border-slate-600",
+                          ? "border-primary/60 bg-primary/10"
+                          : "hover:bg-glass-strong",
                       )}
                     >
                       <span className="font-medium">{chat.title}</span>
-                      <span className="ml-2 text-xs text-muted-foreground/70">{chat.type} · {chat.id}</span>
+                      <span className="ml-2 text-xs text-muted-foreground tabular-nums">{chat.type} · {chat.id}</span>
                     </button>
                   ))}
                 </div>
               </div>
             ) : (
-              <div>
-                <label className="text-sm font-medium text-foreground/80">Chat-ID manuell eingeben</label>
-                <input
+              <div className="space-y-1.5">
+                <Label htmlFor="tg-chat-id">Chat-ID manuell eingeben</Label>
+                <Input
+                  id="tg-chat-id"
                   type="text"
                   value={selectedChat}
                   onChange={(e) => setSelectedChat(e.target.value)}
                   placeholder="-1001234567890"
-                  className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
                 />
-                <p className="text-xs text-muted-foreground/70 mt-1">
+                <p className="text-xs text-muted-foreground">
                   Sende eine Nachricht in den Chat und klicke dann &quot;Aktualisieren&quot;, oder gib die Chat-ID manuell ein.
                 </p>
-                <Button size="sm" variant="outline" className="mt-2" onClick={handleValidate} disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+                <Button size="sm" variant="outline" className="mt-2 max-sm:h-11" onClick={handleValidate} disabled={loading}>
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Aktualisieren
                 </Button>
               </div>
             )}
 
             <div className="space-y-3 pt-2 border-t border-border">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-foreground/80">Tagesbericht</label>
-                <button
-                  onClick={() => setDailyReport(!dailyReport)}
-                  className={cn(
-                    "relative h-6 w-11 rounded-full transition-colors",
-                    dailyReport ? "bg-primary" : "bg-slate-300 dark:bg-accent",
-                  )}
-                >
-                  <span className={cn(
-                    "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform",
-                    dailyReport && "translate-x-5",
-                  )} />
-                </button>
+              {/* Option im Formular, wirkt erst beim Speichern: Kästchen statt Schalter (Abschnitt 14). */}
+              <div className="flex items-center gap-2 max-sm:min-h-11">
+                <Checkbox
+                  id="tg-daily-report"
+                  checked={dailyReport}
+                  onCheckedChange={() => setDailyReport(!dailyReport)}
+                />
+                <Label htmlFor="tg-daily-report" className="cursor-pointer">Tagesbericht</Label>
               </div>
               {dailyReport && (
-                <div>
-                  <label className="text-xs text-muted-foreground">Uhrzeit (Berlin)</label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="tg-report-time">Uhrzeit (Berlin)</Label>
                   <select
+                    id="tg-report-time"
                     value={reportTime}
                     onChange={(e) => setReportTime(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+                    className="glass-field h-9 w-full px-3 text-base tabular-nums outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 md:text-sm max-sm:h-11"
                   >
                     {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t} Uhr</option>)}
                   </select>
@@ -330,13 +359,13 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
               )}
             </div>
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleSave} disabled={!selectedChat || loading}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+            {error && <Notice tone="danger" compact title={error} />}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button size="sm" variant="ghost" onClick={() => { setStep("idle"); setError(""); }} className="max-sm:h-11">Abbrechen</Button>
+              <Button size="sm" onClick={handleSave} disabled={!selectedChat || loading} className="max-sm:h-11">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Speichern
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setStep("idle"); setError(""); }}>Abbrechen</Button>
             </div>
           </>
         )}

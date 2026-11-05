@@ -2,17 +2,30 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
 import { Separator } from "@/components/ui/separator";
+import { StatusDot } from "@/components/ui/status-dot";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Sprout, Loader2, CheckCircle2, Download, Trash2, RefreshCw,
-  ExternalLink, AlertCircle, Droplets, Wifi, WifiOff, Battery, Plus, KeyRound,
+  ExternalLink, AlertCircle, Droplets, WifiOff, Battery, Plus, KeyRound,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface GardenaValve {
   serviceId: string;
@@ -57,6 +70,11 @@ export function GardenaCard({ connections: initialConnections, existingServiceId
   const [saving, setSaving] = useState(false);
   const [addError, setAddError] = useState("");
   const [addPreview, setAddPreview] = useState<number | null>(null);
+
+  // Rückfrage vor dem Trennen (docs/design-regeln.md, Abschnitt 18); die Verbindung bleibt gesetzt,
+  // solange der Dialog ausblendet.
+  const [toDisconnect, setToDisconnect] = useState<Connection | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const canTest = newKey.trim().length > 0 && newSecret.trim().length > 0;
 
@@ -143,8 +161,12 @@ export function GardenaCard({ connections: initialConnections, existingServiceId
     }
   }
 
-  async function handleDisconnect(configId: number, name: string) {
-    if (!confirm(`Verbindung „${name}" wirklich trennen? Zugeordnete Geräte bleiben erhalten, sind aber ohne Verbindung nicht mehr steuerbar.`)) return;
+  function askDisconnect(conn: Connection) {
+    setToDisconnect(conn);
+    setConfirmOpen(true);
+  }
+
+  async function handleDisconnect(configId: number) {
     await fetch(`/api/settings/gardena?configId=${configId}`, { method: "DELETE" });
     setConnections((cs) => cs.filter((c) => c.id !== configId));
     setValvesByConn((v) => { const n = { ...v }; delete n[configId]; return n; });
@@ -154,47 +176,42 @@ export function GardenaCard({ connections: initialConnections, existingServiceId
   const connected = connections.length > 0;
 
   return (
-    <Card className={cn(
-      "border-2 transition-colors",
-      connected ? "border-success/30 " : "border-border",
-    )}>
-      <CardContent className="pt-5 space-y-5">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center">
-              <Sprout className="h-5 w-5 text-success" />
-            </div>
-            <div>
-              <p className="font-semibold text-foreground">GARDENA smart system</p>
-              <p className="text-xs text-muted-foreground">Mehrere Konten möglich · Ventile &amp; Pumpen steuern</p>
-            </div>
+    <Card>
+      {/* Kopf: Symbol-Chip, Titel, Verbindungszustand als Pille (docs/design-regeln.md, Abschnitt 14). */}
+      <CardHeader>
+        <div className="flex items-center gap-3 min-w-0">
+          <IconChip icon={Sprout} tone="primary" size="lg" />
+          <div className="min-w-0">
+            <CardTitle>GARDENA smart system</CardTitle>
+            <CardDescription>Mehrere Konten möglich · Ventile &amp; Pumpen steuern</CardDescription>
           </div>
+        </div>
+        <CardAction>
           {connected ? (
-            <Badge variant="success" className="gap-1.5">
+            <Badge variant="success" className="gap-1.5 tabular-nums">
               <CheckCircle2 className="h-3 w-3" /> {connections.length} verbunden
             </Badge>
           ) : (
-            <Badge variant="secondary" className="gap-1.5">
+            <Badge variant="neutral" className="gap-1.5">
               <WifiOff className="h-3 w-3" /> Nicht verbunden
             </Badge>
           )}
-        </div>
+        </CardAction>
+      </CardHeader>
 
+      <CardContent className="space-y-5">
         {/* Verbindungen */}
         {connections.map((conn) => {
           const valves = valvesByConn[conn.id];
           const err = errorByConn[conn.id];
           return (
-            <div key={conn.id} className="rounded-xl border border-border p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2">
+            <div key={conn.id} className="glass-tile p-3 sm:p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="h-8 w-8 rounded-lg bg-success/10 text-success flex items-center justify-center shrink-0">
-                    <KeyRound className="h-4 w-4" />
-                  </div>
+                  <IconChip icon={KeyRound} />
                   <div className="min-w-0">
-                    <p className="font-medium text-foreground truncate">{conn.name}</p>
-                    <p className="text-xs text-muted-foreground/70 font-mono truncate">
+                    <p className="text-sm font-medium text-foreground truncate">{conn.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono truncate">
                       Key {conn.keyMasked} · {conn.deviceCount} Gerät{conn.deviceCount !== 1 ? "e" : ""}
                     </p>
                   </div>
@@ -205,40 +222,37 @@ export function GardenaCard({ connections: initialConnections, existingServiceId
                     disabled={loadingConn === conn.id}
                     variant="outline"
                     size="sm"
-                    className="gap-1.5 h-8 text-xs"
+                    className="gap-1.5 max-sm:h-11"
                   >
                     {loadingConn === conn.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     Geräte laden
                   </Button>
                   <Button
-                    onClick={() => handleDisconnect(conn.id, conn.name)}
+                    onClick={() => askDisconnect(conn)}
                     variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10"
+                    size="icon-sm"
+                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 max-sm:size-11"
+                    title="Verbindung trennen"
+                    aria-label="Verbindung trennen"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
 
-              {err && (
-                <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                  {err}
-                </div>
-              )}
+              {err && <Notice tone="danger" compact title={err} />}
 
               {valves && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-muted-foreground">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground tabular-nums">
                       {valves.length} Ventil{valves.length !== 1 ? "e" : ""} / Pumpe · {valves.filter((v) => v.online).length} online
                     </p>
                     {valves.some((v) => !imported.has(v.serviceId)) && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 text-xs gap-1"
+                        className="gap-1 max-sm:h-11"
                         disabled={importing !== null}
                         onClick={async () => {
                           for (const v of valves.filter((v) => !imported.has(v.serviceId))) {
@@ -251,39 +265,34 @@ export function GardenaCard({ connections: initialConnections, existingServiceId
                     )}
                   </div>
                   {valves.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-3">Keine Geräte gefunden</p>
+                    <EmptyState compact icon={Droplets} title="Keine Geräte gefunden" />
                   )}
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {/* Zeilen ruhig auf Glas; „Importiert“ zeigt die Pille rechts. */}
+                  <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-thin pr-1">
                     {valves.map((valve) => {
                       const alreadyImported = imported.has(valve.serviceId);
                       return (
                         <div
                           key={valve.serviceId}
-                          className={cn(
-                            "flex items-center justify-between rounded-lg border px-3 py-2 transition-colors",
-                            alreadyImported
-                              ? "border-success/30 bg-success/10 "
-                              : "border-border bg-muted/50 dark:bg-card/50",
-                          )}
+                          className="flex items-center justify-between rounded-control bg-glass-tile px-3 py-2"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="h-7 w-7 rounded-lg bg-success/10 text-success flex items-center justify-center shrink-0">
-                              <Droplets className="h-3.5 w-3.5" />
-                            </div>
+                            <IconChip icon={Droplets} size="sm" />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-foreground/90 truncate">{valve.name}</p>
-                              <p className="text-xs text-muted-foreground/70 truncate">
+                              <p className="text-sm font-medium text-foreground truncate">{valve.name}</p>
+                              <p className="text-xs text-muted-foreground truncate">
                                 {valve.modelType ?? "GARDENA"}
                                 {valve.batteryLevel != null && valve.batteryState !== "NO_BATTERY" && (
-                                  <span className="inline-flex items-center gap-0.5 ml-1">· <Battery className="h-3 w-3" /> {valve.batteryLevel}%</span>
+                                  <span className="inline-flex items-center gap-0.5 ml-1 tabular-nums">· <Battery className="h-3 w-3" /> {valve.batteryLevel}%</span>
                                 )}
                               </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0 ml-2">
-                            {valve.online ? <Wifi className="h-4 w-4 text-success" /> : <WifiOff className="h-4 w-4 text-muted-foreground/70" />}
+                            {/* Ein Zustandspunkt: grün online, rot offline (docs/design-regeln.md, Abschnitt 3). */}
+                            <StatusDot tone={valve.online ? "success" : "danger"} label={valve.online ? "online" : "offline"} />
                             {alreadyImported ? (
-                              <Badge variant="success" className="text-xs gap-1">
+                              <Badge variant="success">
                                 <CheckCircle2 className="h-3 w-3" /> Importiert
                               </Badge>
                             ) : (
@@ -292,7 +301,7 @@ export function GardenaCard({ connections: initialConnections, existingServiceId
                                 variant="outline"
                                 onClick={() => handleImport(valve, conn.id)}
                                 disabled={importing === valve.serviceId}
-                                className="h-7 text-xs gap-1.5"
+                                className="gap-1.5 max-sm:h-11"
                               >
                                 {importing === valve.serviceId ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
                                 Importieren
@@ -309,17 +318,17 @@ export function GardenaCard({ connections: initialConnections, existingServiceId
           );
         })}
 
-        <Separator className="dark:bg-muted" />
+        <Separator />
 
         {/* Neue Verbindung */}
         {!showAdd ? (
-          <Button onClick={() => setShowAdd(true)} variant="outline" className="w-full gap-2">
+          <Button onClick={() => setShowAdd(true)} variant="outline" className="w-full gap-2 max-sm:h-11">
             <Plus className="h-4 w-4" /> GARDENA-Verbindung hinzufügen
           </Button>
         ) : (
-          <div className="rounded-xl border border-dashed border-input p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-foreground/80">Neue GARDENA-Verbindung</p>
+          <div className="glass-tile p-3 sm:p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">Neue GARDENA-Verbindung</p>
               <a
                 href="https://developer.husqvarnagroup.cloud/apps"
                 target="_blank"
@@ -336,57 +345,76 @@ export function GardenaCard({ connections: initialConnections, existingServiceId
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="g-key">Application Key</Label>
-              <Input id="g-key" value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="00000000-0000-0000-0000-000000000000" className="font-mono text-sm" />
+              <Input id="g-key" value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="00000000-0000-0000-0000-000000000000" className="font-mono" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="g-secret">Application Secret</Label>
               <Input id="g-secret" type="password" value={newSecret} onChange={(e) => setNewSecret(e.target.value)} placeholder="••••••••••••••••••••" className="font-mono" />
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 Portal → Anwendung → <strong>Authentication API</strong> und <strong>GARDENA smart system API</strong> verbinden, dann Key/Secret kopieren.
               </p>
             </div>
 
-            {addError && (
-              <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                {addError}
-              </div>
-            )}
+            {addError && <Notice tone="danger" compact title={addError} />}
             {addPreview !== null && (
-              <div className="flex items-center gap-2 text-sm text-success bg-success/10 px-3 py-2 rounded-lg">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                Verbindung ok – {addPreview} Gerät{addPreview !== 1 ? "e" : ""} gefunden.
-              </div>
+              <Notice
+                tone="success"
+                compact
+                title={<>Verbindung ok – {addPreview} Gerät{addPreview !== 1 ? "e" : ""} gefunden.</>}
+              />
             )}
 
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={handleTestNew} disabled={testing || !canTest} variant="outline" className="gap-2">
-                {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Testen
-              </Button>
-              <Button onClick={handleSaveNew} disabled={saving || !canTest} className="bg-success hover:bg-success/90 text-success-foreground gap-2">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Speichern
-              </Button>
+            {/* Primärtaste rechts, Abbrechen links davon; auf dem Handy volle Breite, Primärtaste oben (Abschnitt 16). */}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               {connections.length > 0 && (
-                <Button onClick={() => { setShowAdd(false); setAddError(""); setAddPreview(null); }} variant="ghost" size="sm" className="ml-auto text-muted-foreground/70">
+                <Button onClick={() => { setShowAdd(false); setAddError(""); setAddPreview(null); }} variant="ghost" className="text-muted-foreground max-sm:h-11">
                   Abbrechen
                 </Button>
               )}
+              <Button onClick={handleTestNew} disabled={testing || !canTest} variant="outline" className="gap-2 max-sm:h-11">
+                {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Testen
+              </Button>
+              <Button onClick={handleSaveNew} disabled={saving || !canTest} className="gap-2 max-sm:h-11">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Speichern
+              </Button>
             </div>
           </div>
         )}
 
         {/* Hinweis */}
         {!connected && (
-          <div className="flex items-start gap-2 text-xs text-muted-foreground/70 bg-muted/50 rounded-lg px-3 py-2.5">
-            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <Notice tone="neutral" compact icon={AlertCircle}>
             <span>
               Im <strong>Husqvarna Developer Portal</strong> eine Anwendung anlegen, die APIs <strong>Authentication</strong> und <strong>GARDENA smart system</strong> verbinden, dann Application Key &amp; Secret hier eintragen.
             </span>
-          </div>
+          </Notice>
         )}
       </CardContent>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{`Verbindung „${toDisconnect?.name ?? ""}" wirklich trennen?`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Zugeordnete Geräte bleiben erhalten, sind aber ohne Verbindung nicht mehr steuerbar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (toDisconnect) void handleDisconnect(toDisconnect.id);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Trennen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

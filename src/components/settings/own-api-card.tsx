@@ -7,6 +7,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Copy, Check, Info, Loader2, RefreshCw, Save } from "lucide-react";
 
 interface OwnApiCardProps {
@@ -67,6 +78,12 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
   const [customToken, setCustomToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  // Rückfrage vor dem Ersetzen des Tokens (docs/design-regeln.md, Abschnitt 18): alle Geräte melden
+  // sich mit diesem Token an. Der Body für „Neu generieren“ oder „Speichern“ bleibt gesetzt, solange
+  // der Dialog ausblendet.
+  const [pendingToken, setPendingToken] = useState<{ regenerate: true } | { apiToken: string } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const regenerating = pendingToken !== null && "regenerate" in pendingToken;
 
   useEffect(() => {
     setDisplayToken(apiToken);
@@ -114,42 +131,62 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
     }
   }
 
+  function askTokenChange(body: { regenerate: true } | { apiToken: string }) {
+    setPendingToken(body);
+    setConfirmOpen(true);
+  }
+
+  async function confirmTokenChange() {
+    if (!pendingToken) return;
+    try {
+      await patchToken(pendingToken);
+    } finally {
+      setConfirmOpen(false);
+    }
+  }
+
   return (
     <Card>
-      <CardContent className="pt-5 space-y-4">
+      <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Andere Systeme können mit dem API-Token auf Ressourcen und Geräte zugreifen. Token hier setzen oder neu generieren – wird in der Datenbank gespeichert.
         </p>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-muted-foreground">Base-URL</span>
+            <span className="text-sm text-muted-foreground shrink-0">Base-URL</span>
             <div className="flex items-center gap-1 min-w-0">
-              <code className="text-xs bg-muted px-2 py-1 rounded truncate max-w-[240px]">
-                {baseUrl}
-              </code>
+              {/* Gleiche Pille wie beim Token darunter; lange URL kürzt mit Auslassung. */}
+              <Badge variant="mono" className="min-w-0 max-w-[240px] shrink">
+                <span className="truncate">{baseUrl}</span>
+              </Badge>
               <Button
                 variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
+                size="icon-sm"
+                className="shrink-0 max-sm:size-11"
                 onClick={() => copy(baseUrl, "url")}
+                title="Base-URL kopieren"
+                aria-label="Base-URL kopieren"
               >
                 {copied === "url" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-muted-foreground">API-Token</span>
+            <span className="text-sm text-muted-foreground shrink-0">API-Token</span>
             <div className="flex items-center gap-1 min-w-0">
-              <Badge variant="outline" className="font-mono text-xs max-w-[180px] truncate">
-                {displayToken || "—"}
+              {/* Langer Token: Pille darf schrumpfen, der Text kürzt mit Auslassung. */}
+              <Badge variant="mono" className="min-w-0 max-w-[180px] shrink">
+                <span className="truncate">{displayToken || "—"}</span>
               </Badge>
               <Button
                 variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
+                size="icon-sm"
+                className="shrink-0 max-sm:size-11"
                 onClick={() => copy(displayToken, "token")}
                 disabled={!displayToken}
+                title="API-Token kopieren"
+                aria-label="API-Token kopieren"
               >
                 {copied === "token" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
@@ -157,28 +194,28 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border p-3 space-y-3">
+        <div className="glass-tile p-3 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              className="h-8"
+              className="max-sm:h-11"
               disabled={busy}
-              onClick={() => patchToken({ regenerate: true })}
+              onClick={() => askTokenChange({ regenerate: true })}
             >
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              <span className="ml-1.5">Neu generieren</span>
+              Neu generieren
             </Button>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="custom-api-token" className="text-xs">
+            <Label htmlFor="custom-api-token">
               Eigenen Token speichern (min. 16 Zeichen)
             </Label>
             <div className="flex flex-col sm:flex-row gap-2">
               <Input
                 id="custom-api-token"
-                className="font-mono text-xs h-9"
+                className="font-mono max-sm:h-11"
                 placeholder="Neuer Token …"
                 value={customToken}
                 onChange={(e) => setCustomToken(e.target.value)}
@@ -187,63 +224,86 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
               <Button
                 type="button"
                 size="sm"
-                className="h-9 shrink-0"
+                className="h-9 shrink-0 max-sm:h-11"
                 disabled={busy || customToken.trim().length < 16}
-                onClick={() => patchToken({ apiToken: customToken.trim() })}
+                onClick={() => askTokenChange({ apiToken: customToken.trim() })}
               >
                 <Save className="h-3.5 w-3.5" />
-                <span className="ml-1.5">Speichern</span>
+                Speichern
               </Button>
             </div>
           </div>
           {feedback && (
-            <p
-              className={
-                feedback.type === "ok"
-                  ? "text-xs text-success"
-                  : "text-xs text-destructive"
-              }
-            >
-              {feedback.text}
-            </p>
+            <Notice tone={feedback.type === "ok" ? "success" : "danger"} compact title={feedback.text} />
           )}
         </div>
 
-        <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Authentifizierung</p>
+        <div className="glass-tile p-3 space-y-2">
+          <p className="text-label">Authentifizierung</p>
           <p className="text-xs text-muted-foreground">
-            Header: <code className="bg-border dark:bg-accent px-1 rounded">Authorization: Bearer {'<token>'}</code>
-            {" "}oder Query: <code className="bg-border dark:bg-accent px-1 rounded">?token={'<token>'}</code>
+            Header: <code className="bg-muted px-1 rounded">Authorization: Bearer {'<token>'}</code>
+            {" "}oder Query: <code className="bg-muted px-1 rounded">?token={'<token>'}</code>
           </p>
           <p className="text-xs text-muted-foreground">
-            Token ändern (eingeloggt): <code className="bg-border dark:bg-accent px-1 rounded">PATCH /api/settings/account</code> mit{" "}
-            <code className="bg-border dark:bg-accent px-1 rounded text-[10px]">{`{ "regenerate": true }`}</code> oder{" "}
-            <code className="bg-border dark:bg-accent px-1 rounded text-[10px]">{`{ "apiToken": "…" }`}</code>
+            Token ändern (eingeloggt): <code className="bg-muted px-1 rounded">PATCH /api/settings/account</code> mit{" "}
+            <code className="bg-muted px-1 rounded">{`{ "regenerate": true }`}</code> oder{" "}
+            <code className="bg-muted px-1 rounded">{`{ "apiToken": "…" }`}</code>
           </p>
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Endpunkte (Lesen & Geräte steuern)</p>
+          <p className="text-label">Endpunkte (Lesen & Geräte steuern)</p>
           <ul className="space-y-1.5 text-xs">
             {ENDPOINTS.map((ep) => (
               <li key={ep.path} className="flex flex-wrap items-baseline gap-2">
-                <Badge variant="secondary" className="font-mono text-[10px]">
+                <Badge variant="mono">
                   {ep.method}
                 </Badge>
-                <code className="text-muted-foreground">{ep.path}</code>
+                <code className="text-muted-foreground break-all">{ep.path}</code>
                 <span className="text-muted-foreground">– {ep.desc}</span>
               </li>
             ))}
           </ul>
         </div>
 
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/30">
-          <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
-          <p className="text-xs text-blue-700 dark:text-blue-400">
-            Beispiel Gerät öffnen: <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">POST {baseUrl}/api/devices/1/action</code> mit Body <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">{`{"action": "open"}`}</code>
+        <Notice tone="info" compact icon={Info}>
+          <p className="wrap-anywhere">
+            Beispiel Gerät öffnen: <code className="bg-muted px-1 rounded">POST {baseUrl}/api/devices/1/action</code> mit Body <code className="bg-muted px-1 rounded">{`{"action": "open"}`}</code>
           </p>
-        </div>
+        </Notice>
       </CardContent>
+
+      <AlertDialog open={confirmOpen} onOpenChange={(o) => { if (!busy) setConfirmOpen(o); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{regenerating ? "API-Token neu erzeugen?" : "Eigenen Token speichern?"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Alle Geräte mit dem alten Token verlieren sofort den Zugriff und müssen aktualisiert werden.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={busy}
+              onClick={(e) => {
+                // Offen lassen, bis der Token ersetzt ist; das Ergebnis steht danach in der Karte.
+                e.preventDefault();
+                void confirmTokenChange();
+              }}
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : regenerating ? (
+                <RefreshCw className="h-4 w-4" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {regenerating ? "Neu generieren" : "Speichern"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

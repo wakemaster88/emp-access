@@ -6,6 +6,8 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
 import { StatCard } from "@/components/ui/stat-card";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -15,7 +17,6 @@ import {
   Monitor, DoorOpen, GitMerge, Lightbulb, ToggleRight, Activity,
   Loader2, TrendingUp, AlertCircle,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface Props {
   employeeId: number | null;
@@ -91,20 +92,22 @@ function deviceIcon(device: HistoryScan["device"]) {
   return DoorOpen;
 }
 
+// Quelle nur als Symbol und Text; keine eigene Farbe je Quelle (docs/design-regeln.md, Abschnitt 3).
 function sourceMeta(source: HistoryScan["source"]) {
   switch (source) {
-    case "mobile":    return { label: "Mobile", icon: Smartphone, cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400" };
-    case "dashboard": return { label: "Dashboard", icon: Monitor,    cls: "bg-slate-500/10 text-muted-foreground" };
+    case "mobile":    return { label: "Mobile", icon: Smartphone };
+    case "dashboard": return { label: "Dashboard", icon: Monitor };
     case "rfid":
-    default:          return { label: "Scanner",  icon: KeyRound,    cls: "bg-info/10 text-info" };
+    default:          return { label: "Scanner",  icon: KeyRound };
   }
 }
 
+// Ergebnis als Pille in der Zustandsfarbe.
 function resultMeta(result: string) {
   switch (result) {
-    case "GRANTED":   return { label: "OK",        icon: CheckCircle2, cls: "text-success bg-success/10" };
-    case "PROTECTED": return { label: "Geschützt", icon: ShieldOff,    cls: "text-warning bg-warning/10" };
-    default:          return { label: "Verweigert", icon: XCircle,     cls: "text-destructive bg-destructive/10" };
+    case "GRANTED":   return { label: "OK",        icon: CheckCircle2, variant: "success" as const };
+    case "PROTECTED": return { label: "Geschützt", icon: ShieldOff,    variant: "warning" as const };
+    default:          return { label: "Verweigert", icon: XCircle,     variant: "danger" as const };
   }
 }
 
@@ -196,30 +199,31 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          {/* Auf dem Handy mittig wie der Kopf des Blatts (DialogHeader), ab sm linksbündig. */}
+          <DialogTitle className="flex items-center justify-center gap-2 sm:justify-start">
             <History className="h-5 w-5 text-primary" />
             Verlauf{employeeName ? ` · ${employeeName}` : ""}
           </DialogTitle>
         </DialogHeader>
 
-        {/* Filter */}
-        <div className="grid grid-cols-3 gap-2 mt-2">
+        {/* Filter: auf dem Handy untereinander, sonst drei Spalten */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Select value={days} onValueChange={setDays}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {DAYS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={result} onValueChange={setResult}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {RESULT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={source} onValueChange={setSource}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {SOURCE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
@@ -227,8 +231,8 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
         </div>
 
         {loading && (
-          <div className="py-10 text-center text-muted-foreground/70 text-sm">
-            <Loader2 className="h-5 w-5 animate-spin inline-block mr-2" />
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
             Lade Verlauf…
           </div>
         )}
@@ -236,7 +240,7 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
         {!loading && data && (
           <>
             {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <StatCard label="Gesamt" value={data.stats.total}   tone="neutral" size="sm" />
               <StatCard label="Erfolgreich" value={data.stats.granted} tone="success" size="sm" />
               <StatCard label="Verweigert" value={data.stats.denied}  tone="danger" size="sm" />
@@ -245,15 +249,17 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
 
             {/* Mini-Chart letzten 14 Tage */}
             {data.byDay.length > 0 && (
-              <div className="mt-3 rounded-lg border border-border bg-muted/50 dark:bg-card/30 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
+              <div className="glass-tile p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h4 className="text-label inline-flex items-center gap-1">
                     <TrendingUp className="h-3 w-3" /> Aktivität – 14 Tage
                   </h4>
-                  <span className="text-[10px] text-muted-foreground/70">
+                  <span className="text-[11px] text-muted-foreground tabular-nums">
                     {data.byDay.reduce((s, d) => s + d.granted + d.denied, 0)} Scans
                   </span>
                 </div>
+                {/* Gestapelte Balken: Erfolgreich unten in Grün, Verweigert darüber in Rot – beide Anteile
+                    sichtbar, auch auf der Glas-Kachel (docs/design-regeln.md, Abschnitte 3 und 12). */}
                 <div className="flex items-end gap-0.5 h-14">
                   {data.byDay.map((d) => {
                     const total = d.granted + d.denied;
@@ -266,31 +272,38 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
                         title={`${d.day}: ${d.granted} OK, ${d.denied} Fehler`}
                       >
                         <div
-                          className="w-full rounded-sm bg-border dark:bg-accent overflow-hidden transition-all"
+                          className="flex w-full flex-col justify-end rounded-sm overflow-hidden transition-all"
                           style={{ height: `${Math.max(h, total > 0 ? 6 : 0)}%` }}
                         >
-                          <div
-                            className="bg-success"
-                            style={{ height: `${grantedPct}%`, width: "100%" }}
-                          />
+                          <div className="bg-destructive/70" style={{ height: `${100 - grantedPct}%` }} />
+                          <div className="bg-success" style={{ height: `${grantedPct}%` }} />
                         </div>
                       </div>
                     );
                   })}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="size-2 rounded-[3px] bg-success" aria-hidden />
+                    Erfolgreich
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="size-2 rounded-[3px] bg-destructive/70" aria-hidden />
+                    Verweigert
+                  </span>
                 </div>
               </div>
             )}
 
             {/* Top-Devices */}
             {data.topDevices.length > 0 && (
-              <div className="mt-3">
-                <h4 className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">Häufigste Geräte</h4>
+              <div>
+                <h4 className="text-label mb-1.5">Häufigste Geräte</h4>
                 <div className="flex flex-wrap gap-1.5">
                   {data.topDevices.map((td, i) => (
                     <Badge
                       key={i}
                       variant="secondary"
-                      className="text-[11px] gap-1 py-0.5 px-2"
                     >
                       {td.device?.name ?? "Unbekannt"}
                       <span className="text-muted-foreground font-mono ml-0.5">×{td.count}</span>
@@ -301,16 +314,18 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
             )}
 
             {/* Timeline */}
-            <div className="mt-4 space-y-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+            <div className="space-y-3">
+              <h4 className="text-label tabular-nums">
                 Verlauf · {data.scans.length} Eintr&auml;ge
               </h4>
 
               {data.scans.length === 0 && (
-                <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground/70">
-                  <AlertCircle className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-                  Keine Eintr&auml;ge in diesem Zeitraum.
-                </div>
+                <EmptyState
+                  compact
+                  icon={AlertCircle}
+                  title="Keine Einträge in diesem Zeitraum."
+                  className="glass-tile"
+                />
               )}
 
               {groupedByDay.map((group) => (
@@ -319,12 +334,13 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
                     <span className="text-[11px] font-bold text-foreground/80">
                       {fmtDayHeader(group.day)}
                     </span>
-                    <span className="text-[10px] text-muted-foreground/70 font-mono">
+                    <span className="text-[11px] text-muted-foreground tabular-nums">
                       {new Date(group.day).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
                     </span>
-                    <span className="ml-auto text-[10px] text-muted-foreground/70">{group.items.length}</span>
+                    <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">{group.items.length}</span>
                   </div>
-                  <div className="rounded-lg bg-card border border-border divide-y divide-border/60 overflow-hidden">
+                  {/* Zeilen einer Gruppe in einer Glas-Kachel, Haarlinien in border-border (Abschnitt 17). */}
+                  <div className="glass-tile divide-y divide-border overflow-hidden">
                     {group.items.map((scan) => (
                       <HistoryRow key={scan.id} scan={scan} />
                     ))}
@@ -333,7 +349,10 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
               ))}
             </div>
 
-            <div className="flex justify-end mt-4 sticky bottom-0 bg-background pt-2 pb-1 -mx-6 px-6 border-t border-border">
+            {/* Klebende Fußleiste: Rand passend zum Dialog-Innenabstand (p-5, ab sm p-6), sonst läuft sie auf dem Handy über.
+                Sie klebt am Inhaltsrand, nicht an der Unterkante: die Fläche darunter (::after, so hoch wie der untere
+                Innenabstand) deckt den Streifen ab, durch den sonst beim Scrollen Zeilen unter der Leiste sichtbar wären. */}
+            <div className="flex justify-end sticky bottom-0 bg-popover pt-2 pb-1 -mx-5 px-5 sm:-mx-6 sm:px-6 border-t border-border after:absolute after:inset-x-0 after:top-full after:h-[calc(1.25rem+env(safe-area-inset-bottom))] after:bg-popover after:content-[''] sm:after:h-6">
               <Button variant="ghost" size="sm" onClick={onClose}>Schliessen</Button>
             </div>
           </>
@@ -357,24 +376,22 @@ function HistoryRow({ scan }: { scan: HistoryScan }) {
         {fmtTime(scan.scanTime)}
       </span>
 
-      {/* Device icon */}
-      <div className={cn("h-7 w-7 rounded-lg flex items-center justify-center shrink-0", src.cls)}>
-        {createElement(iconComp, { className: "h-3.5 w-3.5" })}
-      </div>
+      {/* Device icon – neutral; die Zustandsfarbe trägt das Ergebnis rechts */}
+      <IconChip icon={iconComp} size="sm" />
 
       {/* Device + Action */}
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-semibold text-foreground truncate leading-tight">
-          {scan.device?.name ?? <span className="italic text-muted-foreground/70">(ohne Gerät)</span>}
+          {scan.device?.name ?? <span className="italic text-muted-foreground">(ohne Gerät)</span>}
         </p>
-        <p className="text-[10px] text-muted-foreground truncate flex items-center gap-1">
+        <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
           {createElement(src.icon, { className: "h-2.5 w-2.5 shrink-0" })}
           <span>{src.label}</span>
-          <span className="text-slate-300">·</span>
+          <span className="text-muted-foreground/50">·</span>
           <span className="truncate">{actionLabel(scan)}</span>
           {scan.note && scan.result !== "GRANTED" && (
             <>
-              <span className="text-slate-300">·</span>
+              <span className="text-muted-foreground/50">·</span>
               <span className="text-destructive truncate">{scan.note}</span>
             </>
           )}
@@ -382,10 +399,10 @@ function HistoryRow({ scan }: { scan: HistoryScan }) {
       </div>
 
       {/* Result */}
-      <div className={cn("h-6 px-1.5 rounded-md inline-flex items-center gap-1 text-[10px] font-bold shrink-0", res.cls)}>
+      <Badge variant={res.variant} className="shrink-0">
         {createElement(res.icon, { className: "h-3 w-3" })}
         <span>{res.label}</span>
-      </div>
+      </Badge>
     </div>
   );
 }

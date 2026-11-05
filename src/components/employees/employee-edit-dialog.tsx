@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -91,10 +94,14 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
   const [error, setError] = useState<string | null>(null);
   const [tokenBusy, setTokenBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Rückfragen als Schritt im selben Dialog statt Browser-confirm (docs/design-regeln.md, Abschnitte 16 und 18):
+  // Löschen in der Fußzeile, Link erneuern/entziehen direkt bei den Tasten des Mobile-Zugangs.
+  const [confirmAction, setConfirmAction] = useState<"delete" | "rotate" | "revoke" | null>(null);
   const qrRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setConfirmAction(null);
     if (isNew) {
       setForm(emptyEmployee());
       setError(null);
@@ -132,6 +139,8 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
     return () => { cancelled = true; };
   }, [open, target, isNew]);
 
+  const tokenConfirm = confirmAction === "rotate" || confirmAction === "revoke" ? confirmAction : null;
+
   const mobileUrl = form.mobileToken && typeof window !== "undefined"
     ? `${window.location.origin}/m/${form.mobileToken}`
     : null;
@@ -150,8 +159,6 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
 
   async function handleTokenAction(kind: "create" | "rotate" | "revoke") {
     if (!form.id) return;
-    if (kind === "rotate" && !confirm("Bestehenden Link unguelig machen und neuen erzeugen?")) return;
-    if (kind === "revoke" && !confirm("Mobile-Zugang wirklich entziehen?")) return;
     setTokenBusy(true);
     try {
       const res = await fetch(`/api/employees/${form.id}/mobile-token`, {
@@ -167,6 +174,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
       setError("Netzwerkfehler bei Token-Aktion");
     } finally {
       setTokenBusy(false);
+      setConfirmAction(null);
     }
   }
 
@@ -240,7 +248,6 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
 
   async function handleDelete() {
     if (!form.id) return;
-    if (!confirm(`Mitarbeiter ${form.firstName || form.name} wirklich loeschen?`)) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/employees/${form.id}`, { method: "DELETE" });
@@ -258,9 +265,10 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          {/* Auf dem Handy mittig wie der Kopf des Blatts (DialogHeader), ab sm linksbündig. */}
+          <DialogTitle className="flex items-center justify-center gap-2 sm:justify-start">
             <IdCard className="h-5 w-5 text-primary" />
             {isNew ? "Neuen Mitarbeiter anlegen" : (form.firstName || form.lastName)
               ? `${form.firstName} ${form.lastName}`.trim()
@@ -269,15 +277,15 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
         </DialogHeader>
 
         {loading ? (
-          <div className="py-10 text-center text-muted-foreground text-sm">
-            <Loader2 className="h-5 w-5 animate-spin inline-block mr-2" />
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
             Lade…
           </div>
         ) : (
           <div className="space-y-5">
             {/* Persoenliche Daten */}
             <section className="space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Person</h3>
+              <h3 className="text-label">Person</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="emp-firstname">Vorname</Label>
@@ -309,7 +317,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                 <div className="space-y-1.5">
                   <Label htmlFor="emp-status">Status</Label>
                   <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as EmployeeDetail["status"] })}>
-                    <SelectTrigger id="emp-status"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="emp-status" className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="VALID">Aktiv</SelectItem>
                       <SelectItem value="INVALID">Inaktiv</SelectItem>
@@ -324,7 +332,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
 
             {/* Vertrag */}
             <section className="space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vertrag</h3>
+              <h3 className="text-label">Vertrag</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="emp-start">Vertrag ab</Label>
@@ -341,41 +349,36 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
 
             {/* Bereiche */}
             <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-label flex items-center gap-1.5 tabular-nums">
                   <MapPin className="h-3.5 w-3.5" /> Bereiche ({form.areaIds.length})
                 </h3>
-                <Badge variant="secondary" className="text-[10px]">{areas.length} verfügbar</Badge>
+                <Badge variant="neutral" className="tabular-nums">{areas.length} verfügbar</Badge>
               </div>
               <p className="text-xs text-muted-foreground">
                 Klassischer Bereich-Zugang. Mitarbeiter darf an Geräten der zugewiesenen Bereiche scannen.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto rounded-lg border border-border p-2 bg-muted/50 dark:bg-card/30">
+              {/* Auswahlliste als Glas-Kachel: Auswahl bg-primary/10, Darüberfahren bg-glass-tile,
+                  Zeile mit dem Baustein Checkbox (docs/design-regeln.md, Abschnitte 12, 14 und 17). */}
+              <div className="glass-tile grid grid-cols-1 sm:grid-cols-2 gap-0.5 max-h-48 overflow-y-auto scrollbar-thin p-1">
                 {areas.length === 0 && (
-                  <p className="col-span-full text-xs text-muted-foreground/70 text-center py-4">Keine Bereiche angelegt</p>
+                  <EmptyState compact icon={MapPin} title="Keine Bereiche angelegt" className="col-span-full" />
                 )}
                 {areas.map((a) => {
                   const checked = form.areaIds.includes(a.id);
                   return (
-                    <button
+                    <label
                       key={a.id}
-                      type="button"
-                      onClick={() => toggleArea(a.id)}
                       className={cn(
-                        "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-left transition-colors",
+                        "flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-sm text-left transition-colors max-sm:min-h-11",
                         checked
-                          ? "bg-info/10 text-info ring-1 ring-sky-300 "
-                          : "bg-card text-muted-foreground hover:bg-muted"
+                          ? "bg-primary/10 text-foreground"
+                          : "text-muted-foreground hover:bg-glass-tile hover:text-foreground"
                       )}
                     >
-                      <div className={cn(
-                        "h-4 w-4 rounded border flex items-center justify-center shrink-0",
-                        checked ? "bg-info border-info" : "border-input"
-                      )}>
-                        {checked && <Check className="h-3 w-3 text-white" />}
-                      </div>
+                      <Checkbox checked={checked} onCheckedChange={() => toggleArea(a.id)} />
                       <span className="truncate">{a.name}</span>
-                    </button>
+                    </label>
                   );
                 })}
               </div>
@@ -385,44 +388,38 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
 
             {/* Direkt-Geraete */}
             <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-label flex items-center gap-1.5 tabular-nums">
                   <Cpu className="h-3.5 w-3.5" /> Direkt-Geräte ({form.deviceIds.length})
                 </h3>
-                <Badge variant="secondary" className="text-[10px]">{devices.length} verfügbar</Badge>
+                <Badge variant="neutral" className="tabular-nums">{devices.length} verfügbar</Badge>
               </div>
               <p className="text-xs text-muted-foreground">
                 Zusätzlicher Zugang zu einzelnen Geräten – auch ohne Bereich-Zugehörigkeit (z.B. nur Nebeneingang).
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto rounded-lg border border-border p-2 bg-muted/50 dark:bg-card/30">
+              {/* Gleiche Auswahl wie bei den Bereichen; keine eigene Farbe für Geräte (Abschnitt 3). */}
+              <div className="glass-tile grid grid-cols-1 sm:grid-cols-2 gap-0.5 max-h-48 overflow-y-auto scrollbar-thin p-1">
                 {devices.length === 0 && (
-                  <p className="col-span-full text-xs text-muted-foreground/70 text-center py-4">Keine Geräte angelegt</p>
+                  <EmptyState compact icon={Cpu} title="Keine Geräte angelegt" className="col-span-full" />
                 )}
                 {devices.map((d) => {
                   const checked = form.deviceIds.includes(d.id);
                   return (
-                    <button
+                    <label
                       key={d.id}
-                      type="button"
-                      onClick={() => toggleDevice(d.id)}
                       className={cn(
-                        "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-left transition-colors",
+                        "flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-sm text-left transition-colors max-sm:min-h-11",
                         checked
-                          ? "bg-destructive/10 text-destructive ring-1 ring-rose-300 "
-                          : "bg-card text-muted-foreground hover:bg-muted"
+                          ? "bg-primary/10 text-foreground"
+                          : "text-muted-foreground hover:bg-glass-tile hover:text-foreground"
                       )}
                     >
-                      <div className={cn(
-                        "h-4 w-4 rounded border flex items-center justify-center shrink-0",
-                        checked ? "bg-destructive border-destructive" : "border-input"
-                      )}>
-                        {checked && <Check className="h-3 w-3 text-white" />}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate">{d.name}</p>
-                        <p className="text-[10px] text-muted-foreground/70">{d.type}{d.category ? ` · ${d.category}` : ""}</p>
-                      </div>
-                    </button>
+                      <Checkbox checked={checked} onCheckedChange={() => toggleDevice(d.id)} />
+                      <span className="min-w-0">
+                        <span className="block truncate">{d.name}</span>
+                        <span className="block text-[11px] text-muted-foreground">{d.type}{d.category ? ` · ${d.category}` : ""}</span>
+                      </span>
+                    </label>
                   );
                 })}
               </div>
@@ -432,16 +429,15 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
 
             {/* Wochenplan */}
             <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-label flex items-center gap-1.5">
                   <Clock className="h-3.5 w-3.5" /> Zeitsteuerung
                 </h3>
-                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                  <input
-                    type="checkbox"
+                {/* Kästchen statt rohem input: Option im Formular, wirkt erst beim Speichern (Abschnitt 14). */}
+                <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer max-sm:min-h-11">
+                  <Checkbox
                     checked={form.scheduleEnabled}
-                    onChange={(e) => setForm({ ...form, scheduleEnabled: e.target.checked })}
-                    className="rounded"
+                    onCheckedChange={(v) => setForm({ ...form, scheduleEnabled: v === true })}
                   />
                   Wochenplan aktiv
                 </label>
@@ -452,7 +448,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                   onChange={(s) => setForm({ ...form, weekSchedule: s })}
                 />
               ) : (
-                <p className="text-xs text-muted-foreground/70 italic px-3 py-2 rounded-lg bg-muted/50/30 border border-dashed border-border">
+                <p className="glass-tile px-3 py-2 text-xs text-muted-foreground">
                   Ohne Wochenplan ist der Zugang an allen Wochentagen rund um die Uhr (innerhalb des Vertrags) erlaubt.
                 </p>
               )}
@@ -462,12 +458,12 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
               <>
                 <Separator />
                 <section className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-label flex items-center gap-1.5">
                       <Smartphone className="h-3.5 w-3.5" /> Mobile PWA
                     </h3>
                     {form.mobileToken && (
-                      <Badge variant="success" className="text-[10px]">
+                      <Badge variant="success">
                         Aktiv
                       </Badge>
                     )}
@@ -477,28 +473,31 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                   </p>
 
                   {form.mobileToken && mobileUrl ? (
-                    <div className="rounded-xl border border-border bg-card p-3 space-y-3">
-                      <div className="flex items-start gap-3">
-                        <div className="rounded-lg bg-white p-2 border border-border shrink-0">
+                    <div className="glass-tile p-3 space-y-3">
+                      {/* Auf dem Handy untereinander: QR oben, darunter Link und Tasten. */}
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                        {/* QR-Code bleibt auf Weiß (Ruhezone und Kontrast zum Scannen, auch im Dunkeln). */}
+                        <div className="self-center rounded-lg bg-white p-2 border border-border shrink-0 sm:self-start">
                           <canvas ref={qrRef} className="rounded" />
                         </div>
-                        <div className="flex-1 min-w-0 space-y-2">
+                        <div className="min-w-0 space-y-2 sm:flex-1">
                           <div className="space-y-1">
-                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Persoenliche URL</Label>
+                            <Label className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Persoenliche URL</Label>
                             <div className="flex items-center gap-1">
                               <Input
                                 value={mobileUrl}
                                 readOnly
-                                className="font-mono text-xs h-8"
+                                className="font-mono"
                                 onClick={(e) => (e.target as HTMLInputElement).select()}
                               />
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="icon"
-                                className="h-8 w-8 shrink-0"
+                                className="shrink-0 max-sm:size-11"
                                 onClick={copyMobileUrl}
                                 title="Kopieren"
+                                aria-label="Kopieren"
                               >
                                 {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
                               </Button>
@@ -506,9 +505,10 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                                 type="button"
                                 variant="outline"
                                 size="icon"
-                                className="h-8 w-8 shrink-0"
+                                className="shrink-0 max-sm:size-11"
                                 asChild
                                 title="Im neuen Tab oeffnen"
+                                aria-label="Im neuen Tab oeffnen"
                               >
                                 <a href={mobileUrl} target="_blank" rel="noopener noreferrer">
                                   <ExternalLink className="h-3.5 w-3.5" />
@@ -516,97 +516,149 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                               </Button>
                             </div>
                           </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleTokenAction("rotate")}
-                              disabled={tokenBusy}
-                              className="h-7 text-xs gap-1"
+                          {tokenConfirm ? (
+                            <Notice
+                              tone="danger"
+                              compact
+                              title={tokenConfirm === "rotate"
+                                ? "Bestehenden Link unguelig machen und neuen erzeugen?"
+                                : "Mobile-Zugang wirklich entziehen?"}
                             >
-                              {tokenBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                              Neuen Link erzeugen
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleTokenAction("revoke")}
-                              disabled={tokenBusy}
-                              className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            >
-                              Zugang entziehen
-                            </Button>
-                          </div>
-                          <p className="text-[10px] text-muted-foreground/70">
+                              <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setConfirmAction(null)}
+                                  disabled={tokenBusy}
+                                  autoFocus
+                                >
+                                  Abbrechen
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => handleTokenAction(tokenConfirm)}
+                                  disabled={tokenBusy}
+                                >
+                                  {tokenBusy
+                                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                                    : tokenConfirm === "rotate" && <RefreshCw className="h-4 w-4" />}
+                                  {tokenConfirm === "rotate" ? "Neuen Link erzeugen" : "Zugang entziehen"}
+                                </Button>
+                              </div>
+                            </Notice>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setConfirmAction("rotate")}
+                                disabled={tokenBusy}
+                                className="gap-1"
+                              >
+                                {tokenBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                                Neuen Link erzeugen
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setConfirmAction("revoke")}
+                                disabled={tokenBusy}
+                                className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              >
+                                Zugang entziehen
+                              </Button>
+                            </div>
+                          )}
+                          <p className="text-[11px] text-muted-foreground">
                             Wer den Link hat, hat Zugriff. Bei Verlust &bdquo;Neuen Link erzeugen&ldquo; klicken &mdash; alter Link wird sofort unguelig.
                           </p>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-border bg-muted/50 dark:bg-card/30 p-4 text-center space-y-2">
-                      <p className="text-xs text-muted-foreground">Noch kein Mobile-Link erstellt.</p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleTokenAction("create")}
-                        disabled={tokenBusy}
-                        className="gap-1.5"
-                      >
-                        {tokenBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Smartphone className="h-4 w-4" />}
-                        Mobile-Zugang erstellen
-                      </Button>
-                    </div>
+                    <EmptyState
+                      compact
+                      icon={Smartphone}
+                      title="Noch kein Mobile-Link erstellt."
+                      className="glass-tile"
+                      action={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleTokenAction("create")}
+                          disabled={tokenBusy}
+                          className="gap-1.5"
+                        >
+                          {tokenBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Smartphone className="h-4 w-4" />}
+                          Mobile-Zugang erstellen
+                        </Button>
+                      }
+                    />
                   )}
                 </section>
               </>
             )}
 
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                {error}
-              </p>
-            )}
+            {error && <Notice tone="danger" compact title={error} />}
           </div>
         )}
 
-        <DialogFooter className="gap-2 sm:gap-2">
-          {!isNew && form.id && (
-            <Button
-              variant="ghost"
-              onClick={handleDelete}
-              disabled={deleting || saving}
-              className="mr-auto text-muted-foreground/70 hover:text-destructive"
-            >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
-              Löschen
+        {confirmAction === "delete" ? (
+          // Rückfrage statt Fußzeile: Abbrechen oder endgültig löschen.
+          <div className="space-y-3">
+            <Notice tone="danger" compact title={`Mitarbeiter ${form.firstName || form.name} wirklich loeschen?`} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setConfirmAction(null)} disabled={deleting} autoFocus>
+                Abbrechen
+              </Button>
+              <Button type="button" variant="destructive" onClick={handleDelete} disabled={deleting}>
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Löschen
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <DialogFooter className="gap-2 sm:gap-2">
+            {!isNew && form.id && (
+              <Button
+                variant="ghost"
+                onClick={() => setConfirmAction("delete")}
+                disabled={deleting || saving}
+                className="sm:mr-auto text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+                Löschen
+              </Button>
+            )}
+            {!isNew && form.id && onShowHistory && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const display = [form.firstName, form.lastName].filter(Boolean).join(" ") || form.name;
+                  onShowHistory(form.id!, display);
+                }}
+                disabled={saving}
+                className="gap-1.5"
+              >
+                <History className="h-4 w-4" />
+                Verlauf
+              </Button>
+            )}
+            <Button variant="outline" onClick={onClose} disabled={saving}>
+              Abbrechen
             </Button>
-          )}
-          {!isNew && form.id && onShowHistory && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                const display = [form.firstName, form.lastName].filter(Boolean).join(" ") || form.name;
-                onShowHistory(form.id!, display);
-              }}
-              disabled={saving}
-              className="gap-1.5"
-            >
-              <History className="h-4 w-4" />
-              Verlauf
+            <Button onClick={handleSave} disabled={saving || loading} className="gap-1.5">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Speichern
             </Button>
-          )}
-          <Button variant="outline" onClick={onClose} disabled={saving}>
-            Abbrechen
-          </Button>
-          <Button onClick={handleSave} disabled={saving || loading} className="gap-1.5">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Speichern
-          </Button>
-        </DialogFooter>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

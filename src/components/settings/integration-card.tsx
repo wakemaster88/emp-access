@@ -6,8 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Notice } from "@/components/ui/notice";
 import { Separator } from "@/components/ui/separator";
-import { AlertTriangle, CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, Copy, Search, XCircle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, Copy, Search, XCircle } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 
 export interface ApiConfigData {
@@ -23,7 +33,6 @@ export interface ApiConfigData {
 interface ProviderMeta {
   label: string;
   description: string;
-  color: string;
   fields: {
     token: string;
     eventId?: string;
@@ -71,7 +80,6 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
   ANNY: {
     label: "anny.co",
     description: "Buchungsplattform – synchronisiert Buchungen als Tickets",
-    color: "bg-violet-500",
     fields: {
       token: "Access Token",
       baseUrl: "Base URL (optional, Standard: https://b.anny.co)",
@@ -80,7 +88,6 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
   WAKESYS: {
     label: "Wakesys",
     description: "Wakepark Management & Ticketsystem",
-    color: "bg-cyan-500",
     fields: {
       token: "API Token (nicht nötig – Wakesys-Abfrage erfolgt ohne Token)",
       baseUrl: "Base URL (z. B. https://twincable-beckum.wakesys.com)",
@@ -91,7 +98,6 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
   BINARYTEC: {
     label: "Binarytec",
     description: "Zugangskontrolle & Ticket-Synchronisation",
-    color: "bg-orange-500",
     fields: {
       token: "API Token",
       baseUrl: "Base URL (z. B. https://192.168.251.50:444)",
@@ -101,7 +107,6 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
   EMP_CONTROL: {
     label: "emp-control",
     description: "Personalmanagement-System (bidirektional)",
-    color: "bg-primary",
     fields: {
       token: "API Token (optional – nur für bidirektionale Sync)",
       baseUrl: "System-URL (optional – nur für bidirektionale Sync)",
@@ -112,7 +117,6 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
   NUKI: {
     label: "Nuki",
     description: "Smart Locks – Sync, Steuerung & Live-Events via Nuki Web API",
-    color: "bg-destructive",
     fields: {
       token: "Nuki Web API Token (Nuki Web → Account → API)",
     },
@@ -120,7 +124,6 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
   LOQED: {
     label: "LOQED",
     description: "Türschlösser – Öffnen, Entriegeln, Abschließen über die LOQED Integrations-API",
-    color: "bg-lime-600",
     fields: {
       token: "Persönlicher Zugriffstoken (integrations.production.loqed.com/personal-access-tokens, LOQED-Konto als Admin)",
     },
@@ -140,6 +143,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Rückfrage vor dem Entfernen als AlertDialog statt Browser-confirm (docs/design-regeln.md, Abschnitte 16 und 18).
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [unmapped, setUnmapped] = useState<{ annyName: string; count: number; customerSample: string[] }[]>([]);
@@ -182,11 +187,11 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     : webhookBaseUrl;
 
   const empControlApiDescription = (
-    <div className="text-[11px] text-muted-foreground space-y-1 mt-2">
+    <div className="text-[11px] text-muted-foreground space-y-1 mt-2 wrap-anywhere">
       <p className="font-medium text-muted-foreground">Webhook-API</p>
       <p><strong>POST</strong> {webhookUrl || "/api/webhook/emp-control"}</p>
       <p><strong>Header:</strong> <code className="bg-muted px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code> oder <code className="bg-muted px-1 rounded">X-Webhook-Secret: &lt;Secret&gt;</code></p>
-      <p><strong>Body (JSON):</strong> <code className="bg-muted px-1 rounded text-[10px] break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaIds": [1, 2, 3], "deviceIds": [22] } ] }`}</code></p>
+      <p><strong>Body (JSON):</strong> <code className="bg-muted px-1 rounded break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaIds": [1, 2, 3], "deviceIds": [22] } ] }`}</code></p>
       <p><strong>Ressourcen:</strong> <code className="bg-muted px-1 rounded">areaIds</code> (Array) – IDs der Access Areas, bei denen der Mitarbeiter Zugang hat. Alternativ: <code className="bg-muted px-1 rounded">areaId</code> (einzeln) oder <code className="bg-muted px-1 rounded">resourceIds</code>. IDs kommen aus <code className="bg-muted px-1 rounded">GET /api/areas</code>.</p>
       <p><strong>Einzelne Geräte:</strong> <code className="bg-muted px-1 rounded">deviceIds</code> (Array, alternativ <code className="bg-muted px-1 rounded">deviceId</code>) – für Mitarbeiter, die genau ein Gerät bedienen sollen, ohne dass dafür ein eigener Bereich nötig ist. Wirkt <em>zusätzlich</em> zu den Bereichen und gilt in der Mitarbeiter-App wie am RFID-Leser. IDs kommen aus <code className="bg-muted px-1 rounded">GET /api/devices</code>.</p>
       <p>Der Webhook legt pro Mitarbeiter ein Ticket an (uuid: <code className="bg-muted px-1 rounded">emp-&lt;id&gt;</code>) und verknüpft es mit allen angegebenen Ressourcen.</p>
@@ -195,7 +200,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   );
 
   const nukiApiDescription = (
-    <div className="text-[11px] text-muted-foreground space-y-1 mt-2">
+    <div className="text-[11px] text-muted-foreground space-y-1 mt-2 wrap-anywhere">
       <p className="font-medium text-muted-foreground">Nuki Web API</p>
       <p>1. Token unter <a className="underline" href="https://web.nuki.io" target="_blank" rel="noreferrer">web.nuki.io</a> → Account → API generieren und oben einfügen.</p>
       <p>2. Auf <strong>Synchronisieren</strong> klicken – alle Smart Locks aus Nuki werden automatisch als Geräte (Typ <code className="bg-muted px-1 rounded">NUKI_SMARTLOCK</code>, Kategorie <em>Tür</em>) angelegt und mit Akkustand/Firmware befüllt.</p>
@@ -206,17 +211,17 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   );
 
   const annyApiDescription = (
-    <div className="text-[11px] text-muted-foreground space-y-1 mt-2">
+    <div className="text-[11px] text-muted-foreground space-y-1 mt-2 wrap-anywhere">
       <p className="font-medium text-muted-foreground">Webhook-API</p>
       <p><strong>POST</strong> {webhookUrl || "/api/integrations/anny/webhook"}</p>
       <p><strong>Auth:</strong> Secret ist in der URL enthalten (<code className="bg-muted px-1 rounded">?secret=…</code>). Alternativ als Header: <code className="bg-muted px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code></p>
       <p><strong>Body (JSON):</strong></p>
       <ul className="list-disc list-inside space-y-0.5 pl-1">
-        <li><code className="bg-muted px-1 rounded text-[10px]">{`{ "booking": { ... } }`}</code> — einzelne Buchung</li>
-        <li><code className="bg-muted px-1 rounded text-[10px]">{`{ "bookings": [ ... ] }`}</code> — mehrere Buchungen</li>
-        <li><code className="bg-muted px-1 rounded text-[10px]">{`{ "data": { "booking": { ... } } }`}</code> — anny.co Webhook-Format</li>
+        <li><code className="bg-muted px-1 rounded">{`{ "booking": { ... } }`}</code> — einzelne Buchung</li>
+        <li><code className="bg-muted px-1 rounded">{`{ "bookings": [ ... ] }`}</code> — mehrere Buchungen</li>
+        <li><code className="bg-muted px-1 rounded">{`{ "data": { "booking": { ... } } }`}</code> — anny.co Webhook-Format</li>
       </ul>
-      <p><strong>Booking-Felder:</strong> <code className="bg-muted px-1 rounded text-[10px]">id, number, start_date, end_date, status, customer (id, full_name, first_name, last_name), resource (id, name), service (id, name)</code></p>
+      <p><strong>Booking-Felder:</strong> <code className="bg-muted px-1 rounded">id, number, start_date, end_date, status, customer (id, full_name, first_name, last_name), resource (id, name), service (id, name)</code></p>
       <p>Der Webhook ordnet Buchungen automatisch Services, Abos oder Bereichen zu und erstellt/aktualisiert Tickets. Stornierte Buchungen werden ignoriert.</p>
     </div>
   );
@@ -397,7 +402,6 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   }
 
   async function handleDelete() {
-    if (!confirm(`Möchtest du die ${meta.label}-Integration wirklich löschen?`)) return;
     setDeleting(true);
     try {
       await fetch(`/api/settings/integrations?provider=${provider}`, { method: "DELETE" });
@@ -405,41 +409,47 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
       setOpen(false);
     } finally {
       setDeleting(false);
+      setConfirmDelete(false);
     }
   }
 
   return (
-    <Card className={cn("border-border transition-all", open && "ring-1 ring-primary/30")}>
-      <CardHeader
-        className="cursor-pointer select-none"
-        onClick={() => setOpen(!open)}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0", meta.color)}>
+    <Card>
+      <CardHeader>
+        {/* Die ganze Kopfzeile ist eine Taste: per Tastatur erreichbar, Zustand über aria-expanded (Abschnitt 12). */}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls={open ? `integration-${provider}` : undefined}
+          className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-control text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Kürzel im Glas-Chip in Akzentfarbe statt eigener Markenfarbe je Anbieter (docs/design-regeln.md, Abschnitt 3). */}
+            <div className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-glass-tile ring-1 ring-inset ring-glass-border text-xs font-bold text-primary dark:text-foreground">
               {meta.label.slice(0, 2).toUpperCase()}
             </div>
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
+            <div className="min-w-0">
+              <CardTitle className="flex flex-wrap items-center gap-2">
                 {meta.label}
                 {isConfigured ? (
-                  <Badge variant="success" className="text-xs font-normal gap-1">
+                  <Badge variant="success">
                     <CheckCircle2 className="h-3 w-3" /> Verbunden
                   </Badge>
                 ) : (
-                  <Badge variant="secondary" className="text-xs font-normal gap-1">
+                  <Badge variant="neutral">
                     <Circle className="h-3 w-3" /> Nicht konfiguriert
                   </Badge>
                 )}
               </CardTitle>
-              <CardDescription className="text-xs mt-0.5">{meta.description}</CardDescription>
+              <CardDescription className="mt-0.5">{meta.description}</CardDescription>
               {provider === "EMP_CONTROL" && (
-                <div className="mt-2 text-[11px] text-muted-foreground">
+                <div className="mt-2 text-[11px] text-muted-foreground wrap-anywhere">
                   <p><strong>Webhook:</strong> POST <code className="bg-muted px-1 rounded">{webhookUrl || "/api/webhook/emp-control"}</code> – Mitarbeiter pushen. Details beim Öffnen.</p>
                 </div>
               )}
               {provider === "ANNY" && isConfigured && (
-                <div className="mt-2 text-[11px] text-muted-foreground">
+                <div className="mt-2 text-[11px] text-muted-foreground wrap-anywhere">
                   <p><strong>Webhook:</strong> POST <code className="bg-muted px-1 rounded">{webhookUrl || "/api/integrations/anny/webhook"}</code> – Buchungen empfangen. Details beim Öffnen.</p>
                 </div>
               )}
@@ -455,22 +465,22 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 text-muted-foreground/70">
+          <div className="flex items-center gap-2 shrink-0 text-muted-foreground">
             {initialData?.lastUpdate && (
-              <span className="text-xs hidden sm:flex items-center gap-1">
+              <span className="text-xs hidden sm:flex items-center gap-1 tabular-nums">
                 <RefreshCw className="h-3 w-3" />
                 {fmtDate(initialData.lastUpdate)}
               </span>
             )}
             {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </div>
-        </div>
+        </button>
       </CardHeader>
 
       {open && (
         <>
-          <Separator className="dark:bg-muted" />
-          <CardContent className="pt-4 space-y-4">
+          <Separator />
+          <CardContent id={`integration-${provider}`} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor={`${provider}-token`}>{meta.fields.token}</Label>
               <Input
@@ -515,14 +525,14 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   placeholder={provider === "EMP_CONTROL" ? '{"key": "value"}' : provider === "WAKESYS" ? '{"interfaceIds": [2, 3, 4]}' : provider === "BINARYTEC" ? '{"resourceId": "1"}' : ""}
                   value={data.extraConfig ?? ""}
                   onChange={(e) => setData({ ...data, extraConfig: e.target.value })}
-                  className="font-mono text-xs"
+                  className="font-mono"
                 />
               </div>
             )}
 
             {provider === "BINARYTEC" && (
-              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Binarytec API (nur Check, kein Sync)</p>
+              <div className="glass-tile p-3 space-y-2">
+                <p className="text-label">Binarytec API (nur Check, kein Sync)</p>
                 <p className="text-[11px] text-muted-foreground">
                   Wenn Binarytec konfiguriert ist, prüft der Raspberry Pi Scans <strong>nur</strong> per Binarytec (Check-Access). Keine EMP-Tickets, kein Ticket-Sync. <strong>resourceId</strong> im Zusatz (JSON) ist erforderlich.
                 </p>
@@ -530,8 +540,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
             )}
 
             {provider === "WAKESYS" && (
-              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Interface-IDs (Wakesys)</p>
+              <div className="glass-tile p-3 space-y-2">
+                <p className="text-label">Interface-IDs (Wakesys)</p>
                 <ul className="text-[11px] text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono">
                   <li>1 = Admin</li>
                   <li>2 = Seilbahn A</li>
@@ -544,21 +554,21 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   <li>19 = Drehkreuz</li>
                 </ul>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Zusatz z. B.: <code className="bg-border dark:bg-accent px-1 rounded">{`{"interfaceIds": [2, 3, 4]}`}</code> (Reihenfolge = Fallback)
+                  Zusatz z. B.: <code className="bg-muted px-1 rounded">{`{"interfaceIds": [2, 3, 4]}`}</code> (Reihenfolge = Fallback)
                 </p>
               </div>
             )}
 
             {provider === "WAKESYS" && isConfigured && (
-              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-3">
-                <p className="text-xs font-medium text-muted-foreground">RFID / Code testen</p>
+              <div className="glass-tile p-3 space-y-3">
+                <p className="text-label">RFID / Code testen</p>
                 <div className="flex items-center gap-2">
                   <Input
                     placeholder="RFID-Code eingeben…"
                     value={testCode}
                     onChange={(e) => setTestCode(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleWakesysTest()}
-                    className="font-mono text-sm h-9"
+                    className="font-mono max-sm:h-11"
                   />
                   <Button
                     type="button"
@@ -566,58 +576,48 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                     size="sm"
                     onClick={handleWakesysTest}
                     disabled={testing || !testCode.trim()}
-                    className="shrink-0 h-9"
+                    className="shrink-0 h-9 max-sm:h-11"
                   >
-                    {testing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4 mr-1.5" />}
+                    {testing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                     {testing ? "" : "Prüfen"}
                   </Button>
                 </div>
                 {testResult && (
-                  <div className={cn(
-                    "rounded-lg border p-3 space-y-1",
-                    testResult.valid
-                      ? "border-success/30 bg-success/10"
-                      : "border-destructive/30 bg-destructive/10",
-                  )}>
-                    <div className="flex items-center gap-2">
-                      {testResult.valid ? (
-                        <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-destructive shrink-0" />
-                      )}
-                      <span className={cn("text-sm font-bold", testResult.valid ? "text-success" : "text-destructive")}>
-                        {testResult.valid ? "Gültig" : "Nicht gültig"}
-                      </span>
-                    </div>
-                    {testResult.valid && (
-                      <div className="flex items-start gap-3 pl-6">
+                  <Notice
+                    tone={testResult.valid ? "success" : "danger"}
+                    icon={testResult.valid ? CheckCircle2 : XCircle}
+                    compact
+                    title={testResult.valid ? "Gültig" : "Nicht gültig"}
+                  >
+                    {testResult.valid ? (
+                      <div className="flex items-start gap-3">
                         {testResult.picture && (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img src={testResult.picture} alt="" className="h-14 w-14 rounded-lg object-cover shrink-0 border border-border" />
                         )}
-                        <div className="text-xs text-muted-foreground space-y-0.5">
-                          {testResult.name && <p><strong>Name:</strong> {testResult.name}{testResult.age != null && <span className="ml-1 text-muted-foreground/70">({testResult.age} Jahre)</span>}</p>}
+                        <div className="space-y-0.5">
+                          {testResult.name && <p><strong>Name:</strong> {testResult.name}{testResult.age != null && <span className="ml-1 tabular-nums">({testResult.age} Jahre)</span>}</p>}
                           {testResult.cardName && <p><strong>Karte:</strong> {testResult.cardName}</p>}
                           {testResult.category && <p><strong>Kategorie:</strong> {testResult.category}</p>}
                           {testResult.validUntil && <p><strong>Gültig bis:</strong> {testResult.validUntil}</p>}
                           {testResult.interfaceNames && <p><strong>Interface:</strong> {testResult.interfaceNames.join(", ")}</p>}
                         </div>
                       </div>
-                    )}
-                    {testResult.message && !testResult.valid && (
-                      <p className="text-xs text-destructive pl-6">{testResult.message}</p>
-                    )}
-                  </div>
+                    ) : testResult.message ? (
+                      <p>{testResult.message}</p>
+                    ) : null}
+                  </Notice>
                 )}
                 {testResult?.valid && testResult.matchingTickets && testResult.matchingTickets.length > 0 && (
-                  <div className="rounded-lg border border-primary/30 bg-primary/8 p-3 space-y-2">
-                    <p className="text-xs font-medium text-primary">
+                  <div className="glass-tile p-3 space-y-2">
+                    <p className="text-label tabular-nums">
                       {testResult.matchingTickets.length} passende{testResult.matchingTickets.length === 1 ? "s" : ""} Ticket{testResult.matchingTickets.length === 1 ? "" : "s"} im System
                     </p>
                     <div className="space-y-1.5">
                       {testResult.matchingTickets.map((t) => (
-                        <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg bg-card border border-indigo-100 px-3 py-2">
+                        <div key={t.id} className="flex items-center justify-between gap-2 rounded-control bg-glass-tile px-3 py-2">
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-foreground/80 truncate">
+                            <p className="text-sm font-medium text-foreground truncate">
                               {[t.firstName, t.lastName].filter(Boolean).join(" ") || t.name}
                             </p>
                             <p className="text-[11px] text-muted-foreground truncate">
@@ -626,7 +626,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                             </p>
                           </div>
                           {t.rfidCode === testResult.code ? (
-                            <Badge variant="success" className="text-[10px] shrink-0 gap-1">
+                            <Badge variant="success" className="shrink-0">
                               <CheckCircle2 className="h-3 w-3" /> Verknüpft
                             </Badge>
                           ) : (
@@ -636,7 +636,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                               size="sm"
                               onClick={() => handleRfidMerge(t.id)}
                               disabled={merging === t.id}
-                              className="shrink-0 h-7 text-xs"
+                              className="shrink-0 max-sm:h-11"
                             >
                               {merging === t.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : "RFID zuweisen"}
                             </Button>
@@ -653,8 +653,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
             )}
 
             {webhook && (
-              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-3">
-                <p className="text-xs font-medium text-muted-foreground">{webhook.title}</p>
+              <div className="glass-tile p-3 space-y-3">
+                <p className="text-label">{webhook.title}</p>
                 <p className="text-[11px] text-muted-foreground">{webhook.hint}</p>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
@@ -662,14 +662,16 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                     <Input
                       readOnly
                       value={webhookUrl}
-                      className="font-mono text-xs h-8 bg-card"
+                      className="font-mono max-sm:h-11"
                     />
                     <Button
                       type="button"
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8 shrink-0"
+                      className="shrink-0 max-sm:size-11"
                       onClick={() => copyToClipboard(webhookUrl, "wh-url")}
+                      title="URL kopieren"
+                      aria-label="URL kopieren"
                     >
                       {copied === "wh-url" ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
                     </Button>
@@ -682,20 +684,22 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                           readOnly
                           type="password"
                           value={webhookSecret}
-                          className="font-mono text-xs h-8 bg-card"
+                          className="font-mono max-sm:h-11"
                         />
                         <Button
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8 shrink-0"
+                          className="shrink-0 max-sm:size-11"
                           onClick={() => copyToClipboard(webhookSecret, "wh-secret")}
+                          title="Secret kopieren"
+                          aria-label="Secret kopieren"
                         >
                           {copied === "wh-secret" ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
                         </Button>
                       </>
                     ) : (
-                      <span className="text-xs text-muted-foreground/70">Nach dem Speichern wird ein Webhook-Secret erzeugt und hier angezeigt.</span>
+                      <span className="text-xs text-muted-foreground">Nach dem Speichern wird ein Webhook-Secret erzeugt und hier angezeigt.</span>
                     )}
                   </div>
                 </div>
@@ -707,68 +711,59 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               </div>
             )}
 
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                {error}
-              </p>
-            )}
+            {error && <Notice tone="danger" compact title={error} />}
 
-            {syncResult && (
-              <p className="text-sm text-success bg-success/10 px-3 py-2 rounded-lg">
-                Sync abgeschlossen: {syncResult}
-              </p>
-            )}
+            {syncResult && <Notice tone="success" compact title={`Sync abgeschlossen: ${syncResult}`} />}
 
             {unmapped.length > 0 && (
-              <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 space-y-2">
-                <div className="flex items-center gap-2 text-warning">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <p className="text-xs font-medium">
-                    {unmapped.length} ANNY-Service{unmapped.length > 1 ? "s" : ""} ohne Zuordnung — Buchungen wurden nicht importiert
-                  </p>
-                </div>
-                <p className="text-[11px] text-warning">
+              <Notice
+                tone="warning"
+                compact
+                title={<>{unmapped.length} ANNY-Service{unmapped.length > 1 ? "s" : ""} ohne Zuordnung — Buchungen wurden nicht importiert</>}
+              >
+                <p>
                   Erstelle einen Service unter &quot;Services&quot; und hinterlege den ANNY-Namen, dann erneut synchronisieren.
                 </p>
-                <div className="space-y-1">
+                <div className="mt-2 space-y-1">
                   {unmapped.map((u) => (
-                    <div key={u.annyName} className="flex items-center justify-between text-xs bg-card rounded px-2.5 py-1.5 border border-amber-100">
+                    <div key={u.annyName} className="flex items-center justify-between gap-2 rounded-control bg-glass-tile px-2.5 py-1.5">
                       <div className="min-w-0">
-                        <span className="font-medium text-foreground/80">{u.annyName}</span>
+                        <span className="font-medium text-foreground">{u.annyName}</span>
                         {u.customerSample.length > 0 && (
-                          <span className="text-muted-foreground/70 ml-1.5">({u.customerSample.join(", ")}{u.count > u.customerSample.length ? ", …" : ""})</span>
+                          <span className="text-muted-foreground ml-1.5">({u.customerSample.join(", ")}{u.count > u.customerSample.length ? ", …" : ""})</span>
                         )}
                       </div>
-                      <Badge variant="secondary" className="text-[10px] shrink-0 ml-2">
+                      <Badge variant="secondary" className="shrink-0 tabular-nums">
                         {u.count} Buchung{u.count > 1 ? "en" : ""}
                       </Badge>
                     </div>
                   ))}
                 </div>
-              </div>
+              </Notice>
             )}
 
-            <div className="flex items-center justify-between pt-1">
+            {/* Auf dem Handy umbrechen, statt über den Rand zu laufen. */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleDelete}
+                onClick={() => setConfirmDelete(true)}
                 disabled={deleting || !initialData}
-                className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10"
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 max-sm:h-11"
               >
-                <Trash2 className="h-4 w-4 mr-1.5" />
+                <Trash2 className="h-4 w-4" />
                 Entfernen
               </Button>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {syncEndpoint && isConfigured && (provider !== "EMP_CONTROL" || !!data.token) && (
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleSync}
                     disabled={syncing}
-                    className="min-w-24"
+                    className="min-w-24 max-sm:h-11"
                   >
-                    <RefreshCw className={cn("h-4 w-4 mr-1.5", syncing && "animate-spin")} />
+                    <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
                     {syncing ? "Synchronisiere..." : "Jetzt synchronisieren"}
                   </Button>
                 )}
@@ -777,16 +772,16 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   onClick={handleSave}
                   disabled={saving || (provider === "WAKESYS" ? !data.baseUrl?.trim() : provider === "EMP_CONTROL" ? false : !data.token)}
                   className={cn(
-                    "min-w-24",
-                    saved ? "bg-success hover:bg-success/90" : "bg-primary hover:bg-primary/90"
+                    "min-w-24 max-sm:h-11",
+                    saved && "bg-success text-success-foreground hover:bg-success/90 shadow-none"
                   )}
                 >
                   {saving ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />
                   ) : saved ? (
-                    <><CheckCircle2 className="h-4 w-4 mr-1.5" />Gespeichert</>
+                    <><CheckCircle2 className="h-4 w-4" />Gespeichert</>
                   ) : (
-                    <><Save className="h-4 w-4 mr-1.5" />Speichern</>
+                    <><Save className="h-4 w-4" />Speichern</>
                   )}
                 </Button>
               </div>
@@ -794,6 +789,29 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
           </CardContent>
         </>
       )}
+
+      <AlertDialog open={confirmDelete} onOpenChange={(o) => { if (!deleting) setConfirmDelete(o); }}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Möchtest du die {meta.label}-Integration wirklich löschen?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleting}
+              onClick={(e) => {
+                // Offen lassen, bis das Entfernen fertig ist; handleDelete schließt den Dialog.
+                e.preventDefault();
+                void handleDelete();
+              }}
+            >
+              {deleting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Entfernen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
