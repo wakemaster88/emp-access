@@ -15,6 +15,7 @@ import { Notice } from "@/components/ui/notice";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Segmented } from "@/components/ui/segmented";
 import { StatusDot } from "@/components/ui/status-dot";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -149,7 +150,7 @@ const DURATION_PRESETS = [5, 10, 15, 20, 30, 45, 60] as const;
 // muted bei 3,5–4,4 : 1 (docs/design-regeln.md, Abschnitt 10: 4,5 : 1).
 const DURATION_CHIP =
   "press h-8 rounded-full px-2.5 text-xs font-medium tabular-nums outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 max-sm:h-11 max-sm:min-w-11";
-const DURATION_CHIP_ON = "bg-primary text-primary-foreground";
+const DURATION_CHIP_ON = "bg-primary-fill text-primary-foreground";
 const DURATION_CHIP_OFF =
   "bg-foreground/[0.06] text-muted-foreground hover:text-foreground dark:bg-white/[0.08] dark:text-foreground/80 dark:hover:text-foreground";
 const DAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -1009,7 +1010,7 @@ export function IrrigationClient({
           }
         />
         {/* Zeilen mit Haarlinie in einer Karte (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="gap-0 overflow-hidden py-0 sm:py-0">
+        <Card flush="y">
           <CardContent className="px-0 sm:px-0 divide-y divide-border">
             {schedules.length === 0 ? (
               <EmptyState
@@ -1214,29 +1215,23 @@ function PumpGroup({
               </span>
             )}
             <Badge
-              variant={running ? "default" : "neutral"}
-              className={cn("gap-1.5 text-[11px] font-medium", running && "bg-sky-500/15 text-sky-700 dark:text-sky-300")}
+              variant={running ? "water" : "neutral"}
+              className="gap-1.5 text-[11px] font-medium"
             >
-              {running ? (
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75 motion-reduce:animate-none" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
-                </span>
-              ) : (
-                <StatusDot tone="neutral" />
-              )}
+              <StatusDot tone={running ? "water" : "neutral"} pulse={running} />
               {running ? "Läuft" : "Aus"}
             </Badge>
           </div>
         </div>
 
         {/* Live-Kennzahlen: vier Spalten erst ab lg, sonst kürzen die Versalien-Beschriftungen
-            neben der Seitenleiste (iPad hochkant) ab. */}
+            neben der Seitenleiste (iPad hochkant) ab. Als Kachel in der Karte (`variant="tile"`,
+            ohne eigenen Weichzeichner, docs/design-regeln.md, Abschnitt 22); Wasser-Ton, solange die Pumpe läuft. */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <PumpMetric icon={Waves} accent={running ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"} label="Durchfluss" value={running ? `${flowLph}` : "0"} unit="L/h" />
-          <PumpMetric icon={Timer} accent="text-muted-foreground" label="Laufzeit" value={fmtCountdown(elapsed)} unit="min" />
-          <PumpMetric icon={Droplet} accent={running ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"} label="Durchlauf" value={fmtLiters(liters)} unit="" />
-          <PumpMetric icon={Droplets} accent="text-muted-foreground" label="Aktive Ventile" value={`${consumerCount}`} unit={`/ ${valveCount}`} />
+          <StatCard size="sm" variant="tile" icon={Waves} tone={running ? "water" : "neutral"} label="Durchfluss" value={running ? `${flowLph}` : "0"} suffix="L/h" />
+          <StatCard size="sm" variant="tile" icon={Timer} tone="neutral" label="Laufzeit" value={fmtCountdown(elapsed)} suffix="min" />
+          <StatCard size="sm" variant="tile" icon={Droplet} tone={running ? "water" : "neutral"} label="Durchlauf" value={fmtLiters(liters)} />
+          <StatCard size="sm" variant="tile" icon={Droplets} tone="neutral" label="Aktive Ventile" value={`${consumerCount}`} suffix={`/ ${valveCount}`} />
         </div>
 
         {/* Fluss-Animation: Streifen im Wasser-Ton aus den Theme-Variablen statt fester RGB-Werte. */}
@@ -1288,24 +1283,6 @@ function PumpGroup({
   );
 }
 
-function PumpMetric({ icon: Icon, accent, label, value, unit }: {
-  icon: React.ComponentType<{ className?: string }>; accent: string; label: string; value: string; unit: string;
-}) {
-  // Kennzahl in einer Karte: Kachel im Stil von StatCard (sm), aber als glass-tile,
-  // weil StatCard selbst eine Glaskarte mit Weichzeichner ist (docs/design-regeln.md, Abschnitt 22).
-  return (
-    <div className="glass-tile px-3 py-2.5">
-      <div className="flex items-center gap-1.5">
-        <span className="text-label text-[10px] tracking-[0.1em] truncate">{label}</span>
-        <Icon className={cn("ml-auto h-3.5 w-3.5 shrink-0", accent)} />
-      </div>
-      <p className="mt-1 text-xl font-bold leading-none tracking-tight text-foreground tabular-nums truncate">
-        {value}{unit && <span className="text-xs font-medium tracking-normal text-muted-foreground ml-1">{unit}</span>}
-      </p>
-    </div>
-  );
-}
-
 // ── Zonen-Karte ──────────────────────────────────────────────────────────────
 
 // Klare An/Aus-Anzeige des Ventils.
@@ -1325,11 +1302,8 @@ function ZoneStateBadge({ status }: { status?: ZoneStatus }) {
     const label = status.activity === "SCHEDULED_WATERING" ? "An · Zeitplan" : "An · bewässert";
     // Ventil offen = Wasser-Zustand in Himmelblau (docs/design-regeln.md, Abschnitt 3).
     return (
-      <Badge className={cn(base, "bg-sky-500/15 text-sky-700 dark:text-sky-300")}>
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75 motion-reduce:animate-none" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
-        </span>
+      <Badge variant="water" className={base}>
+        <StatusDot tone="water" pulse />
         {label}
       </Badge>
     );
@@ -1579,11 +1553,8 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
             {schedule.deviceName}
           </span>
           {running ? (
-            <Badge className="text-[10px] gap-1 bg-sky-500/15 text-sky-700 dark:text-sky-300">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75 motion-reduce:animate-none" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sky-500" />
-              </span>
+            <Badge variant="water" className="text-[10px] gap-1">
+              <StatusDot tone="water" size="xs" pulse />
               Läuft
             </Badge>
           ) : schedule.isActive ? (
@@ -1721,7 +1692,7 @@ function IrrigationStatsPanel({
         </div>
       </div>
 
-      <Card className="gap-0 overflow-hidden py-0 sm:py-0">
+      <Card flush="y">
         <CardContent className="px-0 sm:px-0">
           {loading && !stats ? (
             <div className="p-8 flex items-center justify-center text-sm text-muted-foreground gap-2">
@@ -1988,7 +1959,7 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                           className={cn(
                             "relative size-5 rounded-[6px] border flex items-center justify-center shrink-0 text-[10px] font-bold tabular-nums outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 after:absolute after:-inset-3 after:content-['']",
                             selected
-                              ? "border-primary bg-primary text-primary-foreground"
+                              ? "border-primary bg-primary-fill text-primary-foreground"
                               : "border-foreground/35 bg-field text-transparent hover:border-foreground/55 dark:border-white/30",
                           )}
                           title={selected ? "Aus Sequenz entfernen" : "Zur Sequenz hinzufügen"}
@@ -2039,25 +2010,20 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
           {/* 4. Wochentage */}
           <div className="space-y-1.5">
             <Label>Wochentage</Label>
-            <div className="flex gap-1">
+            {/* Sieben gleich breite Spalten wie bisher; ohne Innenabstand passen die Kürzel auch schmal. */}
+            <ToggleChipGroup aria-label="Wochentage" className="grid grid-cols-7 gap-1">
               {DAY_LABELS.map((d, i) => (
-                <button
+                <ToggleChip
                   key={d}
-                  type="button"
-                  onClick={() => toggleDay(i)}
                   title={DAY_LABELS_LONG[i]}
-                  aria-pressed={((form.daysOfWeek >> i) & 1) === 1}
-                  className={cn(
-                    "press flex-1 h-9 max-sm:h-11 rounded-control text-xs font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                    (form.daysOfWeek >> i) & 1
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-foreground/[0.06] text-muted-foreground hover:text-foreground dark:bg-white/[0.08] dark:text-foreground/80 dark:hover:text-foreground",
-                  )}
+                  pressed={((form.daysOfWeek >> i) & 1) === 1}
+                  onPressedChange={() => toggleDay(i)}
+                  className="px-0"
                 >
                   {d}
-                </button>
+                </ToggleChip>
               ))}
-            </div>
+            </ToggleChipGroup>
           </div>
 
           {/* 5. Smart-Regen */}

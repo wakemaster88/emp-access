@@ -10,6 +10,9 @@ import { cn } from "@/lib/utils";
  * fingergerecht hoch und wird erst am Zeigergerät kompakt: Zonen-Chips
  * entscheiden, wo eine Durchsage landet, ein Fehlgriff beschallt den falschen
  * Bereich.
+ *
+ * Für Mehrfachauswahl (Zonen, Wochentage) gibt es `ToggleChip` aus
+ * ui/toggle-chip.tsx; dieser Knopf bleibt für Einfachauswahl.
  */
 export function Chip({
   active,
@@ -34,8 +37,9 @@ export function Chip({
         "press inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-8 sm:px-3 sm:text-xs",
         // Aus: Glas-Kapsel wie Badge `secondary` – im Hellen mit dunkler Haarlinie (auf weißen
         // Glaskarten sichtbar), im Dialog tönt sich das Glas von selbst (Abschnitt 18).
+        // An: deckend in `primary-fill`, damit die Schrift auch im Dunkeln 4,5:1 erreicht (Abschnitt 3).
         active
-          ? "border-primary bg-primary text-primary-foreground"
+          ? "border-primary bg-primary-fill text-primary-foreground"
           : "border-border bg-glass-tile text-muted-foreground shadow-[inset_0_1px_0_var(--glass-highlight)] hover:bg-glass-strong hover:text-foreground dark:border-glass-border",
         className
       )}

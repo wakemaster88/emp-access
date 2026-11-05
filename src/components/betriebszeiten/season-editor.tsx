@@ -4,6 +4,7 @@ import { CopyPlus, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { weekdayName } from "@/lib/operating-hours";
 import type { PeriodSpec, SeasonSpec } from "@/components/betriebszeiten/types";
@@ -49,14 +50,13 @@ function MmDdPicker({
   disabled?: boolean;
 }) {
   const { month, day } = splitMmDd(value);
-  // Eigene Auswahlfelder wie Eingabefelder: glass-field, 16 px Schrift auf dem Handy (Abschnitt 16).
-  const selectClass =
-    "glass-field h-9 px-2 text-base text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11 md:text-sm";
 
+  // Native Auswahlfelder im Feld-Look (NativeSelect, Abschnitt 16); im Dialog auf dem Handy 44 px hoch.
+  // Der Tag bleibt so schmal wie sein Inhalt, der Monat nimmt den Rest.
   return (
     <div className="flex gap-1.5">
-      <select
-        className={selectClass}
+      <NativeSelect
+        containerClassName="w-auto"
         value={day}
         disabled={disabled}
         onChange={(e) => onChange(joinMmDd(month, Number(e.target.value)))}
@@ -67,9 +67,9 @@ function MmDdPicker({
             {d}.
           </option>
         ))}
-      </select>
-      <select
-        className={`${selectClass} flex-1`}
+      </NativeSelect>
+      <NativeSelect
+        containerClassName="flex-1"
         value={month}
         disabled={disabled}
         onChange={(e) => {
@@ -83,7 +83,7 @@ function MmDdPicker({
             {name}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }

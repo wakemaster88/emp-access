@@ -1,6 +1,8 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { StatusDot } from "@/components/ui/status-dot";
 import { AlertCircle, Clock, Speaker, Volume2, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "./labels";
@@ -103,20 +105,12 @@ function ZoneTile({
         "glass-tile press flex min-h-11 items-center gap-2.5 p-2.5 text-left hover:bg-glass-strong",
         // Musik läuft = Violett (Zustandsvokabular): aktive Kachel mit Verlauf.
         status.isPlaying &&
-          "border-violet-400/45 bg-gradient-to-br from-violet-400/25 to-violet-400/5",
-        !status.isActive && "opacity-60"
+          "border-violet-400/45 bg-gradient-to-br from-violet-400/25 to-violet-400/5"
       )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "h-2.5 w-2.5 shrink-0 rounded-full",
-          status.isPlaying
-            ? "bg-violet-500 dark:bg-violet-400"
-            : offline
-              ? "bg-destructive"
-              : "bg-muted-foreground/50"
-        )}
+      <StatusDot
+        size="md"
+        tone={status.isPlaying ? "music" : offline ? "danger" : "neutral"}
       />
 
       <span className="min-w-0 flex-1">
@@ -124,6 +118,8 @@ function ZoneTile({
           <span className="truncate text-sm font-medium text-foreground">
             {zone.name}
           </span>
+          {/* Inaktiv: Text bleibt lesbar, den Zustand sagt das Badge (docs/design-regeln.md, Abschnitt 17). */}
+          {!status.isActive && <Badge variant="neutral">Deaktiviert</Badge>}
           {status.pendingJobs > 0 && (
             <span
               className="flex items-center gap-0.5 text-[10px] tabular-nums text-warning"

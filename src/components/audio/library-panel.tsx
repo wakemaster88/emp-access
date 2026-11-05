@@ -14,10 +14,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SearchInput } from "@/components/ui/search-input";
 import { Segmented } from "@/components/ui/segmented";
 import {
   Select,
@@ -231,16 +231,13 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
         <>
           {tracks.length >= SEARCH_THRESHOLD && (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="relative sm:min-w-[200px] sm:flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Titel oder Interpret suchen"
-                  aria-label="Mediathek durchsuchen"
-                  className="pl-8"
-                />
-              </div>
+              <SearchInput
+                containerClassName="sm:min-w-[200px] sm:flex-1"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Titel oder Interpret suchen"
+                aria-label="Mediathek durchsuchen"
+              />
               <Segmented
                 value={filterKind}
                 onValueChange={setFilterKind}
@@ -262,7 +259,7 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
               <EmptyState compact icon={Search} title="Kein Titel passt zur Suche." />
             </Card>
           ) : (
-            <Card className="gap-0 py-0 sm:py-0">
+            <Card flush="y">
               <CardContent className="divide-y divide-border px-0 sm:px-0">
                 {visible.map((track) => (
                   <TrackItem

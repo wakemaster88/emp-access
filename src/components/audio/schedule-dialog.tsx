@@ -19,10 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AUDIO_OPERATING_LABELS, AUDIO_TRIGGER_LABELS } from "@/lib/audio-constants";
-import { Chip, sliderFill } from "./ui";
+import { sliderFill } from "./ui";
 import type {
   AnnouncementRow,
   AudioScheduleAction,
@@ -371,45 +372,37 @@ export function ScheduleDialog({
           <div>
             <Label className="mb-2 block">Wochentage</Label>
             {/* Sieben feste Breiten liefen auf schmalen Geräten aus dem Dialog
-                heraus; als Raster teilen sie sich die vorhandene Breite. */}
-            <div className="grid grid-cols-7 gap-1.5">
-              {DAY_NAMES.map((day, index) => {
-                const active = ((daysOfWeek >> index) & 1) === 1;
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => toggleDay(index)}
-                    aria-pressed={active}
-                    className={cn(
-                      "press h-11 rounded-control border text-xs font-medium sm:h-9",
-                      active
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-glass-border bg-glass-tile text-muted-foreground shadow-[inset_0_1px_0_var(--glass-highlight)] hover:bg-glass-strong hover:text-foreground"
-                    )}
-                  >
-                    {day}
-                  </button>
-                );
-              })}
-            </div>
+                heraus; als Raster teilen sie sich die vorhandene Breite (ohne
+                Innenabstand, damit „Mo“ bis „So“ auch in schmale Spalten passen). */}
+            <ToggleChipGroup aria-label="Wochentage" className="grid grid-cols-7 gap-1.5">
+              {DAY_NAMES.map((day, index) => (
+                <ToggleChip
+                  key={day}
+                  pressed={((daysOfWeek >> index) & 1) === 1}
+                  onPressedChange={() => toggleDay(index)}
+                  className="px-0"
+                >
+                  {day}
+                </ToggleChip>
+              ))}
+            </ToggleChipGroup>
           </div>
 
           <div>
             <Label className="mb-2 block">
               Zonen · {zoneIds.length === 0 ? "alle aktiven" : `${zoneIds.length} ausgewählt`}
             </Label>
-            <div className="flex flex-wrap gap-1.5">
+            <ToggleChipGroup aria-label="Zonen">
               {zones.map((zone) => (
-                <Chip
+                <ToggleChip
                   key={zone.id}
-                  active={zoneIds.includes(zone.id)}
-                  onClick={() => toggleZone(zone.id)}
+                  pressed={zoneIds.includes(zone.id)}
+                  onPressedChange={() => toggleZone(zone.id)}
                 >
                   {zone.name}
-                </Chip>
+                </ToggleChip>
               ))}
-            </div>
+            </ToggleChipGroup>
           </div>
 
           {error && <Notice tone="danger" compact title={error} />}

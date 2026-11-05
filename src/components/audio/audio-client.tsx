@@ -484,7 +484,7 @@ export function AudioClient({
               text="Stelle aus der Mediathek eine Titelliste für den laufenden Betrieb zusammen."
             />
           ) : (
-            <Card className="gap-0 divide-y divide-border py-0 sm:py-0">
+            <Card flush="y" className="divide-y divide-border">
               {playlists.map((playlist) => (
                 <div key={playlist.id} className="px-4 py-3 sm:px-[18px]">
                   <div className="flex items-start justify-between gap-3">
@@ -551,7 +551,7 @@ export function AudioClient({
               text="Lege Sender mit Namen und Stream-URL an. In der Zone wählst du sie dann aus der Liste."
             />
           ) : (
-            <Card className="gap-0 divide-y divide-border py-0 sm:py-0">
+            <Card flush="y" className="divide-y divide-border">
               {streams.map((stream) => (
                 <div key={stream.id} className="px-4 py-3 sm:px-[18px]">
                   <div className="flex items-start justify-between gap-3">
@@ -602,7 +602,7 @@ export function AudioClient({
               text="Lege wiederkehrende Ansagen wie Betriebsschluss oder Kursbeginn einmal an."
             />
           ) : (
-            <Card className="gap-0 divide-y divide-border py-0 sm:py-0">
+            <Card flush="y" className="divide-y divide-border">
               {templates.map((template) => (
                 <div key={template.id} className="px-4 py-3 sm:px-[18px]">
                   <div className="flex items-start justify-between gap-3">
@@ -682,7 +682,7 @@ export function AudioClient({
               text="Musik zum Betriebsbeginn, Durchsagen vor Betriebsende, Kursansagen zur Uhrzeit."
             />
           ) : (
-            <Card className="gap-0 divide-y divide-border py-0 sm:py-0">
+            <Card flush="y" className="divide-y divide-border">
               {schedules.map((schedule) => (
                 <div key={schedule.id} className="px-4 py-3 sm:px-[18px]">
                   <div className="flex items-start justify-between gap-3">
@@ -1048,7 +1048,6 @@ function ZoneCard({
     <Card
       ref={cardRef}
       className={cn(
-        !zone.isActive && "opacity-60",
         // Umriss statt Ring: ein Ring ersetzt den Glasschatten der Karte.
         highlight && "outline-2 outline-primary"
       )}>
@@ -1061,6 +1060,8 @@ function ZoneCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-semibold text-foreground">{zone.name}</h3>
+              {/* Inaktiv: Text bleibt lesbar, den Zustand sagt das Badge (docs/design-regeln.md, Abschnitt 17). */}
+              {!zone.isActive && <Badge variant="neutral">Deaktiviert</Badge>}
               {zone.deviceId ? (
                 <Badge variant={deviceOnline ? "success" : "danger"} className="text-xs">
                   {deviceOnline ? "Online" : "Offline"}
@@ -1081,7 +1082,7 @@ function ZoneCard({
                 </Badge>
               )}
               {isPlaying && (
-                <Badge className="gap-1 bg-violet-500/15 text-xs text-violet-700 dark:text-violet-300">
+                <Badge variant="music" className="gap-1 text-xs">
                   <Volume2 className="h-3 w-3" /> läuft
                 </Badge>
               )}
@@ -1418,7 +1419,7 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
           text="Für diesen Filter gibt es keine Einträge – bei „Nur Probleme“ ist das die gute Nachricht."
         />
       ) : (
-        <Card className="gap-0 py-0 sm:py-0">
+        <Card flush="y">
           <CardContent className="divide-y divide-border px-0 sm:px-0">
             {visible.map((job) => (
               <JobItem key={job.id} job={job} />

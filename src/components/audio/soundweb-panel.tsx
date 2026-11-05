@@ -357,7 +357,8 @@ function DeviceCard({
   }
 
   return (
-    <Card className={cn(!device.isActive && "opacity-70")}>
+    // Inaktiv: Text bleibt lesbar, den Zustand sagt das Badge „Deaktiviert“ (docs/design-regeln.md, Abschnitt 17).
+    <Card>
       <CardContent>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">

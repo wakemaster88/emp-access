@@ -10,8 +10,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import { apiRequest } from "@/components/raeume/shared";
 import { ActionEditor, emptyAction, type ActionDraft } from "@/components/regeln/action-editor";
 import { TRIGGER_HINTS, TRIGGER_LABELS } from "@/components/regeln/shared";
@@ -19,10 +21,6 @@ import { deviceControls } from "@/lib/device-controls";
 import type { Rule, RuleOptions, RuleTrigger } from "@/components/regeln/types";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-
-// Eigene Auswahlfelder wie Eingabefelder: glass-field, 16 px Schrift auf dem Handy (Abschnitt 16).
-const selectClass =
-  "glass-field h-9 w-full px-2 text-base text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11 md:text-sm";
 
 const TRIGGER_ORDER: RuleTrigger[] = [
   "TIME",
@@ -70,28 +68,24 @@ function WeekdayPicker({
   disabled?: boolean;
   onChange: (next: number) => void;
 }) {
+  // Mehrfachauswahl als ToggleChip; gleich breite Chips (40 px) wie bisher, damit die Woche in eine Zeile passt.
   return (
-    <div className="flex flex-wrap gap-1">
+    <ToggleChipGroup aria-label="Wochentage" className="gap-1">
       {WEEKDAYS.map((day, index) => {
         const on = ((mask >> index) & 1) === 1;
         return (
-          <button
+          <ToggleChip
             key={day}
-            type="button"
             disabled={disabled}
-            onClick={() => onChange(mask ^ (1 << index))}
-            aria-pressed={on}
-            className={
-              on
-                ? "press h-9 w-10 rounded-full bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 max-sm:size-11"
-                : "press h-9 w-10 rounded-full border border-border text-xs text-muted-foreground hover:bg-glass-tile hover:text-foreground disabled:opacity-50 max-sm:size-11"
-            }
+            pressed={on}
+            onPressedChange={() => onChange(mask ^ (1 << index))}
+            className="w-10 px-0"
           >
             {day}
-          </button>
+          </ToggleChip>
         );
       })}
-    </div>
+    </ToggleChipGroup>
   );
 }
 
@@ -240,8 +234,7 @@ export function RuleDialog({
             {/* Handy: volle Breite wie die übrigen Felder. */}
             <div className="min-w-32 space-y-1 max-sm:w-full">
               <Label>Raum</Label>
-              <select
-                className={selectClass}
+              <NativeSelect
                 disabled={disabled}
                 value={roomId ?? ""}
                 onChange={(e) => setRoomId(e.target.value ? Number(e.target.value) : null)}
@@ -252,7 +245,7 @@ export function RuleDialog({
                     {r.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
           </div>
 
@@ -279,8 +272,7 @@ export function RuleDialog({
             <TabsContent value="trigger" className="space-y-3">
               <div className="space-y-1">
                 <Label>Wann greift die Regel?</Label>
-                <select
-                  className={selectClass}
+                <NativeSelect
                   disabled={disabled}
                   value={trigger}
                   onChange={(e) => setTrigger(e.target.value as RuleTrigger)}
@@ -290,7 +282,7 @@ export function RuleDialog({
                       {TRIGGER_LABELS[t]}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
                 <p className="text-[11px] text-muted-foreground">{TRIGGER_HINTS[trigger]}</p>
               </div>
 
@@ -327,8 +319,7 @@ export function RuleDialog({
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Kamera</Label>
-                    <select
-                      className={selectClass}
+                    <NativeSelect
                       disabled={disabled}
                       value={cameraId ?? ""}
                       onChange={(e) => setCameraId(e.target.value ? Number(e.target.value) : null)}
@@ -339,12 +330,11 @@ export function RuleDialog({
                           {c.name}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </div>
                   <div className="space-y-1">
                     <Label>Ereignisart</Label>
-                    <select
-                      className={selectClass}
+                    <NativeSelect
                       disabled={disabled}
                       value={eventType}
                       onChange={(e) => setEventType(e.target.value)}
@@ -354,7 +344,7 @@ export function RuleDialog({
                       <option value="VEHICLE">Fahrzeug</option>
                       <option value="MOTION">Bewegung</option>
                       <option value="DOORBELL">Klingel (DoorBird)</option>
-                    </select>
+                    </NativeSelect>
                   </div>
                 </div>
               )}
@@ -363,8 +353,7 @@ export function RuleDialog({
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Auslösendes Gerät</Label>
-                    <select
-                      className={selectClass}
+                    <NativeSelect
                       disabled={disabled}
                       value={triggerDeviceId ?? ""}
                       onChange={(e) =>
@@ -377,12 +366,11 @@ export function RuleDialog({
                           {d.name}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </div>
                   <div className="space-y-1">
                     <Label>Nur bei Befehl</Label>
-                    <select
-                      className={selectClass}
+                    <NativeSelect
                       disabled={disabled || !triggerDevice}
                       value={triggerAction}
                       onChange={(e) => setTriggerAction(e.target.value)}
@@ -393,7 +381,7 @@ export function RuleDialog({
                           {c.label}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </div>
                 </div>
               )}
@@ -402,8 +390,7 @@ export function RuleDialog({
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Zutrittsbereich</Label>
-                    <select
-                      className={selectClass}
+                    <NativeSelect
                       disabled={disabled}
                       value={areaId ?? ""}
                       onChange={(e) => setAreaId(e.target.value ? Number(e.target.value) : null)}
@@ -414,12 +401,11 @@ export function RuleDialog({
                           {a.name}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </div>
                   <div className="space-y-1">
                     <Label>Richtung</Label>
-                    <select
-                      className={selectClass}
+                    <NativeSelect
                       disabled={disabled}
                       value={scanDirection}
                       onChange={(e) => setScanDirection(e.target.value)}
@@ -427,7 +413,7 @@ export function RuleDialog({
                       <option value="">beide</option>
                       <option value="IN">Eingang</option>
                       <option value="OUT">Ausgang</option>
-                    </select>
+                    </NativeSelect>
                   </div>
                 </div>
               )}
@@ -459,8 +445,7 @@ export function RuleDialog({
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label>Betriebszeit</Label>
-                  <select
-                    className={selectClass}
+                  <NativeSelect
                     disabled={disabled}
                     value={operating}
                     onChange={(e) => setOperating(e.target.value as typeof operating)}
@@ -468,12 +453,11 @@ export function RuleDialog({
                     <option value="ANY">spielt keine Rolle</option>
                     <option value="OPEN">nur während der Betriebszeit</option>
                     <option value="CLOSED">nur außerhalb der Betriebszeit</option>
-                  </select>
+                  </NativeSelect>
                 </div>
                 <div className="space-y-1">
                   <Label>Welche Betriebszeit</Label>
-                  <select
-                    className={selectClass}
+                  <NativeSelect
                     disabled={disabled}
                     value={operatingScheduleId ?? ""}
                     onChange={(e) =>
@@ -486,7 +470,7 @@ export function RuleDialog({
                         {s.name}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
               </div>
 

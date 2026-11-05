@@ -66,7 +66,7 @@ function RuleCard({
   onDelete: () => void;
 }) {
   return (
-    <Card className={rule.isActive ? undefined : "opacity-60"}>
+    <Card>
       <CardHeader className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -76,6 +76,7 @@ function RuleCard({
             <Badge variant="secondary">
               {TRIGGER_LABELS[rule.trigger]}
             </Badge>
+            {/* Pausiert: Text bleibt lesbar, den Zustand sagt dieses Badge (docs/design-regeln.md, Abschnitt 17). */}
             {!rule.isActive && (
               <Badge variant="neutral">
                 pausiert
@@ -348,7 +349,7 @@ export function RegelnClient({ data }: { data: RegelnData }) {
             </Card>
           ) : (
             // Zeilen mit Haarlinie in einer Karte (docs/design-regeln.md, Abschnitt 17).
-            <Card className="gap-0 py-0 sm:py-0 divide-y divide-border/60">
+            <Card flush="y" className="divide-y divide-border/60">
               {data.runs.map((run) => (
                 <div key={run.id} className="flex items-start gap-2 px-4 py-2.5 text-xs sm:px-[18px]">
                   {run.success ? (
