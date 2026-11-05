@@ -3,19 +3,18 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { SearchInput } from "@/components/ui/search-input";
 import { Segmented } from "@/components/ui/segmented";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   LockerDialog, rentalDisplayName,
   type LockerData, type AboTicketRef, type RentalRow, type LockerType,
 } from "./locker-dialog";
 import {
-  Lock, Plus, Search, MapPin, Hash, Ticket as TicketIcon, CreditCard,
+  Lock, Plus, MapPin, Hash, Ticket as TicketIcon, CreditCard,
   Calendar, History, Key, AlertTriangle, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -76,13 +75,6 @@ function LockCountBadge({ locker, className }: { locker: Pick<LockerRow, "lockTy
     </Badge>
   );
 }
-
-/**
- * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
- * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
- */
-const TABLE_EDGE =
-  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
 
 export function LockersTable({ lockers, aboTickets, currentYear, readonly }: LockersTableProps) {
   const [selected, setSelected] = useState<LockerData | null>(null);
@@ -185,16 +177,13 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
 
         {/* Handy: Suche und Taste untereinander in voller Breite, damit der Platzhalter lesbar bleibt. */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:ml-auto">
-          <div className="relative sm:flex-1 lg:w-64 lg:flex-none">
-            <Search className="absolute left-2.5 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-            <Input
-              type="text"
-              placeholder="Nr., Standort, Mieter, Abo, Jahr…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-11 pl-8 sm:h-9"
-            />
-          </div>
+          <SearchInput
+            placeholder="Nr., Standort, Mieter, Abo, Jahr…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            containerClassName="sm:flex-1 lg:w-64 lg:flex-none"
+            className="h-11 sm:h-9"
+          />
 
           {!readonly && (
             <Button
@@ -261,7 +250,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
       )}
 
       <div className="border-t border-border">
-        <Table className={TABLE_EDGE}>
+        <Table edge>
           <TableHeader>
             <TableRow>
               <TableHead className="hidden sm:table-cell w-[90px]">
@@ -300,19 +289,13 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           </TableHeader>
           <TableBody>
             {filtered.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={5} className="whitespace-normal">
-                  {lockers.length === 0 ? (
-                    <EmptyState
-                      icon={Lock}
-                      title="Noch keine Schließfächer angelegt"
-                      description="Lege ein Schließfach an und vermiete es jahresweise an Abo-Tickets."
-                    />
-                  ) : (
-                    <EmptyState icon={Lock} title="Keine Treffer für die aktuellen Filter." />
-                  )}
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={5}
+                icon={Lock}
+                title={lockers.length === 0 ? "Noch keine Schließfächer angelegt" : "Keine Treffer für die aktuellen Filter."}
+                description={lockers.length === 0 ? "Lege ein Schließfach an und vermiete es jahresweise an Abo-Tickets." : undefined}
+                compact={false}
+              />
             )}
             {filtered.map((l) => (
               <TableRow

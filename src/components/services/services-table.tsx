@@ -4,9 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { ServiceDialog, type ServiceData, type InitialServiceAreaInput } from "./service-dialog";
 import { Box, Link2, MapPin, Plus, Repeat, Star, Ticket } from "lucide-react";
@@ -112,8 +111,8 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
             // Hauptressource ist eine Rolle, kein Zustand: Akzentfarbe statt Warnfarbe (docs/design-regeln.md, Abschnitt 3).
             <Badge
               key={sa.area.id}
-              variant={isMain ? "outline" : "secondary"}
-              className={isMain ? "border-primary/40 bg-primary/10 text-primary" : "font-medium"}
+              variant={isMain ? "accent" : "secondary"}
+              className={isMain ? undefined : "font-medium"}
               title={isMain ? "Hauptressource" : undefined}
             >
               {isMain
@@ -146,12 +145,13 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
         </div>
       )}
 
-      {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein. */}
+      {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein (`Table edge`).
+          Auf dem Handy ist „#“ ausgeblendet, daher bekommt „Name“ dort den Randabstand. */}
       <div className="-mx-4 sm:-mx-[18px]">
-        <Table>
+        <Table edge>
           <TableHeader>
             <TableRow>
-              <TableHead className="hidden sm:table-cell w-10 pl-[18px]">#</TableHead>
+              <TableHead className="hidden sm:table-cell w-10">#</TableHead>
               <TableHead className="pl-4 sm:pl-2">
                 <span className="inline-flex items-center gap-1.5">
                   <Box className="h-4 w-4 text-muted-foreground/70" />
@@ -176,7 +176,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                   Wiedereinlass
                 </span>
               </TableHead>
-              <TableHead className="w-[90px] text-right pr-4 sm:pr-[18px]">
+              <TableHead className="w-[90px] text-right">
                 <span className="inline-flex items-center justify-end gap-1.5">
                   <Ticket className="h-4 w-4 text-muted-foreground/70" />
                   Tickets
@@ -186,15 +186,13 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
           </TableHeader>
           <TableBody>
             {services.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={6} className="p-0 whitespace-normal">
-                  <EmptyState
-                    icon={Box}
-                    title="Noch keine Services angelegt"
-                    description="Lege einen Service an, um Buchungen aus anny.co zu verknüpfen."
-                  />
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={6}
+                icon={Box}
+                title="Noch keine Services angelegt"
+                description="Lege einen Service an, um Buchungen aus anny.co zu verknüpfen."
+                compact={false}
+              />
             )}
             {services.map((svc, i) => {
               const annyNames: string[] = svc.annyNames ? (() => {
@@ -207,7 +205,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                   className={`max-sm:h-11 ${readonly ? "" : "cursor-pointer"}`}
                   onClick={() => !readonly && openEdit(svc)}
                 >
-                  <TableCell className="hidden sm:table-cell pl-[18px] text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
+                  <TableCell className="hidden sm:table-cell text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
                   <TableCell className="pl-4 sm:pl-2">
                     <div className="min-w-0">
                       <span className="inline-flex items-center gap-2 font-medium text-foreground">
@@ -232,7 +230,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                       <Badge variant="neutral" className="font-normal">Nein</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right pr-4 sm:pr-[18px]">
+                  <TableCell className="text-right">
                     {svc._count.tickets > 0 ? (
                       <Link
                         href={`/tickets?source=all`}

@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { EmptyState } from "@/components/ui/empty-state";
+import { SearchInput } from "@/components/ui/search-input";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { VereinDialog, type VereinData, formatTicketValidity } from "./verein-dialog";
 import {
@@ -84,13 +83,6 @@ function memberValidity(t: MemberRow): "valid" | "expired" | "invalid" | "paused
   }
   return "valid";
 }
-
-/**
- * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
- * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
- */
-const TABLE_EDGE =
-  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
 
 export function VereineTable({ vereine, allTickets, readonly }: VereineTableProps) {
   const [selected, setSelected] = useState<VereinData | null>(null);
@@ -171,7 +163,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
       )}
 
       <div className="border-t border-border">
-        <Table className={TABLE_EDGE}>
+        <Table edge>
           <TableHeader>
             <TableRow>
               <TableHead className="hidden sm:table-cell w-10">#</TableHead>
@@ -198,15 +190,13 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
           </TableHeader>
           <TableBody>
             {vereine.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={4} className="whitespace-normal">
-                  <EmptyState
-                    icon={Users}
-                    title="Noch keine Vereine angelegt"
-                    description="Lege einen Verein an, um Mitgliedern Bulk-Zutritt über Tickets (z. B. „Bahnmiete“) zu geben."
-                  />
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={4}
+                icon={Users}
+                title="Noch keine Vereine angelegt"
+                description="Lege einen Verein an, um Mitgliedern Bulk-Zutritt über Tickets (z. B. „Bahnmiete“) zu geben."
+                compact={false}
+              />
             )}
             {vereine.map((v, i) => {
               const isExpanded = expanded.has(v.id);
@@ -233,7 +223,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
 
               return (
                 <TableRow key={v.id} className="group">
-                  {/* Randabstand kommt aus TABLE_EDGE; die Spalten darin fluchten mit dem Tabellenkopf.
+                  {/* Randabstand kommt aus `Table edge`; die Spalten darin fluchten mit dem Tabellenkopf.
                       max-w-0: die Zelle wächst nicht mit dem Inhalt, damit truncate greift statt die Tabelle zu verbreitern. */}
                   <TableCell colSpan={4} className="p-0 max-w-0">
                     <div className="flex items-center w-full">
@@ -293,16 +283,12 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                             </Badge>
                           </div>
                           {members.length > 5 && (
-                            <div className="relative sm:ml-auto">
-                              <Search className="absolute left-2.5 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-                              <Input
-                                type="text"
-                                placeholder="Suchen..."
-                                value={searchMap[v.id] ?? ""}
-                                onChange={(e) => setSearchMap((prev) => ({ ...prev, [v.id]: e.target.value }))}
-                                className="w-full pl-8 sm:w-48"
-                              />
-                            </div>
+                            <SearchInput
+                              placeholder="Suchen..."
+                              value={searchMap[v.id] ?? ""}
+                              onChange={(e) => setSearchMap((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                              containerClassName="sm:ml-auto sm:w-48"
+                            />
                           )}
                         </div>
 
@@ -366,11 +352,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                               );
                             })}
                             {sortedMembers.length === 0 && (
-                              <TableRow className="hover:bg-transparent">
-                                <TableCell colSpan={4}>
-                                  <EmptyState compact icon={Search} title="Keine Treffer" />
-                                </TableCell>
-                              </TableRow>
+                              <TableEmpty colSpan={4} icon={Search} title="Keine Treffer" />
                             )}
                           </TableBody>
                         </Table>

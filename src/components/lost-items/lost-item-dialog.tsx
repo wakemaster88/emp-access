@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -306,7 +306,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                     type="button"
                     onClick={() => setImage(null)}
                     // Unsichtbare Trefferfläche (after:-inset-1.5) bringt die 32-px-Taste auf 44 px.
-                    className="absolute -top-2.5 -right-2.5 size-8 rounded-full bg-foreground text-background flex items-center justify-center hover:bg-destructive hover:text-white transition-colors after:absolute after:-inset-1.5 after:rounded-full"
+                    className="absolute -top-2.5 -right-2.5 size-8 rounded-full bg-foreground text-background flex items-center justify-center hover:bg-destructive-fill hover:text-white transition-colors after:absolute after:-inset-1.5 after:rounded-full"
                     aria-label="Bild entfernen"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -372,9 +372,10 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
               </div>
             </div>
           ) : (
-            /* Handy: volle Breite, Primärtaste oben. Ab sm: Löschen links, Handlungen rechts. */
-            <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:items-center sm:justify-between">
-              {!isNew ? (
+            /* Handy: volle Breite, Primärtaste oben, Löschen zuunterst. Ab sm: Löschen links (`DialogFooter start`), Handlungen rechts. */
+            <DialogFooter
+              className="pt-2"
+              start={!isNew ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -385,22 +386,21 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   <Trash2 className="h-4 w-4" />
                   Löschen
                 </Button>
-              ) : <span className="hidden sm:block" />}
-              <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                <Button type="button" variant="outline" onClick={onClose} disabled={saving} className="h-11 sm:h-9">
-                  Abbrechen
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving || deleting}
-                  className="gap-1.5 h-11 sm:h-9"
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Speichern
-                </Button>
-              </div>
-            </div>
+              ) : null}
+            >
+              <Button type="button" variant="outline" onClick={onClose} disabled={saving} className="h-11 sm:h-9">
+                Abbrechen
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || deleting}
+                className="gap-1.5 h-11 sm:h-9"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Speichern
+              </Button>
+            </DialogFooter>
           )}
         </div>
       </DialogContent>

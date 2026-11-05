@@ -6,22 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Segmented } from "@/components/ui/segmented";
 import { IconChip } from "@/components/ui/icon-chip";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { LostItemDialog, type LostItemData } from "./lost-item-dialog";
 import {
   Plus, PackageSearch, CheckCircle2, Clock, Phone, ImageOff, Undo2, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-/**
- * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
- * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
- */
-const TABLE_EDGE =
-  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
 
 interface LostItemsTableProps {
   items: LostItemData[];
@@ -102,7 +94,7 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
       </div>
 
       <div className="border-t border-border">
-        <Table className={TABLE_EDGE}>
+        <Table edge>
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">Bild</TableHead>
@@ -116,14 +108,12 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
           </TableHeader>
           <TableBody>
             {filtered.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={readonly ? 5 : 6} className="whitespace-normal">
-                  <EmptyState
-                    icon={PackageSearch}
-                    title={filter === "all" ? "Noch keine Einträge erfasst" : "Keine Einträge in dieser Ansicht"}
-                  />
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={readonly ? 5 : 6}
+                icon={PackageSearch}
+                title={filter === "all" ? "Noch keine Einträge erfasst" : "Keine Einträge in dieser Ansicht"}
+                compact={false}
+              />
             )}
             {filtered.map((item) => {
               const contact = contactLabel(item);
@@ -142,23 +132,22 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
               return (
                 <TableRow
                   key={item.id}
-                  className={cn(
-                    !readonly && "cursor-pointer",
-                    item.pickedUp && "opacity-60"
-                  )}
+                  className={cn(!readonly && "cursor-pointer")}
                   onClick={() => !readonly && setSelected(item)}
                 >
+                  {/* Erledigt: Text bleibt lesbar, den Zustand sagt das Badge „Erledigt“;
+                      gedimmt werden nur Bild und Symbol-Chip (docs/design-regeln.md, Abschnitt 17). */}
                   <TableCell>
                     {item.image ? (
                       /* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */
                       <img
                         src={item.image}
                         alt={item.description}
-                        className="h-12 w-12 rounded-lg object-cover border border-border"
+                        className={cn("h-12 w-12 rounded-lg object-cover border border-border", item.pickedUp && "opacity-60")}
                       />
                     ) : (
                       // Platzhalter ohne Bild: Symbol-Chip wie in Listenzeilen.
-                      <IconChip icon={isLostReport ? User : ImageOff} size="lg" className="size-12" />
+                      <IconChip icon={isLostReport ? User : ImageOff} size="lg" className={cn("size-12", item.pickedUp && "opacity-60")} />
                     )}
                   </TableCell>
                   {/* Beschreibung bricht vollständig um, sonst wird die Tabelle so breit wie der längste Text. */}

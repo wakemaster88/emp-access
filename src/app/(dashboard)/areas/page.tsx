@@ -71,7 +71,7 @@ export default async function AreasPage() {
       <Header title="Ressourcen" accountName={session.user.accountName} />
       <div className="page-content">
         {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader>
             <CardTitle>Alle Ressourcen ({areas.length})</CardTitle>
             <CardDescription>

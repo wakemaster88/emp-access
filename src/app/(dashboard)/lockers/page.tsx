@@ -108,7 +108,7 @@ export default async function LockersPage() {
       <Header title="Schließfächer" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         {/* Tabelle läuft bis an den Kartenrand: Karte unten und Inhalt seitlich ohne Innenabstand. */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader>
             <CardTitle>Alle Schließfächer ({lockers.length})</CardTitle>
             <CardDescription>

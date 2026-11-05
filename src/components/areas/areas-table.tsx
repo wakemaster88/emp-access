@@ -4,9 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { AreaDialog, type AreaData } from "./area-dialog";
 import {
@@ -92,12 +91,13 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
         </div>
       )}
 
-      {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein. */}
+      {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein (`Table edge`).
+          Auf dem Handy ist „#“ ausgeblendet, daher bekommt „Name“ dort den Randabstand. */}
       <div className="-mx-4 sm:-mx-[18px]">
-        <Table>
+        <Table edge>
           <TableHeader>
             <TableRow>
-              <TableHead className="hidden sm:table-cell w-10 pl-[18px]">#</TableHead>
+              <TableHead className="hidden sm:table-cell w-10">#</TableHead>
               <TableHead className="pl-4 sm:pl-2">
                 <span className="inline-flex items-center gap-1.5">
                   <MapPin className="h-4 w-4 text-muted-foreground/70" />
@@ -134,7 +134,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   Limit
                 </span>
               </TableHead>
-              <TableHead className="text-right pr-4 sm:pr-[18px]">
+              <TableHead className="text-right">
                 <span className="inline-flex items-center justify-end gap-1.5">
                   <Ticket className="h-4 w-4 text-muted-foreground/70" />
                   Tickets
@@ -144,15 +144,13 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
           </TableHeader>
           <TableBody>
             {areas.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={8} className="p-0 whitespace-normal">
-                  <EmptyState
-                    icon={MapPin}
-                    title="Noch keine Resourcen angelegt"
-                    description="Lege eine Resource an, um Ein- und Auslass zu verwalten."
-                  />
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={8}
+                icon={MapPin}
+                title="Noch keine Resourcen angelegt"
+                description="Lege eine Resource an, um Ein- und Auslass zu verwalten."
+                compact={false}
+              />
             )}
             {areas.map((area, i) => (
               <TableRow
@@ -169,7 +167,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   openingHours: area.openingHours,
                 })}
               >
-                <TableCell className="hidden sm:table-cell pl-[18px] text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
+                <TableCell className="hidden sm:table-cell text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
                 <TableCell className="pl-4 sm:pl-2">
                   <div className="min-w-0">
                     <span className="inline-flex items-center gap-2 font-medium text-foreground">
@@ -218,7 +216,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-right pr-4 sm:pr-[18px]">
+                <TableCell className="text-right">
                   {area._count.tickets > 0 ? (
                     <Link
                       href={`/tickets?area=${area.id}`}
