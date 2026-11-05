@@ -2,7 +2,7 @@
 
 import { createElement, useEffect, useMemo, useState, useCallback } from "react";
 import {
-  DoorOpen, Lock, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock,
+  DoorOpen, Lock, LockOpen, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock,
   Power, PowerOff, Lightbulb, ToggleRight, GitMerge, Activity, KeyRound,
   RefreshCw, ChevronDown, Building2, Umbrella, Blinds, Square,
   ArrowUpFromLine, ArrowDownToLine, Droplets, CircleDot, Volume2,
@@ -17,6 +17,12 @@ import { cn } from "@/lib/utils";
 import {
   parseSchedule, DAY_KEYS, DAY_LABELS, hasAnySchedule,
 } from "@/lib/schedule";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip, type ChipTone } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
+import { SectionHeading } from "@/components/ui/section-heading";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -58,8 +64,8 @@ interface PrimaryAction {
   key: ActionKey;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  /// Tailwind gradient classes fuer den Primaerbutton.
-  gradient: string;
+  /// Durchgang (Tuer, Schloss, Drehkreuz): grosse Taste mit 56 px, sonst 44 px.
+  large: boolean;
 }
 
 interface SecondaryAction {
@@ -89,25 +95,26 @@ function controlIcon(
     return action === "open" ? Power : PowerOff;
   }
   if (model === "PULSE") return action === "open" ? CircleDot : PowerOff;
-  if (model === "LOCK") return action === "open" ? DoorOpen : Lock;
+  // LOQED: „Entriegeln“ (reset) und „Abschließen“ stehen nebeneinander und
+  // brauchen zwei verschiedene Symbole.
+  if (model === "LOCK") return action === "open" ? DoorOpen : action === "reset" ? LockOpen : Lock;
   if (model === "VALVE") return action === "open" ? Droplets : Square;
   if (model === "AUDIO") return action === "open" ? Volume2 : Square;
   if (action === "emergency") return AlertTriangle;
   return DoorOpen;
 }
 
-const PRIMARY_GRADIENT: Partial<Record<DeviceControlModel, string>> = {
-  SWITCH: "from-amber-400 to-amber-600",
-  LIGHT: "from-amber-400 to-amber-600",
-  VALVE: "from-sky-400 to-sky-600",
-  PULSE: "from-rose-400 to-rose-600",
-  AUDIO: "from-violet-400 to-violet-600",
-};
+/**
+ * Durchgaenge: Oeffnen ist hier der haeufigste Griff, darum bekommt die
+ * Haupttaste 56 px (docs/design-regeln.md, Abschnitt 20).
+ */
+const PASSAGE_MODELS: DeviceControlModel[] = ["LOCK", "DOOR", "TURNSTILE"];
 
 /**
  * Bedienelemente eines Geraets. Welche Aktionen es gibt und wie sie heissen,
  * legt `src/lib/device-controls.ts` fest – dieselbe Quelle, aus der die API
- * ihre Angaben speist. Hier kommen nur Symbol und Farbe dazu.
+ * ihre Angaben speist. Hier kommen nur Symbol und Tastengroesse dazu; die
+ * Haupttaste ist immer die Primaertaste (Akzentfarbe).
  */
 function actionsFor(device: MobileDevice): DeviceActions | null {
   const controls = deviceControls(device);
@@ -121,7 +128,7 @@ function actionsFor(device: MobileDevice): DeviceActions | null {
       key: primary.action,
       label: primary.label,
       icon: controlIcon(model, primary.action),
-      gradient: PRIMARY_GRADIENT[model] ?? "from-emerald-400 to-emerald-600",
+      large: PASSAGE_MODELS.includes(model),
     },
     secondary: rest.length > 0
       ? rest.map((c) => ({
@@ -148,35 +155,28 @@ function deviceIcon(device: MobileDevice) {
   return DoorOpen;
 }
 
-function categoryMeta(cat: string | null, type: string | null) {
+/**
+ * Gruppe und Symbolfarbe je Kategorie. Farbe nur, wo das Zustandsvokabular
+ * eine hat (Licht amber, Musik violett, docs/design-regeln.md, Abschnitt 3);
+ * alles andere bleibt ruhig grau.
+ */
+function categoryMeta(cat: string | null, type: string | null): { label: string; tone: ChipTone; order: number } {
   if (type === "NUKI_SMARTLOCK" || type === "LOQED_SMARTLOCK") {
-    return { label: "Smart Locks", accent: "rose", order: 1 };
+    return { label: "Smart Locks", tone: "neutral", order: 1 };
   }
   switch (cat) {
-    case "TUER":        return { label: "Türen",        accent: "sky",     order: 0 };
-    case "DREHKREUZ":   return { label: "Drehkreuze",   accent: "indigo",  order: 2 };
-    case "SCHALTER":    return { label: "Schalter",     accent: "amber",   order: 3 };
-    case "TASTER":      return { label: "Taster",       accent: "rose",    order: 4 };
-    case "BELEUCHTUNG": return { label: "Beleuchtung",  accent: "yellow",  order: 5 };
-    case "MARKISE":     return { label: "Markisen",     accent: "teal",    order: 6 };
-    case "ROLLTOR":     return { label: "Rolltore",     accent: "slate",   order: 7 };
-    case "AUDIO":       return { label: "Audio",        accent: "violet",  order: 8 };
-    case "SENSOR":      return { label: "Sensoren",     accent: "emerald", order: 9 };
-    default:            return { label: "Sonstige",     accent: "slate",   order: 10 };
+    case "TUER":        return { label: "Türen",        tone: "neutral", order: 0 };
+    case "DREHKREUZ":   return { label: "Drehkreuze",   tone: "neutral", order: 2 };
+    case "SCHALTER":    return { label: "Schalter",     tone: "neutral", order: 3 };
+    case "TASTER":      return { label: "Taster",       tone: "neutral", order: 4 };
+    case "BELEUCHTUNG": return { label: "Beleuchtung",  tone: "light",   order: 5 };
+    case "MARKISE":     return { label: "Markisen",     tone: "neutral", order: 6 };
+    case "ROLLTOR":     return { label: "Rolltore",     tone: "neutral", order: 7 };
+    case "AUDIO":       return { label: "Audio",        tone: "music",   order: 8 };
+    case "SENSOR":      return { label: "Sensoren",     tone: "neutral", order: 9 };
+    default:            return { label: "Sonstige",     tone: "neutral", order: 10 };
   }
 }
-
-const ACCENT_CLS: Record<string, { bg: string; text: string; ring: string }> = {
-  rose:    { bg: "bg-rose-500/10",    text: "text-rose-600 dark:text-rose-400",       ring: "ring-rose-200/50 dark:ring-rose-900/40" },
-  sky:     { bg: "bg-sky-500/10",     text: "text-sky-600 dark:text-sky-400",         ring: "ring-sky-200/50 dark:ring-sky-900/40" },
-  indigo:  { bg: "bg-indigo-500/10",  text: "text-indigo-600 dark:text-indigo-400",   ring: "ring-indigo-200/50 dark:ring-indigo-900/40" },
-  amber:   { bg: "bg-amber-500/10",   text: "text-amber-600 dark:text-amber-400",     ring: "ring-amber-200/50 dark:ring-amber-900/40" },
-  yellow:  { bg: "bg-yellow-500/10",  text: "text-yellow-600 dark:text-yellow-400",   ring: "ring-yellow-200/50 dark:ring-yellow-900/40" },
-  emerald: { bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", ring: "ring-emerald-200/50 dark:ring-emerald-900/40" },
-  teal:    { bg: "bg-teal-500/10",    text: "text-teal-600 dark:text-teal-400",       ring: "ring-teal-200/50 dark:ring-teal-900/40" },
-  violet:  { bg: "bg-violet-500/10",  text: "text-violet-600 dark:text-violet-400",   ring: "ring-violet-200/50 dark:ring-violet-900/40" },
-  slate:   { bg: "bg-slate-500/10",   text: "text-slate-600 dark:text-slate-400",     ring: "ring-slate-200/50 dark:ring-slate-700" },
-};
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -197,6 +197,13 @@ export function MobileAccessClient({ token, profile }: Props) {
   const schedule = parseSchedule(profile.weekSchedule);
   const scheduleConfigured = hasAnySchedule(schedule);
   const isAllowed = profile.contractOk && (!scheduleCheck || scheduleCheck.ok);
+  // Warum die Tasten gesperrt sind: ausgeschrieben im Hinweis über den
+  // Geräten, die Pille im Kopf trägt nur den Zustand.
+  const blockedReason = !profile.contractOk
+    ? (profile.contractReason ?? "Kein Zutritt")
+    : scheduleCheck && !scheduleCheck.ok
+      ? (scheduleCheck.reason ?? "Ausserhalb Zeit")
+      : null;
 
   // Gerate nach Kategorie gruppieren.
   const grouped = useMemo(() => {
@@ -260,34 +267,41 @@ export function MobileAccessClient({ token, profile }: Props) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-md min-h-[100dvh] flex flex-col text-slate-900 dark:text-slate-100">
+    // Unten Luft für den Installationshinweis (schwebt über dem Inhalt), aber
+    // nur, solange er da ist: der Hinweis ist das Geschwister-Element dahinter
+    // (Layout). So liegt auch die Fußzeile über ihm, und ohne Hinweis
+    // (installierte App, Desktop) bleibt unten kein leerer Streifen.
+    <div className="mx-auto max-w-md min-h-[100dvh] flex flex-col text-foreground has-[~[data-install-banner]]:pb-44">
       {/* ─── Header ──────────────────────────────────────────────────── */}
-      <header className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600" />
-        <div className="absolute -top-16 -right-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-12 -left-6 h-32 w-32 rounded-full bg-fuchsia-300/20 blur-2xl" />
+      {/* Akzentfläche bis unter die Statusleiste: als installierte App zeigt
+          iOS die Statusleiste weiß (black-translucent), darum trägt der Kopf
+          in Hell und Dunkel die Akzentfarbe und darauf Weiß. Im Dunkeln ist
+          der Akzent heller; zu 60 % gedeckt behält Weiß darauf genug Kontrast. */}
+      <header className="relative overflow-hidden rounded-b-card bg-primary text-primary-foreground dark:bg-primary/60">
+        <div aria-hidden className="absolute -top-16 -right-10 h-40 w-40 rounded-full bg-primary-foreground/10 blur-3xl" />
+        <div aria-hidden className="absolute -bottom-12 -left-6 h-32 w-32 rounded-full bg-primary-foreground/10 blur-2xl" />
 
-        <div className="relative px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3.5 text-white">
+        <div className="relative px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-4">
           {/* Top-Row: Tenant + Live */}
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[10px] font-medium text-white/70 inline-flex items-center gap-1">
-              <Building2 className="h-2.5 w-2.5" /> {profile.accountName}
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <p className="text-[11px] font-medium text-primary-foreground/75 inline-flex items-center gap-1">
+              <Building2 className="h-3 w-3" /> {profile.accountName}
             </p>
             <button
               type="button"
               onClick={refreshProfile}
               disabled={refreshing}
-              className="h-5 inline-flex items-center gap-1 rounded-full bg-white/15 hover:bg-white/25 px-2 text-[9px] font-medium text-white/90 backdrop-blur transition disabled:opacity-50"
+              className="press relative h-8 shrink-0 inline-flex items-center gap-1.5 rounded-full bg-primary-foreground/15 hover:bg-primary-foreground/25 px-3 text-[11px] font-semibold text-primary-foreground ring-1 ring-inset ring-primary-foreground/25 outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground/70 after:absolute after:-inset-1.5 after:content-[''] disabled:opacity-50"
               aria-label="Aktualisieren"
             >
-              <RefreshCw className={cn("h-2.5 w-2.5", refreshing && "animate-spin")} />
+              <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
               live
             </button>
           </div>
 
           {/* Avatar + Name + Status auf einer Zeile */}
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-xl bg-white/15 ring-1 ring-white/30 backdrop-blur flex items-center justify-center text-sm font-bold shrink-0 overflow-hidden">
+            <div className="h-12 w-12 rounded-xl bg-primary-foreground/15 ring-1 ring-primary-foreground/30 flex items-center justify-center text-sm font-bold shrink-0 overflow-hidden">
               {profile.profileImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profile.profileImage} alt="" className="h-full w-full object-cover" />
@@ -296,8 +310,8 @@ export function MobileAccessClient({ token, profile }: Props) {
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-base font-bold leading-tight truncate">{fullName}</h1>
-              <p className="text-[10px] text-white/70 truncate">
+              <h1 className="text-lg font-semibold leading-tight tracking-tight truncate">{fullName}</h1>
+              <p className="text-xs text-primary-foreground/75 truncate">
                 {profile.ticketTypeName ?? "Mitarbeiter"}
                 {profile.endDate && <> · bis {fmtDate(profile.endDate)}</>}
               </p>
@@ -306,8 +320,8 @@ export function MobileAccessClient({ token, profile }: Props) {
             <HeaderStatusDot
               kind={!profile.contractOk ? "err" : scheduleCheck && !scheduleCheck.ok ? "warn" : "ok"}
               label={
-                !profile.contractOk ? (profile.contractReason ?? "Kein Zutritt")
-                : scheduleCheck && !scheduleCheck.ok ? (scheduleCheck.reason ?? "Ausserhalb Zeit")
+                !profile.contractOk ? "Kein Zutritt"
+                : scheduleCheck && !scheduleCheck.ok ? "Ausserhalb Zeit"
                 : "Aktiv"
               }
             />
@@ -317,61 +331,63 @@ export function MobileAccessClient({ token, profile }: Props) {
 
       {/* ─── Schedule Card (collapsible) ─────────────────────────────── */}
       {scheduleConfigured && (
-        <div className="px-3 pt-2">
-          <button
-            type="button"
-            onClick={() => setScheduleOpen((o) => !o)}
-            className={cn(
-              "w-full rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800",
-              "px-3 py-1.5 flex items-center justify-between text-xs transition-colors",
-              scheduleCheck && !scheduleCheck.ok && "ring-1 ring-amber-300 dark:ring-amber-900/60",
+        <div className="px-4 pt-4">
+          <Card className="gap-0 py-0 sm:py-0">
+            <button
+              type="button"
+              onClick={() => setScheduleOpen((o) => !o)}
+              aria-expanded={scheduleOpen}
+              className="w-full min-h-12 rounded-card px-4 py-2 flex items-center justify-between gap-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <span className="inline-flex items-center gap-2.5 text-sm font-medium text-foreground">
+                <IconChip icon={Clock} tone={scheduleCheck && !scheduleCheck.ok ? "warning" : "neutral"} size="sm" />
+                Arbeitszeiten
+              </span>
+              <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", scheduleOpen && "rotate-180")} />
+            </button>
+            {scheduleOpen && (
+              <div className="border-t border-border px-4 py-2">
+                {DAY_KEYS.map((d) => {
+                  const cfg = schedule[d];
+                  return (
+                    <div key={d} className={cn(
+                      "flex items-center justify-between text-[13px] py-1",
+                      !cfg.enabled && "opacity-50",
+                    )}>
+                      <span className="font-medium text-foreground w-8">{DAY_LABELS[d]}</span>
+                      <span className="text-xs font-mono tabular-nums text-muted-foreground">
+                        {cfg.enabled ? `${cfg.on || "00:00"} – ${cfg.off || "24:00"}` : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-          >
-            <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-medium">
-              <Clock className="h-3 w-3 text-amber-500" />
-              Arbeitszeiten
-            </span>
-            <ChevronDown className={cn("h-3.5 w-3.5 text-slate-400 transition-transform", scheduleOpen && "rotate-180")} />
-          </button>
-          {scheduleOpen && (
-            <div className="mt-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-1">
-              {DAY_KEYS.map((d) => {
-                const cfg = schedule[d];
-                return (
-                  <div key={d} className={cn(
-                    "flex items-center justify-between text-xs py-0.5 px-2",
-                    !cfg.enabled && "opacity-40",
-                  )}>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 w-8 text-[11px]">{DAY_LABELS[d]}</span>
-                    <span className="text-[11px] font-mono text-slate-500">
-                      {cfg.enabled ? `${cfg.on || "00:00"} – ${cfg.off || "24:00"}` : "—"}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          </Card>
         </div>
       )}
 
       {/* ─── Devices grouped ─────────────────────────────────────────── */}
-      <main className="px-3 pt-2 pb-16 flex-1 space-y-2.5">
+      <main className="px-4 pt-4 pb-6 flex-1 space-y-5">
+        {blockedReason && (
+          <Notice tone={profile.contractOk ? "warning" : "danger"} compact title={blockedReason} />
+        )}
+
         {profile.devices.length === 0 && (
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-center text-sm text-slate-400">
-            Keine Geräte freigegeben.
-          </div>
+          <Card className="py-0 sm:py-0">
+            <EmptyState icon={KeyRound} title="Keine Geräte freigegeben." compact />
+          </Card>
         )}
 
         {grouped.map((group) => (
-          <section key={group.meta.label}>
-            <div className="flex items-center justify-between px-2 pb-1">
-              <h2 className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                {group.meta.label}
-              </h2>
-              <span className="text-[9px] text-slate-400">{group.devices.length}</span>
-            </div>
+          <section key={group.meta.label} className="space-y-2">
+            <SectionHeading
+              title={group.meta.label}
+              aside={<span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{group.devices.length}</span>}
+              className="px-1"
+            />
 
-            <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+            <Card className="gap-0 py-1 sm:py-1 divide-y divide-border">
               {group.devices.map((device) => (
                 <DeviceRow
                   key={device.id}
@@ -382,12 +398,12 @@ export function MobileAccessClient({ token, profile }: Props) {
                   onAction={handleAction}
                 />
               ))}
-            </div>
+            </Card>
           </section>
         ))}
       </main>
 
-      <footer className="mt-auto px-4 pb-2 text-center text-[9px] text-slate-400">
+      <footer className="mt-auto px-4 pb-3 text-center text-[11px] text-muted-foreground">
         EMP Access
       </footer>
     </div>
@@ -404,88 +420,99 @@ interface DeviceRowProps {
   onAction: (device: MobileDevice, action: ActionKey) => void;
 }
 
+/**
+ * Ein Geraet als Zeile in der Gruppenkarte: oben Symbol und Name, darunter
+ * die Tasten in voller Breite – Zusatzbefehle als Glas-Tasten links, die
+ * Haupttaste als Primaertaste (44 px, an Durchgaengen 56 px).
+ */
 function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowProps) {
   const iconComp = deviceIcon(device);
   const actions = actionsFor(device);
   const meta = categoryMeta(device.category, device.type);
-  const accent = ACCENT_CLS[meta.accent] ?? ACCENT_CLS.slate;
 
   // Pro Device: zeigen wir den letzten Feedback-Status der primary action.
   const primaryFb = feedback?.id === `${device.id}:${actions?.primary.key}` ? feedback : null;
   const primaryLoading = loading === `${device.id}:${actions?.primary.key}`;
+  const iconSize = actions?.primary.large ? "size-5" : "size-4";
 
   return (
-    <div className="flex items-center gap-2 px-2.5 py-1.5">
-      {/* Icon */}
-      <div className={cn(
-        "h-7 w-7 rounded-lg flex items-center justify-center shrink-0",
-        accent.bg, accent.text,
-      )}>
-        {createElement(iconComp, { className: "h-3.5 w-3.5" })}
-      </div>
+    <div className="px-4 py-3 space-y-3">
+      <div className="flex items-center gap-3">
+        {/* Icon */}
+        <IconChip icon={iconComp} tone={meta.tone} />
 
-      {/* Name */}
-      <div className="flex-1 min-w-0">
-        <p
-          className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 truncate leading-tight"
-          title={device.via === "direct" ? `${device.name} · Direktzugang` : `${device.name} · via Bereich`}
-        >
-          {device.name}
-        </p>
+        {/* Name */}
+        <div className="flex-1 min-w-0">
+          <p
+            className="text-sm font-semibold text-foreground truncate leading-tight"
+            title={device.via === "direct" ? `${device.name} · Direktzugang` : `${device.name} · via Bereich`}
+          >
+            {device.name}
+          </p>
+        </div>
+
+        {actions === null && (
+          <span className="text-xs text-muted-foreground italic shrink-0 pr-1">—</span>
+        )}
       </div>
 
       {/* Actions */}
-      {actions === null ? (
-        <span className="text-[9px] text-slate-400 italic shrink-0 pr-1">—</span>
-      ) : (
-        <div className="flex items-center gap-1 shrink-0">
+      {actions !== null && (
+        <div className="flex items-center gap-2">
           {actions.secondary?.map((action) => (
-            <button
+            <Button
               key={action.key}
               type="button"
+              variant="secondary"
+              size="icon"
               onClick={() => onAction(device, action.key)}
               disabled={!enabled || loading !== null}
               aria-label={action.label}
               title={action.label}
               className={cn(
-                "h-7 w-7 rounded-lg flex items-center justify-center transition active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed",
+                actions.primary.large ? "size-14" : "size-11",
+                // Im Hellen ist der Glasrand weiß auf weißer Karte – eine dunkle
+                // Haarlinie zeigt die Taste (wie die Auswahltasten im Info-Formular).
                 action.tone === "danger"
-                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20"
-                  : "bg-slate-500/10 text-slate-600 dark:text-slate-300 hover:bg-slate-500/20",
+                  ? "bg-destructive/10 text-destructive ring-destructive/25 hover:bg-destructive/15"
+                  : "ring-border dark:ring-glass-border",
               )}
             >
               {loading === `${device.id}:${action.key}`
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : createElement(action.icon, { className: "h-3.5 w-3.5" })}
-            </button>
+                ? <Loader2 className={cn(iconSize, "animate-spin")} />
+                : createElement(action.icon, { className: iconSize })}
+            </Button>
           ))}
 
-          <button
+          <Button
             type="button"
+            variant={primaryFb?.type === "err" ? "destructive" : "default"}
             onClick={() => onAction(device, actions.primary.key)}
             disabled={!enabled || loading !== null}
             className={cn(
-              "h-7 px-2.5 rounded-lg text-white text-[12px] font-semibold inline-flex items-center justify-center gap-1",
-              "active:scale-95 transition-transform bg-gradient-to-b",
-              primaryFb?.type === "ok" ? "from-emerald-500 to-emerald-700" :
-              primaryFb?.type === "err" ? "from-rose-500 to-rose-700" :
-              actions.primary.gradient,
-              "disabled:opacity-30 disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-500",
+              "flex-1 min-w-0 font-semibold",
+              actions.primary.large ? "h-14 text-base" : "h-11",
+              // Erfolg: Fläche und Glow in Grün (der Glow der Primärtaste wäre Indigo).
+              primaryFb?.type === "ok" &&
+                "bg-success text-success-foreground shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_8px_20px_-10px_var(--success)] hover:bg-success/90",
+              // Fehler im Dunkeln: Rot ist dort hell und trägt dunkle Schrift
+              // (wie die Zustandspille), Weiß darauf hätte nur 4:1.
+              primaryFb?.type === "err" && "dark:bg-destructive dark:text-background",
             )}
           >
             {primaryLoading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className={cn(iconSize, "animate-spin")} />
             ) : primaryFb?.type === "ok" ? (
-              <CheckCircle2 className="h-3.5 w-3.5" />
+              <CheckCircle2 className={iconSize} />
             ) : primaryFb?.type === "err" ? (
-              <XCircle className="h-3.5 w-3.5" />
+              <XCircle className={iconSize} />
             ) : (
-              createElement(actions.primary.icon, { className: "h-3.5 w-3.5" })
+              createElement(actions.primary.icon, { className: iconSize })
             )}
             <span className="whitespace-nowrap">
               {primaryFb?.type === "ok" ? "OK" : primaryFb?.type === "err" ? "Fehler" : actions.primary.label}
             </span>
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -494,23 +521,27 @@ function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowPr
 
 // ─── HeaderStatusDot ─────────────────────────────────────────────────────────
 
+/**
+ * Zugangsstatus als Pille auf dem Akzentkopf, voll in der Zustandsfarbe:
+ * grün aktiv, gelb ausserhalb der Zeit, rot kein Zutritt. Im Dunkeln sind
+ * die Zustandsfarben hell und tragen dunkle Schrift – auch Rot.
+ */
 function HeaderStatusDot({ kind, label }: { kind: "ok" | "warn" | "err"; label: string }) {
   const cls = kind === "ok"
-    ? "bg-emerald-400/25 text-emerald-50 ring-emerald-200/40"
+    ? "bg-success text-success-foreground"
     : kind === "warn"
-      ? "bg-amber-400/25 text-amber-50 ring-amber-200/40"
-      : "bg-rose-400/25 text-rose-50 ring-rose-200/40";
-  const dot = kind === "ok" ? "bg-emerald-300" : kind === "warn" ? "bg-amber-300" : "bg-rose-300";
+      ? "bg-warning text-warning-foreground"
+      : "bg-destructive text-destructive-foreground dark:text-background";
   return (
     <div
       title={label}
-      className={cn("inline-flex items-center gap-1.5 rounded-full ring-1 backdrop-blur px-2 py-1 shrink-0", cls)}
+      className={cn("inline-flex items-center gap-1.5 rounded-full ring-1 ring-inset ring-primary-foreground/25 px-2.5 py-1 shrink-0", cls)}
     >
       <span className="relative flex h-1.5 w-1.5">
-        {kind === "ok" && <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-60", dot)} />}
-        <span className={cn("relative inline-flex rounded-full h-1.5 w-1.5", dot)} />
+        {kind === "ok" && <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 bg-current" />}
+        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current" />
       </span>
-      <span className="text-[10px] font-semibold whitespace-nowrap max-w-[120px] truncate">{label}</span>
+      <span className="text-[11px] font-semibold whitespace-nowrap max-w-[120px] truncate">{label}</span>
     </div>
   );
 }

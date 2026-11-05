@@ -43,10 +43,11 @@ export default async function MobileLayout({ children, params }: LayoutProps) {
     : "Zugang";
 
   // Der Body traegt die Safe-Area als Padding; hier wird es oben aufgehoben,
-  // damit der Farbverlauf des Kopfes bis unter die Statusleiste reicht (der
-  // Kopf selbst pad­det um die Inset-Hoehe).
+  // damit die Akzentflaeche des Kopfes bis unter die Statusleiste reicht (der
+  // Kopf selbst pad­det um die Inset-Hoehe). Dahinter liegt der Farbgrund,
+  // der Hell/Dunkel des Geraets folgt.
   return (
-    <div className="min-h-[100dvh] mt-[calc(env(safe-area-inset-top)*-1)] bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
+    <div className="page-ambient min-h-[100dvh] mt-[calc(env(safe-area-inset-top)*-1)]">
       {children}
       <InstallPrompt variant="banner" appName={appName} />
     </div>

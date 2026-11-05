@@ -21,11 +21,16 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
 /**
  * Der Body traegt die Safe-Area als Padding; unter der transparenten iOS-
  * Statusleiste wuerde sonst der helle Body-Hintergrund durchscheinen. Der
- * Rahmen hebt das Padding auf und paddet selbst – mit dunklem Grund.
+ * Rahmen hebt das Padding auf und paddet selbst – mit dunklem Grund. Das gilt
+ * oben und unten: sonst ließe sich die Seite um die Höhe der Home-Leiste
+ * scrollen, und darunter käme im hellen Systemmodus ein heller Streifen.
+ *
+ * Der öffentliche Scanner läuft immer dunkel: `dark` stellt alle Farben im
+ * Rahmen auf ihre dunklen Werte, `page-ambient` legt den Farbgrund darunter.
  */
 export default function TokenLayout({ children }: LayoutProps) {
   return (
-    <div className="min-h-[100dvh] bg-slate-950 mt-[calc(env(safe-area-inset-top)*-1)] pt-[env(safe-area-inset-top)]">
+    <div className="dark page-ambient text-foreground min-h-[100dvh] mt-[calc(env(safe-area-inset-top)*-1)] mb-[calc(env(safe-area-inset-bottom)*-1)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       {children}
     </div>
   );

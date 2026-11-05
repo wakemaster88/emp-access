@@ -5,13 +5,20 @@
  * Ein Link deckt alle Kursplaetze einer Email-Adresse ab: pro Platz wird
  * ein Fragenblock gerendert (Felder kommen aus dem InfoFormTemplate).
  *
- * Design angelehnt an www.tuttenbrocksee.com: Petrol #1a6d73 als Primary,
- * weisse Cards auf Grau-50, grosszuegige Radien (rounded-2xl/3xl),
- * Uppercase-Eyebrows in Grau, fette dunkle Headlines, Pill-Buttons.
+ * Gestaltung nach docs/design-regeln.md und folgt Hell/Dunkel des Geraets:
+ * Kopf als Akzentflaeche (das Logo des Betriebs steht wie im Kopf der
+ * Gaeste-Mails auf Farbe), darunter je Kursplatz eine Glaskarte auf dem
+ * Farbgrund, Felder und Tasten aus den Bausteinen.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronDown, Hash, Loader2, PartyPopper } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { cn } from "@/lib/utils";
 
 interface FormField {
@@ -47,10 +54,6 @@ interface FormData {
   participantNameLabel: string;
   places: Place[];
 }
-
-// Tuttenbrocksee-Website-Palette (www.tuttenbrocksee.com).
-const BRAND = "#1a6d73";
-const BRAND_DARK = "#155a60";
 
 export function InfoFormClient({ token }: { token: string }) {
   const [data, setData] = useState<FormData | null>(null);
@@ -176,22 +179,23 @@ export function InfoFormClient({ token }: { token: string }) {
 
   if (loading) {
     return (
-      <div className="min-h-[100dvh] bg-gray-50 flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" style={{ color: BRAND }} />
+      <div className="page-ambient min-h-[100dvh] flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        Lädt …
       </div>
     );
   }
 
   if (notFound || !data) {
     return (
-      <div className="min-h-[100dvh] bg-gray-50 flex items-center justify-center p-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Link nicht gefunden</h1>
-          <p className="text-sm text-gray-500 mt-3 leading-relaxed">
+      <div className="page-ambient min-h-[100dvh] flex items-center justify-center p-6">
+        <Card className="w-full max-w-md gap-3 px-6 py-10 sm:py-10 text-center">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Link nicht gefunden</h1>
+          <p className="text-sm text-muted-foreground leading-relaxed">
             Dieser Info-Link ist ungültig oder wurde entfernt. Bitte melde dich bei uns,
             falls du deine Angaben ändern möchtest.
           </p>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -202,41 +206,35 @@ export function InfoFormClient({ token }: { token: string }) {
 
   if (submitted) {
     return (
-      <div className="min-h-[100dvh] bg-gray-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-3xl border border-gray-100 shadow-sm p-8 text-center">
-          <div
-            className="mx-auto h-16 w-16 rounded-full flex items-center justify-center"
-            style={{ background: `${BRAND}1a` }}
-          >
-            <PartyPopper className="h-8 w-8" style={{ color: BRAND }} />
-          </div>
-          <p className="text-xs uppercase tracking-wider text-gray-500 mt-6">Alles erledigt</p>
-          <h1 className="text-3xl font-bold text-gray-900 mt-1">Danke!</h1>
-          <p className="text-sm text-gray-600 mt-3 leading-relaxed">
+      <div className="page-ambient min-h-[100dvh] flex items-center justify-center p-6">
+        <Card className="max-w-md w-full items-center gap-0 px-6 py-10 sm:py-10 text-center">
+          <IconChip icon={PartyPopper} tone="success" size="lg" className="size-14 rounded-tile [&_svg]:size-7" />
+          <p className="text-label mt-6">Alles erledigt</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground mt-1">Danke!</h1>
+          <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
             Deine Angaben sind gespeichert – damit geht der Check-in vor Ort deutlich schneller.
             Du kannst diesen Link jederzeit wieder öffnen, um etwas zu ändern.
           </p>
           {websiteHost && (
-            <a
-              href={data.branding.websiteUrl!}
-              className="inline-block mt-6 px-6 py-3 rounded-2xl text-white text-sm font-semibold transition-transform hover:scale-105"
-              style={{ background: BRAND }}
-            >
-              Zurück zu {websiteHost}
-            </a>
+            // Darf umbrechen: Host und Pfad können auf schmalen Handys breiter sein als die Karte.
+            <Button asChild size="lg" className="mt-6 h-auto min-h-11 max-w-full whitespace-normal py-2 text-center wrap-anywhere">
+              <a href={data.branding.websiteUrl!}>
+                Zurück zu {websiteHost}
+              </a>
+            </Button>
           )}
-        </div>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="min-h-[100dvh] bg-gray-50 text-gray-900">
-      {/* Header im Website-Stil: Petrol-Fläche, Logo/Name, Eyebrow + fette Headline */}
-      <div
-        className="px-6 pt-10 pb-16 text-center text-white"
-        style={{ background: `linear-gradient(160deg, ${BRAND} 0%, ${BRAND_DARK} 100%)` }}
-      >
+    <div className="page-ambient min-h-[100dvh] text-foreground">
+      {/* Kopf als Akzentfläche: Logo/Name, Eyebrow und Titel. Das Logo des
+          Betriebs ist (wie im Kopf der Gäste-Mails) für eine Farbfläche gemacht.
+          Im Dunkeln ist der Akzent heller; zu 60 % gedeckt behält Weiß darauf
+          genug Kontrast. */}
+      <div className="rounded-b-card bg-primary px-6 pt-10 pb-12 text-center text-primary-foreground dark:bg-primary/60">
         {data.branding.logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -245,58 +243,60 @@ export function InfoFormClient({ token }: { token: string }) {
             className="h-12 mx-auto mb-4 object-contain"
           />
         ) : (
-          <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-80 mb-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-primary-foreground/80 mb-3">
             {data.accountName}
           </p>
         )}
-        <p className="text-xs uppercase tracking-wider text-white/70">
+        <p className="text-xs uppercase tracking-wider text-primary-foreground/75">
           Schneller einchecken
         </p>
-        <h1 className="text-3xl md:text-4xl font-bold mt-2 leading-tight">
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-balance mt-2 leading-tight">
           {data.serviceName ? `Infos für deinen ${data.serviceName}` : data.template.name}
         </h1>
         {data.template.introText && (
-          <p className="text-sm text-white/85 mt-4 max-w-md mx-auto leading-relaxed">
+          <p className="text-sm text-primary-foreground/85 mt-4 max-w-md mx-auto leading-relaxed">
             {data.template.introText}
           </p>
         )}
       </div>
 
-      <div className="max-w-lg mx-auto p-4 pb-32 space-y-3 -mt-8">
+      <div className="max-w-lg mx-auto p-4 pb-32 space-y-4">
         {data.places.map((place) => {
           const values = answers.get(place.primaryTicketId) ?? {};
           const complete = placeComplete(place.primaryTicketId);
           const isOpen = openPlace === place.primaryTicketId;
           return (
-            <div
+            <Card
               key={place.primaryTicketId}
-              className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden"
+              className="gap-0 py-0 sm:py-0 overflow-hidden"
             >
               <button
                 type="button"
                 onClick={() => setOpenPlace(isOpen ? null : place.primaryTicketId)}
-                className="w-full flex items-center gap-3 p-4 md:p-5 text-left"
+                aria-expanded={isOpen}
+                // Fokusring nach innen: die Karte schneidet alles außerhalb ab.
+                className="w-full flex items-center gap-3 p-4 md:p-5 text-left rounded-card outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
               >
+                {/* Kursplatz vollständig: Haken in der Erfolgsfarbe, sonst die Nummer. */}
                 <div
                   className={cn(
-                    "h-10 w-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold",
-                    complete ? "text-white" : "text-gray-500 bg-gray-100",
+                    "h-10 w-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold tabular-nums",
+                    complete ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground",
                   )}
-                  style={complete ? { background: BRAND } : undefined}
                 >
                   {complete ? <CheckCircle2 className="h-5 w-5" /> : place.index}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] uppercase tracking-wider text-gray-500">
+                  <p className="text-label">
                     Kursplatz {place.index}
                   </p>
-                  <p className="text-sm font-semibold text-gray-900 truncate">
+                  <p className="text-sm font-semibold text-foreground truncate">
                     {values[data.participantNameLabel] || place.bookedName || `Kursplatz ${place.index}`}
                   </p>
-                  <p className="text-xs text-gray-500 truncate mt-0.5">
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">
                     {place.range}
                     {place.bookingNumber && (
-                      <span className="inline-flex items-center gap-0.5 ml-2 text-gray-400">
+                      <span className="inline-flex items-center gap-0.5 ml-2">
                         <Hash className="h-3 w-3" />
                         {place.bookingNumber}
                       </span>
@@ -305,34 +305,28 @@ export function InfoFormClient({ token }: { token: string }) {
                 </div>
                 <ChevronDown
                   className={cn(
-                    "h-4 w-4 text-gray-400 transition-transform shrink-0",
+                    "h-4 w-4 text-muted-foreground transition-transform shrink-0",
                     isOpen && "rotate-180",
                   )}
                 />
               </button>
 
               {isOpen && (
-                <div className="px-4 md:px-5 pb-6 space-y-5 border-t border-gray-100 pt-5">
-                  {place.bookingNumber && (
-                    <p className="text-xs text-gray-400 -mt-1">
-                      Buchungsnummer: <span className="font-medium text-gray-500">{place.bookingNumber}</span>
-                    </p>
-                  )}
+                <div className="px-4 md:px-5 pb-6 space-y-5 border-t border-border pt-5">
                   {data.template.askParticipantName && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+                    <div className="space-y-2">
+                      <Label className="gap-0 leading-snug">
                         Wer nimmt teil?
-                        <span className="text-red-500 ml-0.5">*</span>
-                      </label>
-                      <input
+                        <span className="text-destructive ml-0.5">*</span>
+                      </Label>
+                      <Input
                         type="text"
                         value={values[data.participantNameLabel] ?? ""}
                         onChange={(e) =>
                           setValue(place.primaryTicketId, data.participantNameLabel, e.target.value)
                         }
                         placeholder="Vor- und Nachname des Teilnehmers"
-                        className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1 transition-shadow"
-                        style={{ ["--tw-ring-color" as string]: BRAND }}
+                        className="h-11"
                       />
                     </div>
                   )}
@@ -341,29 +335,29 @@ export function InfoFormClient({ token }: { token: string }) {
                     if (!fieldVisible(field, values, data.template.fields)) return null;
                     const value = values[field.label] ?? "";
                     return (
-                      <div key={field.key} className="space-y-1.5">
-                        <label className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+                      <div key={field.key} className="space-y-2">
+                        <Label className="gap-0 leading-snug">
                           {field.label}
-                          {field.required && <span className="text-red-500 ml-0.5">*</span>}
-                        </label>
+                          {field.required && <span className="text-destructive ml-0.5">*</span>}
+                        </Label>
 
+                        {/* Auswahl als Tasten: gewählt in Akzentfarbe, sonst Glas mit Haarlinie. */}
                         {field.type === "choice" && (
                           <div className="flex flex-wrap gap-2">
                             {(field.options ?? []).map((opt) => (
-                              <button
+                              <Button
                                 key={opt}
                                 type="button"
+                                variant={value === opt ? "default" : "secondary"}
+                                aria-pressed={value === opt}
                                 onClick={() => setValue(place.primaryTicketId, field.label, opt)}
                                 className={cn(
-                                  "px-4 py-2.5 rounded-2xl text-sm font-semibold border transition-all duration-200",
-                                  value === opt
-                                    ? "text-white border-transparent shadow-sm"
-                                    : "bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:scale-[1.02]",
+                                  "h-auto min-h-11 max-w-full whitespace-normal px-4 py-2 font-semibold",
+                                  value !== opt && "ring-border dark:ring-glass-border",
                                 )}
-                                style={value === opt ? { background: BRAND } : undefined}
                               >
                                 {opt}
-                              </button>
+                              </Button>
                             ))}
                           </div>
                         )}
@@ -371,46 +365,43 @@ export function InfoFormClient({ token }: { token: string }) {
                         {field.type === "boolean" && (
                           <div className="flex gap-2">
                             {["Ja", "Nein"].map((opt) => (
-                              <button
+                              <Button
                                 key={opt}
                                 type="button"
+                                variant={value === opt ? "default" : "secondary"}
+                                aria-pressed={value === opt}
                                 onClick={() => setValue(place.primaryTicketId, field.label, opt)}
                                 className={cn(
-                                  "flex-1 px-4 py-2.5 rounded-2xl text-sm font-semibold border transition-all duration-200",
-                                  value === opt
-                                    ? "text-white border-transparent shadow-sm"
-                                    : "bg-white text-gray-700 border-gray-200 hover:border-gray-300",
+                                  "flex-1 h-11 px-4 font-semibold",
+                                  value !== opt && "ring-border dark:ring-glass-border",
                                 )}
-                                style={value === opt ? { background: BRAND } : undefined}
                               >
                                 {opt}
-                              </button>
+                              </Button>
                             ))}
                           </div>
                         )}
 
                         {field.type === "number" && (
-                          <input
+                          <Input
                             type="number"
                             inputMode="decimal"
                             value={value}
                             onChange={(e) =>
                               setValue(place.primaryTicketId, field.label, e.target.value)
                             }
-                            className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1 transition-shadow"
-                            style={{ ["--tw-ring-color" as string]: BRAND }}
+                            className="h-11"
                           />
                         )}
 
                         {field.type === "text" && (
-                          <input
+                          <Input
                             type="text"
                             value={value}
                             onChange={(e) =>
                               setValue(place.primaryTicketId, field.label, e.target.value)
                             }
-                            className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1 transition-shadow"
-                            style={{ ["--tw-ring-color" as string]: BRAND }}
+                            className="h-11"
                           />
                         )}
                       </div>
@@ -418,43 +409,39 @@ export function InfoFormClient({ token }: { token: string }) {
                   })}
                 </div>
               )}
-            </div>
+            </Card>
           );
         })}
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-2xl px-4 py-3">
-            {error}
-          </div>
-        )}
+        {error && <Notice tone="danger" compact title={error} />}
 
         {websiteHost && (
-          <p className="text-center text-xs text-gray-400 pt-2">
-            <a href={data.branding.websiteUrl!} className="hover:text-gray-600 transition-colors">
+          <p className="text-center text-xs text-muted-foreground pt-2">
+            <a href={data.branding.websiteUrl!} className="inline-flex min-h-11 items-center hover:text-foreground transition-colors">
               {websiteHost}
             </a>
           </p>
         )}
       </div>
 
-      {/* Sticky Submit im Website-Button-Stil */}
-      <div className="fixed bottom-0 inset-x-0 bg-white/90 backdrop-blur border-t border-gray-100 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <div className="max-w-lg mx-auto">
-          <button
+      {/* Absenden als klebende Glasleiste unten, Primärtaste in voller Breite.
+          Der Seitenrand steckt wie bei den Karten in der schmalen Spalte, so
+          ist die Taste auch auf breiten Bildschirmen so breit wie die Karten. */}
+      <div className="glass-bar fixed bottom-0 inset-x-0 border-t border-border pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="max-w-lg mx-auto px-4">
+          {/* Warum die Taste gesperrt ist, steht lesbar darüber – nicht blass in der Taste. */}
+          {!allComplete && (
+            <p className="mb-2 text-center text-xs text-muted-foreground">Bitte alle Pflichtfelder ausfüllen</p>
+          )}
+          <Button
             type="button"
             onClick={handleSubmit}
             disabled={submitting || !allComplete}
-            className="w-full py-3.5 rounded-2xl text-white text-sm font-semibold transition-all duration-300 disabled:opacity-40 hover:shadow-lg hover:scale-[1.01] active:scale-100 disabled:hover:scale-100 disabled:hover:shadow-none"
-            style={{ background: allComplete ? BRAND : BRAND_DARK }}
+            size="lg"
+            className="h-12 w-full text-[15px] font-semibold"
           >
-            {submitting ? (
-              <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-            ) : allComplete ? (
-              "Angaben absenden"
-            ) : (
-              "Bitte alle Pflichtfelder ausfüllen"
-            )}
-          </button>
+            {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Angaben absenden"}
+          </Button>
         </div>
       </div>
     </div>

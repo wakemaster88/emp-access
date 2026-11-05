@@ -9,13 +9,17 @@ import {
   KeyRound,
   Loader2,
   ShieldAlert,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { IconChip, type ChipTone } from "@/components/ui/icon-chip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { SignaturePad, type SignaturePadHandle } from "@/components/ui/signature-pad";
 import type { KeySnapshot, PolicySnapshot } from "@/lib/key-policy-pdf";
-import { cn } from "@/lib/utils";
 
 interface SignPayload {
   state: "OPEN" | "SIGNED" | "EXPIRED";
@@ -119,9 +123,10 @@ export function KeySignClient({ token }: { token: string }) {
   if (loading) {
     return (
       <Shell>
-        <div className="flex items-center justify-center py-16 text-slate-400">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
+        <Card className="flex-row items-center justify-center gap-2 py-16 sm:py-16 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Lädt …
+        </Card>
       </Shell>
     );
   }
@@ -129,8 +134,9 @@ export function KeySignClient({ token }: { token: string }) {
   if (notFound || !data) {
     return (
       <Shell>
-        <Notice
-          icon={<ShieldAlert className="h-8 w-8 text-slate-400" />}
+        <StateCard
+          icon={ShieldAlert}
+          tone="neutral"
           title="Link nicht gefunden"
           text="Dieser Link ist ungültig oder wurde zurückgezogen. Bitte wende dich an die ausgebende Stelle."
         />
@@ -141,8 +147,9 @@ export function KeySignClient({ token }: { token: string }) {
   if (done || data.state === "SIGNED") {
     return (
       <Shell accountName={data.accountName}>
-        <Notice
-          icon={<CheckCircle2 className="h-8 w-8 text-emerald-500" />}
+        <StateCard
+          icon={CheckCircle2}
+          tone="success"
           title="Unterschrift erfasst"
           text={
             data.state === "SIGNED" && !done
@@ -152,7 +159,7 @@ export function KeySignClient({ token }: { token: string }) {
         />
         <Button asChild variant="outline" className="mt-4 h-11 w-full">
           <a href={`/api/schluessel/${token}/pdf`} target="_blank" rel="noreferrer">
-            <FileDown className="mr-1.5 h-4 w-4" />
+            <FileDown className="h-4 w-4" />
             Protokoll als PDF öffnen
           </a>
         </Button>
@@ -163,8 +170,9 @@ export function KeySignClient({ token }: { token: string }) {
   if (data.state === "EXPIRED") {
     return (
       <Shell accountName={data.accountName}>
-        <Notice
-          icon={<Clock className="h-8 w-8 text-amber-500" />}
+        <StateCard
+          icon={Clock}
+          tone="warning"
           title="Link abgelaufen"
           text={`Dieser Link war bis zum ${fmtDateTime(data.expiresAt)} gültig. Bitte lass dir einen neuen QR-Code geben.`}
         />
@@ -182,127 +190,143 @@ export function KeySignClient({ token }: { token: string }) {
 
   return (
     <Shell accountName={data.accountName}>
-      <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-        {data.kind === "RETURN" ? "Schlüsselrückgabe" : "Schlüsselübergabe"}
-      </h1>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Für {data.keys.holderName} · Protokoll Nr. {data.keys.handoverId}
-      </p>
+      <div className="space-y-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {data.kind === "RETURN" ? "Schlüsselrückgabe" : "Schlüsselübergabe"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Für {data.keys.holderName} · Protokoll Nr. {data.keys.handoverId}
+          </p>
+        </div>
 
-      <section className="mt-5">
-        <h2 className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-200">
-          <KeyRound className="h-4 w-4 text-indigo-500" />
-          Diese Schlüssel erhältst du
-        </h2>
-        <ul className="space-y-1.5">
-          {data.keys.keys.map((k) => (
-            <li
-              key={k.keyNumber}
-              className="rounded-md border border-slate-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-900/40"
-            >
-              <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                <span className="font-mono">{k.keyNumber}</span>
-                {k.label && <span className="ml-1.5 font-normal">{k.label}</span>}
-                <span className="ml-1.5 text-[11px] font-normal text-slate-400">
-                  {k.levelLabel}
-                </span>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2 className="inline-flex items-center gap-1.5">
+                <KeyRound className="h-4 w-4 text-primary" />
+                Diese Schlüssel erhältst du
+              </h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1.5">
+              {data.keys.keys.map((k) => (
+                <li key={k.keyNumber} className="glass-tile px-3 py-2.5">
+                  <p className="text-sm font-medium text-foreground">
+                    <span className="font-mono">{k.keyNumber}</span>
+                    {k.label && <span className="ml-1.5 font-normal">{k.label}</span>}
+                    <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
+                      {k.levelLabel}
+                    </span>
+                  </p>
+                  {k.locks.length > 0 && (
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Schließt: {k.locks.join(", ")}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {data.keys.dueAt && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Rückgabe bis {fmtDateTime(data.keys.dueAt)}
               </p>
-              {k.locks.length > 0 && (
-                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                  Schließt: {k.locks.join(", ")}
-                </p>
+            )}
+            {data.keys.deposit != null && (
+              <p className="text-xs tabular-nums text-muted-foreground">
+                Pfand: {data.keys.deposit.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>
+                Belehrung
+                <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
+                  {data.policy.templateName} · Version {data.policy.version}
+                </span>
+              </h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="glass-tile max-h-64 overflow-y-auto scrollbar-thin whitespace-pre-line p-3 text-sm leading-relaxed text-foreground/90">
+              {data.policy.bodyText}
+            </div>
+            <CheckRow checked={acceptedPolicy} onChange={setAcceptedPolicy}>
+              Ich habe die Belehrung gelesen und verstanden.
+            </CheckRow>
+          </CardContent>
+        </Card>
+
+        {hasLiability && (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                <h2>Haftungserklärung</h2>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="glass-tile max-h-56 overflow-y-auto scrollbar-thin whitespace-pre-line p-3 text-sm leading-relaxed text-foreground/90">
+                {data.policy.liabilityText}
+              </div>
+              <CheckRow checked={acceptedLiability} onChange={setAcceptedLiability}>
+                Ich erkenne die Haftungserklärung an.
+              </CheckRow>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="sign-name">
+                Vor- und Nachname <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="sign-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="name"
+                className="h-11 text-base"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>
+                Unterschrift <span className="text-destructive">*</span>
+              </Label>
+              <SignaturePad ref={padRef} onChangeEmpty={setPadEmpty} height={190} />
+            </div>
+
+            {error && <Notice tone="danger" compact icon={AlertTriangle} title={error} />}
+
+            <Button
+              onClick={submit}
+              disabled={!canSubmit}
+              size="lg"
+              className="h-12 w-full text-base"
+            >
+              {submitting ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                "Verbindlich unterschreiben"
               )}
-            </li>
-          ))}
-        </ul>
-        {data.keys.dueAt && (
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-            Rückgabe bis {fmtDateTime(data.keys.dueAt)}
-          </p>
-        )}
-        {data.keys.deposit != null && (
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Pfand: {data.keys.deposit.toFixed(2)} EUR
-          </p>
-        )}
-      </section>
-
-      <section className="mt-6">
-        <h2 className="mb-2 text-sm font-medium text-slate-800 dark:text-slate-200">
-          Belehrung
-          <span className="ml-1.5 text-[11px] font-normal text-slate-400">
-            {data.policy.templateName} · Version {data.policy.version}
-          </span>
-        </h2>
-        <div className="max-h-64 overflow-y-auto whitespace-pre-line rounded-md border border-slate-200 bg-white p-3 text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
-          {data.policy.bodyText}
-        </div>
-        <CheckRow checked={acceptedPolicy} onChange={setAcceptedPolicy}>
-          Ich habe die Belehrung gelesen und verstanden.
-        </CheckRow>
-      </section>
-
-      {hasLiability && (
-        <section className="mt-5">
-          <h2 className="mb-2 text-sm font-medium text-slate-800 dark:text-slate-200">
-            Haftungserklärung
-          </h2>
-          <div className="max-h-56 overflow-y-auto whitespace-pre-line rounded-md border border-amber-200 bg-amber-50/50 p-3 text-sm leading-relaxed text-slate-700 dark:border-amber-900/40 dark:bg-amber-950/10 dark:text-slate-300">
-            {data.policy.liabilityText}
-          </div>
-          <CheckRow checked={acceptedLiability} onChange={setAcceptedLiability}>
-            Ich erkenne die Haftungserklärung an.
-          </CheckRow>
-        </section>
-      )}
-
-      <section className="mt-6 space-y-3">
-        <div className="space-y-1">
-          <Label htmlFor="sign-name" className="text-xs">
-            Vor- und Nachname <span className="text-rose-500">*</span>
-          </Label>
-          <Input
-            id="sign-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="name"
-            className="h-11 text-base"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">
-            Unterschrift <span className="text-rose-500">*</span>
-          </Label>
-          <SignaturePad ref={padRef} onChangeEmpty={setPadEmpty} height={190} />
-        </div>
-
-        {error && (
-          <p className="inline-flex items-start gap-1.5 rounded bg-rose-50 px-2 py-1.5 text-xs text-rose-600 dark:bg-rose-950/30">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            {error}
-          </p>
-        )}
-
-        <Button
-          onClick={submit}
-          disabled={!canSubmit}
-          className="h-12 w-full bg-indigo-600 text-base hover:bg-indigo-700"
-        >
-          {submitting ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            "Verbindlich unterschreiben"
-          )}
-        </Button>
-        <p className="text-center text-[11px] text-slate-400">
-          Mit dem Absenden werden Zeitpunkt und IP-Adresse zu Nachweiszwecken gespeichert.
-        </p>
-      </section>
+            </Button>
+            <p className="text-center text-[11px] text-muted-foreground">
+              Mit dem Absenden werden Zeitpunkt und IP-Adresse zu Nachweiszwecken gespeichert.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     </Shell>
   );
 }
 
+/** Rahmen der Seite: Farbgrund (folgt Hell/Dunkel des Geräts), schmale Spalte. */
 function Shell({
   children,
   accountName,
@@ -311,10 +335,10 @@ function Shell({
   accountName?: string;
 }) {
   return (
-    <main className="min-h-dvh bg-slate-50 px-4 py-6 dark:bg-slate-950">
+    <main className="page-ambient min-h-dvh px-4 py-6">
       <div className="mx-auto w-full max-w-xl">
         {accountName && (
-          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+          <p className="text-label mb-3">
             {accountName}
           </p>
         )}
@@ -324,24 +348,28 @@ function Shell({
   );
 }
 
-function Notice({
+/** Abschluss- oder Fehlerzustand als Glaskarte: Symbol in der Zustandsfarbe, Titel, ein Satz. */
+function StateCard({
   icon,
+  tone,
   title,
   text,
 }: {
-  icon: React.ReactNode;
+  icon: LucideIcon;
+  tone: ChipTone;
   title: string;
   text: string;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-12 text-center dark:border-slate-800 dark:bg-slate-900">
-      {icon}
-      <p className="text-base font-medium text-slate-800 dark:text-slate-200">{title}</p>
-      <p className="max-w-sm text-sm text-slate-500 dark:text-slate-400">{text}</p>
-    </div>
+    <Card className="items-center gap-3 px-6 py-10 sm:py-10 text-center">
+      <IconChip icon={icon} tone={tone} size="lg" className="size-14 rounded-tile [&_svg]:size-7" />
+      <p className="text-base font-semibold text-foreground">{title}</p>
+      <p className="max-w-sm text-sm text-muted-foreground">{text}</p>
+    </Card>
   );
 }
 
+/** Bestätigung im Formular: Kästchen und Satz, die ganze Zeile ist tippbar. */
 function CheckRow({
   checked,
   onChange,
@@ -352,22 +380,13 @@ function CheckRow({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className="mt-2 flex w-full items-start gap-2.5 rounded-md border border-slate-200 bg-white p-3 text-left dark:border-slate-700 dark:bg-slate-900/40"
-    >
-      <span
-        className={cn(
-          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors",
-          checked
-            ? "border-indigo-600 bg-indigo-600"
-            : "border-slate-300 dark:border-slate-600",
-        )}
-      >
-        {checked && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
-      </span>
-      <span className="text-sm text-slate-700 dark:text-slate-300">{children}</span>
-    </button>
+    <label className="glass-tile mt-3 flex w-full cursor-pointer items-start gap-3 p-3 text-left">
+      <Checkbox
+        checked={checked}
+        onCheckedChange={(v) => onChange(v === true)}
+        className="mt-px"
+      />
+      <span className="text-sm text-foreground/90">{children}</span>
+    </label>
   );
 }
