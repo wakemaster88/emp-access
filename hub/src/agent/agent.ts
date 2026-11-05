@@ -19,6 +19,7 @@ import { recordHubEvent } from "../state.js";
 import { LLM, LLM_LOADED, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
 import {
   answerCallback,
+  downloadFile,
   editText,
   pollUpdates,
   sendPhoto,
@@ -31,6 +32,7 @@ import {
 import { TOOLS, findTool, readNotes, toolResultText, toolSpecs, type ToolContext } from "./tools.js";
 import { diffFindings, newWatchState, openFindings, type Finding } from "./findings.js";
 import { berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
+import { VOICE, ensureWhisper, transcribe } from "./voice.js";
 import { handleUnknownChat, isPaired, newPairingState, type PairingState } from "./pairing.js";
 
 const ENV_CHAT_IDS = (process.env.HUB_AGENT_TELEGRAM_CHAT_IDS || "")
@@ -379,11 +381,48 @@ async function onUpdate(u: TgUpdate): Promise<void> {
     enqueue(chatId, () => handleUnknown(chatId, msg.chat.type, name, text));
     return;
   }
+  const voice = msg.voice ?? msg.audio;
+  if (voice) {
+    enqueue(chatId, () => handleVoice(chatId, voice));
+    return;
+  }
   if (!text) {
     if (msg.photo) await sendText(chatId, "Bilder kann ich mir noch nicht ansehen – schreib mir, was du wissen willst.");
     return;
   }
   enqueue(chatId, () => handleMessage(chatId, text));
+}
+
+async function handleVoice(chatId: string, voice: { file_id: string; duration: number }): Promise<void> {
+  if (voice.duration > 300) {
+    await sendText(chatId, "Die Sprachnachricht ist mir zu lang (über 5 Minuten). Bitte kürzer oder als Text.");
+    return;
+  }
+  if (!VOICE.ready) {
+    void ensureWhisper();
+    const why = VOICE.installing ? "wird gerade eingerichtet" : `ist nicht bereit${VOICE.error ? `: ${VOICE.error}` : ""}`;
+    await sendText(chatId, `Die Spracherkennung ${why}. Bitte schreib mir solange.`);
+    return;
+  }
+  await typing(chatId);
+  let text: string;
+  try {
+    const audio = await downloadFile(voice.file_id);
+    if (!audio) throw new Error("Sprachnachricht nicht abrufbar");
+    text = await transcribe(audio);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message.split("\n")[0] : String(e);
+    log(`Assistent: Sprachnachricht: ${msg}`);
+    await sendText(chatId, `Die Sprachnachricht konnte ich nicht verstehen: ${msg}`);
+    return;
+  }
+  if (!text || /^\[(BLANK_AUDIO|Musik|Music)\]$/i.test(text)) {
+    await sendText(chatId, "In der Sprachnachricht habe ich nichts verstanden.");
+    return;
+  }
+  // Zur Kontrolle zeigen, was angekommen ist – dann wie eine Textnachricht.
+  await sendText(chatId, `🎙 „${text}“`);
+  await handleMessage(chatId, text);
 }
 
 async function pollLoop(): Promise<void> {
@@ -481,7 +520,8 @@ export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string
     refreshLoadedModel();
     const ram = LLM_LOADED.loaded ? `im RAM (${(LLM_LOADED.sizeBytes / 1024 ** 3).toFixed(1)} GB)` : "entladen";
     const speed = LLM.lastReplyMs != null ? ` · Antwort ${(LLM.lastReplyMs / 1000).toFixed(1)} s` : "";
-    return { state: "ok", value: LLM.model, detail: `${ram} · ${chats}${speed}` };
+    const voice = VOICE.ready ? " · Sprache an" : VOICE.installing ? " · Sprache wird eingerichtet" : "";
+    return { state: "ok", value: LLM.model, detail: `${ram} · ${chats}${speed}${voice}` };
   }
   if (LLM.installing) {
     const pct = LLM.pullPct != null ? ` ${LLM.pullPct} %` : "";
@@ -506,6 +546,8 @@ export async function startAgent(): Promise<void> {
   setInterval(() => {
     if (!LLM.ready) void ensureOllama();
   }, 30 * 60_000);
+  // Sprachnachrichten: whisper.cpp + Modell im Hintergrund bereitstellen.
+  void ensureWhisper();
   void pollLoop();
   setInterval(() => void watchTick().catch((e) => log(`Assistent: Wächter: ${e instanceof Error ? e.message : e}`)), WATCH_MS);
   setInterval(() => void reportTick().catch((e) => log(`Assistent: Bericht: ${e instanceof Error ? e.message : e}`)), 60_000);

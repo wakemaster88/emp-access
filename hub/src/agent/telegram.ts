@@ -28,6 +28,9 @@ export interface TgUpdate {
     text?: string;
     caption?: string;
     photo?: Array<{ file_id: string; width: number }>;
+    /** Sprachnachricht (OGG/Opus) bzw. Audiodatei. */
+    voice?: { file_id: string; duration: number };
+    audio?: { file_id: string; duration: number };
   };
   callback_query?: {
     id: string;
@@ -99,6 +102,14 @@ export async function answerCallback(id: string, text?: string): Promise<void> {
 
 export async function typing(chatId: string): Promise<void> {
   await call("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => undefined);
+}
+
+/** Datei aus Telegram laden (Sprachnachricht, Foto). Bots duerfen bis 20 MB. */
+export async function downloadFile(fileId: string): Promise<Buffer | null> {
+  const file = await call<{ file_path?: string }>("getFile", { file_id: fileId });
+  if (!file.file_path) return null;
+  const res = await fetch(`https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`, { signal: AbortSignal.timeout(60_000) });
+  return res.ok ? Buffer.from(await res.arrayBuffer()) : null;
 }
 
 /** Groesstes Foto einer Nachricht als JPEG laden (fuer Bildfragen an das Modell). */
