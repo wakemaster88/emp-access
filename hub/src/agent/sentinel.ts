@@ -27,6 +27,7 @@ import { berlinHour } from "./watch.js";
 import { decidePerson, parsePersonLook, parseVerdict, shouldInspect, type PersonLook, type Verdict } from "./sentinel-rules.js";
 import { activeCleared, clearedTitle, faceAt, knownPrompt, notePersonEvents, offerPersonOk, rememberPeople, staffClockedIn } from "./people.js";
 import { cameraSawKnownPlate, vehicleTick } from "./vehicles.js";
+import { detectPersons, groupCrop } from "../person-crop.js";
 
 const MODE = (process.env.HUB_AGENT_SENTINEL || "on").trim().toLowerCase();
 const NIGHT = (process.env.HUB_AGENT_SENTINEL_NIGHT || "22-6").trim();
@@ -153,6 +154,12 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
       log(`Wächter: ${cam.name}: Heranzoomen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
       return null;
     });
+    // Ohne optischen Zoom: digital auf die Personen zoomen (Ausschnitt aus dem Vollbild).
+    if (!close) {
+      const boxes = await detectPersons(first);
+      if (boxes?.length) close = await groupCrop(first, boxes);
+      if (close) log(`Wächter: ${cam.name}: digitaler Zoom auf ${boxes?.length} Person(en)`);
+    }
     const known = await activeCleared();
     let look: PersonLook | null = null;
     try {

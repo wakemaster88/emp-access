@@ -12,6 +12,7 @@ import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { STATE, recordHubEvent } from "./state.js";
 import { embedJpeg, embeddingHeader, scoreGallery, refreshGallery } from "./face.js";
+import { faceViaZoom } from "./person-crop.js";
 import { findAllowedVehicle, scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 import { speakOnCamera } from "./camera-talk.js";
@@ -559,6 +560,21 @@ async function uploadPersonSnapshotBody(
     );
     if (attempt < PERSON_SNAP_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, PERSON_SNAP_RETRY_MS));
+    }
+  }
+
+  // Digitaler Zoom: Gesicht zu klein oder ohne Treffer → Kopf-Ausschnitte der
+  // Personen aus dem hochaufgeloesten Bild vergroessern und erneut pruefen.
+  if (buf) {
+    await refreshGallery();
+    const direct = face ? scoreGallery(face.embedding, { upscaled: face.upscaled }).match : null;
+    if (!direct) {
+      const z = await faceViaZoom(buf).catch(() => null);
+      if (z && (z.matched || !face)) {
+        log(`Personen-Snapshot ${cam.config.name}: Gesicht über digitalen Zoom${z.matched ? " (Treffer)" : ""}, ${z.persons} Person(en) im Bild`);
+        improve("face", z.matched ? "zoom_match" : "zoom_face", { cam: cam.config.name, persons: z.persons });
+        face = z.face;
+      }
     }
   }
 
