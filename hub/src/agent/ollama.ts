@@ -198,3 +198,30 @@ export async function chat(messages: ChatMessage[], tools: ToolSpec[]): Promise<
   LLM.lastReplyMs = Date.now() - started;
   return body.message;
 }
+
+/* ------------------------------------------------------------ Anzeige */
+
+/** Ob das Modell gerade im RAM liegt (Ollama `/api/ps`), fuer Systeme im Dashboard. */
+export const LLM_LOADED = { loaded: false, sizeBytes: 0, checkedAt: 0 };
+let psRunning = false;
+
+/** Hoechstens alle 30 s eine Abfrage anstossen; blockiert das Dashboard nie. */
+export function refreshLoadedModel(): void {
+  if (psRunning || !LLM.ready || Date.now() - LLM_LOADED.checkedAt < 30_000) return;
+  psRunning = true;
+  LLM_LOADED.checkedAt = Date.now();
+  fetch(`${OLLAMA_URL}/api/ps`, { signal: AbortSignal.timeout(2_000) })
+    .then((res) => (res.ok ? res.json() : { models: [] }))
+    .then((body: { models?: Array<{ name: string; model?: string; size?: number }> }) => {
+      const want = AGENT_MODEL.includes(":") ? AGENT_MODEL : `${AGENT_MODEL}:latest`;
+      const m = (body.models ?? []).find((x) => x.name === want || x.model === want);
+      LLM_LOADED.loaded = Boolean(m);
+      LLM_LOADED.sizeBytes = m?.size ?? 0;
+    })
+    .catch(() => {
+      LLM_LOADED.loaded = false;
+    })
+    .finally(() => {
+      psRunning = false;
+    });
+}
