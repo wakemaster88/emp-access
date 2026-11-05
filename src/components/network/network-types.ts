@@ -197,3 +197,15 @@ export function scanOnline(lastSeenAt: string | null): boolean | null {
   if (!lastSeenAt) return null;
   return Date.now() - new Date(lastSeenAt).getTime() < ONLINE_THRESHOLD_MS;
 }
+
+/** Eintrag der Sperrliste (BlockedNetworkDevice). */
+export interface BlockedRow {
+  id: number;
+  macAddress: string;
+  name: string;
+  reason: string | null;
+  enforcedAt: string | null;
+  lastSeenAt: string | null;
+  lastSeenIp: string | null;
+  createdAt: string;
+}
