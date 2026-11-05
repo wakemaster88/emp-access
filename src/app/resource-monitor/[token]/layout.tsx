@@ -22,10 +22,19 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
  * Der Body traegt die Safe-Area als Padding; unter der transparenten iOS-
  * Statusleiste wuerde sonst der helle Body-Hintergrund durchscheinen. Der
  * Rahmen hebt das Padding auf und paddet selbst – mit dunklem Grund.
+ *
+ * Wandmonitor: läuft immer dunkel (docs/design-regeln.md, Abschnitt 20). Die
+ * Klasse `dark` stellt alle Tokens darunter auf ihre dunklen Werte, der
+ * Farbgrund (`page-ambient`) liegt auch unter der Statusleiste.
+ *
+ * Fester Rahmen in Bildschirmhöhe: Er hebt das Body-Padding oben und unten auf
+ * und paddet selbst, die Seite füllt den Rest (`flex-1`). So ist das Dokument
+ * genau so hoch wie der Bildschirm – die Anzeige scrollt auch als App mit
+ * Statusleiste und Home-Leiste nicht, und der Farbgrund reicht bis unten.
  */
 export default function TokenLayout({ children }: LayoutProps) {
   return (
-    <div className="min-h-[100dvh] bg-slate-950 mt-[calc(env(safe-area-inset-top)*-1)] pt-[env(safe-area-inset-top)]">
+    <div className="dark scheme-dark page-ambient text-foreground flex h-dvh flex-col mt-[calc(env(safe-area-inset-top)*-1)] mb-[calc(env(safe-area-inset-bottom)*-1)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       {children}
     </div>
   );

@@ -1,5 +1,23 @@
 import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { extendTailwindMerge } from "tailwind-merge"
+
+/**
+ * tailwind-merge mit zwei Ergänzungen für diese Codebasis:
+ * - `bg-gradient-to-*` (Tailwind v4 kennt es weiter als Alias von `bg-linear-to-*`) ist ein
+ *   Verlauf; ohne Eintrag hält tailwind-merge es für eine Hintergrundfarbe und wirft eine
+ *   deckende Grundfarbe davor weg (`bg-background bg-gradient-to-br …`).
+ * - `text-label` (globals.css) ist eine eigene Schriftrolle, keine Textfarbe; sonst verdrängen
+ *   sich `text-label` und eine Textfarbe gegenseitig. Die Farbklasse steht im CSS weiter hinten
+ *   und gewinnt, wenn beide gesetzt sind.
+ */
+const twMerge = extendTailwindMerge<"text-label">({
+  extend: {
+    classGroups: {
+      "bg-image": [{ "bg-gradient-to": ["t", "tr", "r", "br", "b", "bl", "l", "tl"] }],
+      "text-label": ["text-label"],
+    },
+  },
+})
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

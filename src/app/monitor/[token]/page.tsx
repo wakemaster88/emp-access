@@ -5,7 +5,27 @@ const PUBLIC_MONITOR_POLL_MS = 5000;
 
 import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
 import { useWakeLock } from "@/hooks/use-wake-lock";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { Segmented } from "@/components/ui/segmented";
+import { StatusDot } from "@/components/ui/status-dot";
 import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, ChevronDown, LogIn, Pause, Loader2, Camera, Search, Megaphone, X, Power, PowerOff, AlertTriangle, Check, Volume2, VolumeX, Trophy } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
@@ -18,6 +38,67 @@ function endOfDayMs(dateStr: string): number {
   d.setHours(23, 59, 59, 999);
   return d.getTime();
 }
+
+/**
+ * Ergebnis eines Scans als volle Fläche in der Zustandsfarbe (docs/design-regeln.md,
+ * Abschnitte 15 und 20): erlaubt = success, abgelehnt = destructive, geschützt =
+ * warning. Die Tokens haben je einen Wert für Hell und Dunkel; welcher gilt,
+ * entscheidet die Klasse `dark` an der Wurzel des Monitors.
+ * Deckender Grund (`bg-background`) unter dem Verlauf: Sonst scheint das blau-violette
+ * Ambient durch und färbt Grün ins Türkis, Rot ins Violett. `bg-linear-to-*` statt
+ * `bg-gradient-to-*`: tailwind-merge hält Letzteres für eine Hintergrundfarbe und
+ * würfe `bg-background` in `cn()` sonst weg.
+ */
+const RESULT_SURFACE = {
+  GRANTED: "border-success/55 bg-background bg-linear-to-br from-success/32 to-success/16",
+  DENIED: "border-destructive/55 bg-background bg-linear-to-br from-destructive/32 to-destructive/16",
+  PROTECTED: "border-warning/60 bg-background bg-linear-to-br from-warning/32 to-warning/16",
+} as const;
+
+/** Leichtere Tönung für Zeilen in einer Karte (ältere Scans, Scan-Verlauf eines Tickets). */
+const RESULT_TILE = {
+  GRANTED: "border-success/45 bg-linear-to-br from-success/22 to-transparent",
+  DENIED: "border-destructive/45 bg-linear-to-br from-destructive/22 to-transparent",
+  PROTECTED: "border-warning/50 bg-linear-to-br from-warning/22 to-transparent",
+} as const;
+
+/** Symbol, Beschriftung und Farbe je Ergebnis – eine Quelle für Karten, Feed und Scan-Verlauf (Abschnitt 3). */
+const RESULT_CONFIG = {
+  GRANTED: {
+    icon: CheckCircle2,
+    label: "Erlaubt",
+    text: "text-success",
+    ring: "ring-success",
+    ringInset: "inset-ring-success",
+    bg: RESULT_SURFACE.GRANTED,
+    tile: RESULT_TILE.GRANTED,
+  },
+  DENIED: {
+    icon: XCircle,
+    label: "Abgelehnt",
+    text: "text-destructive",
+    ring: "ring-destructive",
+    ringInset: "inset-ring-destructive",
+    bg: RESULT_SURFACE.DENIED,
+    tile: RESULT_TILE.DENIED,
+  },
+  PROTECTED: {
+    icon: Clock,
+    label: "Geschützt",
+    text: "text-warning",
+    ring: "ring-warning",
+    ringInset: "inset-ring-warning",
+    bg: RESULT_SURFACE.PROTECTED,
+    tile: RESULT_TILE.PROTECTED,
+  },
+} as const;
+
+/** Leichte Tönung für Ticket-Zeilen (Kachel in der Karte): Verlauf und Rand in der Zustandsfarbe. */
+const ROW_TINT = {
+  success: "border-success/35 bg-linear-to-br from-success/14 to-success/[0.03]",
+  warning: "border-warning/40 bg-linear-to-br from-warning/16 to-warning/[0.03]",
+  danger: "border-destructive/40 bg-linear-to-br from-destructive/14 to-destructive/[0.03]",
+} as const;
 
 interface Device {
   id: number;
@@ -748,117 +829,52 @@ export default function PublicMonitorPage({ params }: Props) {
 
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
 
-  const styles = dark ? {
-    page: "bg-slate-950 text-white",
-    header: "border-slate-800 bg-slate-900",
-    headerTitle: "text-white",
-    headerSub: "text-slate-300",
-    deviceDot: "bg-emerald-400 shadow-[0_0_10px_3px_rgba(52,211,153,0.6)]",
-    deviceDotOff: "bg-red-500",
-    deviceText: "text-slate-200",
-    liveBadge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-    connectBadge: "bg-slate-800 text-slate-300",
-    sectionLabel: "text-slate-300",
-    emptyBg: "border-slate-700 bg-slate-900 text-slate-400",
-    scanGranted: "bg-emerald-950 border-emerald-700/50",
-    scanDenied: "bg-rose-950 border-rose-700/50",
-    scanProtected: "bg-amber-950 border-amber-700/50",
-    scanName: "text-white",
-    scanSub: "text-slate-300",
-    scanTime: "text-slate-300",
-    scanCountBg: "bg-white/10 text-white",
-    imgRing: "ring-slate-700",
-    clockBg: "bg-indigo-950 border-indigo-700/50",
-    clockText: "text-white",
-    clockSub: "text-indigo-300",
-    ticketBg: "border-slate-700/60 bg-slate-900",
-    ticketName: "text-white",
-    ticketSub: "text-slate-300",
-    ticketAvatarBg: "bg-slate-800",
-    ticketAvatarIcon: "text-slate-400",
-    ticketCountBorder: "border-slate-600 text-slate-300",
-    ringOffset: "ring-offset-slate-950",
-    modeBtnBg: "bg-slate-800 hover:bg-slate-700 text-slate-200",
-  } : {
-    page: "bg-white text-slate-950",
-    header: "border-slate-300 bg-slate-50",
-    headerTitle: "text-slate-950",
-    headerSub: "text-slate-600",
-    deviceDot: "bg-emerald-600 shadow-[0_0_10px_3px_rgba(16,185,129,0.5)]",
-    deviceDotOff: "bg-red-500",
-    deviceText: "text-slate-700",
-    liveBadge: "bg-emerald-100 text-emerald-800 border-emerald-300",
-    connectBadge: "bg-slate-200 text-slate-600",
-    sectionLabel: "text-slate-600",
-    emptyBg: "border-slate-300 bg-slate-100 text-slate-500",
-    scanGranted: "bg-emerald-50 border-emerald-300",
-    scanDenied: "bg-rose-50 border-rose-300",
-    scanProtected: "bg-amber-50 border-amber-300",
-    scanName: "text-slate-950",
-    scanSub: "text-slate-600",
-    scanTime: "text-slate-600",
-    scanCountBg: "bg-slate-200 text-slate-800",
-    imgRing: "ring-slate-300",
-    clockBg: "bg-indigo-50 border-indigo-300",
-    clockText: "text-slate-950",
-    clockSub: "text-indigo-700",
-    ticketBg: "border-slate-300 bg-slate-50",
-    ticketName: "text-slate-950",
-    ticketSub: "text-slate-600",
-    ticketAvatarBg: "bg-slate-200",
-    ticketAvatarIcon: "text-slate-500",
-    ticketCountBorder: "border-slate-400 text-slate-600",
-    ringOffset: "ring-offset-white",
-    modeBtnBg: "bg-slate-200 hover:bg-slate-300 text-slate-700",
-  };
-
-  const resultConfig = {
-    GRANTED: {
-      icon: CheckCircle2,
-      label: "Erlaubt",
-      text: dark ? "text-emerald-400" : "text-emerald-700",
-      badge: dark ? "bg-emerald-500/25 text-emerald-200 font-bold" : "bg-emerald-200 text-emerald-900 font-bold",
-      ring: "ring-emerald-400",
-      bg: styles.scanGranted,
-    },
-    DENIED: {
-      icon: XCircle,
-      label: "Abgelehnt",
-      text: dark ? "text-rose-400" : "text-rose-700",
-      badge: dark ? "bg-rose-500/25 text-rose-200 font-bold" : "bg-rose-200 text-rose-900 font-bold",
-      ring: "ring-rose-400",
-      bg: styles.scanDenied,
-    },
-    PROTECTED: {
-      icon: Clock,
-      label: "Geschützt",
-      text: dark ? "text-amber-400" : "text-amber-700",
-      badge: dark ? "bg-amber-500/25 text-amber-200 font-bold" : "bg-amber-200 text-amber-900 font-bold",
-      ring: "ring-amber-400",
-      bg: styles.scanProtected,
-    },
-  } as const;
+  // Hell/Dunkel des Monitors: `dark` bzw. `light` an der Wurzel stellt alle Tokens
+  // darunter auf ihre dunklen bzw. hellen Werte (docs/design-regeln.md, Abschnitt 10),
+  // unabhängig vom Schema des Dashboards in diesem Browser; `scheme-*` zeichnet auch
+  // Suchfeld und Bildlaufleisten passend. Der Monitor startet dunkel (Abschnitt 20).
+  const themeClass = dark ? "dark scheme-dark" : "light scheme-light";
+  const toggleTheme = () => setDark((d) => !d);
 
   if (error) {
     return (
-      <div className={cn("min-h-[100dvh] flex items-center justify-center", styles.page)}>
-        <p className="text-rose-400">{error}</p>
+      <div className={cn("min-h-[100dvh] flex items-center justify-center p-4 page-ambient text-foreground", themeClass)}>
+        <Notice tone="danger" title={<span className="sm:text-xl">{error}</span>} className="w-full max-w-md sm:max-w-xl sm:p-6" />
       </div>
     );
   }
 
   return (
-    <div className={cn("min-h-[100dvh] flex flex-col transition-colors duration-300 kiosk-surface", styles.page)}>
-      {/* Header */}
-      <header className={cn("border-b px-3 py-2 sm:px-6 sm:py-3.5 flex items-center justify-between transition-colors duration-300", styles.header)} style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}>
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <img src="/logo-dark.png" alt="EMP Access" className="h-7 w-7 sm:h-9 sm:w-9 shrink-0" />
+    <div className={cn("min-h-[100dvh] lg:h-[100dvh] flex flex-col page-ambient text-foreground transition-colors duration-300 kiosk-surface", themeClass)}>
+      {/* Kopfbalken als Glasleiste wie im Dashboard (docs/design-regeln.md, Abschnitt 13): Titel mit
+          Live-Zustand links, Tasten rechts. Reicht die Breite nicht (Handy, viele Steuergeräte),
+          rutschen die Tasten in eine zweite Zeile. z-30 hält das Geräte-Menü über den Karten.
+          Die Safe-Area oben trägt das Layout; der Kopf paddet nur sich selbst. */}
+      <header
+        className="relative z-30 glass-bar border-b border-border px-4 py-2 sm:px-6 sm:py-3 flex flex-wrap items-center gap-x-3 gap-y-2 transition-colors duration-300"
+      >
+        <div className="flex min-w-0 flex-1 basis-40 items-center gap-2 sm:gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="EMP Access" className="h-7 w-7 sm:h-9 sm:w-9 shrink-0 dark:hidden" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-dark.png" alt="EMP Access" className="hidden h-7 w-7 sm:h-9 sm:w-9 shrink-0 dark:block" />
           <div className="min-w-0">
-            <h1 className={cn("text-sm sm:text-lg font-bold tracking-tight truncate", styles.headerTitle)}>{monitorName || "Live Monitor"}</h1>
-            <p className={cn("text-[10px] sm:text-[11px] hidden sm:block", styles.headerSub)}>EMP Access — Echtzeit-Zugangsmonitor</p>
+            <h1 className="text-lg sm:text-xl font-semibold tracking-tight truncate">{monitorName || "Live Monitor"}</h1>
+            <p className="text-[11px] text-muted-foreground hidden sm:block">EMP Access — Echtzeit-Zugangsmonitor</p>
           </div>
+          {connected ? (
+            <Badge variant="success" className="gap-1.5">
+              <StatusDot tone="success" pulse size="xs" />
+              Live
+            </Badge>
+          ) : (
+            <Badge variant="neutral" className="gap-1.5">
+              <Loader2 className="animate-spin" />
+              Verbinde…
+            </Badge>
+          )}
         </div>
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
           {controlDevices.flatMap((device) => {
             const showDeviceName = controlDevices.length > 1;
 
@@ -867,10 +883,11 @@ export default function PublicMonitorPage({ params }: Props) {
               const key = `${device.id}:latch`;
               const busy = controlBusy === key;
               const flashed = controlFlash === key;
-              const track = dark ? "bg-slate-800" : "bg-slate-200";
-              const idle = dark
-                ? "text-slate-400 hover:text-white hover:bg-slate-700"
-                : "text-slate-500 hover:text-slate-900 hover:bg-slate-300";
+              // Aus/Ein als Glas-Kapsel wie `Segmented`; „Ein“ trägt die Zustandsfarbe (an = grün).
+              // In der Kapsel (4 px Rand) 56 px hoch, auf dem Handy 44 px (docs/design-regeln.md,
+              // Abschnitte 20 und 23); ::after verlängert die Trefferfläche bis zum Kapselrand.
+              const segment = "press relative min-w-11 sm:min-w-14 h-9 sm:h-12 px-3 sm:px-4 rounded-full text-sm sm:text-base font-semibold disabled:opacity-50 after:absolute after:inset-x-0 after:-inset-y-1";
+              const idle = "text-muted-foreground hover:text-foreground";
               return [(
                 <div
                   key={key}
@@ -878,21 +895,21 @@ export default function PublicMonitorPage({ params }: Props) {
                   title={isOn ? `${device.name}: ein – klicken auf Aus zum Ausschalten` : `${device.name}: aus – klicken auf Ein zum Einschalten`}
                 >
                   {showDeviceName && (
-                    <span className={cn("text-xs sm:text-sm font-semibold whitespace-nowrap", styles.headerTitle)}>
+                    <span className="text-xs sm:text-sm font-semibold whitespace-nowrap">
                       {device.name}
                     </span>
                   )}
-                  <div className={cn("inline-flex rounded-xl p-0.5", track)}>
+                  <div className="glass-strip inline-flex items-center gap-0.5">
                     <button
                       type="button"
                       disabled={controlBusy !== null}
                       onClick={() => { if (isOn) void handleControlAction(device.id, "reset"); }}
                       className={cn(
-                        "min-w-[2.75rem] px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-colors disabled:opacity-50",
+                        segment,
                         flashed && !isOn
-                          ? "bg-emerald-600 text-white"
+                          ? "bg-success text-success-foreground"
                           : !isOn
-                            ? dark ? "bg-slate-600 text-white shadow-sm" : "bg-white text-slate-900 shadow-sm"
+                            ? "glass-pill-active text-foreground"
                             : idle,
                       )}
                     >
@@ -902,14 +919,7 @@ export default function PublicMonitorPage({ params }: Props) {
                       type="button"
                       disabled={controlBusy !== null}
                       onClick={() => { if (!isOn) void handleControlAction(device.id, "open"); }}
-                      className={cn(
-                        "min-w-[2.75rem] px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-colors disabled:opacity-50",
-                        flashed && isOn
-                          ? "bg-emerald-600 text-white"
-                          : isOn
-                            ? "bg-emerald-600 text-white shadow-sm"
-                            : idle,
-                      )}
+                      className={cn(segment, isOn ? "bg-success text-success-foreground" : idle)}
                     >
                       {busy && !isOn ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Ein"}
                     </button>
@@ -928,23 +938,25 @@ export default function PublicMonitorPage({ params }: Props) {
                   ? PowerOff
                   : Power;
               return (
-                <button
+                <Button
                   key={key}
                   type="button"
                   disabled={controlBusy !== null}
                   onClick={() => void handleControlAction(device.id, ctrl.action)}
                   title={showDeviceName ? `${device.name}: ${ctrl.label}` : `${device.name} ${ctrl.label}`}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl font-semibold text-xs sm:text-sm transition-colors active:scale-95 disabled:opacity-50 whitespace-nowrap",
+                  variant={
                     flashed
-                      ? "bg-emerald-600 text-white"
-                      : controlError && controlBusy === null
-                        ? "bg-rose-600 text-white"
-                        : ctrl.role === "danger"
-                          ? "bg-rose-600 hover:bg-rose-500 text-white"
-                          : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
-                            ? dark ? "bg-slate-700 hover:bg-slate-600 text-white" : "bg-slate-600 hover:bg-slate-500 text-white"
-                            : "bg-sky-600 hover:bg-sky-500 text-white",
+                      ? "default"
+                      : ctrl.role === "danger"
+                        ? "destructive"
+                        : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
+                          ? "secondary"
+                          : "outline"
+                  }
+                  className={cn(
+                    "h-11 gap-2 px-3 text-sm font-semibold sm:h-14 sm:px-4 sm:text-base",
+                    // Bestätigung nach erfolgreichem Befehl: kurz grün.
+                    flashed && "bg-success text-success-foreground shadow-none hover:bg-success/90",
                   )}
                 >
                   {busy ? (
@@ -955,49 +967,48 @@ export default function PublicMonitorPage({ params }: Props) {
                     <Icon className="h-4 w-4 shrink-0" />
                   )}
                   <span>{showDeviceName ? `${device.name} · ${ctrl.label}` : ctrl.label}</span>
-                </button>
+                </Button>
               );
             });
           })}
           {devices.length > 0 && (() => {
             const onlineCount = devices.filter((d) => d.lastUpdate && new Date(d.lastUpdate) > fiveMinAgo).length;
-            const summaryDot = onlineCount === devices.length
-              ? styles.deviceDot
+            const summaryTone = onlineCount === devices.length
+              ? "success"
               : onlineCount === 0
-                ? styles.deviceDotOff
-                : "bg-amber-500 shadow-[0_0_10px_3px_rgba(245,158,11,0.5)]";
+                ? "danger"
+                : "warning";
             return (
               <div className="relative" ref={devicesRef}>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => setDevicesOpen((v) => !v)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg transition-colors",
-                    styles.modeBtnBg,
-                  )}
+                  className="h-11 gap-2 rounded-full px-3 sm:h-14 sm:px-4"
                   aria-haspopup="menu"
                   aria-expanded={devicesOpen}
                 >
-                  <span className={cn("h-2 w-2 rounded-full transition-all", summaryDot)} />
-                  <span className={cn("text-[10px] sm:text-xs font-medium tabular-nums", styles.deviceText)}>
+                  <StatusDot tone={summaryTone} />
+                  <span className="text-sm font-semibold tabular-nums">
                     {onlineCount}/{devices.length}
                   </span>
-                  <ChevronDown className={cn("h-3 w-3 transition-transform", devicesOpen && "rotate-180")} />
-                </button>
+                  <ChevronDown className={cn("size-3 transition-transform", devicesOpen && "rotate-180")} />
+                </Button>
                 {devicesOpen && (
+                  // Menü-Optik (glass-surface), aber deckend: Der Kopfbalken zeichnet selbst weich
+                  // und ist damit die Grenze für den Weichzeichner des Menüs – unterhalb des Kopfes
+                  // schiene der Inhalt sonst ungeweicht durch. `!`, weil glass-surface den
+                  // Hintergrund als Kurzform setzt und sonst gewänne.
                   <div
                     role="menu"
-                    className={cn(
-                      "absolute right-0 top-full mt-1.5 min-w-[200px] rounded-xl border shadow-xl z-30 py-1.5",
-                      dark ? "bg-slate-900 border-slate-700" : "bg-white border-slate-300",
-                    )}
+                    className="glass-surface bg-popover! absolute right-0 top-full mt-1.5 min-w-[200px] rounded-tile z-30 p-1.5"
                   >
                     {devices.map((device) => {
                       const online = device.lastUpdate ? new Date(device.lastUpdate) > fiveMinAgo : false;
                       return (
-                        <div key={device.id} className="flex items-center gap-2 px-3 py-1.5">
-                          <div className={cn("h-2 w-2 rounded-full transition-all shrink-0", online ? styles.deviceDot : styles.deviceDotOff)} />
-                          <span className={cn("text-xs font-medium truncate", styles.deviceText)}>{device.name}</span>
+                        <div key={device.id} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
+                          <StatusDot tone={online ? "success" : "danger"} />
+                          <span className="text-[13px] font-medium truncate">{device.name}</span>
                         </div>
                       );
                     })}
@@ -1006,150 +1017,105 @@ export default function PublicMonitorPage({ params }: Props) {
               </div>
             );
           })()}
-          <div className={cn("flex lg:hidden rounded-lg overflow-hidden border", dark ? "border-slate-700" : "border-slate-300")}>
-            <button
-              onClick={() => setMobileTab("scans")}
-              className={cn(
-                "px-2 py-1 text-[10px] font-bold transition-colors flex items-center gap-1",
-                mobileTab === "scans"
-                  ? dark ? "bg-indigo-600 text-white" : "bg-indigo-500 text-white"
-                  : dark ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500",
-              )}
-            >
-              <ScanLine className="h-3 w-3" />
-              Scans
-            </button>
-            <button
-              onClick={() => setMobileTab("tickets")}
-              className={cn(
-                "px-2 py-1 text-[10px] font-bold transition-colors flex items-center gap-1",
-                mobileTab === "tickets"
-                  ? dark ? "bg-indigo-600 text-white" : "bg-indigo-500 text-white"
-                  : dark ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500",
-              )}
-            >
-              <Ticket className="h-3 w-3" />
-              Tickets
-            </button>
-          </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => {
               const next = !soundEnabledRef.current;
               soundEnabledRef.current = next;
               setSoundEnabled(next);
               if (next) unlockAudio();
             }}
-            className={cn("p-1.5 sm:p-2 rounded-lg transition-colors", styles.modeBtnBg)}
+            className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
             title={soundEnabled ? "Warnton bei ungültigem Scan an" : "Warnton aus"}
           >
             {soundEnabled
-              ? <Volume2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              : <VolumeX className="h-3.5 w-3.5 sm:h-4 sm:w-4 opacity-60" />}
-          </button>
-          <button
-            onClick={() => setDark((d) => !d)}
-            className={cn("p-1.5 sm:p-2 rounded-lg transition-colors", styles.modeBtnBg)}
+              ? <Volume2 className="size-5" />
+              : <VolumeX className="size-5 opacity-60" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
+            aria-label="Farbschema"
           >
-            {dark ? <Sun className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Moon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
-          </button>
-          {connected ? (
-            <Badge className={cn("gap-1 sm:gap-1.5 font-medium text-[10px] sm:text-xs px-1.5 sm:px-2.5", styles.liveBadge)}>
-              <span className={cn("h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full animate-pulse", dark ? "bg-emerald-400" : "bg-emerald-500")} />
-              Live
-            </Badge>
-          ) : (
-            <Badge className={cn("gap-1 sm:gap-1.5 text-[10px] sm:text-xs px-1.5 sm:px-2.5", styles.connectBadge)}>
-              <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-slate-400 animate-pulse" />
-              Verbinde…
-            </Badge>
-          )}
+            {dark ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          </Button>
         </div>
       </header>
 
       {/* Hinweis-Banner vom Shop-Monitor. Bleibt sichtbar bis manuell per X
           geschlossen - dann account-weit weg, auf allen Monitoren. */}
-      {announcements.length > 0 && (
-        <div className="px-3 sm:px-5 pt-3 space-y-2">
+      {(controlError || announcements.length > 0) && (
+        <div className="px-4 sm:px-6 pt-4 space-y-2">
+          {/* Fehlgeschlagener Gerätebefehl: Ursache als Störungs-Hinweis (docs/design-regeln.md,
+              Abschnitt 19), nicht als rote Färbung aller Tasten. */}
+          {controlError && <Notice tone="danger" compact role="alert" title={controlError} />}
           {announcements.map((a) => (
-            <div
-              key={a.id}
-              className={cn(
-                "flex items-start gap-3 rounded-2xl border px-4 py-3 shadow-lg",
-                dark
-                  ? "border-amber-500/40 bg-gradient-to-r from-amber-500/15 to-amber-500/5"
-                  : "border-amber-400 bg-amber-50",
-              )}
-            >
-              <div
-                className={cn(
-                  "flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl",
-                  dark ? "bg-amber-500/20 text-amber-300" : "bg-amber-200 text-amber-700",
-                )}
+            // Hinweis-Kachel in der Hinweisfarbe; das X sitzt oben rechts, auch auf dem Handy.
+            <div key={a.id} className="relative">
+              <Notice
+                tone="warning"
+                icon={Megaphone}
+                className="pr-14 sm:pr-18"
+                title={<span className="whitespace-pre-wrap break-words sm:text-base">{a.message}</span>}
               >
-                <Megaphone className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p
-                  className={cn(
-                    "text-sm sm:text-base font-semibold whitespace-pre-wrap break-words",
-                    dark ? "text-amber-100" : "text-amber-900",
-                  )}
-                >
-                  {a.message}
-                </p>
-                <p
-                  className={cn(
-                    "text-[10px] sm:text-xs mt-1 font-medium tabular-nums",
-                    dark ? "text-amber-300/80" : "text-amber-700",
-                  )}
-                >
+                <span className="font-medium tabular-nums">
                   {a.sourceLabel ? `${a.sourceLabel} · ` : ""}
                   {fmtTime(a.createdAt)}
-                </p>
-              </div>
-              <button
+                </span>
+              </Notice>
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => handleDismissAnnouncement(a.id)}
                 disabled={dismissingIds.has(a.id)}
                 title="Hinweis schliessen"
-                className={cn(
-                  "shrink-0 rounded-lg p-1.5 transition-colors disabled:opacity-50",
-                  dark
-                    ? "text-amber-200/80 hover:bg-amber-500/20 hover:text-amber-100"
-                    : "text-amber-700 hover:bg-amber-200",
-                )}
+                className="absolute right-2 top-2 size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
               >
                 {dismissingIds.has(a.id) ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="size-5 animate-spin" />
                 ) : (
-                  <X className="h-4 w-4" />
+                  <X className="size-5" />
                 )}
-              </button>
+              </Button>
             </div>
           ))}
         </div>
       )}
 
       {/* Content */}
-      <div className="flex-1 p-3 sm:p-5" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 h-full">
+      <div className="flex-1 p-4 sm:p-6 lg:flex lg:min-h-0 lg:flex-col" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+        {/* Handy und Tablet: Umschalter zwischen Scans und Tickets; ab lg stehen beide nebeneinander. */}
+        <Segmented
+          value={mobileTab}
+          onValueChange={setMobileTab}
+          aria-label="Ansicht"
+          stretch
+          // 48 px je Taste + 4 px Kapselrand = 56 px; ::after verlängert die Trefferfläche bis zum Rand.
+          className="mb-4 lg:hidden [&>button]:relative [&>button]:h-12 [&>button]:text-base [&>button]:after:absolute [&>button]:after:inset-x-0 [&>button]:after:-inset-y-1"
+          options={[
+            { value: "scans", label: <><ScanLine className="size-5" />Scans</> },
+            { value: "tickets", label: <><Ticket className="size-5" />Tickets</> },
+          ]}
+        />
+        <div className="grid grid-cols-1 lg:grid-cols-3 lg:grid-rows-[minmax(0,1fr)] lg:flex-1 lg:min-h-0 gap-4 sm:gap-5 h-full">
           {/* Scan Feed */}
-          <div className={cn("flex-col lg:col-span-2", mobileTab === "scans" ? "flex" : "hidden lg:flex")}>
-            <div className="flex items-center gap-2 mb-3">
-              <ScanLine className={cn("h-5 w-5", styles.sectionLabel)} />
-              <h2 className={cn("text-sm font-bold uppercase tracking-widest", styles.sectionLabel)}>Letzte Scans</h2>
-            </div>
+          <div className={cn("flex-col lg:col-span-2 lg:min-h-0", mobileTab === "scans" ? "flex" : "hidden lg:flex")}>
+            <SectionHeading title="Letzte Scans" icon={ScanLine} className="mb-3" />
             {scans.length === 0 && (
-              <div className={cn("rounded-2xl border p-12 text-center text-sm", styles.emptyBg)}>
-                Warte auf Scans…
-              </div>
+              <Card>
+                <EmptyState icon={ScanLine} title="Warte auf Scans…" />
+              </Card>
             )}
-            <div className="max-h-[calc(100dvh-9rem)] overflow-y-auto pr-1 monitor-scrollbar">
-              {/* Top 2 hero scans */}
+            <div className="max-h-[calc(100dvh-12rem)] sm:max-h-[calc(100dvh-13.5rem)] lg:max-h-none lg:min-h-0 overflow-y-auto pr-1 monitor-scrollbar">
+              {/* Top 2 hero scans: eigene Karten, ganz in der Ergebnisfarbe (docs/design-regeln.md, Abschnitt 20) */}
               {groupedScans.length > 0 && (
-                <div className="grid grid-cols-2 gap-3 mb-3" style={{ minHeight: "calc(50vh - 5rem)" }}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3" style={{ minHeight: "calc(50vh - 5rem)" }}>
                   {groupedScans.slice(0, 2).map((group) => {
-                    const rc = resultConfig[group.result];
+                    const rc = RESULT_CONFIG[group.result];
                     const Icon = rc.icon;
                     const isNew = group.scans.some((s) => newIds.has(s.id));
                     const scanCount = group.scans.length;
@@ -1161,14 +1127,15 @@ export default function PublicMonitorPage({ params }: Props) {
                       <div
                         key={group.scans[0].id}
                         className={cn(
-                          "flex flex-col rounded-3xl border-2 overflow-hidden transition-all duration-200",
+                          "glass-card flex flex-col border-2 overflow-hidden transition-all duration-200",
                           rc.bg,
-                          isNew && `animate-scan-flash ring-3 ring-offset-2 ${styles.ringOffset}`,
-                          isNew && rc.ring,
+                          // Markierung neuer Scans innen: Ein Ring außen würde vom Bildlauf-Rahmen abgeschnitten.
+                          isNew && "animate-scan-flash inset-ring-4",
+                          isNew && rc.ringInset,
                         )}
                       >
                         <div className="flex flex-col items-center justify-center flex-1 px-5 pt-5 pb-3 gap-3">
-                          <div className={cn("h-24 w-24 sm:h-28 sm:w-28 rounded-3xl flex items-center justify-center shrink-0 overflow-hidden shadow-lg", dark ? "bg-white/10" : "bg-slate-200")}>
+                          <div className="h-24 w-24 sm:h-28 sm:w-28 rounded-tile flex items-center justify-center shrink-0 overflow-hidden bg-glass-tile ring-1 ring-inset ring-glass-border">
                             {group.profileImage ? (
                               <img src={group.profileImage} alt="" className="h-full w-full object-cover" />
                             ) : (
@@ -1176,64 +1143,69 @@ export default function PublicMonitorPage({ params }: Props) {
                             )}
                           </div>
                           <div className="text-center min-w-0 w-full">
-                            <p className={cn("font-extrabold text-2xl sm:text-3xl leading-tight truncate", styles.scanName)}>
+                            <p className="font-extrabold text-2xl sm:text-3xl leading-tight truncate">
                               {group.personName || group.ticketName}
                             </p>
-                            {(() => { const a = calcAge(group.birthDate) ?? group.noteAge; return a != null ? <p className={cn("text-lg font-medium mt-0.5", dark ? "text-slate-400" : "text-slate-500")}>Alter: {a}</p> : null; })()}
+                            {(() => { const a = calcAge(group.birthDate) ?? group.noteAge; return a != null ? <p className="text-lg font-medium mt-0.5 text-muted-foreground tabular-nums">Alter: {a}</p> : null; })()}
                             {(group.ticketTypeName || (!group.ticketId && group.personName)) && (
-                              <p className={cn("text-base sm:text-lg font-semibold mt-1 truncate", styles.scanSub)}>
+                              <p className="text-base sm:text-lg font-semibold mt-1 truncate text-muted-foreground">
                                 {group.ticketTypeName || "Wakesys"}
                               </p>
                             )}
                             {(group.subscriptionName || group.endDate) && (
-                              <p className={cn("text-sm sm:text-base mt-0.5 truncate", styles.scanSub)}>
+                              <p className="text-sm sm:text-base mt-0.5 truncate text-muted-foreground tabular-nums">
                                 {group.subscriptionName}
                                 {group.subscriptionId && group.endDate && (
                                   <>{group.subscriptionName ? " · " : ""}bis {new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</>
                                 )}
                               </p>
                             )}
+                            {/* Pillen auf der getönten Karte: Tönung trägt den Zustand, die Schrift steht
+                                in foreground – Zustandsfarbe auf Zustandsfläche bliebe unter 4,5:1. */}
                             {aboExpired && (
-                              <span className={cn("inline-block mt-1.5 text-sm font-bold px-3 py-1 rounded-lg", dark ? "bg-rose-500/25 text-rose-200" : "bg-rose-200 text-rose-900")}>Abo abgelaufen</span>
+                              <Badge variant="danger" className="mt-1.5 px-3 py-1 text-sm font-bold text-foreground">Abo abgelaufen</Badge>
                             )}
                             {aboExpiring && (
-                              <span className={cn("inline-block mt-1.5 text-sm font-bold px-3 py-1 rounded-lg", dark ? "bg-amber-500/25 text-amber-200" : "bg-amber-200 text-amber-900")}>
+                              <Badge variant="warning" className="mt-1.5 px-3 py-1 text-sm font-bold text-foreground">
                                 Abo läuft ab {daysLeft === 0 ? "heute" : daysLeft === 1 ? "morgen" : `in ${daysLeft} Tagen`}
-                              </span>
+                              </Badge>
                             )}
+                            {/* Grund in Schriftfarbe: Die Zustandsfarbe trägt die ganze Karte;
+                                als Text auf der Tönung bliebe sie im Hellen unter 4,5:1. */}
                             {group.result !== "GRANTED" && (
-                              <p className={cn("text-base sm:text-xl font-bold mt-2 leading-snug", rc.text)}>
+                              <p className="text-base sm:text-xl font-bold mt-2 leading-snug">
                                 {group.denyReason || rc.label}
                               </p>
                             )}
                             {group.result === "GRANTED" && (
-                              <ScanLeaderBadges ticketId={group.ticketId} board={scanLeaders} dark={dark} size="lg" />
+                              <ScanLeaderBadges ticketId={group.ticketId} board={scanLeaders} size="lg" />
                             )}
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-2 px-5 pb-4 pt-1 flex-wrap">
                           <div className="flex items-center gap-2 flex-wrap">
                             {group.result === "GRANTED" && !group.ticketId && (
-                              <span className={cn("text-xs font-bold px-2.5 py-1 rounded-lg", dark ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>RFID Merge</span>
+                              <Badge variant="warning" className="px-2.5 py-1 font-bold text-foreground">RFID Merge</Badge>
                             )}
                             {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
-                              <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} size="lg" />
+                              <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} size="lg" />
                             )}
                             {scanCount > 1 && (
-                              <span className={cn("text-base font-mono font-bold px-3.5 py-1.5 rounded-xl tabular-nums", styles.scanCountBg)}>&times;{scanCount}</span>
+                              <Badge variant="secondary" className="px-3.5 py-1.5 text-base font-mono font-bold tabular-nums">&times;{scanCount}</Badge>
                             )}
                           </div>
-                          <ScanAgeTimer scanTime={group.latestScanTime} dark={dark} size="lg" />
+                          <ScanAgeTimer scanTime={group.latestScanTime} size="lg" />
                         </div>
                       </div>
                     );
                   })}
                 </div>
               )}
-              {/* Remaining scans */}
-              <div className="space-y-1.5">
+              {/* Remaining scans: eine Karte mit Zeilen statt einer Karte je Scan (docs/design-regeln.md, Abschnitt 22) */}
+              {groupedScans.length > 2 && (
+              <Card className="gap-1.5 p-2 sm:p-2.5">
               {groupedScans.slice(2).map((group) => {
-                const rc = resultConfig[group.result];
+                const rc = RESULT_CONFIG[group.result];
                 const Icon = rc.icon;
                 const isNew = group.scans.some((s) => newIds.has(s.id));
                 const scanCount = group.scans.length;
@@ -1246,15 +1218,15 @@ export default function PublicMonitorPage({ params }: Props) {
                   <div
                     key={group.scans[0].id}
                     className={cn(
-                      "flex items-center justify-between rounded-2xl border overflow-hidden transition-all duration-200",
+                      "glass-tile flex flex-wrap items-center justify-between gap-x-3 gap-y-2 overflow-hidden transition-all duration-200",
                       "px-4 py-3",
-                      rc.bg,
-                      isNew && `animate-scan-flash ring-2 ring-offset-1 ${styles.ringOffset}`,
+                      rc.tile,
+                      isNew && "animate-scan-flash ring-2 ring-offset-1 ring-offset-background",
                       isNew && rc.ring,
                     )}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={cn("h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden", dark ? "bg-white/10" : "bg-slate-200")}>
+                    <div className="flex min-w-0 flex-1 basis-40 items-center gap-3">
+                      <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0 overflow-hidden bg-glass-tile ring-1 ring-inset ring-glass-border">
                         {group.profileImage ? (
                           <img src={group.profileImage} alt="" className="h-full w-full object-cover" />
                         ) : (
@@ -1262,11 +1234,11 @@ export default function PublicMonitorPage({ params }: Props) {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className={cn("font-bold text-[15px] leading-tight truncate", styles.scanName)}>
+                        <p className="font-bold text-[15px] leading-tight truncate">
                           {group.personName || group.ticketName}
-                          {(() => { const a = calcAge(group.birthDate) ?? group.noteAge; return a != null ? <span className={cn("ml-1 text-xs font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
+                          {(() => { const a = calcAge(group.birthDate) ?? group.noteAge; return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground">({a})</span> : null; })()}
                         </p>
-                        <p className={cn("text-sm truncate mt-0.5", group.result !== "GRANTED" && group.denyReason ? (dark ? "text-rose-300" : "text-rose-700") : styles.scanSub)}>
+                        <p className={cn("text-sm truncate mt-0.5", group.result !== "GRANTED" && group.denyReason ? "text-foreground" : "text-muted-foreground")}>
                           {(() => {
                             const parts: string[] = [];
                             if (group.result !== "GRANTED" && group.denyReason) parts.push(group.denyReason);
@@ -1279,109 +1251,106 @@ export default function PublicMonitorPage({ params }: Props) {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    {/* Wie auf den Karten: getönte Pille, Schrift in foreground (Kontrast 4,5:1). */}
+                    <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                       {aboExpired && (
-                        <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", dark ? "bg-rose-500/20 text-rose-200 border border-rose-500/30" : "bg-rose-100 text-rose-700 border border-rose-200")}>Abo abgelaufen</span>
+                        <Badge variant="danger" className="font-bold text-foreground">Abo abgelaufen</Badge>
                       )}
                       {aboExpiring && (
-                        <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", dark ? "bg-amber-500/20 text-amber-200 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>
+                        <Badge variant="warning" className="font-bold text-foreground">
                           {daysLeft === 0 ? "Abo läuft heute ab" : daysLeft === 1 ? "Abo läuft morgen ab" : `Abo läuft in ${daysLeft}d ab`}
-                        </span>
+                        </Badge>
                       )}
                       {group.result === "GRANTED" && !group.ticketId && (
-                        <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", dark ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>RFID Merge</span>
+                        <Badge variant="warning" className="font-bold text-foreground">RFID Merge</Badge>
                       )}
                       {group.result === "GRANTED" && (
-                        <ScanLeaderBadges ticketId={group.ticketId} board={scanLeaders} dark={dark} />
+                        <ScanLeaderBadges ticketId={group.ticketId} board={scanLeaders} />
                       )}
                       {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
-                        <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} />
+                        <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} />
                       )}
                       {scanCount > 1 && (
-                        <span className={cn("text-xs font-mono font-bold px-2.5 py-1 rounded-lg tabular-nums", styles.scanCountBg)}>×{scanCount}</span>
+                        <Badge variant="secondary" className="px-2.5 py-1 font-mono font-bold tabular-nums">×{scanCount}</Badge>
                       )}
-                      <ScanAgeTimer scanTime={group.latestScanTime} dark={dark} />
+                      <ScanAgeTimer scanTime={group.latestScanTime} />
                     </div>
                   </div>
                 );
               })}
-              </div>
+              </Card>
+              )}
             </div>
           </div>
 
           {/* Right Side */}
-          <div className={cn("flex-col gap-4", mobileTab === "tickets" ? "flex" : "hidden lg:flex")}>
-            <LiveClock dark={dark} styles={styles} allPaused={allPaused} pauseToggling={pauseToggling || pausePreviewLoading} onClick={handlePauseAll} />
+          <div className={cn("flex-col gap-4 lg:min-h-0", mobileTab === "tickets" ? "flex" : "hidden lg:flex")}>
+            <LiveClock allPaused={allPaused} pauseToggling={pauseToggling || pausePreviewLoading} onClick={handlePauseAll} />
 
-            <div>
-              <label className="sr-only" htmlFor="monitor-ticket-search">Tickets durchsuchen</label>
-              <div
-                className={cn(
-                  "flex items-center gap-2 rounded-2xl border px-3 py-2.5",
-                  dark ? "border-slate-700 bg-slate-900/80" : "border-slate-300 bg-white",
-                )}
-              >
-                <Search className={cn("h-4 w-4 shrink-0", dark ? "text-slate-500" : "text-slate-400")} aria-hidden />
-                <input
-                  id="monitor-ticket-search"
-                  type="search"
-                  enterKeyHint="search"
-                  value={ticketSearch}
-                  onChange={(e) => setTicketSearch(e.target.value)}
-                  placeholder="Name, Abo oder Bändchen…"
-                  className={cn(
-                    "min-w-0 flex-1 bg-transparent text-sm outline-none",
-                    dark ? "text-white placeholder:text-slate-500" : "text-slate-900 placeholder:text-slate-400",
-                  )}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
+            {/* Tickets als eine Karte: Suche, Überschrift mit Zähler, Liste mit Kachel-Zeilen. */}
+            <Card className="gap-3 lg:min-h-0">
+              <CardContent>
+                <label className="sr-only" htmlFor="monitor-ticket-search">Tickets durchsuchen</label>
+                <div className="relative">
+                  {/* z-10: Das Glasfeld würde das Symbol sonst überdecken. */}
+                  <Search className="pointer-events-none absolute left-4 top-1/2 z-10 size-5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                  <Input
+                    id="monitor-ticket-search"
+                    type="search"
+                    enterKeyHint="search"
+                    value={ticketSearch}
+                    onChange={(e) => setTicketSearch(e.target.value)}
+                    placeholder="Name, Abo oder Bändchen…"
+                    className="h-14 pl-12 md:text-base"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
+              </CardContent>
+
+              <CardContent>
+                <SectionHeading
+                  title={ticketSearch.trim() ? "Suche" : "Aktuell"}
+                  icon={Ticket}
+                  aside={
+                    <Badge variant="secondary" className="font-mono tabular-nums">
+                      {ticketSearch.trim()
+                        ? `${filteredTickets.length}/${tickets.length}`
+                        : listedTickets.length}
+                    </Badge>
+                  }
                 />
-              </div>
-            </div>
+                {!ticketSearch.trim() && tickets.length > listedTickets.length && (
+                  <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                    {listedTickets.length === 0
+                      ? `${tickets.length} gültig – Suche nach Name oder Bändchen`
+                      : `Laufende Zeit, heutige Termine, letzte Scans · ${tickets.length} gültig insgesamt`}
+                  </p>
+                )}
+              </CardContent>
 
-            <div className="flex items-center gap-2">
-              <Ticket className={cn("h-5 w-5", styles.sectionLabel)} />
-              <h2 className={cn("text-sm font-bold uppercase tracking-widest", styles.sectionLabel)}>
-                {ticketSearch.trim() ? "Suche" : "Aktuell"}
-              </h2>
-              <span className={cn("text-xs font-mono font-bold border rounded-lg px-2 py-0.5 ml-auto", styles.ticketCountBorder)}>
-                {ticketSearch.trim()
-                  ? `${filteredTickets.length}/${tickets.length}`
-                  : listedTickets.length}
-              </span>
-            </div>
-            {!ticketSearch.trim() && tickets.length > listedTickets.length && (
-              <p className={cn("text-[11px] -mt-2", styles.sectionLabel)}>
-                {listedTickets.length === 0
-                  ? `${tickets.length} gültig – Suche nach Name oder Bändchen`
-                  : `Laufende Zeit, heutige Termine, letzte Scans · ${tickets.length} gültig insgesamt`}
-              </p>
-            )}
-
-            <div className="space-y-1.5 max-h-[calc(100dvh-26rem)] lg:max-h-[calc(100dvh-22rem)] overflow-y-auto pr-1 monitor-scrollbar flex-1">
+            <div className="mx-2 sm:mx-2.5 space-y-1.5 max-h-[calc(100dvh-26rem)] sm:max-h-[calc(100dvh-27.5rem)] lg:max-h-none lg:min-h-0 overflow-y-auto pr-1 monitor-scrollbar">
               {tickets.length === 0 && (
-                <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>Keine aktiven Tickets</p>
+                <EmptyState compact icon={Ticket} title="Keine aktiven Tickets" />
               )}
               {tickets.length > 0 && filteredTickets.length === 0 && (
-                <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>
-                  Keine Treffer für „{ticketSearch.trim()}“
-                </p>
+                <EmptyState compact icon={Search} title={`Keine Treffer für „${ticketSearch.trim()}“`} />
               )}
               {tickets.length > 0 && filteredTickets.length > 0 && listedTickets.length === 0 && !ticketSearch.trim() && (
-                <p className={cn("text-sm text-center py-6 px-2", styles.sectionLabel)}>
-                  Gerade niemand mit laufender Zeit oder heutigem Termin. Suche oben nach Name oder Bändchen.
-                </p>
+                <EmptyState
+                  compact
+                  icon={Clock}
+                  title="Gerade niemand mit laufender Zeit oder heutigem Termin."
+                  description="Suche oben nach Name oder Bändchen."
+                />
               )}
               {ticketListItems.map((item) => {
                 if (item.kind === "header") {
                   return (
                     <div
                       key={item.key}
-                      className={cn(
-                        "px-1 pt-2 pb-1 text-xs font-bold uppercase tracking-wider",
-                        styles.sectionLabel,
-                      )}
+                      className="text-label px-1 pt-2 pb-1 tabular-nums"
                     >
                       {item.label}
                     </div>
@@ -1420,29 +1389,31 @@ export default function PublicMonitorPage({ params }: Props) {
                 const isPaused = ticket.status === "PAUSED";
                 const allRedeemed = isGroup && group.redeemedPersonCount >= group.personCount;
 
+                // Zustand als Tönung der Kachel (docs/design-regeln.md, Abschnitt 3):
+                // Pause und „läuft ab“ = warning, abgelaufen = destructive, eingecheckt = success.
                 const cardBg = isScanning
-                  ? dark ? "bg-emerald-950 border-emerald-500/50 ring-1 ring-emerald-500/30" : "bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400/30"
+                  ? "border-success/60 bg-linear-to-br from-success/28 to-success/[0.08]"
                   : isPaused
-                    ? dark ? "bg-orange-950/40 border-orange-700/40 opacity-70" : "bg-orange-50/80 border-orange-300 opacity-70"
+                    ? cn(ROW_TINT.warning, "opacity-70")
                     : isExpired || durationExpired
-                      ? dark ? "bg-rose-950/60 border-rose-700/50" : "bg-rose-50 border-rose-300"
+                      ? ROW_TINT.danger
                       : isWarning || durationWarning
-                        ? dark ? "bg-amber-950/60 border-amber-700/50" : "bg-amber-50 border-amber-300"
+                        ? ROW_TINT.warning
                         : checkedIn
-                          ? dark ? "bg-emerald-950/40 border-emerald-700/40" : "bg-emerald-50/80 border-emerald-300"
-                          : styles.ticketBg;
+                          ? ROW_TINT.success
+                          : "";
 
                 const badgeStyle = isPaused
-                  ? dark ? "bg-orange-500/25 text-orange-200 border-orange-500/30" : "bg-orange-200 text-orange-900 border-orange-400"
+                  ? "warning"
                   : isExpired || durationExpired
-                    ? dark ? "bg-rose-500/25 text-rose-200 border-rose-500/30" : "bg-rose-200 text-rose-900 border-rose-400"
+                    ? "danger"
                     : isWarning || durationWarning
-                      ? dark ? "bg-amber-500/25 text-amber-200 border-amber-500/30" : "bg-amber-200 text-amber-900 border-amber-400"
+                      ? "warning"
                       : checkedIn
-                        ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
+                        ? "success"
                         : ticket.status === "VALID"
-                          ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
-                          : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400";
+                          ? "success"
+                          : "info";
 
                 const badgeLabel = isPaused
                   ? "Pausiert"
@@ -1479,50 +1450,49 @@ export default function PublicMonitorPage({ params }: Props) {
                     key={isGroup ? `g:${memberIds.join(",")}` : `t:${ticket.id}`}
                     onClick={() => handleTicketClick(ticket)}
                     className={cn(
-                      "flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-all duration-150 cursor-pointer select-none active:scale-[0.98]",
+                      "glass-tile press flex items-center gap-3 px-3 py-2.5 cursor-pointer select-none",
                       cardBg,
-                      !isScanning && (dark ? "hover:bg-slate-800" : "hover:bg-slate-100"),
+                      !isScanning && "hover:bg-glass-strong",
                     )}
                   >
-                    <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden", styles.ticketAvatarBg)}>
-                      {ticket.hasPhoto ? (
-                        // Bild wird beim Scroll per native lazy-loading über den
-                        // /photo-Endpoint nachgeladen (statt Base64 im Poll).
-                        // Der Endpoint antwortet mit JSON, nicht mit Image – deshalb
-                        // lazy via einen TicketAvatar-Helper darunter.
+                    {ticket.hasPhoto ? (
+                      <div className="h-10 w-10 rounded-control shrink-0 overflow-hidden bg-glass-tile ring-1 ring-inset ring-glass-border">
+                        {/* Bild wird beim Scroll per native lazy-loading über den
+                            /photo-Endpoint nachgeladen (statt Base64 im Poll).
+                            Der Endpoint antwortet mit JSON, nicht mit Image – deshalb
+                            lazy via einen TicketAvatar-Helper darunter. */}
                         <TicketAvatarLazy token={token} ticketId={ticket.id} className="h-full w-full object-cover" />
-                      ) : (
-                        <Users className={cn("h-4 w-4", styles.ticketAvatarIcon)} />
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <IconChip icon={Users} size="lg" />
+                    )}
                     <div className="min-w-0 flex-1">
-                      <p className={cn("text-sm font-bold truncate", styles.ticketName)}>
+                      <p className="text-sm font-bold truncate">
                         {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                        {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className={cn("ml-1.5 text-xs font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
+                        {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">({a})</span> : null; })()}
                       </p>
-                      <p className={cn("text-xs font-medium truncate", styles.ticketSub)}>
+                      <p className="text-xs font-medium truncate text-muted-foreground tabular-nums">
                         {subParts.length > 0
                           ? subParts.join(" · ")
-                          : <span className={dark ? "text-slate-500" : "text-slate-400"}>Ticket</span>}
+                          : <span className="text-muted-foreground">Ticket</span>}
                       </p>
                     </div>
                     <div className="shrink-0 flex flex-col items-end gap-0.5">
-                      <Badge className={cn("text-[11px] px-2 py-0.5 font-bold", badgeStyle)}>
+                      {/* Die Zeile trägt den Zustand schon als Tönung; die Pille bleibt getönt,
+                          die Schrift steht in foreground (Kontrast 4,5:1). */}
+                      <Badge variant={badgeStyle} className="text-[11px] font-bold text-foreground">
                         {badgeLabel}
                       </Badge>
                       {ticket.validityType === "DURATION" && ticket.validityDurationMinutes && ticket.firstScanAt && (
                         isPaused ? (
-                          <span className={cn(
-                            "text-xs font-mono px-2.5 py-1 rounded-lg tabular-nums font-bold",
-                            dark ? "bg-orange-500/25 text-orange-200" : "bg-orange-200 text-orange-900"
-                          )}>
-                            ⏸
-                          </span>
+                          // Pause als Lucide-Symbol statt Emoji (docs/design-regeln.md, Abschnitt 4).
+                          <Badge variant="warning" className="px-2.5 py-1">
+                            <Pause aria-hidden />
+                          </Badge>
                         ) : (
                           <DurationCountdown
                             firstScanAt={ticket.firstScanAt}
                             durationMinutes={ticket.validityDurationMinutes}
-                            dark={dark}
                           />
                         )
                       )}
@@ -1531,6 +1501,7 @@ export default function PublicMonitorPage({ params }: Props) {
                 );
               })}
             </div>
+            </Card>
           </div>
         </div>
       </div>
@@ -1539,91 +1510,66 @@ export default function PublicMonitorPage({ params }: Props) {
           Trefferzahl, die der Klick anfasst. Wird vom Public-Monitor
           ausgeloest, wenn der Nutzer auf die Uhr ("Alle pausieren") klickt. */}
       {pauseConfirm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
-          onClick={() => { if (!pauseToggling) setPauseConfirm(null); }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className={cn(
-              "w-full max-w-md rounded-3xl border shadow-2xl p-6",
-              dark ? "bg-slate-900 border-slate-700 text-white" : "bg-white border-slate-200 text-slate-900",
-            )}
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className={cn(
-                "h-12 w-12 rounded-2xl flex items-center justify-center shrink-0",
-                dark ? "bg-orange-500/20 text-orange-300" : "bg-orange-100 text-orange-700",
-              )}>
-                <Pause className="h-6 w-6" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-lg font-bold leading-tight">
-                  {pauseConfirm.isGlobal ? "Massen-Pause nicht möglich" : "Alle Tickets pausieren?"}
-                </h3>
-                <p className={cn("text-xs mt-0.5", dark ? "text-slate-400" : "text-slate-500")}>
-                  Monitor „{monitorName}“
-                </p>
-              </div>
-            </div>
+        // Massen-Pause sperrt alle Tickets des Bereichs: AlertDialog mit destructive-Taste
+        // (docs/design-regeln.md, Abschnitt 18), schließt nicht beim Tippen daneben. Er rendert
+        // in <body>, also außerhalb der Monitor-Wurzel – deshalb trägt der Inhalt das Farbschema selbst.
+        <AlertDialog open onOpenChange={(open) => { if (!open && !pauseToggling) setPauseConfirm(null); }}>
+          <AlertDialogContent className={themeClass}>
+            <AlertDialogHeader className="sm:grid-cols-[auto_1fr]">
+              <AlertDialogMedia className="text-warning">
+                <Pause strokeWidth={2.2} />
+              </AlertDialogMedia>
+              <AlertDialogTitle>
+                {pauseConfirm.isGlobal ? "Massen-Pause nicht möglich" : "Alle Tickets pausieren?"}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-xs">
+                Monitor „{monitorName}“
+              </AlertDialogDescription>
+            </AlertDialogHeader>
 
-            <div className={cn(
-              "rounded-2xl border px-4 py-4 mb-4",
-              pauseConfirm.isGlobal
-                ? (dark ? "bg-rose-950/40 border-rose-800" : "bg-rose-50 border-rose-200")
-                : (dark ? "bg-slate-950/50 border-slate-700" : "bg-slate-50 border-slate-200"),
-            )}>
-              {pauseConfirm.isGlobal ? (
-                <p className={cn(
-                  "text-sm font-semibold",
-                  dark ? "text-rose-300" : "text-rose-700",
-                )}>
-                  Dieser Monitor ist keinem Bereich zugeordnet. Eine Massen-Pause
-                  würde account-weit ALLE Tickets pausieren und ist deshalb aus
-                  Sicherheitsgründen deaktiviert. Bitte einen bereichsspezifischen
-                  Monitor (z.&nbsp;B. Seilbahn A) zum Pausieren verwenden.
-                </p>
-              ) : (
-                <p className={cn("text-sm font-medium", dark ? "text-slate-300" : "text-slate-700")}>
+            {pauseConfirm.isGlobal ? (
+              <Notice
+                tone="danger"
+                title={
+                  <>
+                    Dieser Monitor ist keinem Bereich zugeordnet. Eine Massen-Pause
+                    würde account-weit ALLE Tickets pausieren und ist deshalb aus
+                    Sicherheitsgründen deaktiviert. Bitte einen bereichsspezifischen
+                    Monitor (z.&nbsp;B. Seilbahn A) zum Pausieren verwenden.
+                  </>
+                }
+              />
+            ) : (
+              <div className="glass-tile px-4 py-4">
+                <p className="text-sm font-medium">
                   Es werden{" "}
-                  <span className={cn(
-                    "font-mono font-extrabold tabular-nums text-base",
-                    dark ? "text-orange-300" : "text-orange-700",
-                  )}>
+                  <span className="font-mono font-extrabold tabular-nums text-base text-warning">
                     {pauseConfirm.count}
                   </span>{" "}
                   Tickets pausiert.
                 </p>
-              )}
-            </div>
+              </div>
+            )}
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPauseConfirm(null)}
-                disabled={pauseToggling}
-                className={cn(
-                  "flex-1 py-3 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-50",
-                  dark ? "bg-slate-800 hover:bg-slate-700 text-slate-200" : "bg-slate-100 hover:bg-slate-200 text-slate-700",
-                )}
-              >
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={pauseToggling} className="h-14 px-6 text-base">
                 {pauseConfirm.isGlobal ? "Verstanden" : "Abbrechen"}
-              </button>
+              </AlertDialogCancel>
               {!pauseConfirm.isGlobal && (
-                <button
-                  onClick={confirmPauseAll}
+                <AlertDialogAction
+                  variant="destructive"
+                  className="h-14 px-6 text-base"
+                  // Offen lassen, bis die Pause durch ist; confirmPauseAll schließt danach selbst.
+                  onClick={(e) => { e.preventDefault(); void confirmPauseAll(); }}
                   disabled={pauseToggling || pauseConfirm.count === 0}
-                  className={cn(
-                    "flex-[1.4] py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50",
-                    dark ? "bg-orange-600 hover:bg-orange-500 text-white" : "bg-orange-600 hover:bg-orange-500 text-white",
-                  )}
                 >
                   {pauseToggling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
                   {pauseConfirm.count === 0 ? "Keine Tickets" : `${pauseConfirm.count} pausieren`}
-                </button>
+                </AlertDialogAction>
               )}
-            </div>
-          </div>
-        </div>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       {/* Mobile Ticket Detail Overlay */}
@@ -1631,8 +1577,6 @@ export default function PublicMonitorPage({ params }: Props) {
         <TicketDetailOverlay
           ticket={selectedTicket}
           scans={scans}
-          dark={dark}
-          styles={styles}
           scanningId={scanningId}
           onScan={() => handleTicketScan(selectedTicket.id)}
           onClose={() => setSelectedTicket(null)}
@@ -1654,22 +1598,22 @@ function calcAge(birthDate: string | null | undefined): number | null {
   return age;
 }
 
+// Die Zeitspanne steht als Text in der Pille; Farbe trägt hier keine Bedeutung
+// (docs/design-regeln.md, Abschnitt 3: keine Farbe als Dekoration).
 const SCAN_LEADER_PERIODS = [
-  { key: "day" as const, label: "Tag", title: "Meiste Scans heute", dark: "bg-amber-500/25 text-amber-100 border-amber-400/40", light: "bg-amber-100 text-amber-900 border-amber-300" },
-  { key: "week" as const, label: "Woche", title: "Meiste Scans diese Woche", dark: "bg-sky-500/25 text-sky-100 border-sky-400/40", light: "bg-sky-100 text-sky-900 border-sky-300" },
-  { key: "month" as const, label: "Monat", title: "Meiste Scans diesen Monat", dark: "bg-violet-500/25 text-violet-100 border-violet-400/40", light: "bg-violet-100 text-violet-900 border-violet-300" },
-  { key: "year" as const, label: "Jahr", title: "Meiste Scans in diesem Jahr", dark: "bg-yellow-500/25 text-yellow-100 border-yellow-400/40", light: "bg-yellow-100 text-yellow-900 border-yellow-300" },
+  { key: "day" as const, label: "Tag", title: "Meiste Scans heute" },
+  { key: "week" as const, label: "Woche", title: "Meiste Scans diese Woche" },
+  { key: "month" as const, label: "Monat", title: "Meiste Scans diesen Monat" },
+  { key: "year" as const, label: "Jahr", title: "Meiste Scans in diesem Jahr" },
 ];
 
 function ScanLeaderBadges({
   ticketId,
   board,
-  dark,
   size,
 }: {
   ticketId: number | null;
   board: ScanLeaderBoard | null;
-  dark: boolean;
   size?: "lg";
 }) {
   if (!ticketId || !board) return null;
@@ -1682,19 +1626,20 @@ function ScanLeaderBadges({
   return (
     <div className={cn("flex flex-wrap gap-1.5", size === "lg" && "justify-center mt-1.5")}>
       {items.map((period) => (
-        <span
+        // Glas-Pille; der Pokal trägt den Akzent.
+        <Badge
           key={period.key}
+          variant="secondary"
           title={`${period.title} (${period.count})`}
           className={cn(
-            "inline-flex items-center gap-1 font-bold border rounded-lg",
-            size === "lg" ? "text-xs px-2 py-1" : "text-[9px] px-1.5 py-0.5",
-            dark ? period.dark : period.light,
+            "font-bold",
+            size === "lg" ? "text-xs px-2 py-1 [&>svg]:size-3.5" : "text-[10px] px-1.5 py-0.5 [&>svg]:size-2.5",
           )}
         >
-          <Trophy className={size === "lg" ? "h-3.5 w-3.5" : "h-2.5 w-2.5"} aria-hidden />
+          <Trophy className="text-primary" aria-hidden />
           {period.label}
           {size === "lg" ? <span className="tabular-nums opacity-80">{period.count}</span> : null}
-        </span>
+        </Badge>
       ))}
     </div>
   );
@@ -1714,7 +1659,7 @@ function formatExpiredSince(expiredForMs: number): string {
   return days === 1 ? "abgelaufen seit 1 Tag" : `abgelaufen seit ${days} Tagen`;
 }
 
-function DurationCountdown({ firstScanAt, durationMinutes, dark, size }: { firstScanAt: string; durationMinutes: number; dark: boolean; size?: "lg" }) {
+function DurationCountdown({ firstScanAt, durationMinutes, size }: { firstScanAt: string; durationMinutes: number; size?: "lg" }) {
   const [remaining, setRemaining] = useState("");
   const [expired, setExpired] = useState(false);
 
@@ -1740,28 +1685,30 @@ function DurationCountdown({ firstScanAt, durationMinutes, dark, size }: { first
 
   const isLg = size === "lg";
 
+  // Restzeit als Pille: läuft = info, abgelaufen = danger. Sie steht meist auf getönten
+  // Karten und Zeilen – die Tönung trägt den Zustand, die Schrift bleibt foreground (4,5:1).
   return (
-    <span className={cn(
-      "tabular-nums font-bold rounded-xl flex items-center gap-1.5",
-      expired ? "font-sans" : "font-mono",
-      isLg ? "text-xl sm:text-2xl px-4 py-2" : "text-xs px-2.5 py-1 rounded-lg",
-      expired
-        ? dark ? "bg-rose-500/25 text-rose-200" : "bg-rose-200 text-rose-900"
-        : dark ? "bg-violet-500/25 text-violet-200" : "bg-violet-200 text-violet-900"
-    )}>
-      {isLg && <Clock className={cn("h-5 w-5 sm:h-6 sm:w-6", expired ? "text-rose-300" : "text-violet-300")} />}
+    <Badge
+      variant={expired ? "danger" : "info"}
+      className={cn(
+        "tabular-nums font-bold text-foreground",
+        expired ? "font-sans" : "font-mono",
+        isLg ? "text-xl sm:text-2xl px-4 py-2 gap-1.5 whitespace-normal [&>svg]:size-5 sm:[&>svg]:size-6" : "text-xs px-2.5 py-1",
+      )}
+    >
+      {isLg && <Clock aria-hidden />}
       {remaining}
-    </span>
+    </Badge>
   );
 }
 
 /**
  * Zeigt an, wie lange ein Scan zurückliegt. Frische Scans (< 5 Min) laufen
- * sekündlich live mit ("vor 12 Sek.") und werden farblich hervorgehoben,
+ * sekündlich live mit ("vor 12 Sek.") und stehen fett in Schriftfarbe,
  * damit der letzte Scan sofort erkennbar ist. Ältere Scans fallen auf die
  * absolute Uhrzeit zurück, damit der genaue Zeitpunkt nachvollziehbar bleibt.
  */
-function ScanAgeTimer({ scanTime, dark, size }: { scanTime: string; dark: boolean; size?: "lg" }) {
+function ScanAgeTimer({ scanTime, size }: { scanTime: string; size?: "lg" }) {
   const [, force] = useState(0);
   const startMs = new Date(scanTime).getTime();
   const ageMs = Date.now() - startMs;
@@ -1777,7 +1724,7 @@ function ScanAgeTimer({ scanTime, dark, size }: { scanTime: string; dark: boolea
 
   if (!isFresh) {
     return (
-      <span className={cn(isLg ? "text-lg" : "text-sm", "tabular-nums font-mono font-semibold", dark ? "text-slate-300" : "text-slate-600")}>
+      <span className={cn(isLg ? "text-lg" : "text-sm", "tabular-nums font-mono font-semibold text-muted-foreground")}>
         {fmtTime(scanTime)}
       </span>
     );
@@ -1788,8 +1735,11 @@ function ScanAgeTimer({ scanTime, dark, size }: { scanTime: string; dark: boolea
     ? `vor ${secs} Sek.`
     : `vor ${Math.floor(secs / 60)} Min. ${secs % 60} Sek.`;
 
+  // Frisch: die mitlaufende Zeit fett in Schriftfarbe – lesbar auf getönten Ergebnis-Karten
+  // (Kontrast 4,5:1). Kein grüner Pulspunkt: Grün hieße auf einer roten Karte etwas anderes,
+  // und gepulst wird nur der Live-Punkt (docs/design-regeln.md, Abschnitte 3 und 9).
   return (
-    <span className={cn(isLg ? "text-lg" : "text-sm", "tabular-nums font-mono font-bold", dark ? "text-emerald-300" : "text-emerald-700")}>
+    <span className={cn(isLg ? "text-lg" : "text-sm", "tabular-nums font-mono font-bold text-foreground")}>
       {label}
     </span>
   );
@@ -1852,8 +1802,6 @@ function TicketAvatarLazy({
 function TicketDetailOverlay({
   ticket,
   scans,
-  dark,
-  styles,
   scanningId,
   onScan,
   onClose,
@@ -1862,8 +1810,6 @@ function TicketDetailOverlay({
 }: {
   ticket: TicketInfo;
   scans: Scan[];
-  dark: boolean;
-  styles: Record<string, string>;
   scanningId: number | null;
   onScan: () => void;
   onClose: () => void;
@@ -1948,14 +1894,18 @@ function TicketDetailOverlay({
   ];
 
   return (
-    <div className={cn("fixed inset-0 z-50 flex flex-col", styles.page)}>
-      <header className={cn("border-b px-4 py-3 flex items-center gap-3", styles.header)}>
-        <button onClick={onClose} className={cn("p-2 -ml-2 rounded-xl", styles.modeBtnBg)}>
-          <ChevronLeft className="h-5 w-5" />
-        </button>
+    // Vollbild über dem Monitor (Handy und Tablet); das Farbschema erbt es von der Monitor-Wurzel.
+    <div className="fixed inset-0 z-50 flex flex-col page-ambient text-foreground">
+      <header
+        className="glass-bar border-b border-border px-4 py-3 flex items-center gap-3"
+        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+      >
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Zurück" className="-ml-2 size-14 rounded-full">
+          <ChevronLeft className="size-6" />
+        </Button>
         <div className="min-w-0 flex-1">
-          <h2 className={cn("font-bold truncate", styles.headerTitle)}>{name}</h2>
-          <p className={cn("text-xs", styles.headerSub)}>
+          <h2 className="font-semibold truncate">{name}</h2>
+          <p className="text-xs text-muted-foreground">
             {headerSubParts.length > 0 ? headerSubParts.join(" · ") : "Ticket"}
           </p>
         </div>
@@ -1963,188 +1913,174 @@ function TicketDetailOverlay({
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 monitor-scrollbar">
         {/* Ticket Info */}
-        <div className={cn("rounded-2xl border p-4 flex items-center gap-4", styles.ticketBg)}>
+        <Card className="flex-row items-center gap-4 px-4">
           {currentImage ? (
-            <img src={currentImage} alt="" className={cn("h-16 w-16 rounded-2xl object-cover shrink-0 ring-1", styles.imgRing)} />
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={currentImage} alt="" className="h-16 w-16 rounded-tile object-cover shrink-0 ring-1 ring-glass-border" />
           ) : (
-            <div className={cn("h-16 w-16 rounded-2xl flex items-center justify-center shrink-0", styles.ticketAvatarBg)}>
-              <Users className={cn("h-6 w-6", styles.ticketAvatarIcon)} />
+            <div className="h-16 w-16 rounded-tile flex items-center justify-center shrink-0 bg-glass-tile ring-1 ring-inset ring-glass-border">
+              <Users className="h-6 w-6 text-muted-foreground" />
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className={cn("text-lg font-bold", styles.ticketName)}>
+            <p className="text-lg font-bold">
               {name}
-              {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className={cn("ml-1.5 text-sm font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a} J.)</span> : null; })()}
+              {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1.5 text-sm font-normal text-muted-foreground tabular-nums">({a} J.)</span> : null; })()}
             </p>
-            <p className={cn("text-sm", styles.ticketSub)}>
+            <p className="text-sm text-muted-foreground">
               {typeLine ?? "Ticket"}
             </p>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <Badge className={cn(
-                "text-xs px-2 py-0.5 font-bold",
-                ticket.status === "PAUSED"
-                  ? dark ? "bg-orange-500/25 text-orange-200 border-orange-500/30" : "bg-orange-200 text-orange-900 border-orange-400"
-                  : ticket.status === "VALID"
-                    ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
-                    : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400"
-              )}>
+              <Badge
+                variant={ticket.status === "PAUSED" ? "warning" : ticket.status === "VALID" ? "success" : "info"}
+                className="font-bold"
+              >
                 {ticket.status === "PAUSED" ? "Pausiert" : ticket.status === "VALID" ? "Gültig" : "Eingelöst"}
               </Badge>
               {startStr && endStr && (
-                <span className={cn("text-xs", styles.ticketSub)}>{startStr} – {endStr}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">{startStr} – {endStr}</span>
               )}
             </div>
           </div>
-        </div>
+        </Card>
 
-        {/* Checkin Button */}
-        <button
+        {/* Checkin Button: Primärtaste; nach dem Einchecken kurz in der Ergebnisfarbe. */}
+        <Button
           onClick={onScan}
           disabled={isScanning}
           className={cn(
-            "w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 transition-all active:scale-[0.98]",
-            isScanning
-              ? dark ? "bg-emerald-800 text-emerald-200" : "bg-emerald-200 text-emerald-900"
-              : dark ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-white",
+            "h-15 w-full text-lg font-bold",
+            isScanning && "bg-success text-success-foreground shadow-none hover:bg-success disabled:opacity-100",
           )}
         >
-          <LogIn className="h-5 w-5" />
+          <LogIn className="size-5" />
           {isScanning ? "Eingecheckt!" : "Einchecken"}
-        </button>
+        </Button>
 
-        {/* Pause Button */}
+        {/* Pause Button: Pause ist ein Hinweis-Zustand (warning). */}
         {!pauseOpen ? (
-          <button
+          <Button
+            variant="outline"
             onClick={() => setPauseOpen(true)}
-            className={cn(
-              "w-full py-3 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]",
-              dark ? "bg-orange-600/20 hover:bg-orange-600/30 text-orange-300 border border-orange-500/30" : "bg-orange-100 hover:bg-orange-200 text-orange-800 border border-orange-300",
-            )}
+            className="h-14 w-full font-semibold border-warning/40 text-warning hover:bg-warning/10"
           >
             <Pause className="h-4 w-4" />
             Pausieren
-          </button>
+          </Button>
         ) : (
-          <div className={cn("rounded-2xl border p-4 space-y-3", dark ? "border-orange-500/30 bg-orange-950/20" : "border-orange-300 bg-orange-50")}>
+          <Card className="gap-3 px-4">
             <div className="flex items-center gap-2">
-              <Pause className={cn("h-4 w-4", dark ? "text-orange-400" : "text-orange-600")} />
-              <p className={cn("text-sm font-bold", dark ? "text-orange-300" : "text-orange-800")}>Ticket pausieren</p>
+              <Pause className="h-4 w-4 text-warning" />
+              <p className="text-sm font-bold">Ticket pausieren</p>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               {durationOptions.map((opt) => (
-                <button
+                <Button
                   key={opt.value}
+                  variant="outline"
+                  aria-pressed={pauseDuration === opt.value}
                   onClick={() => setPauseDuration(pauseDuration === opt.value ? null : opt.value)}
                   className={cn(
-                    "py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95",
-                    pauseDuration === opt.value
-                      ? dark ? "bg-orange-600 text-white" : "bg-orange-600 text-white"
-                      : dark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+                    "h-14 font-semibold",
+                    pauseDuration === opt.value && "border-primary/60 bg-primary/15 ring-1 ring-inset ring-primary/40 hover:bg-primary/20",
                   )}
                 >
                   {opt.label}
-                </button>
+                </Button>
               ))}
             </div>
 
-            <input
+            <Input
               type="text"
               value={pauseReason}
               onChange={(e) => setPauseReason(e.target.value)}
               placeholder="Begründung (optional)"
-              className={cn(
-                "w-full rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50",
-                dark ? "bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500" : "bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400",
-              )}
+              className="h-14"
             />
 
-            <div className="flex gap-2">
-              <button
+            {/* Wie ein Dialog-Fuß (Abschnitt 16): Pausieren rechts, auf dem Handy oben in voller
+                Breite; destructive wie bei der Massen-Pause, weil das Ticket gesperrt wird. */}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                onClick={() => { setPauseOpen(false); setPauseDuration(null); setPauseReason(""); }}
+                className="h-14 px-6 font-semibold"
+              >
+                Abbrechen
+              </Button>
+              <Button
+                variant="destructive"
                 onClick={handlePause}
                 disabled={!pauseDuration || pauseLoading}
-                className={cn(
-                  "flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50",
-                  dark ? "bg-orange-600 hover:bg-orange-500 text-white" : "bg-orange-600 hover:bg-orange-500 text-white",
-                )}
+                className="h-14 px-6 font-bold"
               >
                 {pauseLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
                 Pausieren
-              </button>
-              <button
-                onClick={() => { setPauseOpen(false); setPauseDuration(null); setPauseReason(""); }}
-                className={cn(
-                  "py-3 px-5 rounded-xl font-semibold text-sm transition-all active:scale-95",
-                  dark ? "bg-slate-800 hover:bg-slate-700 text-slate-300" : "bg-slate-100 hover:bg-slate-200 text-slate-700",
-                )}
-              >
-                Abbrechen
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Photo Button */}
-        <button
+        <Button
+          variant="secondary"
           onClick={() => setCameraOpen(true)}
           disabled={photoSaving}
-          className={cn(
-            "w-full py-3 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]",
-            dark ? "bg-slate-800 hover:bg-slate-700 text-slate-300" : "bg-slate-100 hover:bg-slate-200 text-slate-700",
-          )}
+          className="h-14 w-full font-semibold"
         >
           {photoSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
           Foto {currentImage ? "ändern" : "aufnehmen"}
-        </button>
+        </Button>
 
         {/* Scan History */}
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <ScanLine className={cn("h-4 w-4", styles.sectionLabel)} />
-            <h3 className={cn("text-xs font-bold uppercase tracking-widest", styles.sectionLabel)}>Scan-Verlauf</h3>
-            <span className={cn("text-xs font-mono font-bold border rounded-lg px-1.5 py-0.5 ml-auto", styles.ticketCountBorder)}>{ticketScans.length}</span>
-          </div>
+          <SectionHeading
+            title="Scan-Verlauf"
+            icon={ScanLine}
+            aside={<Badge variant="secondary" className="font-mono tabular-nums">{ticketScans.length}</Badge>}
+            className="mb-3"
+          />
           {ticketScans.length === 0 ? (
-            <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>Noch keine Scans</p>
+            <Card>
+              <EmptyState compact icon={ScanLine} title="Noch keine Scans" />
+            </Card>
           ) : (
-            <div className="space-y-1.5">
+            <Card className="gap-1.5 p-2 sm:p-2">
               {ticketScans.map((scan) => {
-                const isGranted = scan.result === "GRANTED";
+                // Gleiche Farbe, gleiches Symbol wie im Feed: geschützt = warning, nicht rot (Abschnitt 3).
+                const rc = RESULT_CONFIG[scan.result];
+                const Icon = rc.icon;
                 return (
                   <div
                     key={scan.id}
                     className={cn(
-                      "flex items-center justify-between rounded-xl border px-3 py-2.5",
-                      isGranted ? styles.scanGranted : styles.scanDenied,
+                      "glass-tile flex items-center justify-between gap-3 px-3 py-2.5",
+                      rc.tile,
                     )}
                   >
-                    <div className="flex items-center gap-2.5">
-                      {isGranted ? (
-                        <CheckCircle2 className={cn("h-5 w-5 shrink-0", dark ? "text-emerald-400" : "text-emerald-600")} />
-                      ) : (
-                        <XCircle className={cn("h-5 w-5 shrink-0", dark ? "text-rose-400" : "text-rose-600")} />
-                      )}
-                      <div>
-                        <p className={cn("text-sm font-semibold", styles.scanName)}>
-                          {isGranted ? "Erlaubt" : (scanDenyReasonLabel(scan.note) || "Abgelehnt")}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Icon className={cn("h-5 w-5 shrink-0", rc.text)} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">
+                          {scan.result === "GRANTED" ? rc.label : (scanDenyReasonLabel(scan.note) || rc.label)}
                         </p>
-                        <p className={cn("text-xs", styles.scanSub)}>
+                        <p className="text-xs text-muted-foreground">
                           {scan.device?.name ?? "Monitor"}
                         </p>
                       </div>
                     </div>
-                    <ScanAgeTimer scanTime={scan.scanTime} dark={dark} />
+                    <ScanAgeTimer scanTime={scan.scanTime} />
                   </div>
                 );
               })}
-            </div>
+            </Card>
           )}
         </div>
       </div>
 
       {cameraOpen && (
         <CameraCapture
-          dark={dark}
           onCapture={handleCapture}
           onClose={() => setCameraOpen(false)}
         />
@@ -2153,7 +2089,7 @@ function TicketDetailOverlay({
   );
 }
 
-function CameraCapture({ dark, onCapture, onClose }: { dark: boolean; onCapture: (dataUrl: string) => void; onClose: () => void }) {
+function CameraCapture({ onCapture, onClose }: { onCapture: (dataUrl: string) => void; onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -2209,11 +2145,12 @@ function CameraCapture({ dark, onCapture, onClose }: { dark: boolean; onCapture:
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95">
+    // Kamera: schwarzer Grund hinter dem Videobild ist erlaubt (docs/design-regeln.md, Abschnitt 15).
+    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black">
       <canvas ref={canvasRef} className="hidden" />
       {!preview ? (
         <>
-          <div className="relative w-full max-w-[320px] aspect-square rounded-3xl overflow-hidden bg-black">
+          <div className="relative w-full max-w-[320px] aspect-square rounded-card overflow-hidden bg-black">
             <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
             {!ready && (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -2232,37 +2169,34 @@ function CameraCapture({ dark, onCapture, onClose }: { dark: boolean; onCapture:
           </div>
           <button
             onClick={() => { streamRef.current?.getTracks().forEach((t) => t.stop()); onClose(); }}
-            className="mt-4 text-white/70 text-sm font-semibold hover:text-white transition-colors"
+            className="mt-4 h-14 px-6 rounded-control text-white/70 text-base font-semibold hover:text-white transition-colors"
           >
             Abbrechen
           </button>
         </>
       ) : (
         <>
-          <div className="relative w-full max-w-[320px] aspect-square rounded-3xl overflow-hidden">
+          <div className="relative w-full max-w-[320px] aspect-square rounded-card overflow-hidden">
             <img src={preview} alt="Preview" className="w-full h-full object-cover" />
           </div>
           <div className="flex gap-4 mt-6">
             <button
               onClick={retake}
               className={cn(
-                "py-3 px-6 rounded-2xl font-semibold text-sm transition-all active:scale-95",
+                "press h-14 px-6 rounded-control font-semibold text-base",
                 "bg-white/10 text-white hover:bg-white/20",
               )}
             >
               Nochmal
             </button>
-            <button
+            <Button
               onClick={() => onCapture(preview)}
-              className={cn(
-                "py-3 px-6 rounded-2xl font-bold text-sm transition-all active:scale-95",
-                "bg-indigo-600 text-white hover:bg-indigo-500",
-              )}
+              className="h-14 px-6 text-base font-bold"
             >
               <span className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4" /> Verwenden
               </span>
-            </button>
+            </Button>
           </div>
         </>
       )}
@@ -2270,7 +2204,7 @@ function CameraCapture({ dark, onCapture, onClose }: { dark: boolean; onCapture:
   );
 }
 
-function LiveClock({ dark, styles, allPaused, pauseToggling, onClick }: { dark: boolean; styles: Record<string, string>; allPaused: boolean; pauseToggling: boolean; onClick: () => void }) {
+function LiveClock({ allPaused, pauseToggling, onClick }: { allPaused: boolean; pauseToggling: boolean; onClick: () => void }) {
   const [time, setTime] = useState("");
   const [date, setDate] = useState("");
   useEffect(() => {
@@ -2283,30 +2217,29 @@ function LiveClock({ dark, styles, allPaused, pauseToggling, onClick }: { dark: 
     return () => clearInterval(id);
   }, []);
   return (
+    // Uhr als Glaskarte; „alles pausiert“ ist ein Hinweis-Zustand (warning, docs/design-regeln.md, Abschnitt 3).
+    // Die Tönung und das Symbol tragen die Farbe, die Schrift bleibt in foreground (Kontrast im Hellen).
     <button
       onClick={onClick}
       disabled={pauseToggling}
       className={cn(
-        "rounded-2xl border px-5 py-4 text-center transition-all duration-500 cursor-pointer active:scale-[0.97] w-full",
+        "glass-card press w-full px-5 py-4 text-center cursor-pointer",
         allPaused
-          ? dark ? "bg-rose-950 border-rose-600/60 ring-2 ring-rose-500/30" : "bg-rose-100 border-rose-400 ring-2 ring-rose-400/30"
-          : styles.clockBg,
+          ? "border-warning/50 bg-linear-to-br from-warning/25 to-warning/[0.06]"
+          : "hover:bg-glass-strong",
         pauseToggling && "opacity-60",
       )}
     >
       {allPaused && (
         <div className="flex items-center justify-center gap-2 mb-1">
-          <Pause className={cn("h-4 w-4", dark ? "text-rose-400" : "text-rose-600")} />
-          <span className={cn("text-xs font-bold uppercase tracking-widest", dark ? "text-rose-400" : "text-rose-600")}>Pausiert</span>
+          <Pause className="h-4 w-4 text-warning" />
+          <span className="text-xs font-bold uppercase tracking-widest">Pausiert</span>
         </div>
       )}
-      <p className={cn(
-        "text-4xl font-mono font-black tracking-tight tabular-nums",
-        allPaused ? (dark ? "text-rose-200" : "text-rose-900") : styles.clockText,
-      )}>{time}</p>
+      <p className="text-5xl font-mono font-black tracking-tight tabular-nums">{time}</p>
       <p className={cn(
         "text-sm mt-1 font-bold",
-        allPaused ? (dark ? "text-rose-400" : "text-rose-600") : styles.clockSub,
+        allPaused ? "text-foreground" : "text-muted-foreground",
       )}>{date}</p>
     </button>
   );
