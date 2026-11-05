@@ -132,3 +132,19 @@ export function staffSummary(now = Date.now()) {
       .map((s) => ({ bereich: s.department, beginn: hm(s.start), ende: s.end, personen: s.pending })),
   };
 }
+
+/** Eingabe fuer die Tagesvorschau (day-preview-format.ts). */
+export function staffPreviewInput(now = Date.now()) {
+  const age = staffDataAge(now);
+  return {
+    configured,
+    dataAgeMin: age == null ? null : Math.round(age / 60_000),
+    error: lastError,
+    working: (snapshot?.working ?? []).map((w) => ({
+      name: w.name,
+      department: w.department,
+      plannedDepartment: w.plannedDepartment,
+    })),
+    shifts: staffOnShiftToday(),
+  };
+}

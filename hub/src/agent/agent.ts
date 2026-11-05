@@ -40,6 +40,7 @@ import { TOOLS, findTool, readNotes, toolResultText, toolSpecs, type ToolContext
 import { diffFindings, newWatchState, openFindings, type Finding } from "./findings.js";
 import { berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
 import { VOICE, ensureWhisper, transcribe } from "./voice.js";
+import { dayPreviewText } from "../day-preview.js";
 import { handleUnknownChat, isPaired, newPairingState, type PairingState } from "./pairing.js";
 
 const ENV_CHAT_IDS = (process.env.HUB_AGENT_TELEGRAM_CHAT_IDS || "")
@@ -254,6 +255,10 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
   }
   if (cmd === "/status" && !LLM.ready) {
     await sendText(chatId, await plainStatus());
+    return;
+  }
+  if (cmd === "/heute" || cmd === "/morgen") {
+    await sendText(chatId, await dayPreviewText(cmd === "/morgen" ? 1 : 0));
     return;
   }
   if (cmd === "/bericht") {
@@ -550,7 +555,9 @@ async function dailyReport(): Promise<string> {
         "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, improve_report und list_events (limit 60). " +
         "Aufbau: 1) Lage in zwei Sätzen. 2) Auffälligkeiten der letzten 24 Stunden (nur Belegtes). " +
         "3) Höchstens drei konkrete Vorschläge zur Optimierung, jeweils mit Begründung aus den Daten und wer es umsetzen muss. " +
-        "Netzwerk-Änderungen nur als Vorschlag. Maximal 25 Zeilen.",
+        "Netzwerk-Änderungen nur als Vorschlag. Maximal 25 Zeilen. " +
+        "Die Tagesvorschau (Buchungen, Wetter, Personal) bekommt Aaron separat, wiederhole sie nicht; " +
+        "nutze day_preview nur, wenn ein Vorschlag davon abhängt (z. B. Personal zur Stoßzeit, Heizung oder Bewässerung nach Wetter).",
     },
   ];
   const text = await converse("report", history, false);
@@ -564,6 +571,8 @@ async function reportTick(): Promise<void> {
   if (lastReportDay === today || berlinHHMM() < REPORT_TIME) return;
   lastReportDay = today;
   await saveStore();
+  // Erst die Tagesvorschau (feste Zahlen, ohne Sprachmodell), dann der Bericht.
+  await broadcast(await dayPreviewText(0));
   if (!(await ensureOllama())) {
     await broadcast(`Tagesbericht ohne Sprachmodell (${LLM.error ?? "nicht bereit"}):\n\n${await plainStatus()}`);
     return;
