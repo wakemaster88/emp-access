@@ -34,6 +34,8 @@ const NIGHT = (process.env.HUB_AGENT_SENTINEL_NIGHT || "22-6").trim();
 const COOLDOWN_MS = 3 * 60_000;
 const MAX_PER_HOUR = Number(process.env.HUB_AGENT_SENTINEL_MAX_PER_HOUR) > 0 ? Number(process.env.HUB_AGENT_SENTINEL_MAX_PER_HOUR) : 30;
 const FOLLOW_SECONDS = 180;
+/** So lange gilt eine gemeldete Person als „schon gemeldet“ (keine Wiederholung). */
+const ALERTED_MS = 20 * 60_000;
 
 export const SENTINEL = {
   enabled: MODE !== "off" && MODE !== "0",
@@ -191,6 +193,11 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
       return;
     }
     if (look?.was) verdict = { ...verdict, was: look.was };
+    // Gemeldete Personen 20 Minuten merken: dieselbe Person an der naechsten
+    // Kamera loest keinen neuen Alarm aus (ausser sie verhaelt sich verdaechtig).
+    if (look?.kleidung.length && look.unbekannt > 0) {
+      await rememberPeople({ camera: cam.name, kleidung: look.kleidung, label: "bereits gemeldet", forMs: ALERTED_MS });
+    }
   }
 
   SENTINEL.alerts++;
