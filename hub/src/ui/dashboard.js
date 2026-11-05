@@ -1869,8 +1869,25 @@ function healthCard(h) {
   return `<article class="card health-card ${esc(h.state)}">
     <div class="row"><span class="tile-ico">${icon(HEALTH_ICONS[h.id] || "dot")}</span><span class="label">${esc(h.label)}</span><span class="dot ${esc(h.state)}"></span></div>
     <div class="value">${esc(h.value)}</div>
+    ${h.meter ? healthMeter(h.meter) : ""}
     <div class="detail">${esc(h.detail)}</div>
   </article>`;
+}
+
+/** Auslastungsbalken mit kleinem Verlauf (z. B. GPU des KI-Modells). */
+function healthMeter(m) {
+  const pct = Math.max(0, Math.min(100, Number(m.pct) || 0));
+  const hist = Array.isArray(m.history) ? m.history.slice(-30) : [];
+  let spark = "";
+  if (hist.length > 1) {
+    const step = 100 / (hist.length - 1);
+    const pts = hist.map((v, i) => `${(i * step).toFixed(1)},${(20 - (Math.max(0, Math.min(100, v)) / 100) * 20).toFixed(1)}`).join(" ");
+    spark = `<svg class="meter-spark" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" /></svg>`;
+  }
+  return `<div class="health-meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${esc(m.label)} ${pct} %">
+      <div class="meter-top"><span>${esc(m.label)}</span><span class="mono">${pct} %</span></div>
+      <div class="meter-bar"><span style="width:${pct}%"></span></div>${spark}
+    </div>`;
 }
 
 function timelineHtml(events, emptyText) {

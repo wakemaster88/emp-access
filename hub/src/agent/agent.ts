@@ -18,6 +18,7 @@ import { CONFIG, api, log } from "../config.js";
 import { recordHubEvent } from "../state.js";
 import { LLM, LLM_LOADED, VISION, askVision, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
 import { SENTINEL, startSentinel } from "./sentinel.js";
+import { AI_LOAD, aiLoadText, startAiLoad } from "./ai-load.js";
 import { answerVehicle } from "./vehicles.js";
 import { answerPersonOk } from "./people.js";
 import { stripThinking } from "./think.js";
@@ -580,7 +581,13 @@ async function reportTick(): Promise<void> {
 /* ------------------------------------------------------------ Dashboard */
 
 /** Kachel „KI-Assistent“ unter Systeme: Modell, Zustand, gekoppelte Chats. */
-export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string; detail: string } {
+export function assistantHealth(): {
+  state: "ok" | "warn" | "off";
+  value: string;
+  detail: string;
+  /** Auslastung fuer Balken und Verlauf in der Kachel (0..100). */
+  meter?: { pct: number; label: string; history: number[] };
+} {
   if (!AGENT.enabled) return { state: "off", value: "aus", detail: "HUB_AGENT_TELEGRAM_TOKEN fehlt" };
   const chats = `${AGENT.pairedChats} Chat${AGENT.pairedChats === 1 ? "" : "s"}`;
   if (LLM.ready) {
@@ -593,7 +600,14 @@ export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string
       : VISION.installing
         ? " · Bildmodell wird geladen"
         : "";
-    return { state: "ok", value: LLM.model, detail: `${ram} · ${chats}${speed}${voice}${eyes}` };
+    const load = aiLoadText();
+    const pct = AI_LOAD.gpuPct ?? AI_LOAD.cpuPct;
+    return {
+      state: "ok",
+      value: LLM.model,
+      detail: `${load ? `${load} · ` : ""}${ram} · ${chats}${speed}${voice}${eyes}`,
+      meter: pct != null ? { pct: Math.round(pct), label: AI_LOAD.gpuPct != null ? "GPU" : "CPU", history: AI_LOAD.gpuHistory.slice(-30) } : undefined,
+    };
   }
   if (LLM.installing) {
     const pct = LLM.pullPct != null ? ` ${LLM.pullPct} %` : "";
@@ -610,6 +624,7 @@ export async function startAgent(): Promise<void> {
     return;
   }
   AGENT.enabled = true;
+  startAiLoad();
   await loadStore();
   log(`Assistent: an, ${TOOLS.length} Werkzeuge, ${AGENT.pairedChats} Chat(s) gekoppelt`);
   void setCommands();
