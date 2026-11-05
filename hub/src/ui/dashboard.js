@@ -160,6 +160,126 @@ function ring(percent, label, small = "", tone = "ok", size = "") {
 }
 
 /* Alarmzustand → Farbklasse (wie die Cloud: Erkennung sky, Klingel violett). */
+/* -------------------------------------------- Erkannte Personen (Zentrale) */
+
+const SEEN_TONE = { face: "ok", staff: "ok", cleared: "ok", suspicious: "warn", unknown: "sky" };
+
+/** Zustand einer Kachel; PERSON zeigt, wer es vermutlich ist. */
+function stateBadge(c, s) {
+  if (s === "PERSON") {
+    const p = live.seen.find((x) => x.cameraId === c.id);
+    if (p && p.kind !== "unknown") return `<span class="badge ${SEEN_TONE[p.kind]}">${icon("user")}${esc(p.label)}</span>`;
+  }
+  return `<span class="badge ${stateTone(s)}">${esc(s)}</span>`;
+}
+
+async function loadSeen() {
+  if (Date.now() - live.seenAt < 2500) return;
+  live.seenAt = Date.now();
+  try {
+    const r = await getJson("/api/live/people");
+    live.seen = Array.isArray(r.people) ? r.people : [];
+  } catch {
+    live.seen = [];
+  }
+  renderSeen();
+}
+
+function seenWhen(p) {
+  if (p.active) return "jetzt";
+  return p.at ? clock(new Date(p.at).toISOString()).slice(0, 5) : "";
+}
+
+function renderSeen() {
+  const box = $("liveSeen");
+  if (!box) return;
+  const rows = live.seen.slice(0, 12);
+  const html = rows
+    .map(
+      (p) => `<button type="button" class="seen-chip k-${esc(p.kind)}${p.active ? " is-active" : ""}" data-seen="${p.cameraId}" title="${esc(`${p.label} · ${p.camera}`)}">
+        <span class="seen-dot" aria-hidden="true"></span><span class="seen-name">${esc(p.label)}</span><span class="seen-meta">${esc(p.camera)} · ${esc(seenWhen(p))}</span>
+      </button>`
+    )
+    .join("");
+  const full = rows.length ? `<span class="seen-title">${icon("user")}Gerade erkannt</span>${html}` : "";
+  if (box.dataset.h !== full) {
+    box.innerHTML = full;
+    box.dataset.h = full;
+  }
+  box.hidden = !rows.length;
+}
+
+/* Grossansicht: Personen-Boxen ueber dem Livebild, etwa jede Sekunde. */
+function startBoxes() {
+  stopBoxes();
+  const c = focusCam();
+  if (!c || c.kind === "MOWER" || !c.reachable) return;
+  pollBoxes();
+  live.boxTimer = setInterval(pollBoxes, 1200);
+}
+
+function stopBoxes() {
+  if (live.boxTimer) clearInterval(live.boxTimer);
+  live.boxTimer = null;
+  live.boxes = null;
+  const el = $("camDlgBoxes");
+  if (el) el.innerHTML = "";
+}
+
+async function pollBoxes() {
+  const c = focusCam();
+  if (!c || !$("camDlg").open || document.hidden || live.boxBusy) return;
+  const src = streamFor(c, "main");
+  if (!src) return;
+  live.boxBusy = true;
+  try {
+    const r = await getJson(`/api/live/boxes?cameraId=${c.id}&src=${encodeURIComponent(src)}`);
+    if (live.focusId !== c.id) return;
+    live.boxes = r;
+    renderBoxes();
+    renderFocusState(state.overview);
+  } catch {
+    // naechster Versuch beim naechsten Takt
+  } finally {
+    live.boxBusy = false;
+  }
+}
+
+/** Ebene genau ueber den sichtbaren Bildinhalt legen (object-fit: contain). */
+function layoutBoxes() {
+  const stage = document.querySelector(".cam-stage");
+  const layer = $("camDlgBoxes");
+  if (!stage || !layer) return;
+  const v = $("camDlgVideo");
+  const i = $("camDlgImg");
+  const vw = $("camDlg").dataset.rtc === "live" && v.videoWidth ? v.videoWidth : i.naturalWidth;
+  const vh = $("camDlg").dataset.rtc === "live" && v.videoHeight ? v.videoHeight : i.naturalHeight;
+  const sw = stage.clientWidth;
+  const sh = stage.clientHeight;
+  if (!vw || !vh || !sw || !sh) return;
+  const k = Math.min(sw / vw, sh / vh);
+  const w = vw * k;
+  const h = vh * k;
+  Object.assign(layer.style, { left: `${(sw - w) / 2}px`, top: `${(sh - h) / 2}px`, width: `${w}px`, height: `${h}px` });
+}
+
+function renderBoxes() {
+  const layer = $("camDlgBoxes");
+  const r = live.boxes;
+  if (!layer) return;
+  layoutBoxes();
+  const persons = (r && Array.isArray(r.persons) ? r.persons : []).slice().sort((a, b) => b.w * b.h - a.w * a.h);
+  const kind = r && r.label ? r.label.kind : "unknown";
+  layer.innerHTML = persons
+    .map((p, n) => {
+      // Der Name gehoert zur groessten Box, die anderen heissen „Person“.
+      const text = n === 0 && r.label ? r.label.text : "Person";
+      const k = n === 0 ? kind : "unknown";
+      return `<div class="cam-box k-${esc(k)}" style="left:${p.x * 100}%;top:${p.y * 100}%;width:${p.w * 100}%;height:${p.h * 100}%"><span class="cam-box-tag">${esc(text)} · ${Math.round(p.conf * 100)} %</span></div>`;
+    })
+    .join("");
+}
+
 function stateTone(name) {
   if (name === "DOORBELL") return "violet";
   if (name === "PERSON" || name === "VEHICLE" || name === "MOTION" || name === "ANIMAL") return "sky";
@@ -326,6 +446,7 @@ async function refresh() {
     else if (state.view === "geraete" || state.view === "raeume") await loadMowerStatus();
     // Die Zentrale braucht sie fuer die Maeher-Kameras; sie pollt alle 2 s, also seltener.
     else if (state.view === "zentrale") await loadMowerStatus(10_000);
+    if (state.view === "zentrale") loadSeen();
     if (state.view === "regeln" && (!state.rules || Date.now() - (state.rulesAt || 0) > 30000)) await loadRules();
     state.overview = overview;
     state.eventSeq = events.seq ?? state.eventSeq;
@@ -478,6 +599,13 @@ const live = {
   focusId: null,
   focusStop: null,
   presets: {},
+  /** Gerade erkannte Personen je Kamera (/api/live/people). */
+  seen: [],
+  seenAt: 0,
+  /** Personen-Boxen der Grossansicht. */
+  boxes: null,
+  boxTimer: null,
+  boxBusy: false,
   /** Kamera-ID -> { pos, min, max } des optischen Zooms (Zoom-Objektiv ohne Schwenkkopf). */
   zoomPos: {},
   /** Kamera-IDs, deren Faehigkeiten schon angefragt wurden. */
@@ -983,7 +1111,7 @@ function renderZentrale(d) {
     tile.classList.toggle("is-mowing", c.kind === "MOWER" && c.states.length > 0);
     tile.classList.toggle("is-offline", !c.reachable);
     const st = tile.querySelector(".live-states");
-    const html = c.states.map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`).join("");
+    const html = c.states.map((s) => stateBadge(c, s)).join("");
     if (st.dataset.h !== html) {
       st.innerHTML = html;
       st.dataset.h = html;
@@ -1048,7 +1176,7 @@ function focusSubtitle(c) {
 function setZoom(scale, x = live.zoom.x, y = live.zoom.y) {
   live.zoom = { scale: Math.max(1, Math.min(4, scale)), x, y };
   const t = live.zoom.scale === 1 ? "" : `scale(${live.zoom.scale})`;
-  for (const el of [$("camDlgVideo"), $("camDlgImg")]) {
+  for (const el of [$("camDlgVideo"), $("camDlgImg"), $("camDlgBoxWrap")]) {
     el.style.transformOrigin = `${live.zoom.x}% ${live.zoom.y}%`;
     el.style.transform = t;
   }
@@ -1070,6 +1198,7 @@ function openFocus(id) {
   $("camDlgSnap").hidden = c.kind === "MOWER";
   setZoom(1, 50, 50);
   if (c.caps && c.caps.zoom && !c.caps.pan) camZoom(c);
+  startBoxes();
   dlg.classList.toggle("is-wide", live.wide.has(c.id));
 
   const video = $("camDlgVideo");
@@ -1144,8 +1273,14 @@ function renderFocusState(d) {
             ? `<span class="live-tag snap">${mower ? "NEUER VERSUCH …" : "STANDBILD"}</span>`
             : `<span class="live-tag snap">${mower ? "VERBINDE ÜBER MAMMOTION …" : "VERBINDE …"}</span>`;
   const why = mower && rtc !== "live" && c.cam.error ? `<span class="badge warn">${esc(c.cam.error)}</span>` : "";
-  const html = `${tag}${why}${c.states
-    .map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`)
+  const b = live.boxes && live.boxes.cameraId === c.id ? live.boxes : null;
+  const n = b ? (Array.isArray(b.persons) ? b.persons.length : b.people) : 0;
+  const who = n
+    ? `<span class="badge ${b.label ? SEEN_TONE[b.label.kind] : "sky"}">${icon("user")}${n === 1 ? "1 Person" : `${n} Personen`}${b.label ? ` · ${esc(b.label.text)}` : ""}</span>`
+    : "";
+  const html = `${tag}${why}${who}${c.states
+    .filter((s) => !(n && s === "PERSON"))
+    .map((s) => stateBadge(c, s))
     .join("")}`;
   const el = $("camDlgState");
   if (el.dataset.h !== html) {
@@ -1394,6 +1529,14 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && live.kiosk && !$("camDlg").open) setKiosk(false);
 });
 window.addEventListener("resize", layoutGrid);
+window.addEventListener("resize", () => $("camDlg").open && layoutBoxes());
+$("camDlgVideo").addEventListener("loadedmetadata", layoutBoxes);
+$("camDlgVideo").addEventListener("resize", layoutBoxes);
+$("camDlgImg").addEventListener("load", layoutBoxes);
+$("liveSeen").addEventListener("click", (ev) => {
+  const chip = ev.target.closest("[data-seen]");
+  if (chip) openFocus(Number(chip.dataset.seen));
+});
 window.addEventListener("orientationchange", () => setTimeout(layoutGrid, 250));
 document.addEventListener("fullscreenchange", () => setTimeout(layoutGrid, 50));
 document.addEventListener("webkitfullscreenchange", () => setTimeout(layoutGrid, 50));
@@ -1552,6 +1695,7 @@ $("camDlgPrev").addEventListener("click", () => stepFocus(-1));
 $("camDlgNext").addEventListener("click", () => stepFocus(1));
 $("camDlgClose").addEventListener("click", () => $("camDlg").close());
 $("camDlg").addEventListener("close", () => {
+  stopBoxes();
   if (live.focusStop) live.focusStop();
   live.focusStop = null;
   live.focusId = null;

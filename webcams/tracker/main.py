@@ -1725,6 +1725,8 @@ async def classify(request: Request) -> dict[str, Any]:
     # Fahrzeug-Boxen normiert (0..1), damit der Hub Hintergrundverkehr
     # (winzige Boxen, außerhalb der Einfahrt) selbst aussortieren kann.
     vehicles: list[dict[str, float | int]] = []
+    # Personen-Boxen normiert (0..1) fuer die Markierungen in der Hub-Zentrale.
+    persons: list[dict[str, float]] = []
     for r in results:
         if r.boxes is None:
             continue
@@ -1736,6 +1738,16 @@ async def classify(request: Request) -> dict[str, Any]:
             if int(c) == PERSON_CLASS:
                 people += 1
                 people_conf = max(people_conf, score)
+                x1, y1, x2, y2 = box
+                persons.append(
+                    {
+                        "conf": round(score, 3),
+                        "x": round(x1 / fw, 4),
+                        "y": round(y1 / fh, 4),
+                        "w": round((x2 - x1) / fw, 4),
+                        "h": round((y2 - y1) / fh, 4),
+                    }
+                )
             elif int(c) in VEHICLE_CLASSES:
                 vehicle_conf = max(vehicle_conf, score)
                 x1, y1, x2, y2 = box
@@ -1756,6 +1768,7 @@ async def classify(request: Request) -> dict[str, Any]:
         "vehicles": vehicles,
         "people": people,
         "peopleConf": round(people_conf, 3),
+        "persons": sorted(persons, key=lambda p: p["conf"], reverse=True),
     }
 
 
