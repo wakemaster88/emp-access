@@ -29,11 +29,12 @@ function Tabs({
  * Tab-Leiste als schwebende Glas-Kapsel (docs/design-regeln.md, Abschnitt 6):
  * `default` ist die Kapsel (`glass-strip`), `line` dieselbe Pillen-Logik ohne
  * Kapsel – für Leisten, die schon in einer Karte stehen. Der aktive Eintrag
- * ist immer eine helle Glas-Pille, nie eine Unterstreichung. Auf dem Handy
- * wischbar statt umbrechend.
+ * ist immer eine helle Glas-Pille, nie eine Unterstreichung. Passt die Leiste
+ * nicht in eine Zeile, bricht sie um (eine Zeile mehr, Einträge füllen jede
+ * Zeile) – nie seitlich scrollen, auch nicht auf dem Handy (Abschnitt 6).
  */
 const tabsListVariants = cva(
-  "group/tabs-list text-muted-foreground inline-flex w-fit max-w-full items-center justify-start gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col group-data-[orientation=vertical]/tabs:items-stretch",
+  "group/tabs-list text-muted-foreground inline-flex w-fit max-w-full flex-wrap items-center justify-start gap-x-0.5 gap-y-1 group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col group-data-[orientation=vertical]/tabs:items-stretch",
   {
     variants: {
       variant: {

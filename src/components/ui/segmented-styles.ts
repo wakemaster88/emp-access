@@ -8,10 +8,13 @@ import { cn } from "@/lib/utils";
 
 export type SegmentedSize = "sm" | "md";
 
-/** Glas-Kapsel; auf dem Handy wischbar statt umbrechend. */
+/**
+ * Glas-Kapsel. Passt sie nicht in eine Zeile, bricht sie um und die Segmente
+ * füllen jede Zeile – nie seitlich scrollen (docs/design-regeln.md, Abschnitt 6).
+ */
 export function segmentedStripClass(stretch: boolean, className?: string) {
   return cn(
-    "glass-strip inline-flex max-w-full items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+    "glass-strip inline-flex max-w-full flex-wrap items-center gap-x-0.5 gap-y-1",
     stretch && "flex w-full",
     className,
   );
@@ -20,7 +23,7 @@ export function segmentedStripClass(stretch: boolean, className?: string) {
 /** Ein Segment; aktiv hebt es die helle Pille hervor. */
 export function segmentedItemClass(size: SegmentedSize, stretch: boolean, active: boolean) {
   return cn(
-    "press inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full whitespace-nowrap font-medium outline-none",
+    "press inline-flex shrink-0 grow items-center justify-center gap-1.5 rounded-full whitespace-nowrap font-medium outline-none",
     "text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
     size === "sm" ? "h-7 px-3 text-xs" : "h-[34px] px-3.5 text-[13px]",
     stretch && "flex-1",

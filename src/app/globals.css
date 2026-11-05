@@ -461,11 +461,11 @@
     )::after {
       inset-inline-end: 0;
     }
-    /* Einträge in Kapseln (Tabs, Segmented): die Kapsel scrollt waagerecht und
-       schneidet ab. Die Fläche wächst darum höchstens um ihren Innenabstand
-       (4 px) – 42 px bei 34 px hohen Einträgen, 36 px bei `size="sm"`; mehr
-       ließe die Kapsel um ein paar Pixel verschieben. `TabsList variant="line"`
-       hat keinen Innenabstand und bekommt darum keine Fläche. */
+    /* Einträge in Kapseln (Tabs, Segmented) stehen dicht: 2 px nebeneinander,
+       umbrochen 4 px untereinander. Die Fläche wächst darum höchstens um den
+       Innenabstand der Kapsel (4 px) – 42 px bei 34 px hohen Einträgen, 36 px
+       bei `size="sm"`. `TabsList variant="line"` hat keinen Innenabstand und
+       bekommt darum keine Fläche. */
     :where(
       [role="radiogroup"] > [role="radio"],
       [role="tablist"]:not([data-variant="line"]) > [role="tab"],
@@ -525,7 +525,9 @@
 
 /* Schwebende Kapsel für Tab-Leisten und Segmentwahlen. */
 @utility glass-strip {
-  border-radius: 9999px;
+  /* 22 px: einzeilig (44 px hoch) weiter eine Pille, umbrochen ein abgerundetes
+     Rechteck statt eines Stadions. */
+  border-radius: 22px;
   padding: 4px;
   border: 1px solid var(--glass-border);
   background: var(--glass-bg);
