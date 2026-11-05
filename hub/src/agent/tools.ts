@@ -23,7 +23,9 @@ import { deviceAction, liveStates, roomsPayload } from "../rooms.js";
 import { climatePayload } from "../climate.js";
 import { rulesStatus } from "../rules.js";
 import { soundwebSummary } from "../soundweb.js";
-import { mowerStatus } from "../mower.js";
+import { mowerRelogin, mowerStatus } from "../mower.js";
+import { getForecast, weatherError, weatherText } from "../weather.js";
+import { energyPlan, setDeviceIgnored, skipMowTask } from "./energy.js";
 import { lastScanResult } from "../scanner.js";
 import { vlanCheckSummary } from "../vlan-check.js";
 import { recentImproveEvents } from "../improve-log.js";
@@ -309,6 +311,43 @@ export const TOOLS: AgentTool[] = [
     run: async () => mowerStatus(),
   },
   {
+    name: "weather_forecast",
+    description:
+      "Wetterbericht für die Anlage (Open-Meteo): jetzt, heute, morgen, übermorgen mit Temperatur, Regen und Wahrscheinlichkeit, optional stündlich für die nächsten Stunden.",
+    parameters: obj({ hours: num("Optional: so viele Stunden stündlich ab jetzt (max. 48)") }),
+    risk: "read",
+    run: async (args) => {
+      const fc = await getForecast();
+      if (!fc) return { error: weatherError() ?? "Wetterbericht nicht verfügbar" };
+      const nH = Math.min(48, Math.max(0, Number(args.hours) || 0));
+      const now = Date.now();
+      return {
+        now: fc.current ? { tempC: fc.current.tempC, text: weatherText(fc.current.code) } : null,
+        days: fc.days.map((d) => ({ date: d.date, text: weatherText(d.code), tMin: d.tMin, tMax: d.tMax, rainMm: d.precipMm, rainProb: d.precipProb })),
+        hourly: nH
+          ? fc.hours
+              .filter((h) => Date.parse(h.t) > now && Date.parse(h.t) <= now + nH * 3_600_000)
+              .map((h) => ({
+                at: new Date(h.t).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" }),
+                tempC: h.tempC,
+                rainMm: h.precipMm,
+                rainProb: h.precipProb,
+                windKmh: h.windKmh,
+              }))
+          : undefined,
+        location: fc.location.source,
+      };
+    },
+  },
+  {
+    name: "energy_plan",
+    description:
+      "Planung für heute und morgen: Wetter, anstehende Mäh-Aufgaben mit Wetter-Urteil, trockene Mähfenster, Bewässerung (was die Cloud voraussichtlich macht, wo eine Einstellung Wasser spart), Heizungen der Klimaregelung, Geräte, die außerhalb der Betriebszeit laufen, Frost-Hinweis.",
+    parameters: obj(),
+    risk: "read",
+    run: async () => energyPlan(),
+  },
+  {
     name: "improve_report",
     description: "Verbesserungslog des Hubs: Zähler und Hinweise seit Start sowie letzte Diagnose-Ereignisse. Grundlage für Optimierungsvorschläge.",
     parameters: obj(),
@@ -403,17 +442,69 @@ export const TOOLS: AgentTool[] = [
   },
   {
     name: "mower_action",
-    description: "Mäher steuern: start_task, pause, resume, stop, dock. Braucht Aarons Bestätigung.",
+    description: "Mäher steuern: start_task (mit task = Aufgaben-ID oder -Name aus mower_status), pause, resume, stop, dock. Braucht Aarons Bestätigung.",
     parameters: obj(
       {
         mower: str("Gerätename des Mähers aus mower_status"),
         action: str("start_task | pause | resume | stop | dock", { enum: ["start_task", "pause", "resume", "stop", "dock"] }),
+        task: str("Nur bei start_task: Aufgaben-ID oder Name"),
       },
       ["mower", "action"]
     ),
     risk: "act",
-    describe: (args) => `Mäher ${args.mower}: ${args.action}`,
-    run: async (args) => executeTask({ id: -1, type: "MOWER_ACTION", payload: { mower: args.mower, action: args.action } }),
+    describe: (args) => `Mäher ${args.mower}: ${args.action}${args.task ? ` (${args.task})` : ""}`,
+    run: async (args) => {
+      let planId: string | undefined;
+      if (args.action === "start_task") {
+        const want = String(args.task ?? "").trim().toLowerCase();
+        const m = (await mowerStatus()).mowers.find((x) => x.name === args.mower);
+        const t = m?.tasks.find((x) => x.id === args.task || x.name.toLowerCase() === want) ?? (m?.tasks.length === 1 ? m.tasks[0] : undefined);
+        if (!t) throw new Error(`Aufgabe fehlt oder unbekannt. Vorhanden: ${m?.tasks.map((x) => x.name).join(", ") || "keine"}`);
+        planId = t.id;
+      }
+      return executeTask({ id: -1, type: "MOWER_ACTION", payload: { mower: args.mower, action: args.action, planId } });
+    },
+  },
+  {
+    name: "mower_skip_task",
+    description:
+      "Eine Mäh-Aufgabe vorübergehend aussetzen (z. B. wegen Regen): schaltet sie ab und zum Zeitpunkt until automatisch wieder ein (Vorgabe: nach ihrem nächsten Zeitfenster). Braucht Aarons Bestätigung.",
+    parameters: obj(
+      {
+        mower: str("Gerätename oder Bezeichnung des Mähers aus mower_status"),
+        task: str("Aufgaben-ID oder Name"),
+        until: str("Optional: ISO-Zeitpunkt, ab dem die Aufgabe wieder an ist"),
+      },
+      ["mower", "task"]
+    ),
+    risk: "act",
+    describe: (args) => `Mäh-Aufgabe ${args.task} (${args.mower}) aussetzen${args.until ? ` bis ${new Date(String(args.until)).toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "short", hour: "2-digit", minute: "2-digit" })}` : ""}`,
+    run: async (args) => skipMowTask(String(args.mower ?? ""), String(args.task ?? ""), args.until ? String(args.until) : undefined),
+  },
+  {
+    name: "mower_relogin",
+    description:
+      "Mammotion-Sitzung verwerfen und einmal mit Passwort neu anmelden, wenn mower_status einen Anmeldefehler oder abgelaufenen Token zeigt. Höchstens alle 6 Stunden. Braucht Aarons Bestätigung.",
+    parameters: obj(),
+    risk: "act",
+    describe: () => "Mammotion neu anmelden",
+    run: async () => mowerRelogin(),
+  },
+  {
+    name: "energy_ignore_device",
+    description: "Ein Gerät vom Energie-Wächter ausnehmen (ignore=true) oder wieder aufnehmen (ignore=false), z. B. Dauerverbraucher. Braucht Aarons Bestätigung.",
+    parameters: obj({ device: num("Geräte-ID aus list_rooms"), ignore: { type: "boolean", description: "true = nicht mehr melden" } }, ["device"]),
+    risk: "act",
+    describe: (args) => {
+      let name = String(args.device);
+      try {
+        name = deviceByRef(args.device).name;
+      } catch {
+        /* Name unbekannt */
+      }
+      return `${name}: ${args.ignore === false ? "wieder als vergessen melden" : "nicht mehr als vergessen melden"}`;
+    },
+    run: async (args) => setDeviceIgnored(Number(args.device), args.ignore !== false),
   },
   {
     name: "restart_service",

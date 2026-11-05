@@ -271,6 +271,24 @@ export async function mowerAction(body: Record<string, unknown>): Promise<{ ok: 
   }
 }
 
+/**
+ * Sitzung verwerfen und einmal mit Passwort neu anmelden (abgelaufene Token).
+ * Der Dienst laesst das hoechstens alle sechs Stunden zu.
+ */
+export async function mowerRelogin(): Promise<{ ok: boolean; error?: string }> {
+  if (!mowerConfigured()) return { ok: false, error: "Kein Mammotion-Account in hub/.env" };
+  if (!(await ensureMowerSidecar())) return { ok: false, error: "Mäher-Dienst läuft nicht" };
+  try {
+    const res = await fetch(`${MOWER_URL}/relogin`, { method: "POST", signal: AbortSignal.timeout(15_000) });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    log(`Mäher: Neuanmeldung ${data.ok ? "gestartet" : `abgelehnt (${data.error ?? res.status})`}`);
+    if (data.ok) syncMowersSoon();
+    return { ok: Boolean(data.ok), error: data.error ?? (res.status === 404 ? "Mäher-Dienst zu alt – Hub neu starten" : undefined) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /* -------------------------------------------------------------- Cloud-Sync */
 
 /** Was die Cloud vom Maeher bekommt (ohne schnell wechselndes Datenalter). */
