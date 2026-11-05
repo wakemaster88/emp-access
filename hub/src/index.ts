@@ -23,6 +23,7 @@ import { startRooms } from "./rooms.js";
 import { startClimate } from "./climate.js";
 import { startRules } from "./rules.js";
 import { startMower, stopMowerSidecar } from "./mower.js";
+import { startAgent } from "./agent/agent.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
@@ -270,6 +271,9 @@ void startRooms().then(() => {
 });
 // Mammotion-Maeher: nur mit Zweit-Account in hub/.env (MAMMOTION_EMAIL/-PASSWORD).
 startMower();
+// Hub-Assistent: lokales Sprachmodell (Ollama) + eigener Telegram-Bot.
+// Nur mit HUB_AGENT_TELEGRAM_TOKEN in hub/.env, sonst ein Leerlauf.
+void startAgent();
 // Welche Kameras geprüft werden, steht in der Cloud ("Halteverbot" an der
 // Kamera) und ist beim Start noch nicht bekannt – der Takt läuft deshalb
 // immer und ist ohne ausgewählte Kamera ein Leerlauf.
