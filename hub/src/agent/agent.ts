@@ -18,6 +18,8 @@ import { CONFIG, api, log } from "../config.js";
 import { recordHubEvent } from "../state.js";
 import { LLM, LLM_LOADED, VISION, askVision, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
 import { SENTINEL, startSentinel } from "./sentinel.js";
+import { startEnergy } from "./energy.js";
+import { AI_LOAD, aiLoadText, startAiLoad } from "./ai-load.js";
 import { answerVehicle } from "./vehicles.js";
 import { answerPersonOk } from "./people.js";
 import { stripThinking } from "./think.js";
@@ -39,6 +41,7 @@ import { TOOLS, findTool, readNotes, toolResultText, toolSpecs, type ToolContext
 import { diffFindings, newWatchState, openFindings, type Finding } from "./findings.js";
 import { berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
 import { VOICE, ensureWhisper, transcribe } from "./voice.js";
+import { dayPreviewText } from "../day-preview.js";
 import { handleUnknownChat, isPaired, newPairingState, type PairingState } from "./pairing.js";
 import { healthFindings, healthSummary } from "../health-trends.js";
 import { trendSummaryText } from "./early-warning.js";
@@ -74,6 +77,8 @@ interface Pending {
   args: Record<string, unknown>;
   desc: string;
   createdAt: number;
+  /** Abweichende Gueltigkeit (Energie-Vorschlaege gelten laenger als 10 min). */
+  ttlMs?: number;
 }
 const pending = new Map<string, Pending>();
 
@@ -131,6 +136,7 @@ async function systemPrompt(): Promise<string> {
     "- Schalte nur, worum Aaron gebeten hat. Keine eigenmächtigen Aktionen.",
     "- Netzwerk (Router PR60X, Switches, VLANs, DHCP, WLAN, Firewall) änderst du nie. Du kannst Befunde lesen und Änderungen vorschlagen; umsetzen tut Aaron.",
     "- Kameras in Umkleiden/WC gibt es nicht und darf es nicht geben.",
+    "- Fragen zu Wetter, Mähen, Bewässerung, Heizung und Energie: erst weather_forecast bzw. energy_plan holen. Heizung und Lüftung regelt die Cloud-Klimaregelung; du schlägst nur vor.",
     "- Mit look_at_camera siehst du dir ein aktuelles Kamerabild selbst an. Außerhalb des Betriebs bewertet der Wächter Personen- und Fahrzeugereignisse automatisch und meldet Auffälliges mit Bild.",
     "- Frueherkennung: early_warnings zeigt, was sich ankündigt (gehäufte Zeitüberschreitungen, häufige Neustarts, Port-Fehler, Temperatur, Platte, abgelaufene Anmeldungen). Nenne dabei die Zahlen und die typische Ursache, schlage die Prüfung vor, ändere aber nichts.",
     "",
@@ -267,6 +273,10 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
     await sendText(chatId, await plainStatus());
     return;
   }
+  if (cmd === "/heute" || cmd === "/morgen") {
+    await sendText(chatId, await dayPreviewText(cmd === "/morgen" ? 1 : 0));
+    return;
+  }
   if (cmd === "/bericht") {
     if (await llmOrExplain(chatId)) await sendText(chatId, await dailyReport());
     return;
@@ -318,7 +328,7 @@ async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Prom
   }
   if (!m) return;
   const p = pending.get(m[2]);
-  if (!p || (p.chatId !== "*" && p.chatId !== chatId) || Date.now() - p.createdAt > PENDING_TTL_MS) {
+  if (!p || (p.chatId !== "*" && p.chatId !== chatId) || Date.now() - p.createdAt > (p.ttlMs ?? PENDING_TTL_MS)) {
     pending.delete(m[2]);
     await answerCallback(cb.id, "Abgelaufen – bitte neu fragen.");
     if (msgId) await editText(chatId, msgId, `${cb.message?.text ?? ""}\n\nAbgelaufen.`);
@@ -350,9 +360,12 @@ async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Prom
 }
 
 /** Knopf fuer eine vorbereitete Aktion (Waechter-Meldung): der Tipp ist die Bestaetigung. */
-function offer(label: string, tool: string, args: Record<string, unknown>, desc: string): TgButton {
+function offer(label: string, tool: string, args: Record<string, unknown>, desc: string, ttlMs?: number): TgButton {
   const id = randomBytes(6).toString("hex");
-  pending.set(id, { chatId: "*", tool, args, desc, createdAt: Date.now() });
+  const now = Date.now();
+  // Abgelaufene Vorschlaege aufraeumen, damit die Liste nicht waechst.
+  for (const [k, p] of pending) if (now - p.createdAt > (p.ttlMs ?? PENDING_TTL_MS)) pending.delete(k);
+  pending.set(id, { chatId: "*", tool, args, desc, createdAt: now, ttlMs });
   return { text: label, callback_data: `ok:${id}` };
 }
 
@@ -562,11 +575,14 @@ async function dailyReport(): Promise<string> {
     {
       role: "user",
       content:
-        "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, early_warnings, improve_report und list_events (limit 60). " +
+        "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, early_warnings, improve_report, list_events (limit 60) und energy_plan. " +
         "Aufbau: 1) Lage in zwei Sätzen. 2) Auffälligkeiten der letzten 24 Stunden (nur Belegtes). " +
         "3) Frueherkennung: was sich ankündigt (gehäufte Zeitüberschreitungen, häufige Neustarts, Port-Fehler/Flattern, Temperatur, Platte, abgelaufene Anmeldungen), mit Zahlen aus early_warnings und Vergleich zur Vorwoche; nichts erfinden, ohne Befund ein Satz. " +
-        "4) Höchstens drei konkrete Vorschläge zur Optimierung, jeweils mit Begründung aus den Daten und wer es umsetzen muss. " +
-        "Netzwerk-Änderungen nur als Vorschlag. Maximal 30 Zeilen.",
+        "4) Energie und Technik aus energy_plan: Mäh-Aufgaben mit Urteil und trockene Mähfenster, Bewässerungs-Hinweise, Frost, Geräte, die außerhalb der Betriebszeit laufen. Nur, was es gibt, ohne das Wetter selbst zu wiederholen. " +
+        "5) Höchstens drei konkrete Vorschläge zur Optimierung, jeweils mit Begründung aus den Daten und wer es umsetzen muss. " +
+        "Netzwerk-Änderungen nur als Vorschlag. Maximal 35 Zeilen. " +
+        "Die Tagesvorschau (Buchungen, Wetter, Personal) bekommt Aaron separat, wiederhole sie nicht; " +
+        "nutze day_preview nur, wenn ein Vorschlag davon abhängt (z. B. Personal zur Stoßzeit, Heizung oder Bewässerung nach Wetter).",
     },
   ];
   const text = await converse("report", history, false);
@@ -580,6 +596,8 @@ async function reportTick(): Promise<void> {
   if (lastReportDay === today || berlinHHMM() < REPORT_TIME) return;
   lastReportDay = today;
   await saveStore();
+  // Erst die Tagesvorschau (feste Zahlen, ohne Sprachmodell), dann der Bericht.
+  await broadcast(await dayPreviewText(0));
   if (!(await ensureOllama())) {
     await broadcast(`Tagesbericht ohne Sprachmodell (${LLM.error ?? "nicht bereit"}):\n\n${await plainStatus()}`);
     return;
@@ -595,7 +613,13 @@ async function reportTick(): Promise<void> {
 /* ------------------------------------------------------------ Dashboard */
 
 /** Kachel „KI-Assistent“ unter Systeme: Modell, Zustand, gekoppelte Chats. */
-export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string; detail: string } {
+export function assistantHealth(): {
+  state: "ok" | "warn" | "off";
+  value: string;
+  detail: string;
+  /** Auslastung fuer Balken und Verlauf in der Kachel (0..100). */
+  meter?: { pct: number; label: string; history: number[] };
+} {
   if (!AGENT.enabled) return { state: "off", value: "aus", detail: "HUB_AGENT_TELEGRAM_TOKEN fehlt" };
   const chats = `${AGENT.pairedChats} Chat${AGENT.pairedChats === 1 ? "" : "s"}`;
   if (LLM.ready) {
@@ -608,7 +632,14 @@ export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string
       : VISION.installing
         ? " · Bildmodell wird geladen"
         : "";
-    return { state: "ok", value: LLM.model, detail: `${ram} · ${chats}${speed}${voice}${eyes}` };
+    const load = aiLoadText();
+    const pct = AI_LOAD.gpuPct ?? AI_LOAD.cpuPct;
+    return {
+      state: "ok",
+      value: LLM.model,
+      detail: `${load ? `${load} · ` : ""}${ram} · ${chats}${speed}${voice}${eyes}`,
+      meter: pct != null ? { pct: Math.round(pct), label: AI_LOAD.gpuPct != null ? "GPU" : "CPU", history: AI_LOAD.gpuHistory.slice(-30) } : undefined,
+    };
   }
   if (LLM.installing) {
     const pct = LLM.pullPct != null ? ` ${LLM.pullPct} %` : "";
@@ -625,6 +656,7 @@ export async function startAgent(): Promise<void> {
     return;
   }
   AGENT.enabled = true;
+  startAiLoad();
   await loadStore();
   log(`Assistent: an, ${TOOLS.length} Werkzeuge, ${AGENT.pairedChats} Chat(s) gekoppelt`);
   void setCommands();
@@ -635,6 +667,8 @@ export async function startAgent(): Promise<void> {
   }, 30 * 60_000);
   // Kamera-Ereignisse ausserhalb des Betriebs selbst ansehen (Bildmodell).
   startSentinel({ chatIds, offer });
+  // Energie, Maeher und Bewaesserung nach Wetter und Betriebszeit (Vorschlaege mit Knopf).
+  if ((process.env.HUB_AGENT_ENERGY ?? "on").toLowerCase() !== "off") void startEnergy({ chatIds, offer });
   // Sprachnachrichten: whisper.cpp + Modell im Hintergrund bereitstellen.
   void ensureWhisper();
   void pollLoop();

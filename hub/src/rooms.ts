@@ -65,12 +65,34 @@ export interface Room {
     lastReadAt: string | null;
     heating: boolean | null;
     lastError: string | null;
+    /** Von der Cloud geregelte Heizungen und Luefter (fuer den Energie-Waechter). */
+    heaterDeviceIds?: number[];
+    fanDeviceIds?: number[];
+    preheatMinutes?: number;
   } | null;
+}
+
+/** Bewaesserungs-Zeitplan aus der Cloud (nur lesen, die Cloud fuehrt ihn aus). */
+export interface IrrigationPlan {
+  id: number;
+  name: string;
+  /** "HH:mm" Berliner Zeit. */
+  startTime: string;
+  /** Bit 0 = Mo … Bit 6 = So. */
+  daysOfWeek: number;
+  durationMinutes: number;
+  isActive: boolean;
+  skipOnRain: boolean;
+  smartRain: boolean;
+  moistureSensor: boolean;
+  lastRunAt: string | null;
 }
 
 interface RoomsSnapshot {
   at: string;
   timezone: string;
+  location?: { latitude: number; longitude: number } | null;
+  irrigation?: IrrigationPlan[];
   rooms: Room[];
   unassigned: RoomDevice[];
 }
@@ -341,6 +363,17 @@ export async function deviceAction(
   const r = await viaCloud(id, act);
   log(`Raum-Steuerung: ${dev.name} ${act} über Cloud → ${r.ok ? "ok" : r.error}`);
   return withName(r);
+}
+
+/** Standort des Accounts (Cloud), fuer den Wetterbericht. */
+export function roomsLocation(): { latitude: number; longitude: number } | null {
+  const l = snapshot?.location;
+  return l && Number.isFinite(l.latitude) && Number.isFinite(l.longitude) ? { latitude: l.latitude, longitude: l.longitude } : null;
+}
+
+/** Bewaesserungs-Zeitplaene aus der Cloud (leer bei aelterer Cloud). */
+export function irrigationPlans(): IrrigationPlan[] {
+  return Array.isArray(snapshot?.irrigation) ? snapshot.irrigation : [];
 }
 
 /* -------------------------------------------------------------- Dashboard */
