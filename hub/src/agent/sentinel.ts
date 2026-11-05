@@ -25,7 +25,7 @@ import { sendPhoto } from "./telegram.js";
 import type { TgButton } from "./telegram.js";
 import { berlinHour } from "./watch.js";
 import { decidePerson, parsePersonLook, parseVerdict, shouldInspect, type PersonLook, type Verdict } from "./sentinel-rules.js";
-import { faceAt, notePersonEvents, staffClockedIn } from "./people.js";
+import { activeCleared, clearedTitle, faceAt, knownPrompt, notePersonEvents, offerPersonOk, rememberPeople, staffClockedIn } from "./people.js";
 import { cameraSawKnownPlate, vehicleTick } from "./vehicles.js";
 
 const MODE = (process.env.HUB_AGENT_SENTINEL || "on").trim().toLowerCase();
@@ -54,7 +54,9 @@ const PERSON_PROMPT =
   "Zähle die Personen und beurteile: Tragen sie Arbeitskleidung (Warnweste, Firmenshirt, Arbeitshose, Handschuhe)? " +
   "Wirken sie wie Mitarbeiter bei der Arbeit (Werkzeug, Schubkarre, Mäher, Reinigung, Boot, Technik)? " +
   "Verdächtig ist: Klettern, Hantieren an Tür/Fenster/Schloss, Vermummung, Wegtragen von Sachen, Verstecken. " +
-  'Antworte nur mit JSON: {"personen": Zahl, "arbeitskleidung": true|false, "mitarbeiter": true|false, "verdaechtig": true|false, "was": "ein Satz auf Deutsch"}';
+  'Beschreibe jede Person kurz zur Wiedererkennung an anderen Kameras (Farbe und Art von Jacke/Oberteil, Hose, Kopfbedeckung, Tasche, Statur). ' +
+  'Antworte nur mit JSON: {"personen": Zahl, "arbeitskleidung": true|false, "mitarbeiter": true|false, "verdaechtig": true|false, ' +
+  '"kleidung": ["Person 1: …", "Person 2: …"], "was": "ein Satz auf Deutsch"}';
 
 let seq = 0;
 const lastInspect = new Map<string, number>();
@@ -143,6 +145,7 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
   // Person: heranzoomen, genauer ansehen, mit Stempeldaten/Gesicht abgleichen.
   let close: Buffer | null = null;
   let reason = "";
+  let personKleidung: string[] = [];
   if (/^PERSON\b/.test(title)) {
     await follow();
     if (followed) await sleep(2_500); // Kamera richtet sich auf die Person aus
@@ -150,9 +153,10 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
       log(`Wächter: ${cam.name}: Heranzoomen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
       return null;
     });
+    const known = await activeCleared();
     let look: PersonLook | null = null;
     try {
-      look = parsePersonLook(await askVision(close ?? first, PERSON_PROMPT, true));
+      look = parsePersonLook(await askVision(close ?? first, PERSON_PROMPT + knownPrompt(known), true));
     } catch (e) {
       log(`Wächter: ${cam.name}: Nahaufnahme: ${e instanceof Error ? e.message : e}`);
     }
@@ -162,14 +166,19 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
       face = faceAt(cam.name, at);
     }
     const staff = await staffClockedIn();
-    const decision = decidePerson({ face, staff, look, hour: berlinHour() });
+    const decision = decidePerson({ face, staff, look, hour: berlinHour(), known: known.map(clearedTitle) });
     reason = decision.reason;
     log(
       `Wächter: ${cam.name} Person: ${decision.alarm ? "ALARM" : "kein Alarm"} – ${decision.reason}` +
         (look ? ` (${look.personen} Pers., Arbeitskleidung ${look.arbeitskleidung ? "ja" : "nein"}: ${look.was})` : "")
     );
     improve("camera", decision.alarm ? "sentinel_person_alarm" : "sentinel_person_staff", { camera: cam.name, reason });
+    personKleidung = look?.kleidung ?? [];
     if (!decision.alarm) {
+      // Fuer die anderen Kameras merken: wiedererkannte verlaengern, neue dazu.
+      const matched = (look?.bekannt ?? []).map((b) => known[b - 1]).filter(Boolean);
+      const label = face?.name ?? (staff?.length ? "Mitarbeiter" : matched[0]?.label ?? "unbedenklich");
+      await rememberPeople({ camera: cam.name, kleidung: look && look.unbekannt > 0 ? look.kleidung : [], label, matched });
       SENTINEL.lastVerdict = `${cam.name}: vermutlich Mitarbeiter – ${decision.reason}`;
       recordHubEvent({ kind: "camera", severity: "info", where: cam.name, title: "Assistent: vermutlich Mitarbeiter", detail: decision.reason });
       return;
@@ -190,6 +199,8 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
     if (caps?.siren) row.push(deps.offer("Sirene", "camera_control", { camera: String(cam.id), what: "siren", on: true }, `${cam.name}: Sirene an`));
   }
   if (row.length) buttons.push(row);
+  const okData = personKleidung.length ? await offerPersonOk(cam.name, personKleidung) : null;
+  if (okData) buttons.push([{ text: "Ist in Ordnung", callback_data: okData }]);
 
   const icon = verdict.dringlichkeit === "hoch" ? "‼️" : "⚠️";
   const time = new Date().toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" });
