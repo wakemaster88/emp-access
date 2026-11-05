@@ -8,7 +8,8 @@
  * 16-kHz-Mono-WAV. Alles lokal, keine Audiodaten verlassen den Hub.
  */
 import { execFile } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { createHash } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -20,6 +21,10 @@ import { CONFIG, log } from "../config.js";
 const execFileAsync = promisify(execFile);
 
 const MODEL = process.env.HUB_AGENT_WHISPER_MODEL?.trim() || "large-v3-turbo";
+/** Pruefsummen bekannter Modelle (Hugging Face LFS). */
+const MODEL_SHA256: Record<string, string> = {
+  "large-v3-turbo": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+};
 const MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${MODEL}.bin`;
 const WHISPER_CANDIDATES = ["/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli", "/opt/homebrew/bin/whisper-cpp"];
 const FFMPEG_CANDIDATES = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"];
@@ -54,12 +59,28 @@ async function downloadModel(): Promise<void> {
   log(`Assistent: lade Sprach-Modell whisper ${MODEL} (einmalig, ~1,6 GB) …`);
   const res = await fetch(MODEL_URL, { signal: AbortSignal.timeout(2 * 60 * 60_000) });
   if (!res.ok || !res.body) throw new Error(`Whisper-Modell: HTTP ${res.status}`);
-  const part = `${file}.part`;
-  await pipeline(Readable.fromWeb(res.body as never), createWriteStream(part));
-  const size = (await fs.stat(part)).size;
-  if (size < 50 * 1024 * 1024) throw new Error(`Whisper-Modell unvollständig (${size} Bytes)`);
-  await fs.rename(part, file);
+  // Eigener Dateiname je Lauf: zwei Downloads duerfen sich nie eine .part teilen.
+  const part = `${file}.${process.pid}.${Date.now()}.part`;
+  try {
+    await pipeline(Readable.fromWeb(res.body as never), createWriteStream(part));
+    const size = (await fs.stat(part)).size;
+    if (size < 50 * 1024 * 1024) throw new Error(`Whisper-Modell unvollständig (${size} Bytes)`);
+    const want = MODEL_SHA256[MODEL];
+    if (want) {
+      const got = await sha256(part);
+      if (got !== want) throw new Error(`Whisper-Modell beschädigt (Prüfsumme ${got.slice(0, 12)}…)`);
+    }
+    await fs.rename(part, file);
+  } finally {
+    await fs.rm(part, { force: true }).catch(() => undefined);
+  }
   log("Assistent: Sprach-Modell geladen");
+}
+
+async function sha256(file: string): Promise<string> {
+  const h = createHash("sha256");
+  for await (const chunk of createReadStream(file)) h.update(chunk as Buffer);
+  return h.digest("hex");
 }
 
 /** whisper.cpp + Modell bereitstellen. */

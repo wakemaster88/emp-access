@@ -16,10 +16,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, api, log } from "../config.js";
 import { recordHubEvent } from "../state.js";
-import { LLM, LLM_LOADED, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
+import { LLM, LLM_LOADED, VISION, askVision, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
+import { SENTINEL, startSentinel } from "./sentinel.js";
+import { stripThinking } from "./think.js";
 import {
   answerCallback,
   downloadFile,
+  downloadPhoto,
   editText,
   pollUpdates,
   sendPhoto,
@@ -27,6 +30,7 @@ import {
   setCommands,
   telegramConfigured,
   typing,
+  type TgButton,
   type TgUpdate,
 } from "./telegram.js";
 import { TOOLS, findTool, readNotes, toolResultText, toolSpecs, type ToolContext } from "./tools.js";
@@ -98,7 +102,16 @@ function chatIds(): string[] {
 
 async function systemPrompt(): Promise<string> {
   const now = new Date();
-  const when = now.toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "long", dateStyle: "medium", timeStyle: "short" } as Intl.DateTimeFormatOptions);
+  // weekday zusammen mit dateStyle/timeStyle wirft in Node („Invalid option“).
+  const when = now.toLocaleString("de-DE", {
+    timeZone: "Europe/Berlin",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   const notes = await readNotes();
   const open = openFindings(watch);
   return [
@@ -114,10 +127,13 @@ async function systemPrompt(): Promise<string> {
     "- Schalte nur, worum Aaron gebeten hat. Keine eigenmächtigen Aktionen.",
     "- Netzwerk (Router PR60X, Switches, VLANs, DHCP, WLAN, Firewall) änderst du nie. Du kannst Befunde lesen und Änderungen vorschlagen; umsetzen tut Aaron.",
     "- Kameras in Umkleiden/WC gibt es nicht und darf es nicht geben.",
+    "- Mit look_at_camera siehst du dir ein aktuelles Kamerabild selbst an. Außerhalb des Betriebs bewertet der Wächter Personen- und Fahrzeugereignisse automatisch und meldet Auffälliges mit Bild.",
     "",
     "Anlage in Kürze: VLAN 1 Management, 20 Kasse, 30 Kameras (ohne Internet), 40 Betrieb (Shelly), 41 Anlage-Audio, 70 Verwaltung, 80 Personal. Kameras Reolink, Tor mit DoorBird, Audio Soundweb London, Mäher Mammotion Luba. Räume, Geräte und Regeln pflegt die Cloud (EMP-Access), der Hub spiegelt und schaltet im LAN.",
     open.length ? `\nOffene Befunde des Wächters: ${open.map((f) => f.title).join("; ")}` : "",
     notes ? `\nGemerkt (remember):\n${notes}` : "",
+    // Hybrides Qwen3 ohne Instruct: Denkmodus per Schalter aus (sonst Denktext in der Antwort).
+    /qwen3/i.test(LLM.model) && !/instruct/i.test(LLM.model) ? "/no_think" : "",
   ].join("\n");
 }
 
@@ -155,14 +171,14 @@ function ctxFor(chatId: string): ToolContext {
 async function converse(chatId: string, history: ChatMessage[], allowAct = true): Promise<string> {
   // Ohne Chat (Tagesbericht): nur lesen, keine Bilder verschicken.
   const tools = toolSpecs().filter(
-    (t) => allowAct || (findTool(t.function.name)?.risk === "read" && t.function.name !== "camera_snapshot")
+    (t) => allowAct || (findTool(t.function.name)?.risk === "read" && !["camera_snapshot", "look_at_camera"].includes(t.function.name))
   );
   const sys: ChatMessage = { role: "system", content: await systemPrompt() };
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const reply = await chat([sys, ...history], tools);
     history.push({ role: "assistant", content: reply.content ?? "", tool_calls: reply.tool_calls });
     const calls = reply.tool_calls ?? [];
-    if (calls.length === 0) return (reply.content ?? "").trim();
+    if (calls.length === 0) return stripThinking(reply.content ?? "");
     for (const call of calls) {
       const name = call.function?.name ?? "";
       const args = parseArgs(call.function?.arguments);
@@ -270,7 +286,7 @@ async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Prom
   }
   const p = pending.get(m[2]);
   const msgId = cb.message?.message_id;
-  if (!p || p.chatId !== chatId || Date.now() - p.createdAt > PENDING_TTL_MS) {
+  if (!p || (p.chatId !== "*" && p.chatId !== chatId) || Date.now() - p.createdAt > PENDING_TTL_MS) {
     pending.delete(m[2]);
     await answerCallback(cb.id, "Abgelaufen – bitte neu fragen.");
     if (msgId) await editText(chatId, msgId, `${cb.message?.text ?? ""}\n\nAbgelaufen.`);
@@ -299,6 +315,13 @@ async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Prom
   if (msgId) await editText(chatId, msgId, line);
   history.push({ role: "assistant", content: `(${line})` });
   histories.set(chatId, trimHistory(history));
+}
+
+/** Knopf fuer eine vorbereitete Aktion (Waechter-Meldung): der Tipp ist die Bestaetigung. */
+function offer(label: string, tool: string, args: Record<string, unknown>, desc: string): TgButton {
+  const id = randomBytes(6).toString("hex");
+  pending.set(id, { chatId: "*", tool, args, desc, createdAt: Date.now() });
+  return { text: label, callback_data: `ok:${id}` };
 }
 
 /* ------------------------------------------------------------ Kopplung */
@@ -386,11 +409,33 @@ async function onUpdate(u: TgUpdate): Promise<void> {
     enqueue(chatId, () => handleVoice(chatId, voice));
     return;
   }
-  if (!text) {
-    if (msg.photo) await sendText(chatId, "Bilder kann ich mir noch nicht ansehen – schreib mir, was du wissen willst.");
+  if (msg.photo) {
+    const photo = msg.photo;
+    enqueue(chatId, () => handlePhoto(chatId, photo, text));
     return;
   }
+  if (!text) return;
   enqueue(chatId, () => handleMessage(chatId, text));
+}
+
+async function handlePhoto(chatId: string, photo: Array<{ file_id: string; width: number }>, caption: string): Promise<void> {
+  if (!VISION.ready) {
+    await sendText(chatId, `Das Bildmodell ${VISION.installing ? "wird gerade eingerichtet" : `ist nicht bereit${VISION.error ? `: ${VISION.error}` : ""}`}.`);
+    return;
+  }
+  await typing(chatId);
+  try {
+    const jpeg = await downloadPhoto(photo);
+    if (!jpeg) throw new Error("Foto nicht abrufbar");
+    const question = caption || "Beschreibe kurz, was auf dem Bild zu sehen ist.";
+    const answer = await askVision(jpeg, `${question}\nAntworte kurz auf Deutsch.`);
+    await sendText(chatId, answer || "Dazu fällt mir nichts ein.");
+    const history = histories.get(chatId) ?? [];
+    history.push({ role: "user", content: `[Foto]${caption ? ` ${caption}` : ""}` }, { role: "assistant", content: answer });
+    histories.set(chatId, trimHistory(history));
+  } catch (e) {
+    await sendText(chatId, `Das Foto konnte ich nicht auswerten: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 async function handleVoice(chatId: string, voice: { file_id: string; duration: number }): Promise<void> {
@@ -521,7 +566,12 @@ export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string
     const ram = LLM_LOADED.loaded ? `im RAM (${(LLM_LOADED.sizeBytes / 1024 ** 3).toFixed(1)} GB)` : "entladen";
     const speed = LLM.lastReplyMs != null ? ` · Antwort ${(LLM.lastReplyMs / 1000).toFixed(1)} s` : "";
     const voice = VOICE.ready ? " · Sprache an" : VOICE.installing ? " · Sprache wird eingerichtet" : "";
-    return { state: "ok", value: LLM.model, detail: `${ram} · ${chats}${speed}${voice}` };
+    const eyes = VISION.ready
+      ? ` · Bilder an${SENTINEL.enabled ? ` (Wächter ${SENTINEL.inspections}/${SENTINEL.alerts})` : ""}`
+      : VISION.installing
+        ? " · Bildmodell wird geladen"
+        : "";
+    return { state: "ok", value: LLM.model, detail: `${ram} · ${chats}${speed}${voice}${eyes}` };
   }
   if (LLM.installing) {
     const pct = LLM.pullPct != null ? ` ${LLM.pullPct} %` : "";
@@ -546,6 +596,8 @@ export async function startAgent(): Promise<void> {
   setInterval(() => {
     if (!LLM.ready) void ensureOllama();
   }, 30 * 60_000);
+  // Kamera-Ereignisse ausserhalb des Betriebs selbst ansehen (Bildmodell).
+  startSentinel({ chatIds, offer });
   // Sprachnachrichten: whisper.cpp + Modell im Hintergrund bereitstellen.
   void ensureWhisper();
   void pollLoop();
