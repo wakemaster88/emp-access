@@ -334,18 +334,19 @@ function ListView({
               "glass-tile flex gap-3 p-3",
               // Rückfrage als eigene Zeile über die volle Kachelbreite.
               confirmingDelete && "flex-wrap",
-              item.pickedUp && "opacity-60"
             )}
           >
+            {/* Erledigt: Text und Tasten bleiben lesbar, gedimmt wird nur das Bild (Abschnitt 17);
+                den Zustand sagt „Erledigt am …“. */}
             {item.image ? (
               /* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */
               <img
                 src={item.image}
                 alt={item.description}
-                className="h-20 w-20 rounded-xl object-cover border border-border shrink-0"
+                className={cn("h-20 w-20 rounded-xl object-cover border border-border shrink-0", item.pickedUp && "opacity-60")}
               />
             ) : (
-              <div className="h-20 w-20 rounded-xl bg-glass-tile border border-glass-border flex items-center justify-center shrink-0">
+              <div className={cn("h-20 w-20 rounded-xl bg-glass-tile border border-glass-border flex items-center justify-center shrink-0", item.pickedUp && "opacity-60")}>
                 {isLostReport ? (
                   <User className="h-7 w-7 text-muted-foreground" />
                 ) : (
