@@ -4,6 +4,7 @@
  * GetAiState), meldet Start/Ende der Ereignisse an die Cloud und laedt
  * Schnappschuesse hoch (bei Ereignis-Beginn und auf Task-Anforderung).
  */
+import { zoomStep } from "./zoom-step.js";
 import { onCameraEvent } from "./rules.js";
 import { kickIfRulesTriggered } from "./task-kick.js";
 import { promises as fs } from "node:fs";
@@ -999,10 +1000,98 @@ async function getControlCam(cameraId: number): Promise<CameraRuntime> {
   return cam;
 }
 
+/*
+ * Befehle an dieselbe Kamera laufen nacheinander. Reolink antwortet auf zwei
+ * gleichzeitige PtzCtrl (Fahren und Stopp) mit „set config failed“ (-13).
+ */
+const ptzQueues = new Map<number, Promise<unknown>>();
+function ptzSerial<T>(cameraId: number, fn: () => Promise<T>): Promise<T> {
+  const prev = ptzQueues.get(cameraId) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(fn);
+  ptzQueues.set(cameraId, next);
+  void next.catch(() => {}).finally(() => {
+    if (ptzQueues.get(cameraId) === next) ptzQueues.delete(cameraId);
+  });
+  return next;
+}
+
+/** Laufende Fahrt je Kamera: Sicherheits-Stopp nach durationMs. */
+const ptzAutoStops = new Map<number, NodeJS.Timeout>();
+
+/*
+ * Kameras mit Zoom-Objektiv ohne Schwenkkopf (RLC-811A u. a.) nehmen
+ * PtzCtrl ZoomInc/ZoomDec an, bewegen aber nichts. Sie zoomen nur ueber
+ * StartZoomFocus auf eine absolute Position (wie reolink_aio).
+ */
+const zoomRanges = new Map<number, { min: number; max: number }>();
+const ZOOM_FALLBACK_RANGE = { min: 0, max: 33 };
+
+async function zoomOnlyCamera(cameraId: number): Promise<boolean> {
+  const caps = capsCache.get(cameraId)?.caps ?? (await getCameraCaps(cameraId).catch(() => null));
+  return !!caps && caps.zoom && !caps.pan;
+}
+
+async function readZoom(cam: CameraRuntime): Promise<{ pos: number; min: number; max: number }> {
+  await ensureLogin(cam);
+  let range = zoomRanges.get(cam.config.id);
+  if (!range) {
+    // action 1 liefert zusaetzlich den Wertebereich unter "range".
+    const res = await fetch(
+      `${baseUrl(cam.config)}/cgi-bin/api.cgi?cmd=GetZoomFocus&token=${encodeURIComponent(cam.token ?? "")}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([{ cmd: "GetZoomFocus", action: 1, param: { channel: cam.config.channel } }]),
+        signal: AbortSignal.timeout(8000),
+      }
+    ).catch(() => null);
+    const json = res && res.ok ? ((await res.json().catch(() => null)) as Array<Record<string, unknown>> | null) : null;
+    const r = (json?.[0]?.range as { ZoomFocus?: { zoom?: { pos?: { min?: number; max?: number } } } } | undefined)
+      ?.ZoomFocus?.zoom?.pos;
+    range =
+      typeof r?.min === "number" && typeof r?.max === "number" && r.max > r.min
+        ? { min: r.min, max: r.max }
+        : ZOOM_FALLBACK_RANGE;
+    zoomRanges.set(cam.config.id, range);
+  }
+  const value = await cgi(cam, "GetZoomFocus", { channel: cam.config.channel });
+  const pos = Number((value.ZoomFocus as { zoom?: { pos?: number } } | undefined)?.zoom?.pos);
+  if (!Number.isFinite(pos)) throw new Error("Kamera meldet keine Zoom-Position");
+  return { pos, ...range };
+}
+
+async function writeZoom(cam: CameraRuntime, pos: number): Promise<void> {
+  await cgi(cam, "StartZoomFocus", { ZoomFocus: { channel: cam.config.channel, op: "ZoomPos", pos } });
+}
+
 /**
- * PTZ-Steuerung. Bei Richtungs-/Zoom-Ops wird nach `durationMs`
- * (Default 800 ms, max 5 s) automatisch gestoppt, damit die Kamera bei
- * Task-Latenz nicht endlos weiterfaehrt.
+ * Optischer Zoom ueber die absolute Position. Ohne pos/step nur lesen.
+ * Liefert immer { pos, min, max }.
+ */
+export async function cameraZoom(
+  cameraId: number,
+  payload: Record<string, unknown> | null
+): Promise<{ pos: number; min: number; max: number }> {
+  const cam = await getControlCam(cameraId);
+  return ptzSerial(cameraId, async () => {
+    const cur = await readZoom(cam);
+    let target: number | null = null;
+    if (payload?.pos != null && Number.isFinite(Number(payload.pos))) {
+      target = clamp(Math.round(Number(payload.pos)), cur.min, cur.max);
+    } else if (payload?.step != null && Number(payload.step) !== 0) {
+      target = zoomStep(cur.pos, cur.min, cur.max, Number(payload.step) > 0 ? 1 : -1);
+    }
+    if (target == null || target === cur.pos) return cur;
+    await writeZoom(cam, target);
+    return { ...cur, pos: target };
+  });
+}
+
+/**
+ * PTZ-Steuerung. Richtungs-/Zoom-Ops laufen, bis "Stop" kommt, laengstens
+ * `durationMs` (Default 800 ms, max 5 s) – der Hub stoppt dann selbst, damit
+ * die Kamera bei verlorenem Loslassen nicht endlos weiterfaehrt. Die Antwort
+ * kommt sofort, nicht erst nach dem Stopp.
  */
 export async function ptzControl(
   cameraId: number,
@@ -1020,14 +1109,36 @@ export async function ptzControl(
     param.id = presetId;
   }
 
-  await ensureLogin(cam);
-  await cgi(cam, "PtzCtrl", param);
+  // Neuer Befehl ersetzt den Sicherheits-Stopp der vorigen Fahrt.
+  const pending = ptzAutoStops.get(cameraId);
+  if (pending) {
+    clearTimeout(pending);
+    ptzAutoStops.delete(cameraId);
+  }
+
+  if ((op === "ZoomInc" || op === "ZoomDec" || op === "Stop") && (await zoomOnlyCamera(cameraId))) {
+    // Zoom-Objektiv ohne Schwenkkopf: ein Schritt pro Befehl, Stopp ist leer.
+    if (op === "Stop") return { op, zoomOnly: true };
+    const z = await cameraZoom(cameraId, { step: op === "ZoomInc" ? 1 : -1 });
+    return { op, zoomOnly: true, zoom: z };
+  }
+
+  await ptzSerial(cameraId, async () => {
+    await ensureLogin(cam);
+    await cgi(cam, "PtzCtrl", param);
+  });
 
   if (PTZ_CONTINUOUS_OPS.has(op)) {
     const durationMs = clamp(Number(payload?.durationMs) || 800, 100, 5000);
-    await new Promise((r) => setTimeout(r, durationMs));
-    await cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "Stop", speed });
-    return { op, speed, durationMs, stopped: true };
+    const timer = setTimeout(() => {
+      if (ptzAutoStops.get(cameraId) !== timer) return;
+      ptzAutoStops.delete(cameraId);
+      void ptzSerial(cameraId, () => cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "Stop", speed })).catch(
+        (e) => log(`Kamera ${cam.config.name}: PTZ-Stopp fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
+      );
+    }, durationMs);
+    ptzAutoStops.set(cameraId, timer);
+    return { op, speed, durationMs };
   }
   return { op, speed };
 }

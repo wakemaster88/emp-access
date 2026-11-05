@@ -478,6 +478,8 @@ const live = {
   focusId: null,
   focusStop: null,
   presets: {},
+  /** Kamera-ID -> { pos, min, max } des optischen Zooms (Zoom-Objektiv ohne Schwenkkopf). */
+  zoomPos: {},
   /** Kamera-IDs, deren Faehigkeiten schon angefragt wurden. */
   capsAsked: new Set(),
   capsBusy: false,
@@ -1016,8 +1018,10 @@ function renderZentrale(d) {
     // Faehigkeiten kamen nach dem Oeffnen an: Steuerung nachziehen.
     const c = focusCam();
     const box = $("camDlgControls");
-    if (c && box.dataset.caps !== capsKey(c)) {
+    // Nicht waehrend gedrueckt gehalten wird: das Loslassen ginge sonst verloren.
+    if (c && !ptzHeld && box.dataset.caps !== capsKey(c)) {
       box.innerHTML = controlsHtml(c);
+      if (c.caps && c.caps.zoom && !c.caps.pan) camZoom(c);
       box.dataset.caps = capsKey(c);
       $("camDlgHost").textContent = focusSubtitle(c);
     }
@@ -1059,10 +1063,13 @@ function openFocus(id) {
   const dlg = $("camDlg");
   $("camDlgTitle").textContent = c.name;
   $("camDlgHost").textContent = focusSubtitle(c);
+  endPtzHold();
   const box = $("camDlgControls");
   box.innerHTML = controlsHtml(c);
   box.dataset.caps = capsKey(c);
+  $("camDlgSnap").hidden = c.kind === "MOWER";
   setZoom(1, 50, 50);
+  if (c.caps && c.caps.zoom && !c.caps.pan) camZoom(c);
   dlg.classList.toggle("is-wide", live.wide.has(c.id));
 
   const video = $("camDlgVideo");
@@ -1147,22 +1154,47 @@ function renderFocusState(d) {
   }
 }
 
+function presetsHtml(c) {
+  const presets = live.presets[c.id];
+  if (!presets) return `<button type="button" class="btn small" data-presets-load>${icon("target")}Positionen laden</button>`;
+  if (!presets.length) return '<span class="ctl-hint">Keine Positionen auf der Kamera gespeichert.</span>';
+  return presets.map((p) => `<button type="button" class="btn small" data-preset="${esc(p.id)}">${esc(p.name)}</button>`).join("");
+}
+
+/** Optischen Zoom lesen (ohne Wert) oder setzen ({ pos } / { step }). */
+async function camZoom(c, args = {}) {
+  const r = await shellyAction("CAMERA_ZOOM", { cameraId: c.id, ...args });
+  if (r.success && r.result && r.result.zoom) {
+    live.zoomPos[c.id] = r.result.zoom;
+    const el = $("camZoomSlider");
+    if (el && live.focusId === c.id) {
+      el.min = r.result.zoom.min;
+      el.max = r.result.zoom.max;
+      el.value = r.result.zoom.pos;
+      el.disabled = false;
+    }
+  } else if (Object.keys(args).length) {
+    toast(`${c.name}: ${r.error || "Zoom fehlgeschlagen"}`, "err");
+  }
+  return r;
+}
+
 function controlsHtml(c) {
-  const digital = `<div class="ctl-group">
+  // Digitaler Zoom (im Browser). Auf dem Telefon per Fingergeste, die
+  // Tasten blendet das CSS dort aus. Schnappschuss sitzt im Kopf.
+  const digital = `<div class="ctl-group ctl-digital" title="${
+    TOUCH
+      ? "Mit zwei Fingern aufziehen, Doppeltipp vergrößert. Vergrößert mit einem Finger verschieben, sonst wischen für die nächste Kamera."
+      : "Digital im Browser, auch mit dem Mausrad an der Stelle, auf die du zeigst. Vergrößert per Ziehen verschieben."
+  }">
       <span class="ctl-label">Bild vergrößern</span>
-      <div class="ctl-row">
+      <div class="ctl-row ctl-row-tight">
         <button type="button" class="btn small" data-dzoom="-1" aria-label="Bild verkleinern">${icon("minus")}</button>
         <span class="ctl-value" id="camZoomLabel">${live.zoom.scale.toFixed(1)}×</span>
         <button type="button" class="btn small" data-dzoom="1" aria-label="Bild vergrößern">${icon("plus")}</button>
-        <button type="button" class="btn small" data-dzoom="0">Zurück</button>
+        <button type="button" class="btn small ctl-grow" data-dzoom="0">Zurück</button>
       </div>
-      <span class="ctl-hint">${
-        TOUCH
-          ? "Mit zwei Fingern aufziehen, Doppeltipp vergrößert. Vergrößert mit einem Finger verschieben, sonst wischen für die nächste Kamera."
-          : "Digital im Browser, auch mit dem Mausrad an der Stelle, auf die du zeigst. Vergrößert per Ziehen verschieben."
-      }</span>
     </div>`;
-  const snap = `<div class="ctl-group"><span class="ctl-label">Bild</span><div class="ctl-row"><button type="button" class="btn small" data-cam="CAMERA_SNAPSHOT">${icon("snap")}Schnappschuss in die Cloud</button></div></div>`;
 
   if (c.kind === "MOWER") {
     const m = c.mower;
@@ -1178,86 +1210,84 @@ function controlsHtml(c) {
 
   if (c.kind === "DOORBIRD") {
     return `<div class="ctl-group"><span class="ctl-label">Tür</span><div class="ctl-row"><button type="button" class="btn primary" data-cam="DOORBIRD_OPEN">${icon("unlock")}Tür öffnen</button></div>
-      ${c.hold ? `<span class="ctl-hint">Wird offen gehalten bis ${esc(clock(c.hold.until))}</span>` : ""}</div>${digital}${snap}`;
+      ${c.hold ? `<span class="ctl-hint">Wird offen gehalten bis ${esc(clock(c.hold.until))}</span>` : ""}</div>${digital}`;
   }
 
   const k = c.caps;
   if (!k) {
     return `<div class="ctl-group"><span class="ctl-label">Steuerung</span><div class="ctl-loading"><div class="skeleton"></div><span class="ctl-hint">${
       c.reachable ? "Frage ab, was diese Kamera kann …" : "Kamera ist offline – Funktionen unbekannt."
-    }</span></div></div>${digital}${snap}`;
+    }</span></div></div>${digital}`;
   }
 
   const groups = [];
-  if (k.pan || k.zoom) {
+  const presetRow = k.presets || k.pan ? `<div class="ctl-row preset-row" id="presetRow">${presetsHtml(c)}</div>` : "";
+  if (k.pan) {
+    // Schwenkkopf: Steuerkreuz links, rechts optischer Zoom und Positionen.
     groups.push(`<div class="ctl-group">
-      <span class="ctl-label">${k.pan ? "Schwenken" : "Optischer Zoom"}</span>
-      ${
-        k.pan
-          ? `<div class="dpad">
-        <button type="button" class="btn" data-ptz="Up" aria-label="hoch">${icon("chev")}</button>
-        <button type="button" class="btn" data-ptz="Left" aria-label="links">${icon("chev")}</button>
-        <span class="center">${icon("target")}</span>
-        <button type="button" class="btn" data-ptz="Right" aria-label="rechts">${icon("chev")}</button>
-        <button type="button" class="btn" data-ptz="Down" aria-label="runter">${icon("chev")}</button>
-      </div>`
-          : ""
-      }
-      ${
-        k.zoom
-          ? `<div class="ctl-row">
-        <button type="button" class="btn small" data-ptz="ZoomDec">${icon("minus")}Weit</button>
-        <button type="button" class="btn small" data-ptz="ZoomInc">${icon("plus")}Nah</button>
-      </div>`
-          : ""
-      }
-      <span class="ctl-hint">Gedrückt halten fährt, loslassen stoppt.${k.pan ? " Pfeiltasten gehen auch." : ""}</span>
+      <span class="ctl-label">Schwenken</span>
+      <div class="ptz-pad" title="Gedrückt halten fährt, loslassen stoppt. Pfeiltasten gehen auch.">
+        <div class="dpad">
+          <button type="button" class="btn" data-ptz="Up" aria-label="hoch">${icon("chev")}</button>
+          <button type="button" class="btn" data-ptz="Left" aria-label="links">${icon("chev")}</button>
+          <span class="center">${icon("target")}</span>
+          <button type="button" class="btn" data-ptz="Right" aria-label="rechts">${icon("chev")}</button>
+          <button type="button" class="btn" data-ptz="Down" aria-label="runter">${icon("chev")}</button>
+        </div>
+        <div class="ptz-side">${
+          k.zoom
+            ? `<div class="ptz-zoom">
+            <button type="button" class="btn small" data-ptz="ZoomInc">${icon("plus")}Nah</button>
+            <button type="button" class="btn small" data-ptz="ZoomDec">${icon("minus")}Weit</button>
+          </div>`
+            : ""
+        }${presetRow}</div>
+      </div>
     </div>`);
-  }
-  if (k.presets || k.pan) {
-    const presets = live.presets[c.id];
+  } else if (k.zoom) {
+    // Zoom-Objektiv ohne Schwenkkopf: faehrt nur auf absolute Positionen.
+    const z = live.zoomPos[c.id];
     groups.push(`<div class="ctl-group">
-      <span class="ctl-label">Positionen</span>
-      <div class="ctl-row" id="presetRow">${
-        presets
-          ? presets.length
-            ? presets.map((p) => `<button type="button" class="btn small" data-preset="${esc(p.id)}">${esc(p.name)}</button>`).join("")
-            : '<span class="ctl-hint">Keine Positionen gespeichert.</span>'
-          : `<button type="button" class="btn small" data-presets-load>${icon("target")}Positionen laden</button>`
-      }</div>
+      <span class="ctl-label">Optischer Zoom</span>
+      <div class="ctl-row zoom-row">
+        <button type="button" class="btn small" data-zstep="-1" aria-label="Weiter">${icon("minus")}Weit</button>
+        <input type="range" class="zoom-slider" id="camZoomSlider" aria-label="Zoom-Position" min="${z ? z.min : 0}" max="${z ? z.max : 33}" step="1" value="${z ? z.pos : 0}"${z ? "" : " disabled"}>
+        <button type="button" class="btn small" data-zstep="1" aria-label="Näher">${icon("plus")}Nah</button>
+      </div>
+      ${presetRow}
     </div>`);
+  } else if (k.presets) {
+    groups.push(`<div class="ctl-group"><span class="ctl-label">Positionen</span>${presetRow}</div>`);
   }
-  const light = [];
+  // Licht und Sirene in einer Gruppe, je eine kompakte Zeile.
+  const extra = [];
   if (k.spotlight) {
-    light.push(`<div class="ctl-row">
-        <button type="button" class="btn small" data-cam="CAMERA_SPOTLIGHT" data-on="true">${icon("bulb")}Scheinwerfer an</button>
+    extra.push(`<div class="ctl-row ctl-line"><span class="ctl-line-label" title="Scheinwerfer">${icon("bulb")}Scheinwerfer</span>
+        <button type="button" class="btn small" data-cam="CAMERA_SPOTLIGHT" data-on="true">an</button>
         <button type="button" class="btn small" data-cam="CAMERA_SPOTLIGHT" data-on="false">aus</button>
       </div>`);
   }
   if (k.ir) {
-    light.push(`<div class="ctl-row">
-        <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="Auto">${icon("moon")}Infrarot auto</button>
+    extra.push(`<div class="ctl-row ctl-line"><span class="ctl-line-label" title="Infrarot">${icon("moon")}Infrarot</span>
+        <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="Auto">auto</button>
         <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="On">an</button>
         <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="Off">aus</button>
       </div>`);
   }
-  if (light.length) groups.push(`<div class="ctl-group"><span class="ctl-label">Licht</span>${light.join("")}</div>`);
   if (k.siren) {
-    groups.push(`<div class="ctl-group">
-      <span class="ctl-label">Sirene</span>
-      <div class="ctl-row">
-        <button type="button" class="btn small danger" data-cam="CAMERA_SIREN" data-on="true">${icon("siren")}Sirene auslösen</button>
+    extra.push(`<div class="ctl-row ctl-line"><span class="ctl-line-label" title="Sirene">${icon("siren")}Sirene</span>
+        <button type="button" class="btn small danger" data-cam="CAMERA_SIREN" data-on="true">auslösen</button>
         <button type="button" class="btn small" data-cam="CAMERA_SIREN" data-on="false">Stopp</button>
-      </div>
-    </div>`);
+      </div>`);
   }
+  if (extra.length) groups.push(`<div class="ctl-group"><span class="ctl-label">${k.siren ? "Licht und Sirene" : "Licht"}</span>${extra.join("")}</div>`);
   if (!groups.length) {
     groups.push(`<div class="ctl-group"><span class="ctl-label">Steuerung</span><span class="ctl-hint">Feste Kamera ohne Schwenken, Zoom, Scheinwerfer oder Sirene.</span></div>`);
   }
   if (k.source === "model") {
     groups.push(`<span class="ctl-hint">Funktionen aus der Modellliste geschätzt – die Kamera hat ihre Fähigkeiten nicht gemeldet.</span>`);
   }
-  return groups.join("") + digital + snap;
+  return groups.join("") + digital;
 }
 
 async function camAction(type, payload, label, button) {
@@ -1298,9 +1328,18 @@ function ptzStop() {
 async function onCamControl(el) {
   const c = focusCam();
   if (!c) return;
+  if (el.id === "camDlgSnap") {
+    return camAction("CAMERA_SNAPSHOT", { cameraId: c.id }, `${c.name}: Schnappschuss`, el);
+  }
   if (el.dataset.dzoom != null) {
     const step = Number(el.dataset.dzoom);
     return setZoom(step === 0 ? 1 : live.zoom.scale + step * 0.5);
+  }
+  if (el.dataset.zstep) {
+    el.disabled = true;
+    await camZoom(c, { step: Number(el.dataset.zstep) });
+    el.disabled = false;
+    return;
   }
   if (el.dataset.preset) {
     return camAction("CAMERA_PTZ", { cameraId: c.id, op: "ToPos", presetId: Number(el.dataset.preset), speed: 32 }, `${c.name}: ${el.textContent.trim()}`, el);
@@ -1360,26 +1399,42 @@ document.addEventListener("fullscreenchange", () => setTimeout(layoutGrid, 50));
 document.addEventListener("webkitfullscreenchange", () => setTimeout(layoutGrid, 50));
 
 /* PTZ: gedrueckt halten faehrt, loslassen stoppt. */
-let ptzHeld = null;
+var ptzHeld = null;
 $("camDlgControls").addEventListener("pointerdown", (ev) => {
   const el = ev.target.closest("[data-ptz]");
   if (!el || ev.button > 0) return;
   ev.preventDefault();
   el.setPointerCapture?.(ev.pointerId);
-  ptzHeld = { el, at: Date.now() };
+  const op = el.dataset.ptz;
+  // Laenger als die 5 s Sicherheitsstopp des Hubs halten: Befehl auffrischen.
+  const again = setInterval(() => ptz(op, true), 4000);
+  ptzHeld = { el, at: Date.now(), again };
   el.classList.add("is-on");
-  ptz(el.dataset.ptz, true);
+  ptz(op, true);
 });
 function endPtzHold() {
-  if (!ptzHeld) return;
-  const { el, at } = ptzHeld;
+  if (!ptzHeld || !ptzHeld.el) return;
+  const { el, at, again } = ptzHeld;
+  clearInterval(again);
   ptzHeld = null;
   el.classList.remove("is-on");
   // Kurzer Tipp: ein Stueck fahren lassen, sonst sofort anhalten.
   setTimeout(ptzStop, Math.max(0, 450 - (Date.now() - at)));
 }
-$("camDlgControls").addEventListener("pointerup", endPtzHold);
-$("camDlgControls").addEventListener("pointercancel", endPtzHold);
+// Loslassen auch ausserhalb der Taste (Finger abgerutscht, Taste neu gezeichnet).
+document.addEventListener("pointerup", endPtzHold);
+document.addEventListener("pointercancel", endPtzHold);
+$("camDlgControls").addEventListener("lostpointercapture", endPtzHold);
+window.addEventListener("blur", endPtzHold);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) endPtzHold();
+});
+$("camDlg").addEventListener("close", endPtzHold);
+$("camDlgSnap").addEventListener("click", (ev) => onCamControl(ev.currentTarget));
+$("camDlgControls").addEventListener("change", (ev) => {
+  const c = focusCam();
+  if (c && ev.target.id === "camZoomSlider") camZoom(c, { pos: Number(ev.target.value) });
+});
 // Langes Druecken auf dem Telefon: kein Kontextmenue, keine Textauswahl.
 $("camDlgControls").addEventListener("contextmenu", (ev) => {
   if (ev.target.closest("[data-ptz]")) ev.preventDefault();

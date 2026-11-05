@@ -7,6 +7,7 @@ import {
   cameraScene,
   captureSnapshot,
   ptzControl,
+  cameraZoom,
   setSpotlight,
   setIrLights,
   setSiren,
@@ -215,6 +216,7 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
     case "CAMERA_SPOTLIGHT":
     case "CAMERA_IR":
     case "CAMERA_SIREN":
+    case "CAMERA_ZOOM":
     case "CAMERA_PTZ_PRESETS": {
       const cameraId = Number(task.payload?.cameraId);
       if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
@@ -232,6 +234,9 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
             break;
           case "CAMERA_SIREN":
             result = await setSiren(cameraId, task.payload);
+            break;
+          case "CAMERA_ZOOM":
+            result = { zoom: await cameraZoom(cameraId, task.payload) };
             break;
           default:
             result = await getPtzPresets(cameraId);
