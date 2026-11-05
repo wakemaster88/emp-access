@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -168,13 +169,14 @@ export function PersonSearchDialog({
                         className="aspect-square w-full object-cover"
                       />
                       {on && (
-                        <span className="absolute top-1 right-1 rounded-full bg-primary p-0.5 text-primary-foreground">
+                        <span className="absolute top-1 right-1 rounded-full bg-primary-fill p-0.5 text-primary-foreground">
                           <Check className="h-3.5 w-3.5" />
                         </span>
                       )}
-                      <span className="absolute top-1 left-1 rounded bg-black/60 px-1 text-[11px] font-medium tabular-nums text-white">
+                      {/* Ähnlichkeit als Pille über dem Kamerabild (Badge media). */}
+                      <Badge variant="media" className="absolute top-1 left-1 tabular-nums">
                         {Math.round(m.score * 100)}%
-                      </span>
+                      </Badge>
                       <span className="block px-1.5 py-1 text-[11px] text-muted-foreground truncate">
                         {new Date(m.seenAt).toLocaleString("de-DE", {
                           day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",

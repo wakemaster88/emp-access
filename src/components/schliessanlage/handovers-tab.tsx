@@ -10,7 +10,6 @@ import {
   FileSignature,
   Plus,
   QrCode,
-  Search,
   Trash2,
 } from "lucide-react";
 import {
@@ -26,7 +25,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Segmented } from "@/components/ui/segmented";
 import { HandoverDialog } from "@/components/schliessanlage/handover-dialog";
 import { ReturnDialog } from "@/components/schliessanlage/return-dialog";
@@ -136,16 +135,13 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
         <ErrorLine message={error} />
 
         <div className="flex flex-wrap gap-2">
-          <div className="relative min-w-48 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Empfänger oder Schlüsselnummer suchen…"
-              className="pl-8 max-sm:h-11"
-            />
-          </div>
+          <SearchInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Empfänger oder Schlüsselnummer suchen…"
+            containerClassName="min-w-48 flex-1"
+            className="max-sm:h-11"
+          />
           {/* Filter als Segmentwahl (docs/design-regeln.md, Abschnitt 14), aktive Wahl als helle Pille. */}
           <Segmented
             aria-label="Protokolle"

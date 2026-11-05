@@ -21,7 +21,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -387,7 +387,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
             {items.map((p) => {
               const personSightings = p.recentSightings ?? [];
               return (
-                <Card key={p.id} className={cn(!p.isActive && "opacity-60")}>
+                // Pausiert: Text bleibt lesbar (das Badge „Pausiert“ sagt den Zustand), gedimmt werden nur die Bilder.
+                <Card key={p.id}>
                   <CardContent className="space-y-3">
                     {/* Kopf: Name und Merkmale links, Handlungen rechts (auf dem Handy darunter). */}
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -518,7 +519,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                                     alt=""
                                     loading="lazy"
                                     decoding="async"
-                                    className="h-full w-full object-cover"
+                                    className={cn("h-full w-full object-cover", !p.isActive && "opacity-60")}
                                   />
                                 </a>
                               ) : (
@@ -649,31 +650,27 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
           {sightingError && <Notice tone="danger" compact title={sightingError} />}
 
           {/* Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein. */}
-          <Card className="py-0 sm:py-0 overflow-hidden">
-                <Table>
+          <Card flush="y">
+                <Table edge>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-16 pl-4 sm:pl-[18px]">Bild</TableHead>
+                      <TableHead className="w-16">Bild</TableHead>
                       <TableHead>Zeit</TableHead>
                       <TableHead>Person</TableHead>
                       <TableHead>Liste</TableHead>
                       <TableHead className="hidden sm:table-cell">Kamera</TableHead>
                       <TableHead>Quelle</TableHead>
                       <TableHead className="hidden md:table-cell">Shelly</TableHead>
-                      <TableHead className="w-[1%] text-right pr-4 sm:pr-[18px]">Aktion</TableHead>
+                      <TableHead className="w-[1%] text-right">Aktion</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sightings.length === 0 && (
-                      <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={8} className="p-0 whitespace-normal">
-                          <EmptyState compact icon={History} title="Noch keine Sichtungen." />
-                        </TableCell>
-                      </TableRow>
+                      <TableEmpty colSpan={8} icon={History} title="Noch keine Sichtungen." />
                     )}
                     {sightings.map((s) => (
                       <TableRow key={s.id}>
-                        <TableCell className="pl-4 sm:pl-[18px]">
+                        <TableCell>
                           {s.hasSnapshot ? (
                             <button
                               type="button"
@@ -732,7 +729,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                             <span className="inline-flex items-center gap-1 text-destructive"><XCircle className="h-3 w-3" /> Fehler</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right pr-4 sm:pr-[18px]">
+                        <TableCell className="text-right">
                           <div className="inline-flex items-center gap-1">
                             {!s.listedPerson && (
                               <Button

@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Crown, KeyRound, Layers, Plus, Search } from "lucide-react";
+import { Crown, KeyRound, Layers, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Table,
   TableBody,
@@ -19,7 +20,6 @@ import {
   EmptyHint,
   KeyStatusBadge,
   LevelBadge,
-  selectFieldClass,
 } from "@/components/schliessanlage/shared";
 import type { KeyRow, LockOption } from "@/components/schliessanlage/types";
 import { KEY_LEVEL_LABELS, KEY_STATUS_LABELS } from "@/lib/keying";
@@ -85,21 +85,20 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
 
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2">
-          <div className="relative min-w-48 flex-1 max-sm:basis-full">
-            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Nummer, Bezeichnung oder Schloss suchen…"
-              className="pl-8 max-sm:h-11"
-            />
-          </div>
-          <select
+          <SearchInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Nummer, Bezeichnung oder Schloss suchen…"
+            containerClassName="min-w-48 flex-1 max-sm:basis-full"
+            className="max-sm:h-11"
+          />
+          {/* Filter in Inhaltsbreite (w-auto statt der vollen Breite von NativeSelect), auf dem Handy teilen sie sich die Zeile. */}
+          <NativeSelect
             aria-label="Schlüsselart"
             value={levelFilter}
             onChange={(e) => setLevelFilter(e.target.value)}
-            className={cn(selectFieldClass, "max-sm:h-11 max-sm:flex-1")}
+            containerClassName="w-auto max-sm:flex-1"
+            className="max-sm:h-11"
           >
             <option value="">Alle Arten</option>
             {Object.entries(KEY_LEVEL_LABELS).map(([value, text]) => (
@@ -107,12 +106,13 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                 {text}
               </option>
             ))}
-          </select>
-          <select
+          </NativeSelect>
+          <NativeSelect
             aria-label="Status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className={cn(selectFieldClass, "max-sm:h-11 max-sm:flex-1")}
+            containerClassName="w-auto max-sm:flex-1"
+            className="max-sm:h-11"
           >
             <option value="">Alle Status</option>
             {Object.entries(KEY_STATUS_LABELS).map(([value, text]) => (
@@ -120,7 +120,7 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                 {text}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         {filtered.length === 0 ? (
@@ -132,14 +132,14 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
         ) : (
           // Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein.
           <div className="-mx-4 sm:-mx-[18px]">
-            <Table>
+            <Table edge>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-32 pl-4 sm:pl-[18px]">Nummer</TableHead>
+                  <TableHead className="w-32">Nummer</TableHead>
                   <TableHead>Bezeichnung</TableHead>
                   <TableHead className="w-36">Art</TableHead>
                   <TableHead className="w-28">Status</TableHead>
-                  <TableHead className="pr-4 sm:pr-[18px]">Schließt</TableHead>
+                  <TableHead>Schließt</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -149,7 +149,7 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                     onClick={() => !readonly && setDialog({ keyItem: k })}
                     className={cn("max-sm:h-11", !readonly && "cursor-pointer")}
                   >
-                    <TableCell className="pl-4 font-mono text-xs font-medium sm:pl-[18px]">
+                    <TableCell className="font-mono text-xs font-medium">
                       <span className="inline-flex items-center gap-1.5">
                         {k.level === "GRAND" ? (
                           <Crown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -171,7 +171,7 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                     <TableCell>
                       <KeyStatusBadge status={k.status} />
                     </TableCell>
-                    <TableCell className="pr-4 text-xs text-muted-foreground sm:pr-[18px]">
+                    <TableCell className="text-xs text-muted-foreground">
                       {k.lockLabels.length === 0 ? (
                         <span className="text-muted-foreground">kein Schloss</span>
                       ) : k.lockLabels.length <= 2 ? (

@@ -21,7 +21,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -384,7 +384,8 @@ export function VehiclesClient({
               {vehicles.map((v) => {
                 const recent = v.recentSightings ?? [];
                 return (
-                  <Card key={v.id} className={cn(!v.isActive && "opacity-60")}>
+                  // Pausiert: Text bleibt lesbar (das Badge „Pausiert“ sagt den Zustand), gedimmt werden nur die Bilder.
+                  <Card key={v.id}>
                     <CardContent className="space-y-3">
                       {/* Kopf: Name und Merkmale links, Handlungen rechts (auf dem Handy darunter). */}
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -442,7 +443,7 @@ export function VehiclesClient({
                               <div key={s.id} className="glass-tile shrink-0 w-28 overflow-hidden">
                                 {s.hasSnapshot ? (
                                   <a href={`/api/vehicle-sightings/${s.id}/snapshot`} target="_blank" rel="noreferrer" className="block aspect-square bg-muted">
-                                    <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                                    <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" loading="lazy" decoding="async" className={cn("h-full w-full object-cover", !v.isActive && "opacity-60")} />
                                   </a>
                                 ) : (
                                   <div className="aspect-square flex items-center justify-center text-muted-foreground/50">
@@ -503,30 +504,26 @@ export function VehiclesClient({
           {sightingError && <Notice tone="danger" compact title={sightingError} />}
 
           {/* Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein. */}
-          <Card className="py-0 sm:py-0 overflow-hidden">
-                <Table>
+          <Card flush="y">
+                <Table edge>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-16 pl-4 sm:pl-[18px]">Bild</TableHead>
+                      <TableHead className="w-16">Bild</TableHead>
                       <TableHead>Zeit</TableHead>
                       <TableHead>Kennzeichen</TableHead>
                       <TableHead>Fahrzeug</TableHead>
                       <TableHead className="hidden sm:table-cell">Kamera</TableHead>
                       <TableHead>Match</TableHead>
-                      <TableHead className="w-[1%] text-right pr-4 sm:pr-[18px]">Aktion</TableHead>
+                      <TableHead className="w-[1%] text-right">Aktion</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sightings.length === 0 && (
-                      <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={7} className="p-0 whitespace-normal">
-                          <EmptyState compact icon={History} title="Noch keine Sichtungen." />
-                        </TableCell>
-                      </TableRow>
+                      <TableEmpty colSpan={7} icon={History} title="Noch keine Sichtungen." />
                     )}
                     {sightings.map((s) => (
                       <TableRow key={s.id}>
-                        <TableCell className="pl-4 sm:pl-[18px]">
+                        <TableCell>
                           {s.hasSnapshot ? (
                             <button type="button" onClick={() => openAssign(s)} aria-label="Fahrzeug zuordnen" className="block h-12 w-12 overflow-hidden rounded-[10px] border border-glass-border bg-muted">
                               <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
@@ -560,7 +557,7 @@ export function VehiclesClient({
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="text-right pr-4 sm:pr-[18px]">
+                        <TableCell className="text-right">
                           <div className="inline-flex items-center gap-1">
                             {!s.matched && (
                               <Button size="sm" variant="outline" className="gap-1 max-sm:h-11" onClick={() => openAssign(s)}>

@@ -13,9 +13,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ErrorLine, apiRequest, selectFieldClass } from "@/components/schliessanlage/shared";
+import { NativeSelect } from "@/components/ui/native-select";
+import { ErrorLine, apiRequest } from "@/components/schliessanlage/shared";
 import type { DoorRow, RoomRow } from "@/components/schliessanlage/types";
-import { cn } from "@/lib/utils";
 
 interface Props {
   door: DoorRow | null;
@@ -98,11 +98,11 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
               <Label htmlFor="d-room">
                 Raum
               </Label>
-              <select
+              <NativeSelect
                 id="d-room"
                 value={roomId ?? ""}
                 onChange={(e) => setRoomId(e.target.value ? Number(e.target.value) : null)}
-                className={cn(selectFieldClass, "w-full max-sm:h-11")}
+                className="max-sm:h-11"
               >
                 <option value="">— ohne Raum —</option>
                 {rooms.map((r) => (
@@ -110,7 +110,7 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
                     {[r.building, r.name].filter(Boolean).join(" · ")}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
           </div>
           <div className="space-y-1">

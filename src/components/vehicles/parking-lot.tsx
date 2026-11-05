@@ -177,7 +177,7 @@ export function ParkingLot({
           const title = cam?.name ?? lot?.name ?? "Parkfläche";
           const unmatched = !!lot?.ip && !cam;
           return (
-            <Card key={key} className="overflow-hidden py-0 sm:py-0 gap-0">
+            <Card key={key} flush="y">
               {/* Kamerabild-Rahmen immer schwarz (Ausnahme laut Farbregeln), auch ohne Bild. `dark` gibt Fläche,
                   Punkt und Platzhalter die Töne des dunklen Modus, damit sie auf dem Bild in Hell und Dunkel gleich leuchten. */}
               <div className="dark relative aspect-video bg-black">
@@ -210,7 +210,7 @@ export function ParkingLot({
                 )}
                 <div className="absolute top-2 left-2">
                   {/* Plakette über dem Kamerabild: dunkel wie Kamerabilder (Ausnahme laut Farbregeln), damit sie auf jedem Bild lesbar bleibt; belegt zeigt zusätzlich einen Warnpunkt. */}
-                  <Badge className="gap-1.5 bg-black/60 text-white">
+                  <Badge variant="media" className="gap-1.5">
                     {occupiedNow && <StatusDot tone="warning" />}
                     {waitingForHub
                       ? "Parkfläche Halle"
@@ -250,7 +250,7 @@ export function ParkingLot({
         <div className="space-y-2">
           <SectionHeading title="Letzte Kennzeichen (Einfahrt)" />
           {/* Kurze Liste: Zeilen mit Haarlinie in einer Karte. */}
-          <Card className="gap-0 py-0 sm:py-0 overflow-hidden divide-y divide-border">
+          <Card flush="y" className="divide-y divide-border">
             {sightings.slice(0, 5).map((s) => (
               <div
                 key={s.id}
