@@ -9,8 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -67,13 +73,17 @@ export interface CameraEventRow {
   camera: { id: number; name: string };
 }
 
+// Kamera-Erkennungen in Himmelblau (Zustandsvokabular), Klingel = jemand da (Violett),
+// Sonstiges gedämpft. Art und Symbol unterscheiden die Erkennungen, nicht die Farbe.
+const DETECTION = "bg-sky-500/15 text-sky-700 dark:text-sky-300";
+
 const EVENT_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  MOTION:  { label: "Bewegung", icon: Activity, color: "bg-info/12 text-info" },
-  PERSON:  { label: "Person",   icon: User,     color: "bg-destructive/12 text-destructive" },
-  VEHICLE: { label: "Fahrzeug", icon: Car,      color: "bg-warning/14 text-warning" },
-  ANIMAL:  { label: "Tier",     icon: PawPrint, color: "bg-success/12 text-success" },
-  DOORBELL:{ label: "Klingel",  icon: Bell,     color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
-  OTHER:   { label: "Sonstiges", icon: Activity, color: "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground" },
+  MOTION:  { label: "Bewegung", icon: Activity, color: DETECTION },
+  PERSON:  { label: "Person",   icon: User,     color: DETECTION },
+  VEHICLE: { label: "Fahrzeug", icon: Car,      color: DETECTION },
+  ANIMAL:  { label: "Tier",     icon: PawPrint, color: DETECTION },
+  DOORBELL:{ label: "Klingel",  icon: Bell,     color: "bg-violet-500/15 text-violet-700 dark:text-violet-300" },
+  OTHER:   { label: "Sonstiges", icon: Activity, color: "bg-foreground/[0.06] text-muted-foreground" },
 };
 
 const EMPTY = {
@@ -140,6 +150,15 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
   // Tor offen halten: Fehler aus Start/Beenden als Banner; Uhr fuer die Restzeit.
   const [holdError, setHoldError] = useState("");
   const now = useNow();
+  // Rückfragen als AlertDialog statt Browser-confirm() (docs/design-regeln.md, Abschnitt 18).
+  // Das Ziel bleibt gesetzt, solange der Dialog ausblendet – sonst flackert der Titel.
+  const [confirmTarget, setConfirmTarget] = useState<{ kind: "delete" | "door"; camera: CameraRow } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  function ask(kind: "delete" | "door", camera: CameraRow) {
+    setConfirmTarget({ kind, camera });
+    setConfirmOpen(true);
+  }
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((p) => ({ ...p, [key]: value }));
@@ -238,7 +257,6 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
   }
 
   async function handleDelete(c: CameraRow) {
-    if (!confirm(`Kamera "${c.name}" inklusive aller Ereignisse löschen?`)) return;
     setDeletingId(c.id);
     try {
       const res = await fetch(`/api/cameras/${c.id}`, { method: "DELETE" });
@@ -271,7 +289,6 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
 
   /** Türöffner-Task für eine DoorBird anlegen (Hub führt open-door.cgi aus). */
   async function openDoor(c: CameraRow) {
-    if (!confirm(`Tür an "${c.name}" wirklich öffnen?`)) return;
     setOpeningDoorId(c.id);
     try {
       await fetch("/api/hub/tasks", {
@@ -287,49 +304,50 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
   const fiveMinAgo = Date.now() - 5 * 60 * 1000;
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       {!hubOnline && (
-        <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          Der lokale Hub ist offline - Ereignisse und Schnappschüsse werden erst wieder geliefert, wenn er läuft.
-        </div>
+        <Notice
+          tone="warning"
+          icon={AlertTriangle}
+          title="Der lokale Hub ist offline - Ereignisse und Schnappschüsse werden erst wieder geliefert, wenn er läuft."
+        />
       )}
       {holdError && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span className="flex-1">Tor offen halten: {holdError}</span>
-          <Button variant="ghost" size="sm" className="h-7" onClick={() => setHoldError("")}>OK</Button>
-        </div>
+        <Notice
+          tone="danger"
+          icon={AlertTriangle}
+          title={<>Tor offen halten: {holdError}</>}
+          action={
+            <Button variant="ghost" size="sm" className="h-11 sm:h-8" onClick={() => setHoldError("")}>OK</Button>
+          }
+        />
       )}
 
       <Card>
-        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4">
-          <CardTitle className="text-base sm:text-xl">Kameras ({cameras.length})</CardTitle>
-          <Button onClick={openAdd} className="gap-2 shadow-sm">
+        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="tabular-nums">Kameras ({cameras.length})</CardTitle>
+          <Button onClick={openAdd} className="h-11 gap-2 sm:h-9">
             <Plus className="h-4 w-4" />
             Kamera hinzufügen
           </Button>
         </CardHeader>
         <CardContent>
           {cameras.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
-              <Cctv className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-              <p className="font-medium text-muted-foreground">Keine Kameras erfasst</p>
-              <p className="text-sm text-center max-w-md">
-                Lege deine Reolink-Kameras mit IP-Adresse und Zugangsdaten an - der lokale Hub
-                überwacht sie dann automatisch auf Bewegung und KI-Erkennungen.
-              </p>
-            </div>
+            <EmptyState
+              icon={Cctv}
+              title="Keine Kameras erfasst"
+              description="Lege deine Reolink-Kameras mit IP-Adresse und Zugangsdaten an - der lokale Hub überwacht sie dann automatisch auf Bewegung und KI-Erkennungen."
+            />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {cameras.map((c) => {
                 const online = c.lastSeenAt ? new Date(c.lastSeenAt).getTime() > fiveMinAgo : null;
                 return (
                   <div
                     key={c.id}
-                    className="rounded-xl border border-border overflow-hidden bg-card"
+                    className="glass-tile overflow-hidden"
                   >
-                    <div className="relative aspect-video bg-muted flex items-center justify-center">
+                    <div className="relative aspect-video bg-black flex items-center justify-center">
                       {c.snapshotAt ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -338,21 +356,28 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        <Cctv className="h-10 w-10 text-slate-300 dark:text-slate-600" />
+                        <Cctv className="h-10 w-10 text-white/25" />
                       )}
                       <div className="absolute top-2 left-2 flex items-center gap-1.5">
                         {online === true && (
-                          <Badge className="bg-success/90 text-white gap-1 text-xs h-5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-white" /> Online
+                          <Badge className="bg-success/90 text-success-foreground gap-1 text-xs h-5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-current" /> Online
                           </Badge>
                         )}
+                        {/* Rot nur, wenn eine aktive Kamera nicht antwortet; eine deaktivierte
+                            meldet sich gewollt nicht mehr (Aus = gedämpft). */}
                         {online === false && (
-                          <Badge variant="secondary" className="bg-slate-700/80 text-slate-200 gap-1 text-xs h-5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Offline
+                          <Badge
+                            className={cn(
+                              "gap-1 text-xs h-5",
+                              c.enabled ? "bg-destructive/90 text-white" : "bg-black/60 text-white/85"
+                            )}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-current" /> Offline
                           </Badge>
                         )}
                         {!c.enabled && (
-                          <Badge variant="secondary" className="bg-slate-700/80 text-slate-300 text-xs h-5">
+                          <Badge className="bg-black/60 text-white/85 text-xs h-5">
                             Deaktiviert
                           </Badge>
                         )}
@@ -366,40 +391,40 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                         )}
                       </div>
                       {c.snapshotAt && (
-                        <span className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white font-mono">
+                        <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-white font-mono tabular-nums">
                           {fmtTime(c.snapshotAt)}
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center justify-between gap-2 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="font-medium text-sm text-foreground truncate">{c.name}</p>
                           {c.kind === "DOORBIRD" && (
                             <Bell
-                              className="h-3.5 w-3.5 shrink-0 text-violet-500"
+                              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                               aria-label="DoorBird Türstation"
                             />
                           )}
                           {c.vehicleDetection && (
                             <Car
-                              className="h-3.5 w-3.5 shrink-0 text-warning"
+                              className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400"
                               aria-label="Fahrzeug-Erkennung aktiv"
                             />
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground/70 font-mono truncate">
+                        <p className="text-xs text-muted-foreground font-mono truncate">
                           {c.host}{c.channel > 0 ? ` · Kanal ${c.channel}` : ""}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="ml-auto flex items-center gap-1 shrink-0">
                         {c.kind === "DOORBIRD" && (
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-muted-foreground/70 hover:text-success"
+                            className="size-11 text-muted-foreground hover:text-success sm:size-8"
                             title="Tür öffnen"
-                            onClick={() => openDoor(c)}
+                            onClick={() => ask("door", c)}
                             disabled={openingDoorId === c.id || !hubOnline}
                           >
                             {openingDoorId === c.id
@@ -418,14 +443,14 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                               router.refresh();
                             }}
                             onError={setHoldError}
-                            className="h-8 w-8 text-muted-foreground/70 hover:text-success"
+                            className="size-11 text-muted-foreground hover:text-success sm:size-8"
                             activeClassName="text-success hover:text-destructive"
                           />
                         )}
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-muted-foreground/70 hover:text-primary"
+                          className="size-11 text-muted-foreground hover:text-primary sm:size-8"
                           title="Neuen Schnappschuss anfordern"
                           onClick={() => requestSnapshot(c)}
                           disabled={snappingId === c.id || !hubOnline}
@@ -435,7 +460,8 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-muted-foreground/70 hover:text-primary"
+                          className="size-11 text-muted-foreground hover:text-primary sm:size-8"
+                          aria-label={`${c.name} bearbeiten`}
                           onClick={() => openEdit(c)}
                         >
                           <Pencil className="h-4 w-4" />
@@ -443,8 +469,9 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
-                          onClick={() => handleDelete(c)}
+                          className="size-11 text-muted-foreground hover:text-destructive sm:size-8"
+                          aria-label={`${c.name} löschen`}
+                          onClick={() => ask("delete", c)}
                           disabled={deletingId === c.id}
                         >
                           {deletingId === c.id
@@ -461,27 +488,31 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base sm:text-xl">Letzte Ereignisse</CardTitle>
+      <Card className="overflow-hidden pb-0 sm:pb-0">
+        <CardHeader>
+          <CardTitle>Letzte Ereignisse</CardTitle>
         </CardHeader>
-        <CardContent className="p-0 sm:px-6 sm:pb-6">
-          <div className="rounded-lg border border-border overflow-x-auto">
+        <CardContent className="px-0 sm:px-0">
+          <div className="border-t border-border">
             <Table>
               <TableHeader>
-                <TableRow className="border-border hover:bg-transparent bg-muted/40">
-                  <TableHead>Zeitpunkt</TableHead>
+                <TableRow>
+                  <TableHead className="pl-4 sm:pl-[18px]">Zeitpunkt</TableHead>
                   <TableHead>Kamera</TableHead>
-                  <TableHead>Ereignis</TableHead>
-                  <TableHead className="hidden sm:table-cell">Dauer</TableHead>
+                  <TableHead className="pr-4 sm:pr-2">Ereignis</TableHead>
+                  <TableHead className="hidden sm:table-cell sm:pr-[18px]">Dauer</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {events.length === 0 && (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={4} className="text-center py-10 text-sm text-muted-foreground/70">
-                      Noch keine Ereignisse - sobald eine Kamera Bewegung oder eine Person erkennt,
-                      erscheint sie hier.
+                    <TableCell colSpan={4} className="p-0 whitespace-normal">
+                      <EmptyState
+                        compact
+                        icon={Activity}
+                        title="Noch keine Ereignisse"
+                        description="Sobald eine Kamera Bewegung oder eine Person erkennt, erscheint sie hier."
+                      />
                     </TableCell>
                   </TableRow>
                 )}
@@ -489,20 +520,20 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                   const meta = EVENT_META[e.type] ?? EVENT_META.OTHER;
                   const Icon = meta.icon;
                   return (
-                    <TableRow key={e.id} className="border-border">
-                      <TableCell className="font-mono text-xs text-muted-foreground">
+                    <TableRow key={e.id} className="max-sm:h-11">
+                      <TableCell className="pl-4 font-mono text-xs tabular-nums text-muted-foreground sm:pl-[18px]">
                         {fmtTime(e.startedAt)}
                       </TableCell>
                       <TableCell className="text-sm text-foreground/80">
                         {e.camera.name}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="pr-4 sm:pr-2">
                         <Badge className={cn("gap-1 text-xs", meta.color)}>
                           <Icon className="h-3 w-3" />
                           {meta.label}
                         </Badge>
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
+                      <TableCell className="hidden sm:table-cell sm:pr-[18px] text-xs tabular-nums text-muted-foreground">
                         {duration(e.startedAt, e.endedAt)}
                       </TableCell>
                     </TableRow>
@@ -515,16 +546,16 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? "Kamera bearbeiten" : "Neue Kamera"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             {!editing && suggestions.length > 0 && (
-              <div className="space-y-1.5 rounded-lg border border-primary/30 bg-primary/10 p-3">
+              <div className="space-y-1.5 rounded-tile border border-primary/30 bg-primary/10 p-3">
                 <Label>Aus dem Netzwerk übernehmen</Label>
                 <Select onValueChange={applySuggestion}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Im Netzwerk erfasste Kamera wählen …" />
                   </SelectTrigger>
                   <SelectContent>
@@ -543,7 +574,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
             <div className="space-y-1.5">
               <Label>Gerätetyp</Label>
               <Select value={form.kind} onValueChange={(v) => set("kind", v)}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -579,11 +610,12 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                   required
                 />
               </div>
-              <div className="space-y-1.5">
+              {/* Zugangsdaten am Handy in voller Breite: halb breit schnitt „unverändert lassen“ ab. */}
+              <div className="space-y-1.5 col-span-2 sm:col-span-1">
                 <Label>Benutzername <span className="text-destructive">*</span></Label>
                 <Input value={form.username} onChange={(e) => set("username", e.target.value)} required />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 col-span-2 sm:col-span-1">
                 <Label>Passwort {editing ? "" : <span className="text-destructive">*</span>}</Label>
                 <Input
                   type="password"
@@ -612,27 +644,27 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                   value={form.channel}
                   onChange={(e) => set("channel", e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground/70">0 bei Einzelkameras, 0-n am NVR.</p>
+                <p className="text-xs text-muted-foreground">0 bei Einzelkameras, 0-n am NVR.</p>
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">HTTPS</p>
                 <p className="text-xs text-muted-foreground">Kamera-API über HTTPS ansprechen (Standard: HTTP)</p>
               </div>
-              <Switch checked={form.https} onCheckedChange={(v) => set("https", v)} />
+              <Switch aria-label="HTTPS" checked={form.https} onCheckedChange={(v) => set("https", v)} />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">Aktiv</p>
                 <p className="text-xs text-muted-foreground">Vom Hub überwachen (Events + Schnappschüsse)</p>
               </div>
-              <Switch checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} />
+              <Switch aria-label="Aktiv" checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">Fahrzeug-Erkennung</p>
                 <p className="text-xs text-muted-foreground">
@@ -640,13 +672,14 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                 </p>
               </div>
               <Switch
+                aria-label="Fahrzeug-Erkennung"
                 checked={form.vehicleDetection}
                 onCheckedChange={(v) => set("vehicleDetection", v)}
               />
             </div>
 
             {form.vehicleDetection && (
-              <div className="space-y-3 rounded-lg border border-border p-3">
+              <div className="glass-tile space-y-3 p-3">
                 <div>
                   <p className="text-sm font-medium">Fahrzeug ohne Kennzeichen</p>
                   <p className="text-xs text-muted-foreground">
@@ -666,7 +699,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                     onChange={(e) => set("vehicleMinAreaPct", e.target.value)}
                     placeholder="2 (Hub-Standard)"
                   />
-                  <p className="text-xs text-muted-foreground/70">
+                  <p className="text-xs text-muted-foreground">
                     Auto an der Einfahrt in 4K etwa 3 bis 30 %, Parkplatz im Hintergrund unter 0,1 %.
                   </p>
                 </div>
@@ -686,11 +719,11 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
             )}
 
             {form.vehicleDetection && form.kind === "REOLINK" && (
-              <div className="space-y-3 rounded-lg border border-border p-3">
+              <div className="glass-tile space-y-3 p-3">
                 <div className="space-y-1.5">
-                  <Label>Lieferdienste (DHL, UPS, GLS, Amazon, DPD, Hermes)</Label>
+                  <Label className="leading-snug">Lieferdienste (DHL, UPS, GLS, Amazon, DPD, Hermes)</Label>
                   <select
-                    className="h-9 w-full rounded-md border border-border bg-transparent px-2 text-sm"
+                    className="glass-field h-11 w-full px-2 text-base outline-none hover:border-foreground/20 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 sm:h-9 md:text-sm"
                     value={form.deliveryMode}
                     onChange={(e) => set("deliveryMode", e.target.value)}
                   >
@@ -698,7 +731,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                     <option value="NOTIFY">Erkennen und melden</option>
                     <option value="OPEN">Erkennen und Tor öffnen</option>
                   </select>
-                  <p className="text-xs text-muted-foreground/70">
+                  <p className="text-xs text-muted-foreground">
                     Der Hub liest die Aufschrift am Fahrzeug. Sie muss auf zwei Bildern stehen. Jeder
                     Treffer kommt als Push mit Foto.
                   </p>
@@ -723,7 +756,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                         placeholder="20:00"
                       />
                     </div>
-                    <p className="col-span-2 text-xs text-muted-foreground/70">
+                    <p className="col-span-2 text-xs text-muted-foreground">
                       Leer = 07:00 bis 20:00. Außerhalb meldet der Hub nur.
                     </p>
                   </div>
@@ -731,7 +764,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
               </div>
             )}
 
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div className="pr-3">
                 <p className="text-sm font-medium">Halteverbot</p>
                 <p className="text-xs text-muted-foreground">
@@ -740,13 +773,14 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                 </p>
               </div>
               <Switch
+                aria-label="Halteverbot"
                 checked={form.noParkDetection}
                 onCheckedChange={(v) => set("noParkDetection", v)}
               />
             </div>
 
             {form.noParkDetection && (
-              <div className="space-y-3 rounded-lg border border-border p-3">
+              <div className="glass-tile space-y-3 p-3">
                 <div className="space-y-1.5">
                   <Label>Standzeit bis zur Meldung (Minuten)</Label>
                   <Input
@@ -758,7 +792,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                     onChange={(e) => set("noParkMinutes", e.target.value)}
                     placeholder="2 (Hub-Standard)"
                   />
-                  <p className="text-xs text-muted-foreground/70">
+                  <p className="text-xs text-muted-foreground">
                     Der Hub schaut alle 20 Sekunden nach. Kurz zum Ausladen halten soll noch nicht
                     zählen, dauerhaftes Abstellen schon.
                   </p>
@@ -779,7 +813,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                       ready: "ein Fahrzeug zählt, wenn seine Räder in der Fläche stehen.",
                     }}
                   />
-                  <p className="text-xs text-muted-foreground/70">
+                  <p className="text-xs text-muted-foreground">
                     Nur die Fläche selbst einrahmen, keine Durchfahrt: Wer dort wartet, würde sonst
                     nach Ablauf der Standzeit gemeldet.
                   </p>
@@ -792,11 +826,9 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
               <Input value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="optional" />
             </div>
 
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
-            )}
+            {error && <Notice tone="danger" compact title={error} />}
 
-            <div className="flex justify-end gap-2 pt-1">
+            <DialogFooter className="pt-1">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                 Abbrechen
               </Button>
@@ -807,10 +839,39 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmTarget?.kind === "door"
+                ? `Tür an "${confirmTarget.camera.name}" wirklich öffnen?`
+                : `Kamera "${confirmTarget?.camera.name ?? ""}" inklusive aller Ereignisse löschen?`}
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            {confirmTarget?.kind === "door" ? (
+              <AlertDialogAction onClick={() => void openDoor(confirmTarget.camera)}>
+                Tür öffnen
+              </AlertDialogAction>
+            ) : (
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => {
+                  if (confirmTarget) void handleDelete(confirmTarget.camera);
+                }}
+              >
+                Löschen
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

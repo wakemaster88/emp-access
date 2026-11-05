@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import {
   Select,
   SelectContent,
@@ -119,7 +120,7 @@ export function SoundwebControlDialog({ open, onClose, onSaved, device, control,
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <Label htmlFor="swc-name">Name</Label>
+              <Label htmlFor="swc-name" className="mb-1.5 block">Name</Label>
               <Input
                 id="swc-name"
                 value={name}
@@ -128,7 +129,7 @@ export function SoundwebControlDialog({ open, onClose, onSaved, device, control,
               />
             </div>
             <div>
-              <Label htmlFor="swc-group">Abschnitt</Label>
+              <Label htmlFor="swc-group" className="mb-1.5 block">Abschnitt</Label>
               <Input
                 id="swc-group"
                 value={group}
@@ -147,7 +148,7 @@ export function SoundwebControlDialog({ open, onClose, onSaved, device, control,
           </div>
 
           <div>
-            <Label>Art</Label>
+            <Label className="mb-1.5 block">Art</Label>
             <Select value={kind} onValueChange={(v) => setKind(v as SoundwebControlKind)}>
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -165,7 +166,7 @@ export function SoundwebControlDialog({ open, onClose, onSaved, device, control,
 
           {kind === "PRESET" ? (
             <div>
-              <Label htmlFor="swc-preset">Preset-ID</Label>
+              <Label htmlFor="swc-preset" className="mb-1.5 block">Preset-ID</Label>
               <Input
                 id="swc-preset"
                 value={presetId}
@@ -182,7 +183,7 @@ export function SoundwebControlDialog({ open, onClose, onSaved, device, control,
             <>
               <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
                 <div>
-                  <Label htmlFor="swc-address">HiQnet-Adresse</Label>
+                  <Label htmlFor="swc-address" className="mb-1.5 block">HiQnet-Adresse</Label>
                   <Input
                     id="swc-address"
                     value={address}
@@ -192,7 +193,7 @@ export function SoundwebControlDialog({ open, onClose, onSaved, device, control,
                   />
                 </div>
                 <div>
-                  <Label htmlFor="swc-sv">State Variable</Label>
+                  <Label htmlFor="swc-sv" className="mb-1.5 block">State Variable</Label>
                   <Input
                     id="swc-sv"
                     value={stateVariable}
@@ -216,11 +217,11 @@ export function SoundwebControlDialog({ open, onClose, onSaved, device, control,
           {kind === "GAIN" && (
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <Label htmlFor="swc-min">Regler von (dB)</Label>
+                <Label htmlFor="swc-min" className="mb-1.5 block">Regler von (dB)</Label>
                 <Input id="swc-min" value={minDb} onChange={(e) => setMinDb(e.target.value)} inputMode="decimal" />
               </div>
               <div>
-                <Label htmlFor="swc-max">bis (dB)</Label>
+                <Label htmlFor="swc-max" className="mb-1.5 block">bis (dB)</Label>
                 <Input id="swc-max" value={maxDb} onChange={(e) => setMaxDb(e.target.value)} inputMode="decimal" />
               </div>
               <p className="text-xs text-muted-foreground sm:col-span-2">
@@ -233,7 +234,7 @@ export function SoundwebControlDialog({ open, onClose, onSaved, device, control,
 
           {kind === "SELECT" && (
             <div>
-              <Label htmlFor="swc-options">Auswahlwerte</Label>
+              <Label htmlFor="swc-options" className="mb-1.5 block">Auswahlwerte</Label>
               <textarea
                 id="swc-options"
                 value={options}
@@ -249,11 +250,7 @@ export function SoundwebControlDialog({ open, onClose, onSaved, device, control,
             </div>
           )}
 
-          {error && (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" compact title={error} />}
         </div>
 
         <DialogFooter>

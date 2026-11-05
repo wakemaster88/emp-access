@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Notice } from "@/components/ui/notice";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -337,7 +338,7 @@ export function ZoneDialog({
 
         <div className="space-y-3">
           <div>
-            <Label htmlFor="az-name">Name</Label>
+            <Label htmlFor="az-name" className="mb-1.5 block">Name</Label>
             <Input
               id="az-name"
               value={name}
@@ -347,9 +348,9 @@ export function ZoneDialog({
           </div>
 
           <div>
-            <Label>Abspieler</Label>
+            <Label className="mb-1.5 block">Abspieler</Label>
             <Select value={deviceId} onValueChange={setDeviceId}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Kein Gerät" />
               </SelectTrigger>
               <SelectContent>
@@ -370,9 +371,9 @@ export function ZoneDialog({
           </div>
 
           <div>
-            <Label>Raum</Label>
+            <Label className="mb-1.5 block">Raum</Label>
             <Select value={roomId} onValueChange={setRoomId}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Kein Raum" />
               </SelectTrigger>
               <SelectContent>
@@ -391,12 +392,12 @@ export function ZoneDialog({
           </div>
 
           <div>
-            <Label>Quelle</Label>
+            <Label className="mb-1.5 block">Quelle</Label>
             <Select
               value={defaultSource}
               onValueChange={(v) => setDefaultSource(v as AudioSourceKind)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -413,9 +414,9 @@ export function ZoneDialog({
           </div>
 
           <div>
-            <Label>Standard-Playlist</Label>
+            <Label className="mb-1.5 block">Standard-Playlist</Label>
             <Select value={playlistId} onValueChange={setPlaylistId}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Keine" />
               </SelectTrigger>
               <SelectContent>
@@ -430,9 +431,9 @@ export function ZoneDialog({
           </div>
 
           <div>
-            <Label>Webradio</Label>
+            <Label className="mb-1.5 block">Webradio</Label>
             <Select value={streamId} onValueChange={setStreamId}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Kein Sender" />
               </SelectTrigger>
               <SelectContent>
@@ -453,7 +454,7 @@ export function ZoneDialog({
           </div>
 
           <div>
-            <Label htmlFor="az-sync">Sync-Gruppe (optional)</Label>
+            <Label htmlFor="az-sync" className="mb-1.5 block">Sync-Gruppe (optional)</Label>
             <Input
               id="az-sync"
               value={syncGroup}
@@ -478,7 +479,8 @@ export function ZoneDialog({
             <VolumeField label="Ducking" value={duckVolume} onChange={setDuckVolume} />
           </div>
 
-          <div className="space-y-2 rounded-lg border border-border p-3 dark:border-border">
+          {/* Abschnitte als Kacheln: das Glas tönt sich im deckenden Dialog von selbst (Abschnitt 18). */}
+          <div className="glass-tile space-y-2 p-3">
             <div>
               <Label>Musik automatisch an und aus</Label>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -517,7 +519,7 @@ export function ZoneDialog({
                       onChange={(e) => updateDay(weekday, { from: e.target.value })}
                       disabled={!day.enabled}
                       aria-label={`${WEEKDAYS[weekday]} Start`}
-                      className="h-10 px-2 sm:h-9"
+                      className="px-2"
                     />
                     <span className="text-xs text-muted-foreground">bis</span>
                     <Input
@@ -526,7 +528,7 @@ export function ZoneDialog({
                       onChange={(e) => updateDay(weekday, { to: e.target.value })}
                       disabled={!day.enabled}
                       aria-label={`${WEEKDAYS[weekday]} Ende`}
-                      className="h-10 px-2 sm:h-9"
+                      className="px-2"
                     />
                   </div>
                 ))}
@@ -534,7 +536,7 @@ export function ZoneDialog({
                   <button
                     type="button"
                     onClick={copyFirstDay}
-                    className="min-h-10 text-xs font-medium text-primary hover:underline sm:min-h-0"
+                    className="min-h-11 text-xs font-medium text-primary hover:underline sm:min-h-0"
                   >
                     Zeiten von {WEEKDAYS[firstEnabled]} für alle eingeschalteten Tage übernehmen
                   </button>
@@ -593,7 +595,7 @@ export function ZoneDialog({
             )}
           </div>
 
-          <div className="space-y-2 rounded-lg border border-border p-3 dark:border-border">
+          <div className="glass-tile space-y-2 p-3">
             <div>
               <Label>Senden vom Handy</Label>
               <p className="text-xs text-muted-foreground">
@@ -619,7 +621,7 @@ export function ZoneDialog({
 
             {(airplayEnabled || bluetoothEnabled) && (
               <div>
-                <Label htmlFor="az-extname">Angezeigter Name (optional)</Label>
+                <Label htmlFor="az-extname" className="mb-1.5 block">Angezeigter Name (optional)</Label>
                 <Input
                   id="az-extname"
                   value={externalName}
@@ -639,16 +641,12 @@ export function ZoneDialog({
             )}
           </div>
 
-          <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
+          <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:min-h-0">
             <Switch checked={isActive} onCheckedChange={setIsActive} />
             Zone aktiv
           </label>
 
-          {error && (
-            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" compact title={error} />}
         </div>
 
         <DialogFooter>
@@ -686,8 +684,8 @@ function ReceiverSwitch({
   return (
     <label
       className={cn(
-        "flex min-h-10 items-start gap-2.5 text-sm sm:min-h-0",
-        available ? "text-muted-foreground" : "text-muted-foreground/70"
+        "flex min-h-11 items-start gap-2.5 text-sm sm:min-h-0",
+        available ? "text-foreground" : "text-muted-foreground"
       )}
     >
       <Switch
@@ -722,7 +720,7 @@ function OffsetField({
 }) {
   return (
     <div>
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className="mb-1.5 block">{label}</Label>
       <div className="flex items-center gap-1.5">
         <Input
           id={id}

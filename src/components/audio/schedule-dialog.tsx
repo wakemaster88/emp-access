@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import {
   Select,
   SelectContent,
@@ -180,7 +181,7 @@ export function ScheduleDialog({
 
         <div className="space-y-3">
           <div>
-            <Label htmlFor="as-name">Name</Label>
+            <Label htmlFor="as-name" className="mb-1.5 block">Name</Label>
             <Input
               id="as-name"
               value={name}
@@ -190,13 +191,13 @@ export function ScheduleDialog({
           </div>
 
           <div>
-            <Label>Aktion</Label>
+            <Label className="mb-1.5 block">Aktion</Label>
             <Select
               value={action}
               onValueChange={(v) => setAction(v as AudioScheduleAction)}
               disabled={isEdit}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -217,9 +218,9 @@ export function ScheduleDialog({
 
           {action === "ANNOUNCE" && (
             <div>
-              <Label>Durchsage</Label>
+              <Label className="mb-1.5 block">Durchsage</Label>
               <Select value={announcementId} onValueChange={setAnnouncementId} disabled={isEdit}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Auswählen" />
                 </SelectTrigger>
                 <SelectContent>
@@ -240,9 +241,9 @@ export function ScheduleDialog({
 
           {action === "PLAY" && (
             <div>
-              <Label>Was spielen</Label>
+              <Label className="mb-1.5 block">Was spielen</Label>
               <Select value={playlistId} onValueChange={setPlaylistId} disabled={isEdit}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Auswählen" />
                 </SelectTrigger>
                 <SelectContent>
@@ -275,9 +276,9 @@ export function ScheduleDialog({
           )}
 
           <div>
-            <Label>Wann</Label>
+            <Label className="mb-1.5 block">Wann</Label>
             <Select value={trigger} onValueChange={(v) => setTrigger(v as AudioScheduleTrigger)}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -293,7 +294,7 @@ export function ScheduleDialog({
 
           {trigger === "TIME" ? (
             <div>
-              <Label htmlFor="as-time">Uhrzeit</Label>
+              <Label htmlFor="as-time" className="mb-1.5 block">Uhrzeit</Label>
               <Input
                 id="as-time"
                 type="time"
@@ -305,7 +306,7 @@ export function ScheduleDialog({
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <Label htmlFor="as-offset">Verschiebung (Min.)</Label>
+                <Label htmlFor="as-offset" className="mb-1.5 block">Verschiebung (Min.)</Label>
                 <Input
                   id="as-offset"
                   type="number"
@@ -321,9 +322,9 @@ export function ScheduleDialog({
                 </p>
               </div>
               <div>
-                <Label>Betriebszeit</Label>
+                <Label className="mb-1.5 block">Betriebszeit</Label>
                 <Select value={operatingScheduleId} onValueChange={setOperatingScheduleId}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -345,12 +346,12 @@ export function ScheduleDialog({
           )}
 
           <div>
-            <Label>Bedingung</Label>
+            <Label className="mb-1.5 block">Bedingung</Label>
             <Select
               value={operating}
               onValueChange={(v) => setOperating(v as RuleOperatingCondition)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -381,10 +382,10 @@ export function ScheduleDialog({
                     onClick={() => toggleDay(index)}
                     aria-pressed={active}
                     className={cn(
-                      "h-11 rounded-lg border text-xs font-medium transition-colors sm:h-9",
+                      "press h-11 rounded-control border text-xs font-medium sm:h-9",
                       active
-                        ? "bg-primary text-white border-primary"
-                        : "border-input text-muted-foreground hover:bg-muted"
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-glass-border bg-glass-tile text-muted-foreground shadow-[inset_0_1px_0_var(--glass-highlight)] hover:bg-glass-strong hover:text-foreground"
                     )}
                   >
                     {day}
@@ -411,11 +412,7 @@ export function ScheduleDialog({
             </div>
           </div>
 
-          {error && (
-            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" compact title={error} />}
         </div>
 
         <DialogFooter>

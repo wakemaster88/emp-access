@@ -31,10 +31,12 @@ export function Chip({
       disabled={disabled}
       aria-pressed={active}
       className={cn(
-        "inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-8 sm:px-3 sm:text-xs",
+        "press inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-8 sm:px-3 sm:text-xs",
+        // Aus: Glas-Kapsel wie Badge `secondary` – im Hellen mit dunkler Haarlinie (auf weißen
+        // Glaskarten sichtbar), im Dialog tönt sich das Glas von selbst (Abschnitt 18).
         active
-          ? "border-primary bg-primary text-white"
-          : "border-input text-muted-foreground hover:bg-muted dark:border-border dark:text-foreground/80 dark:hover:bg-muted",
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-glass-tile text-muted-foreground shadow-[inset_0_1px_0_var(--glass-highlight)] hover:bg-glass-strong hover:text-foreground dark:border-glass-border",
         className
       )}
     >
@@ -62,4 +64,4 @@ export function sliderFill(value: number): React.CSSProperties {
  * der Oberfläche verschoben weiter. Der Input-Baustein macht es genauso.
  */
 export const TEXTAREA_CLASS =
-  "w-full rounded-lg border border-input bg-transparent px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:text-sm dark:border-border";
+  "glass-field w-full px-3 py-2 text-base outline-none transition-[color,box-shadow,border-color,background-color] placeholder:text-muted-foreground hover:border-foreground/20 focus-visible:border-ring focus-visible:bg-glass-strong focus-visible:ring-[3px] focus-visible:ring-ring/30 md:text-sm";

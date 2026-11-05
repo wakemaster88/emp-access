@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Loader2, Megaphone, Mic, TriangleAlert, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -130,24 +132,22 @@ export function AnnouncePanel({
 
   if (activeZones.length === 0) {
     return (
-      <Card className="border-dashed border-input">
-        <CardContent className="py-10 text-center">
-          <Volume2 className="h-10 w-10 mx-auto text-muted-foreground/70 mb-3" />
-          <h3 className="font-semibold text-foreground/80">Noch keine Zone</h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Lege zuerst unter „Zonen&quot; eine Beschallungszone an.
-          </p>
-        </CardContent>
+      <Card className="py-0 sm:py-0">
+        <EmptyState
+          icon={Volume2}
+          title="Noch keine Zone"
+          description="Lege zuerst unter „Zonen&quot; eine Beschallungszone an."
+        />
       </Card>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {liveActive && <LiveBroadcastCard live={live} />}
 
       <Card>
-        <CardContent className="p-4 space-y-4">
+        <CardContent className="space-y-4">
           <div>
             <Label className="mb-2 block">Zielzonen · {targetLabel}</Label>
             <div className="flex flex-wrap gap-1.5">
@@ -209,16 +209,16 @@ export function AnnouncePanel({
             {/* Der Schalter selbst ist 18 px hoch; die Zeile drumherum macht
                 daraus am Telefon eine greifbare Fläche. */}
             <div className="flex flex-col justify-end gap-1">
-              <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:min-h-0">
                 <Switch checked={chime} onCheckedChange={setChime} disabled={liveActive} />
                 Gong voranstellen
               </label>
 
-              <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:min-h-0">
                 <Switch checked={emergency} onCheckedChange={setEmergency} disabled={liveActive} />
                 <span className="flex items-center gap-1">
                   <TriangleAlert
-                    className={cn("h-3.5 w-3.5", emergency ? "text-destructive" : "text-muted-foreground/70")}
+                    className={cn("h-3.5 w-3.5", emergency ? "text-destructive" : "text-muted-foreground")}
                   />
                   Notfall (unterbricht alles)
                 </span>
@@ -254,30 +254,29 @@ export function AnnouncePanel({
           </div>
 
           {(notice ?? live.notice) && (
-            <p className="text-xs text-success bg-success/10 p-2.5 rounded-lg border border-success/30/40">
-              {notice ?? live.notice}
-            </p>
+            <Notice tone="success" compact title={notice ?? live.notice} />
           )}
           {(error ?? live.error) && (
-            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
-              {error ?? live.error}
-            </p>
+            <Notice tone="danger" compact title={error ?? live.error} />
           )}
         </CardContent>
       </Card>
 
       {templates.length > 0 && (
         <Card>
-          <CardContent className="p-4">
-            <Label className="mb-2 block">Gespeicherte Durchsagen</Label>
-            <div className="flex flex-wrap gap-2">
+          <CardHeader>
+            <CardTitle>Gespeicherte Durchsagen</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Handy: untereinander in voller Breite; lange Namen brechen um, statt über die Karte zu ragen. */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               {templates.map((template) => (
                 <Button
                   key={template.id}
                   variant="outline"
                   disabled={sending || liveActive}
                   onClick={() => playTemplate(template)}
-                  className="h-10 gap-1.5 sm:h-8"
+                  className="h-auto min-h-11 justify-start gap-1.5 whitespace-normal py-2 text-left sm:min-h-8 sm:py-1.5"
                 >
                   <Megaphone className="h-3.5 w-3.5" />
                   {template.name}

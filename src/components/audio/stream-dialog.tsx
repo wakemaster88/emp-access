@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { StreamRow } from "./types";
@@ -69,7 +70,7 @@ export function StreamDialog({ open, onClose, onSaved, stream }: Props) {
 
         <div className="space-y-3">
           <div>
-            <Label htmlFor="as-name">Name</Label>
+            <Label htmlFor="as-name" className="mb-1.5 block">Name</Label>
             <Input
               id="as-name"
               value={name}
@@ -78,7 +79,7 @@ export function StreamDialog({ open, onClose, onSaved, stream }: Props) {
             />
           </div>
           <div>
-            <Label htmlFor="as-url">Stream-URL</Label>
+            <Label htmlFor="as-url" className="mb-1.5 block">Stream-URL</Label>
             <Input
               id="as-url"
               value={url}
@@ -90,11 +91,7 @@ export function StreamDialog({ open, onClose, onSaved, stream }: Props) {
               danach nur noch den Namen.
             </p>
           </div>
-          {error && (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" compact title={error} />}
         </div>
 
         <DialogFooter>

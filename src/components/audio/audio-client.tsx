@@ -6,6 +6,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState as EmptyStateBlock } from "@/components/ui/empty-state";
+import { Segmented } from "@/components/ui/segmented";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,6 +44,7 @@ import {
   Trash2,
   Volume2,
   XCircle,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -58,7 +62,7 @@ import { scheduleOperatingSpecs, scheduleWarnings } from "./schedule-warnings";
 import { AnnouncePanel } from "./announce-panel";
 import { LiveBroadcastBanner } from "./live-broadcast";
 import { useLiveBroadcast } from "./use-live-broadcast";
-import { Chip, sliderFill } from "./ui";
+import { sliderFill } from "./ui";
 import { AnnouncementDialog } from "./announcement-dialog";
 import { LibraryPanel } from "./library-panel";
 import {
@@ -328,18 +332,19 @@ export function AudioClient({
   }
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-6xl space-y-4 sm:space-y-5">
       {live.phase !== "idle" && tab !== "announce" && (
         <LiveBroadcastBanner live={live} onShow={() => setTab("announce")} />
       )}
       <ZoneStatusBar zones={zones} status={liveZones} onSelect={showZone} />
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={setTab} className="gap-4">
         {/*
-          Die Zähler bleiben dem Zeigergerät vorbehalten, sonst sieht man am
-          Telefon kaum zwei Tabs.
+          Keine Anzahl in den Reitern (Abschnitt 6: höchstens Zustand und
+          Störungen): mit Zählern brauchte die Leiste 1250 px und schnitt
+          „Zeitpläne“ und „Verlauf“ auch am breiten Bildschirm ab.
         */}
-        <TabsList className="mb-4 w-full justify-start overflow-x-auto sm:w-auto">
+        <TabsList className="w-full sm:w-fit">
           <TabsTrigger value="announce" className="flex-none gap-1.5">
             <Megaphone className="h-4 w-4" />
             Durchsage
@@ -347,37 +352,30 @@ export function AudioClient({
           <TabsTrigger value="zones" className="flex-none gap-1.5">
             <Speaker className="h-4 w-4" />
             Zonen
-            <TabCount value={zones.length} />
           </TabsTrigger>
           <TabsTrigger value="soundweb" className="flex-none gap-1.5">
             <SlidersHorizontal className="h-4 w-4" />
             Soundweb
-            <TabCount value={soundwebDevices.length} />
           </TabsTrigger>
           <TabsTrigger value="library" className="flex-none gap-1.5">
             <Music className="h-4 w-4" />
             Mediathek
-            <TabCount value={tracks.length} />
           </TabsTrigger>
           <TabsTrigger value="playlists" className="flex-none gap-1.5">
             <ListMusic className="h-4 w-4" />
             Playlists
-            <TabCount value={playlists.length} />
           </TabsTrigger>
           <TabsTrigger value="streams" className="flex-none gap-1.5">
             <Radio className="h-4 w-4" />
             Webradio
-            <TabCount value={streams.length} />
           </TabsTrigger>
           <TabsTrigger value="templates" className="flex-none gap-1.5">
             <Megaphone className="h-4 w-4" />
             Vorlagen
-            <TabCount value={templates.length} />
           </TabsTrigger>
           <TabsTrigger value="schedules" className="flex-none gap-1.5">
             <CalendarClock className="h-4 w-4" />
             Zeitpläne
-            <TabCount value={schedules.length} />
           </TabsTrigger>
           <TabsTrigger value="history" className="flex-none gap-1.5">
             <History className="h-4 w-4" />
@@ -397,7 +395,7 @@ export function AudioClient({
         </TabsContent>
 
         {/* ── ZONEN ────────────────────────────────────────────────────────── */}
-        <TabsContent value="zones" className="space-y-3">
+        <TabsContent value="zones" className="space-y-4">
           <SectionHeader
             text="Jede Zone ist ein Abspieler mit eigenem Verstärker."
             actionLabel="Neue Zone"
@@ -411,7 +409,7 @@ export function AudioClient({
               text="Lege eine Beschallungszone an und ordne ihr einen Abspieler zu."
             />
           ) : (
-            <div className="grid gap-3">
+            <div className="grid gap-4">
               {zones.map((zone) => (
                 <ZoneCard
                   key={zone.id}
@@ -472,7 +470,7 @@ export function AudioClient({
         </TabsContent>
 
         {/* ── PLAYLISTS ────────────────────────────────────────────────────── */}
-        <TabsContent value="playlists" className="space-y-3">
+        <TabsContent value="playlists" className="space-y-4">
           <SectionHeader
             text="Playlists laufen als Hintergrundmusik in den Zonen."
             actionLabel="Neue Playlist"
@@ -486,16 +484,16 @@ export function AudioClient({
               text="Stelle aus der Mediathek eine Titelliste für den laufenden Betrieb zusammen."
             />
           ) : (
-            <div className="grid gap-3">
+            <Card className="gap-0 divide-y divide-border py-0 sm:py-0">
               {playlists.map((playlist) => (
-                <Card key={playlist.id}>
-                  <CardContent className="p-4 flex items-start justify-between gap-3">
+                <div key={playlist.id} className="px-4 py-3 sm:px-[18px]">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold text-foreground">
+                        <h3 className="text-sm font-semibold text-foreground">
                           {playlist.name}
                         </h3>
-                        <Badge variant="secondary" className="text-xs">
+                        <Badge variant="secondary" className="text-xs tabular-nums">
                           {playlist.trackIds.length} Titel
                         </Badge>
                         {playlist.shuffle && (
@@ -504,7 +502,7 @@ export function AudioClient({
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="text-xs tabular-nums text-muted-foreground mt-1">
                         {playlist.description ? `${playlist.description} · ` : ""}
                         Gesamtlänge {formatDuration(playlist.totalSec || null)}
                         {playlist.crossfadeSec > 0 && ` · ${playlist.crossfadeSec}s Überblendung`}
@@ -531,15 +529,15 @@ export function AudioClient({
                         }
                       />
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
-            </div>
+            </Card>
           )}
         </TabsContent>
 
         {/* ── WEBRADIO ─────────────────────────────────────────────────────── */}
-        <TabsContent value="streams" className="space-y-3">
+        <TabsContent value="streams" className="space-y-4">
           <SectionHeader
             text="Sender einmal anlegen und in den Zonen auswählen."
             actionLabel="Neuer Sender"
@@ -553,12 +551,12 @@ export function AudioClient({
               text="Lege Sender mit Namen und Stream-URL an. In der Zone wählst du sie dann aus der Liste."
             />
           ) : (
-            <div className="grid gap-3">
+            <Card className="gap-0 divide-y divide-border py-0 sm:py-0">
               {streams.map((stream) => (
-                <Card key={stream.id}>
-                  <CardContent className="p-4 flex items-start justify-between gap-3">
+                <div key={stream.id} className="px-4 py-3 sm:px-[18px]">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-foreground">
+                      <h3 className="text-sm font-semibold text-foreground">
                         {stream.name}
                       </h3>
                       <p className="mt-1 truncate text-xs text-muted-foreground">{stream.url}</p>
@@ -584,13 +582,13 @@ export function AudioClient({
                         }
                       />
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
-            </div>
+            </Card>
           )}
         </TabsContent>
-        <TabsContent value="templates" className="space-y-3">
+        <TabsContent value="templates" className="space-y-4">
           <SectionHeader
             text="Gespeicherte Durchsagen stehen als Schnellwahl und in Zeitplänen zur Verfügung."
             actionLabel="Neue Durchsage"
@@ -604,13 +602,13 @@ export function AudioClient({
               text="Lege wiederkehrende Ansagen wie Betriebsschluss oder Kursbeginn einmal an."
             />
           ) : (
-            <div className="grid gap-3">
+            <Card className="gap-0 divide-y divide-border py-0 sm:py-0">
               {templates.map((template) => (
-                <Card key={template.id}>
-                  <CardContent className="p-4 flex items-start justify-between gap-3">
+                <div key={template.id} className="px-4 py-3 sm:px-[18px]">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold text-foreground">
+                        <h3 className="text-sm font-semibold text-foreground">
                           {template.name}
                         </h3>
                         {template.priority >= 100 && (
@@ -630,7 +628,7 @@ export function AudioClient({
                       {template.text && (
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{template.text}</p>
                       )}
-                      <p className="text-xs text-muted-foreground/70 mt-1">
+                      <p className="text-xs tabular-nums text-muted-foreground mt-1">
                         {template.zoneIds.length === 0
                           ? "Alle aktiven Zonen"
                           : `${template.zoneIds.length} Zone${template.zoneIds.length === 1 ? "" : "n"}`}
@@ -662,15 +660,15 @@ export function AudioClient({
                         }
                       />
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
-            </div>
+            </Card>
           )}
         </TabsContent>
 
         {/* ── ZEITPLÄNE ────────────────────────────────────────────────────── */}
-        <TabsContent value="schedules" className="space-y-3">
+        <TabsContent value="schedules" className="space-y-4">
           <SectionHeader
             text="Zeitpläne werden jede Minute geprüft."
             actionLabel="Neuer Zeitplan"
@@ -684,18 +682,18 @@ export function AudioClient({
               text="Musik zum Betriebsbeginn, Durchsagen vor Betriebsende, Kursansagen zur Uhrzeit."
             />
           ) : (
-            <div className="grid gap-3">
+            <Card className="gap-0 divide-y divide-border py-0 sm:py-0">
               {schedules.map((schedule) => (
-                <Card key={schedule.id}>
-                  <CardContent className="p-4 flex items-start justify-between gap-3">
+                <div key={schedule.id} className="px-4 py-3 sm:px-[18px]">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3
                           className={cn(
-                            "font-semibold",
+                            "text-sm font-semibold",
                             schedule.isActive
                               ? "text-foreground"
-                              : "text-muted-foreground/70 line-through"
+                              : "text-muted-foreground line-through"
                           )}
                         >
                           {schedule.name}
@@ -724,7 +722,7 @@ export function AudioClient({
                         {schedule.trigger !== "TIME" &&
                           ` · Betriebszeit: ${schedule.operatingScheduleName ?? "die des Raums"}`}
                       </p>
-                      <p className="text-xs text-muted-foreground/70 mt-0.5">
+                      <p className="text-xs tabular-nums text-muted-foreground mt-0.5">
                         {schedule.isActive
                           ? nextRunLabel(schedule, zones, operatingSchedules, timeZone)
                           : "Abgeschaltet"}
@@ -784,10 +782,10 @@ export function AudioClient({
                         }
                       />
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
-            </div>
+            </Card>
           )}
         </TabsContent>
 
@@ -892,10 +890,7 @@ export function AudioClient({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
+            <AlertDialogAction variant="destructive" onClick={confirmDelete}>
               Löschen
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -923,18 +918,10 @@ function SectionHeader({
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm text-muted-foreground">{text}</p>
-      <Button onClick={onAction} className="w-full gap-1.5 sm:w-auto sm:shrink-0">
+      <Button onClick={onAction} className="h-11 w-full gap-1.5 sm:h-9 sm:w-auto sm:shrink-0">
         <Plus className="h-4 w-4" /> {actionLabel}
       </Button>
     </div>
-  );
-}
-
-function TabCount({ value }: { value: number }) {
-  return (
-    <Badge variant="secondary" className="ml-1.5 hidden text-xs sm:inline-flex">
-      {value}
-    </Badge>
   );
 }
 
@@ -976,7 +963,7 @@ function IconAction({
       aria-pressed={pressed}
       title={title ?? label}
       className={cn(
-        "h-10 w-10 sm:h-8 sm:w-8",
+        "h-11 w-11 sm:h-8 sm:w-8",
         tone === "danger" && "text-destructive hover:bg-destructive/10 ",
         className
       )}
@@ -1061,11 +1048,11 @@ function ZoneCard({
     <Card
       ref={cardRef}
       className={cn(
-        "border-border transition-shadow dark:border-border",
         !zone.isActive && "opacity-60",
-        highlight && "ring-2 ring-primary"
+        // Umriss statt Ring: ein Ring ersetzt den Glasschatten der Karte.
+        highlight && "outline-2 outline-primary"
       )}>
-      <CardContent className="p-4">
+      <CardContent>
         {/*
           Am Telefon stehen die Knöpfe unter dem Namen: nebeneinander blieben
           für den Zonennamen neben vier Knöpfen nur wenige Zeichen.
@@ -1073,16 +1060,9 @@ function ZoneCard({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold text-foreground">{zone.name}</h3>
+              <h3 className="text-sm font-semibold text-foreground">{zone.name}</h3>
               {zone.deviceId ? (
-                <Badge
-                  className={cn(
-                    "text-xs",
-                    deviceOnline
-                      ? "bg-success/12 text-success"
-                      : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground"
-                  )}
-                >
+                <Badge variant={deviceOnline ? "success" : "danger"} className="text-xs">
                   {deviceOnline ? "Online" : "Offline"}
                 </Badge>
               ) : (
@@ -1101,12 +1081,12 @@ function ZoneCard({
                 </Badge>
               )}
               {isPlaying && (
-                <Badge className="bg-primary/10 text-primary text-xs gap-1">
+                <Badge className="gap-1 bg-violet-500/15 text-xs text-violet-700 dark:text-violet-300">
                   <Volume2 className="h-3 w-3" /> läuft
                 </Badge>
               )}
               {externalActive && (
-                <Badge className="gap-1 bg-info/10 text-xs text-info">
+                <Badge variant="info" className="gap-1 text-xs">
                   {externalActive === "AIRPLAY" ? (
                     <Airplay className="h-3 w-3" />
                   ) : (
@@ -1117,10 +1097,7 @@ function ZoneCard({
                 </Badge>
               )}
               {pendingJobs > 0 && (
-                <Badge
-                  variant="outline"
-                  className="gap-1 border-warning/30 text-xs text-warning"
-                >
+                <Badge variant="warning" className="gap-1 text-xs tabular-nums">
                   <Clock className="h-3 w-3" />
                   {pendingJobs} wartet
                 </Badge>
@@ -1205,7 +1182,7 @@ function ZoneCard({
             <Button
               onClick={onPlay}
               disabled={busy}
-              className="h-10 flex-1 gap-1.5 sm:h-8 sm:flex-none"
+              className="h-11 flex-1 gap-1.5 sm:h-8 sm:flex-none"
             >
               {busy ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1218,7 +1195,7 @@ function ZoneCard({
               variant="outline"
               onClick={onStop}
               disabled={busy}
-              className="h-10 flex-1 gap-1.5 sm:h-8 sm:flex-none"
+              className="h-11 flex-1 gap-1.5 sm:h-8 sm:flex-none"
             >
               <Square className="h-3.5 w-3.5" />
               Stopp
@@ -1245,12 +1222,12 @@ function ZoneCard({
         </div>
 
         {externalActive && (
-          <p className="mt-2 flex items-start gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 text-xs text-info">
-            {externalActive === "AIRPLAY" ? (
-              <Airplay className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            ) : (
-              <Bluetooth className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            )}
+          <Notice
+            tone="info"
+            compact
+            icon={externalActive === "AIRPLAY" ? Airplay : Bluetooth}
+            className="mt-2"
+          >
             <span>
               {externalSender
                 ? `„${externalSender}“ sendet per ${EXTERNAL_LABELS[externalActive]}`
@@ -1258,7 +1235,7 @@ function ZoneCard({
               . Die eigene Quelle läuft weiter, sobald die Verbindung endet – Durchsagen
               kommen auch währenddessen durch.
             </span>
-          </p>
+          </Notice>
         )}
 
         {zone.bluetoothEnabled && (
@@ -1267,7 +1244,7 @@ function ZoneCard({
               variant="outline"
               onClick={() => onPairing(pairable === 0)}
               disabled={busy}
-              className="h-10 shrink-0 gap-1.5 text-xs sm:h-8"
+              className="h-11 shrink-0 gap-1.5 text-xs sm:h-8"
             >
               <BluetoothSearching className="h-3.5 w-3.5" />
               {pairable > 0
@@ -1283,7 +1260,7 @@ function ZoneCard({
         )}
 
         {monitor.active && (
-          <div className="mt-2 flex flex-col gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+          <div className="mt-2 flex flex-col gap-1 rounded-tile border border-primary/30 bg-primary/10 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
             <span className="flex items-center gap-1.5 text-xs font-medium text-primary">
               <Headphones className="h-3.5 w-3.5" />
               Mithören
@@ -1307,7 +1284,7 @@ function ZoneCard({
               <Button
                 variant="ghost"
                 onClick={monitor.toggle}
-                className="h-10 shrink-0 text-xs sm:h-8"
+                className="h-11 shrink-0 text-xs sm:h-8"
               >
                 Beenden
               </Button>
@@ -1316,13 +1293,7 @@ function ZoneCard({
         )}
 
         {error && (
-          <p
-            role="alert"
-            className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-          >
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-            {error}
-          </p>
+          <Notice tone="danger" compact role="alert" icon={AlertTriangle} title={error} className="mt-2" />
         )}
       </CardContent>
     </Card>
@@ -1425,20 +1396,18 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-1.5">
-          {HISTORY_FILTERS.map((option) => (
-            <Chip
-              key={option.value}
-              active={filter === option.value}
-              onClick={() => setFilter(option.value)}
-            >
-              {option.label}
-              {option.value === "problems" && problems.length > 0 && ` (${problems.length})`}
-            </Chip>
-          ))}
-        </div>
+        <Segmented
+          value={filter}
+          onValueChange={setFilter}
+          aria-label="Verlauf filtern"
+          options={HISTORY_FILTERS.map((option) => ({
+            value: option.value,
+            label: option.label,
+            count: option.value === "problems" && problems.length > 0 ? problems.length : undefined,
+          }))}
+        />
         <p className="text-xs text-muted-foreground">Aktualisiert sich automatisch</p>
       </div>
 
@@ -1449,8 +1418,8 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
           text="Für diesen Filter gibt es keine Einträge – bei „Nur Probleme“ ist das die gute Nachricht."
         />
       ) : (
-        <Card>
-          <CardContent className="p-0 divide-y divide-border/60">
+        <Card className="gap-0 py-0 sm:py-0">
+          <CardContent className="divide-y divide-border px-0 sm:px-0">
             {visible.map((job) => (
               <JobItem key={job.id} job={job} />
             ))}
@@ -1469,7 +1438,7 @@ function JobItem({ job }: { job: JobRow }) {
   const waiting = (job.status === "PENDING" || job.status === "SENT") && !stuck;
 
   return (
-    <div className="flex items-start gap-3 p-3">
+    <div className="flex items-start gap-3 px-4 py-3 sm:px-[18px]">
       <div
         className="mt-0.5 shrink-0"
         title={stuck ? "Kein Abspieler hat den Befehl geholt" : JOB_STATUS_LABELS[job.status]}
@@ -1513,7 +1482,7 @@ function JobItem({ job }: { job: JobRow }) {
         {job.errorMessage && (
           <p className="mt-0.5 text-xs break-words text-destructive">{job.errorMessage}</p>
         )}
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs tabular-nums text-muted-foreground">
           {new Date(job.createdAt).toLocaleString("de-DE", {
             dateStyle: "short",
             timeStyle: "medium",
@@ -1525,21 +1494,17 @@ function JobItem({ job }: { job: JobRow }) {
 }
 
 function EmptyState({
-  icon: Icon,
+  icon,
   title,
   text,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   title: string;
   text: string;
 }) {
   return (
-    <Card className="border-dashed border-input">
-      <CardContent className="py-10 text-center">
-        <Icon className="h-10 w-10 mx-auto text-muted-foreground/70 mb-3" />
-        <h3 className="font-semibold text-foreground/80">{title}</h3>
-        <p className="text-sm text-muted-foreground mt-1">{text}</p>
-      </CardContent>
+    <Card className="py-0 sm:py-0">
+      <EmptyStateBlock icon={icon} title={title} description={text} />
     </Card>
   );
 }

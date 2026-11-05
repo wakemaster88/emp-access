@@ -69,7 +69,7 @@ export default async function CamerasPage() {
   return (
     <>
       <Header title="Kameras" accountName={session.user.accountName} />
-      <div className="page-content space-y-4 sm:space-y-6">
+      <div className="page-content space-y-4 sm:space-y-5">
         <CamerasView
           cameras={cameras.map((c) => ({
             ...c,

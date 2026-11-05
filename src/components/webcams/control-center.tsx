@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -10,9 +10,16 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusDot } from "@/components/ui/status-dot";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
   ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight,
@@ -59,13 +66,17 @@ export interface CameraEventRow {
   endedAt: string | null;
 }
 
+// Kamera-Erkennungen in Himmelblau, Klingel = jemand da (Violett), Rest gedämpft.
+// Die Leiste über dem Video ist immer dunkel (Klasse `dark`): dort gilt der dunkle Ton.
+const DETECTION_TEXT = "text-sky-700 dark:text-sky-300";
+
 const EVENT_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  MOTION:   { label: "Bewegung", icon: Activity, color: "text-sky-300" },
-  PERSON:   { label: "Person",   icon: User,     color: "text-rose-300" },
-  VEHICLE:  { label: "Fahrzeug", icon: Car,      color: "text-amber-300" },
-  ANIMAL:   { label: "Tier",     icon: PawPrint, color: "text-emerald-300" },
-  DOORBELL: { label: "Klingel",  icon: Bell,     color: "text-violet-300" },
-  OTHER:    { label: "Ereignis", icon: Activity, color: "text-zinc-300" },
+  MOTION:   { label: "Bewegung", icon: Activity, color: DETECTION_TEXT },
+  PERSON:   { label: "Person",   icon: User,     color: DETECTION_TEXT },
+  VEHICLE:  { label: "Fahrzeug", icon: Car,      color: DETECTION_TEXT },
+  ANIMAL:   { label: "Tier",     icon: PawPrint, color: DETECTION_TEXT },
+  DOORBELL: { label: "Klingel",  icon: Bell,     color: "text-violet-700 dark:text-violet-300" },
+  OTHER:    { label: "Ereignis", icon: Activity, color: "text-muted-foreground" },
 };
 
 function fmtClock(iso: string): string {
@@ -218,11 +229,16 @@ function ScanOverlay({ scan }: { scan: ScanOverlayRow | null }) {
   const denied = scan.result === "DENIED";
 
   return (
-    <div className="pointer-events-none absolute inset-x-1.5 top-8 flex justify-center">
+    // Unter der Tastenreihe oben rechts: am Telefon sind die Tasten 44 px hoch.
+    <div className="pointer-events-none absolute inset-x-1.5 top-14 flex justify-center sm:top-8">
       <div
         className={cn(
-          "flex items-center gap-2 rounded-lg px-3 py-1.5 shadow-lg backdrop-blur-sm text-white animate-in fade-in slide-in-from-top-2 duration-300",
-          granted ? "bg-emerald-600/90" : denied ? "bg-rose-600/90" : "bg-amber-500/90"
+          "flex items-center gap-2 rounded-lg px-3 py-1.5 backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300",
+          granted
+            ? "bg-success/90 text-success-foreground"
+            : denied
+              ? "bg-destructive/90 text-white"
+              : "bg-warning/90 text-warning-foreground"
         )}
       >
         <ScanLine className="h-4 w-4 shrink-0" />
@@ -230,7 +246,7 @@ function ScanOverlay({ scan }: { scan: ScanOverlayRow | null }) {
           <p className="text-xs font-semibold leading-tight truncate">
             {scan.ticketName ?? "Unbekanntes Ticket"}
           </p>
-          <p className="text-[10px] leading-tight text-white/85 truncate">
+          <p className="text-[10px] leading-tight opacity-85 truncate">
             {[scan.ticketTypeName, granted ? "Erlaubt" : denied ? "Abgelehnt" : "Geschützt", fmtClock(scan.scanTime)]
               .filter(Boolean)
               .join(" · ")}
@@ -450,6 +466,9 @@ function CameraPanel({
   const [hd, setHd] = useState(false);
   const [live, setLive] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
+  // Rückfragen in der App statt Browser-confirm(): Tür öffnen, Sirene auslösen.
+  const [doorConfirm, setDoorConfirm] = useState(false);
+  const [sirenConfirm, setSirenConfirm] = useState(false);
 
   const run = useCallback(
     async (key: string, action: string, payload: Record<string, unknown> = {}) => {
@@ -490,15 +509,20 @@ function CameraPanel({
     if (!r.ok) setSpotlightOn(!on);
   }
 
-  async function toggleSiren(on: boolean) {
-    if (on && !confirm(`Sirene an "${cam.name}" wirklich auslösen?`)) return;
+  async function setSiren(on: boolean) {
     setSirenOn(on);
     const r = await run("siren", "siren", { on });
     if (!r.ok) setSirenOn(!on);
   }
 
+  // Einschalten erst nach Rückfrage – im selben Dialog, denn ein Dialog öffnet
+  // keinen zweiten (docs/design-regeln.md, Abschnitt 18). Ausschalten sofort.
+  function toggleSiren(on: boolean) {
+    if (on) setSirenConfirm(true);
+    else void setSiren(false);
+  }
+
   async function openDoor() {
-    if (!confirm(`Tür an "${cam.name}" wirklich öffnen?`)) return;
     await run("door", "door", { relay: 1 });
   }
 
@@ -511,7 +535,7 @@ function CameraPanel({
 
   return (
     <>
-      <div className="group relative aspect-video overflow-hidden rounded-md bg-slate-900 flex items-center justify-center">
+      <div className="group relative aspect-video overflow-hidden rounded-tile bg-black flex items-center justify-center">
         {go2rtcUrl && streamSrc ? (
           <WebRTCVideo
             go2rtcUrl={go2rtcUrl}
@@ -528,24 +552,25 @@ function CameraPanel({
             className="h-full w-full object-cover"
           />
         ) : (
-          <Cctv className="h-10 w-10 text-slate-300 dark:text-slate-600" />
+          <Cctv className="h-10 w-10 text-white/25" />
         )}
 
-        {/* Name unten links, Ereignisse rechts – dezenter Verlauf wie im alten Kiosk. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-6">
+        {/* Name unten links, Ereignisse rechts – dezenter Verlauf wie im alten Kiosk.
+            Die Leiste liegt immer auf dem dunklen Bild, daher `dark` für ihre Farben. */}
+        <div className="dark pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-6">
           <span className="text-xs font-medium text-white drop-shadow truncate shrink-0">
             {cam.name}
           </span>
           <EventOverlay events={events} />
           {!(go2rtcUrl && streamBase) && snapshotAt && (
-            <span className="font-mono text-[10px] text-white/70 shrink-0">
+            <span className="font-mono text-[10px] tabular-nums text-white/70 shrink-0">
               {fmtTime(snapshotAt)}
             </span>
           )}
         </div>
 
         {go2rtcUrl && streamBase && live && (
-          <Badge className="absolute top-1.5 left-1.5 bg-rose-600/90 text-white gap-1 text-[9px] h-4 px-1">
+          <Badge className="absolute top-1.5 left-1.5 h-4 gap-1 bg-emerald-400/90 px-1.5 text-[9px] text-emerald-950">
             <Radio className="h-2.5 w-2.5" /> LIVE
           </Badge>
         )}
@@ -554,21 +579,29 @@ function CameraPanel({
         <ScanOverlay scan={scan} />
 
 
-        {/* Tor offen halten: immer sichtbar – der Zustand ist sicherheitsrelevant. */}
+        {/* Tor offen halten: immer sichtbar – der Zustand ist sicherheitsrelevant.
+            Mit Video unter „LIVE“ bzw. „Nicht live“, damit es keinen der beiden verdeckt;
+            rechts bleibt Platz für die Tasten (mit Video zwei, sonst drei, am Telefon je 44 px). */}
         {isDoorbird && (
           <DoorHoldBadge
             hold={hold}
             now={now}
-            className={cn("absolute left-1.5 max-w-[calc(100%-5rem)]", go2rtcUrl && streamBase && live ? "top-7" : "top-1.5")}
+            className={cn(
+              "absolute left-1.5",
+              go2rtcUrl && streamSrc
+                ? "max-w-[calc(100%-7rem)] sm:max-w-[calc(100%-5rem)]"
+                : "max-w-[calc(100%-10rem)] sm:max-w-[calc(100%-7rem)]",
+              go2rtcUrl && streamBase ? "top-7" : "top-1.5"
+            )}
           />
         )}
 
-        {/* Buttons nur bei Hover einblenden, damit das Grid ruhig bleibt;
-            bei laufender Offenhaltung bleiben sie stehen (Beenden per Touch). */}
+        {/* Mit der Maus erscheinen die Buttons erst bei Hover, damit das Grid ruhig bleibt.
+            Auf Touch-Geräten (kein Hover) und bei laufender Offenhaltung bleiben sie stehen. */}
         <div
           className={cn(
-            "absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity",
-            holdActive && "opacity-100"
+            "absolute top-1.5 right-1.5 flex items-center gap-1 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
+            !holdActive && "pointer-fine:opacity-0"
           )}
         >
           {!isDoorbird && go2rtcUrl && streamSrc && (
@@ -576,8 +609,8 @@ function CameraPanel({
               variant="secondary"
               size="sm"
               className={cn(
-                "h-7 px-1.5 text-[10px] font-semibold bg-black/50 hover:bg-black/70",
-                hd ? "text-emerald-400" : "text-white"
+                "h-11 px-2.5 text-[10px] font-semibold bg-black/50 hover:bg-black/70 sm:h-7 sm:px-1.5",
+                hd ? "bg-primary text-primary-foreground hover:bg-primary/90" : "text-white"
               )}
               title={hd ? "Auf Vorschau-Qualität (sub) wechseln" : "Auf volle Qualität (main) wechseln"}
               onClick={() => setHd((v) => !v)}
@@ -589,7 +622,7 @@ function CameraPanel({
             <Button
               variant="secondary"
               size="icon"
-              className="h-7 w-7 bg-black/50 hover:bg-black/70 text-white"
+              className="size-11 bg-black/50 hover:bg-black/70 text-white sm:size-7"
               title="Neuen Schnappschuss anfordern"
               onClick={refreshSnapshot}
               disabled={disabled}
@@ -604,9 +637,9 @@ function CameraPanel({
               <Button
                 variant="secondary"
                 size="icon"
-                className="h-7 w-7 bg-black/50 hover:bg-emerald-700/80 text-white"
+                className="size-11 bg-black/50 hover:bg-black/70 text-white sm:size-7"
                 title="Tür öffnen"
-                onClick={openDoor}
+                onClick={() => setDoorConfirm(true)}
                 disabled={disabled}
               >
                 {busy === "door"
@@ -621,8 +654,8 @@ function CameraPanel({
                 onChange={onHoldChange}
                 onError={setError}
                 variant="secondary"
-                className="h-7 w-7 bg-black/50 hover:bg-emerald-700/80 text-white"
-                activeClassName="bg-emerald-600/90 hover:bg-rose-700/90"
+                className="size-11 bg-black/50 hover:bg-black/70 text-white sm:size-7"
+                activeClassName="bg-emerald-400/90 text-emerald-950 hover:bg-destructive/90 hover:text-white"
                 iconClassName="h-3.5 w-3.5"
               />
             </>
@@ -630,7 +663,7 @@ function CameraPanel({
             <Button
               variant="secondary"
               size="icon"
-              className="h-7 w-7 bg-black/50 hover:bg-black/70 text-white"
+              className="size-11 bg-black/50 hover:bg-black/70 text-white sm:size-7"
               title="Kamera steuern (PTZ, Licht, IR, Sirene)"
               onClick={() => setControlsOpen(true)}
             >
@@ -641,18 +674,24 @@ function CameraPanel({
 
         {/* Fehler (z.B. Türöffner) kurz auf der Kachel anzeigen. */}
         {isDoorbird && error && (
-          <p className="absolute bottom-6 inset-x-2 rounded bg-rose-600/90 px-2 py-1 text-[10px] text-white">
+          <p className="absolute bottom-6 inset-x-2 rounded-lg bg-destructive/90 px-2 py-1 text-[10px] text-white">
             {error}
           </p>
         )}
       </div>
 
-      <Dialog open={controlsOpen} onOpenChange={setControlsOpen}>
+      <Dialog
+        open={controlsOpen}
+        onOpenChange={(o) => {
+          setControlsOpen(o);
+          if (!o) setSirenConfirm(false);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-2 pr-6">
+            <DialogTitle className="flex items-center justify-between gap-2">
               <span className="truncate">{cam.name}</span>
-              <span className="text-xs font-mono font-normal text-slate-400 shrink-0">
+              <span className="text-xs font-mono font-normal text-muted-foreground shrink-0">
                 {cam.host}{cam.channel > 0 ? ` · K${cam.channel}` : ""}
               </span>
             </DialogTitle>
@@ -667,7 +706,7 @@ function CameraPanel({
                   key={cell.op}
                   variant="outline"
                   size="icon"
-                  className="h-9 w-9"
+                  className="size-11 sm:size-9"
                   title={cell.op}
                   disabled={disabled}
                   onClick={() => run(`ptz-${cell.op}`, "ptz", { op: cell.op, speed })}
@@ -677,8 +716,8 @@ function CameraPanel({
                     : cell.icon && <cell.icon className="h-4 w-4" />}
                 </Button>
               ) : (
-                <div key={`center-${i}`} className="h-9 w-9 flex items-center justify-center">
-                  <Crosshair className="h-4 w-4 text-slate-300 dark:text-slate-600" />
+                <div key={`center-${i}`} className="size-11 sm:size-9 flex items-center justify-center">
+                  <Crosshair className="h-4 w-4 text-muted-foreground/50" />
                 </div>
               )
             )}
@@ -713,7 +752,7 @@ function CameraPanel({
             </div>
 
             <Select value={String(speed)} onValueChange={(v) => setSpeed(Number(v))}>
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger className="w-full text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -737,12 +776,12 @@ function CameraPanel({
                 Presets laden
               </Button>
             ) : presets.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center">Keine Presets gespeichert</p>
+              <p className="text-xs text-muted-foreground text-center">Keine Presets gespeichert</p>
             ) : (
               <Select
                 onValueChange={(v) => run("preset", "ptz", { op: "ToPos", presetId: Number(v) })}
               >
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger className="w-full text-xs">
                   <SelectValue placeholder="Preset anfahren …" />
                 </SelectTrigger>
                 <SelectContent>
@@ -755,22 +794,24 @@ function CameraPanel({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
-            <div className="flex items-center gap-1.5 text-sm">
-              <Lightbulb className={cn("h-4 w-4", spotlightOn ? "text-amber-500" : "text-slate-400")} />
+        {/* Licht, IR und Sirene als gruppierte Zeilen in einer Kachel (im Dialog automatisch getönt). */}
+        <div className="glass-tile divide-y divide-border">
+          <div className="flex min-h-11 items-center justify-between gap-3 px-3 py-1.5">
+            <div className="flex items-center gap-2 text-sm">
+              <Lightbulb className={cn("h-4 w-4", spotlightOn ? "text-amber-500 dark:text-amber-300" : "text-muted-foreground")} />
               Licht
             </div>
             <Switch
+              aria-label="Licht"
               checked={spotlightOn}
               onCheckedChange={toggleSpotlight}
               disabled={disabled}
             />
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2 gap-2">
-            <div className="flex items-center gap-1.5 text-sm shrink-0">
-              <Moon className="h-4 w-4 text-slate-400" />
+          <div className="flex min-h-11 items-center justify-between gap-3 px-3 py-1.5">
+            <div className="flex items-center gap-2 text-sm">
+              <Moon className="h-4 w-4 text-muted-foreground" />
               IR
             </div>
             <Select
@@ -778,7 +819,7 @@ function CameraPanel({
               onValueChange={(v) => run("ir", "ir", { state: v })}
               disabled={disabled}
             >
-              <SelectTrigger className="h-7 text-xs w-20">
+              <SelectTrigger size="sm" aria-label="IR" className="w-24 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -789,12 +830,13 @@ function CameraPanel({
             </Select>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
-            <div className="flex items-center gap-1.5 text-sm">
-              <Siren className={cn("h-4 w-4", sirenOn ? "text-rose-500" : "text-slate-400")} />
+          <div className="flex min-h-11 items-center justify-between gap-3 px-3 py-1.5">
+            <div className="flex items-center gap-2 text-sm">
+              <Siren className={cn("h-4 w-4", sirenOn ? "text-destructive" : "text-muted-foreground")} />
               Sirene
             </div>
             <Switch
+              aria-label="Sirene"
               checked={sirenOn}
               onCheckedChange={toggleSiren}
               disabled={disabled}
@@ -802,14 +844,49 @@ function CameraPanel({
           </div>
         </div>
 
-            {error && (
-              <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
-                {error}
-              </p>
+            {sirenConfirm && (
+              <Notice tone="danger" compact icon={Siren} title={`Sirene an "${cam.name}" wirklich auslösen?`}>
+                <div className="mt-2 flex flex-wrap justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSirenConfirm(false)}
+                  >
+                    Abbrechen
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={disabled}
+                    onClick={() => {
+                      setSirenConfirm(false);
+                      void setSiren(true);
+                    }}
+                  >
+                    Auslösen
+                  </Button>
+                </div>
+              </Notice>
             )}
+
+            {error && <Notice tone="danger" compact title={error} />}
           </div>
         </DialogContent>
       </Dialog>
+
+      {isDoorbird && (
+        <AlertDialog open={doorConfirm} onOpenChange={setDoorConfirm}>
+          <AlertDialogContent aria-describedby={undefined}>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{`Tür an "${cam.name}" wirklich öffnen?`}</AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void openDoor()}>Tür öffnen</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   );
 }
@@ -840,43 +917,43 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
   }, [cameras]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-4 sm:space-y-5">
       {!hubOnline && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          Der lokale Hub ist offline – Kamera-Steuerung ist erst wieder möglich, wenn er läuft.
-        </div>
+        <Notice
+          tone="warning"
+          icon={AlertTriangle}
+          title="Der lokale Hub ist offline – Kamera-Steuerung ist erst wieder möglich, wenn er läuft."
+        />
       )}
 
       {go2rtc.reachable === false && (
-        <div className="flex items-center gap-2 rounded-lg border border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-4 py-3 text-sm text-sky-800 dark:text-sky-300">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          go2rtc ({go2rtc.url}) ist aus diesem Browser nicht erreichbar – es werden Standbilder
-          statt Live-Video gezeigt. Live-Video funktioniert nur im lokalen Netz (z.&nbsp;B. über
-          das lokale Dashboard).
-        </div>
+        <Notice
+          tone="info"
+          icon={AlertTriangle}
+          title={
+            <>
+              go2rtc ({go2rtc.url}) ist aus diesem Browser nicht erreichbar – es werden Standbilder
+              statt Live-Video gezeigt.
+            </>
+          }
+        >
+          Live-Video funktioniert nur im lokalen Netz (z.&nbsp;B. über das lokale Dashboard).
+        </Notice>
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        <Badge variant="secondary" className="gap-1.5">
+        <Badge variant="secondary" className="gap-1.5 tabular-nums">
           <Cctv className="h-3.5 w-3.5" />
           {cameras.length} Kameras
         </Badge>
-        <Badge
-          className={cn(
-            "gap-1.5",
-            go2rtc.reachable
-              ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-              : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-          )}
-        >
+        <Badge variant={go2rtc.reachable ? "success" : "neutral"} className="gap-1.5">
           <Radio className="h-3.5 w-3.5" />
           {go2rtc.reachable ? "Live-Video aktiv" : "Nur Standbilder"}
         </Badge>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-slate-400"
+          className="size-11 text-muted-foreground sm:size-8"
           title="go2rtc-Adresse konfigurieren"
           onClick={() => {
             setUrlDraft(go2rtc.url);
@@ -887,7 +964,7 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
         </Button>
         {showSettings && (
           <form
-            className="flex items-center gap-2"
+            className="flex w-full items-center gap-2 sm:w-auto"
             onSubmit={(e) => {
               e.preventDefault();
               saveGo2rtcUrl(urlDraft);
@@ -898,39 +975,27 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
               value={urlDraft}
               onChange={(e) => setUrlDraft(e.target.value)}
               placeholder="http://192.168.1.202:1984"
-              className="h-8 w-64 font-mono text-xs"
+              className="h-11 min-w-0 flex-1 font-mono sm:h-8 sm:w-64 sm:flex-none md:text-xs"
             />
-            <Button type="submit" size="sm" className="h-8">Speichern</Button>
+            <Button type="submit" size="sm" className="h-11 sm:h-8">Speichern</Button>
           </form>
         )}
-        <Badge
-          className={cn(
-            "gap-1.5",
-            (online ?? 0) > 0
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-              : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-          )}
-        >
-          <span className={cn("h-1.5 w-1.5 rounded-full", (online ?? 0) > 0 ? "bg-emerald-500" : "bg-slate-400")} />
+        <Badge variant={(online ?? 0) > 0 ? "success" : "neutral"} className="gap-1.5 tabular-nums">
+          <StatusDot tone={(online ?? 0) > 0 ? "success" : "neutral"} size="xs" />
           {online ?? "–"} online
         </Badge>
       </div>
 
       {cameras.length === 0 ? (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-slate-500">
-            <Cctv className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-            <p className="font-medium text-slate-600 dark:text-slate-400">
-              Keine aktiven Reolink-Kameras
-            </p>
-            <p className="text-sm text-center max-w-md">
-              Lege unter „Kameras“ zuerst deine Reolink-Kameras an – hier steuerst du
-              anschließend PTZ, Presets, Scheinwerfer, IR und Sirene.
-            </p>
-          </CardContent>
+        <Card className="py-0 sm:py-0">
+          <EmptyState
+            icon={Cctv}
+            title="Keine aktiven Reolink-Kameras"
+            description="Lege unter „Kameras“ zuerst deine Reolink-Kameras an – hier steuerst du anschließend PTZ, Presets, Scheinwerfer, IR und Sirene."
+          />
         </Card>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2">
           {cameras.map((c) => (
             <CameraPanel
               key={c.id}

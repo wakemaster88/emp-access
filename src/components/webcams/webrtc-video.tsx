@@ -304,8 +304,8 @@ export function WebRTCVideo({
       {/* Klarer "Nicht live"-Marker, sobald der Stream nicht laeuft aber ein
           Standbild gezeigt wird - sonst wirkt die Kachel faelschlich live. */}
       {visible && status === "error" && snapshotUrl && (
-        <span className="pointer-events-none absolute top-1.5 left-1.5 flex items-center gap-1 rounded bg-slate-900/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-200 ring-1 ring-white/15">
-          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+        <span className="pointer-events-none absolute top-1.5 left-1.5 flex items-center gap-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/85 ring-1 ring-white/15">
+          <span className="h-1.5 w-1.5 rounded-full bg-white/50" />
           Nicht live
         </span>
       )}

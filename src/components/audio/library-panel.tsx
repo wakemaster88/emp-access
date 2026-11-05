@@ -2,10 +2,23 @@
 
 import { useMemo, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Segmented } from "@/components/ui/segmented";
 import {
   Select,
   SelectContent,
@@ -15,7 +28,6 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Music, Pause, Play, Search, Trash2, Upload } from "lucide-react";
 import { TRACK_KIND_LABELS as KIND_LABELS, formatDuration } from "./labels";
-import { Chip } from "./ui";
 import type { AudioTrackKind, TrackRow } from "./types";
 
 /** Ab dieser Anzahl lohnt sich die Suche – darunter nur unnötiges Bedienelement. */
@@ -37,6 +49,9 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
   const [filterKind, setFilterKind] = useState<AudioTrackKind | "ALL">("ALL");
   const [playingId, setPlayingId] = useState<number | null>(null);
   const previewRef = useRef<HTMLAudioElement>(null);
+  // Löschen entfernt die Datei endgültig – wie die anderen Löschwege der Seite
+  // erst nach Rückfrage.
+  const [deleteTarget, setDeleteTarget] = useState<TrackRow | null>(null);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -152,9 +167,9 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <Card>
-        <CardContent className="p-4">
+        <CardContent>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="sm:min-w-[160px]">
               <Label className="mb-1.5 block">Art</Label>
@@ -200,32 +215,24 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
             die Zonen-Pis laden sie einmalig und spielen danach lokal ab.
           </p>
 
-          {error && (
-            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30 mt-3">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" compact title={error} className="mt-3" />}
         </CardContent>
       </Card>
 
       {tracks.length === 0 ? (
-        <Card className="border-dashed border-input">
-          <CardContent className="py-10 text-center">
-            <Music className="h-10 w-10 mx-auto text-muted-foreground/70 mb-3" />
-            <h3 className="font-semibold text-foreground/80">
-              Mediathek ist leer
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Lade Musik, Jingles und Gongs hoch, um Playlists zusammenzustellen.
-            </p>
-          </CardContent>
+        <Card className="py-0 sm:py-0">
+          <EmptyState
+            icon={Music}
+            title="Mediathek ist leer"
+            description="Lade Musik, Jingles und Gongs hoch, um Playlists zusammenzustellen."
+          />
         </Card>
       ) : (
         <>
           {tracks.length >= SEARCH_THRESHOLD && (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="relative sm:min-w-[200px] sm:flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -234,48 +241,43 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
                   className="pl-8"
                 />
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                <Chip active={filterKind === "ALL"} onClick={() => setFilterKind("ALL")}>
-                  Alle
-                </Chip>
-                {(Object.keys(KIND_LABELS) as AudioTrackKind[]).map((k) => (
-                  <Chip
-                    key={k}
-                    active={filterKind === k}
-                    onClick={() => setFilterKind(k)}
-                  >
-                    {KIND_LABELS[k]}
-                  </Chip>
-                ))}
-              </div>
+              <Segmented
+                value={filterKind}
+                onValueChange={setFilterKind}
+                aria-label="Nach Art filtern"
+                className="self-start sm:self-auto"
+                options={[
+                  { value: "ALL", label: "Alle" },
+                  ...(Object.keys(KIND_LABELS) as AudioTrackKind[]).map((k) => ({
+                    value: k,
+                    label: KIND_LABELS[k],
+                  })),
+                ]}
+              />
             </div>
           )}
 
           {visible.length === 0 ? (
-            <Card className="border-dashed border-input">
-              <CardContent className="py-8 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Kein Titel passt zur Suche.
-                </p>
-              </CardContent>
+            <Card className="py-0 sm:py-0">
+              <EmptyState compact icon={Search} title="Kein Titel passt zur Suche." />
             </Card>
           ) : (
-            <Card>
-              <CardContent className="p-0 divide-y divide-border/60">
+            <Card className="gap-0 py-0 sm:py-0">
+              <CardContent className="divide-y divide-border px-0 sm:px-0">
                 {visible.map((track) => (
                   <TrackItem
                     key={track.id}
                     track={track}
                     playing={playingId === track.id}
                     onTogglePlay={() => togglePreview(track)}
-                    onRemove={() => remove(track)}
+                    onRemove={() => setDeleteTarget(track)}
                   />
                 ))}
               </CardContent>
             </Card>
           )}
 
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs tabular-nums text-muted-foreground">
             {visible.length === tracks.length
               ? `${tracks.length} Titel`
               : `${visible.length} von ${tracks.length} Titeln`}
@@ -285,6 +287,31 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
           <audio ref={previewRef} onEnded={() => setPlayingId(null)} className="hidden" />
         </>
       )}
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>„{deleteTarget?.title}&ldquo; löschen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Das lässt sich nicht rückgängig machen.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (deleteTarget) void remove(deleteTarget);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -308,14 +335,14 @@ function TrackItem({
   onRemove: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 p-3 sm:gap-3">
+    <div className="flex items-center gap-2 px-4 py-3 sm:gap-3 sm:px-[18px]">
       <Button
         variant="ghost"
         size="icon"
         onClick={onTogglePlay}
         aria-label={playing ? `${track.title} anhalten` : `${track.title} anhören`}
         aria-pressed={playing}
-        className="h-10 w-10 shrink-0 sm:h-8 sm:w-8"
+        className="h-11 w-11 shrink-0 sm:h-8 sm:w-8"
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
       </Button>
@@ -327,7 +354,7 @@ function TrackItem({
             {KIND_LABELS[track.kind]}
           </Badge>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs tabular-nums text-muted-foreground">
           {track.artist ? `${track.artist} · ` : ""}
           {formatDuration(track.durationSec)}
           {track.sizeBytes ? ` · ${(track.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ""}
@@ -340,7 +367,7 @@ function TrackItem({
         onClick={onRemove}
         aria-label={`${track.title} löschen`}
         title="Löschen"
-        className="h-10 w-10 shrink-0 text-destructive hover:bg-destructive/10 sm:h-8 sm:w-8"
+        className="h-11 w-11 shrink-0 text-destructive hover:bg-destructive/10 sm:h-8 sm:w-8"
       >
         <Trash2 className="h-4 w-4" />
       </Button>
