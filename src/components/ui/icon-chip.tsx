@@ -37,10 +37,10 @@ const SOFT: Record<ChipTone, string> = {
 
 const SOLID: Record<ChipTone, string> = {
   neutral: "bg-muted-foreground text-background",
-  primary: "bg-primary text-primary-foreground",
+  primary: "bg-primary-fill text-primary-foreground",
   success: "bg-success text-success-foreground",
   warning: "bg-warning text-warning-foreground",
-  danger: "bg-destructive text-white",
+  danger: "bg-destructive-fill text-white",
   info: "bg-info text-info-foreground",
   light: "bg-amber-400 text-amber-950",
   music: "bg-violet-400 text-violet-950",

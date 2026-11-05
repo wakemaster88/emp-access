@@ -25,7 +25,7 @@ const TONE: Record<NoticeTone, { box: string; chip: string; text: string; icon: 
   },
   danger: {
     box: "border-destructive/45 bg-gradient-to-br from-destructive/14 to-destructive/[0.03]",
-    chip: "bg-destructive text-white",
+    chip: "bg-destructive-fill text-white",
     text: "text-destructive",
     icon: OctagonAlert,
   },
@@ -49,6 +49,12 @@ interface NoticeProps {
   action?: React.ReactNode;
   /** Kompakt für Karten und Dialoge (kleiner Chip, weniger Abstand). */
   compact?: boolean;
+  /**
+   * Lage der Handlung: `center` (Standard) mittig zur Höhe des Hinweises,
+   * `start` oben an der Titelzeile – für Hinweise, die sich aufklappen
+   * (sonst springt die Taste beim Aufklappen nach unten).
+   */
+  actionAlign?: "start" | "center";
   className?: string;
   /** `alert` für Fehler, die gerade erst auftreten (Screenreader sagt sie an). */
   role?: "status" | "alert";
@@ -70,6 +76,7 @@ export function Notice({
   children,
   action,
   compact = false,
+  actionAlign = "center",
   className,
   role,
 }: NoticeProps) {
@@ -106,7 +113,14 @@ export function Notice({
         )}
       </div>
       {action && (
-        <div className="flex shrink-0 items-center justify-end gap-2 self-center max-sm:basis-full">{action}</div>
+        <div
+          className={cn(
+            "flex shrink-0 items-center justify-end gap-2 max-sm:basis-full",
+            actionAlign === "start" ? "self-start" : "self-center",
+          )}
+        >
+          {action}
+        </div>
       )}
     </div>
   );

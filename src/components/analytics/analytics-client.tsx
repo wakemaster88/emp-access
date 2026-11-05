@@ -335,6 +335,7 @@ export function AnalyticsClient() {
                     tick={{ fontSize: 10, fill: CHART_AXIS }}
                     tickLine={false}
                     axisLine={false}
+                    minTickGap={12}
                   />
                   <YAxis tick={{ fontSize: 10, fill: CHART_AXIS }} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />

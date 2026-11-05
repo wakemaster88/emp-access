@@ -7,13 +7,24 @@ import { cn } from "@/lib/utils"
  * dem Farbgrund – Radius 24 px, Lichtkante oben, weicher Schatten. Innen
  * 16 px Abstand oben/unten, 18 px seitlich (docs/design-regeln.md, Abschnitt 5).
  * Am Einsatzort keine eigenen Rahmen-, Schatten- oder Hintergrundfarben.
+ *
+ * `flush`: Tabelle oder Zeilenliste läuft bis an den unteren Rand (kein
+ * Abstand unten, Ecken schneiden ab) – ersetzt `overflow-hidden pb-0 sm:pb-0`.
+ * `flush="y"` auch oben und ohne Abstand zwischen den Kindern, für Zeilenlisten
+ * ohne Kopf (`overflow-hidden gap-0 py-0 sm:py-0`).
  */
-function Card({ className, ...props }: React.ComponentProps<"div">) {
+function Card({
+  className,
+  flush,
+  ...props
+}: React.ComponentProps<"div"> & { flush?: boolean | "y" }) {
   return (
     <div
       data-slot="card"
       className={cn(
         "glass-card text-card-foreground flex flex-col gap-4 py-4 sm:py-[18px]",
+        flush && "overflow-hidden pb-0 sm:pb-0",
+        flush === "y" && "gap-0 pt-0 sm:pt-0",
         className
       )}
       {...props}

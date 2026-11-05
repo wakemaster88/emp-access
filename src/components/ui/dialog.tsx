@@ -6,6 +6,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { keepInitialFocusOffClose } from "@/components/ui/initial-focus"
 
 function Dialog({
   ...props
@@ -51,10 +52,12 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  const closeRef = React.useRef<HTMLButtonElement>(null)
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -68,12 +71,18 @@ function DialogContent({
           "sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95",
           className
         )}
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event)
+          // Erster Fokus nie auf dem X (kein Fokusring beim Öffnen).
+          if (!event.defaultPrevented) keepInitialFocusOffClose(event, closeRef.current)
+        }}
         {...props}
       >
         <div aria-hidden className="mx-auto -mt-1 mb-1 h-1.5 w-10 shrink-0 rounded-full bg-foreground/15 sm:hidden" />
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
+            ref={closeRef}
             data-slot="dialog-close"
             className="press absolute top-3.5 right-3.5 inline-flex size-8 items-center justify-center rounded-full after:absolute after:-inset-1.5 after:content-[''] bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border hover:text-foreground hover:bg-glass-strong focus-visible:ring-[3px] focus-visible:ring-ring/50 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
@@ -96,13 +105,20 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+/**
+ * Tastenzeile eines Dialogs: auf dem Handy untereinander (Primärtaste oben),
+ * ab sm rechtsbündig nebeneinander. `start` steht ab sm links (z. B. ein
+ * destruktives „Löschen“), auf dem Handy ganz unten.
+ */
 function DialogFooter({
   className,
   showCloseButton = false,
+  start,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean
+  start?: React.ReactNode
 }) {
   return (
     <div
@@ -113,6 +129,11 @@ function DialogFooter({
       )}
       {...props}
     >
+      {start != null && start !== false && (
+        <div data-slot="dialog-footer-start" className="flex flex-col-reverse gap-2 sm:mr-auto sm:flex-row">
+          {start}
+        </div>
+      )}
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>

@@ -597,10 +597,12 @@ function CameraPanel({
         )}
 
         {/* Mit der Maus erscheinen die Buttons erst bei Hover, damit das Grid ruhig bleibt.
-            Auf Touch-Geräten (kein Hover) und bei laufender Offenhaltung bleiben sie stehen. */}
+            Auf Touch-Geräten (kein Hover) und bei laufender Offenhaltung bleiben sie stehen.
+            `dark`: Die Buttons liegen auf dem Kamerabild und brauchen auch im hellen
+            Modus die helle Glaskante (wie die Bildunterschrift). */}
         <div
           className={cn(
-            "absolute top-1.5 right-1.5 flex items-center gap-1 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
+            "dark absolute top-1.5 right-1.5 flex items-center gap-1 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
             !holdActive && "pointer-fine:opacity-0"
           )}
         >

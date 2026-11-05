@@ -178,7 +178,9 @@ export function PoliciesTab({ policies, readonly }: Props) {
                   {older.map((v) => (
                     <div
                       key={v.id}
-                      className="flex items-center gap-2 py-1"
+                      // Bei Touch etwas höher: die Tippflächen der Tasten (44 px)
+                      // reichen sonst in die Zeile darüber.
+                      className="flex items-center gap-2 py-1 pointer-coarse:py-1.5"
                     >
                       <span className="font-mono text-[11px] text-muted-foreground">v{v.version}</span>
                       <span className="text-[11px] text-muted-foreground tabular-nums">{fmtDate(v.createdAt)}</span>

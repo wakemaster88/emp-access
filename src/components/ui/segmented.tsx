@@ -1,7 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import {
+  segmentedCountClass,
+  segmentedItemClass,
+  segmentedStripClass,
+} from "@/components/ui/segmented-styles";
 
 export interface SegmentedOption<T extends string> {
   value: T;
@@ -9,6 +13,8 @@ export interface SegmentedOption<T extends string> {
   /** Kleine Zahl rechts im Segment (z. B. Anzahl Treffer). */
   count?: number;
   disabled?: boolean;
+  /** Tooltip (natives `title`), z. B. für abgekürzte Beschriftungen. */
+  title?: string;
 }
 
 interface SegmentedProps<T extends string> {
@@ -28,6 +34,8 @@ interface SegmentedProps<T extends string> {
  * heller Pille für die aktive Wahl – für Filter, Zeiträume und Ansichten,
  * die keinen eigenen Inhaltsbereich umschalten (dafür `Tabs`).
  * Pfeiltasten wechseln die Wahl, wie bei einer Radiogruppe.
+ * Steht der Filter in der URL, `SegmentedLinks` (segmented-links.tsx) nehmen –
+ * gleiches Aussehen, Links statt Tasten.
  */
 export function Segmented<T extends string>({
   value,
@@ -56,11 +64,7 @@ export function Segmented<T extends string>({
     <div
       role="radiogroup"
       aria-label={aria["aria-label"]}
-      className={cn(
-        "glass-strip inline-flex max-w-full items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-        stretch && "flex w-full",
-        className,
-      )}
+      className={segmentedStripClass(stretch, className)}
     >
       {options.map((o, i) => {
         const active = o.value === value;
@@ -75,6 +79,7 @@ export function Segmented<T extends string>({
             aria-checked={active}
             tabIndex={active ? 0 : -1}
             disabled={o.disabled}
+            title={o.title}
             onClick={() => onValueChange(o.value)}
             onKeyDown={(e) => {
               if (e.key === "ArrowRight" || e.key === "ArrowDown") {
@@ -85,25 +90,10 @@ export function Segmented<T extends string>({
                 move(i, -1);
               }
             }}
-            className={cn(
-              "press inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full whitespace-nowrap font-medium outline-none",
-              "text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-              size === "sm" ? "h-7 px-3 text-xs" : "h-[34px] px-3.5 text-[13px]",
-              stretch && "flex-1",
-              active && "glass-pill-active font-semibold text-foreground",
-            )}
+            className={segmentedItemClass(size, stretch, active)}
           >
             {o.label}
-            {o.count !== undefined && (
-              <span
-                className={cn(
-                  "rounded-full px-1.5 text-[10px] font-semibold tabular-nums leading-4",
-                  active ? "bg-primary/15 text-primary" : "bg-foreground/[0.07] text-muted-foreground dark:bg-white/10",
-                )}
-              >
-                {o.count}
-              </span>
-            )}
+            {o.count !== undefined && <span className={segmentedCountClass(active)}>{o.count}</span>}
           </button>
         );
       })}
