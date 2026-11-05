@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     mowerName: true,
   } as const;
 
-  const [rooms, unassigned, acc, schedules] = await Promise.all([
+  const [rooms, unassigned, acc, schedules, irrigation] = await Promise.all([
     db.keyRoom.findMany({
       where: { accountId: account.id },
       orderBy: [{ building: "asc" }, { floor: "asc" }, { name: "asc" }],
@@ -69,11 +69,28 @@ export async function GET(request: NextRequest) {
       select: deviceSelect,
       orderBy: { name: "asc" },
     }),
-    db.account.findUnique({ where: { id: account.id }, select: { timezone: true } }),
+    db.account.findUnique({ where: { id: account.id }, select: { timezone: true, latitude: true, longitude: true } }),
     db.operatingSchedule.findMany({
       where: { accountId: account.id },
       select: { id: true, name: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+    // Fuer die Wetter-Vorschau des Hub-Assistenten (nur lesen, keine Steuerung).
+    db.irrigationSchedule.findMany({
+      where: { accountId: account.id },
+      select: {
+        id: true,
+        startTime: true,
+        daysOfWeek: true,
+        durationMinutes: true,
+        isActive: true,
+        skipOnRain: true,
+        smartRain: true,
+        sensorServiceId: true,
+        lastRunAt: true,
+        device: { select: { name: true } },
+      },
+      orderBy: { startTime: "asc" },
     }),
   ]);
 
@@ -83,7 +100,15 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     at: now.toISOString(),
     timezone: tz,
+    location:
+      acc?.latitude != null && acc?.longitude != null ? { latitude: acc.latitude, longitude: acc.longitude } : null,
     schedules,
+    irrigation: irrigation.map(({ device, sensorServiceId, lastRunAt, ...s }) => ({
+      ...s,
+      name: device.name,
+      moistureSensor: !!sensorServiceId,
+      lastRunAt: lastRunAt?.toISOString() ?? null,
+    })),
     rooms: rooms.map(({ operatingSchedule, climate, ...room }) => ({
       ...room,
       climate: climate ? climateView(climate) : null,

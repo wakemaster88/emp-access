@@ -72,6 +72,9 @@ SESSION_FILE = CACHE_DIR / "session.json"
 #: Merkt sich abgelehnte Zugangsdaten (nur als Hash), damit auch Hub-Neustarts
 #: und Updates sie nicht immer wieder probieren. Neue Daten in .env heben es auf.
 REJECTED_FILE = CACHE_DIR / "rejected.json"
+# Letzte Neuanmeldung auf Wunsch (Knopf im Hub); schuetzt den Account vor Serien-Logins.
+RELOGIN_FILE = CACHE_DIR / "relogin.json"
+RELOGIN_MIN_GAP_S = 6 * 3600
 
 #: Grundtakt fuer Berichte, solange ein Maeher arbeitet (Sekunden).
 ACTIVE_POLL_S = 60
@@ -273,6 +276,46 @@ class MowerService:
         names = [h.device_name for h in self.client.device_registry.all_devices]
         LOG.info("Mammotion verbunden, Geraete: %s", ", ".join(names) or "keine")
         return True
+
+    async def relogin(self) -> dict[str, Any]:
+        """Gespeicherte Sitzung verwerfen und einmal mit Passwort neu anmelden.
+
+        Fuer abgelaufene Token (z. B. "refreshToken invalid"), die PyMammotion
+        nicht selbst erneuert. Hoechstens alle sechs Stunden, damit Mammotion
+        den Account nicht wegen Serien-Logins sperrt.
+        """
+        if not EMAIL or not PASSWORD:
+            return {"ok": False, "error": "MAMMOTION_EMAIL und MAMMOTION_PASSWORD fehlen in hub/.env"}
+        try:
+            last = float(json.loads(RELOGIN_FILE.read_text("utf-8")).get("at", 0))
+        except (OSError, ValueError, AttributeError, TypeError):
+            last = 0.0
+        wait = RELOGIN_MIN_GAP_S - (time.time() - last)
+        if wait > 0:
+            return {
+                "ok": False,
+                "error": f"Letzte Neuanmeldung ist noch keine 6 Stunden her. Frühestens in {int(wait // 60) + 1} min wieder (Schutz vor Kontosperre).",
+            }
+        with contextlib.suppress(OSError):
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            RELOGIN_FILE.write_text(json.dumps({"at": time.time()}), "utf-8")
+        LOG.info("Neuanmeldung bei Mammotion angefordert: Sitzung wird verworfen")
+        if self._loop_task is not None and not self._loop_task.done():
+            self._loop_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._loop_task
+        with contextlib.suppress(Exception):
+            await self.cameras.close_all()
+        self._clear_cache()
+        with contextlib.suppress(FileNotFoundError):
+            REJECTED_FILE.unlink()
+        if self.http is None:
+            self.http = ClientSession()
+        self.login_attempts = 0
+        self.state = "logging_in"
+        self.error = None
+        self._loop_task = asyncio.create_task(self._run())
+        return {"ok": True}
 
     async def _run(self) -> None:
         while not await self._login():
@@ -985,6 +1028,10 @@ def build_app(service: MowerService) -> web.Application:
         result = await service.action(str(body.get("mower", "")), str(body.get("action", "")), body)
         return web.json_response(result, status=200 if result.get("ok") else 409)
 
+    async def relogin(_req: web.Request) -> web.Response:
+        result = await service.relogin()
+        return web.json_response(result, status=200 if result.get("ok") else 409)
+
     async def whep_offer(req: web.Request) -> web.Response:
         try:
             uid = int(req.match_info["uid"])
@@ -1018,6 +1065,7 @@ def build_app(service: MowerService) -> web.Application:
     app.router.add_get("/status", status)
     app.router.add_get("/map", map_)
     app.router.add_post("/action", action)
+    app.router.add_post("/relogin", relogin)
     app.router.add_patch("/whep/session/{sid}", whep_patch)
     app.router.add_delete("/whep/session/{sid}", whep_delete)
     app.router.add_post("/whep/{mower}/{uid}", whep_offer)
