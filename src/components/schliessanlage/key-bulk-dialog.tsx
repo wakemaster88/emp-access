@@ -13,11 +13,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { LockPicker } from "@/components/schliessanlage/lock-picker";
-import { ErrorLine, apiRequest, selectFieldClass } from "@/components/schliessanlage/shared";
+import { ErrorLine, apiRequest } from "@/components/schliessanlage/shared";
 import type { LockOption } from "@/components/schliessanlage/types";
 import { KEY_LEVEL_LABELS, buildKeyNumberSeries } from "@/lib/keying";
-import { cn } from "@/lib/utils";
 
 interface Props {
   lockOptions: LockOption[];
@@ -154,18 +154,18 @@ export function KeyBulkDialog({ lockOptions, open, onClose }: Props) {
               <Label htmlFor="b-level">
                 Schlüsselart
               </Label>
-              <select
+              <NativeSelect
                 id="b-level"
                 value={level}
                 onChange={(e) => setLevel(e.target.value)}
-                className={cn(selectFieldClass, "w-full max-sm:h-11")}
+                className="max-sm:h-11"
               >
                 {Object.entries(KEY_LEVEL_LABELS).map(([value, text]) => (
                   <option key={value} value={value}>
                     {text}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
           </div>
 

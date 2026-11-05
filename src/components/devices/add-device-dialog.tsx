@@ -222,9 +222,10 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
       <DialogTrigger asChild>
-        <Button className="gap-2 max-sm:h-11">
+        {/* Primärhandlung im Kartenkopf; auf dem Handy nur „+ Gerät“, der volle Name bleibt als aria-label. */}
+        <Button className="gap-2 max-sm:h-11" aria-label="Gerät hinzufügen">
           <Plus className="h-4 w-4" />
-          Gerät hinzufügen
+          <span>Gerät<span className="max-sm:hidden"> hinzufügen</span></span>
         </Button>
       </DialogTrigger>
 

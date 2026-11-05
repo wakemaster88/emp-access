@@ -1,12 +1,13 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { EmptyState } from "@/components/ui/empty-state";
+import { CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SearchInput } from "@/components/ui/search-input";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { SubscriptionDialog, type SubscriptionData } from "./subscription-dialog";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
@@ -60,13 +61,6 @@ function ticketValidity(t: TicketRow): "valid" | "expired" | "invalid" | "paused
   }
   return "valid";
 }
-
-/**
- * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
- * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
- */
-const TABLE_EDGE =
-  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
 
 function formatDate(d: string | Date | null): string {
   if (!d) return "–";
@@ -174,20 +168,33 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
 
   return (
     <>
-      {!readonly && (
-        <div className="flex justify-end px-4 sm:px-[18px]">
-          <Button
-            onClick={() => { setSelected(null); setSelectedAreas([]); setAddOpen(true); }}
-            className="h-11 sm:h-9"
-          >
-            <Plus className="h-4 w-4" />
-            Abo anlegen
-          </Button>
-        </div>
-      )}
+      {/* Kopf der Karte (docs/design-regeln.md, Abschnitt 13): Titel mit Anzahl links, „Abo anlegen“
+          oben rechts statt als eigene Zeile. Steht hier und nicht in der Seite, weil der Anlegen-Dialog
+          zum Zustand dieser Tabelle gehört. */}
+      <CardHeader>
+        <CardTitle>Alle Abos ({subscriptions.length})</CardTitle>
+        <CardDescription>
+          Abos verknüpfen <Link href="/tickets" className="text-primary hover:underline">Tickets</Link> mit <Link href="/areas" className="text-primary hover:underline">Resourcen</Link> und definieren Standard-Gültigkeiten.
+        </CardDescription>
+        {!readonly && (
+          <CardAction>
+            <Button
+              onClick={() => { setSelected(null); setSelectedAreas([]); setAddOpen(true); }}
+              className="h-11 sm:h-9"
+            >
+              <Plus className="h-4 w-4" />
+              {/* Auf dem Handy „+ Abo“, damit der Titel daneben Platz hat; „anlegen“ bleibt
+                  für Screenreader im Namen. */}
+              <span>
+                Abo<span className="max-sm:sr-only"> anlegen</span>
+              </span>
+            </Button>
+          </CardAction>
+        )}
+      </CardHeader>
 
       <div className="border-t border-border">
-        <Table className={TABLE_EDGE}>
+        <Table edge>
           <TableHeader>
             <TableRow>
               <TableHead className="hidden sm:table-cell w-10">#</TableHead>
@@ -220,15 +227,13 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
           </TableHeader>
           <TableBody>
             {subscriptions.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={5} className="whitespace-normal">
-                  <EmptyState
-                    icon={CreditCard}
-                    title="Noch keine Abos angelegt"
-                    description="Lege ein Abo an, um Abonnements aus anny.co zu verknüpfen."
-                  />
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={5}
+                compact={false}
+                icon={CreditCard}
+                title="Noch keine Abos angelegt"
+                description="Lege ein Abo an, um Abonnements aus anny.co zu verknüpfen."
+              />
             )}
             {subscriptions.map((sub, i) => {
               const annyNames: string[] = sub.annyNames ? (() => {
@@ -326,16 +331,12 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                               </Badge>
                             </div>
                             {tickets.length > 5 && (
-                              <div className="relative sm:ml-auto">
-                                <Search className="absolute left-2.5 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-                                <Input
-                                  type="text"
-                                  placeholder="Suchen..."
-                                  value={searchMap[sub.id] ?? ""}
-                                  onChange={(e) => setSearchMap(prev => ({ ...prev, [sub.id]: e.target.value }))}
-                                  className="w-full pl-8 sm:w-48"
-                                />
-                              </div>
+                              <SearchInput
+                                placeholder="Suchen..."
+                                value={searchMap[sub.id] ?? ""}
+                                onChange={(e) => setSearchMap(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                                containerClassName="sm:ml-auto sm:w-48"
+                              />
                             )}
                           </div>
 
@@ -362,7 +363,8 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                                     className={cn("group max-sm:h-11", !readonly && "cursor-pointer")}
                                     onClick={() => openTicketEdit(t.id)}
                                   >
-                                    <TableCell>
+                                    {/* Handy: lange Namen brechen um, statt die Ticketliste seitlich scrollen zu lassen. */}
+                                    <TableCell className="max-sm:whitespace-normal">
                                       <span className="font-medium text-foreground/90">
                                         {t.firstName ?? ""} {t.lastName ?? ""}
                                       </span>
@@ -432,11 +434,7 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                                 );
                               })}
                               {sortedTickets.length === 0 && (
-                                <TableRow className="hover:bg-transparent">
-                                  <TableCell colSpan={readonly ? 5 : 6}>
-                                    <EmptyState compact icon={Search} title="Keine Treffer" />
-                                  </TableCell>
-                                </TableRow>
+                                <TableEmpty colSpan={readonly ? 5 : 6} icon={Search} title="Keine Treffer" />
                               )}
                             </TableBody>
                           </Table>

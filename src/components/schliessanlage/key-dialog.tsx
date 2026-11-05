@@ -13,13 +13,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { Separator } from "@/components/ui/separator";
 import { LockPicker } from "@/components/schliessanlage/lock-picker";
-import { ErrorLine, apiRequest, selectFieldClass } from "@/components/schliessanlage/shared";
+import { ErrorLine, apiRequest } from "@/components/schliessanlage/shared";
 import type { KeyRow, LockOption } from "@/components/schliessanlage/types";
 import { KEY_LEVEL_LABELS, KEY_STATUS_LABELS } from "@/lib/keying";
-import { cn } from "@/lib/utils";
 
 interface Props {
   keyItem: KeyRow | null;
@@ -127,36 +127,36 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
               <Label htmlFor="s-level">
                 Schlüsselart
               </Label>
-              <select
+              <NativeSelect
                 id="s-level"
                 value={level}
                 onChange={(e) => setLevel(e.target.value)}
-                className={cn(selectFieldClass, "w-full max-sm:h-11")}
+                className="max-sm:h-11"
               >
                 {Object.entries(KEY_LEVEL_LABELS).map(([value, text]) => (
                   <option key={value} value={value}>
                     {text}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <div className="space-y-1">
               <Label htmlFor="s-status">
                 Status
               </Label>
-              <select
+              <NativeSelect
                 id="s-status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 disabled={isIssued}
-                className={cn(selectFieldClass, "w-full max-sm:h-11")}
+                className="max-sm:h-11"
               >
                 {Object.entries(KEY_STATUS_LABELS).map(([value, text]) => (
                   <option key={value} value={value}>
                     {text}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               {isIssued && (
                 <p className="text-[11px] text-muted-foreground">
                   Ausgegeben – Rücknahme läuft über das Protokoll.
@@ -199,23 +199,25 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
 
         <Separator />
 
-        {/* Löschen links, Abbrechen und Speichern rechts; auf dem Handy untereinander, Primärtaste oben. */}
-        <DialogFooter className="sm:items-center sm:justify-between">
-          {!isNew && !confirmDelete ? (
-            <Button
-              variant="ghost"
-              onClick={() => setConfirmDelete(true)}
-              disabled={saving || deleting}
-              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive max-sm:h-11"
-            >
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              Löschen
-            </Button>
-          ) : (
-            <div className="max-sm:hidden" />
-          )}
+        {/* Löschen ab sm links (DialogFooter start), Abbrechen und Speichern rechts; auf dem Handy untereinander, Primärtaste oben, Löschen zuunterst. */}
+        <DialogFooter
+          start={
+            !isNew &&
+            !confirmDelete && (
+              <Button
+                variant="ghost"
+                onClick={() => setConfirmDelete(true)}
+                disabled={saving || deleting}
+                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive max-sm:h-11"
+              >
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Löschen
+              </Button>
+            )
+          }
+        >
           {confirmDelete ? (
-            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <>
               <Button variant="outline" onClick={() => setConfirmDelete(false)} disabled={deleting} className="max-sm:h-11">
                 Abbrechen
               </Button>
@@ -227,9 +229,9 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
                 )}
                 Löschen
               </Button>
-            </div>
+            </>
           ) : (
-            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <>
               <Button variant="outline" onClick={onClose} disabled={saving} className="max-sm:h-11">
                 Abbrechen
               </Button>
@@ -247,7 +249,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
                   </>
                 )}
               </Button>
-            </div>
+            </>
           )}
         </DialogFooter>
       </DialogContent>

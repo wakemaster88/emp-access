@@ -7,6 +7,7 @@ import { AlertTriangle, ArrowDown, ArrowUp, Bell, Cctv, Loader2, Plus, Trash2, V
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { deviceControls } from "@/lib/device-controls";
 import { deviceMetaLabel } from "@/components/raeume/shared";
@@ -54,11 +55,6 @@ export function emptyAction(kind: RuleActionKind): ActionDraft {
     returnAfterSeconds: null,
   };
 }
-
-// Eigene Auswahlfelder wie Eingabefelder: glass-field, 16 px Schrift auf dem Handy (Abschnitt 16).
-const fieldClass =
-  "glass-field h-9 px-2 text-base text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11 md:text-sm";
-const selectClass = `w-full ${fieldClass}`;
 
 // Die Art der Aktion ist kein Zustand: Symbole gedämpft statt Zustandsfarben.
 const KIND_ICONS: Record<RuleActionKind, React.ReactNode> = {
@@ -114,8 +110,7 @@ function CameraFields({
     <div className="grid gap-2 sm:grid-cols-3">
       <div className="space-y-1">
         <Label>Kamera</Label>
-        <select
-          className={selectClass}
+        <NativeSelect
           disabled={disabled}
           value={action.targetCameraId ?? ""}
           onChange={(e) => {
@@ -132,14 +127,13 @@ function CameraFields({
               {c.name}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
 
       <div className="space-y-1">
         <Label>Position (Preset)</Label>
         {presets && presets.length > 0 ? (
-          <select
-            className={selectClass}
+          <NativeSelect
             disabled={disabled}
             value={action.ptzPresetId ?? ""}
             onChange={(e) =>
@@ -152,7 +146,7 @@ function CameraFields({
                 {p.name} (#{p.id})
               </option>
             ))}
-          </select>
+          </NativeSelect>
         ) : (
           <div className="flex gap-1">
             <Input
@@ -180,8 +174,7 @@ function CameraFields({
 
       <div className="space-y-1">
         <Label>Automatisch folgen</Label>
-        <select
-          className={selectClass}
+        <NativeSelect
           disabled={disabled}
           value={action.autoTrack == null ? "" : action.autoTrack ? "on" : "off"}
           onChange={(e) =>
@@ -194,7 +187,7 @@ function CameraFields({
           <option value="on">an</option>
           <option value="off">aus</option>
           <option value="">unverändert</option>
-        </select>
+        </NativeSelect>
       </div>
 
       <div className="space-y-1">
@@ -260,8 +253,7 @@ function DeviceFields({
     <div className="grid gap-2 sm:grid-cols-3">
       <div className="space-y-1 sm:col-span-2">
         <Label>Gerät</Label>
-        <select
-          className={selectClass}
+        <NativeSelect
           disabled={disabled}
           value={action.deviceId ?? ""}
           onChange={(e) => {
@@ -282,13 +274,12 @@ function DeviceFields({
               {d.name} ({deviceMetaLabel(d.type, d.category)})
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
 
       <div className="space-y-1">
         <Label>Befehl</Label>
-        <select
-          className={selectClass}
+        <NativeSelect
           disabled={disabled || !device}
           value={action.deviceAction ?? ""}
           onChange={(e) => onChange({ ...action, deviceAction: e.target.value || null })}
@@ -299,7 +290,7 @@ function DeviceFields({
               {c.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
 
       <div className="space-y-1">
@@ -339,8 +330,7 @@ function NotifyFields({
     <div className="grid gap-2 sm:grid-cols-3">
       <div className="space-y-1">
         <Label>Kanal</Label>
-        <select
-          className={selectClass}
+        <NativeSelect
           disabled={disabled}
           value={action.channel}
           onChange={(e) => onChange({ ...action, channel: e.target.value as ActionDraft["channel"] })}
@@ -348,7 +338,7 @@ function NotifyFields({
           <option value="PUSH">Push</option>
           <option value="TELEGRAM">Telegram</option>
           <option value="BOTH">Telegram und Push</option>
-        </select>
+        </NativeSelect>
       </div>
       <div className="space-y-1 sm:col-span-2">
         <Label>Text</Label>
@@ -382,8 +372,7 @@ function AudioFields({
     <div className="grid gap-2 sm:grid-cols-3">
       <div className="space-y-1">
         <Label>Zone</Label>
-        <select
-          className={selectClass}
+        <NativeSelect
           disabled={disabled}
           value={action.audioZoneId ?? ""}
           onChange={(e) =>
@@ -396,13 +385,12 @@ function AudioFields({
               {z.name}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
 
       <div className="space-y-1">
         <Label>Was</Label>
-        <select
-          className={selectClass}
+        <NativeSelect
           disabled={disabled}
           value={mode}
           onChange={(e) =>
@@ -417,15 +405,14 @@ function AudioFields({
           <option value="announcement">Durchsage</option>
           <option value="playlist">Playlist</option>
           <option value="stop">Wiedergabe stoppen</option>
-        </select>
+        </NativeSelect>
       </div>
 
       <div className="space-y-1">
         <Label>
           {mode === "playlist" ? "Playlist" : "Durchsage"}
         </Label>
-        <select
-          className={selectClass}
+        <NativeSelect
           disabled={disabled || mode === "stop"}
           value={(mode === "playlist" ? action.audioPlaylistId : action.audioAnnouncementId) ?? ""}
           onChange={(e) => {
@@ -443,7 +430,7 @@ function AudioFields({
               {item.name}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
     </div>
   );
@@ -488,8 +475,8 @@ export function ActionEditor({
           <div className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-2 text-xs font-medium">
             {KIND_ICONS[action.kind]}
             <span className="text-muted-foreground tabular-nums">{index + 1}.</span>
-            <select
-              className={`${fieldClass} max-sm:order-last max-sm:w-full`}
+            <NativeSelect
+              containerClassName="w-auto max-sm:order-last max-sm:w-full"
               disabled={disabled}
               value={action.kind}
               onChange={(e) => update(index, emptyAction(e.target.value as RuleActionKind))}
@@ -498,7 +485,7 @@ export function ActionEditor({
               <option value="NOTIFY">Benachrichtigen</option>
               <option value="AUDIO">Audio</option>
               <option value="CAMERA">Kamera steuern</option>
-            </select>
+            </NativeSelect>
             <div className="ml-auto flex gap-0.5">
               <Button
                 variant="ghost"

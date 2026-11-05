@@ -3,11 +3,11 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -63,11 +63,6 @@ function calcAge(birthDate: Date | string | null | undefined): number | null {
   if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
   return age;
 }
-
-// Tabelle bis an den Kartenrand: erste und letzte Spalte bekommen den
-// Innenabstand der Karte (16/18 px), Zeilen auf dem Handy 44 px.
-const TABLE_EDGE =
-  "[&_tr>*:first-child]:pl-4 sm:[&_tr>*:first-child]:pl-[18px] [&_tr>*:last-child]:pr-4 sm:[&_tr>*:last-child]:pr-[18px]";
 
 function sourceBadge(source: string | null | undefined) {
   const label = !source
@@ -299,8 +294,9 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
 
   return (
     <>
+      {/* Tabelle bis an den Kartenrand (Table edge), Zeilen auf dem Handy 44 px. */}
       <div className="-mx-4 sm:-mx-[18px]">
-        <Table className={TABLE_EDGE}>
+        <Table edge>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
@@ -314,15 +310,14 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
           </TableHeader>
           <TableBody>
             {tickets.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="p-0 whitespace-normal">
-                  <EmptyState
-                    icon={searchCode ? SearchX : Ticket}
-                    title={searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
-                    description={searchCode ? "Prüfe den Code oder setze den Filter zurück." : "Neue Tickets erscheinen hier, sobald sie angelegt oder synchronisiert wurden."}
-                  />
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={7}
+                className="p-0"
+                compact={false}
+                icon={searchCode ? SearchX : Ticket}
+                title={searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
+                description={searchCode ? "Prüfe den Code oder setze den Filter zurück." : "Neue Tickets erscheinen hier, sobald sie angelegt oder synchronisiert wurden."}
+              />
             )}
 
             {regularGroups.map(({ groupName, groupType, rows: groupRows }) => {

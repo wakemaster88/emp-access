@@ -3,19 +3,18 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { SearchInput } from "@/components/ui/search-input";
 import { Segmented } from "@/components/ui/segmented";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   LockerDialog, rentalDisplayName,
   type LockerData, type AboTicketRef, type RentalRow, type LockerType,
 } from "./locker-dialog";
 import {
-  Lock, Plus, Search, MapPin, Hash, Ticket as TicketIcon, CreditCard,
+  Lock, Plus, MapPin, Hash, Ticket as TicketIcon, CreditCard,
   Calendar, History, Key, AlertTriangle, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -78,16 +77,33 @@ function LockCountBadge({ locker, className }: { locker: Pick<LockerRow, "lockTy
 }
 
 /**
- * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
- * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
+ * Primärhandlung „Schließfach anlegen“ mit eigenem Dialog – steht im Kartenkopf
+ * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
+ * und „Schließfach“; der volle Name bleibt als `aria-label`.
  */
-const TABLE_EDGE =
-  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
+export function CreateLockerButton({ aboTickets, currentYear }: Pick<LockersTableProps, "aboTickets" | "currentYear">) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} type="button" className="max-sm:h-11" aria-label="Schließfach anlegen">
+        <Plus className="h-4 w-4" />
+        <span>Schließfach<span className="max-sm:sr-only"> anlegen</span></span>
+      </Button>
+      <LockerDialog
+        locker={null}
+        initialRentals={[]}
+        aboTickets={aboTickets}
+        currentYear={currentYear}
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
 
 export function LockersTable({ lockers, aboTickets, currentYear, readonly }: LockersTableProps) {
   const [selected, setSelected] = useState<LockerData | null>(null);
   const [selectedRentals, setSelectedRentals] = useState<RentalRow[]>([]);
-  const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "assigned" | "free" | "openKeys">("all");
 
@@ -154,12 +170,21 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
 
   return (
     <>
-      <div className="mb-4 flex flex-col gap-3 px-4 sm:px-[18px] lg:flex-row lg:items-center">
+      {/* Kapsel und Suche erst ab xl nebeneinander: bei 1024 px (mit Seitenleiste) bräche die Kapsel
+          sonst 3 + 1 um und die Suche würde gestaucht. */}
+      <div className="mb-4 flex flex-col gap-3 px-4 sm:px-[18px] xl:flex-row xl:items-center">
         <Segmented
           aria-label="Filter"
           value={activeFilter}
           onValueChange={setFilter}
-          className="self-start lg:self-auto"
+          // Handy: mit „Offene Schlüssel“ vier Einträge als 2 × 2 statt 3 + 1 (bei 390 px stand
+          // „Offene Schlüssel“ allein und gestreckt in Zeile 2); Spalten gleich breit, wo es passt.
+          // Unter 360 px passen zwei Spalten nicht sicher – dort bleibt der normale Umbruch.
+          className={cn(
+            "self-start xl:self-auto",
+            lockersWithOpenPast.length > 0 &&
+              "min-[360px]:max-sm:grid min-[360px]:max-sm:w-full min-[360px]:max-sm:grid-cols-[repeat(2,minmax(max-content,1fr))]",
+          )}
           options={[
             { value: "all", label: "Alle", count: lockers.length },
             { value: "assigned", label: `Belegt ${currentYear}`, count: assignedCount },
@@ -167,46 +192,32 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
             ...(lockersWithOpenPast.length > 0
               ? [{
                   value: "openKeys" as const,
-                  // Segmented kennt kein title je Option, daher sitzt der Tooltip am Label.
                   label: (
-                    <span
-                      className="inline-flex items-center gap-1.5"
-                      title="Schließfächer mit ausstehenden Schlüsseln aus früheren Jahren"
-                    >
-                      <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+                    <span className="inline-flex items-center gap-1.5">
+                      {/* Handy: ohne Symbol passt die Kapsel bei 360 px in zwei Zeilen (sonst drei);
+                          die Warnung steht im Hinweis darunter. */}
+                      <AlertTriangle className="h-3.5 w-3.5 text-warning max-sm:hidden" />
                       Offene Schlüssel
                     </span>
                   ),
+                  // Tooltip am ganzen Segment (`title` je Option), nicht nur am Label.
+                  title: "Schließfächer mit ausstehenden Schlüsseln aus früheren Jahren",
                   count: lockersWithOpenPast.length,
                 }]
               : []),
           ]}
         />
 
-        {/* Handy: Suche und Taste untereinander in voller Breite, damit der Platzhalter lesbar bleibt. */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:ml-auto">
-          <div className="relative sm:flex-1 lg:w-64 lg:flex-none">
-            <Search className="absolute left-2.5 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-            <Input
-              type="text"
-              placeholder="Nr., Standort, Mieter, Abo, Jahr…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-11 pl-8 sm:h-9"
-            />
-          </div>
-
-          {!readonly && (
-            <Button
-              onClick={() => { setSelected(null); setAddOpen(true); }}
-              type="button"
-              className="h-11 shrink-0 sm:h-9"
-            >
-              <Plus className="h-4 w-4" />
-              Schließfach anlegen
-            </Button>
-          )}
-        </div>
+        {/* Suche immer sichtbar: auf dem Handy volle Breite, ab sm 20 rem (so passt der Platzhalter
+            ganz hinein), ab xl rechts neben der Kapsel. „Schließfach anlegen“ steht im Kartenkopf
+            (CreateLockerButton). */}
+        <SearchInput
+          placeholder="Nr., Standort, Mieter, Abo, Jahr…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          containerClassName="w-full sm:w-80 xl:ml-auto"
+          className="h-11 sm:h-9"
+        />
       </div>
 
       {lockersWithOpenPast.length > 0 && (
@@ -241,11 +252,12 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
             {lockersWithOpenPast.slice(0, 12).map((l) => {
               const newest = l.openPast[0];
               return (
-                <li key={l.id} className="inline-flex items-center gap-1">
-                  <span className="font-mono text-foreground">#{l.number}</span>
+                // Handy: die Teile brechen als Ganzes um, statt Nummer und Namen zu zerteilen („#D-/04“).
+                <li key={l.id} className="inline-flex flex-wrap items-center gap-x-1">
+                  <span className="font-mono text-foreground whitespace-nowrap">#{l.number}</span>
                   <span className="text-muted-foreground/60">·</span>
                   <span className="font-medium text-foreground">{rentalDisplayName(newest)}</span>
-                  <span className="tabular-nums">
+                  <span className="tabular-nums whitespace-nowrap">
                     ({newest.year}, {newest.keysIssued - newest.keysReturned} offen)
                   </span>
                 </li>
@@ -261,7 +273,9 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
       )}
 
       <div className="border-t border-border">
-        <Table className={TABLE_EDGE}>
+        {/* Handy: feste Aufteilung (je Hälfte), lange Inhalte brechen um oder werden gekürzt,
+            statt die Tabelle zu verbreitern (vorher 337 px in 326 px). */}
+        <Table edge className="max-sm:table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead className="hidden sm:table-cell w-[90px]">
@@ -300,19 +314,13 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           </TableHeader>
           <TableBody>
             {filtered.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={5} className="whitespace-normal">
-                  {lockers.length === 0 ? (
-                    <EmptyState
-                      icon={Lock}
-                      title="Noch keine Schließfächer angelegt"
-                      description="Lege ein Schließfach an und vermiete es jahresweise an Abo-Tickets."
-                    />
-                  ) : (
-                    <EmptyState icon={Lock} title="Keine Treffer für die aktuellen Filter." />
-                  )}
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={5}
+                icon={Lock}
+                title={lockers.length === 0 ? "Noch keine Schließfächer angelegt" : "Keine Treffer für die aktuellen Filter."}
+                description={lockers.length === 0 ? "Lege ein Schließfach an und vermiete es jahresweise an Abo-Tickets." : undefined}
+                compact={false}
+              />
             )}
             {filtered.map((l) => (
               <TableRow
@@ -326,7 +334,8 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                 {/* Text bricht um, statt die Tabelle auf dem Handy zu verbreitern. */}
                 <TableCell className="whitespace-normal max-sm:pl-4">
                   <div className="min-w-0">
-                    <span className="inline-flex items-center gap-2 font-medium text-foreground">
+                    {/* Handy: `text-pretty` bricht „Board-Spind B-02“ vor „B-02“ um statt nach „B-“. */}
+                    <span className="inline-flex items-center gap-2 font-medium text-foreground max-sm:text-pretty">
                       <Lock className="h-4 w-4 text-primary shrink-0" />
                       {l.name}
                       <LockCountBadge locker={l} className="hidden sm:inline-flex" />
@@ -376,10 +385,10 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                       <div className="flex flex-wrap items-center gap-1">
                         {l.current.ticket?.subscription && (
                           // Abo-Verknüpfung ist der Normalfall, kein Zustand: Glas statt Grün.
-                          // Handy: lange Abo-Namen kürzen, statt die Tabelle zu verbreitern.
+                          // Handy: lange Abo-Namen auf die Spaltenbreite kürzen, statt die Tabelle zu verbreitern.
                           <Badge
                             variant="secondary"
-                            className="font-medium text-foreground/80 max-sm:max-w-[10.5rem]"
+                            className="font-medium text-foreground/80 max-sm:max-w-full"
                             title={l.current.ticket.subscription.name}
                           >
                             <CreditCard className="h-2.5 w-2.5 text-muted-foreground/70" />
@@ -420,7 +429,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                   {l.openPast.length > 0 && (
                     // Warnfarbe nur am Symbol; der Text in Vordergrundfarbe bleibt auf der Tönung lesbar.
                     <div
-                      className="mt-1 inline-flex items-start gap-1 text-[11px] leading-tight px-2 py-1 rounded-lg bg-warning/14 text-foreground max-w-full"
+                      className="mt-1 flex w-fit items-start gap-1 text-[11px] leading-tight px-2 py-1 rounded-lg bg-warning/14 text-foreground max-w-full"
                       title={l.openPast
                         .map((r) => `${r.year}: ${rentalDisplayName(r)} – ${r.keysIssued - r.keysReturned} offen`)
                         .join("\n")}
@@ -481,15 +490,6 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           </TableBody>
         </Table>
       </div>
-
-      <LockerDialog
-        locker={null}
-        initialRentals={[]}
-        aboTickets={aboTickets}
-        currentYear={currentYear}
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-      />
 
       <LockerDialog
         locker={selected}

@@ -16,15 +16,6 @@ import {
 
 /** Gemeinsame Anzeige- und Fetch-Helfer der Schliessanlage-Tabs. */
 
-/**
- * Natives Auswahlfeld in der Optik von `Input` (glass-field, Radius 14 px,
- * Fokus in Akzentfarbe). Für Listen mit leerem Wert und Gruppen, die der
- * Select-Baustein nicht abbildet. Die Einträge der aufgeklappten Liste stehen
- * deckend auf der Popover-Fläche, damit sie in Hell und Dunkel lesbar bleiben.
- */
-export const selectFieldClass =
-  "glass-field h-9 min-w-0 px-3 text-base text-foreground outline-none transition-[color,box-shadow,border-color,background-color] hover:border-foreground/20 focus-visible:border-ring focus-visible:bg-glass-strong focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm [&_optgroup]:bg-popover [&_option]:bg-popover [&_option]:text-popover-foreground";
-
 export function levelLabel(level: string): string {
   return KEY_LEVEL_LABELS[level as KeyLevel] ?? level;
 }

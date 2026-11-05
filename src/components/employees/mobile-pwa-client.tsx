@@ -277,7 +277,7 @@ export function MobileAccessClient({ token, profile }: Props) {
           iOS die Statusleiste weiß (black-translucent), darum trägt der Kopf
           in Hell und Dunkel die Akzentfarbe und darauf Weiß. Im Dunkeln ist
           der Akzent heller; zu 60 % gedeckt behält Weiß darauf genug Kontrast. */}
-      <header className="relative overflow-hidden rounded-b-card bg-primary text-primary-foreground dark:bg-primary/60">
+      <header className="relative overflow-hidden rounded-b-card bg-primary-fill text-primary-foreground dark:bg-primary/60">
         <div aria-hidden className="absolute -top-16 -right-10 h-40 w-40 rounded-full bg-primary-foreground/10 blur-3xl" />
         <div aria-hidden className="absolute -bottom-12 -left-6 h-32 w-32 rounded-full bg-primary-foreground/10 blur-2xl" />
 
@@ -350,10 +350,8 @@ export function MobileAccessClient({ token, profile }: Props) {
                 {DAY_KEYS.map((d) => {
                   const cfg = schedule[d];
                   return (
-                    <div key={d} className={cn(
-                      "flex items-center justify-between text-[13px] py-1",
-                      !cfg.enabled && "opacity-50",
-                    )}>
+                    // Freier Tag ohne Deckkraft: der Strich statt der Uhrzeit sagt es (Abschnitt 17).
+                    <div key={d} className="flex items-center justify-between text-[13px] py-1">
                       <span className="font-medium text-foreground w-8">{DAY_LABELS[d]}</span>
                       <span className="text-xs font-mono tabular-nums text-muted-foreground">
                         {cfg.enabled ? `${cfg.on || "00:00"} – ${cfg.off || "24:00"}` : "—"}
@@ -471,11 +469,10 @@ function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowPr
               title={action.label}
               className={cn(
                 actions.primary.large ? "size-14" : "size-11",
-                // Im Hellen ist der Glasrand weiß auf weißer Karte – eine dunkle
-                // Haarlinie zeigt die Taste (wie die Auswahltasten im Info-Formular).
-                action.tone === "danger"
-                  ? "bg-destructive/10 text-destructive ring-destructive/25 hover:bg-destructive/15"
-                  : "ring-border dark:ring-glass-border",
+                // Die dunkle Haarlinie im Hellen bringt `secondary` selbst mit;
+                // nur die gefährliche Aktion trägt die Störungsfarbe.
+                action.tone === "danger" &&
+                  "bg-destructive/10 text-destructive ring-destructive/25 hover:bg-destructive/15",
               )}
             >
               {loading === `${device.id}:${action.key}`

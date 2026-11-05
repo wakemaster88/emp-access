@@ -1,13 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import type { LockOption } from "@/components/schliessanlage/types";
-import { cn } from "@/lib/utils";
 
 /** Mehrfachauswahl von Schloessern mit Suche – Basis der n:m-Zuordnung. */
 export function LockPicker({
@@ -32,19 +30,17 @@ export function LockPicker({
   };
 
   return (
-    // Auswahlliste im Dialog: Glas-Kachel (in Ebenen automatisch getönt), gewählte Zeilen in Akzent-Tönung.
-    <div className="glass-tile space-y-1.5 p-1.5">
+    // Suche und Zähler über der Auswahlliste; die Liste ist eine Checklist (Kachel mit Haarlinien,
+    // in Ebenen automatisch getönt, die ganze Zeile schaltet das Kästchen).
+    <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Raum, Tür oder Schließung suchen…"
-            className="pl-8 max-sm:h-11"
-          />
-        </div>
+        <SearchInput
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Raum, Tür oder Schließung suchen…"
+          containerClassName="flex-1"
+          className="max-sm:h-11"
+        />
         <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{value.length} gewählt</span>
         {value.length > 0 && (
           <Button
@@ -59,40 +55,24 @@ export function LockPicker({
         )}
       </div>
 
-      <div className="scrollbar-thin max-h-56 space-y-0.5 overflow-y-auto">
+      <Checklist aria-label="Schließt folgende Schlösser" maxHeight="14rem">
         {filtered.length === 0 ? (
           <EmptyState
-            compact
+            size="sm"
             title={options.length === 0 ? "Noch keine Schlösser angelegt." : "Keine Treffer."}
-            className="py-4"
           />
         ) : (
-          filtered.map((o) => {
-            const selected = value.includes(o.id);
-            return (
-              // Ganze Zeile ist Beschriftung des Kästchens und damit die Tippfläche; das Kästchen
-              // selbst nimmt keine Zeiger an (kein doppeltes Umschalten, keine überlappende Tippfläche).
-              <label
-                key={o.id}
-                className={cn(
-                  "flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
-                  selected
-                    ? "bg-primary/10"
-                    : "hover:bg-glass-tile",
-                )}
-              >
-                <Checkbox
-                  checked={selected}
-                  onCheckedChange={() => toggle(o.id)}
-                  className="pointer-events-none"
-                />
-                {/* Umbrechen statt kürzen: Tür- und Schließungsnummer stehen am Ende und unterscheiden sonst gleich beginnende Zeilen. */}
-                <span className="min-w-0 break-words text-xs text-foreground">{o.label}</span>
-              </label>
-            );
-          })
+          filtered.map((o) => (
+            // Umbrechen statt kürzen: Tür- und Schließungsnummer stehen am Ende und unterscheiden sonst gleich beginnende Zeilen.
+            <ChecklistItem
+              key={o.id}
+              checked={value.includes(o.id)}
+              onCheckedChange={() => toggle(o.id)}
+              title={o.label}
+            />
+          ))
         )}
-      </div>
+      </Checklist>
     </div>
   );
 }

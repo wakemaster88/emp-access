@@ -3,9 +3,10 @@ import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { AddTicketDialog } from "@/components/tickets/add-ticket-dialog";
 import { BulkTicketDialog } from "@/components/tickets/bulk-ticket-dialog";
 import { BulkRfidDialog } from "@/components/tickets/bulk-rfid-dialog";
@@ -168,14 +169,27 @@ export default async function TicketsPage({ searchParams }: Props) {
   const subParam = sub ?? "";
   const svcParam = svc ?? "";
 
+  // Zahl an der Taste „Filter“ (Handy): Filter, die vom Standard abweichen.
+  const activeFilterCount = [
+    sort !== "date" || order !== "desc",
+    !!source && source !== "all",
+    !!sub,
+    !!svc,
+    !!area,
+    showInactive,
+  ].filter(Boolean).length;
+  // Zurücksetzen lässt die Code-Suche stehen; sie liegt außerhalb der Filterleiste.
+  const resetFiltersHref = codeTrim ? `/tickets?code=${encodeURIComponent(codeTrim)}` : "/tickets";
+
   return (
     <>
       <Header title="Tickets" accountName={session.user.accountName} />
       <div className="page-content">
         {/* Tabelle läuft bis an den unteren Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="pb-0 sm:pb-0 overflow-hidden">
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 flex-wrap">
-            <div className="flex items-center gap-3">
+        <Card flush>
+          {/* Kopf der Karte (Abschnitt 13): Titel mit Anzahl links, Primärhandlung oben rechts. */}
+          <CardHeader>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <CardTitle>
                 {showInactive ? "Alle Tickets" : "Aktive Tickets"} ({tickets.length})
               </CardTitle>
@@ -185,54 +199,63 @@ export default async function TicketsPage({ searchParams }: Props) {
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <TicketSortFilter
-                currentSort={sortParam}
-                currentOrder={orderParam}
-                currentSource={sourceParam}
-                currentSub={subParam}
-                currentSvc={svcParam}
-                subscriptions={subsWithAreas}
-                services={svcsWithAreas}
-              />
-              {areas.length > 0 && (
-                <AreaFilter areas={areas} current={area} />
-              )}
-              {/* Der Filterzustand steht im Kartentitel („Alle“/„Aktive Tickets“); die Taste bleibt neutral. */}
-              <Button asChild variant="outline">
-                <Link href={toggleHref}>
-                  {showInactive
-                    ? <><EyeOff className="h-4 w-4" /><span className="hidden xs:inline">Nur aktive</span><span className="xs:hidden">Aktive</span></>
-                    : <><Eye className="h-4 w-4" /><span className="hidden xs:inline">Auch inaktive</span><span className="xs:hidden">Alle</span></>}
-                </Link>
-              </Button>
-              {!isSuperAdmin && (
-                <BulkHistoryDialog accountName={session.user.accountName} />
-              )}
-              {!isSuperAdmin && (
-                <BulkTicketDialog
-                  areas={areas}
-                  subscriptions={subsWithAreas}
-                  services={svcsWithAreas}
-                  accountName={session.user.accountName}
-                />
-              )}
-              {!isSuperAdmin && (
-                <BulkRfidDialog
-                  areas={areas}
-                  subscriptions={subsWithAreas}
-                  services={svcsWithAreas}
-                />
-              )}
-              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subsWithAreas} services={svcsWithAreas} vereine={vereineList} />}
-            </div>
+            {!isSuperAdmin && (
+              <CardAction>
+                <AddTicketDialog areas={areas} subscriptions={subsWithAreas} services={svcsWithAreas} vereine={vereineList} />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
-            <TicketCodeSearch
-              currentCode={codeTrim || undefined}
-              currentArea={area}
-              currentShowAll={showInactive}
-            />
+            <div className="space-y-3">
+              {/* Weitere Handlungen als outline in einer Zeile unter dem Kopf. */}
+              {!isSuperAdmin && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <BulkHistoryDialog accountName={session.user.accountName} />
+                  <BulkTicketDialog
+                    areas={areas}
+                    subscriptions={subsWithAreas}
+                    services={svcsWithAreas}
+                    accountName={session.user.accountName}
+                  />
+                  <BulkRfidDialog
+                    areas={areas}
+                    subscriptions={subsWithAreas}
+                    services={svcsWithAreas}
+                  />
+                </div>
+              )}
+              {/* Ab sm eine umbrechende Filterzeile, auf dem Handy die Taste „Filter“ mit Sheet von unten. */}
+              <div>
+                <FilterBar activeCount={activeFilterCount} resetHref={resetFiltersHref}>
+                  <TicketSortFilter
+                    currentSort={sortParam}
+                    currentOrder={orderParam}
+                    currentSource={sourceParam}
+                    currentSub={subParam}
+                    currentSvc={svcParam}
+                    subscriptions={subsWithAreas}
+                    services={svcsWithAreas}
+                  />
+                  {areas.length > 0 && (
+                    <AreaFilter areas={areas} current={area} />
+                  )}
+                  {/* Der Filterzustand steht im Kartentitel („Alle“/„Aktive Tickets“); die Taste bleibt neutral.
+                      Voller Text auch auf dem Handy: dort steht sie im Sheet in voller Breite. */}
+                  <Button asChild variant="outline">
+                    <Link href={toggleHref}>
+                      {showInactive
+                        ? <><EyeOff className="h-4 w-4" />Nur aktive</>
+                        : <><Eye className="h-4 w-4" />Auch inaktive</>}
+                    </Link>
+                  </Button>
+                </FilterBar>
+              </div>
+              <TicketCodeSearch
+                currentCode={codeTrim || undefined}
+                currentArea={area}
+                currentShowAll={showInactive}
+              />
+            </div>
             <TicketsTable
               tickets={tickets as never}
               areas={areas}

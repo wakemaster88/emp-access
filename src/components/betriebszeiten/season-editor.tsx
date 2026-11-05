@@ -4,6 +4,7 @@ import { CopyPlus, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { weekdayName } from "@/lib/operating-hours";
 import type { PeriodSpec, SeasonSpec } from "@/components/betriebszeiten/types";
@@ -49,14 +50,13 @@ function MmDdPicker({
   disabled?: boolean;
 }) {
   const { month, day } = splitMmDd(value);
-  // Eigene Auswahlfelder wie Eingabefelder: glass-field, 16 px Schrift auf dem Handy (Abschnitt 16).
-  const selectClass =
-    "glass-field h-9 px-2 text-base text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11 md:text-sm";
 
+  // Native Auswahlfelder im Feld-Look (NativeSelect, Abschnitt 16); im Dialog auf dem Handy 44 px hoch.
+  // Der Tag bleibt so schmal wie sein Inhalt, der Monat nimmt den Rest.
   return (
     <div className="flex gap-1.5">
-      <select
-        className={selectClass}
+      <NativeSelect
+        containerClassName="w-auto"
         value={day}
         disabled={disabled}
         onChange={(e) => onChange(joinMmDd(month, Number(e.target.value)))}
@@ -67,9 +67,9 @@ function MmDdPicker({
             {d}.
           </option>
         ))}
-      </select>
-      <select
-        className={`${selectClass} flex-1`}
+      </NativeSelect>
+      <NativeSelect
+        containerClassName="flex-1"
         value={month}
         disabled={disabled}
         onChange={(e) => {
@@ -83,7 +83,7 @@ function MmDdPicker({
             {name}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }
@@ -123,30 +123,34 @@ function DayRow({
       ) : (
         <div className="flex flex-1 flex-col gap-1.5">
           {periods.map((period, index) => (
-            <div key={index} className="flex items-center gap-1.5">
-              <Input
-                type="time"
-                value={period.opensAt}
-                disabled={disabled}
-                className="w-[6.5rem] max-sm:h-11"
-                onChange={(e) =>
-                  onChange(
-                    periods.map((p, i) => (i === index ? { ...p, opensAt: e.target.value } : p)),
-                  )
-                }
-              />
-              <span className="text-xs text-muted-foreground">bis</span>
-              <Input
-                type="time"
-                value={period.closesAt}
-                disabled={disabled}
-                className="w-[6.5rem] max-sm:h-11"
-                onChange={(e) =>
-                  onChange(
-                    periods.map((p, i) => (i === index ? { ...p, closesAt: e.target.value } : p)),
-                  )
-                }
-              />
+            // Die beiden Zeiten bleiben zusammen, „über Nacht“ und Entfernen dürfen umbrechen:
+            // alles in einer Zeile braucht 340 px, im Dialog auf dem Handy sind es 294 px.
+            <div key={index} className="flex flex-wrap items-center gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="time"
+                  value={period.opensAt}
+                  disabled={disabled}
+                  className="w-[6.5rem] max-sm:h-11"
+                  onChange={(e) =>
+                    onChange(
+                      periods.map((p, i) => (i === index ? { ...p, opensAt: e.target.value } : p)),
+                    )
+                  }
+                />
+                <span className="text-xs text-muted-foreground">bis</span>
+                <Input
+                  type="time"
+                  value={period.closesAt}
+                  disabled={disabled}
+                  className="w-[6.5rem] max-sm:h-11"
+                  onChange={(e) =>
+                    onChange(
+                      periods.map((p, i) => (i === index ? { ...p, closesAt: e.target.value } : p)),
+                    )
+                  }
+                />
+              </div>
               {period.closesAt < period.opensAt && (
                 <span className="text-[11px] text-warning" title="Endet am Folgetag">
                   über Nacht

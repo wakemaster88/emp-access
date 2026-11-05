@@ -10,7 +10,6 @@ import {
   FileSignature,
   Plus,
   QrCode,
-  Search,
   Trash2,
 } from "lucide-react";
 import {
@@ -25,8 +24,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SearchInput } from "@/components/ui/search-input";
 import { Segmented } from "@/components/ui/segmented";
 import { HandoverDialog } from "@/components/schliessanlage/handover-dialog";
 import { ReturnDialog } from "@/components/schliessanlage/return-dialog";
@@ -103,23 +102,21 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="tabular-nums">
-              {handovers.length} Protokolle
-              {overdueCount > 0 && (
-                <span className="ml-2 inline-flex items-center gap-1 text-sm font-normal text-destructive">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  {overdueCount} überfällig
-                </span>
-              )}
-            </CardTitle>
-            <CardDescription>
-              Ausgabe und Rücknahme von Schlüsseln. Die Belehrung wird per QR-Code digital
-              unterschrieben.
-            </CardDescription>
-          </div>
-          {!readonly && (
+        <CardTitle className="tabular-nums">
+          {handovers.length} Protokolle
+          {overdueCount > 0 && (
+            <span className="ml-2 inline-flex items-center gap-1 text-sm font-normal text-destructive">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {overdueCount} überfällig
+            </span>
+          )}
+        </CardTitle>
+        <CardDescription>
+          Ausgabe und Rücknahme von Schlüsseln. Die Belehrung wird per QR-Code digital
+          unterschrieben.
+        </CardDescription>
+        {!readonly && (
+          <CardAction>
             <Button
               size="sm"
               onClick={() => setCreateOpen(true)}
@@ -128,24 +125,22 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
               <Plus className="mr-1 h-3.5 w-3.5" />
               Ausgeben
             </Button>
-          )}
-        </div>
+          </CardAction>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">
         <ErrorLine message={error} />
 
         <div className="flex flex-wrap gap-2">
-          <div className="relative min-w-48 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Empfänger oder Schlüsselnummer suchen…"
-              className="pl-8 max-sm:h-11"
-            />
-          </div>
+          <SearchInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Empfänger oder Schlüsselnummer suchen…"
+            containerClassName="min-w-48 flex-1"
+            // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss mitten im Wort.
+            className="text-ellipsis max-sm:h-11"
+          />
           {/* Filter als Segmentwahl (docs/design-regeln.md, Abschnitt 14), aktive Wahl als helle Pille. */}
           <Segmented
             aria-label="Protokolle"
@@ -213,7 +208,8 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                         Protokoll #{h.id} · ausgegeben {fmtDate(h.issuedAt)}
                         {h.issuedByName ? ` von ${h.issuedByName}` : ""}
                         {h.dueAt && !overdue ? ` · Rückgabe bis ${fmtDate(h.dueAt)}` : ""}
-                        {h.deposit != null ? ` · Pfand ${h.deposit.toFixed(2)} EUR` : ""}
+                        {/* Geschützte Leerzeichen: „Pfand 50.00 EUR“ bleibt beim Umbruch zusammen. */}
+                        {h.deposit != null ? ` · Pfand\u00a0${h.deposit.toFixed(2)}\u00a0EUR` : ""}
                       </p>
                       <div className="mt-1.5 flex flex-wrap gap-1">
                         {h.items.map((item) => (
@@ -240,7 +236,10 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                     </div>
 
                     {!readonly && (
-                      <div className="flex shrink-0 flex-wrap items-center gap-1">
+                      // Ab sm fest neben dem Text. Auf dem Handy ohne Symbole in den Tasten, damit Signieren, Rücknahme
+                      // und Löschen auch bei 360 px in eine Zeile passen (mit Symbolen 302 px, „Löschen“ ragte über die
+                      // Kachel); reicht es trotzdem nicht, darf die Zeile schmaler werden und umbrechen.
+                      <div className="flex min-w-0 flex-wrap items-center gap-1 sm:shrink-0">
                         {signed ? (
                           <Button asChild size="sm" variant="outline" className="max-sm:h-11">
                             <a
@@ -248,7 +247,7 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                               target="_blank"
                               rel="noreferrer"
                             >
-                              <FileDown className="mr-1 h-3 w-3" />
+                              <FileDown className="mr-1 h-3 w-3 max-sm:hidden" />
                               PDF
                             </a>
                           </Button>
@@ -259,7 +258,7 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                             onClick={() => setSignatureFor(h)}
                             className="max-sm:h-11"
                           >
-                            <QrCode className="mr-1 h-3 w-3" />
+                            <QrCode className="mr-1 h-3 w-3 max-sm:hidden" />
                             Signieren
                           </Button>
                         )}
@@ -270,17 +269,18 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                             onClick={() => setReturnFor(h)}
                             className="tabular-nums max-sm:h-11"
                           >
-                            <ArrowLeftCircle className="mr-1 h-3 w-3" />
+                            <ArrowLeftCircle className="mr-1 h-3 w-3 max-sm:hidden" />
                             Rücknahme ({openItems.length})
                           </Button>
                         )}
                         {!signed && (
+                          // ml-auto: rutscht „Löschen“ allein in die zweite Zeile, steht es rechts (wie die Handlungen der Räume).
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon-sm"
                             onClick={() => askRemove(h)}
-                            className="text-muted-foreground hover:text-destructive max-sm:size-11"
+                            className="ml-auto text-muted-foreground hover:text-destructive max-sm:size-11"
                             title="Protokoll löschen"
                             aria-label="Protokoll löschen"
                           >

@@ -2,8 +2,8 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { LostItemsTable } from "@/components/lost-items/lost-items-table";
+import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { CreateLostItemButton, LostItemsTable } from "@/components/lost-items/lost-items-table";
 
 export default async function FundsachenPage() {
   const session = await safeAuth();
@@ -23,12 +23,20 @@ export default async function FundsachenPage() {
       <Header title="Fundsachen" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         {/* Tabelle läuft bis an den Kartenrand: Karte unten und Inhalt seitlich ohne Innenabstand. */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader>
-            <CardTitle>Fundsachen & Verlustmeldungen ({items.length})</CardTitle>
+            {/* Geschütztes Leerzeichen: auf dem Handy bricht der Titel vor „Verlustmeldungen“ um,
+                statt die Anzahl allein in die zweite Zeile zu stellen. */}
+            <CardTitle>Fundsachen & Verlustmeldungen&nbsp;({items.length})</CardTitle>
             <CardDescription>
               Gefundene Gegenstände und Verlustmeldungen können hier im Backend oder am Shop-Monitor erfasst und als erledigt markiert werden.
             </CardDescription>
+            {/* Primärhandlung oben rechts im Kartenkopf (docs/design-regeln.md, Abschnitt 13). */}
+            {!isSuperAdmin && (
+              <CardAction>
+                <CreateLostItemButton />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
             <LostItemsTable

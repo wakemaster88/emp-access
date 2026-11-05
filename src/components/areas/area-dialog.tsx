@@ -6,6 +6,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,9 +18,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Trash2, Save, Settings2, Link2, Package, Check } from "lucide-react";
+import { Loader2, Trash2, Save, Settings2, Link2, Package } from "lucide-react";
 import { ScanLockField } from "@/components/devices/edit-device-dialog";
-import { cn } from "@/lib/utils";
 
 export interface AreaData {
   id: number;
@@ -54,7 +54,8 @@ const EMPTY = {
 
 type TabId = "settings" | "resources" | "services";
 
-function CheckList({
+function AnnyChecklist({
+  label,
   items,
   selected,
   onToggle,
@@ -64,6 +65,8 @@ function CheckList({
   emptyTitle,
   emptyDescription,
 }: {
+  /** Name der Liste für Screenreader. */
+  label: string;
   items: string[];
   selected: Set<string>;
   onToggle: (name: string) => void;
@@ -78,9 +81,9 @@ function CheckList({
   }
 
   return (
-    // Auswahlliste als Glas-Kachel; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
-    // Zeilen: Auswahl bg-primary/10, Darüberfahren bg-glass-tile (Abschnitt 17); Kästchen wie der Baustein Checkbox.
-    <div className="glass-tile max-h-[320px] overflow-y-auto scrollbar-thin space-y-0.5 p-1">
+    // Auswahlliste aus dem Baustein Checklist (docs/design-regeln.md, Abschnitt 16): die ganze Zeile
+    // schaltet das Kästchen; anderswo verknüpfte Einträge sind gesperrt.
+    <Checklist aria-label={label} maxHeight={320}>
       {items.map((name) => {
         const isSelected = selected.has(name);
         const usedBy = mappings[name];
@@ -89,35 +92,19 @@ function CheckList({
         const usedAreaName = isUsedElsewhere ? allAreas.find((a) => a.id === usedBy)?.name : null;
 
         return (
-          <button
+          <ChecklistItem
             key={name}
-            type="button"
-            onClick={() => !isUsedElsewhere && onToggle(name)}
+            checked={isSelected}
+            onCheckedChange={() => onToggle(name)}
             disabled={isUsedElsewhere}
-            className={cn(
-              "w-full flex items-center gap-2 rounded-control px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
-              isSelected
-                ? "bg-primary/10"
-                : "hover:bg-glass-tile",
-              isUsedElsewhere && "opacity-40 cursor-not-allowed"
-            )}
-          >
-            <div className={cn(
-              "size-[18px] rounded-[6px] border flex items-center justify-center shrink-0 transition-colors",
-              isSelected
-                ? "bg-primary border-primary text-primary-foreground"
-                : "border-input bg-field"
-            )}>
-              {isSelected && <Check className="size-3.5" strokeWidth={3} />}
-            </div>
-            <span className="text-xs text-foreground/80 truncate flex-1">{name}</span>
-            {isUsedElsewhere && usedAreaName && (
+            title={name}
+            trailing={isUsedElsewhere && usedAreaName ? (
               <Badge variant="secondary" className="text-[11px] px-1.5 py-0 shrink-0">→ {usedAreaName}</Badge>
-            )}
-          </button>
+            ) : null}
+          />
         );
       })}
-    </div>
+    </Checklist>
   );
 }
 
@@ -363,7 +350,8 @@ export function AreaDialog({
             <p className="text-[11px] text-muted-foreground">
               Verknüpfe anny Ressourcen mit dieser Resource. Die Verfügbarkeiten werden im Dashboard angezeigt.
             </p>
-            <CheckList
+            <AnnyChecklist
+              label="anny Ressourcen"
               items={annyResources}
               selected={selectedAnny}
               onToggle={toggleAnny}
@@ -379,7 +367,8 @@ export function AreaDialog({
             <p className="text-[11px] text-muted-foreground">
               Verknüpfe anny Services mit dieser Resource. Tickets werden beim Sync automatisch zugewiesen.
             </p>
-            <CheckList
+            <AnnyChecklist
+              label="anny Services"
               items={annyServices}
               selected={selectedAnny}
               onToggle={toggleAnny}
@@ -420,10 +409,10 @@ export function AreaDialog({
 
         <Separator />
 
-        {/* Handy: Tasten volle Breite, Primärtaste oben (docs/design-regeln.md, Abschnitt 16).
+        {/* Handy: Tasten volle Breite, Primärtaste oben, „Löschen“ zuunterst; ab sm „Löschen“ links (`DialogFooter start`, docs/design-regeln.md, Abschnitt 16).
             Tasten 36 px wie in der Lösch-Rückfrage (Abschnitt 5: 34 bis 44 px); „Löschen“ in voller Nebentextfarbe (Kontrast 4,5:1). */}
-        <DialogFooter className="sm:items-center sm:justify-between">
-          {!isNew ? (
+        <DialogFooter
+          start={!isNew ? (
             <Button
               type="button" variant="ghost"
               onClick={() => setConfirmDelete(true)}
@@ -433,22 +422,21 @@ export function AreaDialog({
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               Löschen
             </Button>
-          ) : <div className="hidden sm:block" />}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting} className="max-sm:h-11">
-              Abbrechen
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || deleting || !form.name.trim()}
-              className="min-w-24 max-sm:h-11"
-            >
-              {saving
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <><Save className="h-4 w-4" />{isNew ? "Erstellen" : "Speichern"}</>}
-            </Button>
-          </div>
+          ) : null}
+        >
+          <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting} className="max-sm:h-11">
+            Abbrechen
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || deleting || !form.name.trim()}
+            className="min-w-24 max-sm:h-11"
+          >
+            {saving
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <><Save className="h-4 w-4" />{isNew ? "Erstellen" : "Speichern"}</>}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -345,13 +345,15 @@ export default function MonitorPage() {
                     const wasOpened = openedIds.has(d.id);
                     const online = d.lastUpdate && d.lastUpdate > fiveMinAgo;
                     return (
+                      // max-w-full und truncate: Lange Gerätenamen kürzen in der Karte, statt die Seite auf
+                      // dem Handy seitlich zu verbreitern (docs/design-regeln.md, Abschnitt 5).
                       <Button
                         key={d.id}
                         size="sm"
                         variant="outline"
                         disabled={openingId !== null}
                         onClick={() => handleQuickOpen(d.id)}
-                        className={`gap-1.5 max-sm:h-11 ${
+                        className={`gap-1.5 max-w-full max-sm:h-11 ${
                           wasOpened
                             ? "bg-success hover:bg-success/90 text-success-foreground border-success"
                             : "hover:bg-success/10 "
@@ -364,9 +366,9 @@ export default function MonitorPage() {
                         ) : (
                           <DoorOpen className="h-4 w-4" />
                         )}
-                        <span className="flex items-center gap-1.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
                           <StatusDot size="xs" tone={online ? "success" : "neutral"} />
-                          {d.name}
+                          <span className="truncate">{d.name}</span>
                         </span>
                       </Button>
                     );
@@ -441,7 +443,9 @@ export default function MonitorPage() {
                           {denyReason}
                         </p>
                       )}
-                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5 flex-wrap">
+                      {/* Handy: ohne Trennpunkte – die Zeile bricht dort um, ein Punkt bliebe am Zeilenende
+                          stehen; jedes Teil hat sein Symbol. */}
+                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5 max-sm:gap-x-2.5 flex-wrap">
                         {scan.ticket?.ticketTypeName && (
                           <span className="inline-flex items-center gap-1 shrink-0">
                             <Ticket className="h-3 w-3 text-muted-foreground/70 shrink-0" aria-hidden />
@@ -449,7 +453,7 @@ export default function MonitorPage() {
                           </span>
                         )}
                         {scan.ticket?.ticketTypeName && scan.ticket?.accessArea?.name && (
-                          <span className="text-muted-foreground/70 shrink-0">·</span>
+                          <span className="text-muted-foreground/70 shrink-0 max-sm:hidden">·</span>
                         )}
                         {scan.ticket?.accessArea?.name && (
                           <span className="inline-flex items-center gap-1 shrink-0 min-w-0">
@@ -458,7 +462,7 @@ export default function MonitorPage() {
                           </span>
                         )}
                         {(scan.ticket?.ticketTypeName || scan.ticket?.accessArea?.name) && scan.device?.name && (
-                          <span className="text-muted-foreground/70 shrink-0">·</span>
+                          <span className="text-muted-foreground/70 shrink-0 max-sm:hidden">·</span>
                         )}
                         {scan.device?.name && (
                           <span className="inline-flex items-center gap-1 shrink-0 min-w-0">
@@ -468,7 +472,7 @@ export default function MonitorPage() {
                         )}
                         {isWakesys && (
                           <>
-                            {scan.device?.name && <span className="text-muted-foreground/70 shrink-0">·</span>}
+                            {scan.device?.name && <span className="text-muted-foreground/70 shrink-0 max-sm:hidden">·</span>}
                             <span className="inline-flex items-center gap-1 shrink-0 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
                               {scan.code}
                             </span>

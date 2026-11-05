@@ -3,8 +3,8 @@ import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { LockersTable } from "@/components/lockers/lockers-table";
+import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { CreateLockerButton, LockersTable } from "@/components/lockers/lockers-table";
 
 /// Aktuelles Vermietungsjahr in Berlin-Zeit (Default-Zone der App).
 function currentYearBerlin(): number {
@@ -103,12 +103,24 @@ export default async function LockersPage() {
     })),
   }));
 
+  // Eine Liste für Tabelle und Anlegen-Taste im Kartenkopf (dieselbe Referenz, wird nur einmal übertragen).
+  const aboTicketRefs = aboTickets.map((t) => ({
+    id: t.id,
+    name: t.name,
+    firstName: t.firstName,
+    lastName: t.lastName,
+    ticketTypeName: t.ticketTypeName,
+    status: t.status,
+    endDate: t.endDate ? t.endDate.toISOString() : null,
+    subscription: t.subscription,
+  }));
+
   return (
     <>
       <Header title="Schließfächer" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         {/* Tabelle läuft bis an den Kartenrand: Karte unten und Inhalt seitlich ohne Innenabstand. */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader>
             <CardTitle>Alle Schließfächer ({lockers.length})</CardTitle>
             <CardDescription>
@@ -118,20 +130,17 @@ export default async function LockersPage() {
               </Link>{" "}
               hinterlegt – die Historie bleibt erhalten.
             </CardDescription>
+            {/* Primärhandlung oben rechts im Kartenkopf (docs/design-regeln.md, Abschnitt 13). */}
+            {!isSuperAdmin && (
+              <CardAction>
+                <CreateLockerButton aboTickets={aboTicketRefs} currentYear={currentYear} />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
             <LockersTable
               lockers={lockerRows}
-              aboTickets={aboTickets.map((t) => ({
-                id: t.id,
-                name: t.name,
-                firstName: t.firstName,
-                lastName: t.lastName,
-                ticketTypeName: t.ticketTypeName,
-                status: t.status,
-                endDate: t.endDate ? t.endDate.toISOString() : null,
-                subscription: t.subscription,
-              }))}
+              aboTickets={aboTicketRefs}
               currentYear={currentYear}
               readonly={isSuperAdmin}
             />

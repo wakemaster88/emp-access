@@ -9,6 +9,7 @@ import { Clock, ScanLine, Loader2, X, CalendarDays, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import type { ServiceData } from "./checkin-types";
 import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
@@ -688,7 +689,7 @@ export function AddTicketOverlay({
               Ticket-Typ
             </label>
             {services.length > 0 ? (
-              <select
+              <NativeSelect
                 id="add-service"
                 value={serviceId}
                 onChange={(e) => {
@@ -741,13 +742,13 @@ export function AddTicketOverlay({
                     if (svc.defaultEndDate) setEndDate(toDateInput(svc.defaultEndDate));
                   }
                 }}
-                className="glass-field w-full h-14 px-4 text-base font-semibold text-foreground outline-none transition-[color,box-shadow,border-color,background-color] hover:border-foreground/20 focus-visible:border-ring focus-visible:bg-glass-strong focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                className="h-14 pl-4 text-base md:text-base font-semibold"
               >
                 <option value="none">Kein Service</option>
                 {services.map((s) => (
                   <option key={s.id} value={String(s.id)}>{s.name}</option>
                 ))}
-              </select>
+              </NativeSelect>
             ) : (
               <Input
                 id="add-service"
@@ -870,7 +871,7 @@ export function AddTicketOverlay({
                             isDisabled
                               ? "bg-transparent border-border text-muted-foreground cursor-not-allowed"
                               : isSelected
-                                ? "bg-primary border-primary text-primary-foreground active:scale-95"
+                                ? "bg-primary-fill border-primary text-primary-foreground active:scale-95"
                                 : "bg-glass-tile border-glass-border text-foreground hover:bg-glass-strong hover:border-foreground/20 active:scale-95",
                           )}
                         >

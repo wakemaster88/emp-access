@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,8 +17,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, Check, ScanLine } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
+import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, ScanLine } from "lucide-react";
 
 function toDateInput(val: string | Date | null | undefined): string {
   if (!val) return "";
@@ -58,12 +58,15 @@ interface SubscriptionDialogProps {
 
 type TabId = "settings" | "anny" | "areas";
 
-function CheckList({
+function SelectionList({
+  label,
   items,
   selected,
   onToggle,
   emptyText,
 }: {
+  /** Name der Liste für Screenreader. */
+  label: string;
   items: { key: string; label: string }[];
   selected: Set<string>;
   onToggle: (key: string) => void;
@@ -73,37 +76,18 @@ function CheckList({
     return <EmptyState compact title={emptyText} />;
   }
 
-  // Auswahlliste als Glas-Kachel; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
-  // Zeilen: Auswahl bg-primary/10, Darüberfahren bg-glass-tile (Abschnitt 17); Kästchen wie der Baustein Checkbox.
+  // Auswahlliste aus dem Baustein (docs/design-regeln.md, Abschnitt 16): die ganze Zeile schaltet das Kästchen.
   return (
-    <div className="glass-tile max-h-[320px] overflow-y-auto overscroll-contain scrollbar-thin space-y-0.5 p-1">
-      {items.map(({ key, label }) => {
-        const isSelected = selected.has(key);
-        return (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onToggle(key)}
-            className={cn(
-              "w-full flex min-h-11 items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left transition-colors sm:min-h-9",
-              isSelected
-                ? "bg-primary/10"
-                : "hover:bg-glass-tile"
-            )}
-          >
-            <div className={cn(
-              "size-[18px] rounded-[6px] border flex items-center justify-center shrink-0 transition-colors",
-              isSelected
-                ? "bg-primary border-primary text-primary-foreground"
-                : "border-input bg-field"
-            )}>
-              {isSelected && <Check className="size-3.5" strokeWidth={3} />}
-            </div>
-            <span className="text-[13px] text-foreground truncate flex-1">{label}</span>
-          </button>
-        );
-      })}
-    </div>
+    <Checklist aria-label={label} maxHeight={320}>
+      {items.map(({ key, label: itemLabel }) => (
+        <ChecklistItem
+          key={key}
+          checked={selected.has(key)}
+          onCheckedChange={() => onToggle(key)}
+          title={itemLabel}
+        />
+      ))}
+    </Checklist>
   );
 }
 
@@ -398,7 +382,8 @@ export function SubscriptionDialog({
             <p className="text-xs text-muted-foreground">
               Wähle anny Abos, Services und Ressourcen, die diesem Abo zugeordnet werden. Tickets mit diesen Namen werden beim Sync automatisch verknüpft.
             </p>
-            <CheckList
+            <SelectionList
+              label="anny Verknüpfungen"
               items={annyItems}
               selected={selectedAnny}
               onToggle={toggleAnny}
@@ -406,7 +391,7 @@ export function SubscriptionDialog({
             />
             {selectedAnny.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="tabular-nums">{selectedAnny.size} ausgewählt</Badge>
+                <Badge variant="accent" className="tabular-nums">{selectedAnny.size} ausgewählt</Badge>
                 <button
                   type="button"
                   onClick={() => setSelectedAnny(new Set())}
@@ -422,7 +407,8 @@ export function SubscriptionDialog({
             <p className="text-xs text-muted-foreground">
               Wähle die Resourcen, zu denen dieses Abo Zugang gewährt. Abo-Tickets erscheinen im Dashboard in allen ausgewählten Resourcen.
             </p>
-            <CheckList
+            <SelectionList
+              label="Resourcen"
               items={areaItems}
               selected={selectedAreas}
               onToggle={toggleArea}
@@ -430,7 +416,7 @@ export function SubscriptionDialog({
             />
             {selectedAreas.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="tabular-nums">{selectedAreas.size} ausgewählt</Badge>
+                <Badge variant="accent" className="tabular-nums">{selectedAreas.size} ausgewählt</Badge>
                 <button
                   type="button"
                   onClick={() => setSelectedAreas(new Set())}
@@ -475,9 +461,9 @@ export function SubscriptionDialog({
             </div>
           </div>
         ) : (
-          /* Handy: volle Breite, Primärtaste oben. Ab sm: Löschen links, Handlungen rechts. */
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-            {!isNew ? (
+          /* Handy: volle Breite, Primärtaste oben, Löschen zuunterst. Ab sm: Löschen links (DialogFooter start), Handlungen rechts. */
+          <DialogFooter
+            start={!isNew && (
               <Button
                 type="button" variant="ghost" size="sm"
                 onClick={() => setConfirmDelete(true)}
@@ -487,24 +473,23 @@ export function SubscriptionDialog({
                 <Trash2 className="h-3.5 w-3.5 mr-1" />
                 Löschen
               </Button>
-            ) : <div className="hidden sm:block" />}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row">
-              <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-11 sm:h-9">
-                Abbrechen
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleSave}
-                disabled={saving || deleting || !name.trim()}
-                className="min-w-24 h-11 sm:h-9"
-              >
-                {saving
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
-              </Button>
-            </div>
-          </div>
+            )}
+          >
+            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-11 sm:h-9">
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSave}
+              disabled={saving || deleting || !name.trim()}
+              className="min-w-24 h-11 sm:h-9"
+            >
+              {saving
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
+            </Button>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>

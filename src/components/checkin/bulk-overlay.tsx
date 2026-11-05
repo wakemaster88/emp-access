@@ -40,6 +40,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
 import {
@@ -571,7 +572,7 @@ export function BulkOverlay({
                       className={cn(
                         "min-h-11 px-4 py-2.5 rounded-control text-sm font-semibold border transition-colors active:scale-95",
                         active
-                          ? "bg-primary text-primary-foreground border-primary"
+                          ? "bg-primary-fill text-primary-foreground border-primary"
                           : "bg-glass-tile text-foreground border-glass-border hover:border-primary/50",
                       )}
                     >
@@ -595,15 +596,12 @@ export function BulkOverlay({
                   {needsExplicitMainArea ? "(bitte wählen)" : "(optional)"}
                 </span>
               </label>
-              <select
+              <NativeSelect
                 id="bulk-area"
                 value={areaId == null ? "none" : String(areaId)}
                 onChange={(e) => setAreaId(e.target.value === "none" ? null : Number(e.target.value))}
                 disabled={busy}
-                className={cn(
-                  "glass-field w-full h-12 px-3 text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
-                  needsExplicitMainArea && "border-warning",
-                )}
+                className={cn("h-12 md:text-base", needsExplicitMainArea && "border-warning")}
               >
                 <option value="none">{isService ? "Keine Hauptressource" : "Kein Bereich"}</option>
                 {visibleAreas.map((a) => (
@@ -611,7 +609,7 @@ export function BulkOverlay({
                     {a.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               {needsExplicitMainArea && (
                 <p className="text-xs text-warning">
                   Ohne Auswahl startet die Zeitgültigkeit an jedem Gate.

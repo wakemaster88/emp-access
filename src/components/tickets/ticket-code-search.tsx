@@ -2,9 +2,8 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, useCallback, useEffect } from "react";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Button } from "@/components/ui/button";
-import { Search } from "lucide-react";
 
 interface TicketCodeSearchProps {
   currentCode?: string;
@@ -61,22 +60,22 @@ export function TicketCodeSearch({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="relative min-w-0 flex-1 basis-56 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 z-10 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <Input
-          ref={inputRef}
-          type="text"
-          placeholder="Code scannen oder eingeben …"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss.
-          className="pl-9 font-mono text-ellipsis"
-          autoComplete="off"
-          autoFocus
-        />
-      </div>
-      <Button type="button" variant="outline" onClick={handleSearch} className="shrink-0">
+      <SearchInput
+        ref={inputRef}
+        placeholder="Code scannen oder eingeben …"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss.
+        // Auf dem Handy 44 px hoch wie die Suchfelder der übrigen Listen (Gutscheine, Schließfächer).
+        className="font-mono text-ellipsis max-sm:h-11"
+        // basis-40 auf dem Handy: Feld und „Suchen“ bleiben in einer Zeile (auch bei 360 px),
+        // „Filter zurücksetzen“ rückt darunter.
+        containerClassName="flex-1 basis-40 sm:basis-56 max-w-md"
+        autoComplete="off"
+        autoFocus
+      />
+      <Button type="button" variant="outline" onClick={handleSearch} className="shrink-0 max-sm:h-11">
         Suchen
       </Button>
       {currentCode && (

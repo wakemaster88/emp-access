@@ -341,6 +341,8 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
           <ChevronLeft />
         </Button>
         <div className="flex min-w-0 flex-1 justify-center">
+          {/* Handy: drei Tage; mit dem engeren Innenabstand der Kapsel (10 px) stehen sie auch bei
+              360 px in einer Zeile. Höhe und Schrift bleiben (Abschnitte 5 und 20). */}
           <Segmented
             aria-label="Tag"
             value={date}
@@ -427,7 +429,7 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
                     className={cn(
                       "press h-11 w-full rounded-xl text-sm font-semibold tabular-nums outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:h-14",
                       isSelected
-                        ? "bg-primary text-primary-foreground"
+                        ? "bg-primary-fill text-primary-foreground"
                         : isToday
                         ? "bg-primary/15 text-foreground ring-1 ring-inset ring-primary/50"
                         : "text-foreground hover:bg-glass-tile"

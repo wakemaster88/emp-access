@@ -3,11 +3,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchInput } from "@/components/ui/search-input";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,7 +19,6 @@ import {
   Loader2, Trash2, Save, Settings2, Ticket as TicketIcon,
   Check, Users, Search, MapPin, Clock, UserPlus, ScanLine,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 export interface VereinData {
   id: number;
@@ -91,9 +92,11 @@ export function formatTicketValidity(t: Pick<TicketRef,
   return "Unbegrenzt";
 }
 
-function CheckList({
-  items, selected, onToggle, emptyText, searchable,
+function TicketChecklist({
+  label, items, selected, onToggle, emptyText, searchable,
 }: {
+  /** Name der Liste für Screenreader. */
+  label: string;
   items: { key: string; label: string; sublabel?: string; disabled?: boolean }[];
   selected: Set<string>;
   onToggle: (key: string) => void;
@@ -109,50 +112,32 @@ function CheckList({
     return <EmptyState compact title={emptyText} />;
   }
 
-  // Auswahlliste als Glas-Kachel; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
-  // Zeilen: Auswahl bg-primary/10, Darüberfahren bg-glass-tile (Abschnitt 17); Kästchen wie der Baustein Checkbox.
+  // Auswahlliste aus dem Baustein Checklist (docs/design-regeln.md, Abschnitt 16): die ganze Zeile schaltet das Kästchen.
   return (
     <div className="space-y-2">
       {searchable && (
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-          <Input
-            type="text" placeholder="Suchen…" value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="h-11 pl-8 sm:h-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Suchen…" value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="h-11 sm:h-9"
+        />
       )}
-      <div className="glass-tile max-h-[260px] overflow-y-auto overscroll-contain scrollbar-thin space-y-0.5 p-1">
-        {filtered.map(({ key, label, sublabel, disabled }) => {
-          const isSelected = selected.has(key);
-          return (
-            <button
-              key={key} type="button" disabled={disabled}
-              onClick={() => onToggle(key)}
-              className={cn(
-                "w-full flex min-h-11 items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left transition-colors sm:min-h-9",
-                disabled && "opacity-50 cursor-not-allowed",
-                !disabled && isSelected ? "bg-primary/10" : !disabled && "hover:bg-glass-tile"
-              )}
-            >
-              <div className={cn(
-                "size-[18px] rounded-[6px] border flex items-center justify-center shrink-0 transition-colors",
-                isSelected ? "bg-primary border-primary text-primary-foreground" : "border-input bg-field"
-              )}>
-                {isSelected && <Check className="size-3.5" strokeWidth={3} />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] text-foreground truncate">{label}</p>
-                {sublabel && <p className="text-[11px] text-muted-foreground truncate">{sublabel}</p>}
-              </div>
-            </button>
-          );
-        })}
+      <Checklist aria-label={label} maxHeight={260}>
+        {filtered.map((item) => (
+          <ChecklistItem
+            key={item.key}
+            checked={selected.has(item.key)}
+            onCheckedChange={() => onToggle(item.key)}
+            disabled={item.disabled}
+            title={item.label}
+            description={item.sublabel}
+          />
+        ))}
+        {/* Leer innerhalb der Liste: kleine Stufe, wie es der Baustein Checklist vorsieht. */}
         {filtered.length === 0 && (
-          <EmptyState compact icon={Search} title="Keine Treffer" />
+          <EmptyState size="sm" icon={Search} title="Keine Treffer" />
         )}
-      </div>
+      </Checklist>
     </div>
   );
 }
@@ -445,7 +430,8 @@ export function VereinDialog({
               Wähle <strong>Zutritts-Tickets</strong>. Mitglieder erben die Areas dieser Tickets beim Scan –
               die zeitliche Restriktion (Datum, Tageszeit, Dauer) ergibt sich direkt aus dem jeweiligen Ticket.
             </p>
-            <CheckList
+            <TicketChecklist
+              label="Zutritts-Tickets"
               items={accessTicketItems}
               selected={selectedAccessTickets}
               onToggle={toggleAccessTicket}
@@ -529,7 +515,8 @@ export function VereinDialog({
               </p>
             )}
 
-            <CheckList
+            <TicketChecklist
+              label="Mitglieds-Tickets"
               items={memberItems}
               selected={selectedMembers}
               onToggle={toggleMember}
@@ -538,7 +525,7 @@ export function VereinDialog({
             />
             {selectedMembers.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="tabular-nums">{selectedMembers.size} ausgewählt</Badge>
+                <Badge variant="accent" className="tabular-nums">{selectedMembers.size} ausgewählt</Badge>
                 <button type="button" onClick={() => setSelectedMembers(new Set())}
                         className="min-h-11 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors sm:min-h-0">
                   Alle abwählen
@@ -573,27 +560,26 @@ export function VereinDialog({
             </div>
           </div>
         ) : (
-          /* Handy: volle Breite, Primärtaste oben. Ab sm: Löschen links, Handlungen rechts. */
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-            {!isNew ? (
+          /* Handy: volle Breite, Primärtaste oben, Löschen zuunterst. Ab sm: Löschen links (`DialogFooter start`), Handlungen rechts. */
+          <DialogFooter
+            start={!isNew ? (
               <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDelete(true)} disabled={deleting || saving}
                       className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-11 sm:h-9">
                 <Trash2 className="h-3.5 w-3.5 mr-1" />
                 Löschen
               </Button>
-            ) : <div className="hidden sm:block" />}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row">
-              <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-11 sm:h-9">
-                Abbrechen
-              </Button>
-              <Button type="button" size="sm" onClick={handleSave}
-                      disabled={saving || deleting || !name.trim()}
-                      className="min-w-24 h-11 sm:h-9">
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
-              </Button>
-            </div>
-          </div>
+            ) : null}
+          >
+            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-11 sm:h-9">
+              Abbrechen
+            </Button>
+            <Button type="button" size="sm" onClick={handleSave}
+                    disabled={saving || deleting || !name.trim()}
+                    className="min-w-24 h-11 sm:h-9">
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
+            </Button>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>

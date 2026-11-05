@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Dialog,
   DialogContent,
@@ -56,7 +57,6 @@ import {
   AlertTriangle,
   FlaskConical,
   RefreshCw,
-  Search,
   Stethoscope,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -269,18 +269,24 @@ export function EmailSettings({ initialConfig, subscriptions = [], services = []
             <CardDescription>
               Regelbasierte Mails zu Aboablauf, Followups und Welcome-Nachrichten.
             </CardDescription>
+            {/* Kopf der Karte (docs/design-regeln.md, Abschnitt 13): die Primärhandlung oben rechts,
+                „Aus Vorlage“ als weitere Handlung in der Zeile darunter. */}
+            <CardAction>
+              <Button size="sm" className={cn("gap-1.5", TOUCH_SM)} onClick={handleNewBlank}>
+                <Plus className="h-4 w-4" />
+                {/* Handy: nur das Hauptwort („+ Regel“), docs/design-regeln.md, Abschnitt 13. */}
+                <span>
+                  <span className="max-sm:sr-only">Neue </span>Regel
+                </span>
+              </Button>
+            </CardAction>
           </CardHeader>
 
           <CardContent className="space-y-3">
-            {/* Werkzeugleiste statt CardAction: zwei Tasten passen auf dem Handy nicht neben den Titel. */}
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => setPresetPickerOpen(true)} className={cn("gap-1.5", TOUCH_SM)}>
                 <Sparkles className="h-4 w-4 text-primary" />
                 Aus Vorlage
-              </Button>
-              <Button size="sm" className={cn("gap-1.5", TOUCH_SM)} onClick={handleNewBlank}>
-                <Plus className="h-4 w-4" />
-                Neue Regel
               </Button>
             </div>
             {rulesLoading && rules == null ? (
@@ -478,17 +484,18 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
         <CardDescription>
           Wer hat wann welche Mail bekommen – inkl. Cron, manuell ausgeloester Sends und Tests.
         </CardDescription>
-        {/* Wie bei den Info-Anfragen: die Kopf-Taste sitzt im CardAction-Platz. */}
+        {/* Wie bei den Info-Anfragen: die Kopf-Taste sitzt im CardAction-Platz. Auf dem Handy nur als
+            Symbol (44 px, Name bleibt für Screenreader), damit die Beschreibung daneben Platz hat. */}
         <CardAction>
           <Button
             variant="outline"
             size="sm"
             onClick={refresh}
             disabled={loading}
-            className={cn("gap-1.5", TOUCH_SM)}
+            className={cn("gap-1.5 max-sm:w-11", TOUCH_SM)}
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Aktualisieren
+            <span className="max-sm:sr-only">Aktualisieren</span>
           </Button>
         </CardAction>
       </CardHeader>
@@ -496,25 +503,14 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
       <CardContent className="space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Handy: Suche in voller Breite, darunter beide Filter nebeneinander. */}
-          <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="E-Mail, Name oder Betreff…"
-              className={cn("pl-8", search && "pr-10", FIELD)}
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                className="absolute right-1 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground sm:size-7"
-                aria-label="Suche leeren"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          <SearchInput
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="E-Mail, Name oder Betreff…"
+            onClear={() => setSearch("")}
+            containerClassName="w-full sm:w-auto sm:min-w-[200px] sm:flex-1"
+            className={FIELD}
+          />
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
             <SelectTrigger className="min-w-0 flex-1 data-[size=default]:h-11 sm:w-[140px] sm:flex-none sm:data-[size=default]:h-9">
               <SelectValue />
@@ -1220,18 +1216,15 @@ function RuleRow({
   }
 
   return (
-    <li
-      className={cn(
-        "glass-tile overflow-hidden transition-opacity",
-        !rule.isActive && "opacity-60",
-      )}
-    >
+    // Inaktive Regel: Text bleibt lesbar, das Badge sagt den Zustand, gedimmt wird nur der IconChip (Abschnitt 17).
+    <li className="glass-tile overflow-hidden">
       <div className="flex items-center gap-3 p-3 flex-wrap">
-        <IconChip icon={Icon} tone="neutral" />
+        <IconChip icon={Icon} tone="neutral" className={cn(!rule.isActive && "opacity-60")} />
         {/* Mindestbreite für den Text: auf dem Handy rutschen die Tasten in eine eigene Zeile. */}
         <div className="min-w-0 flex-1 basis-48">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-medium text-foreground truncate">{rule.name}</p>
+            {!rule.isActive && <Badge variant="neutral">Inaktiv</Badge>}
             {rule.createVoucher && (
               <Badge variant="secondary" className="tabular-nums">
                 <GiftIcon className="h-3 w-3" />
@@ -1249,8 +1242,10 @@ function RuleRow({
             {rule.sentCount} versendet
           </p>
         </div>
-        {/* Darf umbrechen: auf sehr schmalen Handys schneidet die Kachel (overflow-hidden) sonst „Löschen“ ab. */}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+        {/* Darf umbrechen: auf sehr schmalen Handys schneidet die Kachel (overflow-hidden) sonst „Löschen“ ab.
+            Handy: eigene Zeile über die volle Breite, Tasten ohne Lücke verteilt – so passen Schalter und
+            fünf 44-px-Tasten auch bei 360 px in eine Zeile, statt „Löschen“ allein umbrechen zu lassen. */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1 max-sm:w-full max-sm:justify-between max-sm:gap-0">
           <Switch
             checked={rule.isActive}
             onCheckedChange={toggle}

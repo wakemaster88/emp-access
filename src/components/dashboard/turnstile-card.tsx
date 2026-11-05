@@ -238,14 +238,15 @@ export function TurnstileCard({ date }: { date: string }) {
       ? `Ø ${totals.ridesPerGuest.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Fahrten/Gast`
       : null;
   // Abweichung zum Durchschnitt als Trendzeile (grün/rot mit Vorzeichen).
-  // StatCard blendet dann den Hinweis aus, darum steht dessen Text mit darin.
+  // Bei den Fahrten trägt sie den Vergleich selbst (der Hinweis wäre derselbe);
+  // bei den Gästen steht der Hinweis (Fahrten je Gast) per hintWithTrend darunter.
   const ridesTrend =
     ridesDelta != null && average
       ? { value: ridesDelta, label: `zum Ø ${fmtNum(average.rides)} an ${average.days} Vergleichstagen` }
       : undefined;
   const guestsTrend =
     guestsDelta != null && average
-      ? { value: guestsDelta, label: `zum Ø ${fmtNum(average.guests)}${perGuest ? ` · ${perGuest}` : ""}` }
+      ? { value: guestsDelta, label: `zum Ø ${fmtNum(average.guests)}` }
       : undefined;
 
   return (
@@ -257,9 +258,10 @@ export function TurnstileCard({ date }: { date: string }) {
           aside={<Badge variant="secondary">echte Fahrten</Badge>}
           className="min-w-0"
         />
-        <div className="ml-auto shrink-0">
+        {/* Handy: die Auswahl steht unter der Überschrift in voller Breite; feste Breite erst ab sm. */}
+        <div className="ml-auto shrink-0 max-sm:w-full">
           <Select value={String(area.id)} onValueChange={selectArea}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-full sm:w-[150px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -295,6 +297,7 @@ export function TurnstileCard({ date }: { date: string }) {
           tone="primary"
           trend={guestsTrend}
           hint={perGuest ?? "eindeutige Tickets am Drehkreuz"}
+          hintWithTrend
         />
         <StatCard
           label="Tickets"
@@ -370,7 +373,7 @@ export function TurnstileCard({ date }: { date: string }) {
                 key: t.name,
                 label: t.name,
                 value: t.rides,
-                sub: `${fmtNum(t.guests)} Gäste`,
+                sub: `${fmtNum(t.guests)} ${t.guests === 1 ? "Gast" : "Gäste"}`,
               }))}
               emptyText="Keine Fahrten an diesem Tag."
               barClass="bg-primary"

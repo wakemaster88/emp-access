@@ -396,7 +396,7 @@ export function GardenaCard({ connections: initialConnections, existingServiceId
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{`Verbindung „${toDisconnect?.name ?? ""}" wirklich trennen?`}</AlertDialogTitle>
+            <AlertDialogTitle>{`Verbindung „${toDisconnect?.name ?? ""}“ wirklich trennen?`}</AlertDialogTitle>
             <AlertDialogDescription>
               Zugeordnete Geräte bleiben erhalten, sind aber ohne Verbindung nicht mehr steuerbar.
             </AlertDialogDescription>

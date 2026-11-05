@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -155,26 +156,31 @@ export function PersonSearchDialog({
                       onClick={() => toggle(m.id)}
                       aria-pressed={on}
                       className={cn(
-                        "press relative rounded-xl border overflow-hidden text-left bg-muted outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                        on ? "border-primary ring-2 ring-primary" : "border-glass-border opacity-60 hover:opacity-90"
+                        "group press relative rounded-xl border overflow-hidden text-left bg-muted outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                        on ? "border-primary ring-2 ring-primary" : "border-glass-border"
                       )}
                     >
+                      {/* Nicht gewählt: nur das Bild gedimmt, Zeit und Kamera bleiben lesbar (docs/design-regeln.md, Abschnitt 17). */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={`/api/person-sightings/${m.id}/snapshot`}
                         alt=""
                         loading="lazy"
                         decoding="async"
-                        className="aspect-square w-full object-cover"
+                        className={cn(
+                          "aspect-square w-full object-cover transition-opacity duration-200",
+                          !on && "opacity-60 group-hover:opacity-90"
+                        )}
                       />
                       {on && (
-                        <span className="absolute top-1 right-1 rounded-full bg-primary p-0.5 text-primary-foreground">
+                        <span className="absolute top-1 right-1 rounded-full bg-primary-fill p-0.5 text-primary-foreground">
                           <Check className="h-3.5 w-3.5" />
                         </span>
                       )}
-                      <span className="absolute top-1 left-1 rounded bg-black/60 px-1 text-[11px] font-medium tabular-nums text-white">
+                      {/* Ähnlichkeit als Pille über dem Kamerabild (Badge media). */}
+                      <Badge variant="media" className="absolute top-1 left-1 tabular-nums">
                         {Math.round(m.score * 100)}%
-                      </span>
+                      </Badge>
                       <span className="block px-1.5 py-1 text-[11px] text-muted-foreground truncate">
                         {new Date(m.seenAt).toLocaleString("de-DE", {
                           day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",

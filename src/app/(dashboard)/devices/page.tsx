@@ -2,7 +2,7 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AddDeviceDialog } from "@/components/devices/add-device-dialog";
 import { DevicesTable } from "@/components/devices/devices-table";
 import { DeviceStatusFilter, type DeviceStatusFilterValue } from "@/components/devices/device-status-filter";
@@ -62,13 +62,22 @@ export default async function DevicesPage({ searchParams }: Props) {
       <Header title="Geräte" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         {/* Tabelle läuft bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <Card flush>
+          {/* Kopf: Titel links, „Gerät hinzufügen“ oben rechts (docs/design-regeln.md, Abschnitt 13).
+              Ab sm steht der Statusfilter neben dem Titel. Auf dem Handy löst sich die Hülle auf
+              (contents): der Titel steht neben der Taste, der Filter in voller Breite darunter. */}
+          <CardHeader>
+            <div className="contents sm:flex sm:flex-wrap sm:items-center sm:gap-3">
               <CardTitle className="tabular-nums">Geräte ({devices.length})</CardTitle>
-              <DeviceStatusFilter current={status} />
+              <div className="max-sm:col-span-full max-sm:mt-1.5">
+                <DeviceStatusFilter current={status} />
+              </div>
             </div>
-            {!isSuperAdmin && <AddDeviceDialog areas={areas} rooms={rooms} />}
+            {!isSuperAdmin && (
+              <CardAction>
+                <AddDeviceDialog areas={areas} rooms={rooms} />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
             <DevicesTable devices={devices} areas={areas} />

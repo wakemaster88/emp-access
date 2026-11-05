@@ -82,7 +82,8 @@ Im Dunkeln bleiben die Werte.
 - Außenabstand Seite 16 px (Handy) / 24 px, Kartenabstand 16 bis 20 px, Innenabstand Karte
   16 bis 18 px, Kachelabstand 8 px.
 - Kacheln sind mindestens 44 px hoch und breit (Touch). Tasten 34 bis 44 px.
-- Handy: eine Spalte, Tab-Leisten wischbar, kein horizontales Scrollen der Seite.
+- Handy: eine Spalte. Nichts scrollt seitlich – nicht die Seite, keine Tab-Leiste oder Kapsel,
+  keine Tabelle (geprüft bei 390 und 360 px Breite).
   Desktop: Raster mit 2 bis 3 Spalten, Objekt-Ansicht in zwei Spalten.
 
 ## 6. Tab-Leisten und Navigation
@@ -92,6 +93,11 @@ Im Dunkeln bleiben die Werte.
 - Ein Tab zeigt höchstens einen Punkt (Zustand) und eine Zahl (Störungen). Mehr nicht.
 - Innerhalb eines Objekts: höchstens vier Reiter (Steuern, Zeit, Überwachung, Technik).
   Reiter ohne Inhalt werden nicht gezeigt.
+- Passt eine Tab-Leiste oder Kapsel (`Tabs`, `Segmented`, `SegmentedLinks`) nicht in eine Zeile,
+  bricht sie um: eine Zeile mehr, die Einträge füllen jede Zeile, die Kapsel wird ein
+  abgerundetes Rechteck (22 px). Nie seitlich wischen oder scrollen. Auf dem Handy stehen die
+  Einträge enger (10 px Innenabstand). Der aktive Eintrag behält die Schriftstärke und hebt sich
+  nur durch die helle Pille ab – fetter wäre er breiter, und die Leiste spränge beim Wechseln.
 
 ## 7. Kacheln und Zeilen
 
@@ -170,8 +176,8 @@ Schema des Dashboards (kein `setTheme`). Nicht weiter verschachteln (kein `dark`
 - Tippflächen: Auf Touch-Geräten (`pointer: coarse`) haben Tasten, Schalter und `ToggleChip` eine
   unsichtbare Fläche von mindestens 44 × 44 px (`::after` in `globals.css`); sichtbar ändert sich
   nichts. Einträge in Kapseln (Tabs, `Segmented`, `SegmentedLinks`) wachsen nur um den
-  Innenabstand der Kapsel (4 px), weil die Kapsel waagerecht scrollt und sonst wackelt: 42 px bei
-  34 px hohen Einträgen, 36 px bei `size="sm"`. `TabsList variant="line"` (ohne Kapsel) bekommt
+  Innenabstand der Kapsel (4 px), weil sie dicht stehen (2 px nebeneinander, umbrochen 4 px
+  untereinander): 42 px bei 34 px hohen Einträgen, 36 px bei `size="sm"`. `TabsList variant="line"` (ohne Kapsel) bekommt
   keine Fläche. Mit Maus mindestens 24 px – der kleine `Switch` (18 px) hat dafür eine eigene
   Fläche. Eigene `after:`-Klassen am Einsatzort gehen vor. Folgt eine Taste direkt auf eine andere,
   auf einen Link oder ein Feld, beginnt ihre Fläche an der eigenen Kante; folgt ihr ein Link oder
@@ -195,6 +201,24 @@ beschreiben, wie die Grundsätze oben im Code umgesetzt werden.
   Höchstens eine Primärtaste im Kopf; alles Weitere als `outline` oder `ghost`.
 - **Inhalt**: `page-content` (16 px Rand auf dem Handy, 24 px ab `sm`), darin Abschnitte mit
   16 bis 20 px Abstand (`space-y-4 sm:space-y-5` oder `gap-4 sm:gap-5`).
+- **Kopf der Karte** (Liste oder Bereich mit Handlungen): links `CardTitle` mit Anzahl
+  („Aktive Tickets (70)“) und höchstens einem Badge, darunter `CardDescription` (höchstens zwei
+  Zeilen). Die Primärhandlung („… anlegen“, „Hinzufügen“) steht in `CardAction` oben rechts –
+  nicht als eigene Zeile, nicht links unter dem Text. Ab `sm` steht sie neben Titel und
+  Beschreibung, auf dem Handy nur neben dem Titel; die Beschreibung läuft dort darunter über die
+  volle Breite (das macht `CardHeader` selbst). Ohne Beschreibung stehen Titel und Taste auf jeder
+  Breite mittig in einer Zeile, auch das ohne eigene Klassen. Auf dem Handy zeigt die Taste Symbol und ein Wort,
+  am liebsten das Hauptwort; der Rest bleibt für Screenreader:
+  `<Plus /><span>Ticket<span className="max-sm:sr-only"> erstellen</span></span>` („+ Ticket“).
+  Weitere Handlungen (Verlauf, Import, Neu laden) als `outline` in einer Zeile unter dem Kopf, auf
+  dem Handy höchstens eine Zeile.
+- **Filter unter dem Kopf**: Suche immer sichtbar (`SearchInput`, auf dem Handy volle Breite).
+  Bereich oder Zustand mit wenigen Werten als `Segmented`/`SegmentedLinks`. Ein oder zwei
+  Auswahlfelder stehen auf dem Handy nebeneinander in zwei gleich breiten Spalten
+  (`grid grid-cols-2 gap-2 sm:flex sm:flex-wrap`, Auswahl `w-full sm:w-44`). Ab drei
+  Auswahlfeldern oder Schaltern: `FilterBar` – ab `sm` eine umbrechende Zeile, auf dem Handy die
+  Taste „Filter“ mit der Zahl aktiver Filter und ein Sheet von unten. Feste Breiten wie
+  `w-[180px]` gelten erst ab `sm`.
 - **Abschnittsüberschrift** zwischen Karten: `SectionHeading` (11 px Versalien, `text-label`),
   nicht `h2` mit eigener Größe.
 - **Seitenleiste**: Glasfläche, folgt Hell/Dunkel. Aktiver Eintrag als getönte Pille in
@@ -222,6 +246,7 @@ Jede Seite baut aus diesen Teilen. Ein Muster, das hier fehlt, kommt als Baustei
 | `Input`, `Textarea`, `Select`, `Switch`, `Checkbox`, `Label` | `ui/…` | Formulare. Felder sind `glass-field` (getönt, Radius 14 px). Schalter an = grün (Ja/Nein), Kästchen für Auswahl und Bestätigung (Abschnitt 16). |
 | `NativeSelect` | `ui/native-select.tsx` | Natives Auswahlfeld im Feld-Look: lange oder gruppierte Listen, leere Werte, Server-Formulare. Breite, `flex-*` und Rasterspalte an `containerClassName` (dort sitzt der Pfeil), `className` gestaltet nur das Feld. |
 | `SearchInput` | `ui/search-input.tsx` | Suchfeld mit Lupe; mit `onClear` eine Taste „Suche leeren“ (danach Fokus im Feld). Breite, `flex-*` und Rasterspalte an `containerClassName`, `className` gestaltet nur das Feld. |
+| `FilterBar`, `FilterGroup` | `ui/filter-bar.tsx` | Ab drei Filtern: ab `sm` eine umbrechende Zeile, auf dem Handy Taste „Filter“ (Zahl aktiver Filter) mit Sheet von unten, dort alles untereinander in 44 px. `resetHref`/`onReset` für „Zurücksetzen“. Kinder ohne feste `id` (werden zweimal gerendert). |
 | `ToggleChip`, `ToggleChipGroup` | `ui/toggle-chip.tsx` | Mehrfachauswahl als Chips (Wochentage, Filter), `aria-pressed`, gedrückt weich getönt mit Akzent-Rand und halbfetter Schrift. Genau eine Wahl: `Segmented`. |
 | `Checklist`, `ChecklistItem` | `ui/checklist.tsx` | Auswahlliste in Dialogen: Kachel mit Haarlinien, die ganze Zeile schaltet das Kästchen. |
 | `ConfirmDialog`, `ConfirmStep` | `ui/confirm-dialog.tsx` | Rückfrage vor Löschen und Sperren: eigene Ebene von einer Seite aus, Schritt innerhalb eines Dialogs (Abschnitt 18). |
@@ -287,7 +312,14 @@ bereit.
   Trennlinien in Karten und Tabellen sind `border-border` (im Hellen dunkle Haarlinie), nicht
   `border-glass-border` – das ist die helle Lichtkante der Glasfläche selbst.
   Zeilenhöhe mindestens 44 px auf dem Handy. Gruppenzeilen als `text-label` auf `bg-glass-tile`.
-- Breite Tabellen scrollen in ihrem Container waagerecht, nie die Seite.
+- Tabellen passen auf dem Handy (360 px) ohne seitliches Scrollen: Nebenspalten `max-sm:hidden`,
+  ihr Inhalt als Nebenzeile in der ersten Spalte; lange Texte brechen um (`whitespace-normal`,
+  Codes und Adressen `break-all`). Der Container scrollt nur als Notnagel, nie die Seite. Fällt
+  die letzte Spalte auf dem Handy weg, bekommt die letzte sichtbare `max-sm:pr-4` – den Rand von
+  `Table edge` trägt die letzte Zelle im DOM, auch wenn sie versteckt ist.
+- Raster für Listen und Kacheln immer mit Spaltenangabe (`grid grid-cols-1 sm:grid-cols-2 …`):
+  Ohne sie ist die Spur so breit wie der längste Inhalt, `truncate` greift nicht, und die Seite
+  wird breiter als das Handy.
 - Auswahl: `bg-primary/10`, Darüberfahren: `bg-glass-tile`.
 - **Inaktiv** (Listen und Karten außerhalb der Raum-Kacheln): Text bleibt lesbar – keine
   Deckkraft auf Text, Nebentext mindestens 3:1. Den Zustand sagt ein neutrales Badge („Inaktiv“,
@@ -349,5 +381,6 @@ bereit.
 3. Keine Grautöne oder Dekorfarben aus der Palette; Zustände in ihrer festen Farbe.
 4. Kennzahlen als `StatCard`, Hinweise als `Notice`, Umschalter als `Tabs` oder `Segmented`.
 5. Leer-, Lade- und Fehlerzustand vorhanden und je ein Satz.
-6. Handy (390 px): eine Spalte, nichts läuft waagerecht über, Tasten 44 px.
+6. Handy (390 und 360 px): eine Spalte, nichts scrollt seitlich (Seite, Kapseln, Tabellen),
+   Tasten 44 px, Primärhandlung oben rechts im Kartenkopf, Filter nach Abschnitt 13.
 7. Hell und Dunkel geprüft, Kontrast Text mindestens 4,5:1.

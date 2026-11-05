@@ -129,9 +129,11 @@ function EventOverlay({ events }: { events: CameraEventRow[] }) {
   const isActive = !e.endedAt;
 
   return (
+    // Nie umbrechen („Fahrzeug“ / „13:45“ in zwei Zeilen); in schmalen Kacheln (Handy 360 px,
+    // drei Spalten bei 1280 px) steht das Ereignis als eigene Zeile über Name und Uhrzeit.
     <span
       className={cn(
-        "flex items-center gap-1 text-[10px] font-medium min-w-0",
+        "flex items-center gap-1 text-[10px] font-medium min-w-0 whitespace-nowrap @max-[22rem]:order-first @max-[22rem]:basis-full",
         meta.color,
         isActive && "animate-pulse"
       )}
@@ -237,7 +239,7 @@ function ScanOverlay({ scan }: { scan: ScanOverlayRow | null }) {
           granted
             ? "bg-success/90 text-success-foreground"
             : denied
-              ? "bg-destructive/90 text-white"
+              ? "bg-destructive-fill/90 text-white"
               : "bg-warning/90 text-warning-foreground"
         )}
       >
@@ -428,6 +430,18 @@ const PTZ_PAD: Array<{ op: PtzOp | null; icon: React.ElementType | null }> = [
   { op: "RightDown", icon: ArrowDownRight },
 ];
 
+/** Namen der Richtungstasten (Tooltip und Screenreader) statt der englischen Befehle. */
+const PTZ_LABEL: Partial<Record<PtzOp, string>> = {
+  LeftUp: "Nach links oben",
+  Up: "Nach oben",
+  RightUp: "Nach rechts oben",
+  Left: "Nach links",
+  Right: "Nach rechts",
+  LeftDown: "Nach links unten",
+  Down: "Nach unten",
+  RightDown: "Nach rechts unten",
+};
+
 function CameraPanel({
   cam,
   hubOnline,
@@ -535,7 +549,7 @@ function CameraPanel({
 
   return (
     <>
-      <div className="group relative aspect-video overflow-hidden rounded-tile bg-black flex items-center justify-center">
+      <div className="@container group relative aspect-video overflow-hidden rounded-tile bg-black flex items-center justify-center">
         {go2rtcUrl && streamSrc ? (
           <WebRTCVideo
             go2rtcUrl={go2rtcUrl}
@@ -557,7 +571,7 @@ function CameraPanel({
 
         {/* Name unten links, Ereignisse rechts – dezenter Verlauf wie im alten Kiosk.
             Die Leiste liegt immer auf dem dunklen Bild, daher `dark` für ihre Farben. */}
-        <div className="dark pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-6">
+        <div className="dark pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-x-2 gap-y-0.5 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-6">
           <span className="text-xs font-medium text-white drop-shadow truncate shrink-0">
             {cam.name}
           </span>
@@ -570,8 +584,9 @@ function CameraPanel({
         </div>
 
         {go2rtcUrl && streamBase && live && (
-          <Badge className="absolute top-1.5 left-1.5 h-4 gap-1 bg-emerald-400/90 px-1.5 text-[9px] text-emerald-950">
-            <Radio className="h-2.5 w-2.5" /> LIVE
+          // Über dem Video als dunkle Glaspille (Badge `media`); Smaragd (live) trägt das Symbol.
+          <Badge variant="media" className="absolute top-1.5 left-1.5 h-4 gap-1 px-1.5 text-[9px]">
+            <Radio className="h-2.5 w-2.5 text-emerald-400" /> LIVE
           </Badge>
         )}
 
@@ -612,7 +627,7 @@ function CameraPanel({
               size="sm"
               className={cn(
                 "h-11 px-2.5 text-[10px] font-semibold bg-black/50 hover:bg-black/70 sm:h-7 sm:px-1.5",
-                hd ? "bg-primary text-primary-foreground hover:bg-primary/90" : "text-white"
+                hd ? "bg-primary-fill text-primary-foreground hover:bg-primary-fill/90" : "text-white"
               )}
               title={hd ? "Auf Vorschau-Qualität (sub) wechseln" : "Auf volle Qualität (main) wechseln"}
               onClick={() => setHd((v) => !v)}
@@ -657,7 +672,7 @@ function CameraPanel({
                 onError={setError}
                 variant="secondary"
                 className="size-11 bg-black/50 hover:bg-black/70 text-white sm:size-7"
-                activeClassName="bg-emerald-400/90 text-emerald-950 hover:bg-destructive/90 hover:text-white"
+                activeClassName="bg-emerald-400/90 text-emerald-950 hover:bg-destructive-fill/90 hover:text-white"
                 iconClassName="h-3.5 w-3.5"
               />
             </>
@@ -676,7 +691,7 @@ function CameraPanel({
 
         {/* Fehler (z.B. Türöffner) kurz auf der Kachel anzeigen. */}
         {isDoorbird && error && (
-          <p className="absolute bottom-6 inset-x-2 rounded-lg bg-destructive/90 px-2 py-1 text-[10px] text-white">
+          <p className="absolute bottom-6 inset-x-2 rounded-lg bg-destructive-fill/90 px-2 py-1 text-[10px] text-white">
             {error}
           </p>
         )}
@@ -709,7 +724,8 @@ function CameraPanel({
                   variant="outline"
                   size="icon"
                   className="size-11 sm:size-9"
-                  title={cell.op}
+                  title={PTZ_LABEL[cell.op] ?? cell.op}
+                  aria-label={PTZ_LABEL[cell.op] ?? cell.op}
                   disabled={disabled}
                   onClick={() => run(`ptz-${cell.op}`, "ptz", { op: cell.op, speed })}
                 >
@@ -943,15 +959,24 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
         </Notice>
       )}
 
+      {/* Statuszeile: die Zustände als eine Gruppe, die Taste für die go2rtc-Adresse dahinter.
+          Auf dem Handy brechen nur die Zustände um (zusammen mit der Taste rund 375 px auf 328 px),
+          die Taste bleibt rechts und das Eingabefeld steht in voller Breite darunter. */}
       <div className="flex items-center gap-2 flex-wrap">
-        <Badge variant="secondary" className="gap-1.5 tabular-nums">
-          <Cctv className="h-3.5 w-3.5" />
-          {cameras.length} Kameras
-        </Badge>
-        <Badge variant={go2rtc.reachable ? "success" : "neutral"} className="gap-1.5">
-          <Radio className="h-3.5 w-3.5" />
-          {go2rtc.reachable ? "Live-Video aktiv" : "Nur Standbilder"}
-        </Badge>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-none">
+          <Badge variant="secondary" className="gap-1.5 tabular-nums">
+            <Cctv className="h-3.5 w-3.5" />
+            {cameras.length} Kameras
+          </Badge>
+          <Badge variant={go2rtc.reachable ? "success" : "neutral"} className="gap-1.5">
+            <Radio className="h-3.5 w-3.5" />
+            {go2rtc.reachable ? "Live-Video aktiv" : "Nur Standbilder"}
+          </Badge>
+          <Badge variant={(online ?? 0) > 0 ? "success" : "neutral"} className="gap-1.5 tabular-nums">
+            <StatusDot tone={(online ?? 0) > 0 ? "success" : "neutral"} size="xs" />
+            {online ?? "–"} online
+          </Badge>
+        </div>
         <Button
           variant="ghost"
           size="icon"
@@ -982,14 +1007,10 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
             <Button type="submit" size="sm" className="h-11 sm:h-8">Speichern</Button>
           </form>
         )}
-        <Badge variant={(online ?? 0) > 0 ? "success" : "neutral"} className="gap-1.5 tabular-nums">
-          <StatusDot tone={(online ?? 0) > 0 ? "success" : "neutral"} size="xs" />
-          {online ?? "–"} online
-        </Badge>
       </div>
 
       {cameras.length === 0 ? (
-        <Card className="py-0 sm:py-0">
+        <Card flush="y">
           <EmptyState
             icon={Cctv}
             title="Keine aktiven Reolink-Kameras"

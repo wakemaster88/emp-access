@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import { Loader2, Zap, Cable, MonitorSmartphone, ArrowUp, EthernetPort, Lock, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PORT_STATUS, vlanColor } from "@/components/network/network-types";
@@ -210,16 +211,20 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
 
           {/* Tabellen-Ansicht: läuft bis an die Kartenränder (docs/design-regeln.md, Abschnitt 17). */}
           <div className="-mx-4 sm:-mx-[18px]">
-            <Table>
+            <Table edge>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-16 pl-4 sm:pl-[18px]">Port</TableHead>
+                  <TableHead className="w-16">Port</TableHead>
                   <TableHead className="hidden sm:table-cell">Beschriftung</TableHead>
                   <TableHead>VLAN</TableHead>
                   <TableHead className="hidden md:table-cell">Tagged</TableHead>
                   <TableHead className="hidden sm:table-cell">Anschluss</TableHead>
-                  <TableHead className="pr-4 sm:pr-[18px] lg:pr-2">Gerät</TableHead>
-                  <TableHead className="hidden lg:table-cell w-20 pr-4 sm:pr-[18px]">Status</TableHead>
+                  {/* Unter lg ist „Gerät“ die letzte sichtbare Spalte; edge trifft nur die letzte
+                      Zelle im DOM (Status), darum behält „Gerät“ den eigenen Randabstand.
+                      Auf dem Handy nimmt die Spalte den Rest der Breite, lange Namen brechen um
+                      (vorher 348 px Tabelle auf 326 px Karte). */}
+                  <TableHead className="pr-4 sm:pr-[18px] lg:pr-2 max-sm:w-full">Gerät</TableHead>
+                  <TableHead className="hidden lg:table-cell w-20">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -229,7 +234,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                     className="cursor-pointer max-sm:h-11"
                     onClick={() => openPort(p)}
                   >
-                    <TableCell className="pl-4 sm:pl-[18px] font-mono font-semibold text-sm">
+                    <TableCell className="font-mono font-semibold text-sm">
                       {p.number}
                       {p.poe && <Zap className="inline h-3 w-3 ml-1 text-muted-foreground" />}
                       {p.uplink && <ArrowUp className="inline h-3 w-3 ml-1 text-primary" />}
@@ -265,14 +270,18 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                     <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
                       {p.outlet?.label || <span className="text-muted-foreground">–</span>}
                     </TableCell>
-                    <TableCell className="text-xs pr-4 sm:pr-[18px] lg:pr-2">
+                    <TableCell className="text-xs pr-4 sm:pr-[18px] lg:pr-2 max-sm:w-full max-sm:max-w-0 max-sm:whitespace-normal max-sm:wrap-anywhere">
                       {p.client ? (
                         <span className="text-foreground/80">{p.client.name}</span>
                       ) : (
                         <span className="text-muted-foreground">–</span>
                       )}
+                      {/* Handy: die Beschriftung des Ports (eigene Spalte erst ab sm) als Nebenzeile,
+                          sonst fehlte z. B. „Reserve Kasse 3“; Anschluss und Tagged-VLANs zeigt der
+                          Port-Dialog beim Antippen (docs/design-regeln.md, Abschnitt 17). */}
+                      {p.label && <span className="block text-muted-foreground sm:hidden">{p.label}</span>}
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell pr-4 sm:pr-[18px]">
+                    <TableCell className="hidden lg:table-cell">
                       <Badge variant={PORT_STATUS_VARIANT[p.status] ?? "secondary"} className="text-[10px]">
                         {PORT_STATUS.find((s) => s.value === p.status)?.label ?? p.status}
                       </Badge>
@@ -330,27 +339,21 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
             {vlans.length > 0 && (
               <div className="space-y-1.5">
                 <Label>Tagged VLANs (Trunk)</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {vlans.map((v) => {
-                    const active = form.taggedVlanIds.includes(v.id);
-                    return (
-                      <button
-                        key={v.id}
-                        type="button"
-                        onClick={() => toggleTagged(v.id)}
-                        aria-pressed={active}
-                        className={cn(
-                          "press inline-flex h-8 items-center rounded-full border px-3 text-xs font-mono outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:h-11",
-                          active
-                            ? vlanColor(v.id, vlans)
-                            : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-                        )}
-                      >
-                        {v.vlanId} · {v.name}
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* Mehrfachauswahl als Umschalt-Chips (ToggleChip); gedrückt in Akzent-Tönung
+                    statt VLAN-Farbe, auf dem Handy 44 px hoch wie bisher. */}
+                <ToggleChipGroup aria-label="Tagged VLANs (Trunk)" className="gap-1.5">
+                  {vlans.map((v) => (
+                    <ToggleChip
+                      key={v.id}
+                      size="sm"
+                      pressed={form.taggedVlanIds.includes(v.id)}
+                      onPressedChange={() => toggleTagged(v.id)}
+                      className="font-mono max-sm:h-11"
+                    >
+                      {v.vlanId} · {v.name}
+                    </ToggleChip>
+                  ))}
+                </ToggleChipGroup>
               </div>
             )}
 

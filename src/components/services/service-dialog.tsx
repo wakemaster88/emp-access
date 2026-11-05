@@ -6,6 +6,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,8 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, Check, ScanLine, ClipboardCheck } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, ScanLine, ClipboardCheck } from "lucide-react";
 
 function toDateInput(val: string | Date | null | undefined): string {
   if (!val) return "";
@@ -88,13 +88,16 @@ interface ServiceDialogProps {
 
 type TabId = "settings" | "anny" | "areas";
 
-function CheckList({
+function AnnyChecklist({
+  label,
   items,
   selected,
   onToggle,
   emptyTitle,
   emptyDescription,
 }: {
+  /** Name der Liste für Screenreader. */
+  label: string;
   items: { key: string; label: string }[];
   selected: Set<string>;
   onToggle: (key: string) => void;
@@ -106,36 +109,17 @@ function CheckList({
   }
 
   return (
-    // Auswahlliste als Glas-Kachel; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
-    // Zeilen: Auswahl bg-primary/10, Darüberfahren bg-glass-tile (Abschnitt 17); Kästchen wie der Baustein Checkbox.
-    <div className="glass-tile max-h-[320px] overflow-y-auto scrollbar-thin space-y-0.5 p-1">
-      {items.map(({ key, label }) => {
-        const isSelected = selected.has(key);
-        return (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onToggle(key)}
-            className={cn(
-              "w-full flex items-center gap-2 rounded-control px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
-              isSelected
-                ? "bg-primary/10"
-                : "hover:bg-glass-tile"
-            )}
-          >
-            <div className={cn(
-              "size-[18px] rounded-[6px] border flex items-center justify-center shrink-0 transition-colors",
-              isSelected
-                ? "bg-primary border-primary text-primary-foreground"
-                : "border-input bg-field"
-            )}>
-              {isSelected && <Check className="size-3.5" strokeWidth={3} />}
-            </div>
-            <span className="text-xs text-foreground/80 truncate flex-1">{label}</span>
-          </button>
-        );
-      })}
-    </div>
+    // Auswahlliste aus dem Baustein Checklist (docs/design-regeln.md, Abschnitt 16): die ganze Zeile schaltet das Kästchen.
+    <Checklist aria-label={label} maxHeight={320}>
+      {items.map((item) => (
+        <ChecklistItem
+          key={item.key}
+          checked={selected.has(item.key)}
+          onCheckedChange={() => onToggle(item.key)}
+          title={item.label}
+        />
+      ))}
+    </Checklist>
   );
 }
 
@@ -533,7 +517,8 @@ export function ServiceDialog({
             <p className="text-[11px] text-muted-foreground">
               Wähle anny Services und Ressourcen, die diesem Service zugeordnet werden. Tickets mit diesen Namen werden beim Sync automatisch verknüpft.
             </p>
-            <CheckList
+            <AnnyChecklist
+              label="anny Verknüpfungen"
               items={annyItems}
               selected={selectedAnny}
               onToggle={toggleAnny}
@@ -542,7 +527,7 @@ export function ServiceDialog({
             />
             {selectedAnny.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="neutral" className="tabular-nums">{selectedAnny.size} ausgewählt</Badge>
+                <Badge variant="accent" className="tabular-nums">{selectedAnny.size} ausgewählt</Badge>
                 <Button
                   type="button"
                   variant="ghost"
@@ -775,10 +760,10 @@ export function ServiceDialog({
 
         <Separator />
 
-        {/* Handy: Tasten volle Breite, Primärtaste oben (docs/design-regeln.md, Abschnitt 16).
+        {/* Handy: Tasten volle Breite, Primärtaste oben, „Löschen“ zuunterst; ab sm „Löschen“ links (`DialogFooter start`, docs/design-regeln.md, Abschnitt 16).
             Tasten 36 px wie in der Lösch-Rückfrage (Abschnitt 5: 34 bis 44 px); „Löschen“ in voller Nebentextfarbe (Kontrast 4,5:1). */}
-        <DialogFooter className="sm:items-center sm:justify-between">
-          {!isNew ? (
+        <DialogFooter
+          start={!isNew ? (
             <Button
               type="button" variant="ghost"
               onClick={() => setConfirmDelete(true)}
@@ -788,22 +773,21 @@ export function ServiceDialog({
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               Löschen
             </Button>
-          ) : <div className="hidden sm:block" />}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting} className="max-sm:h-11">
-              Abbrechen
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || deleting || !name.trim()}
-              className="min-w-24 max-sm:h-11"
-            >
-              {saving
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <><Save className="h-4 w-4" />{isNew ? "Erstellen" : "Speichern"}</>}
-            </Button>
-          </div>
+          ) : null}
+        >
+          <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting} className="max-sm:h-11">
+            Abbrechen
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || deleting || !name.trim()}
+            className="min-w-24 max-sm:h-11"
+          >
+            {saving
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <><Save className="h-4 w-4" />{isNew ? "Erstellen" : "Speichern"}</>}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

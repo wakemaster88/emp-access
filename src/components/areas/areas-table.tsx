@@ -4,9 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { AreaDialog, type AreaData } from "./area-dialog";
 import {
@@ -41,11 +40,9 @@ interface AreasTableProps {
   annyMappings?: Record<string, number>;
 }
 
-export function AreasTable({ areas, readonly, annyResources, annyServices, annyMappings }: AreasTableProps) {
-  const [selected, setSelected] = useState<AreaData | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-
-  const allAreaData: AreaData[] = areas.map((a) => ({
+/** Alle Ressourcen als Dialog-Daten (Auswahl „In Resource“ im Dialog). */
+function toAllAreaData(areas: AreaRow[]): AreaData[] {
+  return areas.map((a) => ({
     id: a.id,
     name: a.name,
     parentId: a.parentId,
@@ -55,6 +52,38 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
     showOnDashboard: a.showOnDashboard,
     openingHours: a.openingHours,
   }));
+}
+
+/**
+ * Primärhandlung „Resource anlegen“ mit eigenem Dialog – steht im Kartenkopf
+ * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
+ * und „Resource“; der volle Name bleibt als `aria-label`.
+ */
+export function CreateAreaButton({ areas, annyResources, annyServices, annyMappings }: Omit<AreasTableProps, "readonly">) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} className="max-sm:h-11" aria-label="Resource anlegen">
+        <Plus className="h-4 w-4" />
+        <span>Resource<span className="max-sm:sr-only"> anlegen</span></span>
+      </Button>
+      <AreaDialog
+        area={null}
+        allAreas={toAllAreaData(areas)}
+        annyResources={annyResources}
+        annyServices={annyServices}
+        annyMappings={annyMappings}
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
+export function AreasTable({ areas, readonly, annyResources, annyServices, annyMappings }: AreasTableProps) {
+  const [selected, setSelected] = useState<AreaData | null>(null);
+
+  const allAreaData = toAllAreaData(areas);
 
   const maxDeviceBadges = 3;
 
@@ -80,31 +109,23 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
 
   return (
     <>
-      {!readonly && (
-        <div className="flex justify-end mb-4">
-          <Button
-            onClick={() => setAddOpen(true)}
-            className="max-sm:h-11"
-          >
-            <Plus className="h-4 w-4" />
-            Resource anlegen
-          </Button>
-        </div>
-      )}
-
-      {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein. */}
+      {/* „Resource anlegen“ steht im Kartenkopf (CreateAreaButton). */}
+      {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein (`Table edge`).
+          Auf dem Handy ist „#“ ausgeblendet, daher bekommt „Name“ dort den Randabstand. */}
       <div className="-mx-4 sm:-mx-[18px]">
-        <Table>
+        <Table edge>
           <TableHeader>
             <TableRow>
-              <TableHead className="hidden sm:table-cell w-10 pl-[18px]">#</TableHead>
+              <TableHead className="hidden sm:table-cell w-10">#</TableHead>
               <TableHead className="pl-4 sm:pl-2">
                 <span className="inline-flex items-center gap-1.5">
                   <MapPin className="h-4 w-4 text-muted-foreground/70" />
                   Name
                 </span>
               </TableHead>
-              <TableHead className="hidden lg:table-cell">
+              {/* Eigene Spalte erst ab 2xl: bei 1280 px (mit Seitenleiste) war die Tabelle sonst 55 px zu breit
+                  und „Tickets“ lag abgeschnitten im seitlichen Scroller; bis dahin steht „in …“ unter dem Namen. */}
+              <TableHead className="hidden 2xl:table-cell">
                 <span className="inline-flex items-center gap-1.5">
                   <FolderTree className="h-4 w-4 text-muted-foreground/70" />
                   In Resource
@@ -134,9 +155,10 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   Limit
                 </span>
               </TableHead>
-              <TableHead className="text-right pr-4 sm:pr-[18px]">
+              <TableHead className="text-right">
+                {/* Handy: Kopf ohne Symbol wie bei Services (dort braucht die Namensspalte den Platz). */}
                 <span className="inline-flex items-center justify-end gap-1.5">
-                  <Ticket className="h-4 w-4 text-muted-foreground/70" />
+                  <Ticket className="h-4 w-4 text-muted-foreground/70 max-sm:hidden" />
                   Tickets
                 </span>
               </TableHead>
@@ -144,15 +166,13 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
           </TableHeader>
           <TableBody>
             {areas.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={8} className="p-0 whitespace-normal">
-                  <EmptyState
-                    icon={MapPin}
-                    title="Noch keine Resourcen angelegt"
-                    description="Lege eine Resource an, um Ein- und Auslass zu verwalten."
-                  />
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={8}
+                icon={MapPin}
+                title="Noch keine Resourcen angelegt"
+                description="Lege eine Resource an, um Ein- und Auslass zu verwalten."
+                compact={false}
+              />
             )}
             {areas.map((area, i) => (
               <TableRow
@@ -169,19 +189,20 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   openingHours: area.openingHours,
                 })}
               >
-                <TableCell className="hidden sm:table-cell pl-[18px] text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
-                <TableCell className="pl-4 sm:pl-2">
+                <TableCell className="hidden sm:table-cell text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
+                {/* Handy: lange Namen brechen um, statt die Tabelle zu verbreitern. */}
+                <TableCell className="pl-4 sm:pl-2 max-sm:whitespace-normal max-sm:text-pretty">
                   <div className="min-w-0">
                     <span className="inline-flex items-center gap-2 font-medium text-foreground">
                       <MapPin className="h-4 w-4 text-primary shrink-0" />
                       {area.name}
                     </span>
                     {area.parent?.name && (
-                      <p className="lg:hidden text-xs text-muted-foreground/70 ml-6 mt-0.5">in {area.parent.name}</p>
+                      <p className="2xl:hidden text-xs text-muted-foreground/70 ml-6 mt-0.5">in {area.parent.name}</p>
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                <TableCell className="hidden 2xl:table-cell text-sm text-muted-foreground">
                   {area.parent?.name ? (
                     <span className="inline-flex items-center gap-1.5">
                       <FolderTree className="h-3.5 w-3.5 text-muted-foreground/70" />
@@ -218,7 +239,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-right pr-4 sm:pr-[18px]">
+                <TableCell className="text-right">
                   {area._count.tickets > 0 ? (
                     <Link
                       href={`/tickets?area=${area.id}`}
@@ -236,16 +257,6 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
           </TableBody>
         </Table>
       </div>
-
-      <AreaDialog
-        area={null}
-        allAreas={allAreaData}
-        annyResources={annyResources}
-        annyServices={annyServices}
-        annyMappings={annyMappings}
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-      />
 
       <AreaDialog
         area={selected}

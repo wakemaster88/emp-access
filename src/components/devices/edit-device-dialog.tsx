@@ -552,19 +552,22 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
               </DialogFooter>
             </div>
           ) : (
-            /* Handy: Tasten volle Breite, Primärtaste oben (docs/design-regeln.md, Abschnitt 16). */
-            <DialogFooter className="sm:items-center sm:justify-between">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDelete(true)} disabled={deleting || saving}
-                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10">
-                <Trash2 className="h-4 w-4" />
-                Löschen
-              </Button>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting}>Abbrechen</Button>
-                <Button type="submit" disabled={saving || deleting || !form.name.trim()} className="min-w-28">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4" />Speichern</>}
+            /* Handy: Tasten volle Breite, Primärtaste oben (docs/design-regeln.md, Abschnitt 16);
+               „Löschen“ ab sm links, auf dem Handy zuunterst (DialogFooter start). */
+            <DialogFooter
+              className="sm:items-center"
+              start={
+                <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDelete(true)} disabled={deleting || saving}
+                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                  <Trash2 className="h-4 w-4" />
+                  Löschen
                 </Button>
-              </div>
+              }
+            >
+              <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting}>Abbrechen</Button>
+              <Button type="submit" disabled={saving || deleting || !form.name.trim()} className="min-w-28">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4" />Speichern</>}
+              </Button>
             </DialogFooter>
           )}
         </form>

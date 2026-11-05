@@ -38,6 +38,7 @@ import { RuleDialog } from "@/components/regeln/rule-dialog";
 import {
   OPERATING_LABELS,
   TRIGGER_KIND_LABELS,
+  triggerLabel,
   TRIGGER_LABELS,
   cooldownLabel,
   describeAction,
@@ -66,7 +67,7 @@ function RuleCard({
   onDelete: () => void;
 }) {
   return (
-    <Card className={rule.isActive ? undefined : "opacity-60"}>
+    <Card>
       <CardHeader className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -76,6 +77,7 @@ function RuleCard({
             <Badge variant="secondary">
               {TRIGGER_LABELS[rule.trigger]}
             </Badge>
+            {/* Pausiert: Text bleibt lesbar, den Zustand sagt dieses Badge (docs/design-regeln.md, Abschnitt 17). */}
             {!rule.isActive && (
               <Badge variant="neutral">
                 pausiert
@@ -163,36 +165,33 @@ function RuleCard({
         </dl>
       </CardContent>
 
+      {/* Angaben mit Trennpunkt am Ende des Eintrags: bricht die Zeile um, steht kein „·“ allein am Zeilenanfang. */}
       <CardFooter className="flex-wrap gap-x-1.5 gap-y-1 border-t text-[11px] text-muted-foreground tabular-nums">
-        <span>{weekdayLabel(rule.daysOfWeek)}</span>
-        {rule.windowStart && rule.windowEnd && (
-          <>
-            <span>·</span>
-            <span className="flex items-center gap-0.5">
+        {[
+          <span key="days">{weekdayLabel(rule.daysOfWeek)}</span>,
+          rule.windowStart && rule.windowEnd && (
+            <span key="window" className="flex items-center gap-0.5">
               <Clock className="h-3 w-3" />
               {rule.windowStart}–{rule.windowEnd}
             </span>
-          </>
-        )}
-        {rule.operating !== "ANY" && (
-          <>
-            <span>·</span>
-            <span>{OPERATING_LABELS[rule.operating]}</span>
-          </>
-        )}
-        {rule.onlyWhenDark && (
-          <>
-            <span>·</span>
-            <span className="flex items-center gap-0.5">
+          ),
+          rule.operating !== "ANY" && <span key="operating">{OPERATING_LABELS[rule.operating]}</span>,
+          rule.onlyWhenDark && (
+            <span key="dark" className="flex items-center gap-0.5">
               <Moon className="h-3 w-3" />
               nur dunkel
             </span>
-          </>
-        )}
-        <span>·</span>
-        <span>{cooldownLabel(rule.cooldownSeconds)}</span>
-        <span>·</span>
-        <span>zuletzt {fmtAgo(rule.lastRunAt, nowMs)}</span>
+          ),
+          <span key="cooldown">{cooldownLabel(rule.cooldownSeconds)}</span>,
+          <span key="last">zuletzt {fmtAgo(rule.lastRunAt, nowMs)}</span>,
+        ]
+          .filter(Boolean)
+          .map((item, index, items) => (
+            <span key={index} className="flex items-center gap-1.5">
+              {item}
+              {index < items.length - 1 && <span aria-hidden>·</span>}
+            </span>
+          ))}
       </CardFooter>
     </Card>
   );
@@ -277,8 +276,9 @@ export function RegelnClient({ data }: { data: RegelnData }) {
 
   return (
     <div className="page-content space-y-4 sm:space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground tabular-nums">
+      {/* Primärhandlung oben rechts, wie bei den Betriebszeiten (docs/design-regeln.md, Abschnitt 13). */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 text-xs text-muted-foreground tabular-nums">
           {data.rules.length === 0
             ? "Noch keine Regel angelegt."
             : `${activeCount} von ${data.rules.length} ${data.rules.length === 1 ? "Regel" : "Regeln"} aktiv.`}
@@ -286,7 +286,7 @@ export function RegelnClient({ data }: { data: RegelnData }) {
         {!data.readonly && (
           <Button
             size="sm"
-            className="h-8 text-xs max-sm:h-11"
+            className="h-8 shrink-0 text-xs max-sm:h-11"
             onClick={() => setCreating(true)}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -321,7 +321,9 @@ export function RegelnClient({ data }: { data: RegelnData }) {
             grouped.map(([room, rules]) => (
               <section key={room} className="space-y-2">
                 <SectionHeading title={`${room} (${rules.length})`} />
-                <div className="grid gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
+                {/* `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte machen ein langer Name oder eine
+                    lange Beschreibung (`truncate`) die Spalte breiter als das Handy. */}
+                <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
                   {rules.map((rule) => (
                     <RuleCard
                       key={rule.id}
@@ -348,7 +350,7 @@ export function RegelnClient({ data }: { data: RegelnData }) {
             </Card>
           ) : (
             // Zeilen mit Haarlinie in einer Karte (docs/design-regeln.md, Abschnitt 17).
-            <Card className="gap-0 py-0 sm:py-0 divide-y divide-border/60">
+            <Card flush="y" className="divide-y divide-border/60">
               {data.runs.map((run) => (
                 <div key={run.id} className="flex items-start gap-2 px-4 py-2.5 text-xs sm:px-[18px]">
                   {run.success ? (
@@ -360,7 +362,8 @@ export function RegelnClient({ data }: { data: RegelnData }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-medium">{run.ruleName}</span>
                       <span className="text-muted-foreground">
-                        {TRIGGER_KIND_LABELS[run.triggerKind] ?? run.triggerKind}
+                        {/* Verlauf kennt beide Schreibweisen („closing“ und „CLOSING“) – nie den rohen Code zeigen. */}
+                        {TRIGGER_KIND_LABELS[run.triggerKind] ?? triggerLabel(run.triggerKind)}
                       </span>
                     </div>
                     {run.errorMessage && (

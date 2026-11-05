@@ -90,15 +90,30 @@ export function HubRestartButton({
     }
   }
 
+  // Auf dem Handy nur das erste Wort („Tracker“, „Hub“), damit die Hub-Tasten in einer Zeile
+  // stehen (docs/design-regeln.md, Abschnitt 13); der volle Text bleibt als Name der Taste.
+  const [labelHead, ...labelRest] = label.split(" ");
+
   // Rückfrage als AlertDialog statt Browser-Dialog (docs/design-regeln.md,
   // Abschnitte 16 und 18); Fehler als Notice (Abschnitt 19).
   return (
     <div className="flex flex-wrap items-center gap-2">
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="outline" size="sm" disabled={busy} className="gap-1.5 max-sm:h-11">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            className="gap-1.5 max-sm:h-11"
+            aria-label={busy ? undefined : label}
+          >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-            {busy ? "Warte auf Hub …" : label}
+            {busy ? "Warte auf Hub …" : (
+              <span>
+                {labelHead}
+                {labelRest.length > 0 && <span className="max-sm:hidden"> {labelRest.join(" ")}</span>}
+              </span>
+            )}
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>

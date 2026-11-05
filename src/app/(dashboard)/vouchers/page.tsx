@@ -1,12 +1,11 @@
 import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { SegmentedLinks } from "@/components/ui/segmented-links";
 import { VouchersTable } from "@/components/vouchers/vouchers-table";
-import { Gift, Check, Clock, Ban } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Gift, Check, Clock, Ban, type LucideIcon } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{
@@ -136,7 +135,7 @@ export default async function VouchersPage({ searchParams }: Props) {
     redeemedTicketId: v.redeemedTicketId,
   }));
 
-  const tabs: Array<{ id: string; label: string; count: number; icon: React.ComponentType<{ className?: string }> }> = [
+  const tabs: Array<{ id: string; label: string; count: number; icon: LucideIcon }> = [
     { id: "all", label: "Alle", count: totalAll, icon: Gift },
     { id: "open", label: "Offen", count: totalOpen, icon: Clock },
     { id: "redeemed", label: "Eingelöst", count: totalRedeemed, icon: Check },
@@ -149,13 +148,15 @@ export default async function VouchersPage({ searchParams }: Props) {
       <Header title="Gutscheine" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         {/*
-          Statusfilter als Glas-Kapsel wie `Segmented`. Die Einträge bleiben Links,
-          weil der Filter in der URL steht; auf dem Handy wischbar statt umbrechend.
+          Statusfilter als `SegmentedLinks`: Links, weil der Filter in der URL steht.
+          Auf dem Handy bricht die Kapsel um; ohne die Symbole (nur Zierde, aria-hidden) bleiben
+          es auch bei 360 px zwei Zeilen statt drei.
         */}
-        <div className="glass-strip flex w-fit max-w-full items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {tabs.map((tab) => {
-            const isActive = (status ?? "all") === tab.id;
-            const Icon = tab.icon;
+        <SegmentedLinks
+          aria-label="Status"
+          className="max-sm:[&_svg]:hidden"
+          value={status ?? "all"}
+          options={tabs.map((tab) => {
             const params = new URLSearchParams();
             if (tab.id !== "all") params.set("status", tab.id);
             if (queryTrim) params.set("q", queryTrim);
@@ -164,33 +165,12 @@ export default async function VouchersPage({ searchParams }: Props) {
             const href = params.toString()
               ? `/vouchers?${params.toString()}`
               : "/vouchers";
-            return (
-              <Link
-                key={tab.id}
-                href={href}
-                aria-current={isActive ? "page" : undefined}
-                className={cn(
-                  "press inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-[13px] font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                  isActive && "glass-pill-active font-semibold text-foreground",
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {tab.label}
-                <span
-                  className={cn(
-                    "rounded-full px-1.5 text-[10px] font-semibold leading-4 tabular-nums",
-                    isActive ? "bg-primary/15 text-primary" : "bg-foreground/[0.07] text-muted-foreground dark:bg-white/10",
-                  )}
-                >
-                  {tab.count}
-                </span>
-              </Link>
-            );
+            return { value: tab.id, label: tab.label, count: tab.count, icon: tab.icon, href };
           })}
-        </div>
+        />
 
         {/* Tabelle läuft bis an den Kartenrand, daher unten kein Innenabstand. */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Gift className="h-4 w-4 text-primary shrink-0" />

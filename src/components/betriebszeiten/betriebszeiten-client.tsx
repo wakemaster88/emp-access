@@ -233,9 +233,11 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
 
   return (
     <div className="page-content space-y-4 sm:space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* Primärhandlung oben rechts (docs/design-regeln.md, Abschnitt 13): kein Umbruch, sonst
+          rutschte die Taste bei langem Text (Räume ohne Betriebszeit) links unter den Text. */}
+      <div className="flex items-center justify-between gap-3">
         {/* Ohne Profil sagt das der leere Zustand darunter; hier steht es nicht ein zweites Mal (docs/design-regeln.md, Abschnitt 1). */}
-        <p className="text-xs text-muted-foreground">
+        <p className="min-w-0 flex-1 text-xs text-muted-foreground">
           {data.schedules.length > 0 &&
             `${openCount} von ${data.schedules.length} ${data.schedules.length === 1 ? "Profil" : "Profilen"} gerade geöffnet.`}
           {data.roomsWithoutSchedule > 0 && (
@@ -248,7 +250,7 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
           )}
         </p>
         {!data.readonly && (
-          <Button className="max-sm:h-11" onClick={() => setCreating(true)}>
+          <Button className="shrink-0 max-sm:h-11" onClick={() => setCreating(true)}>
             <Plus className="h-4 w-4" />
             Betriebszeit
           </Button>
@@ -266,7 +268,9 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
           />
         </Card>
       ) : (
-        <div className="grid gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
+        // `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte macht ein langer Profilname
+        // (`truncate`) die Spalte breiter als das Handy, dann scrollt die Seite seitlich.
+        <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
           {data.schedules.map((schedule) => (
             <ScheduleCard
               key={schedule.id}

@@ -600,8 +600,18 @@ export default function PublicMonitorPage({ params }: Props) {
     const handler = (e: MouseEvent) => {
       if (!devicesRef.current?.contains(e.target as Node)) setDevicesOpen(false);
     };
+    // Escape schließt das Menü und gibt den Fokus an die Taste zurück.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setDevicesOpen(false);
+      devicesRef.current?.querySelector<HTMLButtonElement>("button[aria-haspopup]")?.focus();
+    };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [devicesOpen]);
 
   /** Nach Check-in: hasPhoto-Flag aus nächstem Ticket-Poll ins geöffnete Overlay übernehmen.
@@ -1163,7 +1173,7 @@ export default function PublicMonitorPage({ params }: Props) {
                             {/* Pillen auf der getönten Karte: Tönung trägt den Zustand, die Schrift steht
                                 in foreground – Zustandsfarbe auf Zustandsfläche bliebe unter 4,5:1. */}
                             {aboExpired && (
-                              <Badge variant="danger" className="mt-1.5 px-3 py-1 text-sm font-bold text-foreground">Abo abgelaufen</Badge>
+                              <Badge variant="danger" className="mt-1.5 px-3 py-1 text-sm font-bold text-foreground dark:text-foreground">Abo abgelaufen</Badge>
                             )}
                             {aboExpiring && (
                               <Badge variant="warning" className="mt-1.5 px-3 py-1 text-sm font-bold text-foreground">
@@ -1254,7 +1264,7 @@ export default function PublicMonitorPage({ params }: Props) {
                     {/* Wie auf den Karten: getönte Pille, Schrift in foreground (Kontrast 4,5:1). */}
                     <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                       {aboExpired && (
-                        <Badge variant="danger" className="font-bold text-foreground">Abo abgelaufen</Badge>
+                        <Badge variant="danger" className="font-bold text-foreground dark:text-foreground">Abo abgelaufen</Badge>
                       )}
                       {aboExpiring && (
                         <Badge variant="warning" className="font-bold text-foreground">
@@ -1391,10 +1401,11 @@ export default function PublicMonitorPage({ params }: Props) {
 
                 // Zustand als Tönung der Kachel (docs/design-regeln.md, Abschnitt 3):
                 // Pause und „läuft ab“ = warning, abgelaufen = destructive, eingecheckt = success.
+                // Pausiert: Text bleibt lesbar, gedimmt werden nur Bild und IconChip (Abschnitt 17).
                 const cardBg = isScanning
                   ? "border-success/60 bg-linear-to-br from-success/28 to-success/[0.08]"
                   : isPaused
-                    ? cn(ROW_TINT.warning, "opacity-70")
+                    ? ROW_TINT.warning
                     : isExpired || durationExpired
                       ? ROW_TINT.danger
                       : isWarning || durationWarning
@@ -1456,7 +1467,7 @@ export default function PublicMonitorPage({ params }: Props) {
                     )}
                   >
                     {ticket.hasPhoto ? (
-                      <div className="h-10 w-10 rounded-control shrink-0 overflow-hidden bg-glass-tile ring-1 ring-inset ring-glass-border">
+                      <div className={cn("h-10 w-10 rounded-control shrink-0 overflow-hidden bg-glass-tile ring-1 ring-inset ring-glass-border", isPaused && "opacity-60")}>
                         {/* Bild wird beim Scroll per native lazy-loading über den
                             /photo-Endpoint nachgeladen (statt Base64 im Poll).
                             Der Endpoint antwortet mit JSON, nicht mit Image – deshalb
@@ -1464,7 +1475,7 @@ export default function PublicMonitorPage({ params }: Props) {
                         <TicketAvatarLazy token={token} ticketId={ticket.id} className="h-full w-full object-cover" />
                       </div>
                     ) : (
-                      <IconChip icon={Users} size="lg" />
+                      <IconChip icon={Users} size="lg" className={cn(isPaused && "opacity-60")} />
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold truncate">
@@ -1685,15 +1696,16 @@ function DurationCountdown({ firstScanAt, durationMinutes, size }: { firstScanAt
 
   const isLg = size === "lg";
 
-  // Restzeit als Pille: läuft = info, abgelaufen = danger. Sie steht meist auf getönten
-  // Karten und Zeilen – die Tönung trägt den Zustand, die Schrift bleibt foreground (4,5:1).
+  // Restzeit als Pille: läuft = info (Tönung trägt den Zustand, Schrift foreground, 4,5:1),
+  // abgelaufen = deckend rot mit weißer Schrift – auf der grünen Erfolgskarte läse sich die
+  // rote Tönung sonst grau. Groß bricht sie notfalls ausgewogen um (22 px wie die Kapseln).
   return (
     <Badge
-      variant={expired ? "danger" : "info"}
+      variant={expired ? "destructive" : "info"}
       className={cn(
-        "tabular-nums font-bold text-foreground",
-        expired ? "font-sans" : "font-mono",
-        isLg ? "text-xl sm:text-2xl px-4 py-2 gap-1.5 whitespace-normal [&>svg]:size-5 sm:[&>svg]:size-6" : "text-xs px-2.5 py-1",
+        "tabular-nums font-bold",
+        expired ? "font-sans" : "font-mono text-foreground",
+        isLg ? "text-lg sm:text-xl px-4 py-2 gap-1.5 whitespace-normal text-balance rounded-[22px] [&>svg]:size-5 sm:[&>svg]:size-6" : "text-xs px-2.5 py-1",
       )}
     >
       {isLg && <Clock aria-hidden />}

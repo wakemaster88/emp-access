@@ -116,8 +116,10 @@ export default async function NetworkPage() {
 
   // Reine Anzahlen sind kein Zustand: ruhig in neutral, keine Farbe als Dekoration
   // (docs/design-regeln.md, Abschnitt 3). Die Belegung zeigt zusätzlich den Balken.
+  // „Hardware“ wie Reiter und Taste auf dem Handy: „Switches & Router“ endete bei 360 px als
+  // „Switches & Rou…“ (die Beschriftung der Kachel kürzt, bricht nicht um).
   const stats: { label: string; value: string | number; icon: LucideIcon; tone: StatTone; progress?: number }[] = [
-    { label: "Switches & Router", value: networkDevices.length, icon: Server, tone: "neutral" },
+    { label: "Hardware", value: networkDevices.length, icon: Server, tone: "neutral" },
     { label: "VLANs", value: vlans.length, icon: Network, tone: "neutral" },
     {
       label: "Ports (belegt)",
@@ -231,7 +233,9 @@ export default async function NetworkPage() {
                   })}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Weitere Handlungen: auf dem Handy eine eigene Zeile unter Titel und Status
+                  (docs/design-regeln.md, Abschnitt 13), sonst drückt die Zeile den Titel zusammen. */}
+              <div className="flex flex-wrap items-center gap-2 max-sm:basis-full">
                 <HubLogButton hubName={hubAgents.length === 1 ? hubAgents[0].name : undefined} />
                 <HubRestartButton
                   service="tracker"

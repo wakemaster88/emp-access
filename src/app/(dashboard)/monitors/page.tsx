@@ -2,7 +2,6 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
-import { Badge } from "@/components/ui/badge";
 import { MonitorManager } from "@/components/settings/monitor-manager";
 
 export const dynamic = "force-dynamic";
@@ -37,15 +36,8 @@ export default async function MonitorsPage() {
     <>
       <Header title="Monitore" accountName={session.user.accountName} />
       <div className="page-content max-w-3xl space-y-4 sm:space-y-5">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Erstelle und verwalte öffentliche Monitore für Scan-Ansichten, Check-ins, Ressourcen-Übersichten und Token-Scanner.
-          </p>
-          <Badge variant="secondary" className="ml-3 shrink-0 tabular-nums">
-            {monitors.length} Monitor{monitors.length !== 1 ? "e" : ""}
-          </Badge>
-        </div>
-
+        {/* Den Kopf der Liste (Erklärung, Anzahl, „Monitor erstellen“) rendert MonitorManager, weil der
+            Anlegen-Dialog zu dessen Zustand gehört (docs/design-regeln.md, Abschnitt 13). */}
         <MonitorManager
           monitors={monitors.map((m) => ({
             ...m,

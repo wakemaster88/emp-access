@@ -184,15 +184,21 @@ export function TimelineAxis({ range }: { range: TimeRange }) {
       {ticks.map((t) => {
         const left = ((t - range.startMin) / total) * 100;
         const isStrong = t % 120 === 0;
+        // Abstand zur Jetzt-Marke: Die Pille deckt die Beschriftung sonst halb ab
+        // (auf dem Handy ist eine Stunde nur rund 30 px breit, daher dort der größere Abstand).
+        const nowGap = nowVisible ? Math.abs(t - nowMin!) : Infinity;
         return (
           <span
             key={t}
             className={cn(
-              "absolute top-0 -translate-x-1/2 text-[10px] font-mono tabular-nums",
+              "absolute top-0 text-[10px] font-mono tabular-nums",
+              // Erste und letzte Marke bündig am Rand statt halb über die Kante (runde Kartenecke).
+              left <= 3 ? "translate-x-0" : left >= 97 ? "-translate-x-full" : "-translate-x-1/2",
               isStrong ? "text-foreground/80 font-semibold" : "text-muted-foreground",
               // Auf dem Handy ist eine Stunde schmaler als die Beschriftung:
               // dort nur jede zweite Stunde beschriften, sonst überlappen sie.
               !isStrong && "max-sm:hidden",
+              nowGap < 25 ? "invisible" : nowGap < 50 && "max-sm:invisible",
             )}
             style={{ left: `${left}%` }}
           >

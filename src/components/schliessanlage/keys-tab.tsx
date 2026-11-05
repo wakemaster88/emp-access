@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Crown, KeyRound, Layers, Plus, Search } from "lucide-react";
+import { Crown, KeyRound, Layers, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Table,
   TableBody,
@@ -19,7 +20,6 @@ import {
   EmptyHint,
   KeyStatusBadge,
   LevelBadge,
-  selectFieldClass,
 } from "@/components/schliessanlage/shared";
 import type { KeyRow, LockOption } from "@/components/schliessanlage/types";
 import { KEY_LEVEL_LABELS, KEY_STATUS_LABELS } from "@/lib/keying";
@@ -29,6 +29,29 @@ interface Props {
   keys: KeyRow[];
   lockOptions: LockOption[];
   readonly: boolean;
+}
+
+/** „Schließt“ kurz: bis zu zwei Schlösser, sonst das erste und die Zahl der weiteren. */
+function lockSummary(labels: string[]): string {
+  if (labels.length === 0) return "kein Schloss";
+  if (labels.length <= 2) return labels.join(" · ");
+  return `${labels[0]} +${labels.length - 1} weitere`;
+}
+
+/**
+ * Kurze Nummern in Klammern („(T-071)“, „[V-0171]“) bleiben beim Umbruch zusammen – sonst bricht
+ * der Browser nach dem Bindestrich („[V-“ / „0171]“). Längere Klammerinhalte dürfen weiter umbrechen.
+ */
+function keepCodes(text: string): React.ReactNode {
+  return text.split(/([([][^\s()[\]]{1,12}[)\]])/).map((part, i) =>
+    i % 2 === 1 ? (
+      <span key={i} className="whitespace-nowrap">
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
 }
 
 export function KeysTab({ keys, lockOptions, readonly }: Props) {
@@ -51,55 +74,59 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
   const grandCount = keys.filter((k) => k.level === "GRAND").length;
   const issuedCount = keys.filter((k) => k.status === "ISSUED").length;
 
+  // Weitere Handlung „Serie“: ab sm neben der Primärtaste im Kopf, auf dem Handy in einer Zeile
+  // unter dem Kopf, damit der Kopf nur die Primärtaste trägt (docs/design-regeln.md, Abschnitt 13).
+  const bulkButton = (className: string) => (
+    <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)} className={className}>
+      <Layers className="mr-1 h-3.5 w-3.5" />
+      Serie
+    </Button>
+  );
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="tabular-nums">
-              {keys.length} Schlüssel · {issuedCount} ausgegeben
-            </CardTitle>
-            <CardDescription>
-              Jede Kopie ist ein eigener Datensatz mit eigener Nummer.
-              {grandCount > 0 && ` Davon ${grandCount} Generalschlüssel.`}
-            </CardDescription>
-          </div>
-          {!readonly && (
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)} className="max-sm:h-11">
-                <Layers className="mr-1 h-3.5 w-3.5" />
-                Serie
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => setDialog({ keyItem: null })}
-                className="max-sm:h-11"
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Schlüssel
-              </Button>
-            </div>
-          )}
-        </div>
+        <CardTitle className="tabular-nums">
+          {/* Neben der Taste bricht der Titel auf dem Handy um: Zahl und Wort bleiben zusammen. */}
+          {keys.length} Schlüssel · <span className="whitespace-nowrap">{issuedCount} ausgegeben</span>
+        </CardTitle>
+        <CardDescription>
+          Jede Kopie ist ein eigener Datensatz mit eigener Nummer.
+          {grandCount > 0 && ` Davon ${grandCount} Generalschlüssel.`}
+        </CardDescription>
+        {!readonly && (
+          <CardAction className="flex gap-2">
+            {bulkButton("max-sm:hidden")}
+            <Button
+              size="sm"
+              onClick={() => setDialog({ keyItem: null })}
+              className="max-sm:h-11"
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Schlüssel
+            </Button>
+          </CardAction>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">
+        {!readonly && <div className="sm:hidden">{bulkButton("h-11")}</div>}
         <div className="flex flex-wrap gap-2">
-          <div className="relative min-w-48 flex-1 max-sm:basis-full">
-            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Nummer, Bezeichnung oder Schloss suchen…"
-              className="pl-8 max-sm:h-11"
-            />
-          </div>
-          <select
+          <SearchInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Nummer, Bezeichnung oder Schloss suchen…"
+            containerClassName="min-w-48 flex-1 max-sm:basis-full"
+            // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss mitten im Wort.
+            className="text-ellipsis max-sm:h-11"
+          />
+          {/* Filter in Inhaltsbreite (w-auto statt der vollen Breite von NativeSelect), auf dem Handy teilen sie sich die Zeile. */}
+          <NativeSelect
             aria-label="Schlüsselart"
             value={levelFilter}
             onChange={(e) => setLevelFilter(e.target.value)}
-            className={cn(selectFieldClass, "max-sm:h-11 max-sm:flex-1")}
+            containerClassName="w-auto max-sm:flex-1"
+            className="max-sm:h-11"
           >
             <option value="">Alle Arten</option>
             {Object.entries(KEY_LEVEL_LABELS).map(([value, text]) => (
@@ -107,12 +134,13 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                 {text}
               </option>
             ))}
-          </select>
-          <select
+          </NativeSelect>
+          <NativeSelect
             aria-label="Status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className={cn(selectFieldClass, "max-sm:h-11 max-sm:flex-1")}
+            containerClassName="w-auto max-sm:flex-1"
+            className="max-sm:h-11"
           >
             <option value="">Alle Status</option>
             {Object.entries(KEY_STATUS_LABELS).map(([value, text]) => (
@@ -120,7 +148,7 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                 {text}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         {filtered.length === 0 ? (
@@ -131,15 +159,19 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
           </EmptyHint>
         ) : (
           // Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein.
+          // Handy (326 px): nur Nummer und Status; Bezeichnung und Schließt stehen als Nebenzeilen
+          // unter der Nummer, Art zeigt das Symbol (Krone = Generalschlüssel). Ab sm alle Spalten,
+          // lange Texte brechen um statt die Tabelle zu verbreitern (docs/design-regeln.md, Abschnitt 17).
           <div className="-mx-4 sm:-mx-[18px]">
-            <Table>
+            <Table edge>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-32 pl-4 sm:pl-[18px]">Nummer</TableHead>
-                  <TableHead>Bezeichnung</TableHead>
-                  <TableHead className="w-36">Art</TableHead>
-                  <TableHead className="w-28">Status</TableHead>
-                  <TableHead className="pr-4 sm:pr-[18px]">Schließt</TableHead>
+                  <TableHead className="sm:w-32">Nummer</TableHead>
+                  <TableHead className="max-sm:hidden">Bezeichnung</TableHead>
+                  <TableHead className="w-36 max-sm:hidden">Art</TableHead>
+                  {/* Auf dem Handy die letzte sichtbare Spalte: Randabstand wie die Karte. */}
+                  <TableHead className="w-28 max-sm:pr-4">Status</TableHead>
+                  <TableHead className="max-sm:hidden">Schließt</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -149,7 +181,7 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                     onClick={() => !readonly && setDialog({ keyItem: k })}
                     className={cn("max-sm:h-11", !readonly && "cursor-pointer")}
                   >
-                    <TableCell className="pl-4 font-mono text-xs font-medium sm:pl-[18px]">
+                    <TableCell className="font-mono text-xs font-medium">
                       <span className="inline-flex items-center gap-1.5">
                         {k.level === "GRAND" ? (
                           <Crown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -158,28 +190,38 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                         )}
                         {k.keyNumber}
                       </span>
+                      <div className="mt-0.5 space-y-0.5 font-sans text-xs font-normal whitespace-normal sm:hidden">
+                        {(k.label || k.notes) && (
+                          <p>
+                            {k.label}
+                            {k.notes && (
+                              <span className="text-[11px] text-muted-foreground">
+                                {k.label ? " · " : ""}
+                                {k.notes}
+                              </span>
+                            )}
+                          </p>
+                        )}
+                        <p className="text-muted-foreground">{keepCodes(lockSummary(k.lockLabels))}</p>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="text-xs whitespace-normal max-sm:hidden">
                       {k.label || <span className="text-muted-foreground">—</span>}
                       {k.notes && (
                         <span className="ml-1 text-[11px] text-muted-foreground">· {k.notes}</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-sm:hidden">
                       <LevelBadge level={k.level} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-sm:pr-4">
                       <KeyStatusBadge status={k.status} />
                     </TableCell>
-                    <TableCell className="pr-4 text-xs text-muted-foreground sm:pr-[18px]">
-                      {k.lockLabels.length === 0 ? (
-                        <span className="text-muted-foreground">kein Schloss</span>
-                      ) : k.lockLabels.length <= 2 ? (
-                        k.lockLabels.join(" · ")
+                    <TableCell className="text-xs whitespace-normal text-muted-foreground max-sm:hidden sm:min-w-40">
+                      {k.lockLabels.length > 2 ? (
+                        <span title={k.lockLabels.join("\n")}>{keepCodes(lockSummary(k.lockLabels))}</span>
                       ) : (
-                        <span title={k.lockLabels.join("\n")}>
-                          {k.lockLabels[0]} +{k.lockLabels.length - 1} weitere
-                        </span>
+                        keepCodes(lockSummary(k.lockLabels))
                       )}
                     </TableCell>
                   </TableRow>

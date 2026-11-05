@@ -3,7 +3,7 @@
 import { useMemo, useState, Fragment } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,9 +20,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
@@ -688,48 +687,61 @@ export function ClientsTab({
     return absolute;
   }
 
+  function onVlanFilterChange(v: string) {
+    setVlanFilter(v === "all" || v === "none" ? v : Number(v));
+  }
+
+  // Weitere Handlung „Netzwerk scannen“: ab sm neben der Primärtaste im Kopf, auf dem Handy
+  // in einer eigenen Zeile unter dem Kopf (docs/design-regeln.md, Abschnitt 13).
+  const scanButton = (className: string) => (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={triggerScan}
+      disabled={scanning}
+      className={cn("gap-2", className)}
+    >
+      {scanning
+        ? <Loader2 className="h-4 w-4 animate-spin" />
+        : <RefreshCw className="h-4 w-4" />}
+      {scanning ? "Scannt …" : "Netzwerk scannen"}
+    </Button>
+  );
+
   return (
-    <Card className="overflow-hidden pb-0 sm:pb-0">
-      {/* items-stretch: Titelzeile, Scan-Hinweis und Filter nehmen die volle Breite ein,
-          damit die Tasten rechts stehen wie in den anderen Tabs (CardHeader setzt items-start). */}
-      <CardHeader className="flex flex-col items-stretch gap-3">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <CardTitle className="tabular-nums">
-              Geräte im Netzwerk ({visibleCount})
-            </CardTitle>
-            <CardDescription className="text-xs mt-1">
-              {lastScanAt
-                ? <>Letzter Hub-Scan: <span className="text-foreground/80 font-medium">{formatLastScan(lastScanAt)}</span></>
-                : "Noch kein Hub-Scan in der Cloud"}
-            </CardDescription>
-          </div>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={triggerScan}
-              disabled={scanning}
-              className="gap-2 max-sm:h-11"
-            >
-              {scanning
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <RefreshCw className="h-4 w-4" />}
-              {scanning ? "Scannt …" : "Netzwerk scannen"}
-            </Button>
-            <Button onClick={() => openAdd()} className="gap-2 max-sm:h-11">
-              <Plus className="h-4 w-4" />
-              Gerät hinzufügen
-            </Button>
-          </div>
+    <Card flush>
+      {/* Kopf: Titel und Scan-Stand links, „Gerät hinzufügen“ oben rechts; auf dem Handy
+          „+ Gerät“ (docs/design-regeln.md, Abschnitt 13). */}
+      <CardHeader>
+        <CardTitle className="tabular-nums">
+          Geräte im Netzwerk ({visibleCount})
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {lastScanAt
+            ? <>Letzter Hub-Scan: <span className="text-foreground/80 font-medium">{formatLastScan(lastScanAt)}</span></>
+            : "Noch kein Hub-Scan in der Cloud"}
+        </CardDescription>
+        <CardAction className="flex items-center gap-2">
+          {scanButton("max-sm:hidden")}
+          <Button onClick={() => openAdd()} className="gap-2 max-sm:h-11" aria-label="Gerät hinzufügen">
+            <Plus className="h-4 w-4" />
+            <span>Gerät<span className="max-sm:hidden"> hinzufügen</span></span>
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2 sm:hidden">
+          {scanButton("h-11")}
         </div>
         {scanMsg && (
           <p className="text-xs text-muted-foreground">{scanMsg}</p>
         )}
         {scanError && <Notice tone="danger" compact title={scanError} />}
-        {/* Filter und VLAN-Wahl als Segmentwahl (docs/design-regeln.md, Abschnitt 6).
-            Auf dem Handy enger gesetzt, damit „Neu vom Scan“ samt Zahl in die Kapsel passt
-            (bei 390 px sonst 356 px Inhalt auf 322 px, die Zahl verschwand im Scrollbereich). */}
+        {/* Filter als Segmentwahl (docs/design-regeln.md, Abschnitt 6). Auf dem Handy enger gesetzt,
+            damit „Alle“, „Verwaltet“ und „Neu vom Scan“ samt Zahl möglichst in einer Zeile stehen
+            (mit vollem Abstand rund 360 px Inhalt, die Kapsel bräche schon bei 390 px um).
+            Die VLAN-Wahl hat so viele Werte wie VLANs: ab sm Segmentwahl, auf dem Handy ein
+            Auswahlfeld in voller Breite statt mehrerer umbrochener Kapselzeilen. */}
         <div className="flex flex-col gap-2 w-full min-w-0">
           <Segmented
             aria-label="Filter"
@@ -739,17 +751,34 @@ export function ClientsTab({
             className="self-start max-sm:[&>button]:gap-1 max-sm:[&>button]:px-2"
           />
           {vlans.length > 0 && (
-            <Segmented
-              aria-label="VLAN"
-              value={String(vlanFilter)}
-              onValueChange={(v) => setVlanFilter(v === "all" || v === "none" ? v : Number(v))}
-              options={VLAN_FILTERS.map((f) => ({ value: String(f.value), label: f.label, count: f.count }))}
-              className="self-start max-sm:[&>button]:gap-1 max-sm:[&>button]:px-2"
-            />
+            <>
+              <Segmented
+                aria-label="VLAN"
+                value={String(vlanFilter)}
+                onValueChange={onVlanFilterChange}
+                options={VLAN_FILTERS.map((f) => ({ value: String(f.value), label: f.label, count: f.count }))}
+                className="self-start max-sm:hidden"
+              />
+              <Select value={String(vlanFilter)} onValueChange={onVlanFilterChange}>
+                <SelectTrigger aria-label="VLAN" className="w-full sm:hidden max-sm:data-[size=default]:h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VLAN_FILTERS.map((f) => (
+                    <SelectItem key={String(f.value)} value={String(f.value)}>
+                      {f.label}
+                      {/* Leerzeichen: in der Taste steht der Eintrag als Fließtext („Alle VLANs 51“, nicht „Alle VLANs51“). */}
+                      {" "}
+                      {f.count !== undefined && (
+                        <span className="tabular-nums text-muted-foreground">{f.count}</span>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
           )}
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
         {/* Dauerhinweis, kein frisch aufgetretener Fehler: status statt alert,
             sonst liest der Screenreader ihn bei jedem Tabwechsel laut vor. */}
         {duplicateIps.size > 0 && filter !== "managed" && (
@@ -758,36 +787,41 @@ export function ClientsTab({
           </Notice>
         )}
 
-        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17).
+            Handy (326 px): Gerät und Tasten; Status und IP stehen als Nebenzeile unter dem Namen,
+            der Bereich steht schon in der Zwischenzeile darüber. Die erste sichtbare Spalte ist
+            dann „Gerät“ und bekommt den Randabstand selbst (edge trifft die erste Zelle im DOM).
+            Feste Spaltenbreiten erst ab sm: die Zwischenzeilen spannen 7 Spalten, auf dem Handy
+            sind 2 sichtbar – mit table-fixed teilten sich die 5 leeren den Platz, „Gerät“ blieb
+            16 px breit. Ohne sie nimmt „Gerät“ (w-full) den Rest neben den Tasten. */}
         <div className="-mx-4 sm:-mx-[18px]">
-          <Table className="table-fixed w-full min-w-[640px]">
+          <Table edge className="w-full sm:table-fixed sm:min-w-[640px]">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[88px] pl-4 sm:pl-[18px]">Status</TableHead>
-                <TableHead className="w-[28%]">Gerät</TableHead>
-                <TableHead className="w-[140px]">IP</TableHead>
+                <TableHead className="w-[88px] max-sm:hidden">Status</TableHead>
+                <TableHead className="sm:w-[28%] max-sm:w-full max-sm:pl-4">Gerät</TableHead>
+                <TableHead className="w-[140px] max-sm:hidden">IP</TableHead>
                 <TableHead className="hidden xl:table-cell w-[140px]">MAC</TableHead>
                 <TableHead className="hidden lg:table-cell w-[130px]">Port</TableHead>
-                <TableHead className="w-[100px]">Bereich</TableHead>
-                {/* Breit genug für „Übernehmen“, sonst ragt die Taste in die Nachbarspalte. */}
-                <TableHead className="w-[152px] pr-4 sm:pr-[18px]" />
+                <TableHead className="w-[100px] max-sm:hidden">Bereich</TableHead>
+                {/* Breit genug für „Übernehmen“, sonst ragt die Taste in die Nachbarspalte.
+                    Auf dem Handy nur Symboltasten (2 × 44 px). */}
+                <TableHead className="w-[152px] max-sm:w-[114px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {visibleCount === 0 && (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="p-0 whitespace-normal">
-                    <EmptyState
-                      icon={filter === "unknown" ? Radar : MonitorSmartphone}
-                      title={filter === "unknown"
-                        ? "Keine unbekannten Scan-Funde"
-                        : "Keine Geräte erfasst"}
-                      description={filter === "unknown"
-                        ? "Alle gescannten Hosts sind bereits zugeordnet."
-                        : "Erfasse Geräte manuell oder übernehme Funde vom Hub-Scan."}
-                    />
-                  </TableCell>
-                </TableRow>
+                <TableEmpty
+                  colSpan={7}
+                  compact={false}
+                  icon={filter === "unknown" ? Radar : MonitorSmartphone}
+                  title={filter === "unknown"
+                    ? "Keine unbekannten Scan-Funde"
+                    : "Keine Geräte erfasst"}
+                  description={filter === "unknown"
+                    ? "Alle gescannten Hosts sind bereits zugeordnet."
+                    : "Erfasse Geräte manuell oder übernehme Funde vom Hub-Scan."}
+                />
               )}
 
               {vlanGroups.map((group) => {
@@ -795,7 +829,7 @@ export function ClientsTab({
                 return (
                   <Fragment key={group.meta.vlanDbId ?? "none"}>
                     <TableRow className="bg-glass-tile hover:bg-glass-tile">
-                      <TableCell colSpan={7} className="py-2 pl-4 sm:pl-[18px]">
+                      <TableCell colSpan={7} className="py-2">
                         <div className="flex flex-wrap items-center gap-2">
                           {group.meta.vlanDbId != null ? (
                             <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId, vlans))}>
@@ -807,7 +841,7 @@ export function ClientsTab({
                           {group.meta.subnet && (
                             <span className="text-[11px] font-mono text-muted-foreground">{group.meta.subnet}</span>
                           )}
-                          <span className="text-[11px] text-muted-foreground tabular-nums">{vlanCount} Geräte</span>
+                          <span className="text-[11px] text-muted-foreground tabular-nums">{vlanCount} {vlanCount === 1 ? "Gerät" : "Geräte"}</span>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -816,13 +850,14 @@ export function ClientsTab({
                       <Fragment key={`${group.meta.vlanDbId ?? "none"}-${areaGroup.meta.areaId ?? "none"}`}>
                         {group.showAreas && (
                           <TableRow className="hover:bg-transparent">
-                            <TableCell colSpan={7} className="py-1.5 pl-8 sm:pl-[34px]">
-                              <div className="flex flex-wrap items-center gap-2">
+                            <TableCell colSpan={7} className="py-1.5">
+                              {/* Eingerückt unter der VLAN-Zeile: Randabstand der Tabelle (edge) plus 16 px. */}
+                              <div className="flex flex-wrap items-center gap-2 pl-4">
                                 <span className="text-label">
                                   {areaGroup.meta.name}
                                 </span>
                                 <span className="text-[11px] text-muted-foreground tabular-nums">
-                                  {areaGroup.items.length} Geräte
+                                  {areaGroup.items.length} {areaGroup.items.length === 1 ? "Gerät" : "Geräte"}
                                 </span>
                               </div>
                             </TableCell>
@@ -849,14 +884,16 @@ export function ClientsTab({
                             const verified = ipVerified(c.macAddress, ip);
                             return (
                               <TableRow key={`c-${c.id}`}>
-                                <TableCell className="pl-4 sm:pl-[18px]">
+                                <TableCell className="max-sm:hidden">
                                   <StatusBadge online={online} />
                                 </TableCell>
-                                <TableCell className="max-w-0">
+                                <TableCell className="max-w-0 max-sm:pl-4">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <IconChip icon={Icon} size="sm" />
+                                    {/* Auf dem Handy ohne Symbol: der Typ steht in der Zeile darunter.
+                                        Der Name bricht dort um statt zu kürzen (Abschnitt 17). */}
+                                    <IconChip icon={Icon} size="sm" className="max-sm:hidden" />
                                     <div className="min-w-0 flex-1">
-                                      <p className="font-medium text-sm text-foreground truncate" title={c.name}>
+                                      <p className="font-medium text-sm text-foreground sm:truncate max-sm:whitespace-normal max-sm:break-words" title={c.name}>
                                         {c.name}
                                       </p>
                                       <p className="text-[11px] text-muted-foreground truncate">
@@ -873,10 +910,15 @@ export function ClientsTab({
                                           </>
                                         )}
                                       </p>
+                                      {/* Handy: Status und IP als Nebenzeile (ab sm eigene Spalten). */}
+                                      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 sm:hidden">
+                                        <StatusBadge online={online} />
+                                        <IpCell ip={ip} verified={verified} isStatic={c.isStatic} />
+                                      </div>
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="max-sm:hidden">
                                   <IpCell ip={ip} verified={verified} isStatic={c.isStatic} />
                                 </TableCell>
                                 <TableCell className="hidden xl:table-cell font-mono text-xs text-muted-foreground truncate">
@@ -896,7 +938,7 @@ export function ClientsTab({
                                     <span className="text-xs text-muted-foreground">–</span>
                                   )}
                                 </TableCell>
-                                <TableCell className="max-w-0">
+                                <TableCell className="max-w-0 max-sm:hidden">
                                   {row.areaId != null ? (
                                     <Badge variant="secondary" className="text-xs font-normal max-w-full truncate">
                                       {row.areaName}
@@ -905,7 +947,7 @@ export function ClientsTab({
                                     <span className="text-xs text-muted-foreground">–</span>
                                   )}
                                 </TableCell>
-                                <TableCell className="pr-4 sm:pr-[18px]">
+                                <TableCell>
                                   <div className="flex items-center justify-end gap-0.5">
                                     <Button
                                       variant="ghost"
@@ -941,25 +983,29 @@ export function ClientsTab({
                               : null;
                             return (
                               <TableRow key={`iot-${d.id}`}>
-                                <TableCell className="pl-4 sm:pl-[18px]">
+                                <TableCell className="max-sm:hidden">
                                   <StatusBadge online={online} />
                                 </TableCell>
-                                <TableCell className="max-w-0">
+                                <TableCell className="max-w-0 max-sm:pl-4">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <IconChip icon={Cpu} size="sm" />
+                                    <IconChip icon={Cpu} size="sm" className="max-sm:hidden" />
                                     <div className="min-w-0 flex-1">
                                       <Link
                                         href={`/devices/${d.id}`}
-                                        className="font-medium text-sm text-foreground/80 hover:text-primary truncate block"
+                                        className="font-medium text-sm text-foreground/80 hover:text-primary block sm:truncate max-sm:whitespace-normal max-sm:break-words"
                                         title={d.name}
                                       >
                                         {d.name}
                                       </Link>
                                       <p className="text-[11px] text-muted-foreground truncate">IoT (nicht zugeordnet)</p>
+                                      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 sm:hidden">
+                                        <StatusBadge online={online} />
+                                        <IpCell ip={d.ipAddress} verified={false} />
+                                      </div>
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="max-sm:hidden">
                                   <IpCell ip={d.ipAddress} verified={false} />
                                 </TableCell>
                                 <TableCell className="hidden xl:table-cell">
@@ -968,7 +1014,7 @@ export function ClientsTab({
                                 <TableCell className="hidden lg:table-cell">
                                   <span className="text-xs text-muted-foreground">–</span>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="max-sm:hidden">
                                   {row.areaId != null ? (
                                     <Badge variant="secondary" className="text-xs font-normal opacity-70">
                                       {row.areaName}
@@ -977,16 +1023,18 @@ export function ClientsTab({
                                     <span className="text-xs text-muted-foreground">–</span>
                                   )}
                                 </TableCell>
-                                <TableCell className="pr-4 sm:pr-[18px]">
+                                <TableCell>
                                   <div className="flex items-center justify-end">
+                                    {/* Auf dem Handy nur das Symbol; der Name der Taste bleibt. */}
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      className="max-sm:h-11"
+                                      className="max-sm:size-11"
                                       onClick={() => openAdd(d)}
+                                      aria-label="Zuordnen"
                                     >
                                       <Link2 />
-                                      Zuordnen
+                                      <span className="hidden sm:inline">Zuordnen</span>
                                     </Button>
                                   </div>
                                 </TableCell>
@@ -1002,25 +1050,34 @@ export function ClientsTab({
                             || "Unbekanntes Gerät";
                           return (
                             <TableRow key={`scan-${d.id}`}>
-                              <TableCell className="pl-4 sm:pl-[18px]">
+                              <TableCell className="max-sm:hidden">
                                 <StatusBadge online={active} />
                               </TableCell>
-                              <TableCell className="max-w-0">
+                              <TableCell className="max-w-0 max-sm:pl-4">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  {/* Neuer Scan-Fund wartet auf Zuordnung: Hinweisfarbe statt Violett (Musik). */}
-                                  <IconChip icon={Radar} size="sm" tone="warning" />
+                                  {/* Neuer Scan-Fund wartet auf Zuordnung: Hinweisfarbe statt Violett (Musik).
+                                      Auf dem Handy trägt die Zeile „neu vom Scan“ den Hinweis. */}
+                                  <IconChip icon={Radar} size="sm" tone="warning" className="max-sm:hidden" />
                                   <div className="min-w-0 flex-1">
-                                    <p className="font-medium text-sm text-foreground truncate" title={label}>
+                                    <p className="font-medium text-sm text-foreground sm:truncate max-sm:whitespace-normal max-sm:break-words" title={label}>
                                       {label}
                                     </p>
                                     <p className="text-[11px] text-muted-foreground truncate">
                                       neu vom Scan
                                       {d.deviceType ? ` · ${d.deviceType}` : ""}
                                     </p>
+                                    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 sm:hidden">
+                                      <StatusBadge online={active} />
+                                      <IpCell
+                                        ip={d.ipAddress}
+                                        verified={active && !!d.ipAddress}
+                                        conflict={!!d.ipAddress && duplicateIps.has(d.ipAddress)}
+                                      />
+                                    </div>
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="max-sm:hidden">
                                 <IpCell
                                   ip={d.ipAddress}
                                   verified={active && !!d.ipAddress}
@@ -1033,7 +1090,7 @@ export function ClientsTab({
                               <TableCell className="hidden lg:table-cell">
                                 <span className="text-xs text-muted-foreground">–</span>
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="max-sm:hidden">
                                 {row.areaId != null ? (
                                   <Badge variant="secondary" className="text-xs font-normal opacity-70">
                                     {row.areaName}
@@ -1042,16 +1099,17 @@ export function ClientsTab({
                                   <span className="text-xs text-muted-foreground">–</span>
                                 )}
                               </TableCell>
-                              <TableCell className="pr-4 sm:pr-[18px]">
+                              <TableCell>
                                 <div className="flex items-center justify-end">
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className="max-sm:h-11"
+                                    className="max-sm:size-11"
                                     onClick={() => openAdopt(d)}
+                                    aria-label="Übernehmen"
                                   >
                                     <Plus />
-                                    Übernehmen
+                                    <span className="hidden sm:inline">Übernehmen</span>
                                   </Button>
                                 </div>
                               </TableCell>
@@ -1207,7 +1265,8 @@ export function ClientsTab({
             <DialogTitle>Gerät übernehmen</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAdopt} className="space-y-4">
-            <div className="glass-tile p-3 text-xs font-mono text-muted-foreground space-y-0.5">
+            {/* Lange Hostnamen brechen um, statt den Dialog auf dem Handy zu verbreitern. */}
+            <div className="glass-tile p-3 text-xs font-mono text-muted-foreground space-y-0.5 wrap-anywhere">
               <p>IP: {adopting?.ipAddress ?? "–"}</p>
               <p>MAC: {adopting?.macAddress}</p>
               {adopting?.hostname && <p>Hostname: {adopting.hostname}</p>}

@@ -3,11 +3,12 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchInput } from "@/components/ui/search-input";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
@@ -125,7 +126,7 @@ function DateField({
       onChange={(e) => onChange(e.target.value)}
       // Gleiche Optik wie `Input`: getönte Glas-Füllung, Fokus in Akzentfarbe.
       className={cn(
-        "glass-field selection:bg-primary selection:text-primary-foreground h-9 w-full min-w-0 px-3 py-1 text-base transition-[color,box-shadow,border-color,background-color] outline-none hover:border-foreground/20 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        "glass-field selection:bg-primary-fill selection:text-primary-foreground h-9 w-full min-w-0 px-3 py-1 text-base transition-[color,box-shadow,border-color,background-color] outline-none hover:border-foreground/20 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
         "focus-visible:border-ring focus-visible:bg-glass-strong focus-visible:ring-ring/30 focus-visible:ring-[3px]",
         className,
       )}
@@ -258,17 +259,13 @@ function TicketPicker({
       )}
       {open && (
         <div className="glass-tile p-1.5 space-y-1.5">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-            <Input
-              type="text"
-              autoFocus={autoFocus ?? true}
-              placeholder="Mieter, Abo, Tickettyp suchen…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="h-11 pl-8 sm:h-9"
-            />
-          </div>
+          <SearchInput
+            autoFocus={autoFocus ?? true}
+            placeholder="Mieter, Abo, Tickettyp suchen…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-11 sm:h-9"
+          />
           <div className="max-h-[220px] overflow-y-auto overscroll-contain scrollbar-thin space-y-0.5">
             {filtered.length === 0 ? (
               <EmptyState
@@ -290,7 +287,8 @@ function TicketPicker({
                 >
                   <div className={cn(
                     "size-[18px] rounded-full border flex items-center justify-center shrink-0",
-                    isSel ? "bg-primary border-primary text-primary-foreground" : "border-input bg-field"
+                    // Farben wie das Kästchen (Checkbox): gewählt deckend ohne hellen Ring, leer mit Rand ab 3:1.
+                    isSel ? "border-primary-fill bg-primary-fill text-primary-foreground" : "border-foreground/50 bg-field dark:border-white/40"
                   )}>
                     {isSel && <Check className="size-3" strokeWidth={3} />}
                   </div>
@@ -344,7 +342,7 @@ function RenterModeToggle({
   required?: boolean;
 }) {
   // Segmentwahl ohne eigene Klassen; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
-  // Segmented kennt kein title je Option, daher sitzen die Tooltips an den Labels.
+  // Tooltips am ganzen Segment (`title` je Option), nicht nur am Label.
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-xs text-muted-foreground">
@@ -358,20 +356,22 @@ function RenterModeToggle({
           {
             value: "ticket",
             label: (
-              <span className="inline-flex items-center gap-1" title="Mieter aus den Abo-Tickets auswählen">
+              <span className="inline-flex items-center gap-1">
                 <TicketIcon className="h-3 w-3" />
                 Abo-Ticket
               </span>
             ),
+            title: "Mieter aus den Abo-Tickets auswählen",
           },
           {
             value: "manual",
             label: (
-              <span className="inline-flex items-center gap-1" title="Mietername frei eingeben (ohne Abo-Verknüpfung)">
+              <span className="inline-flex items-center gap-1">
                 <User className="h-3 w-3" />
                 Manuell
               </span>
             ),
+            title: "Mietername frei eingeben (ohne Abo-Verknüpfung)",
           },
         ]}
       />
@@ -913,7 +913,7 @@ export function LockerDialog({
                     <div className={cn(
                       "shrink-0 px-2 py-1 rounded-lg font-mono text-xs font-semibold tabular-nums",
                       isCurrent
-                        ? "bg-primary text-primary-foreground"
+                        ? "bg-primary-fill text-primary-foreground"
                         : "bg-foreground/[0.06] text-muted-foreground dark:bg-white/[0.08]"
                     )}>
                       {r.year}
@@ -1218,9 +1218,9 @@ export function LockerDialog({
             </div>
           </div>
         ) : (
-          /* Handy: volle Breite, Primärtaste oben. Ab sm: Löschen links, Handlungen rechts. */
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-            {!isNew ? (
+          /* Handy: volle Breite, Primärtaste oben, Löschen zuunterst. Ab sm: Löschen links (`DialogFooter start`), Handlungen rechts. */
+          <DialogFooter
+            start={!isNew ? (
               <Button
                 type="button" variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}
                 disabled={deleting || saving}
@@ -1229,25 +1229,24 @@ export function LockerDialog({
                 <Trash2 className="h-3.5 w-3.5 mr-1" />
                 Löschen
               </Button>
-            ) : <div className="hidden sm:block" />}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row">
-              <Button
-                type="button" variant="outline" size="sm" onClick={onClose}
-                disabled={saving || deleting} className="h-11 sm:h-9"
-              >
-                {isNew ? "Abbrechen" : "Schließen"}
-              </Button>
-              <Button
-                type="button" size="sm" onClick={handleSaveLocker}
-                disabled={saving || deleting || !name.trim() || !number.trim()}
-                className="min-w-24 h-11 sm:h-9"
-              >
-                {saving
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
-              </Button>
-            </div>
-          </div>
+            ) : null}
+          >
+            <Button
+              type="button" variant="outline" size="sm" onClick={onClose}
+              disabled={saving || deleting} className="h-11 sm:h-9"
+            >
+              {isNew ? "Abbrechen" : "Schließen"}
+            </Button>
+            <Button
+              type="button" size="sm" onClick={handleSaveLocker}
+              disabled={saving || deleting || !name.trim() || !number.trim()}
+              className="min-w-24 h-11 sm:h-9"
+            >
+              {saving
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
+            </Button>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>

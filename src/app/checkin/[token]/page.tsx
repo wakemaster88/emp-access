@@ -1321,6 +1321,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         // Fehlerliste klappt über eine echte Taste auf (Tastatur, aria-expanded).
         // Die Zeile ist nur 20 px hoch; die Trefffläche reicht per `::after` auf
         // 44 px, am Kiosk auf 56 px (Abschnitt 20), ohne die Notice zu vergrößern.
+        // Die Sync-Taste steht oben an der Titelzeile und springt beim Aufklappen nicht.
         const canExpand = hasErrors && details.length > 0;
         return (
           <div className="px-4 sm:px-6 pt-3">
@@ -1328,6 +1329,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
               tone={hasErrors ? "danger" : "warning"}
               icon={RefreshCw}
               compact
+              actionAlign="start"
               role="status"
               title={
                 canExpand ? (
@@ -1467,7 +1469,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                 const isSearching = searchQuery.trim().length > 0;
                 const isExpanded = isSearching || expandedServiceGroups.has(groupName);
                 return (
-                  <Card key={groupName} className="gap-0 py-0 sm:py-0 overflow-hidden">
+                  <Card key={groupName} flush="y">
                     <button
                       type="button"
                       onClick={() => {
@@ -1533,7 +1535,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                 const isSearching = searchQuery.trim().length > 0;
                 const isExpanded = isSearching || expandedVereine.has(g.id);
                 return (
-                  <Card key={`verein-${g.id}`} className="gap-0 py-0 sm:py-0 overflow-hidden">
+                  <Card key={`verein-${g.id}`} flush="y">
                     <button
                       type="button"
                       onClick={() => {
@@ -1617,7 +1619,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                 const isSearching = searchQuery.trim().length > 0;
                 const isExpanded = isSearching || expandedAbos.has(sub.id);
                 return (
-                  <Card key={sub.id} className="gap-0 py-0 sm:py-0 overflow-hidden">
+                  <Card key={sub.id} flush="y">
                     <button
                       type="button"
                       onClick={() => {

@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { IconChip } from "@/components/ui/icon-chip";
 import { DoorDialog } from "@/components/schliessanlage/door-dialog";
 import { LockDialog } from "@/components/schliessanlage/lock-dialog";
@@ -173,45 +173,49 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                   {deviceById.get(lock.deviceId)?.name ?? "Gerät"}
                 </span>
               )}
-              <span
-                className="ml-auto inline-flex items-center gap-0.5 text-[11px] text-muted-foreground tabular-nums"
-                title={`${lock.keyCount} Schlüssel zugeordnet`}
-              >
-                <KeyRound className="h-3 w-3" />
-                {lock.keyCount}
-              </span>
-              {!readonly && (
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setLockDialog({ lock, doorId: door.id })}
-                    className="text-muted-foreground hover:text-primary max-sm:size-11"
-                    title="Schloss bearbeiten"
-                    aria-label="Schloss bearbeiten"
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() =>
-                      askRemove(
-                        `/api/schliessanlage/locks/${lock.id}`,
-                        `Schloss "${lock.lockNumber || lock.id}" wirklich löschen?`,
-                        "Schlüssel bleiben erhalten, verlieren aber diese Zuordnung.",
-                      )
-                    }
-                    className="text-muted-foreground hover:text-destructive max-sm:size-11"
-                    title="Schloss löschen"
-                    aria-label="Schloss löschen"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              )}
+              {/* Zahl und Handlungen als eine Gruppe rechts: rutschen sie auf dem Handy in die nächste Zeile,
+                  bleiben sie dort zusammen rechtsbündig (wie die Handlungen der Tür darüber). */}
+              <div className="ml-auto flex shrink-0 items-center gap-x-2">
+                <span
+                  className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground tabular-nums"
+                  title={`${lock.keyCount} Schlüssel zugeordnet`}
+                >
+                  <KeyRound className="h-3 w-3" />
+                  {lock.keyCount}
+                </span>
+                {!readonly && (
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => setLockDialog({ lock, doorId: door.id })}
+                      className="text-muted-foreground hover:text-primary max-sm:size-11"
+                      title="Schloss bearbeiten"
+                      aria-label="Schloss bearbeiten"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() =>
+                        askRemove(
+                          `/api/schliessanlage/locks/${lock.id}`,
+                          `Schloss "${lock.lockNumber || lock.id}" wirklich löschen?`,
+                          "Schlüssel bleiben erhalten, verlieren aber diese Zuordnung.",
+                        )
+                      }
+                      className="text-muted-foreground hover:text-destructive max-sm:size-11"
+                      title="Schloss löschen"
+                      aria-label="Schloss löschen"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -219,44 +223,47 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
     </div>
   );
 
+  // Weitere Handlung „Tür“ (ohne Raum): ab sm neben der Primärtaste im Kopf, auf dem Handy in einer
+  // Zeile unter dem Kopf, damit der Kopf nur die Primärtaste trägt (docs/design-regeln.md, Abschnitt 13).
+  const looseDoorButton = (className: string) => (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={() => setDoorDialog({ door: null, roomId: null })}
+      className={className}
+    >
+      <DoorOpen className="mr-1 h-3.5 w-3.5" />
+      Tür
+    </Button>
+  );
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="tabular-nums">
-              {rooms.length} Räume · {doorCount} Türen
-            </CardTitle>
-            <CardDescription>
-              Struktur der Anlage: Räume enthalten Türen, Türen enthalten Schlösser. Türen ohne Raum
-              sind Gemeinschafts- oder Außentüren.
-            </CardDescription>
-          </div>
-          {!readonly && (
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setDoorDialog({ door: null, roomId: null })}
-                className="max-sm:h-11"
-              >
-                <DoorOpen className="mr-1 h-3.5 w-3.5" />
-                Tür
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => setRoomDialog({ room: null })}
-                className="max-sm:h-11"
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Raum
-              </Button>
-            </div>
-          )}
-        </div>
+        <CardTitle className="tabular-nums">
+          {rooms.length} Räume · {doorCount} Türen
+        </CardTitle>
+        <CardDescription>
+          Struktur der Anlage: Räume enthalten Türen, Türen enthalten Schlösser. Türen ohne Raum
+          sind Gemeinschafts- oder Außentüren.
+        </CardDescription>
+        {!readonly && (
+          <CardAction className="flex gap-2">
+            {looseDoorButton("max-sm:hidden")}
+            <Button
+              size="sm"
+              onClick={() => setRoomDialog({ room: null })}
+              className="max-sm:h-11"
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Raum
+            </Button>
+          </CardAction>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-2">
+        {!readonly && <div className="sm:hidden">{looseDoorButton("h-11")}</div>}
         <ErrorLine message={error} />
 
         {rooms.length === 0 && looseDoors.length === 0 && (

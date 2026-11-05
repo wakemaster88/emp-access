@@ -6,22 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Segmented } from "@/components/ui/segmented";
 import { IconChip } from "@/components/ui/icon-chip";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { LostItemDialog, type LostItemData } from "./lost-item-dialog";
 import {
   Plus, PackageSearch, CheckCircle2, Clock, Phone, ImageOff, Undo2, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-/**
- * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
- * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
- */
-const TABLE_EDGE =
-  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
 
 interface LostItemsTableProps {
   items: LostItemData[];
@@ -44,10 +36,27 @@ function contactLabel(item: LostItemData): string | null {
   return item.contact;
 }
 
+/**
+ * Primärhandlung „Eintrag anlegen“ mit eigenem Dialog – steht im Kartenkopf
+ * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
+ * und „Eintrag“; der volle Name bleibt als `aria-label`.
+ */
+export function CreateLostItemButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} type="button" className="max-sm:h-11" aria-label="Eintrag anlegen">
+        <Plus className="h-4 w-4" />
+        <span>Eintrag<span className="max-sm:sr-only"> anlegen</span></span>
+      </Button>
+      <LostItemDialog item={null} open={open} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
 export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
   const router = useRouter();
   const [selected, setSelected] = useState<LostItemData | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
@@ -81,6 +90,7 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
 
   return (
     <>
+      {/* „Eintrag anlegen“ steht im Kartenkopf (CreateLostItemButton). */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 px-4 sm:px-[18px]">
         <Segmented
           aria-label="Filter"
@@ -89,20 +99,10 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
           className="self-start sm:self-auto"
           options={filterButtons.map((f) => ({ value: f.id, label: f.label, count: f.count }))}
         />
-        {!readonly && (
-          <Button
-            onClick={() => setAddOpen(true)}
-            type="button"
-            className="h-11 sm:h-9 sm:ml-auto"
-          >
-            <Plus className="h-4 w-4" />
-            Eintrag anlegen
-          </Button>
-        )}
       </div>
 
       <div className="border-t border-border">
-        <Table className={TABLE_EDGE}>
+        <Table edge>
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">Bild</TableHead>
@@ -111,19 +111,17 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
               <TableHead className="hidden sm:table-cell w-[120px]">Datum</TableHead>
               <TableHead className="hidden md:table-cell w-[200px]">Kontakt</TableHead>
               <TableHead className="hidden sm:table-cell sm:w-[120px] text-right">Status</TableHead>
-              {!readonly && <TableHead className="sm:w-[130px] text-right" />}
+              {!readonly && <TableHead className="md:w-[130px] text-right" />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={readonly ? 5 : 6} className="whitespace-normal">
-                  <EmptyState
-                    icon={PackageSearch}
-                    title={filter === "all" ? "Noch keine Einträge erfasst" : "Keine Einträge in dieser Ansicht"}
-                  />
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={readonly ? 5 : 6}
+                icon={PackageSearch}
+                title={filter === "all" ? "Noch keine Einträge erfasst" : "Keine Einträge in dieser Ansicht"}
+                compact={false}
+              />
             )}
             {filtered.map((item) => {
               const contact = contactLabel(item);
@@ -142,23 +140,22 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
               return (
                 <TableRow
                   key={item.id}
-                  className={cn(
-                    !readonly && "cursor-pointer",
-                    item.pickedUp && "opacity-60"
-                  )}
+                  className={cn(!readonly && "cursor-pointer")}
                   onClick={() => !readonly && setSelected(item)}
                 >
+                  {/* Erledigt: Text bleibt lesbar, den Zustand sagt das Badge „Erledigt“;
+                      gedimmt werden nur Bild und Symbol-Chip (docs/design-regeln.md, Abschnitt 17). */}
                   <TableCell>
                     {item.image ? (
                       /* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */
                       <img
                         src={item.image}
                         alt={item.description}
-                        className="h-12 w-12 rounded-lg object-cover border border-border"
+                        className={cn("h-12 w-12 rounded-lg object-cover border border-border", item.pickedUp && "opacity-60")}
                       />
                     ) : (
                       // Platzhalter ohne Bild: Symbol-Chip wie in Listenzeilen.
-                      <IconChip icon={isLostReport ? User : ImageOff} size="lg" className="size-12" />
+                      <IconChip icon={isLostReport ? User : ImageOff} size="lg" className={cn("size-12", item.pickedUp && "opacity-60")} />
                     )}
                   </TableCell>
                   {/* Beschreibung bricht vollständig um, sonst wird die Tabelle so breit wie der längste Text. */}
@@ -202,18 +199,19 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                         size="sm"
                         disabled={togglingId === item.id}
                         onClick={(e) => { e.stopPropagation(); togglePickedUp(item); }}
-                        className="gap-1.5 max-sm:size-11"
+                        className="gap-1.5 max-md:size-11"
                       >
-                        {/* Handy: nur Symbol (44 px), die Beschriftung bleibt für Screenreader. */}
+                        {/* Handy und bis md: nur Symbol (44 px), die Beschriftung bleibt für Screenreader.
+                            Mit Beschriftung war die Tabelle bei 640 px (Handy quer) um 38 px zu breit. */}
                         {item.pickedUp ? (
                           <>
                             <Undo2 className="h-3.5 w-3.5" />
-                            <span className="max-sm:sr-only">Zurücksetzen</span>
+                            <span className="max-md:sr-only">Zurücksetzen</span>
                           </>
                         ) : (
                           <>
                             <CheckCircle2 className="h-3.5 w-3.5" />
-                            <span className="max-sm:sr-only">{isLostReport ? "Erledigt" : "Abgeholt"}</span>
+                            <span className="max-md:sr-only">{isLostReport ? "Erledigt" : "Abgeholt"}</span>
                           </>
                         )}
                       </Button>
@@ -226,7 +224,6 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
         </Table>
       </div>
 
-      <LostItemDialog item={null} open={addOpen} onClose={() => setAddOpen(false)} />
       <LostItemDialog item={selected} open={!!selected} onClose={() => setSelected(null)} />
     </>
   );

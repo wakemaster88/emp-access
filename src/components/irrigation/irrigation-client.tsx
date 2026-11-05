@@ -15,6 +15,7 @@ import { Notice } from "@/components/ui/notice";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Segmented } from "@/components/ui/segmented";
 import { StatusDot } from "@/components/ui/status-dot";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -149,7 +150,7 @@ const DURATION_PRESETS = [5, 10, 15, 20, 30, 45, 60] as const;
 // muted bei 3,5–4,4 : 1 (docs/design-regeln.md, Abschnitt 10: 4,5 : 1).
 const DURATION_CHIP =
   "press h-8 rounded-full px-2.5 text-xs font-medium tabular-nums outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 max-sm:h-11 max-sm:min-w-11";
-const DURATION_CHIP_ON = "bg-primary text-primary-foreground";
+const DURATION_CHIP_ON = "bg-primary-fill text-primary-foreground";
 const DURATION_CHIP_OFF =
   "bg-foreground/[0.06] text-muted-foreground hover:text-foreground dark:bg-white/[0.08] dark:text-foreground/80 dark:hover:text-foreground";
 const DAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -860,11 +861,13 @@ export function IrrigationClient({
                   </p>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5">
+              {/* Handy: eigene Zeile in zwei gleichen Spalten – Basis-Auswahl links, „Starten“
+                  rechts, beide 44 px; die feste Breite der Auswahl gilt erst ab sm (Abschnitt 13). */}
+              <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+                <div className="flex min-w-0 items-center gap-1.5">
                   <Label className="text-xs text-muted-foreground">Basis</Label>
                   <Select value={String(baseMinutes)} onValueChange={(v) => setBaseMinutes(Number(v))}>
-                    <SelectTrigger size="sm" className="w-[92px] max-sm:data-[size=sm]:h-11"><SelectValue /></SelectTrigger>
+                    <SelectTrigger size="sm" className="min-w-0 flex-1 max-sm:data-[size=sm]:h-11 sm:w-[92px] sm:flex-none"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {DURATION_PRESETS.map((d) => <SelectItem key={d} value={String(d)}>{d} Min</SelectItem>)}
                     </SelectContent>
@@ -965,7 +968,10 @@ export function IrrigationClient({
                 </CardTitle>
                 <span className="text-xs text-muted-foreground tabular-nums">{unassignedValves.length} Ventil{unassignedValves.length === 1 ? "" : "e"}</span>
               </div>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* `grid-cols-1` (minmax(0, 1fr)) wie bei den zugeordneten Ventilen: ohne feste Spalte
+                  wuchs die Kachel bei 360 px auf ihre Inhaltsbreite (332 px) und die Seite scrollte seitlich. */}
+              {/* Eine Spalte bis lg (ab md mit Seitenleiste daneben), sonst kürzen Name und Felder auf wenige Zeichen. */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
                 {unassignedValves.map((zone) => (
                   <ZoneCard
                     key={zone.id}
@@ -1004,12 +1010,13 @@ export function IrrigationClient({
           icon={CalendarDays}
           aside={
             <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }} className="max-sm:h-11">
-              <Plus className="h-4 w-4" /> Neuer Zeitplan
+              <Plus className="h-4 w-4" />
+              <span><span className="max-sm:sr-only">Neuer </span>Zeitplan</span>
             </Button>
           }
         />
         {/* Zeilen mit Haarlinie in einer Karte (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="gap-0 overflow-hidden py-0 sm:py-0">
+        <Card flush="y">
           <CardContent className="px-0 sm:px-0 divide-y divide-border">
             {schedules.length === 0 ? (
               <EmptyState
@@ -1214,29 +1221,23 @@ function PumpGroup({
               </span>
             )}
             <Badge
-              variant={running ? "default" : "neutral"}
-              className={cn("gap-1.5 text-[11px] font-medium", running && "bg-sky-500/15 text-sky-700 dark:text-sky-300")}
+              variant={running ? "water" : "neutral"}
+              className="gap-1.5 text-[11px] font-medium"
             >
-              {running ? (
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75 motion-reduce:animate-none" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
-                </span>
-              ) : (
-                <StatusDot tone="neutral" />
-              )}
+              <StatusDot tone={running ? "water" : "neutral"} pulse={running} />
               {running ? "Läuft" : "Aus"}
             </Badge>
           </div>
         </div>
 
         {/* Live-Kennzahlen: vier Spalten erst ab lg, sonst kürzen die Versalien-Beschriftungen
-            neben der Seitenleiste (iPad hochkant) ab. */}
+            neben der Seitenleiste (iPad hochkant) ab. Als Kachel in der Karte (`variant="tile"`,
+            ohne eigenen Weichzeichner, docs/design-regeln.md, Abschnitt 22); Wasser-Ton, solange die Pumpe läuft. */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <PumpMetric icon={Waves} accent={running ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"} label="Durchfluss" value={running ? `${flowLph}` : "0"} unit="L/h" />
-          <PumpMetric icon={Timer} accent="text-muted-foreground" label="Laufzeit" value={fmtCountdown(elapsed)} unit="min" />
-          <PumpMetric icon={Droplet} accent={running ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"} label="Durchlauf" value={fmtLiters(liters)} unit="" />
-          <PumpMetric icon={Droplets} accent="text-muted-foreground" label="Aktive Ventile" value={`${consumerCount}`} unit={`/ ${valveCount}`} />
+          <StatCard size="sm" variant="tile" icon={Waves} tone={running ? "water" : "neutral"} label="Durchfluss" value={running ? `${flowLph}` : "0"} suffix="L/h" />
+          <StatCard size="sm" variant="tile" icon={Timer} tone="neutral" label="Laufzeit" value={fmtCountdown(elapsed)} suffix="min" />
+          <StatCard size="sm" variant="tile" icon={Droplet} tone={running ? "water" : "neutral"} label="Durchlauf" value={fmtLiters(liters)} />
+          <StatCard size="sm" variant="tile" icon={Droplets} tone="neutral" label="Aktive Ventile" value={`${consumerCount}`} suffix={`/ ${valveCount}`} />
         </div>
 
         {/* Fluss-Animation: Streifen im Wasser-Ton aus den Theme-Variablen statt fester RGB-Werte. */}
@@ -1251,8 +1252,9 @@ function PumpGroup({
 
         {/* Manuelle Pumpen-Steuerung */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Dauer-Chips umbrechen in schmalen Breiten (eine Segmentwahl würde waagerecht scrollen). */}
-          <div className="flex flex-wrap gap-1">
+          {/* Dauer-Chips umbrechen in schmalen Breiten (eine Segmentwahl würde waagerecht scrollen);
+              auf dem Handy vier gleiche Spalten, damit kein einzelner Chip allein in der zweiten Zeile steht. */}
+          <div className="flex flex-wrap gap-1 max-sm:grid max-sm:w-full max-sm:grid-cols-4">
             {DURATION_PRESETS.map((d) => (
               <button
                 key={d}
@@ -1280,29 +1282,15 @@ function PumpGroup({
       {/* Zugeordnete Ventile */}
       <div className="p-4 sm:p-[18px]">
         <p className="text-label mb-2">Zugeordnete Ventile</p>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {/* `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte nimmt die Spalte die Inhaltsbreite
+            der Kachel (Name `truncate` plus Zustand und Online-Badge) – auf dem Handy breiter als
+            die Karte, die den rechten Rand dann abschneidet. Mit fester Spalte kürzt der Name.
+            Eine Spalte bis lg (ab md mit Seitenleiste daneben), zwei ab lg, drei ab xl. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
           {children}
         </div>
       </div>
     </section>
-  );
-}
-
-function PumpMetric({ icon: Icon, accent, label, value, unit }: {
-  icon: React.ComponentType<{ className?: string }>; accent: string; label: string; value: string; unit: string;
-}) {
-  // Kennzahl in einer Karte: Kachel im Stil von StatCard (sm), aber als glass-tile,
-  // weil StatCard selbst eine Glaskarte mit Weichzeichner ist (docs/design-regeln.md, Abschnitt 22).
-  return (
-    <div className="glass-tile px-3 py-2.5">
-      <div className="flex items-center gap-1.5">
-        <span className="text-label text-[10px] tracking-[0.1em] truncate">{label}</span>
-        <Icon className={cn("ml-auto h-3.5 w-3.5 shrink-0", accent)} />
-      </div>
-      <p className="mt-1 text-xl font-bold leading-none tracking-tight text-foreground tabular-nums truncate">
-        {value}{unit && <span className="text-xs font-medium tracking-normal text-muted-foreground ml-1">{unit}</span>}
-      </p>
-    </div>
   );
 }
 
@@ -1325,11 +1313,8 @@ function ZoneStateBadge({ status }: { status?: ZoneStatus }) {
     const label = status.activity === "SCHEDULED_WATERING" ? "An · Zeitplan" : "An · bewässert";
     // Ventil offen = Wasser-Zustand in Himmelblau (docs/design-regeln.md, Abschnitt 3).
     return (
-      <Badge className={cn(base, "bg-sky-500/15 text-sky-700 dark:text-sky-300")}>
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75 motion-reduce:animate-none" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
-        </span>
+      <Badge variant="water" className={base}>
+        <StatusDot tone="water" pulse />
         {label}
       </Badge>
     );
@@ -1418,7 +1403,9 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
                 </div>
               ) : (
                 <div className="group/name flex items-center gap-1">
-                  <p className="font-medium text-foreground truncate">{zone.name}</p>
+                  {/* Name bricht um statt gekürzt zu enden – „Ventil Liegewiese Nord“ und „… Süd“ wären sonst
+                      nicht zu unterscheiden. Die Kachel ist dafür breit genug (eine Spalte ab md neben der Seitenleiste). */}
+                  <p className="min-w-0 font-medium text-foreground break-words">{zone.name}</p>
                   {isPump && (
                     <Badge variant="secondary" className="text-[10px] gap-1 shrink-0">
                       <Activity className="h-3 w-3" /> Pumpe
@@ -1457,8 +1444,9 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
           </div>
         </div>
 
-        {/* Dauer-Picker */}
-        <div className="flex flex-wrap gap-1">
+        {/* Dauer-Picker: vier gleiche Spalten (4 + 3, mit Empfehlung 4 + 4) – frei umbrechend
+            stünde in der schmalen Kachel „60′“ allein in der zweiten Zeile. */}
+        <div className="grid grid-cols-4 gap-1">
           {DURATION_PRESETS.map((d) => (
             <button
               key={d}
@@ -1526,7 +1514,8 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
               onValueChange={(v) => onAssignPump(v === "none" ? null : Number(v))}
               disabled={disabled}
             >
-              <SelectTrigger size="sm" className="flex-1 text-xs max-sm:data-[size=sm]:h-11">
+              {/* `min-w-0`: ein langer Pumpenname kürzt im Feld, statt die Kachel zu verbreitern. */}
+              <SelectTrigger size="sm" className="min-w-0 flex-1 text-xs max-sm:data-[size=sm]:h-11">
                 <SelectValue placeholder="Pumpe zuordnen" />
               </SelectTrigger>
               <SelectContent>
@@ -1579,11 +1568,8 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
             {schedule.deviceName}
           </span>
           {running ? (
-            <Badge className="text-[10px] gap-1 bg-sky-500/15 text-sky-700 dark:text-sky-300">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75 motion-reduce:animate-none" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sky-500" />
-              </span>
+            <Badge variant="water" className="text-[10px] gap-1">
+              <StatusDot tone="water" size="xs" pulse />
               Läuft
             </Badge>
           ) : schedule.isActive ? (
@@ -1613,8 +1599,8 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
           )}
           {schedule.smartRain && (
             <Badge
-              variant="outline"
-              className="text-[10px] gap-1 text-primary border-primary/30 dark:border-primary/30"
+              variant="accent"
+              className="text-[10px] gap-1"
               title="Dauer wird aus der Wasserbilanz berechnet (Verdunstung ET₀ − Regen seit letztem Lauf)"
             >
               <Sparkles className="h-3 w-3" /> Wasserbilanz
@@ -1707,21 +1693,25 @@ function IrrigationStatsPanel({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SectionHeading title="Statistik" icon={BarChart3} />
-        {/* Zeitraum als Segmentwahl (docs/design-regeln.md, Abschnitt 6). */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Zeitraum als Segmentwahl (docs/design-regeln.md, Abschnitt 6). Handy: eine Zeile unter
+            der Überschrift – die Segmente füllen die Breite, „Aktualisieren“ steht nur als Symbol
+            (44 px); mit Text (370 px) brach die Taste in eine dritte Zeile um. */}
+        <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-wrap">
           <Segmented
             aria-label="Zeitraum"
             value={String(days)}
             onValueChange={(v) => onDaysChange(Number(v))}
             options={dayOptions.map((d) => ({ value: String(d), label: `${d} Tage` }))}
+            className="max-sm:flex-1"
           />
-          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading} className="text-muted-foreground max-sm:h-11">
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} /> Aktualisieren
+          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading} aria-label="Aktualisieren" className="text-muted-foreground max-sm:size-11">
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            <span className="max-sm:hidden">Aktualisieren</span>
           </Button>
         </div>
       </div>
 
-      <Card className="gap-0 overflow-hidden py-0 sm:py-0">
+      <Card flush="y">
         <CardContent className="px-0 sm:px-0">
           {loading && !stats ? (
             <div className="p-8 flex items-center justify-center text-sm text-muted-foreground gap-2">
@@ -1735,15 +1725,16 @@ function IrrigationStatsPanel({
             />
           ) : (
             <>
+              {/* Auf dem Handy ohne Trennpunkte: bricht die Zeile um, stünde sonst ein „·“ allein am Zeilenanfang. */}
               <div className="px-4 py-3 sm:px-[18px] border-b border-border bg-glass-tile flex flex-wrap gap-x-4 gap-y-1 text-sm">
                 <span className="text-muted-foreground">
                   <span className="font-semibold tabular-nums">{stats.summary.totalMinutes}</span> Min gesamt
                 </span>
-                <span className="text-muted-foreground">·</span>
+                <span className="text-muted-foreground max-sm:hidden" aria-hidden>·</span>
                 <span className="text-muted-foreground">
                   <span className="font-semibold tabular-nums">{fmtLiters(stats.summary.totalLiters)}</span> geschätzt
                 </span>
-                <span className="text-muted-foreground">·</span>
+                <span className="text-muted-foreground max-sm:hidden" aria-hidden>·</span>
                 <span className="text-muted-foreground">
                   <span className="font-semibold tabular-nums">{stats.summary.runCount}</span> Läufe
                 </span>
@@ -1978,9 +1969,12 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                     const pos = form.valveOrder.indexOf(z.id);
                     const selected = pos >= 0;
                     return (
-                      <div key={z.id} className={cn("flex items-center gap-2 px-3 py-2", !selected && "opacity-50")}>
+                      // Nicht in der Sequenz: Name gedämpft statt Deckkraft auf der ganzen Zeile – Text und
+                      // Kästchenrand bleiben lesbar (docs/design-regeln.md, Abschnitt 17).
+                      <div key={z.id} className="flex items-center gap-2 px-3 py-2">
                         {/* Wie das Kästchen (Checkbox), zeigt aber die Position in der Sequenz; die
-                            unsichtbare Fläche (after:) vergrößert das Tippziel auf 44 px. */}
+                            unsichtbare Fläche (after:) vergrößert das Tippziel auf 44 px. Farben wie das
+                            Kästchen: gewählt deckend ohne hellen Ring, leer mit Rand ab 3:1. */}
                         <button
                           type="button"
                           onClick={() => toggleValve(z.id)}
@@ -1988,14 +1982,14 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                           className={cn(
                             "relative size-5 rounded-[6px] border flex items-center justify-center shrink-0 text-[10px] font-bold tabular-nums outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 after:absolute after:-inset-3 after:content-['']",
                             selected
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-foreground/35 bg-field text-transparent hover:border-foreground/55 dark:border-white/30",
+                              ? "border-primary-fill bg-primary-fill text-primary-foreground"
+                              : "border-foreground/50 bg-field text-transparent hover:border-foreground/70 dark:border-white/40 dark:hover:border-white/55",
                           )}
                           title={selected ? "Aus Sequenz entfernen" : "Zur Sequenz hinzufügen"}
                         >
                           {selected ? pos + 1 : "+"}
                         </button>
-                        <span className="text-sm text-foreground truncate flex-1">{z.name}</span>
+                        <span className={cn("text-sm truncate flex-1", selected ? "text-foreground" : "text-muted-foreground")}>{z.name}</span>
                         {selected && (
                           <div className="flex items-center gap-0.5 shrink-0">
                             <Button
@@ -2039,25 +2033,20 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
           {/* 4. Wochentage */}
           <div className="space-y-1.5">
             <Label>Wochentage</Label>
-            <div className="flex gap-1">
+            {/* Sieben gleich breite Spalten wie bisher; ohne Innenabstand passen die Kürzel auch schmal. */}
+            <ToggleChipGroup aria-label="Wochentage" className="grid grid-cols-7 gap-1">
               {DAY_LABELS.map((d, i) => (
-                <button
+                <ToggleChip
                   key={d}
-                  type="button"
-                  onClick={() => toggleDay(i)}
                   title={DAY_LABELS_LONG[i]}
-                  aria-pressed={((form.daysOfWeek >> i) & 1) === 1}
-                  className={cn(
-                    "press flex-1 h-9 max-sm:h-11 rounded-control text-xs font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                    (form.daysOfWeek >> i) & 1
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-foreground/[0.06] text-muted-foreground hover:text-foreground dark:bg-white/[0.08] dark:text-foreground/80 dark:hover:text-foreground",
-                  )}
+                  pressed={((form.daysOfWeek >> i) & 1) === 1}
+                  onPressedChange={() => toggleDay(i)}
+                  className="px-0"
                 >
                   {d}
-                </button>
+                </ToggleChip>
               ))}
-            </div>
+            </ToggleChipGroup>
           </div>
 
           {/* 5. Smart-Regen */}

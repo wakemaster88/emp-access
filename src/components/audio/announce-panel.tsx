@@ -15,6 +15,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import { Loader2, Megaphone, Mic, TriangleAlert, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -23,7 +24,7 @@ import {
   TTS_FALLBACK_VOICES,
   type TtsVoice,
 } from "@/lib/audio-constants";
-import { Chip, TEXTAREA_CLASS } from "./ui";
+import { TEXTAREA_CLASS } from "./ui";
 import { LiveBroadcastCard } from "./live-broadcast";
 import type { AnnouncementRow, ZoneRow } from "./types";
 import type { LiveBroadcast } from "./use-live-broadcast";
@@ -117,7 +118,7 @@ export function AnnouncePanel({
         setError(typeof data.error === "string" ? data.error : "Durchsage fehlgeschlagen");
         return;
       }
-      setNotice(`„${template.name}" läuft in ${data.queued} Zone${data.queued === 1 ? "" : "n"}`);
+      setNotice(`„${template.name}“ läuft in ${data.queued} Zone${data.queued === 1 ? "" : "n"}`);
       onDone();
     } finally {
       setSending(false);
@@ -150,25 +151,25 @@ export function AnnouncePanel({
         <CardContent className="space-y-4">
           <div>
             <Label className="mb-2 block">Zielzonen · {targetLabel}</Label>
-            <div className="flex flex-wrap gap-1.5">
-              <Chip
-                active={selectedZones.length === 0}
-                onClick={() => setSelectedZones([])}
+            <ToggleChipGroup aria-label="Zielzonen">
+              <ToggleChip
+                pressed={selectedZones.length === 0}
+                onPressedChange={() => setSelectedZones([])}
                 disabled={liveActive}
               >
                 Alle Zonen
-              </Chip>
+              </ToggleChip>
               {activeZones.map((zone) => (
-                <Chip
+                <ToggleChip
                   key={zone.id}
-                  active={selectedZones.includes(zone.id)}
-                  onClick={() => toggleZone(zone.id)}
+                  pressed={selectedZones.includes(zone.id)}
+                  onPressedChange={() => toggleZone(zone.id)}
                   disabled={liveActive}
                 >
                   {zone.name}
-                </Chip>
+                </ToggleChip>
               ))}
-            </div>
+            </ToggleChipGroup>
           </div>
 
           <div>
@@ -283,9 +284,7 @@ export function AnnouncePanel({
                   <Megaphone className="h-3.5 w-3.5" />
                   {template.name}
                   {template.priority >= 100 && (
-                    <Badge variant="danger" className="text-[10px]">
-                      Notfall
-                    </Badge>
+                    <Badge variant="destructive">Notfall</Badge>
                   )}
                 </Button>
               ))}

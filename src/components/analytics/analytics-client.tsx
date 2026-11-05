@@ -236,10 +236,13 @@ export function AnalyticsClient() {
         <TabsContent value="general" className="space-y-4 sm:space-y-5 mt-0">
       {/* Period selector */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        {/* Handy: volle Breite wie die Tab-Leiste darüber; 10 px statt 14 px Innenabstand je Segment,
+            damit die fünf Zeiträume auch bei 360 px in einer Zeile stehen (sonst bricht die Kapsel um). */}
         <Segmented
           value={mode}
           onValueChange={setMode}
           aria-label="Zeitraum"
+          className="w-full sm:w-fit"
           options={modes.map((m) => ({ value: m.id, label: m.label }))}
         />
 
@@ -261,17 +264,18 @@ export function AnalyticsClient() {
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-2">
+          // Handy: beide Daten in zwei gleich breiten Spalten; feste Breite erst ab sm.
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <Input
               type="date"
-              className="w-40"
+              className="flex-1 sm:w-40 sm:flex-initial"
               value={customFrom}
               onChange={(e) => setCustomFrom(e.target.value)}
             />
             <span className="text-xs text-muted-foreground">–</span>
             <Input
               type="date"
-              className="w-40"
+              className="flex-1 sm:w-40 sm:flex-initial"
               value={customTo}
               onChange={(e) => setCustomTo(e.target.value)}
             />

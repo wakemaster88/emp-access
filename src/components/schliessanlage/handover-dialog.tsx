@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, Loader2, Save, Search, UserPlus, Users } from "lucide-react";
+import { KeyRound, Loader2, Save, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import {
   Dialog,
   DialogContent,
@@ -15,13 +15,14 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
+import { SearchInput } from "@/components/ui/search-input";
 import { Segmented } from "@/components/ui/segmented";
 import { Separator } from "@/components/ui/separator";
 import {
   ErrorLine,
   LevelBadge,
   apiRequest,
-  selectFieldClass,
 } from "@/components/schliessanlage/shared";
 import type {
   EmployeeOption,
@@ -29,7 +30,6 @@ import type {
   KeyRow,
   PolicyRow,
 } from "@/components/schliessanlage/types";
-import { cn } from "@/lib/utils";
 
 interface Props {
   keys: KeyRow[];
@@ -155,10 +155,10 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
             />
 
             {mode === "existing" && (
-              <select
+              <NativeSelect
                 value={holderId ?? ""}
                 onChange={(e) => setHolderId(e.target.value ? Number(e.target.value) : null)}
-                className={cn(selectFieldClass, "w-full max-sm:h-11")}
+                className="max-sm:h-11"
               >
                 <option value="">— Empfänger wählen —</option>
                 {holders.map((h) => (
@@ -166,14 +166,14 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
                     {h.displayName}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             )}
 
             {mode === "employee" && (
-              <select
+              <NativeSelect
                 value={ticketId ?? ""}
                 onChange={(e) => setTicketId(e.target.value ? Number(e.target.value) : null)}
-                className={cn(selectFieldClass, "w-full max-sm:h-11")}
+                className="max-sm:h-11"
               >
                 <option value="">— Mitarbeiter wählen —</option>
                 {employees.map((e) => (
@@ -182,7 +182,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
                     {e.ticketTypeName ? ` · ${e.ticketTypeName}` : ""}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             )}
 
             {mode === "free" && (
@@ -235,52 +235,29 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
               </Label>
               <span className="text-[11px] text-muted-foreground tabular-nums">{keyIds.length} gewählt</span>
             </div>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="text"
-                value={keyQuery}
-                onChange={(e) => setKeyQuery(e.target.value)}
-                placeholder="Verfügbare Schlüssel suchen…"
-                className="pl-8 max-sm:h-11"
-              />
-            </div>
-            {/* Auswahlliste als Glas-Kachel (in Ebenen automatisch getönt). */}
-            <div className="glass-tile scrollbar-thin max-h-52 space-y-0.5 overflow-y-auto p-1">
+            <SearchInput
+              value={keyQuery}
+              onChange={(e) => setKeyQuery(e.target.value)}
+              placeholder="Verfügbare Schlüssel suchen…"
+              className="max-sm:h-11"
+            />
+            {/* Auswahlliste als Checklist: Kachel mit Haarlinien (in Ebenen automatisch getönt), die ganze Zeile schaltet das Kästchen. */}
+            <Checklist aria-label="Schlüssel" maxHeight="13rem">
               {availableKeys.length === 0 ? (
-                <EmptyState compact icon={KeyRound} title="Keine verfügbaren Schlüssel." />
+                <EmptyState size="sm" icon={KeyRound} title="Keine verfügbaren Schlüssel." />
               ) : (
-                availableKeys.map((k) => {
-                  const selected = keyIds.includes(k.id);
-                  return (
-                    // Ganze Zeile ist Beschriftung des Kästchens und damit die Tippfläche; das Kästchen
-                    // selbst nimmt keine Zeiger an (kein doppeltes Umschalten).
-                    <label
-                      key={k.id}
-                      className={cn(
-                        "flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
-                        selected
-                          ? "bg-primary/10"
-                          : "hover:bg-glass-tile",
-                      )}
-                    >
-                      <Checkbox
-                        checked={selected}
-                        onCheckedChange={() => toggleKey(k.id)}
-                        className="pointer-events-none"
-                      />
-                      <span className="shrink-0 font-mono text-xs text-foreground">
-                        {k.keyNumber}
-                      </span>
-                      <LevelBadge level={k.level} />
-                      <span className="truncate text-[11px] text-muted-foreground">
-                        {k.label || k.lockLabels[0] || ""}
-                      </span>
-                    </label>
-                  );
-                })
+                availableKeys.map((k) => (
+                  <ChecklistItem
+                    key={k.id}
+                    checked={keyIds.includes(k.id)}
+                    onCheckedChange={() => toggleKey(k.id)}
+                    title={<span className="font-mono">{k.keyNumber}</span>}
+                    description={k.label || k.lockLabels[0] || null}
+                    trailing={<LevelBadge level={k.level} />}
+                  />
+                ))
               )}
-            </div>
+            </Checklist>
           </div>
 
           <Separator />
@@ -317,11 +294,11 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
             <Label htmlFor="h-policy">
               Belehrungsvorlage
             </Label>
-            <select
+            <NativeSelect
               id="h-policy"
               value={policyId ?? ""}
               onChange={(e) => setPolicyId(e.target.value ? Number(e.target.value) : null)}
-              className={cn(selectFieldClass, "w-full max-sm:h-11")}
+              className="max-sm:h-11"
             >
               <option value="">— aktive Vorlage verwenden —</option>
               {activePolicies.map((p) => (
@@ -329,7 +306,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
                   {p.name} (v{p.version})
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             {activePolicies.length === 0 && (
               <p className="text-[11px] text-warning">
                 Noch keine aktive Vorlage – der Signatur-Link lässt sich erst danach erzeugen.

@@ -93,7 +93,8 @@ export default async function SettingsPage() {
                 <Badge variant="mono">{account?.subdomain}</Badge>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-muted-foreground">API Token (Geräte)</span>
+                {/* shrink-0: Die Beschriftung bleibt eine Zeile (auf dem Handy sonst drei Zeilen neben dem Token). */}
+                <span className="shrink-0 text-sm text-muted-foreground">API Token (Geräte)</span>
                 {/* Langer Token: Pille darf schrumpfen, der Text kürzt mit Auslassung. */}
                 <Badge variant="mono" className="min-w-0 max-w-[220px] shrink">
                   <span className="truncate">{account?.apiToken}</span>
@@ -130,7 +131,9 @@ export default async function SettingsPage() {
         {/* GARDENA smart system */}
         <section className="space-y-2">
           {/* Wie bei Shelly: Anzahl als neutrale Pille, der Verbindungszustand (grün) steht in der Karte. */}
-          <SectionHeading icon={Sprout} title="GARDENA smart system" aside={gardenaConnections.length > 0 && ( <Badge variant="secondary" className="tabular-nums"> {gardenaConnections.length} Verbindung{gardenaConnections.length !== 1 ? "en" : ""} · {existingGardenaIds.length} Gerät{existingGardenaIds.length !== 1 ? "e" : ""} </Badge> )} />
+          {/* Handy: im Badge nur die Geräte – die Verbindungen nennt die Karte („1 verbunden“), so bleibt
+              die Überschrift einzeilig. */}
+          <SectionHeading icon={Sprout} title="GARDENA smart system" aside={gardenaConnections.length > 0 && ( <Badge variant="secondary" className="tabular-nums"> <span className="max-sm:hidden">{gardenaConnections.length} Verbindung{gardenaConnections.length !== 1 ? "en" : ""} · </span>{existingGardenaIds.length} Gerät{existingGardenaIds.length !== 1 ? "e" : ""} </Badge> )} />
           <GardenaCard
             connections={gardenaConnections}
             existingServiceIds={existingGardenaIds}

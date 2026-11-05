@@ -29,11 +29,12 @@ function Tabs({
  * Tab-Leiste als schwebende Glas-Kapsel (docs/design-regeln.md, Abschnitt 6):
  * `default` ist die Kapsel (`glass-strip`), `line` dieselbe Pillen-Logik ohne
  * Kapsel – für Leisten, die schon in einer Karte stehen. Der aktive Eintrag
- * ist immer eine helle Glas-Pille, nie eine Unterstreichung. Auf dem Handy
- * wischbar statt umbrechend.
+ * ist immer eine helle Glas-Pille, nie eine Unterstreichung. Passt die Leiste
+ * nicht in eine Zeile, bricht sie um (eine Zeile mehr, Einträge füllen jede
+ * Zeile) – nie seitlich scrollen, auch nicht auf dem Handy (Abschnitt 6).
  */
 const tabsListVariants = cva(
-  "group/tabs-list text-muted-foreground inline-flex w-fit max-w-full items-center justify-start gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col group-data-[orientation=vertical]/tabs:items-stretch",
+  "group/tabs-list text-muted-foreground inline-flex w-fit max-w-full flex-wrap items-center justify-start gap-x-0.5 gap-y-1 group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col group-data-[orientation=vertical]/tabs:items-stretch",
   {
     variants: {
       variant: {
@@ -71,9 +72,11 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "press relative inline-flex h-[34px] flex-1 shrink-0 items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap text-muted-foreground outline-none",
+        "press relative inline-flex h-[34px] flex-1 shrink-0 items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap text-muted-foreground outline-none max-sm:px-2.5",
         "hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-        "data-[state=active]:glass-pill-active data-[state=active]:text-foreground data-[state=active]:font-semibold",
+        // Der aktive Reiter behält die Schriftstärke: fetter wäre er breiter, und eine
+        // umbrochene Leiste spränge beim Wechseln in andere Zeilen.
+        "data-[state=active]:glass-pill-active data-[state=active]:text-foreground",
         "group-data-[orientation=vertical]/tabs:w-full group-data-[orientation=vertical]/tabs:justify-start group-data-[orientation=vertical]/tabs:rounded-control",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className

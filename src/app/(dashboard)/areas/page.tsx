@@ -3,8 +3,8 @@ import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { AreasTable } from "@/components/areas/areas-table";
+import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { AreasTable, CreateAreaButton } from "@/components/areas/areas-table";
 
 interface AnnyExtra {
   mappings?: Record<string, number>;
@@ -71,12 +71,23 @@ export default async function AreasPage() {
       <Header title="Ressourcen" accountName={session.user.accountName} />
       <div className="page-content">
         {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader>
             <CardTitle>Alle Ressourcen ({areas.length})</CardTitle>
             <CardDescription>
               Resourcen definieren Zugangsbereiche. <Link href="/services" className="text-primary hover:underline">Services</Link> und <Link href="/subscriptions" className="text-primary hover:underline">Abos</Link> verknüpfen Resourcen mit <Link href="/tickets" className="text-primary hover:underline">Tickets</Link>.
             </CardDescription>
+            {/* Primärhandlung oben rechts im Kartenkopf (docs/design-regeln.md, Abschnitt 13). */}
+            {!isSuperAdmin && (
+              <CardAction>
+                <CreateAreaButton
+                  areas={areaRows as never}
+                  annyResources={annyResourceNames}
+                  annyServices={annyServiceNames}
+                  annyMappings={annyMappings}
+                />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent>
             <AreasTable

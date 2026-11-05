@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, Building2, Copy, Check, Users, Loader2, Eye, EyeOff, ShieldCheck, ShieldOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
@@ -23,6 +22,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -365,46 +365,71 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
   return (
     <>
       {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-      <Card className="overflow-hidden pb-0 sm:pb-0">
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+      <Card flush>
+        {/* Kopf der Karte (docs/design-regeln.md, Abschnitt 13): Titel mit Anzahl links, „Neuer Mandant“
+            oben rechts – auf dem Handy kürzer („+ Mandant“), der volle Name bleibt für Screenreader. */}
+        <CardHeader>
           <CardTitle className="flex items-center gap-2 tabular-nums">
             <Building2 className="h-4 w-4 text-primary" />
             Alle Mandanten ({accounts.length})
           </CardTitle>
-          <Button onClick={openCreate} size="sm" className="max-sm:h-11">
-            <Plus className="h-4 w-4" />
-            Neuer Mandant
-          </Button>
+          <CardAction>
+            <Button onClick={openCreate} size="sm" className="max-sm:h-11">
+              <Plus className="h-4 w-4" />
+              <span>
+                <span className="max-sm:sr-only">Neuer </span>Mandant
+              </span>
+            </Button>
+          </CardAction>
         </CardHeader>
-        {/* Erste und letzte Spalte rücken auf den Innenabstand der Karte ein; breite Tabellen scrollen im Container. */}
-        <Table>
+        {/* Erste und letzte Spalte rücken auf den Innenabstand der Karte ein. Handy (326 px): nur Name
+            (Subdomain und Status als Nebenzeile) und die Tasten; die übrigen Spalten erst ab sm, dort
+            scrollt eine breite Tabelle notfalls im Container (docs/design-regeln.md, Abschnitt 17). */}
+        <Table edge>
           <TableHeader>
             <TableRow>
-              <TableHead className="pl-4 sm:pl-[18px]">Name</TableHead>
-              <TableHead>Subdomain</TableHead>
-              <TableHead>API Token</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Admins</TableHead>
-              <TableHead className="text-right">Geräte</TableHead>
-              <TableHead className="text-right">Tickets</TableHead>
-              <TableHead className="text-right">Scans</TableHead>
-              <TableHead>Erstellt</TableHead>
-              <TableHead className="w-[100px] pr-4 sm:pr-[18px]"></TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead className="max-sm:hidden">Subdomain</TableHead>
+              <TableHead className="max-sm:hidden">API Token</TableHead>
+              <TableHead className="max-sm:hidden">Status</TableHead>
+              <TableHead className="text-right max-sm:hidden">Admins</TableHead>
+              <TableHead className="text-right max-sm:hidden">Geräte</TableHead>
+              <TableHead className="text-right max-sm:hidden">Tickets</TableHead>
+              <TableHead className="text-right max-sm:hidden">Scans</TableHead>
+              <TableHead className="max-sm:hidden">Erstellt</TableHead>
+              <TableHead className="w-[100px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {accounts.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={10} className="p-0 whitespace-normal">
-                  <EmptyState icon={Building2} title="Keine Mandanten vorhanden" />
-                </TableCell>
-              </TableRow>
+              <TableEmpty colSpan={10} className="p-0" compact={false} icon={Building2} title="Keine Mandanten vorhanden" />
             )}
             {accounts.map((acc) => (
               <TableRow key={acc.id} className="group">
-                <TableCell className="font-medium pl-4 sm:pl-[18px]">{acc.name}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{acc.subdomain}</TableCell>
-                <TableCell>
+                {/* Handy: lange Namen brechen um; Subdomain (Code, bricht überall), Status und das Kopieren
+                    des API-Tokens darunter – die Spalte „API Token“ erscheint erst ab sm. */}
+                <TableCell className="font-medium max-sm:whitespace-normal max-sm:wrap-anywhere">
+                  {acc.name}
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs font-normal text-muted-foreground sm:hidden">
+                    <span className="font-mono break-all">{acc.subdomain}</span>
+                    <Badge variant={acc.isActive ? "success" : "neutral"}>
+                      {acc.isActive ? "Aktiv" : "Inaktiv"}
+                    </Badge>
+                    <button
+                      onClick={() => copyToken(acc)}
+                      className="flex min-h-11 items-center gap-1 font-mono hover:text-foreground transition-colors"
+                    >
+                      {acc.apiToken.slice(0, 12)}...
+                      {copiedToken === acc.id ? (
+                        <Check className="h-3 w-3 text-success" />
+                      ) : (
+                        <Copy className="h-3 w-3 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100" />
+                      )}
+                    </button>
+                  </div>
+                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground max-sm:hidden">{acc.subdomain}</TableCell>
+                <TableCell className="max-sm:hidden">
                   <button
                     onClick={() => copyToken(acc)}
                     className="flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors max-sm:min-h-11"
@@ -418,17 +443,17 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                     )}
                   </button>
                 </TableCell>
-                <TableCell>
+                <TableCell className="max-sm:hidden">
                   <Badge variant={acc.isActive ? "success" : "neutral"}>
                     {acc.isActive ? "Aktiv" : "Inaktiv"}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{acc._count.admins}</TableCell>
-                <TableCell className="text-right tabular-nums">{acc._count.devices}</TableCell>
-                <TableCell className="text-right tabular-nums">{acc._count.tickets}</TableCell>
-                <TableCell className="text-right tabular-nums">{acc._count.scans}</TableCell>
-                <TableCell className="text-sm text-muted-foreground tabular-nums">{fmtDate(acc.createdAt)}</TableCell>
-                <TableCell className="pr-4 sm:pr-[18px]">
+                <TableCell className="text-right tabular-nums max-sm:hidden">{acc._count.admins}</TableCell>
+                <TableCell className="text-right tabular-nums max-sm:hidden">{acc._count.devices}</TableCell>
+                <TableCell className="text-right tabular-nums max-sm:hidden">{acc._count.tickets}</TableCell>
+                <TableCell className="text-right tabular-nums max-sm:hidden">{acc._count.scans}</TableCell>
+                <TableCell className="text-sm text-muted-foreground tabular-nums max-sm:hidden">{fmtDate(acc.createdAt)}</TableCell>
+                <TableCell>
                   {/* Mit Maus erst beim Darüberfahren oder Fokus, auf Touch-Geräten immer sichtbar. */}
                   <div className="flex items-center gap-1 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-within:opacity-100">
                     <Button variant="ghost" size="icon-sm" className="max-sm:size-11" onClick={() => openUsers(acc)} title="Benutzer verwalten" aria-label="Benutzer verwalten">
@@ -580,39 +605,49 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             </div>
           ) : (
             <div className="space-y-4">
+              {/* Handy (Blatt, 318 px): nur Name (E-Mail, Rolle und 2FA als Nebenzeile) und die Tasten;
+                  die übrigen Spalten erst ab sm (docs/design-regeln.md, Abschnitt 17). */}
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>E-Mail</TableHead>
-                    <TableHead>Rolle</TableHead>
-                    <TableHead>2FA</TableHead>
-                    <TableHead>Letzter Login</TableHead>
+                    <TableHead className="max-sm:hidden">E-Mail</TableHead>
+                    <TableHead className="max-sm:hidden">Rolle</TableHead>
+                    <TableHead className="max-sm:hidden">2FA</TableHead>
+                    <TableHead className="max-sm:hidden">Letzter Login</TableHead>
                     <TableHead className="w-[140px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {users.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="p-0 whitespace-normal">
-                        <EmptyState compact icon={Users} title="Keine Benutzer vorhanden" />
-                      </TableCell>
-                    </TableRow>
+                    <TableEmpty colSpan={6} className="p-0" icon={Users} title="Keine Benutzer vorhanden" />
                   )}
                   {users.map((u) => (
                     <TableRow key={u.id} className="group">
-                      <TableCell className="font-medium">{u.name}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
-                      <TableCell>
-                        {/* Rolle Admin weich in Akzentfarbe: die Pille hat dafür keine eigene Variante. */}
-                        <Badge
-                          variant={u.role === "ADMIN" ? "default" : "neutral"}
-                          className={u.role === "ADMIN" ? "bg-primary/10 text-primary" : undefined}
-                        >
+                      <TableCell className="font-medium max-sm:whitespace-normal max-sm:wrap-anywhere">
+                        {u.name}
+                        {/* E-Mail bricht auf dem Handy überall um (lange Adressen). */}
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 font-normal sm:hidden">
+                          <span className="w-full text-xs text-muted-foreground break-all">{u.email}</span>
+                          <Badge variant={u.role === "ADMIN" ? "accent" : "neutral"}>
+                            {u.role === "ADMIN" ? "Admin" : "Benutzer"}
+                          </Badge>
+                          {u.twoFactorEnabledAt && (
+                            <span className="inline-flex items-center gap-1 text-xs text-success">
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              2FA aktiv
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-sm:hidden">{u.email}</TableCell>
+                      <TableCell className="max-sm:hidden">
+                        {/* Rolle Admin weich in Akzentfarbe (Variante accent). */}
+                        <Badge variant={u.role === "ADMIN" ? "accent" : "neutral"}>
                           {u.role === "ADMIN" ? "Admin" : "Benutzer"}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="max-sm:hidden">
                         {u.twoFactorEnabledAt ? (
                           <span className="inline-flex items-center gap-1 text-sm text-success">
                             <ShieldCheck className="h-4 w-4" />
@@ -622,7 +657,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                           <span className="text-sm text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground tabular-nums">
+                      <TableCell className="text-sm text-muted-foreground tabular-nums max-sm:hidden">
                         {u.lastLogin
                           ? new Date(u.lastLogin).toLocaleString("de-DE", {
                               day: "2-digit", month: "2-digit", year: "numeric",

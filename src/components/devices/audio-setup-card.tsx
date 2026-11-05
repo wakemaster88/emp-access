@@ -66,8 +66,9 @@ export function AudioSetupCard({ configJson, zoneName }: AudioSetupCardProps) {
             <p className="text-sm font-medium text-foreground/80">Software auf dem Raspberry Pi</p>
           </div>
           <div className="flex items-start gap-2">
-            {/* Befehle als Kachel in der Karte; min-w-0 und Umbruch, damit lange Zeilen die Seite nicht verbreitern und auf dem Handy ganz lesbar bleiben. */}
-            <div className="glass-tile min-w-0 flex-1 overflow-x-auto p-3 font-mono text-xs text-foreground">
+            {/* Befehle als Kachel in der Karte; min-w-0 und Umbruch, damit lange Zeilen die Seite nicht verbreitern und auf dem Handy ganz lesbar bleiben.
+                Auf dem Handy kein Scrollbereich: die Befehle brechen um (docs/design-regeln.md, Abschnitt 5). */}
+            <div className="glass-tile min-w-0 flex-1 p-3 font-mono text-xs text-foreground max-sm:whitespace-pre-wrap max-sm:break-all sm:overflow-x-auto">
               <div className="flex items-start gap-2">
                 <Terminal className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                 <span className="whitespace-pre-wrap break-all select-all">{installCmd}</span>
@@ -96,7 +97,7 @@ export function AudioSetupCard({ configJson, zoneName }: AudioSetupCardProps) {
             Das Installationsskript fragt diesen Text ab. Nachtragen geht später mit:
           </p>
           <div className="flex items-start gap-2">
-            <div className="glass-tile min-w-0 flex-1 overflow-x-auto p-3 font-mono text-xs text-foreground">
+            <div className="glass-tile min-w-0 flex-1 p-3 font-mono text-xs text-foreground max-sm:whitespace-pre-wrap max-sm:break-all sm:overflow-x-auto">
               <span className="break-all select-all">{setupCmd}</span>
             </div>
             <CopyButton value={setupCmd} label="Befehl" />

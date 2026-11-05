@@ -87,8 +87,9 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
                 Auf dem Raspberry Pi folgenden Befehl im Terminal ausführen:
               </p>
               <div className="relative">
-                {/* Befehle als ruhige Glas-Kachel (in der Ebene getönt), ohne eigene Terminal-Farben. */}
-                <div className="glass-tile p-3 font-mono text-xs text-foreground overflow-x-auto">
+                {/* Befehle als ruhige Glas-Kachel (in der Ebene getönt), ohne eigene Terminal-Farben.
+                    Auf dem Handy brechen Befehle und Adressen um, statt seitlich zu scrollen (docs/design-regeln.md, Abschnitt 5). */}
+                <div className="glass-tile p-3 font-mono text-xs text-foreground max-sm:whitespace-pre-wrap max-sm:break-all sm:overflow-x-auto">
                   <div className="flex items-start gap-2">
                     <Terminal className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                     <span className="break-all select-all">sudo bash install.sh</span>
@@ -99,7 +100,7 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
                 Alternativ das Repository manuell klonen:
               </p>
               <div className="relative group">
-                <div className="glass-tile p-3 font-mono text-xs text-foreground/90 overflow-x-auto">
+                <div className="glass-tile p-3 font-mono text-xs text-foreground/90 max-sm:whitespace-pre-wrap max-sm:break-all sm:overflow-x-auto">
                   <p className="text-muted-foreground mb-1"># Repository klonen</p>
                   <p>git clone https://github.com/wakemaster88/emp-access.git</p>
                   <p>cd emp-access/raspberry-pi</p>

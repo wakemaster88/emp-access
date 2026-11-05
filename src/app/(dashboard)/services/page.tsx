@@ -3,8 +3,8 @@ import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ServicesTable } from "@/components/services/services-table";
+import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { CreateServiceButton, ServicesTable } from "@/components/services/services-table";
 
 interface AnnyExtra {
   services?: string[];
@@ -58,12 +58,18 @@ export default async function ServicesPage() {
       <Header title="Services" accountName={session.user.accountName} />
       <div className="page-content">
         {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader>
             <CardTitle>Alle Services ({services.length})</CardTitle>
             <CardDescription>
               Services gruppieren <Link href="/tickets" className="text-primary hover:underline">Tickets</Link> und verknüpfen sie mit <Link href="/areas" className="text-primary hover:underline">Resourcen</Link> (Zugangsbereichen).
             </CardDescription>
+            {/* Primärhandlung oben rechts im Kartenkopf (docs/design-regeln.md, Abschnitt 13). */}
+            {!isSuperAdmin && (
+              <CardAction>
+                <CreateServiceButton areas={areas} annyServices={annyServices} annyResources={annyResources} />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent>
             <ServicesTable

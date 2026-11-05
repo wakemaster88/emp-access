@@ -13,17 +13,16 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   ErrorLine,
   apiRequest,
   canOpenLock,
   deviceMetaLabel,
   isoToDateInput,
-  selectFieldClass,
 } from "@/components/schliessanlage/shared";
 import type { DeviceOption, LockRow } from "@/components/schliessanlage/types";
 import { LOCK_TYPE_LABELS } from "@/lib/keying";
-import { cn } from "@/lib/utils";
 
 interface Props {
   lock: LockRow | null;
@@ -110,18 +109,18 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
               <Label htmlFor="k-type">
                 Bauart
               </Label>
-              <select
+              <NativeSelect
                 id="k-type"
                 value={lockType}
                 onChange={(e) => setLockType(e.target.value)}
-                className={cn(selectFieldClass, "w-full max-sm:h-11")}
+                className="max-sm:h-11"
               >
                 {Object.entries(LOCK_TYPE_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -178,11 +177,11 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
             <Label htmlFor="k-device">
               Elektronisches Gerät
             </Label>
-            <select
+            <NativeSelect
               id="k-device"
               value={deviceId}
               onChange={(e) => setDeviceId(e.target.value)}
-              className={cn(selectFieldClass, "w-full max-sm:h-11")}
+              className="max-sm:h-11"
             >
               <option value="">Rein mechanisch</option>
               {preferred.length > 0 && (
@@ -203,7 +202,7 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
                   ))}
                 </optgroup>
               )}
-            </select>
+            </NativeSelect>
             <p className="text-[11px] text-muted-foreground">
               Nuki, LOQED oder ein Shelly am Türöffner, der diesen Schließpunkt öffnet.
             </p>

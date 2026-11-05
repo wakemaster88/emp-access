@@ -1,12 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { SearchInput } from "@/components/ui/search-input";
 
 export interface EquipmentItem {
   id: number;
@@ -61,19 +59,17 @@ export function EquipmentPicker({
   };
 
   return (
-    // Auswahlliste im Dialog: Glas-Kachel (in Ebenen automatisch getönt), gewählte Zeilen in Akzent-Tönung.
-    <div className="glass-tile space-y-1.5 p-1.5">
+    // Suche und Zähler über der Auswahlliste; die Liste ist eine Checklist (Kachel mit Haarlinien,
+    // in Ebenen automatisch getönt, gewählte Zeilen in Akzent-Tönung, die ganze Zeile schaltet).
+    <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={placeholder}
-            className="pl-8 max-sm:h-11"
-          />
-        </div>
+        <SearchInput
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={placeholder}
+          containerClassName="flex-1"
+          className="max-sm:h-11"
+        />
         <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{value.length} gewählt</span>
         {value.length > 0 && (
           <Button
@@ -88,58 +84,48 @@ export function EquipmentPicker({
         )}
       </div>
 
-      <div className="scrollbar-thin max-h-64 space-y-0.5 overflow-y-auto">
+      {/* Name der Gruppe für Screenreader: der Suchhinweis des Pickers (die sichtbare Beschriftung steht beim Aufrufer). */}
+      <Checklist aria-label={placeholder} maxHeight="16rem">
         {filtered.length === 0 ? (
-          <EmptyState compact title={items.length === 0 ? emptyText : "Keine Treffer."} className="py-4" />
+          <EmptyState size="sm" title={items.length === 0 ? emptyText : "Keine Treffer."} />
         ) : (
           filtered.map((item) => {
             const selected = value.includes(item.id);
             return (
-              // Ganze Zeile ist Beschriftung des Kästchens und damit die Tippfläche; das Kästchen
-              // selbst nimmt keine Zeiger an (kein doppeltes Umschalten, keine überlappende Tippfläche).
-              <label
+              <ChecklistItem
                 key={item.id}
-                className={cn(
-                  "flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
-                  selected
-                    ? "bg-primary/10"
-                    : "hover:bg-glass-tile",
-                )}
-              >
-                <Checkbox
-                  checked={selected}
-                  onCheckedChange={() => toggle(item.id)}
-                  className="pointer-events-none"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block break-words text-xs text-foreground">
-                    {item.label}
-                  </span>
-                  <span className="block break-words text-[11px] text-muted-foreground">
-                    {item.meta}
-                    {item.takenBy && (
-                      // Nicht gewählt: Hinweis in Nebentextfarbe (Kontrast); Warnfarbe nur für das Verschieben.
-                      <span className={selected ? "text-warning" : undefined}>
-                        {item.meta ? " · " : ""}
-                        {selected ? `wird aus ${item.takenBy} hierher verschoben` : `in ${item.takenBy}`}
-                      </span>
-                    )}
-                  </span>
-                </span>
-              </label>
+                checked={selected}
+                onCheckedChange={() => toggle(item.id)}
+                title={item.label}
+                description={
+                  item.meta || item.takenBy ? (
+                    <>
+                      {item.meta}
+                      {item.takenBy && (
+                        // Nicht gewählt: Hinweis in Nebentextfarbe (Kontrast); Warnfarbe nur für das Verschieben.
+                        <span className={selected ? "text-warning" : undefined}>
+                          {item.meta ? " · " : ""}
+                          {selected ? `wird aus ${item.takenBy} hierher verschoben` : `in ${item.takenBy}`}
+                        </span>
+                      )}
+                    </>
+                  ) : null
+                }
+              />
             );
           })
         )}
+        {/* Letzte Zeile der Liste, Innenabstand wie die Einträge. */}
         {hiddenTaken > 0 && !showTaken && (
           <button
             type="button"
             onClick={() => setShowTaken(true)}
-            className="w-full rounded-[10px] px-2 py-1.5 text-left text-[11px] text-primary transition-colors hover:bg-glass-tile max-sm:min-h-11"
+            className="w-full px-3 py-2 text-left text-[11px] text-primary transition-colors hover:bg-glass-tile max-sm:min-h-11"
           >
             + {hiddenTaken} aus anderen Räumen zeigen
           </button>
         )}
-      </div>
+      </Checklist>
     </div>
   );
 }

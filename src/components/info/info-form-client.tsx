@@ -234,7 +234,7 @@ export function InfoFormClient({ token }: { token: string }) {
           Betriebs ist (wie im Kopf der Gäste-Mails) für eine Farbfläche gemacht.
           Im Dunkeln ist der Akzent heller; zu 60 % gedeckt behält Weiß darauf
           genug Kontrast. */}
-      <div className="rounded-b-card bg-primary px-6 pt-10 pb-12 text-center text-primary-foreground dark:bg-primary/60">
+      <div className="rounded-b-card bg-primary-fill px-6 pt-10 pb-12 text-center text-primary-foreground dark:bg-primary/60">
         {data.branding.logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -268,7 +268,7 @@ export function InfoFormClient({ token }: { token: string }) {
           return (
             <Card
               key={place.primaryTicketId}
-              className="gap-0 py-0 sm:py-0 overflow-hidden"
+              flush="y"
             >
               <button
                 type="button"
@@ -341,7 +341,8 @@ export function InfoFormClient({ token }: { token: string }) {
                           {field.required && <span className="text-destructive ml-0.5">*</span>}
                         </Label>
 
-                        {/* Auswahl als Tasten: gewählt in Akzentfarbe, sonst Glas mit Haarlinie. */}
+                        {/* Auswahl als Tasten: gewählt in Akzentfarbe, sonst Glas mit Haarlinie. Die Tasten
+                            füllen ihre Zeile (flex-auto) wie „Ja / Nein“ darunter. */}
                         {field.type === "choice" && (
                           <div className="flex flex-wrap gap-2">
                             {(field.options ?? []).map((opt) => (
@@ -351,10 +352,7 @@ export function InfoFormClient({ token }: { token: string }) {
                                 variant={value === opt ? "default" : "secondary"}
                                 aria-pressed={value === opt}
                                 onClick={() => setValue(place.primaryTicketId, field.label, opt)}
-                                className={cn(
-                                  "h-auto min-h-11 max-w-full whitespace-normal px-4 py-2 font-semibold",
-                                  value !== opt && "ring-border dark:ring-glass-border",
-                                )}
+                                className="h-auto min-h-11 max-w-full flex-auto whitespace-normal px-4 py-2 font-semibold"
                               >
                                 {opt}
                               </Button>
@@ -371,10 +369,7 @@ export function InfoFormClient({ token }: { token: string }) {
                                 variant={value === opt ? "default" : "secondary"}
                                 aria-pressed={value === opt}
                                 onClick={() => setValue(place.primaryTicketId, field.label, opt)}
-                                className={cn(
-                                  "flex-1 h-11 px-4 font-semibold",
-                                  value !== opt && "ring-border dark:ring-glass-border",
-                                )}
+                                className="flex-1 h-11 px-4 font-semibold"
                               >
                                 {opt}
                               </Button>

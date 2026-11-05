@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { StatCard } from "@/components/ui/stat-card";
 import { Switch } from "@/components/ui/switch";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import {
   Dialog,
   DialogContent,
@@ -138,6 +140,52 @@ function formatTime(iso: string): string {
   });
 }
 
+// Ab md (768 px, Auswahl in 12 px) passt die volle Zeitraum-Beschriftung ins Auswahlfeld;
+// schmaler (Handy, 16 px) blieb von „Mi., 4. Nov. 22:00 – Do., 5. Nov. 06:00“ nur
+// „Mi., 4. Nov. 22:00 – Do.“ zwischen den Pfeilen stehen.
+const WIDE_QUERY = "(min-width: 768px)";
+
+function subscribeWide(onChange: () => void) {
+  const mq = window.matchMedia(WIDE_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+function useWideScreen(): boolean {
+  return useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => false);
+}
+
+// Wochentag und Monat aus dem kombinierten Format lesen: einzeln formatiert liefert Intl die
+// alleinstehenden Formen ohne Punkt („Mi“, „Nov“), die volle Beschriftung schreibt „Mi.“, „Nov.“.
+const DAY_FMT = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+function dayParts(d: Date): { weekday: string; month: string } {
+  const parts = DAY_FMT.formatToParts(d);
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return { weekday: pick("weekday"), month: pick("month") };
+}
+
+/**
+ * Kurze Beschriftung eines Zeitraums für schmale Auswahlfelder: nur die Tage, die Uhrzeiten
+ * stehen schon in der Beschreibung („Fenster 22:00–06:00“). Der Schlüssel ist der Starttag
+ * (YYYY-MM-DD, Zeitzone des Kontos), darum wird in UTC formatiert.
+ * Über Mitternacht „Mi./Do., 4./5.11.“ bzw. „Sa./So., 31.10./1.11.“ (Monat als Zahl: mit
+ * Namen wurde „So./Mo., 29./30. März“ bei 360 px 165 px breit, Platz sind 148 px; so höchstens
+ * 142 px), sonst „Mi., 4. Nov.“.
+ */
+function shortPeriodLabel(key: string, overnight: boolean): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  const start = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12));
+  const s = dayParts(start);
+  if (!overnight) return `${s.weekday}, ${start.getUTCDate()}. ${s.month}`;
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const days = `${s.weekday}/${dayParts(end).weekday}`;
+  const endDate = `${end.getUTCDate()}.${end.getUTCMonth() + 1}.`;
+  if (start.getUTCMonth() === end.getUTCMonth()) return `${days}, ${start.getUTCDate()}./${endDate}`;
+  return `${days}, ${start.getUTCDate()}.${start.getUTCMonth() + 1}./${endDate}`;
+}
+
 export function SurveillanceClient({ initial, cameras }: Props) {
   const [form, setForm] = useState({
     manualArmed: initial.manualArmed,
@@ -163,6 +211,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
   const [reportLoading, setReportLoading] = useState(true);
   const [reportError, setReportError] = useState("");
   const [preview, setPreview] = useState<{ url: string; title: string } | null>(null);
+  const widePeriodLabel = useWideScreen();
 
   const loadReport = useCallback(async (period?: string | null) => {
     setReportLoading(true);
@@ -325,63 +374,69 @@ export function SurveillanceClient({ initial, cameras }: Props) {
       </Card>
 
       <Card>
+        {/* Kopf: Titel und Fenster links, Zeitraumwahl (Pfeil, Auswahl, Pfeil) oben rechts
+            (docs/design-regeln.md, Abschnitt 13). Auf dem Handy steht die Zeitraumwahl als eigene
+            Zeile in voller Breite unter Titel und Fenster, nicht zwischen den beiden. */}
         <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              Nachtbericht
-              {report?.period.inProgress && (
-                <Badge variant="warning">läuft</Badge>
-              )}
-            </CardTitle>
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                className="max-sm:size-11"
-                disabled={reportLoading || periodIndex < 0 || periodIndex >= (report?.periods.length ?? 0) - 1}
-                onClick={() => goPeriod(1)}
-                title="Ältere Periode"
-                aria-label="Ältere Periode"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              {/* Natives Auswahlfeld in Glas-Optik (wie Input), Liste deckend auf der Popover-Fläche.
-                  Handy: Breite 0 plus flex-1, sonst gibt die längste Option die Breite vor und schiebt den Kopf über den Kartenrand. */}
-              <select
-                className="glass-field h-8 min-w-0 max-w-[220px] px-2.5 text-base text-foreground outline-none transition-[color,box-shadow,border-color] hover:border-foreground/20 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 md:text-xs max-sm:h-11 max-sm:w-0 max-sm:max-w-none max-sm:flex-1 [&_option]:bg-popover [&_option]:text-popover-foreground"
-                value={reportKey ?? ""}
-                disabled={reportLoading || !report}
-                onChange={(e) => void loadReport(e.target.value)}
-              >
-                {(report?.periods ?? []).map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}
-                    {p.inProgress ? " (läuft)" : ""}
-                  </option>
-                ))}
-              </select>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                className="max-sm:size-11"
-                disabled={reportLoading || periodIndex <= 0}
-                onClick={() => goPeriod(-1)}
-                title="Neuere Periode"
-                aria-label="Neuere Periode"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            Nachtbericht
+            {report?.period.inProgress && (
+              <Badge variant="warning">läuft</Badge>
+            )}
+          </CardTitle>
           {report && (
-            <p className="text-xs text-muted-foreground mt-1">
+            <CardDescription className="text-xs">
               Fenster {report.windowStart}–{report.windowEnd} · nur klare
               Personen-/Fahrzeug-Erkennungen mit Snapshot
-            </p>
+            </CardDescription>
           )}
+          <CardAction className="flex items-center gap-1 max-sm:col-span-full max-sm:row-[3] max-sm:mt-1.5 max-sm:justify-self-stretch">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              className="max-sm:size-11"
+              disabled={reportLoading || periodIndex < 0 || periodIndex >= (report?.periods.length ?? 0) - 1}
+              onClick={() => goPeriod(1)}
+              title="Ältere Periode"
+              aria-label="Ältere Periode"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {/* Natives Auswahlfeld (NativeSelect) in Glas-Optik wie Input, 32 px hoch wie die Pfeiltasten daneben.
+                Handy: Breite 0 plus flex-1, sonst gibt die längste Option die Breite vor und schiebt den Kopf über den Kartenrand.
+                Unter md die kurze Beschriftung ohne Uhrzeiten und ohne „(läuft)“ (das zeigt das Badge im Titel),
+                ab md die volle in ganzer Länge (vorher bei 220 px abgeschnitten). Werte und Auswahl bleiben gleich. */}
+            <NativeSelect
+              containerClassName="w-auto max-w-[220px] md:max-w-none max-sm:w-0 max-sm:max-w-none max-sm:flex-1"
+              className="h-8 md:text-xs max-sm:h-11"
+              aria-label="Periode"
+              value={reportKey ?? ""}
+              disabled={reportLoading || !report}
+              onChange={(e) => void loadReport(e.target.value)}
+            >
+              {(report?.periods ?? []).map((p) => (
+                <option key={p.key} value={p.key}>
+                  {widePeriodLabel
+                    ? `${p.label}${p.inProgress ? " (läuft)" : ""}`
+                    : shortPeriodLabel(p.key, report?.period.overnight ?? true) ?? p.label}
+                </option>
+              ))}
+            </NativeSelect>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              className="max-sm:size-11"
+              disabled={reportLoading || periodIndex <= 0}
+              onClick={() => goPeriod(-1)}
+              title="Neuere Periode"
+              aria-label="Neuere Periode"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </CardAction>
         </CardHeader>
         <CardContent className="space-y-4">
           {reportLoading && (
@@ -395,9 +450,11 @@ export function SurveillanceClient({ initial, cameras }: Props) {
           )}
           {!reportLoading && report && (
             <>
-              {/* Kennzahlen des Zeitraums; zwei Spalten, die dritte über die volle Breite, drei erst ab lg (schmaler kürzt die Versal-Beschriftung). */}
+              {/* Kennzahlen des Zeitraums; zwei Spalten, die dritte über die volle Breite, drei erst ab lg (schmaler kürzt die Versal-Beschriftung).
+                  In der Karte als Kachel (variant="tile"), kein Glas auf Glas. */}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                 <StatCard
+                  variant="tile"
                   size="sm"
                   tone="neutral"
                   icon={UserRound}
@@ -406,6 +463,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                   hint="mit Snapshot"
                 />
                 <StatCard
+                  variant="tile"
                   size="sm"
                   tone="neutral"
                   icon={Car}
@@ -414,6 +472,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                   hint="mit Snapshot"
                 />
                 <StatCard
+                  variant="tile"
                   size="sm"
                   tone="neutral"
                   icon={ImageIcon}
@@ -603,29 +662,21 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               </p>
               <div>
                 <Label>Wochentage</Label>
-                {/* Handy: sieben gleich breite Chips in einer Reihe, 44 px hoch (Tippfläche). */}
-                <div className="mt-1.5 grid grid-cols-7 gap-1 sm:flex sm:flex-wrap">
-                  {DAYS.map((d) => {
-                    const selected = ((form.daysOfWeek >> d.bit) & 1) === 1;
-                    return (
-                      <button
-                        type="button"
-                        key={d.bit}
-                        onClick={() => toggleDay(d.bit)}
-                        aria-pressed={selected}
-                        className={cn(
-                          "press h-8 min-w-10 px-2.5 rounded-full text-xs font-semibold outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:h-11 max-sm:min-w-0 max-sm:px-0",
-                          // Auswahl als weiche Tönung (Abschnitt 17), nicht deckend; Text in Vordergrundfarbe für Kontrast in Hell und Dunkel.
-                          selected
-                            ? "bg-primary/12 text-foreground ring-1 ring-inset ring-primary/40"
-                            : "bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border hover:text-foreground"
-                        )}
-                      >
-                        {d.short}
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* Umschalt-Chips (ToggleChip), gewählt in weicher Akzent-Tönung.
+                    Handy: sieben gleich breite Chips in einer Reihe, 44 px hoch (Tippfläche). */}
+                <ToggleChipGroup aria-label="Wochentage" className="mt-1.5 grid grid-cols-7 gap-1 sm:flex sm:flex-wrap">
+                  {DAYS.map((d) => (
+                    <ToggleChip
+                      key={d.bit}
+                      size="sm"
+                      pressed={((form.daysOfWeek >> d.bit) & 1) === 1}
+                      onPressedChange={() => toggleDay(d.bit)}
+                      className="min-w-10 px-2.5 max-sm:h-11 max-sm:min-w-0 max-sm:px-0"
+                    >
+                      {d.short}
+                    </ToggleChip>
+                  ))}
+                </ToggleChipGroup>
               </div>
             </>
           )}
@@ -702,6 +753,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               return (
                 // Kamera als Kippkachel: dabei = Auswahl-Tönung, aus = Glas mit gedämpftem Namen
                 // (keine Deckkraft auf der ganzen Kachel, sonst fallen Nebentext und Badge unter 4,5:1).
+                // Aus: Rand wie glass-tile (Glas auf Glas, im Hellen eine dunkle Haarlinie).
                 <button
                   type="button"
                   key={c.id}
@@ -711,7 +763,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                     "press w-full flex items-center justify-between gap-3 rounded-tile border px-3 py-2.5 text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:min-h-11",
                     on
                       ? "border-primary/40 bg-primary/10"
-                      : "border-glass-border bg-glass-tile"
+                      : "border-glass-tile-border bg-glass-tile"
                   )}
                 >
                   <span className={cn("min-w-0 font-medium", on ? "text-foreground" : "text-muted-foreground")}>

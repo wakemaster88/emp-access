@@ -513,9 +513,11 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
           </div>
         </div>
 
-        {/* Reiter als Kapsel; jeder Reiter hat seinen Inhaltsbereich (TabsContent). */}
+        {/* Reiter als Kapsel; jeder Reiter hat seinen Inhaltsbereich (TabsContent).
+            Handy: ohne Symbole (wie die Statuskapsel der Gutscheine), damit die drei Reiter auch
+            bei 360 px in einer Zeile stehen statt „Scans“ allein in einer zweiten. */}
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="gap-4">
-          <TabsList className="w-full">
+          <TabsList className="w-full max-sm:[&_svg]:hidden">
             <TabsTrigger value="edit" className="px-2.5">
               <Pencil className="size-3.5" />
               Bearbeiten

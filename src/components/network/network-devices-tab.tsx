@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,9 +19,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
 import { StatusDot } from "@/components/ui/status-dot";
@@ -163,59 +162,82 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
   }
 
   return (
-    <Card className="overflow-hidden pb-0 sm:pb-0">
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+    <Card flush>
+      {/* Kopf: Titel links, Primärhandlung oben rechts; auf dem Handy „+ Hardware“ (docs/design-regeln.md, Abschnitt 13). */}
+      <CardHeader>
         <CardTitle className="tabular-nums">
           Switches &amp; Router ({devices.length})
         </CardTitle>
-        <Button onClick={openAdd} className="gap-2 max-sm:h-11">
-          <Plus className="h-4 w-4" />
-          Hardware hinzufügen
-        </Button>
+        <CardAction>
+          <Button onClick={openAdd} className="gap-2 max-sm:h-11" aria-label="Hardware hinzufügen">
+            <Plus className="h-4 w-4" />
+            <span>Hardware<span className="max-sm:hidden"> hinzufügen</span></span>
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent>
-        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17).
+            Handy (326 px): Gerät und Tasten; Status und Ports stehen als Nebenzeile unter dem Namen,
+            der Pfeil entfällt (der Name führt schon zur Detailseite). */}
         <div className="-mx-4 sm:-mx-[18px]">
-          <Table>
+          <Table edge>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[180px] pl-4 sm:pl-[18px]">Gerät</TableHead>
+                <TableHead className="sm:min-w-[180px]">Gerät</TableHead>
                 <TableHead className="hidden md:table-cell">Modell</TableHead>
                 <TableHead className="hidden lg:table-cell">IP-Adresse</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead className="max-sm:hidden">Status</TableHead>
                 <TableHead className="hidden sm:table-cell">Standort</TableHead>
-                <TableHead>Ports</TableHead>
-                <TableHead className="w-24 pr-4 sm:pr-[18px]" />
+                <TableHead className="max-sm:hidden">Ports</TableHead>
+                <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {devices.length === 0 && (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="p-0 whitespace-normal">
-                    <EmptyState
-                      icon={Server}
-                      title="Keine Netzwerk-Hardware erfasst"
-                      description="Lege Switches, Router oder Access Points an, um dein Netzwerk zu dokumentieren."
-                    />
-                  </TableCell>
-                </TableRow>
+                <TableEmpty
+                  colSpan={7}
+                  compact={false}
+                  icon={Server}
+                  title="Keine Netzwerk-Hardware erfasst"
+                  description="Lege Switches, Router oder Access Points an, um dein Netzwerk zu dokumentieren."
+                />
               )}
               {devices.map((d) => {
                 const meta = TYPE_META[d.type] ?? TYPE_META.OTHER;
                 const Icon = meta.icon;
+                const online = scanOnline(d.lastSeenAt);
                 return (
                   <TableRow
                     key={d.id}
                     className="group"
                   >
-                    <TableCell className="pl-4 sm:pl-[18px]">
-                      <Link href={`/network/${d.id}`} className="flex items-center gap-3 min-w-0">
+                    {/* Gerät – auf dem Handy nimmt die Spalte den Rest der Breite; der Name bricht um
+                        statt mitten im Wort zu enden („Core-Switch Technikra…“). */}
+                    <TableCell className="max-sm:w-full max-sm:max-w-0">
+                      {/* Handy: der Link reicht über den Zellenabstand (-my-2 py-2), so ist auch eine
+                          Zeile ohne Nebenzeile („AP Bootshaus“, 36 px) auf ganzer Höhe tippbar. */}
+                      <Link href={`/network/${d.id}`} className="flex items-center gap-3 min-w-0 max-sm:-my-2 max-sm:py-2">
                         <IconChip icon={Icon} />
                         <div className="min-w-0">
-                          <p className="font-medium text-sm text-foreground group-hover:text-primary truncate">
+                          <p className="font-medium text-sm text-foreground group-hover:text-primary sm:truncate max-sm:whitespace-normal max-sm:break-words">
                             {d.name}
                           </p>
                           <p className="text-xs text-muted-foreground">{meta.label}</p>
+                          {/* Handy: Status und belegte Ports als Nebenzeile (ab sm eigene Spalten). */}
+                          {(online !== null || d.portCount > 0) && (
+                            <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground sm:hidden">
+                              {online !== null && (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <StatusDot tone={online ? "success" : "neutral"} size="xs" />
+                                  {online ? "Online" : "Offline"}
+                                </span>
+                              )}
+                              {online !== null && d.portCount > 0 && <span aria-hidden>·</span>}
+                              {d.portCount > 0 && (
+                                <span className="tabular-nums">{d.usedPorts} / {d.portCount} Ports</span>
+                              )}
+                            </p>
+                          )}
                         </div>
                       </Link>
                     </TableCell>
@@ -225,9 +247,8 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                     <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
                       {d.ipAddress || <span className="text-muted-foreground">–</span>}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-sm:hidden">
                       {(() => {
-                        const online = scanOnline(d.lastSeenAt);
                         if (online === true) {
                           return (
                             <Badge
@@ -269,7 +290,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                         <span className="text-muted-foreground">–</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-sm:hidden">
                       {d.portCount > 0 ? (
                         <Badge variant="secondary" className="gap-1 text-xs tabular-nums">
                           <EthernetPort className="h-3 w-3" />
@@ -279,7 +300,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                         <span className="text-muted-foreground text-xs">–</span>
                       )}
                     </TableCell>
-                    <TableCell className="pr-4 sm:pr-[18px]">
+                    <TableCell>
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
@@ -302,13 +323,14 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                             ? <Loader2 className="h-4 w-4 animate-spin" />
                             : <Trash2 className="h-4 w-4" />}
                         </Button>
-                        <Link
-                          href={`/network/${d.id}`}
-                          aria-label={d.name}
-                          className="inline-flex size-8 items-center justify-center rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:size-11"
-                        >
-                          <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary" />
-                        </Link>
+                        {/* Pfeil erst ab sm: auf dem Handy führt der Name zur Detailseite.
+                            Als Taste bekommt er bei Touch eine eigene Tippfläche, und „Löschen“
+                            davor reicht nicht mehr in ihn hinein. */}
+                        <Button asChild variant="ghost" size="icon-sm" className="max-sm:hidden">
+                          <Link href={`/network/${d.id}`} aria-label={d.name}>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary" />
+                          </Link>
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>

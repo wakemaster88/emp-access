@@ -65,7 +65,8 @@ export function ExceptionEditor({
           </div>
 
           {/* Kästchen aus dem Baustein (Glasfeld, angehakt in Akzentfarbe); die ganze Zeile ist Tippfläche (docs/design-regeln.md, Abschnitt 14). */}
-          <label className="flex h-9 items-center gap-2 text-xs max-sm:h-11">
+          {/* pl-1: Die unsichtbare Fläche des Kästchens (12 px) endet so genau am Datumsfeld davor. */}
+          <label className="flex h-9 items-center gap-2 pl-1 text-xs max-sm:h-11">
             <Checkbox
               checked={exception.closed}
               disabled={disabled}

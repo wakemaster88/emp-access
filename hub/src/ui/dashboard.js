@@ -89,10 +89,11 @@ function ago(iso) {
   if (!iso) return "nie";
   const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
   if (s < 10) return "gerade eben";
-  if (s < 60) return `vor ${s} s`;
-  if (s < 3600) return `vor ${Math.floor(s / 60)} min`;
-  if (s < 86400) return `vor ${Math.floor(s / 3600)} h`;
-  return `vor ${Math.floor(s / 86400)} d`;
+  // Geschuetztes Leerzeichen: Zahl und Einheit brechen nie getrennt um ("vor 20 s").
+  if (s < 60) return `vor ${s}\u00a0s`;
+  if (s < 3600) return `vor ${Math.floor(s / 60)}\u00a0min`;
+  if (s < 86400) return `vor ${Math.floor(s / 3600)}\u00a0h`;
+  return `vor ${Math.floor(s / 86400)}\u00a0d`;
 }
 
 function timeTag(iso) {

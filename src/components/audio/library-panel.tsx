@@ -14,10 +14,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SearchInput } from "@/components/ui/search-input";
 import { Segmented } from "@/components/ui/segmented";
 import {
   Select,
@@ -231,21 +231,20 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
         <>
           {tracks.length >= SEARCH_THRESHOLD && (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="relative sm:min-w-[200px] sm:flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Titel oder Interpret suchen"
-                  aria-label="Mediathek durchsuchen"
-                  className="pl-8"
-                />
-              </div>
+              <SearchInput
+                containerClassName="sm:min-w-[200px] sm:flex-1"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Titel oder Interpret suchen"
+                aria-label="Mediathek durchsuchen"
+              />
+              {/* Handy: volle Breite unter der Suche; mit dem engeren Innenabstand der Kapsel
+                  (10 px) passen die fünf Arten bei 360 px in eine Zeile. */}
               <Segmented
                 value={filterKind}
                 onValueChange={setFilterKind}
                 aria-label="Nach Art filtern"
-                className="self-start sm:self-auto"
+                className="sm:self-auto"
                 options={[
                   { value: "ALL", label: "Alle" },
                   ...(Object.keys(KIND_LABELS) as AudioTrackKind[]).map((k) => ({
@@ -262,7 +261,7 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
               <EmptyState compact icon={Search} title="Kein Titel passt zur Suche." />
             </Card>
           ) : (
-            <Card className="gap-0 py-0 sm:py-0">
+            <Card flush="y">
               <CardContent className="divide-y divide-border px-0 sm:px-0">
                 {visible.map((track) => (
                   <TrackItem
@@ -357,7 +356,8 @@ function TrackItem({
         <p className="text-xs tabular-nums text-muted-foreground">
           {track.artist ? `${track.artist} · ` : ""}
           {formatDuration(track.durationSec)}
-          {track.sizeBytes ? ` · ${(track.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ""}
+          {/* geschütztes Leerzeichen: Zahl und Einheit brechen nicht auseinander */}
+          {track.sizeBytes ? ` · ${(track.sizeBytes / 1024 / 1024).toFixed(1)}\u00a0MB` : ""}
         </p>
       </div>
 

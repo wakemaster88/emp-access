@@ -39,13 +39,13 @@ export function WeekScheduleEditor({ value, onChange, className }: WeekScheduleE
         {DAY_KEYS.map((day) => {
           const entry = value[day];
           return (
+            // Tag ohne Zeitsteuerung: keine Deckkraft auf der Zeile (Text bleibt lesbar);
+            // den Zustand zeigt der Schalter, gesperrte Zeitfelder dimmen sich selbst.
             <div
               key={day}
               className={cn(
                 "grid grid-cols-[2.5rem_1fr_1fr_1fr] gap-2 items-center rounded-lg px-1 py-1.5 transition-colors",
-                entry.enabled
-                  ? "bg-primary/10"
-                  : "opacity-60"
+                entry.enabled && "bg-primary/10"
               )}
             >
               {/* Toggle: Schalter-Baustein statt eigenem Knopf; Standardgröße (24 × 40) füllt die 40-px-Spalte und ist gut zu treffen. */}
@@ -71,7 +71,7 @@ export function WeekScheduleEditor({ value, onChange, className }: WeekScheduleE
                 onChange={(e) => updateDay(day, "on", e.target.value)}
                 disabled={!entry.enabled}
                 className={cn(
-                  "glass-field w-full h-9 px-2 text-base md:text-sm text-center font-mono transition-[color,box-shadow,border-color] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 max-sm:h-11",
+                  "glass-field w-full h-9 px-2 text-base md:text-sm text-center font-mono transition-[color,box-shadow,border-color] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11",
                   entry.enabled
                     ? "text-foreground/90"
                     : "text-muted-foreground cursor-not-allowed"
@@ -85,7 +85,7 @@ export function WeekScheduleEditor({ value, onChange, className }: WeekScheduleE
                 onChange={(e) => updateDay(day, "off", e.target.value)}
                 disabled={!entry.enabled}
                 className={cn(
-                  "glass-field w-full h-9 px-2 text-base md:text-sm text-center font-mono transition-[color,box-shadow,border-color] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 max-sm:h-11",
+                  "glass-field w-full h-9 px-2 text-base md:text-sm text-center font-mono transition-[color,box-shadow,border-color] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11",
                   entry.enabled
                     ? "text-foreground/90"
                     : "text-muted-foreground cursor-not-allowed"
@@ -131,12 +131,10 @@ export function WeekScheduleDisplay({ schedule }: { schedule: WeekSchedule }) {
         {DAY_KEYS.map((day) => {
           const entry = schedule[day];
           return (
+            // Tag ohne Zeitsteuerung: gedämpfter Text und „–“ statt Deckkraft auf der Zeile.
             <div
               key={day}
-              className={cn(
-                "grid grid-cols-[2.5rem_1fr_1fr_1fr] gap-2 items-center rounded-lg px-1 py-1 text-sm",
-                entry.enabled ? "" : "opacity-40"
-              )}
+              className="grid grid-cols-[2.5rem_1fr_1fr_1fr] gap-2 items-center rounded-lg px-1 py-1 text-sm"
             >
               <StatusDot tone={entry.enabled ? "primary" : "neutral"} className="mx-auto" />
               <span className={cn("text-center font-semibold", entry.enabled ? "text-foreground" : "text-muted-foreground")}>
