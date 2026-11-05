@@ -32,12 +32,18 @@ function Card({
   )
 }
 
+/**
+ * Kopf der Karte (docs/design-regeln.md, Abschnitt 13). Mit `CardAction` zwei
+ * Spalten: ab `sm` steht die Taste rechts neben Titel und Beschreibung, auf dem
+ * Handy nur neben dem Titel (beide mittig) und die Beschreibung darunter in
+ * voller Breite – sonst bliebe ihr neben der Taste nur ein schmaler Streifen.
+ */
 function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-header"
       className={cn(
-        "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-4 sm:px-[18px] has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-4 [.border-b]:border-border",
+        "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-4 sm:px-[18px] has-data-[slot=card-action]:grid-cols-[1fr_auto] max-sm:has-data-[slot=card-action]:items-center [.border-b]:pb-4 [.border-b]:border-border",
         className
       )}
       {...props}
@@ -59,7 +65,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      className={cn("text-muted-foreground text-[13px] leading-snug", className)}
+      className={cn("text-muted-foreground text-[13px] leading-snug max-sm:col-span-full", className)}
       {...props}
     />
   )
@@ -70,7 +76,7 @@ function CardAction({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-action"
       className={cn(
-        "col-start-2 row-span-2 row-start-1 self-start justify-self-end",
+        "col-start-2 row-start-1 justify-self-end sm:row-span-2 sm:self-start",
         className
       )}
       {...props}

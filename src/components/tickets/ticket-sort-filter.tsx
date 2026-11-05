@@ -103,7 +103,7 @@ export function TicketSortFilter({
   return (
     // FilterGroup: im Filter-Sheet (Handy) untereinander im selben Abstand wie die übrigen
     // Filter; ab sm lösen sich die Felder in die Filterzeile auf und brechen mit ihr um.
-    <FilterGroup className="max-sm:gap-3 sm:contents">
+    <FilterGroup>
       <Select value={sortValue} onValueChange={handleSortChange}>
         <SelectTrigger className={cn("sm:w-[180px]", TRIGGER)}>
           <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />

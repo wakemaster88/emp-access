@@ -95,7 +95,9 @@ Im Dunkeln bleiben die Werte.
   Reiter ohne Inhalt werden nicht gezeigt.
 - Passt eine Tab-Leiste oder Kapsel (`Tabs`, `Segmented`, `SegmentedLinks`) nicht in eine Zeile,
   bricht sie um: eine Zeile mehr, die Einträge füllen jede Zeile, die Kapsel wird ein
-  abgerundetes Rechteck (22 px). Nie seitlich wischen oder scrollen.
+  abgerundetes Rechteck (22 px). Nie seitlich wischen oder scrollen. Auf dem Handy stehen die
+  Einträge enger (10 px Innenabstand). Der aktive Eintrag behält die Schriftstärke und hebt sich
+  nur durch die helle Pille ab – fetter wäre er breiter, und die Leiste spränge beim Wechseln.
 
 ## 7. Kacheln und Zeilen
 
@@ -199,12 +201,16 @@ beschreiben, wie die Grundsätze oben im Code umgesetzt werden.
   Höchstens eine Primärtaste im Kopf; alles Weitere als `outline` oder `ghost`.
 - **Inhalt**: `page-content` (16 px Rand auf dem Handy, 24 px ab `sm`), darin Abschnitte mit
   16 bis 20 px Abstand (`space-y-4 sm:space-y-5` oder `gap-4 sm:gap-5`).
-- **Kopf der Karte** (Liste oder Bereich mit Handlungen), auf Handy und Desktop gleich: links
-  `CardTitle` mit Anzahl („Aktive Tickets (70)“) und höchstens einem Badge, darunter
-  `CardDescription` (höchstens zwei Zeilen). Die Primärhandlung („… anlegen“, „Hinzufügen“) steht
-  in `CardAction` oben rechts – nicht als eigene Zeile, nicht links unter dem Text. Auf dem Handy
-  darf ihr Text kürzer werden (Symbol plus ein Wort). Weitere Handlungen (Verlauf, Import, Neu
-  laden) als `outline` in einer Zeile unter dem Kopf, auf dem Handy höchstens eine Zeile.
+- **Kopf der Karte** (Liste oder Bereich mit Handlungen): links `CardTitle` mit Anzahl
+  („Aktive Tickets (70)“) und höchstens einem Badge, darunter `CardDescription` (höchstens zwei
+  Zeilen). Die Primärhandlung („… anlegen“, „Hinzufügen“) steht in `CardAction` oben rechts –
+  nicht als eigene Zeile, nicht links unter dem Text. Ab `sm` steht sie neben Titel und
+  Beschreibung, auf dem Handy nur neben dem Titel; die Beschreibung läuft dort darunter über die
+  volle Breite (das macht `CardHeader` selbst). Auf dem Handy zeigt die Taste Symbol und ein Wort,
+  am liebsten das Hauptwort; der Rest bleibt für Screenreader:
+  `<Plus /><span>Ticket<span className="max-sm:sr-only"> erstellen</span></span>` („+ Ticket“).
+  Weitere Handlungen (Verlauf, Import, Neu laden) als `outline` in einer Zeile unter dem Kopf, auf
+  dem Handy höchstens eine Zeile.
 - **Filter unter dem Kopf**: Suche immer sichtbar (`SearchInput`, auf dem Handy volle Breite).
   Bereich oder Zustand mit wenigen Werten als `Segmented`/`SegmentedLinks`. Ein oder zwei
   Auswahlfelder stehen auf dem Handy nebeneinander in zwei gleich breiten Spalten
@@ -307,7 +313,12 @@ bereit.
   Zeilenhöhe mindestens 44 px auf dem Handy. Gruppenzeilen als `text-label` auf `bg-glass-tile`.
 - Tabellen passen auf dem Handy (360 px) ohne seitliches Scrollen: Nebenspalten `max-sm:hidden`,
   ihr Inhalt als Nebenzeile in der ersten Spalte; lange Texte brechen um (`whitespace-normal`,
-  Codes und Adressen `break-all`). Der Container scrollt nur als Notnagel, nie die Seite.
+  Codes und Adressen `break-all`). Der Container scrollt nur als Notnagel, nie die Seite. Fällt
+  die letzte Spalte auf dem Handy weg, bekommt die letzte sichtbare `max-sm:pr-4` – den Rand von
+  `Table edge` trägt die letzte Zelle im DOM, auch wenn sie versteckt ist.
+- Raster für Listen und Kacheln immer mit Spaltenangabe (`grid grid-cols-1 sm:grid-cols-2 …`):
+  Ohne sie ist die Spur so breit wie der längste Inhalt, `truncate` greift nicht, und die Seite
+  wird breiter als das Handy.
 - Auswahl: `bg-primary/10`, Darüberfahren: `bg-glass-tile`.
 - **Inaktiv** (Listen und Karten außerhalb der Raum-Kacheln): Text bleibt lesbar – keine
   Deckkraft auf Text, Nebentext mindestens 3:1. Den Zustand sagt ein neutrales Badge („Inaktiv“,

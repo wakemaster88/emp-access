@@ -87,7 +87,7 @@ function memberValidity(t: MemberRow): "valid" | "expired" | "invalid" | "paused
 /**
  * Primärhandlung „Verein anlegen“ mit eigenem Dialog – steht im Kartenkopf
  * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
- * und „anlegen“; der volle Name bleibt als `aria-label`.
+ * und „Verein“; der volle Name bleibt als `aria-label`.
  */
 export function CreateVereinButton({ allTickets }: Pick<VereineTableProps, "allTickets">) {
   const [open, setOpen] = useState(false);
@@ -95,7 +95,7 @@ export function CreateVereinButton({ allTickets }: Pick<VereineTableProps, "allT
     <>
       <Button onClick={() => setOpen(true)} type="button" className="max-sm:h-11" aria-label="Verein anlegen">
         <Plus className="h-4 w-4" />
-        <span><span className="max-sm:hidden">Verein </span>anlegen</span>
+        <span>Verein<span className="max-sm:sr-only"> anlegen</span></span>
       </Button>
       <VereinDialog
         verein={null}

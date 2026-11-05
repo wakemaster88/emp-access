@@ -57,7 +57,10 @@ function FilterBar({
   const canReset = activeCount > 0 && (resetHref !== undefined || onReset !== undefined)
   return (
     <>
-      <div data-slot="filter-bar" className={cn("hidden flex-wrap items-center gap-2 sm:flex", className)}>
+      <div
+        data-slot="filter-bar"
+        className={cn("hidden flex-wrap items-center gap-2 sm:flex [&>[data-slot=filter-group]]:contents", className)}
+      >
         {children}
       </div>
       <Sheet>
@@ -91,7 +94,7 @@ function FilterBar({
             className={cn(
               "flex min-h-0 flex-col gap-3 overflow-y-auto px-4 pb-2",
               // Eigene Zeilen der Filter lösen sich auf: alles untereinander, volle Breite, 44 px.
-              "[&_[data-slot=filter-group]]:flex-col [&_[data-slot=filter-group]]:items-stretch",
+              "[&_[data-slot=filter-group]]:flex-col [&_[data-slot=filter-group]]:items-stretch [&_[data-slot=filter-group]]:gap-3",
               "[&_[data-slot=select-trigger]]:h-11 [&_[data-slot=select-trigger]]:w-full",
               "[&_[data-slot=button]]:h-11 [&_[data-slot=button]]:w-full [&_[data-slot=button]]:justify-start",
             )}
@@ -123,7 +126,9 @@ function FilterBar({
 
 /**
  * Gruppe innerhalb einer `FilterBar` (z. B. eine Komponente mit mehreren
- * Auswahlfeldern): ab `sm` in einer Zeile, im Sheet untereinander.
+ * Auswahlfeldern): ab `sm` fügen sich ihre Felder in die Zeile der Leiste ein
+ * (`display: contents`), im Sheet stehen sie untereinander. Außerhalb einer
+ * `FilterBar` eine eigene umbrechende Zeile.
  */
 function FilterGroup({ className, ...props }: React.ComponentProps<"div">) {
   return <div data-slot="filter-group" className={cn("flex flex-wrap items-center gap-2", className)} {...props} />

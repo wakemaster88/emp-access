@@ -238,13 +238,13 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
                 placeholder="Titel oder Interpret suchen"
                 aria-label="Mediathek durchsuchen"
               />
-              {/* Handy: volle Breite unter der Suche, 10 px Innenabstand – so passen die
-                  fünf Arten bei 360 px in eine Zeile (mit 14 px stand „Ansage“ allein darunter). */}
+              {/* Handy: volle Breite unter der Suche; mit dem engeren Innenabstand der Kapsel
+                  (10 px) passen die fünf Arten bei 360 px in eine Zeile. */}
               <Segmented
                 value={filterKind}
                 onValueChange={setFilterKind}
                 aria-label="Nach Art filtern"
-                className="max-sm:[&>[role=radio]]:px-2.5 sm:self-auto"
+                className="sm:self-auto"
                 options={[
                   { value: "ALL", label: "Alle" },
                   ...(Object.keys(KIND_LABELS) as AudioTrackKind[]).map((k) => ({

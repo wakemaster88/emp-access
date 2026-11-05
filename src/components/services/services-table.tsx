@@ -41,7 +41,7 @@ interface ServicesTableProps {
 /**
  * Primärhandlung „Service anlegen“ mit eigenem Dialog – steht im Kartenkopf
  * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
- * und „anlegen“; der volle Name bleibt als `aria-label`.
+ * und „Service“; der volle Name bleibt als `aria-label`.
  */
 export function CreateServiceButton({ areas, annyServices, annyResources }: Omit<ServicesTableProps, "services" | "readonly">) {
   const [open, setOpen] = useState(false);
@@ -49,7 +49,7 @@ export function CreateServiceButton({ areas, annyServices, annyResources }: Omit
     <>
       <Button onClick={() => setOpen(true)} className="max-sm:h-11" aria-label="Service anlegen">
         <Plus className="h-4 w-4" />
-        <span><span className="max-sm:hidden">Service </span>anlegen</span>
+        <span>Service<span className="max-sm:sr-only"> anlegen</span></span>
       </Button>
       <ServiceDialog
         service={null}

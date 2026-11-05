@@ -183,10 +183,10 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
               className="h-11 sm:h-9"
             >
               <Plus className="h-4 w-4" />
-              {/* Auf dem Handy „+ anlegen“, damit Titel und Beschreibung daneben Platz haben;
-                  „Abo“ bleibt für Screenreader im Namen. */}
+              {/* Auf dem Handy „+ Abo“, damit der Titel daneben Platz hat; „anlegen“ bleibt
+                  für Screenreader im Namen. */}
               <span>
-                <span className="max-sm:sr-only">Abo </span>anlegen
+                Abo<span className="max-sm:sr-only"> anlegen</span>
               </span>
             </Button>
           </CardAction>

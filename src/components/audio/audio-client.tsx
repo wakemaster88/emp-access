@@ -351,39 +351,39 @@ export function AudioClient({
           Inhalt) noch in eine Zeile, statt „Verlauf“ allein in eine zweite zu schieben.
         */}
         <TabsList className="w-full sm:w-fit">
-          <TabsTrigger value="announce" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
+          <TabsTrigger value="announce" className="gap-1.5 px-3 sm:flex-none">
             <Megaphone className="h-4 w-4" />
             Durchsage
           </TabsTrigger>
-          <TabsTrigger value="zones" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
+          <TabsTrigger value="zones" className="gap-1.5 px-3 sm:flex-none">
             <Speaker className="h-4 w-4" />
             Zonen
           </TabsTrigger>
-          <TabsTrigger value="soundweb" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
+          <TabsTrigger value="soundweb" className="gap-1.5 px-3 sm:flex-none">
             <SlidersHorizontal className="h-4 w-4" />
             Soundweb
           </TabsTrigger>
-          <TabsTrigger value="library" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
+          <TabsTrigger value="library" className="gap-1.5 px-3 sm:flex-none">
             <Music className="h-4 w-4" />
             Mediathek
           </TabsTrigger>
-          <TabsTrigger value="playlists" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
+          <TabsTrigger value="playlists" className="gap-1.5 px-3 sm:flex-none">
             <ListMusic className="h-4 w-4" />
             Playlists
           </TabsTrigger>
-          <TabsTrigger value="streams" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
+          <TabsTrigger value="streams" className="gap-1.5 px-3 sm:flex-none">
             <Radio className="h-4 w-4" />
             Webradio
           </TabsTrigger>
-          <TabsTrigger value="templates" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
+          <TabsTrigger value="templates" className="gap-1.5 px-3 sm:flex-none">
             <Megaphone className="h-4 w-4" />
             Vorlagen
           </TabsTrigger>
-          <TabsTrigger value="schedules" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
+          <TabsTrigger value="schedules" className="gap-1.5 px-3 sm:flex-none">
             <CalendarClock className="h-4 w-4" />
             Zeitpläne
           </TabsTrigger>
-          <TabsTrigger value="history" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
+          <TabsTrigger value="history" className="gap-1.5 px-3 sm:flex-none">
             <History className="h-4 w-4" />
             Verlauf
           </TabsTrigger>
@@ -1393,7 +1393,7 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
           value={filter}
           onValueChange={setFilter}
           aria-label="Verlauf filtern"
-          className="max-sm:w-full max-sm:[&>[role=radio]]:px-2.5"
+          className="max-sm:w-full"
           options={HISTORY_FILTERS.map((option) => ({
             value: option.value,
             label: option.label,

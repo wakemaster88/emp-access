@@ -72,9 +72,11 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "press relative inline-flex h-[34px] flex-1 shrink-0 items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap text-muted-foreground outline-none",
+        "press relative inline-flex h-[34px] flex-1 shrink-0 items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap text-muted-foreground outline-none max-sm:px-2.5",
         "hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-        "data-[state=active]:glass-pill-active data-[state=active]:text-foreground data-[state=active]:font-semibold",
+        // Der aktive Reiter behält die Schriftstärke: fetter wäre er breiter, und eine
+        // umbrochene Leiste spränge beim Wechseln in andere Zeilen.
+        "data-[state=active]:glass-pill-active data-[state=active]:text-foreground",
         "group-data-[orientation=vertical]/tabs:w-full group-data-[orientation=vertical]/tabs:justify-start group-data-[orientation=vertical]/tabs:rounded-control",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className

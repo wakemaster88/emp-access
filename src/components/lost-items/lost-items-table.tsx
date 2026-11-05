@@ -39,7 +39,7 @@ function contactLabel(item: LostItemData): string | null {
 /**
  * Primärhandlung „Eintrag anlegen“ mit eigenem Dialog – steht im Kartenkopf
  * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
- * und „anlegen“; der volle Name bleibt als `aria-label`.
+ * und „Eintrag“; der volle Name bleibt als `aria-label`.
  */
 export function CreateLostItemButton() {
   const [open, setOpen] = useState(false);
@@ -47,7 +47,7 @@ export function CreateLostItemButton() {
     <>
       <Button onClick={() => setOpen(true)} type="button" className="max-sm:h-11" aria-label="Eintrag anlegen">
         <Plus className="h-4 w-4" />
-        <span><span className="max-sm:hidden">Eintrag </span>anlegen</span>
+        <span>Eintrag<span className="max-sm:sr-only"> anlegen</span></span>
       </Button>
       <LostItemDialog item={null} open={open} onClose={() => setOpen(false)} />
     </>

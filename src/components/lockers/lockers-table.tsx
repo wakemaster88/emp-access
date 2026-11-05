@@ -79,7 +79,7 @@ function LockCountBadge({ locker, className }: { locker: Pick<LockerRow, "lockTy
 /**
  * Primärhandlung „Schließfach anlegen“ mit eigenem Dialog – steht im Kartenkopf
  * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
- * und „anlegen“; der volle Name bleibt als `aria-label`.
+ * und „Schließfach“; der volle Name bleibt als `aria-label`.
  */
 export function CreateLockerButton({ aboTickets, currentYear }: Pick<LockersTableProps, "aboTickets" | "currentYear">) {
   const [open, setOpen] = useState(false);
@@ -87,7 +87,7 @@ export function CreateLockerButton({ aboTickets, currentYear }: Pick<LockersTabl
     <>
       <Button onClick={() => setOpen(true)} type="button" className="max-sm:h-11" aria-label="Schließfach anlegen">
         <Plus className="h-4 w-4" />
-        <span><span className="max-sm:hidden">Schließfach </span>anlegen</span>
+        <span>Schließfach<span className="max-sm:sr-only"> anlegen</span></span>
       </Button>
       <LockerDialog
         locker={null}

@@ -57,7 +57,7 @@ function toAllAreaData(areas: AreaRow[]): AreaData[] {
 /**
  * Primärhandlung „Resource anlegen“ mit eigenem Dialog – steht im Kartenkopf
  * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
- * und „anlegen“; der volle Name bleibt als `aria-label`.
+ * und „Resource“; der volle Name bleibt als `aria-label`.
  */
 export function CreateAreaButton({ areas, annyResources, annyServices, annyMappings }: Omit<AreasTableProps, "readonly">) {
   const [open, setOpen] = useState(false);
@@ -65,7 +65,7 @@ export function CreateAreaButton({ areas, annyResources, annyServices, annyMappi
     <>
       <Button onClick={() => setOpen(true)} className="max-sm:h-11" aria-label="Resource anlegen">
         <Plus className="h-4 w-4" />
-        <span><span className="max-sm:hidden">Resource </span>anlegen</span>
+        <span>Resource<span className="max-sm:sr-only"> anlegen</span></span>
       </Button>
       <AreaDialog
         area={null}

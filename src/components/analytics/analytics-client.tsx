@@ -242,7 +242,7 @@ export function AnalyticsClient() {
           value={mode}
           onValueChange={setMode}
           aria-label="Zeitraum"
-          className="w-full sm:w-fit max-sm:[&>button]:px-2.5"
+          className="w-full sm:w-fit"
           options={modes.map((m) => ({ value: m.id, label: m.label }))}
         />
 
