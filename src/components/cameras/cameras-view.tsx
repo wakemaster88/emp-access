@@ -330,7 +330,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
         {/* Kopf: Titel links, Primärhandlung oben rechts (docs/design-regeln.md, Abschnitt 13);
             der volle Text passt auch auf dem Handy neben den Titel. */}
         <CardHeader>
-          <CardTitle className="tabular-nums row-span-2 self-center">Kameras ({cameras.length})</CardTitle>
+          <CardTitle className="tabular-nums">Kameras ({cameras.length})</CardTitle>
           <CardAction>
             <Button onClick={openAdd} className="h-11 gap-2 sm:h-9">
               <Plus className="h-4 w-4" />

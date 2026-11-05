@@ -165,7 +165,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
     <Card flush>
       {/* Kopf: Titel links, Primärhandlung oben rechts; auf dem Handy „+ Hardware“ (docs/design-regeln.md, Abschnitt 13). */}
       <CardHeader>
-        <CardTitle className="tabular-nums row-span-2 self-center">
+        <CardTitle className="tabular-nums">
           Switches &amp; Router ({devices.length})
         </CardTitle>
         <CardAction>

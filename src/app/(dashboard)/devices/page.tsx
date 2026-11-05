@@ -67,14 +67,14 @@ export default async function DevicesPage({ searchParams }: Props) {
               Ab sm steht der Statusfilter neben dem Titel. Auf dem Handy löst sich die Hülle auf
               (contents): der Titel steht neben der Taste, der Filter in voller Breite darunter. */}
           <CardHeader>
-            <div className="contents sm:row-span-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:self-center">
-              <CardTitle className="tabular-nums max-sm:row-span-2 max-sm:self-center">Geräte ({devices.length})</CardTitle>
+            <div className="contents sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+              <CardTitle className="tabular-nums">Geräte ({devices.length})</CardTitle>
               <div className="max-sm:col-span-full max-sm:mt-1.5">
                 <DeviceStatusFilter current={status} />
               </div>
             </div>
             {!isSuperAdmin && (
-              <CardAction className="sm:self-center">
+              <CardAction>
                 <AddDeviceDialog areas={areas} rooms={rooms} />
               </CardAction>
             )}

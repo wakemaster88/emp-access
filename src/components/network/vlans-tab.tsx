@@ -117,7 +117,7 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
     <Card flush>
       {/* Kopf: Titel links, Primärhandlung oben rechts; auf dem Handy „+ VLAN“ (docs/design-regeln.md, Abschnitt 13). */}
       <CardHeader>
-        <CardTitle className="tabular-nums row-span-2 self-center">VLANs ({vlans.length})</CardTitle>
+        <CardTitle className="tabular-nums">VLANs ({vlans.length})</CardTitle>
         <CardAction>
           <Button onClick={openAdd} className="gap-2 max-sm:h-11" aria-label="VLAN hinzufügen">
             <Plus className="h-4 w-4" />

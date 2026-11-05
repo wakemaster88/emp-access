@@ -206,7 +206,8 @@ beschreiben, wie die Grundsätze oben im Code umgesetzt werden.
   Zeilen). Die Primärhandlung („… anlegen“, „Hinzufügen“) steht in `CardAction` oben rechts –
   nicht als eigene Zeile, nicht links unter dem Text. Ab `sm` steht sie neben Titel und
   Beschreibung, auf dem Handy nur neben dem Titel; die Beschreibung läuft dort darunter über die
-  volle Breite (das macht `CardHeader` selbst). Auf dem Handy zeigt die Taste Symbol und ein Wort,
+  volle Breite (das macht `CardHeader` selbst). Ohne Beschreibung stehen Titel und Taste auf jeder
+  Breite mittig in einer Zeile, auch das ohne eigene Klassen. Auf dem Handy zeigt die Taste Symbol und ein Wort,
   am liebsten das Hauptwort; der Rest bleibt für Screenreader:
   `<Plus /><span>Ticket<span className="max-sm:sr-only"> erstellen</span></span>` („+ Ticket“).
   Weitere Handlungen (Verlauf, Import, Neu laden) als `outline` in einer Zeile unter dem Kopf, auf

@@ -119,7 +119,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
     <Card flush>
       {/* Kopf: Titel links, Primärhandlung oben rechts; auf dem Handy „+ Anschluss“ (docs/design-regeln.md, Abschnitt 13). */}
       <CardHeader>
-        <CardTitle className="tabular-nums row-span-2 self-center">Anschlüsse ({outlets.length})</CardTitle>
+        <CardTitle className="tabular-nums">Anschlüsse ({outlets.length})</CardTitle>
         <CardAction>
           <Button onClick={openAdd} className="gap-2 max-sm:h-11" aria-label="Anschluss hinzufügen">
             <Plus className="h-4 w-4" />
