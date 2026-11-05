@@ -609,6 +609,7 @@ async function uploadPersonSnapshotBody(
         ? `best ${scored.nearest.score.toFixed(3)} „${scored.nearest.name}“ (n=${scored.gallery}, ≥${scored.threshold.toFixed(2)})`
         : "Gallery leer",
     score: match?.score ?? scored.nearest?.score,
+    list: match?.listType,
   });
   improve("face", match ? "person_match" : nearMiss ? "near_miss" : "person_nomatch", {
     cam: cam.config.name,
