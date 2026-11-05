@@ -2590,3 +2590,31 @@ tr.is-off td:not(:last-child) { opacity: 0.55; }
 .ai-img-dlg img { display: block; max-width: 100%; max-height: 80dvh; margin: 0 auto; }
 .ai-img-dlg p { margin: 0; padding: 0.6rem 3.2rem 0.75rem 0.9rem; font-size: 0.8125rem; white-space: pre-wrap; }
 .ai-img-dlg .icon-btn { position: absolute; top: 0.5rem; right: 0.5rem; background: rgb(0 0 0 / 0.5); color: #fff; }
+
+/* ------------------------------------------- Mitarbeiter (Zentrale + Ansicht) */
+/* Personal-Kachel im Kamera-Raster: Glas statt Bild, gleiche Groesse wie eine Kamera. */
+.live-tile.staff-tile {
+  background: var(--glass-bg-strong);
+  color: var(--text);
+  display: flex; flex-direction: column; gap: 0.35rem;
+  padding: 0.6rem 0.75rem;
+}
+.live-tile.staff-tile::after { display: none; }
+.staff-tile-head { display: flex; align-items: center; gap: 0.45rem; font-size: 0.8125rem; font-weight: 600; }
+.staff-tile-head .ico { width: 1rem; height: 1rem; color: var(--ok-ink); }
+.staff-tile-head .grow { margin-left: auto; font-weight: 500; color: var(--muted); font-size: 0.72rem; }
+.staff-tile-count { font-size: 1.6rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.staff-tile-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; overflow: hidden; min-height: 0; }
+.staff-tile-list li { display: flex; align-items: center; gap: 0.4rem; min-width: 0; font-size: 0.78rem; }
+.staff-tile-list .n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.staff-tile-list .m { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
+.staff-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--ok); flex: none; }
+.staff-dot.pause { background: var(--sky); }
+.staff-tile .empty-line { color: var(--muted); font-size: 0.78rem; }
+.staff-card .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.staff-seen { list-style: none; margin: 0.25rem 0 0; padding: 0; display: grid; gap: 0.3rem; font-size: 0.8125rem; }
+.staff-seen li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 0.5rem; }
+.staff-seen .t { color: var(--muted); font-variant-numeric: tabular-nums; }
+.staff-seen .d { color: var(--muted); grid-column: 2; }
+.sec-note { margin: -0.4rem 0 0.6rem; font-size: 0.8125rem; }
+.staff-card .line .k { min-width: 7.6rem; }

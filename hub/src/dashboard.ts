@@ -8,6 +8,7 @@
  * Zugriff: ohne HUB_DASHBOARD_TOKEN nur 127.0.0.1. Mit Token bindet der
  * Server ans LAN und verlangt das Token fuer jede Anfrage von aussen.
  */
+import { staffPayload } from "./staff-insights.js";
 import { deviceAction, liveStates, roomsPayload, syncRooms } from "./rooms.js";
 import { climatePayload, recordClimatePush } from "./climate.js";
 import { controlSmart, listSmartDevices, pairSmart } from "./smart-devices.js";
@@ -655,6 +656,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       if (!jpeg) return json(res, 404, { error: "Bild nicht mehr vorhanden" });
       res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
       return void res.end(jpeg);
+    }
+
+    // Mitarbeiter (emp-control) und was die KI heute ueber sie bemerkt hat.
+    if (req.method === "GET" && url.pathname === "/api/staff") {
+      return json(res, 200, await staffPayload());
     }
 
     // Zentrale, Grossansicht: Personen-Boxen im aktuellen Bild.

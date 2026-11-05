@@ -20,10 +20,14 @@ const VIEWS = [
   "fahrzeuge",
   "aktionen",
   "maeher",
+  "mitarbeiter",
 ];
 
 const state = {
   view: "zentrale",
+  /** Mitarbeiter aus emp-control + KI-Beobachtungen (GET /api/staff). */
+  staff: null,
+  staffAt: 0,
   overview: null,
   events: [],
   eventSeq: 0,
@@ -670,6 +674,8 @@ async function refresh() {
       loadSeen();
       loadAi();
     }
+    // Stempeldaten aendern sich langsam; die Zaehler in der Navigation brauchen sie auch.
+    loadStaff(state.view === "zentrale" || state.view === "mitarbeiter" ? 15_000 : 60_000);
     if (state.view === "regeln" && (!state.rules || Date.now() - (state.rulesAt || 0) > 30000)) await loadRules();
     state.overview = overview;
     state.eventSeq = events.seq ?? state.eventSeq;
@@ -733,6 +739,7 @@ function render() {
     case "fahrzeuge": renderFahrzeuge(d); break;
     case "aktionen": renderAktionen(d); break;
     case "maeher": renderMaeher(); break;
+    case "mitarbeiter": renderMitarbeiter(); break;
   }
 }
 
@@ -780,6 +787,7 @@ function renderNavCounts(d) {
   const mowing = state.mower ? state.mower.mowers.filter((m) => m.active).length : 0;
   const mowerErr = state.mower ? state.mower.mowers.filter((m) => m.errors && m.errors.length).length : 0;
   set("maeher", mowerErr || mowing, mowerErr ? "warn" : "ok");
+  set("mitarbeiter", state.staff && state.staff.configured ? state.staff.people.length : "", "ok");
 }
 
 /* --------------------------------------------------------------- Zentrale */
@@ -1330,6 +1338,7 @@ function renderZentrale(d) {
     b.setAttribute("aria-pressed", String(b.dataset.cols === String(live.cols)));
   }
 
+  const withStaff = !!(state.staff && state.staff.configured);
   const tileKey = (c) => `${c.id}:${c.host}:${streamFor(c, "sub")}:${streamFor(c, "sub") ? "" : live.go2rtc}`;
   const sig = cams.map(tileKey).join("|");
   if (sig !== live.signature) {
@@ -1367,7 +1376,12 @@ function renderZentrale(d) {
     }
     if (tileObserver) for (const t of tiles) if (!keep.has(t)) tileObserver.observe(t);
   }
+  // Personal-Kachel steht vor den Kameras und ueberlebt den Umbau der Kacheln.
+  const staffEl = grid.querySelector("[data-staff-tile]");
+  if (withStaff && !staffEl) grid.insertAdjacentHTML("afterbegin", staffTileShell());
+  else if (!withStaff && staffEl) staffEl.remove();
   layoutGrid();
+  renderStaffTile();
 
   for (const c of cams) {
     const tile = grid.querySelector(`[data-live="${c.id}"]`);
@@ -1797,10 +1811,19 @@ async function onCamControl(el) {
 }
 
 $("liveGrid").addEventListener("click", (ev) => {
+  if (ev.target.closest("[data-staff-tile]")) {
+    location.hash = "mitarbeiter";
+    return;
+  }
   const tile = ev.target.closest("[data-live]");
   if (tile) openFocus(Number(tile.dataset.live));
 });
 $("liveGrid").addEventListener("keydown", (ev) => {
+  if (ev.target.closest("[data-staff-tile]") && (ev.key === "Enter" || ev.key === " ")) {
+    ev.preventDefault();
+    location.hash = "mitarbeiter";
+    return;
+  }
   const tile = ev.target.closest("[data-live]");
   if (tile && (ev.key === "Enter" || ev.key === " ")) {
     ev.preventDefault();
@@ -2582,6 +2605,155 @@ function renderPersonen(d) {
 
   const list = state.events.filter((e) => e.kind === "person");
   setHTML("personTimeline", timelineHtml(list.slice(-60).reverse(), "Noch keine Personen gesehen."));
+}
+
+/* ------------------------------------------------------------ Mitarbeiter */
+
+async function loadStaff(maxAge) {
+  if (state.staffLoading || Date.now() - state.staffAt < maxAge) return;
+  state.staffLoading = true;
+  try {
+    state.staff = await getJson("/api/staff");
+    state.staffAt = Date.now();
+  } catch {
+    /* naechster Takt versucht es wieder */
+  } finally {
+    state.staffLoading = false;
+  }
+}
+
+const hhmm = (iso) =>
+  iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" }) : "–";
+
+function staffAge(s) {
+  if (!s || s.dataAgeMs == null) return "noch keine Daten";
+  const min = Math.round(s.dataAgeMs / 60000);
+  return min < 1 ? "Stand gerade eben" : `Stand vor ${min}\u00a0min`;
+}
+
+/** Kachel-Rahmen in der Zentrale; Inhalt kommt aus renderStaffTile(). */
+function staffTileShell() {
+  return `<article class="live-tile staff-tile" data-staff-tile tabindex="0" role="button" aria-label="Mitarbeiter anzeigen">
+    <div class="staff-tile-head">${icon("users")}<span>Im Dienst</span><span class="grow" id="staffTileAge"></span></div>
+    <div class="staff-tile-count" id="staffTileCount">–</div>
+    <ul class="staff-tile-list" id="staffTileList"></ul>
+  </article>`;
+}
+
+function renderStaffTile() {
+  const s = state.staff;
+  if (!s || !s.configured || !$("staffTileList")) return;
+  $("staffTileCount").textContent = String(s.people.length);
+  $("staffTileAge").textContent = s.error ? "Abruf gestört" : staffAge(s);
+  const rows = s.people.map(
+    (p) => `<li><span class="staff-dot${p.onBreak ? " pause" : ""}" aria-hidden="true"></span><span class="n">${esc(p.name)}</span><span class="m">${esc(
+      p.onBreak ? "Pause" : p.lastSeen ? `${p.lastSeen.camera} ${hhmm(p.lastSeen.at)}` : p.department || `seit ${hhmm(p.since)}`
+    )}</span></li>`
+  );
+  const pending = s.pending.reduce((n, x) => n + x.names.length, 0);
+  if (pending) rows.push(`<li class="empty-line">${pending} heute noch nicht eingestempelt</li>`);
+  if (!s.people.length && !pending) rows.push('<li class="empty-line">Niemand eingestempelt</li>');
+  // Kein setHTML: das Raster wird neu gebaut, der Cache wuesste davon nichts.
+  const list = $("staffTileList");
+  const html = rows.join("");
+  if (list.dataset.h !== html) {
+    list.innerHTML = html;
+    list.dataset.h = html;
+  }
+}
+
+function renderMitarbeiter() {
+  const s = state.staff;
+  if (!s) {
+    $("staffSub").textContent = "Lade Stempeldaten …";
+    return;
+  }
+  if (!s.configured) {
+    $("staffSub").textContent =
+      s.configured === null && !s.error ? "Noch kein Abruf aus der Cloud." : s.error || "emp-control ist in der Cloud noch nicht verbunden.";
+    setHTML("staffStats", "");
+    setHTML("staffCards", empty("Keine Stempeldaten. In der Cloud unter Einstellungen → emp-control den Live-Monitor-Link hinterlegen."));
+    setHTML("staffObs", "");
+    $("staffPendingWrap").hidden = true;
+    return;
+  }
+  $("staffSub").textContent = `Aus emp-control · ${staffAge(s)}${s.error ? ` · letzter Abruf fehlgeschlagen: ${s.error}` : ""}`;
+  const onBreak = s.people.filter((p) => p.onBreak).length;
+  const seen = s.people.filter((p) => p.sightings.length).length;
+  const pending = s.pending.reduce((n, x) => n + x.names.length, 0);
+  setHTML(
+    "staffStats",
+    [
+      statCard("users", "Im Dienst", s.people.length, "eingestempelt", "ok"),
+      statCard("moon", "Pause", onBreak, "gerade", onBreak ? "sky" : "accent"),
+      statCard("camera", "Von KI gesehen", seen, "heute zugeordnet"),
+      statCard("alert", "Fehlt noch", pending, "mit Schicht heute", pending ? "warn" : "accent"),
+    ].join("")
+  );
+
+  setHTML(
+    "staffCards",
+    s.people.length
+      ? s.people
+          .map(
+            (p) => `<article class="card place staff-card">
+        <div class="place-head"><span class="tile-ico ${p.onBreak ? "sky" : "ok"}">${icon("user")}</span><h3>${esc(p.name)}</h3><span class="host">${esc(p.department || "")}</span></div>
+        <div class="line"><span class="k">Eingestempelt</span><span class="v">${esc(hhmm(p.since))}</span></div>
+        <div class="line"><span class="k">Schicht bis</span><span class="v">${esc(p.plannedEnd ? hhmm(p.plannedEnd) : "–")}</span></div>
+        ${p.flags.length ? `<div class="chips">${p.flags.map((f) => badge(f.tone, f.text)).join("")}</div>` : ""}
+        <div class="line"><span class="k">Zuletzt gesehen</span><span class="v${p.lastSeen ? "" : " muted"}">${esc(
+          p.lastSeen ? `${p.lastSeen.camera} · ${hhmm(p.lastSeen.at)} (${p.lastSeen.how})` : "heute von keiner Kamera zugeordnet"
+        )}</span></div>
+        ${
+          p.sightings.length > 1 || (p.sightings[0] && p.sightings[0].text)
+            ? `<details><summary class="muted">KI-Sichtungen heute (${p.sightings.length})</summary><ul class="staff-seen">${p.sightings
+                .map(
+                  (x) => `<li><span class="t">${esc(hhmm(x.at))}</span><span>${esc(x.camera)} · ${esc(x.how)}</span>${
+                    x.text ? `<span class="d">${esc(x.text)}</span>` : ""
+                  }</li>`
+                )
+                .join("")}</ul></details>`
+            : ""
+        }
+      </article>`
+          )
+          .join("")
+      : empty("Gerade ist niemand eingestempelt.")
+  );
+
+  $("staffPendingWrap").hidden = !s.pending.length;
+  setHTML(
+    "staffPending",
+    s.pending
+      .map(
+        (x) => `<article class="card place">
+        <div class="place-head"><span class="tile-ico warn">${icon("alert")}</span><h3>${esc(x.department || "Schicht")}</h3><span class="host">${esc(
+          `${hhmm(x.start)}${x.end ? `–${x.end}` : ""}`
+        )}</span></div>
+        <div class="line"><span class="k">Noch nicht da</span><span class="v">${esc(x.names.join(", "))}</span></div>
+      </article>`
+      )
+      .join("")
+  );
+
+  const obsIcon = { staff: "check", alert: "alert", cleared: "user" };
+  setHTML(
+    "staffObs",
+    s.observations.length
+      ? s.observations
+          .map(
+            (o) => `<li class="${o.kind === "alert" ? "alert" : "info"}">
+        ${timeTag(o.at)}
+        <span class="node">${icon(obsIcon[o.kind] || "dot")}</span>
+        <div class="body">
+          <div class="title"><span class="where">${esc(o.camera)}</span> · ${esc(o.title)}</div>
+          ${o.text ? `<div class="detail">${esc(o.text)}</div>` : ""}
+        </div>
+      </li>`
+          )
+          .join("")
+      : '<li class="empty">Heute noch nichts bemerkt.</li>'
+  );
 }
 
 /* --------------------------------------------------------------- Fahrzeuge */
