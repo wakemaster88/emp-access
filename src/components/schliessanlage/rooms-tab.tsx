@@ -270,7 +270,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
           return (
             <div key={room.id} className="glass-tile">
               {/* Kopfzeile des Raums: Aufklappen links, Handlungen rechts (brechen auf dem Handy um). */}
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 p-2.5">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 p-2.5 sm:gap-y-2">
                 <button
                   type="button"
                   onClick={() => toggle(room.id)}

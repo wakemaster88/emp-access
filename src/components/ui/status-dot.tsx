@@ -1,6 +1,22 @@
 import { cn } from "@/lib/utils";
 
-export type StatusTone = "success" | "warning" | "danger" | "info" | "neutral" | "primary";
+/**
+ * Töne des Punkts. `light`, `music`, `heat`, `water` und `live` sind das
+ * Zustandsvokabular aus docs/design-regeln.md, Abschnitt 3 (Namen wie bei
+ * `IconChip`): hell der 500er-, dunkel der 400er-Ton.
+ */
+export type StatusTone =
+  | "success"
+  | "warning"
+  | "danger"
+  | "info"
+  | "neutral"
+  | "primary"
+  | "light"
+  | "music"
+  | "heat"
+  | "water"
+  | "live";
 
 const TONE_CLASSES: Record<StatusTone, string> = {
   success: "bg-success",
@@ -9,6 +25,11 @@ const TONE_CLASSES: Record<StatusTone, string> = {
   info: "bg-info",
   neutral: "bg-muted-foreground/50",
   primary: "bg-primary",
+  light: "bg-amber-500 dark:bg-amber-400",
+  music: "bg-violet-500 dark:bg-violet-400",
+  heat: "bg-orange-500 dark:bg-orange-400",
+  water: "bg-sky-500 dark:bg-sky-400",
+  live: "bg-emerald-500 dark:bg-emerald-400",
 };
 
 /** Im Dunkeln leuchten aktive Punkte leicht (wie in den Raum-Mockups). */
@@ -19,6 +40,11 @@ const GLOW_CLASSES: Record<StatusTone, string> = {
   info: "dark:shadow-[0_0_8px_var(--info)]",
   neutral: "",
   primary: "dark:shadow-[0_0_8px_var(--primary)]",
+  light: "dark:shadow-[0_0_8px_var(--color-amber-400)]",
+  music: "dark:shadow-[0_0_8px_var(--color-violet-400)]",
+  heat: "dark:shadow-[0_0_8px_var(--color-orange-400)]",
+  water: "dark:shadow-[0_0_8px_var(--color-sky-400)]",
+  live: "dark:shadow-[0_0_8px_var(--color-emerald-400)]",
 };
 
 interface StatusDotProps {

@@ -5,6 +5,7 @@ import { XIcon } from "lucide-react"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { keepInitialFocusOffClose } from "@/components/ui/initial-focus"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -49,11 +50,13 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
 }) {
+  const closeRef = React.useRef<HTMLButtonElement>(null)
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -71,11 +74,16 @@ function SheetContent({
             "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t rounded-t-card",
           className
         )}
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event)
+          // Erster Fokus nie auf dem X (kein Fokusring beim Öffnen).
+          if (!event.defaultPrevented) keepInitialFocusOffClose(event, closeRef.current)
+        }}
         {...props}
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="press absolute top-3.5 right-3.5 inline-flex size-8 items-center justify-center rounded-full after:absolute after:-inset-1.5 after:content-[''] bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border hover:text-foreground hover:bg-glass-strong focus-visible:ring-[3px] focus-visible:ring-ring/50 focus:outline-hidden disabled:pointer-events-none">
+          <SheetPrimitive.Close ref={closeRef} className="press absolute top-3.5 right-3.5 inline-flex size-8 items-center justify-center rounded-full after:absolute after:-inset-1.5 after:content-[''] bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border hover:text-foreground hover:bg-glass-strong focus-visible:ring-[3px] focus-visible:ring-ring/50 focus:outline-hidden disabled:pointer-events-none">
             <XIcon className="size-4" />
             <span className="sr-only">Schließen</span>
           </SheetPrimitive.Close>

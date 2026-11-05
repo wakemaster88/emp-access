@@ -16,6 +16,14 @@ import { cn } from "@/lib/utils"
  * - `destructive`: Löschen, Sperren. Immer mit Rückfrage.
  *
  * Radius 14 px (`rounded-control`), Antippen skaliert auf 97 % (`press`).
+ * Deckende Tasten nutzen `primary-fill`/`destructive-fill` (Weiß darauf
+ * mindestens 4,5:1). Glas-Tasten haben im Hellen eine dunkle Haarlinie, im
+ * Dunkeln die helle Lichtkante (`glass-tile-border`, ein Token statt
+ * `dark:`-Klasse – so bleibt ein eigener Rand am Einsatzort in beiden Modi).
+ *
+ * Symbole bekommen `size-4` (bei `xs` `size-3`), außer sie tragen selbst eine
+ * `size-*`-Klasse. `h-*`/`w-*` am Symbol werden überstimmt – für andere
+ * Größen also `size-3.5` statt `h-3.5 w-3.5` schreiben.
  */
 const buttonVariants = cva(
   "press inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control text-sm font-medium disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
@@ -23,13 +31,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_8px_20px_-10px_var(--primary)] hover:bg-primary/90",
+          "bg-primary-fill text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_8px_20px_-10px_var(--primary)] hover:bg-primary-fill/90",
         destructive:
-          "bg-destructive text-white shadow-[inset_0_1px_0_oklch(1_0_0/24%),0_8px_20px_-10px_var(--destructive)] hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/80",
+          "bg-destructive-fill text-white shadow-[inset_0_1px_0_oklch(1_0_0/24%),0_8px_20px_-10px_var(--destructive)] hover:bg-destructive-fill/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
         outline:
-          "border border-glass-border bg-glass text-foreground shadow-[inset_0_1px_0_var(--glass-highlight)] hover:bg-glass-strong",
+          "border border-glass-tile-border bg-glass text-foreground shadow-[inset_0_1px_0_var(--glass-highlight)] hover:bg-glass-strong",
         secondary:
-          "bg-glass-tile text-foreground shadow-[inset_0_1px_0_var(--glass-highlight)] ring-1 ring-inset ring-glass-border hover:bg-glass-strong",
+          "bg-glass-tile text-foreground shadow-[inset_0_1px_0_var(--glass-highlight)] ring-1 ring-inset ring-glass-tile-border hover:bg-glass-strong",
         ghost:
           "text-foreground hover:bg-glass-tile",
         link: "text-primary underline-offset-4 hover:underline active:scale-100",

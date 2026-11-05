@@ -206,15 +206,17 @@ export function AnnouncePanel({
               </Select>
             </div>
 
-            {/* Der Schalter selbst ist 18 px hoch; die Zeile drumherum macht
-                daraus am Telefon eine greifbare Fläche. */}
+            {/* Der Schalter selbst ist 24 px hoch; die Zeile drumherum macht
+                daraus bei Touch eine greifbare Fläche von 44 px. Flach wird sie
+                erst mit Maus – sonst überlappen sich die Tippflächen der beiden
+                Schalter („Notfall“ läge über dem Gong). */}
             <div className="flex flex-col justify-end gap-1">
-              <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:min-h-0">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:pointer-fine:min-h-0">
                 <Switch checked={chime} onCheckedChange={setChime} disabled={liveActive} />
                 Gong voranstellen
               </label>
 
-              <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:min-h-0">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:pointer-fine:min-h-0">
                 <Switch checked={emergency} onCheckedChange={setEmergency} disabled={liveActive} />
                 <span className="flex items-center gap-1">
                   <TriangleAlert

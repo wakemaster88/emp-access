@@ -3,22 +3,43 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { EmptyState, type EmptyStateProps } from "@/components/ui/empty-state"
+
+/**
+ * Randabstand für Tabellen, die bis an den Kartenrand laufen (`Card flush`):
+ * erste und letzte Spalte rücken wie der Karteninhalt ein (16 px, ab sm 18 px).
+ * Entspricht den lokalen `TABLE_EDGE`-Konstanten.
+ */
+const TABLE_EDGE_CLASS =
+  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]"
 
 /**
  * Tabelle im Leitstand-Stil: gesperrte, kleine Kopfzeile, ruhige Zeilen mit
  * Haarlinien in Glas-Randfarbe, Zahlen bündig. Steht in einer Karte und hat
  * selbst keinen Hintergrund. Der Container scrollt horizontal, damit breite
- * Tabellen auf dem Handy nicht die Seite sprengen.
+ * Tabellen auf dem Handy nicht die Seite sprengen (senkrecht schneidet er ab,
+ * damit unsichtbare Tippflächen am Rand kein Wackeln auslösen).
+ *
+ * - `edge`: Tabelle läuft bis an den Kartenrand (`Card flush`); erste und
+ *   letzte Spalte bekommen den Randabstand der Karte.
+ * - Kürzen in einer Zelle: Text in der Zelle `truncate`, die Zelle selbst
+ *   `max-w-0 w-full` (sie nimmt den freien Platz, ohne die Tabelle zu
+ *   verbreitern); `whitespace-nowrap` gilt für alle Zellen.
+ * - Leere Tabelle: `TableEmpty` als einzige Zeile im `TableBody`.
  */
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  edge = false,
+  ...props
+}: React.ComponentProps<"table"> & { edge?: boolean }) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto scrollbar-thin"
+      className="relative w-full overflow-x-auto overflow-y-hidden scrollbar-thin"
     >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        className={cn("w-full caption-bottom text-sm", edge && TABLE_EDGE_CLASS, className)}
         {...props}
       />
     </div>
@@ -97,6 +118,45 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
   )
 }
 
+/**
+ * Leere Tabelle: eine Zeile über alle Spalten (`colSpan`), Text darf
+ * umbrechen. Ohne `children` zeigt sie einen kompakten `EmptyState` aus
+ * `title`, `description`, `icon` und `action`.
+ */
+function TableEmpty({
+  colSpan,
+  children,
+  className,
+  icon,
+  title = "Keine Einträge.",
+  description,
+  action,
+  compact = true,
+  size,
+}: {
+  colSpan: number
+  children?: React.ReactNode
+  /** Klassen für die Zelle. */
+  className?: string
+} & Partial<Omit<EmptyStateProps, "className">>) {
+  return (
+    <TableRow data-slot="table-empty" className="hover:bg-transparent">
+      <TableCell colSpan={colSpan} className={cn("whitespace-normal", className)}>
+        {children ?? (
+          <EmptyState
+            icon={icon}
+            title={title}
+            description={description}
+            action={action}
+            compact={compact}
+            size={size}
+          />
+        )}
+      </TableCell>
+    </TableRow>
+  )
+}
+
 function TableCaption({
   className,
   ...props
@@ -119,4 +179,5 @@ export {
   TableRow,
   TableCell,
   TableCaption,
+  TableEmpty,
 }

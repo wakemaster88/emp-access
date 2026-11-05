@@ -57,6 +57,9 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  /* Deckende Flächen mit Schrift oder Symbol darauf (Primärtaste, Badge, Häkchen). */
+  --color-primary-fill: var(--primary-fill);
+  --color-destructive-fill: var(--destructive-fill);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -67,6 +70,8 @@
   --color-glass-strong: var(--glass-bg-strong);
   --color-glass-tile: var(--glass-tile);
   --color-glass-border: var(--glass-border);
+  /* Rand von Glas auf Glas (Kachel, Glas-Taste): hell dunkle Haarlinie, dunkel Lichtkante. */
+  --color-glass-tile-border: var(--glass-tile-border);
   --color-glass-highlight: var(--glass-highlight);
   --color-field: var(--field);
   --radius-sm: calc(var(--radius) - 4px);
@@ -105,6 +110,13 @@
 
   --primary: oklch(0.53 0.24 276);
   --primary-foreground: oklch(0.99 0 0);
+  /*
+   * `primary` ist der Akzent für Text, Symbole, Ringe und Tönungen. Deckende
+   * Flächen mit Schrift darauf nehmen `primary-fill` bzw. `destructive-fill`:
+   * Weiß darauf erreicht hell 5,6:1 (Primär) und 5,7:1 (Löschen).
+   */
+  --primary-fill: oklch(0.53 0.24 276);
+  --destructive-fill: oklch(0.51 0.24 18);
 
   --secondary: oklch(0.955 0.008 255);
   --secondary-foreground: oklch(0.3 0.04 260);
@@ -113,15 +125,17 @@
   --accent: oklch(0.95 0.012 262);
   --accent-foreground: oklch(0.2 0.03 262);
 
-  /* Zustandsfarben hell: so dunkel, dass Text auf Glas und getönten Badges
-     mindestens 4,5:1 erreicht; als Fläche tragen sie weiße Schrift. */
-  --destructive: oklch(0.55 0.24 18);
+  /* Zustandsfarben hell: so dunkel, dass Badge-Text auf seiner Tönung
+     (12–14 %) über heller Glaskarte und über weißem Popover mindestens 4,5:1
+     erreicht (gemessen 4,6 bis 4,8); als Fläche tragen sie weiße Schrift
+     (5,5 bis 5,7:1). Farbton und Sättigung wie zuvor, nur dunkler. */
+  --destructive: oklch(0.51 0.24 18);
   --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.51 0.13 163);
+  --success: oklch(0.49 0.13 163);
   --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.55 0.165 55);
+  --warning: oklch(0.52 0.165 55);
   --warning-foreground: oklch(0.99 0 0);
-  --info: oklch(0.52 0.15 242);
+  --info: oklch(0.505 0.15 242);
   --info-foreground: oklch(0.99 0 0);
 
   --border: oklch(0.2 0.03 262 / 9%);
@@ -154,6 +168,9 @@
   --glass-bg-strong: oklch(1 0 0 / 78%);
   --glass-tile: oklch(1 0 0 / 55%);
   --glass-border: oklch(1 0 0 / 85%);
+  /* Rand der Kachel: im Hellen eine dunkle Haarlinie – die weiße Lichtkante
+     verschwindet auf heller Glaskarte. */
+  --glass-tile-border: oklch(0.2 0.03 262 / 7%);
   --glass-highlight: oklch(1 0 0 / 95%);
   --glass-shadow: 0 20px 50px -28px oklch(0.25 0.04 262 / 45%);
   --glass-blur: 28px;
@@ -182,6 +199,10 @@
 
   --primary: oklch(0.6 0.22 277);
   --primary-foreground: oklch(0.99 0 0);
+  /* Dunkler als der Akzent, damit Weiß darauf 4,5:1 erreicht (gemessen 4,9
+     und 5,0:1; vorher 4,1 auf Primär und 4,0 auf destructive/80). */
+  --primary-fill: oklch(0.56 0.22 277);
+  --destructive-fill: oklch(0.56 0.2 18);
 
   --secondary: oklch(0.26 0.03 262);
   --secondary-foreground: oklch(0.93 0.01 255);
@@ -226,6 +247,7 @@
   --glass-bg-strong: oklch(1 0 0 / 9%);
   --glass-tile: oklch(1 0 0 / 8%);
   --glass-border: oklch(1 0 0 / 16%);
+  --glass-tile-border: oklch(1 0 0 / 16%);
   --glass-highlight: oklch(1 0 0 / 22%);
   --glass-shadow: 0 24px 60px -30px oklch(0 0 0 / 75%);
   --glass-blur: 28px;
@@ -338,6 +360,123 @@
       scroll-behavior: auto !important;
     }
   }
+  /* Recharts misst Beschriftungen in diesem Element. Mit der Übergangszeit
+     oben läse es noch die alte Schriftgröße (16 px) und bräche Achsen falsch. */
+  #recharts_measurement_span {
+    transition: none !important;
+  }
+
+  /*
+   * Tippflächen (docs/design-regeln.md, Abschnitt 12): Am Finger bekommen kleine
+   * Bedienelemente eine unsichtbare Fläche von mindestens 44 × 44 px, mittig
+   * über dem Element. Nichts verschiebt sich, nichts wird sichtbar. Alles in
+   * :where() und in der Basisebene: `after:*`-, `absolute`-, `fixed`- und
+   * `sticky`-Klassen am Einsatzort gewinnen immer.
+   * `[data-variant][data-size]` erfasst Tasten unter `…Trigger asChild`: der
+   * Trigger überschreibt `data-slot`, Variante und Größe bleiben.
+   */
+  @media (pointer: coarse) {
+    :where(
+      [data-slot="button"],
+      [data-variant][data-size],
+      [data-slot="alert-dialog-action"],
+      [data-slot="alert-dialog-cancel"],
+      [data-slot="switch"],
+      [data-slot="toggle-chip"],
+      [role="radiogroup"] > [role="radio"],
+      [role="tablist"] > [role="tab"],
+      [data-slot="segmented-link"]
+    ) {
+      position: relative;
+    }
+    :where(
+      [data-slot="button"],
+      [data-variant][data-size],
+      [data-slot="alert-dialog-action"],
+      [data-slot="alert-dialog-cancel"],
+      [data-slot="switch"],
+      [data-slot="toggle-chip"]
+    )::after {
+      content: "";
+      position: absolute;
+      inset-block: min(0px, calc((100% - 2.75rem) / 2));
+      inset-inline: min(0px, calc((100% - 2.75rem) / 2));
+    }
+    /* Folgt ein Bedienelement direkt auf ein anderes, beginnt seine Fläche an
+       der eigenen Kante. Sonst läge sie (später gemalt) über dem Rand des
+       Nachbarn davor und nähme ihm in dichten Gruppen (gap-0.5, gap-1) Tipps
+       ab; der Nachbar davor behält seine Fläche bis an diese Kante. Dasselbe
+       gilt hinter Links, Feldern und schlichten Tasten (z. B. „Abmelden“
+       hinter dem Profil-Link). */
+    :where(
+      :is(
+          a[href],
+          button,
+          input,
+          select,
+          textarea,
+          [data-slot="button"],
+          [data-variant][data-size],
+          [data-slot="alert-dialog-action"],
+          [data-slot="alert-dialog-cancel"],
+          [data-slot="switch"],
+          [data-slot="toggle-chip"]
+        ):not([type="hidden"], [aria-hidden="true"])
+        + :is(
+          [data-slot="button"],
+          [data-variant][data-size],
+          [data-slot="alert-dialog-action"],
+          [data-slot="alert-dialog-cancel"],
+          [data-slot="switch"],
+          [data-slot="toggle-chip"]
+        )
+    )::after {
+      inset-inline-start: 0;
+    }
+    /* Links, Felder und schlichte Tasten sind nicht positioniert und lägen
+       darum unter der Fläche ihres Nachbarn davor. Folgt eines davon direkt,
+       endet die Fläche an der eigenen Kante (z. B. „Ältere Periode“ vor der
+       Auswahl des Zeitraums). Versteckte Formularfelder (Radix legt sie neben
+       Auswahl, Schalter und Häkchen) zählen nicht. */
+    :where(
+      :is(
+          [data-slot="button"],
+          [data-variant][data-size],
+          [data-slot="alert-dialog-action"],
+          [data-slot="alert-dialog-cancel"],
+          [data-slot="switch"],
+          [data-slot="toggle-chip"]
+        ):has(
+          + :is(a[href], button, input, select, textarea):not(
+              [type="hidden"],
+              [aria-hidden="true"],
+              [data-slot="button"],
+              [data-variant][data-size],
+              [data-slot="alert-dialog-action"],
+              [data-slot="alert-dialog-cancel"],
+              [data-slot="switch"],
+              [data-slot="toggle-chip"]
+            )
+        )
+    )::after {
+      inset-inline-end: 0;
+    }
+    /* Einträge in Kapseln (Tabs, Segmented): die Kapsel scrollt waagerecht und
+       schneidet ab. Die Fläche wächst darum höchstens um ihren Innenabstand
+       (4 px) – 42 px bei 34 px hohen Einträgen, 36 px bei `size="sm"`; mehr
+       ließe die Kapsel um ein paar Pixel verschieben. `TabsList variant="line"`
+       hat keinen Innenabstand und bekommt darum keine Fläche. */
+    :where(
+      [role="radiogroup"] > [role="radio"],
+      [role="tablist"]:not([data-variant="line"]) > [role="tab"],
+      [data-slot="segmented-link"]
+    )::after {
+      content: "";
+      position: absolute;
+      inset-block: max(-4px, min(0px, calc((100% - 2.75rem) / 2)));
+      inset-inline: max(-4px, min(0px, calc((100% - 2.75rem) / 2)));
+    }
+  }
 }
 
 /*
@@ -379,7 +518,7 @@
 
 @utility glass-tile {
   border-radius: var(--radius-tile);
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--glass-tile-border);
   background: var(--glass-tile);
   box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
@@ -491,6 +630,7 @@
   --glass-bg-strong: var(--layer-glass-bg-strong);
   --glass-tile: var(--layer-glass-tile);
   --glass-border: var(--layer-glass-border);
+  --glass-tile-border: var(--layer-glass-border);
   --glass-highlight: var(--layer-glass-highlight);
   --glass-pill: var(--layer-glass-pill);
 }
@@ -501,6 +641,7 @@
     :where(
       [data-slot="input"],
       [data-slot="select-trigger"],
+      [data-slot="native-select"] > select,
       [data-slot="button"]:not([data-size^="icon"]):not([data-size="xs"]):not([data-variant="link"]),
       [data-slot="alert-dialog-action"]:not([data-size^="icon"]),
       [data-slot="alert-dialog-cancel"]:not([data-size^="icon"])
@@ -520,6 +661,8 @@
     --glass-bg: var(--card);
     --glass-bg-strong: var(--popover);
     --glass-tile: var(--muted);
+    /* Deckende Kachel auf deckender Karte: Rand als normale Haarlinie. */
+    --glass-tile-border: var(--border);
     --glass-blur: 0px;
     --sidebar: var(--sidebar-solid);
   }
@@ -700,14 +843,15 @@
  * Der gefüllte Teil links vom Daumen. Ohne eigenes Aussehen faellt die
  * Fuellfarbe von `accent-color` weg, und damit der Blick, mit dem man mehrere
  * Zonen auf einmal vergleicht. Den Stand liefert die Komponente als
- * --slider-fill in Prozent.
+ * --slider-fill in Prozent, die Farbe optional als --slider-fill-color
+ * (Zustandsfarbe, z. B. Violett für Musik; sonst Akzent).
  */
 .touch-slider::-webkit-slider-runnable-track {
   height: 0.375rem;
   border-radius: 9999px;
   background: linear-gradient(
     to right,
-    var(--primary) var(--slider-fill, 0%),
+    var(--slider-fill-color, var(--primary)) var(--slider-fill, 0%),
     var(--muted) var(--slider-fill, 0%)
   );
 }
@@ -721,7 +865,7 @@
   margin-top: -0.5rem;
   border-radius: 9999px;
   border: 2px solid var(--card);
-  background: var(--primary);
+  background: var(--slider-fill-color, var(--primary));
   box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
 }
 
@@ -730,7 +874,7 @@
   border-radius: 9999px;
   background: linear-gradient(
     to right,
-    var(--primary) var(--slider-fill, 0%),
+    var(--slider-fill-color, var(--primary)) var(--slider-fill, 0%),
     var(--muted) var(--slider-fill, 0%)
   );
 }
@@ -740,7 +884,7 @@
   width: 1.375rem;
   border-radius: 9999px;
   border: 2px solid var(--card);
-  background: var(--primary);
+  background: var(--slider-fill-color, var(--primary));
   box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
 }
 
