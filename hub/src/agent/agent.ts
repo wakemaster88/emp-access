@@ -37,6 +37,7 @@ import {
 } from "./telegram.js";
 import { TOOLS, findTool, readNotes, toolResultText, toolSpecs, type ToolContext } from "./tools.js";
 import { diffFindings, newWatchState, openFindings, type Finding } from "./findings.js";
+import { startOccupancy } from "../occupancy.js";
 import { berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
 import { VOICE, ensureWhisper, transcribe } from "./voice.js";
 import { handleUnknownChat, isPaired, newPairingState, type PairingState } from "./pairing.js";
@@ -129,6 +130,7 @@ async function systemPrompt(): Promise<string> {
     "- Schalte nur, worum Aaron gebeten hat. Keine eigenmächtigen Aktionen.",
     "- Netzwerk (Router PR60X, Switches, VLANs, DHCP, WLAN, Firewall) änderst du nie. Du kannst Befunde lesen und Änderungen vorschlagen; umsetzen tut Aaron.",
     "- Kameras in Umkleiden/WC gibt es nicht und darf es nicht geben.",
+    "- Fragen wie „Wie voll ist es?“, „Wie lange wartet man am Lift?“ beantwortest du mit occupancy. Tagsüber meldet sich die Belegungsüberwachung selbst, wenn ein Punkt voll wird.",
     "- Mit look_at_camera siehst du dir ein aktuelles Kamerabild selbst an. Außerhalb des Betriebs bewertet der Wächter Personen- und Fahrzeugereignisse automatisch und meldet Auffälliges mit Bild.",
     "",
     "Anlage in Kürze: VLAN 1 Management, 20 Kasse, 30 Kameras (ohne Internet), 40 Betrieb (Shelly), 41 Anlage-Audio, 70 Verwaltung, 80 Personal. Kameras Reolink, Tor mit DoorBird, Audio Soundweb London, Mäher Mammotion Luba. Räume, Geräte und Regeln pflegt die Cloud (EMP-Access), der Hub spiegelt und schaltet im LAN.",
@@ -546,7 +548,7 @@ async function dailyReport(): Promise<string> {
     {
       role: "user",
       content:
-        "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, improve_report und list_events (limit 60). " +
+        "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, improve_report, list_events (limit 60) und occupancy (peakYesterday = Spitzen von gestern; nur erwähnen, wenn gestern Betrieb war). " +
         "Aufbau: 1) Lage in zwei Sätzen. 2) Auffälligkeiten der letzten 24 Stunden (nur Belegtes). " +
         "3) Höchstens drei konkrete Vorschläge zur Optimierung, jeweils mit Begründung aus den Daten und wer es umsetzen muss. " +
         "Netzwerk-Änderungen nur als Vorschlag. Maximal 25 Zeilen.",
@@ -618,6 +620,8 @@ export async function startAgent(): Promise<void> {
   }, 30 * 60_000);
   // Kamera-Ereignisse ausserhalb des Betriebs selbst ansehen (Bildmodell).
   startSentinel({ chatIds, offer });
+  // Tagsueber Belegung/Wartezeiten messen und melden, wenn es voll wird.
+  startOccupancy({ chatIds });
   // Sprachnachrichten: whisper.cpp + Modell im Hintergrund bereitstellen.
   void ensureWhisper();
   void pollLoop();
