@@ -28,6 +28,7 @@ import { lastScanResult } from "../scanner.js";
 import { vlanCheckSummary } from "../vlan-check.js";
 import { recentImproveEvents } from "../improve-log.js";
 import { readHubLog } from "../hublog.js";
+import { staffSummary } from "../staff.js";
 import { LLM, askVision } from "./ollama.js";
 import type { ToolSpec } from "./ollama.js";
 
@@ -139,10 +140,22 @@ export const TOOLS: AgentTool[] = [
         parking: STATE.parking,
         soundweb: soundwebSummary(),
         rules: rulesStatus(),
+        staff: (() => {
+          const s = staffSummary();
+          return { workingCount: s.workingCount, onBreakCount: s.onBreakCount, dataAgeMin: s.dataAgeMin, error: s.error };
+        })(),
         llm: { model: LLM.model, ready: LLM.ready, lastReplyMs: LLM.lastReplyMs },
         system_setup: STATE.system ? { autoLogin: STATE.system.autoLoginUser, sleepMin: STATE.system.sleepMinutes, hints: STATE.system.hints } : null,
       };
     },
+  },
+  {
+    name: "who_is_working",
+    description:
+      "Wer arbeitet gerade? Eingestempelte Mitarbeiter aus emp-control (Zeiterfassung) mit Bereich, Einstempelzeit, Pause und geplantem Schichtende, dazu heutige Schichten, deren Leute noch nicht eingestempelt sind. Nenne das Alter des Stands, wenn stale=true.",
+    parameters: obj(),
+    risk: "read",
+    run: async () => staffSummary(),
   },
   {
     name: "list_cameras",

@@ -24,6 +24,7 @@ import { startClimate } from "./climate.js";
 import { startRules } from "./rules.js";
 import { startMower, stopMowerSidecar } from "./mower.js";
 import { startAgent } from "./agent/agent.js";
+import { startStaff } from "./staff.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
@@ -271,6 +272,9 @@ void startRooms().then(() => {
 });
 // Mammotion-Maeher: nur mit Zweit-Account in hub/.env (MAMMOTION_EMAIL/-PASSWORD).
 startMower();
+// Personal aus emp-control (ueber die Cloud): wer ist eingestempelt, wer hat
+// heute noch Schicht. Fuer Assistent und Waechter; ohne Monitor-Link ein Leerlauf.
+void startStaff();
 // Hub-Assistent: lokales Sprachmodell (Ollama) + eigener Telegram-Bot.
 // Nur mit HUB_AGENT_TELEGRAM_TOKEN in hub/.env, sonst ein Leerlauf.
 void startAgent();

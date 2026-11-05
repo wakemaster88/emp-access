@@ -42,6 +42,21 @@ interface ProviderMeta {
   tokenOptional?: boolean;
 }
 
+/** `extraConfig` als Objekt lesen; unlesbares JSON zaehlt als leer. */
+function readExtra(raw: string | null | undefined): Record<string, unknown> {
+  try {
+    const v = raw ? JSON.parse(raw) : {};
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Einen Schluessel in `extraConfig` setzen, den Rest unveraendert lassen. */
+function writeExtra(raw: string | null | undefined, key: string, value: string): string {
+  return JSON.stringify({ ...readExtra(raw), [key]: value });
+}
+
 const SYNC_ENDPOINTS: Record<string, { method: string; url: string }> = {
   ANNY: { method: "POST", url: "/api/integrations/anny" },
   EMP_CONTROL: { method: "GET", url: "/api/integrations/emp-control" },
@@ -514,6 +529,23 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   value={data.baseUrl ?? ""}
                   onChange={(e) => setData({ ...data, baseUrl: e.target.value })}
                 />
+              </div>
+            )}
+
+            {provider === "EMP_CONTROL" && (
+              <div className="space-y-2">
+                <Label htmlFor="EMP_CONTROL-monitor">Live-Monitor-Link (für „Wer arbeitet gerade?“ im Hub)</Label>
+                <Input
+                  id="EMP_CONTROL-monitor"
+                  type="password"
+                  placeholder="https://…/monitor?token=…"
+                  value={String(readExtra(data.extraConfig).monitorUrl ?? "")}
+                  onChange={(e) => setData({ ...data, extraConfig: writeExtra(data.extraConfig, "monitorUrl", e.target.value.trim()) })}
+                  className="font-mono"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  In emp-control unter Terminals &amp; Standorte einen Live-Monitor anlegen und dessen Link hier einfügen. Der Hub erfährt darüber, wer eingestempelt ist und wer heute noch Schicht hat; der Token bleibt in der Cloud.
+                </p>
               </div>
             )}
 
