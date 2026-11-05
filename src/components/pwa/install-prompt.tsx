@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Download, Share, SquarePlus, X, CheckCircle2, Smartphone } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { IconChip } from "@/components/ui/icon-chip";
 
 /**
  * Installationshinweis fuer die Web-App.
@@ -96,42 +98,41 @@ export function InstallPrompt({ variant = "card", appName = "EMP Access" }: { va
   if (variant === "banner") {
     if (isStandalone || hidden || info.dismissed) return null;
     if (!info.ios && !canPrompt) return null;
+    // Schwebende Ebene über dem Inhalt: dichtes Glas (glass-surface), damit
+    // der Text darunter nicht durchscheint. `data-install-banner` lässt die
+    // Seite davor unten Platz machen, solange der Hinweis zu sehen ist.
     return (
-      <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pointer-events-none">
-        <div className="mx-auto max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur shadow-xl p-3.5 pointer-events-auto text-slate-900 dark:text-slate-100">
+      <div data-install-banner className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pointer-events-none">
+        <div className="glass-surface mx-auto max-w-md rounded-card p-3.5 pointer-events-auto text-foreground">
           <div className="flex items-start gap-3">
-            <div className="h-10 w-10 shrink-0 rounded-xl bg-indigo-600 flex items-center justify-center">
-              <Smartphone className="h-5 w-5 text-white" />
-            </div>
+            <IconChip icon={Smartphone} tone="primary" active size="lg" />
             <div className="min-w-0 flex-1 text-sm">
               <p className="font-semibold leading-tight">{appName} als App</p>
               {info.ios ? (
-                <p className="mt-1 text-slate-600 dark:text-slate-300 leading-snug">
-                  Unten <Share className="inline h-3.5 w-3.5 -mt-0.5" aria-label="Teilen" /> <span className="font-medium">Teilen</span> antippen,
-                  dann <SquarePlus className="inline h-3.5 w-3.5 -mt-0.5" aria-label="Plus" /> <span className="font-medium">Zum Home-Bildschirm</span>.
+                <p className="mt-1 text-muted-foreground leading-snug">
+                  Unten <Share className="inline h-3.5 w-3.5 -mt-0.5" aria-label="Teilen" /> <span className="font-medium text-foreground">Teilen</span> antippen,
+                  dann <SquarePlus className="inline h-3.5 w-3.5 -mt-0.5" aria-label="Plus" /> <span className="font-medium text-foreground">Zum Home-Bildschirm</span>.
                   {!info.safari && " Dafür die Seite in Safari öffnen."}
                 </p>
               ) : (
-                <p className="mt-1 text-slate-600 dark:text-slate-300 leading-snug">Startet im Vollbild und liegt als Symbol auf dem Startbildschirm.</p>
+                <p className="mt-1 text-muted-foreground leading-snug">Startet im Vollbild und liegt als Symbol auf dem Startbildschirm.</p>
               )}
               {canPrompt && !info.ios && (
-                <button
-                  type="button"
-                  onClick={install}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white"
-                >
-                  <Download className="h-3.5 w-3.5" /> Installieren
-                </button>
+                <Button type="button" onClick={install} className="mt-2.5 h-11">
+                  <Download className="h-4 w-4" /> Installieren
+                </Button>
               )}
             </div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={dismiss}
               aria-label="Hinweis ausblenden"
-              className="h-8 w-8 shrink-0 -mr-1 -mt-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center justify-center"
+              className="size-11 shrink-0 -mr-2 -mt-2 rounded-full text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -139,41 +140,39 @@ export function InstallPrompt({ variant = "card", appName = "EMP Access" }: { va
   }
 
   const body = isStandalone ? (
-    <p className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400">
+    <p className="flex items-center gap-2 text-sm text-success">
       <CheckCircle2 className="h-4 w-4" /> Läuft als installierte App.
     </p>
   ) : info.ios ? (
-    <div className="text-sm text-slate-600 dark:text-slate-300 space-y-1.5">
+    <div className="text-sm text-muted-foreground space-y-1.5">
       <p>
         Auf iPhone und iPad: in Safari unten <Share className="inline h-4 w-4 -mt-0.5" aria-label="Teilen" />{" "}
-        <span className="font-medium">Teilen</span> antippen, dann{" "}
-        <SquarePlus className="inline h-4 w-4 -mt-0.5" aria-label="Plus" /> <span className="font-medium">Zum Home-Bildschirm</span> wählen.
+        <span className="font-medium text-foreground">Teilen</span> antippen, dann{" "}
+        <SquarePlus className="inline h-4 w-4 -mt-0.5" aria-label="Plus" /> <span className="font-medium text-foreground">Zum Home-Bildschirm</span> wählen.
       </p>
-      <p className="text-xs text-slate-500">Erst als installierte App gibt es Push-Benachrichtigungen, Vollbild und ein Startbild.</p>
+      <p className="text-xs">Erst als installierte App gibt es Push-Benachrichtigungen, Vollbild und ein Startbild.</p>
     </div>
   ) : canPrompt ? (
-    <button
-      type="button"
-      onClick={install}
-      className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white"
-    >
+    <Button type="button" onClick={install} className="max-sm:h-11">
       <Download className="h-4 w-4" /> App installieren
-    </button>
+    </Button>
   ) : (
-    <p className="text-sm text-slate-600 dark:text-slate-300">
-      In Chrome oder Edge über das Menü <span className="font-medium">„App installieren“</span> wählen; auf Android erscheint der Hinweis automatisch.
+    <p className="text-sm text-muted-foreground">
+      In Chrome oder Edge über das Menü <span className="font-medium text-foreground">„App installieren“</span> wählen; auf Android erscheint der Hinweis automatisch.
     </p>
   );
 
   if (variant === "inline") return body;
 
   return (
-    <div className={cn("rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2")}>
-      <div className="flex items-center gap-2">
-        <Smartphone className="h-4 w-4 text-indigo-600" />
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{appName} auf dem Handy</h3>
-      </div>
-      {body}
-    </div>
+    <Card className="gap-3">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Smartphone className="h-4 w-4 text-primary" />
+          <h3>{appName} auf dem Handy</h3>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>{body}</CardContent>
+    </Card>
   );
 }
