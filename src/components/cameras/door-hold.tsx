@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Notice } from "@/components/ui/notice";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -116,8 +117,9 @@ export function DoorHoldBadge({
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight text-white",
-        warn ? "bg-rose-600/90" : "bg-emerald-600/90",
+        "inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium leading-tight tabular-nums",
+        // Liegt auf dem Kamerabild: deckende Fläche. Offen = Smaragd, Fehler = Rot.
+        warn ? "bg-destructive/90 text-white" : "bg-emerald-400/90 text-emerald-950",
         className
       )}
       title={`Tor offen halten bis ${fmtClock(hold.until!)} Uhr · ${pulse}`}
@@ -151,8 +153,9 @@ function DoorHoldDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Timer className="h-4 w-4 text-emerald-600" />
+          {/* Symbol im Textfluss: bleibt beim Umbruch und im zentrierten Handy-Titel am Text. */}
+          <DialogTitle>
+            <Timer className="mr-1.5 inline-block size-4 align-[-0.15em] text-emerald-600 dark:text-emerald-400" />
             Tor offen halten – {cameraName}
           </DialogTitle>
         </DialogHeader>
@@ -163,7 +166,7 @@ function DoorHoldDialog({
             Beenden geht jederzeit über dasselbe Symbol.
           </p>
           <Select value={String(minutes)} onValueChange={(v) => setMinutes(Number(v))}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Dauer" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -172,12 +175,8 @@ function DoorHoldDialog({
               ))}
             </SelectContent>
           </Select>
-          {error && (
-            <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
-              {error}
-            </p>
-          )}
-          <div className="flex justify-end gap-2">
+          {error && <Notice tone="danger" compact title={error} />}
+          <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
               Abbrechen
             </Button>
@@ -185,7 +184,7 @@ function DoorHoldDialog({
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Timer className="h-4 w-4" />}
               Offen halten
             </Button>
-          </div>
+          </DialogFooter>
         </div>
       </DialogContent>
     </Dialog>

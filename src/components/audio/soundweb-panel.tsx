@@ -5,6 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/ui/status-dot";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -167,7 +169,7 @@ export function SoundwebPanel({ devices, hubOnline: hubOnlineInitial, active, on
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           BSS Soundweb London: Pegel, Stummschaltungen und Presets aus dem Audio-Architect-Design
@@ -175,36 +177,29 @@ export function SoundwebPanel({ devices, hubOnline: hubOnlineInitial, active, on
         </p>
         <Button
           onClick={() => setDeviceDialog({ open: true, device: null })}
-          className="w-full gap-1.5 sm:w-auto sm:shrink-0"
+          className="h-11 w-full gap-1.5 sm:h-9 sm:w-auto sm:shrink-0"
         >
           <Plus className="h-4 w-4" /> Soundweb hinzufügen
         </Button>
       </div>
 
       {!hubOnline && devices.length > 0 && (
-        <p
-          role="alert"
-          className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Der lokale Hub meldet sich nicht. Die Soundwebs hängen am Netz des Hubs – ohne
-          ihn kommt kein Befehl an und die Werte hier sind der letzte bekannte Stand.
-        </p>
+        <Notice tone="warning" role="alert" icon={AlertTriangle} title="Der lokale Hub meldet sich nicht.">
+          Die Soundwebs hängen am Netz des Hubs – ohne ihn kommt kein Befehl an und die Werte
+          hier sind der letzte bekannte Stand.
+        </Notice>
       )}
 
       {devices.length === 0 ? (
-        <Card className="border-dashed border-input">
-          <CardContent className="py-10 text-center">
-            <SlidersHorizontal className="mx-auto mb-3 h-10 w-10 text-muted-foreground/70" />
-            <h3 className="font-semibold text-foreground/80">Noch kein Soundweb</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Lege den Prozessor mit IP-Adresse und HiQnet-Node an und wähle danach die Regler
-              aus dem Design, die hier bedient werden sollen.
-            </p>
-          </CardContent>
+        <Card className="py-0 sm:py-0">
+          <EmptyState
+            icon={SlidersHorizontal}
+            title="Noch kein Soundweb"
+            description="Lege den Prozessor mit IP-Adresse und HiQnet-Node an und wähle danach die Regler aus dem Design, die hier bedient werden sollen."
+          />
         </Card>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-4">
           {devices.map((device) => (
             <DeviceCard
               key={device.id}
@@ -266,7 +261,7 @@ export function SoundwebPanel({ devices, hubOnline: hubOnlineInitial, active, on
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-white hover:bg-destructive/90">
+            <AlertDialogAction variant="destructive" onClick={confirmDelete}>
               Löschen
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -363,10 +358,10 @@ function DeviceCard({
 
   return (
     <Card className={cn(!device.isActive && "opacity-70")}>
-      <CardContent className="p-4">
+      <CardContent>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="truncate font-semibold">{device.name}</h3>
+            <h3 className="truncate text-sm leading-tight font-semibold tracking-tight">{device.name}</h3>
             <p className="text-xs text-muted-foreground">
               {device.host}:{device.port} · Node {formatNode(device.node)}
               {device.hubName ? ` · ${device.hubName}` : ""}
@@ -384,10 +379,10 @@ function DeviceCard({
             )}
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="outline" onClick={onAddControl} className="h-10 gap-1.5 text-xs sm:h-8">
+            <Button variant="outline" onClick={onAddControl} className="h-11 gap-1.5 text-xs sm:h-8">
               <Plus className="h-3.5 w-3.5" /> Regler
             </Button>
-            <Button variant="ghost" size="icon" onClick={onEdit} aria-label={`${device.name} bearbeiten`} className="sm:size-8">
+            <Button variant="ghost" size="icon" onClick={onEdit} aria-label={`${device.name} bearbeiten`} className="size-11 sm:size-8">
               <Pencil className="h-4 w-4" />
             </Button>
             <Button
@@ -395,7 +390,7 @@ function DeviceCard({
               size="icon"
               onClick={onDelete}
               aria-label={`${device.name} löschen`}
-              className="text-muted-foreground hover:text-destructive sm:size-8"
+              className="size-11 text-muted-foreground hover:text-destructive sm:size-8"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -403,16 +398,19 @@ function DeviceCard({
         </div>
 
         {device.controls.length === 0 ? (
-          <p className="mt-3 rounded-lg border border-dashed border-input p-3 text-xs text-muted-foreground">
-            Noch kein Regler. „Regler“ öffnet den Dialog – dort die HiQnet-Adresse des Objekts aus
-            Audio Architect eintragen.
-          </p>
+          <EmptyState
+            compact
+            icon={SlidersHorizontal}
+            title="Noch kein Regler."
+            description="„Regler“ öffnet den Dialog – dort die HiQnet-Adresse des Objekts aus Audio Architect eintragen."
+            className="glass-tile mt-3 py-5"
+          />
         ) : (
           <div className="mt-3 space-y-3">
             {sections.map(([group, controls]) => (
               <div key={group ?? "__none__"}>
                 {group && (
-                  <h4 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <h4 className="text-label mb-1.5">
                     {group}
                   </h4>
                 )}
@@ -460,7 +458,7 @@ interface ControlTileProps {
 
 function ControlTile({ control, value, disabled, busy, error, recalled, onSend, onEdit, onDelete }: ControlTileProps) {
   return (
-    <div className="rounded-lg border border-input p-3 dark:border-border">
+    <div className="glass-tile p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{control.name}</p>
@@ -472,17 +470,23 @@ function ControlTile({ control, value, disabled, busy, error, recalled, onSend, 
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           {busy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-          <Button variant="ghost" size="icon-xs" onClick={onEdit} aria-label={`${control.name} bearbeiten`}>
-            <Pencil className="h-3 w-3" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onEdit}
+            aria-label={`${control.name} bearbeiten`}
+            className="size-11 sm:size-8"
+          >
+            <Pencil className="size-3.5" />
           </Button>
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon"
             onClick={onDelete}
             aria-label={`${control.name} löschen`}
-            className="text-muted-foreground hover:text-destructive"
+            className="size-11 text-muted-foreground hover:text-destructive sm:size-8"
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="size-3.5" />
           </Button>
         </div>
       </div>
@@ -516,7 +520,7 @@ function ControlTile({ control, value, disabled, busy, error, recalled, onSend, 
             variant={recalled ? "default" : "outline"}
             disabled={disabled || busy}
             onClick={() => onSend(undefined)}
-            className="h-10 w-full gap-1.5 sm:h-9"
+            className="h-11 w-full gap-1.5 sm:h-9"
           >
             {recalled ? <Check className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
             {recalled ? "Abgerufen" : `Preset ${control.presetId ?? "?"} abrufen`}
@@ -651,7 +655,7 @@ function MuteButton({
       disabled={disabled}
       onClick={() => onToggle(!muted)}
       aria-pressed={muted}
-      className="h-10 w-full gap-1.5 sm:h-9"
+      className="h-11 w-full gap-1.5 sm:h-9"
     >
       {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
       {unknown ? "Stumm schalten" : muted ? "Stumm – wieder an" : "Stumm schalten"}

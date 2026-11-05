@@ -3,6 +3,7 @@
 import { Loader2, Mic, Square } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "./labels";
@@ -35,12 +36,13 @@ export function LiveBroadcastCard({ live }: { live: LiveBroadcast }) {
   const failed = live.zones.filter((zone) => zone.status === "FAILED" && zone.errorMessage);
 
   return (
-    <Card className="border-destructive/40 bg-destructive/5">
-      <CardContent className="space-y-4 p-4">
+    // Live ist Smaragd im Zustandsvokabular; Rot bleibt Störungen vorbehalten.
+    <Card className="border-success/40 bg-gradient-to-br from-success/14 to-success/[0.03]">
+      <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <StatusDot tone="danger" size="md" pulse={live.phase === "live"} />
-            <span className="font-semibold text-destructive">
+            <StatusDot tone="success" size="md" pulse={live.phase === "live"} />
+            <span className="font-semibold text-success">
               {live.phase === "starting"
                 ? "Live-Durchsage startet …"
                 : live.phase === "stopping"
@@ -54,9 +56,10 @@ export function LiveBroadcastCard({ live }: { live: LiveBroadcast }) {
             )}
           </div>
           <Button
+            variant="destructive"
             onClick={() => void live.stop()}
             disabled={live.phase === "stopping"}
-            className="h-11 w-full gap-1.5 bg-destructive text-white hover:bg-destructive/90 sm:h-9 sm:w-auto"
+            className="h-11 w-full gap-1.5 sm:h-9 sm:w-auto"
           >
             {live.phase === "stopping" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -70,7 +73,7 @@ export function LiveBroadcastCard({ live }: { live: LiveBroadcast }) {
         <div className="flex items-center gap-3">
           <Mic className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div
-            className="h-2 flex-1 overflow-hidden rounded-full bg-muted"
+            className="h-2 flex-1 overflow-hidden rounded-full bg-foreground/10"
             role="meter"
             aria-label="Mikrofonpegel"
             aria-valuemin={0}
@@ -94,7 +97,7 @@ export function LiveBroadcastCard({ live }: { live: LiveBroadcast }) {
               return (
                 <span
                   key={zone.id}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs"
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-glass-tile px-3 text-xs ring-1 ring-inset ring-glass-border"
                 >
                   <StatusDot tone={state.tone} pulse={state.pulse} size="xs" />
                   <span className="font-medium">{zone.name}</span>
@@ -130,26 +133,37 @@ export function LiveBroadcastBanner({
   onShow: () => void;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2">
-      <StatusDot tone="danger" pulse={live.phase === "live"} />
-      <button type="button" onClick={onShow} className="text-sm font-medium text-destructive">
-        Live-Durchsage läuft
-      </button>
-      {live.phase === "live" && (
-        <span className="font-mono text-xs tabular-nums text-muted-foreground">
-          {formatDuration(live.seconds)}
+    // Hinweis-Kachel in Live-Grün. Die Dauer tickt jede Sekunde und ist
+    // aria-hidden, damit die Statusregion des Hinweises sie nicht ständig vorliest.
+    <Notice
+      tone="success"
+      compact
+      icon={null}
+      title={
+        <span className="flex flex-wrap items-center gap-2">
+          <StatusDot tone="success" pulse={live.phase === "live"} />
+          <button type="button" onClick={onShow} className="min-h-11 text-sm font-medium text-success sm:min-h-0">
+            Live-Durchsage läuft
+          </button>
+          {live.phase === "live" && (
+            <span aria-hidden className="font-mono text-xs font-normal tabular-nums text-muted-foreground">
+              {formatDuration(live.seconds)}
+            </span>
+          )}
         </span>
-      )}
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => void live.stop()}
-        disabled={live.phase === "stopping"}
-        className="ml-auto gap-1.5 border-destructive text-destructive"
-      >
-        <Square className="h-3.5 w-3.5 fill-current" />
-        Beenden
-      </Button>
-    </div>
+      }
+      action={
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void live.stop()}
+          disabled={live.phase === "stopping"}
+          className="h-11 gap-1.5 border-destructive/50 text-destructive hover:text-destructive sm:h-8"
+        >
+          <Square className="h-3.5 w-3.5 fill-current" />
+          Beenden
+        </Button>
+      }
+    />
   );
 }

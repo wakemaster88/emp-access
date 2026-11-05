@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import {
   Select,
   SelectContent,
@@ -133,7 +134,7 @@ export function AnnouncementDialog({
 
         <div className="space-y-3">
           <div>
-            <Label htmlFor="aa-name">Name</Label>
+            <Label htmlFor="aa-name" className="mb-1.5 block">Name</Label>
             <Input
               id="aa-name"
               value={name}
@@ -143,13 +144,13 @@ export function AnnouncementDialog({
           </div>
 
           <div>
-            <Label>Quelle</Label>
+            <Label className="mb-1.5 block">Quelle</Label>
             <Select
               value={source}
               onValueChange={(v) => setSource(v as "TTS" | "FILE")}
               disabled={isEdit}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -179,16 +180,19 @@ export function AnnouncementDialog({
                 />
                 <div className="mt-1.5 flex flex-wrap items-center gap-1">
                   <span className="text-[11px] text-muted-foreground">Echte Zeiten einsetzen:</span>
+                  {/* Glas-Tasten: im Dialog getönt, auf dem Handy von selbst 44 px hoch. */}
                   {ANNOUNCEMENT_PLACEHOLDERS.map((p) => (
-                    <button
+                    <Button
                       key={p.token}
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       title={p.label}
                       onClick={() => setText((t) => `${t}${t && !t.endsWith(" ") ? " " : ""}${p.token}`)}
-                      className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:border-primary/50 hover:text-primary"
+                      className="h-7 rounded-[10px] px-2 font-mono text-[11px] font-normal text-muted-foreground hover:text-foreground"
                     >
                       {p.token}
-                    </button>
+                    </Button>
                   ))}
                 </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">
@@ -197,9 +201,9 @@ export function AnnouncementDialog({
               </div>
 
               <div>
-                <Label>Stimme</Label>
+                <Label className="mb-1.5 block">Stimme</Label>
                 <Select value={voice} onValueChange={setVoice}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -214,9 +218,9 @@ export function AnnouncementDialog({
             </>
           ) : (
             <div>
-              <Label>Audiodatei</Label>
+              <Label className="mb-1.5 block">Audiodatei</Label>
               <Select value={trackId} onValueChange={setTrackId}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Auswählen" />
                 </SelectTrigger>
                 <SelectContent>
@@ -236,7 +240,7 @@ export function AnnouncementDialog({
           )}
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
-            <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
+            <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:min-h-0">
               <Switch checked={chime} onCheckedChange={setChime} />
               Gong voranstellen
             </label>
@@ -256,7 +260,7 @@ export function AnnouncementDialog({
             </div>
           </div>
 
-          <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
+          <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:min-h-0">
             <Switch checked={emergency} onCheckedChange={setEmergency} />
             Notfall – unterbricht laufende Durchsagen
           </label>
@@ -279,11 +283,7 @@ export function AnnouncementDialog({
             </div>
           </div>
 
-          {error && (
-            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" compact title={error} />}
         </div>
 
         <DialogFooter>

@@ -27,15 +27,15 @@ export function ZoneStatusBar({ zones, status, onSelect }: Props) {
   ).length;
 
   return (
-    <Card className="mb-4">
-      <CardContent className="p-3">
-        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+    <Card>
+      <CardContent>
+        <div className="mb-2 flex items-center gap-2 text-xs tabular-nums text-muted-foreground">
           <Speaker className="h-3.5 w-3.5" />
           <span>
             {playing} von {zones.length} Zonen spielen
           </span>
           {offline > 0 && (
-            <span className="flex items-center gap-1 text-warning">
+            <span className="flex items-center gap-1 text-destructive">
               <AlertCircle className="h-3.5 w-3.5" />
               {offline} offline
             </span>
@@ -100,8 +100,10 @@ function ZoneTile({
       onClick={onSelect}
       aria-label={`Zone ${zone.name} anzeigen`}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition-colors",
-        "border-border hover:bg-muted/50 dark:border-border dark:hover:bg-muted/50",
+        "glass-tile press flex min-h-11 items-center gap-2.5 p-2.5 text-left hover:bg-glass-strong",
+        // Musik läuft = Violett (Zustandsvokabular): aktive Kachel mit Verlauf.
+        status.isPlaying &&
+          "border-violet-400/45 bg-gradient-to-br from-violet-400/25 to-violet-400/5",
         !status.isActive && "opacity-60"
       )}
     >
@@ -110,10 +112,10 @@ function ZoneTile({
         className={cn(
           "h-2.5 w-2.5 shrink-0 rounded-full",
           status.isPlaying
-            ? "bg-success"
-            : offline || noPlayer
-              ? "bg-slate-300 dark:bg-slate-600"
-              : "bg-amber-400"
+            ? "bg-violet-500 dark:bg-violet-400"
+            : offline
+              ? "bg-destructive"
+              : "bg-muted-foreground/50"
         )}
       />
 
@@ -124,7 +126,7 @@ function ZoneTile({
           </span>
           {status.pendingJobs > 0 && (
             <span
-              className="flex items-center gap-0.5 text-[10px] text-warning"
+              className="flex items-center gap-0.5 text-[10px] tabular-nums text-warning"
               title={`${status.pendingJobs} Befehl(e) noch nicht bestätigt`}
             >
               <Clock className="h-3 w-3" />
@@ -135,7 +137,7 @@ function ZoneTile({
         <span className="block truncate text-xs text-muted-foreground">{subline}</span>
       </span>
 
-      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground/70">
+      <span className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-muted-foreground">
         {status.isPlaying ? (
           <Volume2 className="h-3.5 w-3.5" />
         ) : (

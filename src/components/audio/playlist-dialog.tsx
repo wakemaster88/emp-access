@@ -11,6 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Switch } from "@/components/ui/switch";
 import { ChevronDown, ChevronUp, Loader2, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -90,7 +92,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
 
         <div className="space-y-3">
           <div>
-            <Label htmlFor="ap-name">Name</Label>
+            <Label htmlFor="ap-name" className="mb-1.5 block">Name</Label>
             <Input
               id="ap-name"
               value={name}
@@ -100,7 +102,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
           </div>
 
           <div>
-            <Label htmlFor="ap-desc">Beschreibung (optional)</Label>
+            <Label htmlFor="ap-desc" className="mb-1.5 block">Beschreibung (optional)</Label>
             <Input
               id="ap-desc"
               value={description}
@@ -109,7 +111,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
-            <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
+            <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:min-h-0">
               <Switch checked={shuffle} onCheckedChange={setShuffle} />
               Zufällige Reihenfolge
             </label>
@@ -133,23 +135,27 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
           <div>
             <Label className="mb-2 block">Titel ({trackIds.length})</Label>
             {trackIds.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic py-3 text-center border border-dashed border-input rounded-lg">
-                Noch keine Titel · unten aus der Mediathek hinzufügen
-              </p>
+              <EmptyState
+                compact
+                title="Noch keine Titel · unten aus der Mediathek hinzufügen"
+                className="rounded-tile border border-dashed border-border py-4"
+              />
             ) : (
               <div className="space-y-1.5">
                 {trackIds.map((id, index) => {
                   const track = tracks.find((t) => t.id === id);
                   if (!track) return null;
                   return (
+                    // Zeilen als Kacheln: das Glas tönt sich im deckenden Dialog von selbst (Abschnitt 18).
                     <div
                       key={id}
-                      className="flex items-center gap-1.5 p-2 rounded-lg border border-border bg-muted/40"
+                      className="glass-tile flex items-center gap-1.5 p-2"
                     >
                       {/* Vorher zwei gedrehte Griff-Symbole mit 16 px
                           Trefferfläche – am Telefon Glückssache. Pfeile sagen
-                          außerdem klarer, was der Knopf tut. */}
-                      <div className="flex shrink-0 flex-col">
+                          außerdem klarer, was der Knopf tut. Am Telefon
+                          nebeneinander, damit jeder Pfeil 44 px bekommt. */}
+                      <div className="flex shrink-0 sm:flex-col">
                         <MoveButton
                           icon={ChevronUp}
                           label={`${track.title} nach oben`}
@@ -170,7 +176,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
                         size="icon"
                         onClick={() => setTrackIds((prev) => prev.filter((t) => t !== id))}
                         aria-label={`${track.title} aus der Playlist entfernen`}
-                        className="h-10 w-10 shrink-0 text-destructive hover:bg-destructive/10 sm:h-8 sm:w-8"
+                        className="h-11 w-11 shrink-0 text-destructive hover:bg-destructive/10 sm:h-8 sm:w-8"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -193,9 +199,9 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
                     key={track.id}
                     type="button"
                     onClick={() => setTrackIds((prev) => [...prev, track.id])}
-                    className="flex min-h-10 w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-muted sm:min-h-0 dark:hover:bg-muted"
+                    className="flex min-h-11 w-full items-center gap-2 rounded-xl p-2 text-left text-sm transition-colors hover:bg-glass-tile sm:min-h-0"
                   >
-                    <Plus className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                    <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="truncate">{track.title}</span>
                   </button>
                 ))}
@@ -203,11 +209,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
             </div>
           )}
 
-          {error && (
-            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" compact title={error} />}
         </div>
 
         <DialogFooter>
@@ -241,7 +243,7 @@ function MoveButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="flex h-7 w-9 items-center justify-center rounded text-muted-foreground/70 hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent sm:h-6 sm:w-8 dark:hover:bg-muted"
+      className="press flex size-11 items-center justify-center rounded-[10px] text-muted-foreground hover:bg-glass-tile hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent sm:h-6 sm:w-8"
     >
       <Icon className="h-4 w-4" />
     </button>

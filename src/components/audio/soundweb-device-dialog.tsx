@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -72,7 +73,7 @@ export function SoundwebDeviceDialog({ open, onClose, onSaved, device }: Props) 
 
         <div className="space-y-3">
           <div>
-            <Label htmlFor="sw-name">Name</Label>
+            <Label htmlFor="sw-name" className="mb-1.5 block">Name</Label>
             <Input
               id="sw-name"
               value={name}
@@ -82,7 +83,7 @@ export function SoundwebDeviceDialog({ open, onClose, onSaved, device }: Props) 
           </div>
           <div className="grid gap-3 sm:grid-cols-[1fr_7rem]">
             <div>
-              <Label htmlFor="sw-host">IP-Adresse</Label>
+              <Label htmlFor="sw-host" className="mb-1.5 block">IP-Adresse</Label>
               <Input
                 id="sw-host"
                 value={host}
@@ -92,7 +93,7 @@ export function SoundwebDeviceDialog({ open, onClose, onSaved, device }: Props) 
               />
             </div>
             <div>
-              <Label htmlFor="sw-port">Port</Label>
+              <Label htmlFor="sw-port" className="mb-1.5 block">Port</Label>
               <Input
                 id="sw-port"
                 value={port}
@@ -102,7 +103,7 @@ export function SoundwebDeviceDialog({ open, onClose, onSaved, device }: Props) 
             </div>
           </div>
           <div>
-            <Label htmlFor="sw-node">HiQnet-Node</Label>
+            <Label htmlFor="sw-node" className="mb-1.5 block">HiQnet-Node</Label>
             <Input
               id="sw-node"
               value={node}
@@ -116,25 +117,21 @@ export function SoundwebDeviceDialog({ open, onClose, onSaved, device }: Props) 
             </p>
           </div>
           {isEdit && (
-            <div className="flex items-center justify-between rounded-lg border border-input p-3 dark:border-border">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">Aktiv</p>
                 <p className="text-xs text-muted-foreground">
                   Aus: Der Hub baut die Verbindung ab, die Regler bleiben gespeichert.
                 </p>
               </div>
-              <Switch checked={isActive} onCheckedChange={setIsActive} />
+              <Switch aria-label="Aktiv" checked={isActive} onCheckedChange={setIsActive} />
             </div>
           )}
           <p className="text-xs text-muted-foreground">
             Der lokale Hub verbindet sich über das London-DI-Protokoll (TCP {SOUNDWEB_DEFAULT_PORT}).
             Der Prozessor muss aus dem Netz des Hubs erreichbar sein; ein Passwort braucht er nicht.
           </p>
-          {error && (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" compact title={error} />}
         </div>
 
         <DialogFooter>

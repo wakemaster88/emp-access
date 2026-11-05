@@ -54,7 +54,7 @@ export function ZoneEditor({
   return (
     <div className="space-y-2">
       <div
-        className="relative w-full overflow-hidden rounded-lg border border-border bg-muted aspect-video cursor-crosshair select-none"
+        className="relative w-full overflow-hidden rounded-xl bg-black aspect-video cursor-crosshair select-none"
         onClick={addPoint}
         role="img"
         aria-label={`Kamerabild zum Markieren der ${texts.purpose}`}
@@ -71,17 +71,18 @@ export function ZoneEditor({
             onError={() => setBroken(true)}
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
+          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-white/70">
             Kein Schnappschuss vorhanden. Erst „Schnappschuss“ in der Liste anfordern.
           </div>
         )}
+        {/* Erkennungsfläche der Kamera: Himmelblau aus dem Zustandsvokabular. */}
         <svg
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
           className="absolute inset-0 h-full w-full pointer-events-none"
         >
           {points.length >= 3 && (
-            <polygon points={path} fill="rgba(34,197,94,0.25)" stroke="rgb(34,197,94)" strokeWidth={0.4} />
+            <polygon points={path} className="fill-sky-400/25 stroke-sky-400" strokeWidth={0.4} />
           )}
           {points.length === 2 && (
             <line
@@ -89,17 +90,19 @@ export function ZoneEditor({
               y1={points[0][1] * 100}
               x2={points[1][0] * 100}
               y2={points[1][1] * 100}
-              stroke="rgb(34,197,94)"
+              className="stroke-sky-400"
               strokeWidth={0.4}
             />
           )}
           {points.map(([x, y], i) => (
-            <circle key={i} cx={x * 100} cy={y * 100} r={0.9} fill="rgb(34,197,94)" stroke="white" strokeWidth={0.25} />
+            <circle key={i} cx={x * 100} cy={y * 100} r={0.9} className="fill-sky-400" stroke="white" strokeWidth={0.25} />
           ))}
         </svg>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="text-xs text-muted-foreground flex-1">
+      {/* Hinweis in eigener Zeile, die beiden Tasten darunter zusammen rechts:
+          neben dem Hinweis brach mal der Text dreizeilig um, mal eine Taste allein. */}
+      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+        <p className="w-full text-xs text-muted-foreground">
           {points.length === 0
             ? texts.empty
             : points.length < 3
