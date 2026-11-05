@@ -103,7 +103,7 @@ async function closeUp(cameraId: number, caps: CameraCaps | null): Promise<Buffe
 async function inspect(where: string, title: string, at: number): Promise<void> {
   const cam = findCameraByRef(where);
   if (!cam) return;
-  const first = await snap(cam.id);
+  let first = await snap(cam.id);
   SENTINEL.inspections++;
   let verdict: Verdict;
   try {
@@ -149,18 +149,36 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
   let close: Buffer | null = null;
   let reason = "";
   let personKleidung: string[] = [];
-  if (/^PERSON\b/.test(title)) {
-    await follow();
-    if (followed) await sleep(2_500); // Kamera richtet sich auf die Person aus
-    close = await closeUp(cam.id, caps).catch((e) => {
-      log(`Wächter: ${cam.name}: Heranzoomen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
-      return null;
-    });
-    // Ohne optischen Zoom: digital auf die Personen zoomen (Ausschnitt aus dem Vollbild).
-    if (!close) {
-      const boxes = await detectPersons(first);
-      if (boxes?.length) close = await groupCrop(first, boxes);
-      if (close) log(`Wächter: ${cam.name}: digitaler Zoom auf ${boxes?.length} Person(en)`);
+  const isPerson = /^PERSON\b/.test(title);
+  if (isPerson) {
+    // Ist ueberhaupt jemand im Bild? Der Tracker (YOLO) zaehlt Personen. Sieht
+    // er auf zwei Bildern niemanden, war es eine Fehlausloesung oder die
+    // Person ist schon weg – dann kein Alarm mit leerem Bild.
+    let boxes = await detectPersons(first);
+    if (boxes && boxes.length === 0) {
+      await sleep(1_500);
+      const again = await snap(cam.id).catch(() => null);
+      const b2 = again ? await detectPersons(again) : null;
+      if (again && b2?.length) {
+        first = again;
+        boxes = b2;
+      } else if (b2 && b2.length === 0) {
+        log(`Wächter: ${cam.name}: Tracker sieht keine Person (2 Bilder) – kein Alarm`);
+        SENTINEL.lastVerdict = `${cam.name}: keine Person im Bild`;
+        improve("camera", "sentinel_person_empty", { camera: cam.name });
+        return;
+      }
+    }
+    // Digitaler Zoom auf die gefundenen Personen (Ausschnitt aus dem Vollbild,
+    // die Kamera bewegt sich dafuer nicht). Nur ohne Boxen optisch zoomen.
+    if (boxes?.length) {
+      close = await groupCrop(first, boxes);
+      log(`Wächter: ${cam.name}: digitaler Zoom auf ${boxes.length} Person(en)${close ? "" : " (Ausschnitt lohnt nicht)"}`);
+    } else {
+      close = await closeUp(cam.id, caps).catch((e) => {
+        log(`Wächter: ${cam.name}: Heranzoomen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        return null;
+      });
     }
     const known = await activeCleared();
     let look: PersonLook | null = null;
@@ -231,6 +249,8 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
     await sleep(4_000);
     try {
       const jpeg = await snap(cam.id);
+      // Bei Personen nur Bilder schicken, auf denen der Tracker noch jemanden sieht.
+      if (isPerson && (await detectPersons(jpeg))?.length === 0) continue;
       for (const id of ids) await sendPhoto(id, jpeg, `${cam.name} · +${i * 4} s`).catch(() => undefined);
     } catch {
       break;
