@@ -3,7 +3,8 @@
 /**
  * Tab-Leiste im Kopf der Räume-Seite: "Übersicht" links, ein Tab je Raum,
  * "Ohne Raum" rechts. Eine schwebende Glas-Kapsel, der aktive Tab ist eine
- * helle Pille (docs/design-regeln.md, Abschnitt 6).
+ * helle Pille (docs/design-regeln.md, Abschnitt 6). Passen nicht alle Tabs in
+ * eine Zeile, bricht die Leiste um; die Seite scrollt nie seitlich.
  *
  * Ein Tab zeigt höchstens einen Punkt (Zustand) und eine Zahl (Störungen).
  */
@@ -53,7 +54,7 @@ function TabButton({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13px] whitespace-nowrap transition-all duration-200",
+        "flex h-9 max-w-full shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13px] whitespace-nowrap transition-all duration-200",
         active ? "glass-pill-active font-semibold text-foreground" : "font-medium text-muted-foreground hover:text-foreground",
         className,
       )}
@@ -88,7 +89,7 @@ export function RoomTabs({
     <div
       role="tablist"
       aria-label="Räume"
-      className="glass-strip flex items-center gap-0.5 overflow-x-auto scrollbar-thin [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="glass-strip flex flex-wrap items-center gap-0.5 rounded-[22px]"
     >
       <TabButton active={view.kind === "overview"} onClick={() => onSelect({ kind: "overview" })} label="Übersicht">
         <LayoutGrid className="h-3.5 w-3.5" />
@@ -105,7 +106,7 @@ export function RoomTabs({
           {t.dot !== "none" && (
             <span aria-hidden className={cn("h-[7px] w-[7px] rounded-full", DOT[t.dot], t.dot === "present" && "animate-pulse")} />
           )}
-          <span>{t.name}</span>
+          <span className="truncate">{t.name}</span>
           {t.badge != null && t.badge > 0 && (
             <span className="rounded-full bg-destructive/15 px-1.5 text-[10px] font-semibold tabular-nums text-destructive">
               {t.badge}

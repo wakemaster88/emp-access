@@ -265,7 +265,7 @@ function RoomTile({
         }
       }}
       className={cn(
-        "glass-tile group flex cursor-pointer flex-col gap-2.5 p-3.5 text-left transition-all duration-200 hover:-translate-y-0.5",
+        "glass-tile group flex min-w-0 cursor-pointer flex-col gap-2.5 p-3.5 text-left transition-all duration-200 hover:-translate-y-0.5",
         TINT[state],
       )}
     >
@@ -356,7 +356,7 @@ function ago(iso: string, nowMs: number): string {
 
 function Lane({ title, Icon, children }: { title: string; Icon: LucideIcon; children: React.ReactNode }) {
   return (
-    <section className="glass-card p-4">
+    <section className="glass-card min-w-0 p-4">
       <h3 className="mb-2.5 flex items-center gap-1.5 text-label">
         <Icon className="h-3.5 w-3.5" />
         {title}
