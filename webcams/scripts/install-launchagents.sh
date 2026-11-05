@@ -66,7 +66,6 @@ cat > "$WEBCAMS_PLIST" <<EOF
   <array>
     <string>$PNPM_BIN</string>
     <string>start</string>
-    <string>--</string>
     <string>-H</string>
     <string>127.0.0.1</string>
     <string>-p</string>
