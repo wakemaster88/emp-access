@@ -39,6 +39,7 @@ import {
 } from "./telegram.js";
 import { TOOLS, findTool, readNotes, toolResultText, toolSpecs, type ToolContext } from "./tools.js";
 import { diffFindings, newWatchState, openFindings, type Finding } from "./findings.js";
+import { startOccupancy } from "../occupancy.js";
 import { berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
 import { VOICE, ensureWhisper, transcribe } from "./voice.js";
 import { dayPreviewText } from "../day-preview.js";
@@ -136,6 +137,7 @@ async function systemPrompt(): Promise<string> {
     "- Schalte nur, worum Aaron gebeten hat. Keine eigenmächtigen Aktionen.",
     "- Netzwerk (Router PR60X, Switches, VLANs, DHCP, WLAN, Firewall) änderst du nie. Du kannst Befunde lesen und Änderungen vorschlagen; umsetzen tut Aaron.",
     "- Kameras in Umkleiden/WC gibt es nicht und darf es nicht geben.",
+    "- Fragen wie „Wie voll ist es?“, „Wie lange wartet man am Lift?“ beantwortest du mit occupancy. Tagsüber meldet sich die Belegungsüberwachung selbst, wenn ein Punkt voll wird.",
     "- Fragen zu Wetter, Mähen, Bewässerung, Heizung und Energie: erst weather_forecast bzw. energy_plan holen. Heizung und Lüftung regelt die Cloud-Klimaregelung; du schlägst nur vor.",
     "- Mit look_at_camera siehst du dir ein aktuelles Kamerabild selbst an. Außerhalb des Betriebs bewertet der Wächter Personen- und Fahrzeugereignisse automatisch und meldet Auffälliges mit Bild.",
     "- Frueherkennung: early_warnings zeigt, was sich ankündigt (gehäufte Zeitüberschreitungen, häufige Neustarts, Port-Fehler, Temperatur, Platte, abgelaufene Anmeldungen). Nenne dabei die Zahlen und die typische Ursache, schlage die Prüfung vor, ändere aber nichts.",
@@ -575,7 +577,7 @@ async function dailyReport(): Promise<string> {
     {
       role: "user",
       content:
-        "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, early_warnings, improve_report, list_events (limit 60) und energy_plan. " +
+        "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, early_warnings, improve_report, list_events (limit 60), energy_plan und occupancy (peakYesterday = Spitzen von gestern; nur erwähnen, wenn gestern Betrieb war). " +
         "Aufbau: 1) Lage in zwei Sätzen. 2) Auffälligkeiten der letzten 24 Stunden (nur Belegtes). " +
         "3) Frueherkennung: was sich ankündigt (gehäufte Zeitüberschreitungen, häufige Neustarts, Port-Fehler/Flattern, Temperatur, Platte, abgelaufene Anmeldungen), mit Zahlen aus early_warnings und Vergleich zur Vorwoche; nichts erfinden, ohne Befund ein Satz. " +
         "4) Energie und Technik aus energy_plan: Mäh-Aufgaben mit Urteil und trockene Mähfenster, Bewässerungs-Hinweise, Frost, Geräte, die außerhalb der Betriebszeit laufen. Nur, was es gibt, ohne das Wetter selbst zu wiederholen. " +
@@ -667,6 +669,8 @@ export async function startAgent(): Promise<void> {
   }, 30 * 60_000);
   // Kamera-Ereignisse ausserhalb des Betriebs selbst ansehen (Bildmodell).
   startSentinel({ chatIds, offer });
+  // Tagsueber Belegung/Wartezeiten messen und melden, wenn es voll wird.
+  startOccupancy({ chatIds });
   // Energie, Maeher und Bewaesserung nach Wetter und Betriebszeit (Vorschlaege mit Knopf).
   if ((process.env.HUB_AGENT_ENERGY ?? "on").toLowerCase() !== "off") void startEnergy({ chatIds, offer });
   // Sprachnachrichten: whisper.cpp + Modell im Hintergrund bereitstellen.

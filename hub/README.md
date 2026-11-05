@@ -179,6 +179,28 @@ Sitzung ohne Fenster-Server geprüft werden.
 - **Energie, Mäher, Bewässerung** (`energy.ts`, Regeln in `energy-rules.ts`, Wetter in `../weather.ts` über Open-Meteo, Standort aus dem Cloud-Account, sonst `HUB_LAT`/`HUB_LON`): alle 5 min. Licht/Schalter, die außerhalb der Betriebszeit ihres Raums seit 45 min an sind und keine Kamera im Raum hat jemanden gesehen → Vorschlag „Ausschalten“ / „Nicht mehr fragen“ (Heizungen und Lüfter der Cloud-Klimaregelung und Dauerverbraucher wie Kühlung/Pumpen ausgenommen). Mäh-Aufgabe startet in den nächsten 3 h trotz Regen, nassem Gras, < 3 °C oder Sturm → „Heute aussetzen“: Aufgabe wird abgeschaltet und nach dem Zeitfenster automatisch wieder eingeschaltet (`.cache/agent-energy.json`). Mäher mäht im Regen → „In die Station“. Mammotion getrennt → „Neu anmelden“ (Sidecar `POST /relogin`, höchstens alle 6 h). Werkzeuge `weather_forecast`, `energy_plan` (Vorschau heute/morgen, auch im Tagesbericht), `mower_skip_task`, `mower_relogin`, `energy_ignore_device`. Geschaltet wird nur per Knopf. `HUB_AGENT_ENERGY=off` schaltet ab.
 - **Speicher:** Das Modell bleibt `HUB_AGENT_KEEP_ALIVE` (30 min) nach der letzten Anfrage geladen und wird dann entladen.
 
+## Belegung und Wartezeiten
+
+Läuft mit dem Hub-Assistenten (`hub/src/occupancy.ts`). Tagsüber (`HUB_OCCUPANCY_HOURS`, Standard `9-21`) alle 5 Minuten (`HUB_OCCUPANCY_INTERVAL` in Sekunden) zählt der Hub auf den Kamerabildern die Personen (YOLO-Tracker) an diesen Punkten:
+
+| Punkt | Kameras (Name enthält) | voll ab | Durchsatz/h | Meldung ab Wartezeit |
+| --- | --- | --- | --- | --- |
+| `uebungslift` | Übungslift | 12 | 60 | 15 min |
+| `seilbahn-a` | Seilbahn A | 25 | 100 (gemessen am Drehkreuz) | 20 min |
+| `seilbahn-b` | Seilbahn B | 25 | 100 | 20 min |
+| `gastro` | Gastro, Imbiss | 15 | 40 | 15 min |
+| `drehkreuz` | Drehkreuz | 10 | 120 (gemessen am Drehkreuz Seilbahn A) | 10 min |
+
+Wartezeit ≈ Personen ÷ Durchsatz. Den gemessenen Durchsatz liefert die Cloud (`GET /api/hub/occupancy`, Eintritte je Drehkreuz-Bereich der letzten 15/60 min und des Tages), sobald mindestens 20 Eintritte pro Stunde zusammenkommen. Ist ein Punkt zweimal hintereinander voll oder die Wartezeit über der Schwelle, meldet sich der Assistent per Telegram mit Bild, und noch einmal, wenn es wieder leerer ist. `HUB_OCCUPANCY_ALERTS=0` schaltet nur die Meldungen ab.
+
+Im Chat: „Wie voll ist es?“ (Werkzeug `occupancy`). Schwellen lassen sich per Chat ändern („Übungslift ist erst ab 20 Leuten voll“, mit Bestätigung) oder direkt in `hub/occupancy.json`, dort auch Zonen je Kamera, damit nur der Wartebereich zählt:
+
+```json
+{ "spots": [ { "key": "uebungslift", "full": 20, "zones": { "5": [[0, 0.4], [1, 0.4], [1, 1], [0, 1]] } } ] }
+```
+
+Es werden keine Bilder gespeichert, nur die Tagesspitzen (`hub/.cache/occupancy.json`).
+
 ## Installation auf einer Hub-Maschine
 
 Der Hub ist ein reines Deployment-Target: er fährt `origin/main` aus dem

@@ -32,6 +32,7 @@ import { vlanCheckSummary } from "../vlan-check.js";
 import { recentImproveEvents } from "../improve-log.js";
 import { readHubLog } from "../hublog.js";
 import { staffSummary } from "../staff.js";
+import { occupancyReport, setSpotConfig } from "../occupancy.js";
 import { dayPreviewForAgent } from "../day-preview.js";
 import { LLM, askVision } from "./ollama.js";
 import type { ToolSpec } from "./ollama.js";
@@ -160,6 +161,48 @@ export const TOOLS: AgentTool[] = [
     parameters: obj(),
     risk: "read",
     run: async () => staffSummary(),
+  },
+  {
+    name: "occupancy",
+    description:
+      "Wie voll ist es? Belegung und geschätzte Wartezeit an Übungslift, Seilbahn A/B, Gastro und Drehkreuz: Personen auf den Kamerabildern, Stufe (leer/ruhig/gut besucht/voll), Wartezeit in Minuten, Drehkreuz-Eintritte (15 min, Stunde, heute) und Tagesspitzen von heute und gestern. Sag dazu, dass die Wartezeit geschätzt ist. fresh=true misst sofort neu.",
+    parameters: obj({ fresh: { type: "boolean", description: "Sofort neu messen statt der letzten Messung (dauert einige Sekunden)" } }),
+    risk: "read",
+    run: async (args) => occupancyReport(args.fresh === true),
+  },
+  {
+    name: "set_occupancy_threshold",
+    description:
+      "Schwellen für die Belegungsmeldung eines Punkts dauerhaft ändern (hub/occupancy.json): full = ab so vielen Personen voll, perHour = Abfertigung pro Stunde, waitAlertMin = Meldung ab dieser Wartezeit, enabled = Punkt messen ja/nein. Punkte: uebungslift, seilbahn-a, seilbahn-b, gastro, drehkreuz. Braucht Aarons Bestätigung.",
+    parameters: obj(
+      {
+        spot: str("Schlüssel des Punkts, z. B. uebungslift"),
+        full: num("Personen, ab denen der Punkt voll ist"),
+        perHour: num("Abfertigung pro Stunde"),
+        waitAlertMin: num("Wartezeit in Minuten, ab der gemeldet wird"),
+        enabled: { type: "boolean", description: "Punkt messen" },
+      },
+      ["spot"]
+    ),
+    risk: "act",
+    describe: (args) =>
+      `Belegung ${args.spot}: ${[
+        args.full != null ? `voll ab ${args.full} Personen` : "",
+        args.perHour != null ? `${args.perHour} pro Stunde` : "",
+        args.waitAlertMin != null ? `Meldung ab ${args.waitAlertMin} min` : "",
+        args.enabled != null ? (args.enabled ? "an" : "aus") : "",
+      ]
+        .filter(Boolean)
+        .join(", ")}`,
+    run: async (args) => {
+      const n = (v: unknown) => (v == null || v === "" ? undefined : Number(v) > 0 ? Number(v) : undefined);
+      return setSpotConfig(String(args.spot ?? "").trim(), {
+        full: n(args.full),
+        perHour: n(args.perHour),
+        waitAlertMin: n(args.waitAlertMin),
+        enabled: typeof args.enabled === "boolean" ? args.enabled : undefined,
+      });
+    },
   },
   {
     name: "day_preview",
