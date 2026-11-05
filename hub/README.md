@@ -159,6 +159,17 @@ Eine LaunchDaemon-Variante (läuft ohne angemeldeten Benutzer) ist nicht
 umgesetzt: Vision-OCR und Face-Sidecar müssten dafür erst einmal in einer
 Sitzung ohne Fenster-Server geprüft werden.
 
+## Hub-Assistent (lokales Sprachmodell + Telegram)
+
+`src/agent/`: Ein lokales Modell über Ollama spricht über einen **eigenen Telegram-Bot** mit dem Betreiber, überwacht den Hub und schlägt Verbesserungen vor. Der Bot läuft per Long Polling vom Hub aus, also ohne Webhook und auch dann, wenn die Cloud nicht erreichbar ist.
+
+- **Einschalten:** Bot bei @BotFather anlegen, Token als `HUB_AGENT_TELEGRAM_TOKEN` in `hub/.env`. Beim nächsten Start installiert der Hub Ollama per Homebrew (falls nötig), startet es mit `brew services` und lädt das Modell (`HUB_AGENT_MODEL`, Vorgabe `qwen3:30b`, rund 19 GB). Bis das Modell bereit ist, beantwortet der Bot `/status` und `/befunde` ohne Modell.
+- **Kopplung:** Der Bot redet nur mit freigeschalteten Chats. Beim ersten „Hallo“ schickt der Hub einen sechsstelligen Code über den Alarmkanal der Cloud (`/api/hub/alerts`, Quelle `agent`, also Push und Alarm-Telegram). Wer den Code im Bot eingibt, ist gekoppelt (`.cache/agent.json`). Fünf falsche Versuche sperren, der Code gilt 15 Minuten.
+- **Werkzeuge** (`tools.ts`): Lesen läuft sofort (Lage, Kameras, Standbild, Ereignisse, Log, Räume mit Live-Zustand, Klima, Netzwerk-Inventar, Ping, Mäher, Verbesserungslog, Notizen). Alles, was schaltet (Gerät, Kamera-Licht/Sirene/Preset, Tor, Mäher, Dienst-Neustart), kommt als Rückfrage mit Knopf „Ausführen“. Netzwerk-Änderungen (Router, Switches, VLANs, DHCP, WLAN) und freie Shell-Befehle gibt es bewusst nicht.
+- **Wächter** (`watch.ts`, alle 5 min): Cloud-Verbindung, Kameras und DoorBird aus Hub-Sicht, RAM und Platte, Tracker, Soundweb, Face-Sidecar. Warnungen erst nach zwei Prüfungen, Alarme sofort, Entwarnung wenn erledigt. In der Ruhezeit (`HUB_AGENT_QUIET`, Vorgabe 22–7 Uhr) gesammelt am Morgen. Was die Cloud schon meldet (Hub offline, Gerät offline, Switch-Befunde), meldet der Wächter nicht doppelt.
+- **Tagesbericht** um `HUB_AGENT_REPORT_TIME` (Vorgabe 07:30): Lage, Auffälligkeiten, höchstens drei Vorschläge. Vorschläge, keine eigenmächtigen Änderungen.
+- **Speicher:** Das Modell bleibt `HUB_AGENT_KEEP_ALIVE` (30 min) nach der letzten Anfrage geladen und wird dann entladen.
+
 ## Installation auf einer Hub-Maschine
 
 Der Hub ist ein reines Deployment-Target: er fährt `origin/main` aus dem

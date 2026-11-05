@@ -99,6 +99,7 @@ export const CONFIG = {
     "soundweb",
     "rooms",
     "rules",
+    ...(process.env.HUB_AGENT_TELEGRAM_TOKEN?.trim() ? ["agent"] : []),
   ],
 };
 
