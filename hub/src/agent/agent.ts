@@ -16,7 +16,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, api, log } from "../config.js";
 import { recordHubEvent } from "../state.js";
-import { LLM, chat, ensureOllama, type ChatMessage } from "./ollama.js";
+import { LLM, LLM_LOADED, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
 import {
   answerCallback,
   editText,
@@ -469,6 +469,25 @@ async function reportTick(): Promise<void> {
     log(`Assistent: Tagesbericht fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
     await broadcast(`Tagesbericht fehlgeschlagen, hier die Kurzlage:\n\n${await plainStatus()}`);
   }
+}
+
+/* ------------------------------------------------------------ Dashboard */
+
+/** Kachel „KI-Assistent“ unter Systeme: Modell, Zustand, gekoppelte Chats. */
+export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string; detail: string } {
+  if (!AGENT.enabled) return { state: "off", value: "aus", detail: "HUB_AGENT_TELEGRAM_TOKEN fehlt" };
+  const chats = `${AGENT.pairedChats} Chat${AGENT.pairedChats === 1 ? "" : "s"}`;
+  if (LLM.ready) {
+    refreshLoadedModel();
+    const ram = LLM_LOADED.loaded ? `im RAM (${(LLM_LOADED.sizeBytes / 1024 ** 3).toFixed(1)} GB)` : "entladen";
+    const speed = LLM.lastReplyMs != null ? ` · Antwort ${(LLM.lastReplyMs / 1000).toFixed(1)} s` : "";
+    return { state: "ok", value: LLM.model, detail: `${ram} · ${chats}${speed}` };
+  }
+  if (LLM.installing) {
+    const pct = LLM.pullPct != null ? ` ${LLM.pullPct} %` : "";
+    return { state: "warn", value: LLM.model, detail: `${LLM.phase ?? "wird eingerichtet"}${pct} · ${chats}` };
+  }
+  return { state: "warn", value: LLM.model, detail: LLM.error ?? "nicht bereit" };
 }
 
 /* ------------------------------------------------------------ Start */

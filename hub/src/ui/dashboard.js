@@ -189,6 +189,7 @@ const HEALTH_ICONS = {
   tasks: "tasks",
   soundweb: "speaker",
   snmp: "switch",
+  assistant: "sparkle",
 };
 
 const KIND_ICONS = {

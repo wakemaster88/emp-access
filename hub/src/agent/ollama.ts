@@ -52,6 +52,10 @@ export const LLM = {
   model: AGENT_MODEL,
   error: null as string | null,
   lastReplyMs: null as number | null,
+  /** Was gerade passiert (Dashboard-Kachel), z. B. „Modell wird geladen“. */
+  phase: null as string | null,
+  /** Fortschritt des Modell-Downloads in Prozent. */
+  pullPct: null as number | null,
 };
 
 async function first(paths: string[]): Promise<string | null> {
@@ -95,13 +99,40 @@ async function hasModel(): Promise<boolean> {
 
 async function pullModel(): Promise<void> {
   log(`Assistent: lade Modell ${AGENT_MODEL} (einmalig, mehrere GB) …`);
+  LLM.phase = "Modell wird geladen";
+  LLM.pullPct = 0;
   const res = await fetch(`${OLLAMA_URL}/api/pull`, {
     method: "POST",
-    body: JSON.stringify({ model: AGENT_MODEL, stream: false }),
+    body: JSON.stringify({ model: AGENT_MODEL, stream: true }),
     signal: AbortSignal.timeout(3 * 60 * 60_000),
   });
-  const body = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
-  if (!res.ok || body.error) throw new Error(`Modell laden: ${body.error ?? `HTTP ${res.status}`}`);
+  if (!res.ok || !res.body) throw new Error(`Modell laden: HTTP ${res.status}`);
+  // NDJSON: {status, digest?, total?, completed?} je Zeile, am Ende {status:"success"}.
+  const decoder = new TextDecoder();
+  let buf = "";
+  let lastStatus = "";
+  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    buf += decoder.decode(chunk, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      let ev: { status?: string; total?: number; completed?: number; error?: string };
+      try {
+        ev = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (ev.error) throw new Error(`Modell laden: ${ev.error}`);
+      if (ev.status) lastStatus = ev.status;
+      if (ev.total && ev.total > 100 * 1024 * 1024 && ev.completed != null) {
+        LLM.pullPct = Math.min(100, Math.floor((ev.completed / ev.total) * 100));
+      }
+    }
+  }
+  if (lastStatus !== "success") throw new Error(`Modell laden abgebrochen (${lastStatus || "ohne Status"})`);
+  LLM.pullPct = null;
   log(`Assistent: Modell ${AGENT_MODEL} geladen`);
 }
 
@@ -115,6 +146,7 @@ export async function ensureOllama(): Promise<boolean> {
       const setup = process.env.HUB_AGENT_OLLAMA_SETUP !== "0" && process.platform === "darwin";
       if (!setup) throw new Error(`Ollama antwortet nicht unter ${OLLAMA_URL}`);
       if (!(await first(OLLAMA_CANDIDATES))) {
+        LLM.phase = "Ollama wird installiert";
         log("Assistent: Ollama fehlt – installiere über Homebrew …");
         await brew(["install", "ollama"], 45 * 60_000);
         recordHubEvent({ kind: "system", severity: "info", where: "Assistent", title: "Ollama installiert" });
@@ -136,6 +168,7 @@ export async function ensureOllama(): Promise<boolean> {
     return false;
   } finally {
     LLM.installing = false;
+    LLM.phase = null;
   }
 }
 
@@ -164,4 +197,31 @@ export async function chat(messages: ChatMessage[], tools: ToolSpec[]): Promise<
   }
   LLM.lastReplyMs = Date.now() - started;
   return body.message;
+}
+
+/* ------------------------------------------------------------ Anzeige */
+
+/** Ob das Modell gerade im RAM liegt (Ollama `/api/ps`), fuer Systeme im Dashboard. */
+export const LLM_LOADED = { loaded: false, sizeBytes: 0, checkedAt: 0 };
+let psRunning = false;
+
+/** Hoechstens alle 30 s eine Abfrage anstossen; blockiert das Dashboard nie. */
+export function refreshLoadedModel(): void {
+  if (psRunning || !LLM.ready || Date.now() - LLM_LOADED.checkedAt < 30_000) return;
+  psRunning = true;
+  LLM_LOADED.checkedAt = Date.now();
+  fetch(`${OLLAMA_URL}/api/ps`, { signal: AbortSignal.timeout(2_000) })
+    .then((res) => (res.ok ? res.json() : { models: [] }))
+    .then((body: { models?: Array<{ name: string; model?: string; size?: number }> }) => {
+      const want = AGENT_MODEL.includes(":") ? AGENT_MODEL : `${AGENT_MODEL}:latest`;
+      const m = (body.models ?? []).find((x) => x.name === want || x.model === want);
+      LLM_LOADED.loaded = Boolean(m);
+      LLM_LOADED.sizeBytes = m?.size ?? 0;
+    })
+    .catch(() => {
+      LLM_LOADED.loaded = false;
+    })
+    .finally(() => {
+      psRunning = false;
+    });
 }
