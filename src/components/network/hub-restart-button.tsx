@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Notice } from "@/components/ui/notice";
 import { Loader2, RotateCcw } from "lucide-react";
 
 type Service = "tracker" | "hub";
@@ -43,7 +49,6 @@ export function HubRestartButton({
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function run() {
-    if (!confirm(confirmText)) return;
     setBusy(true);
     setNote(null);
     try {
@@ -85,15 +90,31 @@ export function HubRestartButton({
     }
   }
 
+  // Rückfrage als AlertDialog statt Browser-Dialog (docs/design-regeln.md,
+  // Abschnitte 16 und 18); Fehler als Notice (Abschnitt 19).
   return (
-    <span className="inline-flex items-center gap-2">
-      <Button variant="outline" size="sm" onClick={run} disabled={busy} className="gap-1.5">
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-        {busy ? "Warte auf Hub …" : label}
-      </Button>
-      {note && (
-        <span className={"text-xs " + (note.ok ? "text-muted-foreground" : "text-destructive")}>{note.text}</span>
-      )}
-    </span>
+    <div className="flex flex-wrap items-center gap-2">
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="outline" size="sm" disabled={busy} className="gap-1.5 max-sm:h-11">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            {busy ? "Warte auf Hub …" : label}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{label}?</AlertDialogTitle>
+            <AlertDialogDescription>{confirmText}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void run()}>Neu starten</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {note && (note.ok
+        ? <span className="text-xs text-muted-foreground">{note.text}</span>
+        : <Notice tone="danger" compact title={note.text} />)}
+    </div>
   );
 }

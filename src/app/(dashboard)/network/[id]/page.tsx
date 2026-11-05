@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { IconChip } from "@/components/ui/icon-chip";
 import { PortGrid } from "@/components/network/port-grid";
 import { ArrowLeft, Server, MapPin, Globe, EthernetPort } from "lucide-react";
 
@@ -65,25 +66,27 @@ export default async function NetworkDeviceDetailPage({ params }: Props) {
 
   return (
     <>
-      <Header title={device.name} accountName={session.user.accountName} />
-      <div className="page-content space-y-4 sm:space-y-6">
+      {/* Abschnittstitel im Kopf wie bei „Gerätedetails“; der Name steht einmal in der Karte. */}
+      <Header title="Netzwerkgerät" accountName={session.user.accountName} />
+      <div className="page-content space-y-4 sm:space-y-5">
         <Link
           href="/network"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors max-sm:min-h-11"
         >
           <ArrowLeft className="h-4 w-4" />
           Zurück zum Netzwerk
         </Link>
 
         <Card>
-          <CardContent className="flex flex-wrap items-center gap-4 p-4 sm:p-6">
-            <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <Server className="h-6 w-6" />
-            </div>
+          <CardContent className="flex flex-wrap items-center gap-4">
+            {/* Gerätetyp ist kein Zustand: neutraler Symbol-Chip (docs/design-regeln.md, Abschnitt 3). */}
+            <IconChip icon={Server} size="lg" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-bold text-foreground">{device.name}</h2>
-                <Badge variant="secondary" className="text-xs">{TYPE_LABEL[device.type] ?? device.type}</Badge>
+                <CardTitle>
+                  <h2>{device.name}</h2>
+                </CardTitle>
+                <Badge variant="secondary">{TYPE_LABEL[device.type] ?? device.type}</Badge>
               </div>
               <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-muted-foreground">
                 {[device.vendor, device.model].filter(Boolean).length > 0 && (
@@ -107,15 +110,16 @@ export default async function NetworkDeviceDetailPage({ params }: Props) {
                 </span>
               </div>
               {device.notes && (
-                <p className="text-xs text-muted-foreground/70 mt-1">{device.notes}</p>
+                <p className="text-xs text-muted-foreground mt-1">{device.notes}</p>
               )}
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base sm:text-xl">Ports</CardTitle>
+        {/* Die Port-Tabelle läuft bis an den unteren Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        <Card className="overflow-hidden pb-0 sm:pb-0">
+          <CardHeader>
+            <CardTitle>Ports</CardTitle>
           </CardHeader>
           <CardContent>
             <PortGrid

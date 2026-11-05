@@ -138,20 +138,34 @@ export const PORT_STATUS = [
   { value: "FAULTY", label: "Defekt" },
 ] as const;
 
-/// Stabile Farbpalette fuer VLAN-Badges/Port-Matrix (Index = vlanDbId % n).
+/// Stabile Farbpalette fuer VLAN-Badges/Port-Matrix (Index = Stelle in der VLAN-Liste % n).
+// Ein VLAN ist eine Kategorie wie eine Reihe im Diagramm, kein Zustand: deshalb
+// die Diagramm-Tokens statt Paletten- oder Zustandsfarben (docs/design-regeln.md,
+// Abschnitt 15). Getönte Fläche mit farbigem Rand, Schrift in Vordergrundfarbe,
+// damit der Kontrast in Hell und Dunkel reicht.
 export const VLAN_COLORS = [
-  "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
-  "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
-  "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
-  "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
-  "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
-  "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  "border-chart-1/50 bg-chart-1/15 text-foreground",
+  "border-chart-2/50 bg-chart-2/15 text-foreground",
+  "border-chart-3/50 bg-chart-3/15 text-foreground",
+  "border-chart-4/50 bg-chart-4/15 text-foreground",
+  "border-chart-5/50 bg-chart-5/15 text-foreground",
 ] as const;
 
-export function vlanColor(vlanDbId: number): string {
-  return VLAN_COLORS[vlanDbId % VLAN_COLORS.length];
+/**
+ * Farbe eines VLANs nach seiner Stelle in der VLAN-Liste des Mandanten
+ * (sortiert nach VLAN-ID), nicht nach der fortlaufenden Datenbank-ID: so
+ * bekommen bis zu fünf VLANs sicher verschiedene Farben, und jede Ansicht
+ * mit derselben Liste färbt gleich.
+ */
+export function vlanColor(
+  vlanDbId: number,
+  vlans: readonly { id: number; vlanId: number }[],
+): string {
+  const self = vlans.find((v) => v.id === vlanDbId);
+  const index = self
+    ? vlans.filter((v) => v.vlanId < self.vlanId || (v.vlanId === self.vlanId && v.id < self.id)).length
+    : vlanDbId;
+  return VLAN_COLORS[index % VLAN_COLORS.length];
 }
 
 /** Sortierschluessel: bekannte VLANs nach vlanId, danach „Ohne VLAN“. */

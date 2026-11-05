@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -16,7 +16,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Loader2, Zap, Cable, MonitorSmartphone, ArrowUp } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
+import { Loader2, Zap, Cable, MonitorSmartphone, ArrowUp, EthernetPort, Lock, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PORT_STATUS, vlanColor } from "@/components/network/network-types";
 
@@ -36,6 +38,15 @@ export interface PortData {
 
 interface VlanOption { id: number; vlanId: number; name: string }
 interface OutletOption { id: number; label: string; taken: boolean }
+
+// Port-Status als Zustandsfarbe: aktiv = grün, inaktiv = ruhig, reserviert = Hinweis,
+// defekt = Störung (docs/design-regeln.md, Abschnitt 3). Unbekannte Werte bleiben Glas.
+const PORT_STATUS_VARIANT: Record<string, "success" | "neutral" | "warning" | "danger"> = {
+  ACTIVE: "success",
+  INACTIVE: "neutral",
+  RESERVED: "warning",
+  FAULTY: "danger",
+};
 
 interface PortGridProps {
   ports: PortData[];
@@ -122,161 +133,166 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
   );
 
   return (
-    <div className="space-y-6">
-      {/* Port-Matrix wie am physischen Switch */}
-      <div className="rounded-xl border border-border bg-muted/50 dark:bg-card/40 p-4">
-        <div className="flex flex-wrap gap-2">
-          {ports.map((p) => {
-            const inactive = p.status === "INACTIVE";
-            const faulty = p.status === "FAULTY";
-            const reserved = p.status === "RESERVED";
-            return (
-              <button
-                key={p.id}
-                onClick={() => openPort(p)}
-                title={[
-                  `Port ${p.number}`,
-                  p.uplink ? "Uplink / Zuleitung" : null,
-                  p.label,
-                  p.vlan ? `VLAN ${p.vlan.vlanId} (${p.vlan.name})` : null,
-                  p.client ? `Gerät: ${p.client.name}` : null,
-                  p.outlet ? `Dose: ${p.outlet.label}` : null,
-                ].filter(Boolean).join(" · ")}
-                className={cn(
-                  "relative flex flex-col items-center justify-center h-14 w-14 rounded-lg border-2 text-xs font-mono font-semibold transition-all hover:scale-105 hover:shadow-md",
-                  faulty
-                    ? "border-destructive bg-destructive/10 text-destructive"
-                    : inactive
-                      ? "border-border bg-muted text-muted-foreground/70"
-                      : reserved
-                        ? "border-warning/30 bg-warning/10 text-warning"
-                        : p.uplink
-                          ? "border-violet-500 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
-                          : p.vlan
-                            ? cn("border-transparent", vlanColor(p.vlan.id))
-                            : "border-input bg-card text-muted-foreground"
-                )}
-              >
-                <span>{p.number}</span>
-                <span className="flex items-center gap-0.5 mt-0.5">
-                  {p.uplink && <ArrowUp className="h-3 w-3" />}
-                  {p.poe && <Zap className="h-3 w-3" />}
-                  {p.outlet && <Cable className="h-3 w-3" />}
-                  {p.client && <MonitorSmartphone className="h-3 w-3" />}
-                </span>
-              </button>
-            );
-          })}
-          {ports.length === 0 && (
-            <p className="text-sm text-muted-foreground/70 py-4">Keine Ports vorhanden.</p>
-          )}
-        </div>
-
-        {/* Legende */}
-        <div className="flex flex-wrap items-center gap-3 mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400"><ArrowUp className="h-3 w-3" /> Uplink / Zuleitung</span>
-          <span className="inline-flex items-center gap-1"><Zap className="h-3 w-3" /> PoE</span>
-          <span className="inline-flex items-center gap-1"><Cable className="h-3 w-3" /> Anschluss verbunden</span>
-          <span className="inline-flex items-center gap-1"><MonitorSmartphone className="h-3 w-3" /> Gerät zugewiesen</span>
-          <span>Farbe = untagged VLAN</span>
-        </div>
-      </div>
-
-      {/* Tabellen-Ansicht */}
-      <div className="rounded-lg border border-border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border hover:bg-transparent bg-muted/40">
-              <TableHead className="w-16">Port</TableHead>
-              <TableHead className="hidden sm:table-cell">Beschriftung</TableHead>
-              <TableHead>VLAN</TableHead>
-              <TableHead className="hidden md:table-cell">Tagged</TableHead>
-              <TableHead className="hidden sm:table-cell">Anschluss</TableHead>
-              <TableHead>Gerät</TableHead>
-              <TableHead className="hidden lg:table-cell w-20">Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {ports.map((p) => (
-              <TableRow
-                key={p.id}
-                className="border-border cursor-pointer hover:bg-primary/10"
-                onClick={() => openPort(p)}
-              >
-                <TableCell className="font-mono font-semibold text-sm">
-                  {p.number}
-                  {p.poe && <Zap className="inline h-3 w-3 ml-1 text-warning" />}
-                  {p.uplink && <ArrowUp className="inline h-3 w-3 ml-1 text-violet-500" />}
-                </TableCell>
-                <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5">
-                    {p.label || <span className="text-slate-300">–</span>}
-                    {p.uplink && (
-                      <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 text-[10px] h-4 px-1.5">
-                        Uplink
-                      </Badge>
-                    )}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  {p.vlan ? (
-                    <Badge className={cn("text-xs", vlanColor(p.vlan.id))}>
-                      {p.vlan.vlanId} · {p.vlan.name}
-                    </Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground/70">–</span>
-                  )}
-                </TableCell>
-                <TableCell className="hidden md:table-cell">
-                  {p.taggedVlans.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {p.taggedVlans.map((v) => (
-                        <Badge key={v.id} variant="secondary" className="text-[10px] font-mono">
-                          {v.vlanId}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground/70">–</span>
-                  )}
-                </TableCell>
-                <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
-                  {p.outlet?.label || <span className="text-slate-300">–</span>}
-                </TableCell>
-                <TableCell className="text-xs">
-                  {p.client ? (
-                    <span className="text-foreground/80">{p.client.name}</span>
-                  ) : (
-                    <span className="text-slate-300">–</span>
-                  )}
-                </TableCell>
-                <TableCell className="hidden lg:table-cell">
-                  <Badge
-                    variant="secondary"
+    <div className="space-y-4">
+      {ports.length === 0 ? (
+        // Ohne Ports nur der leere Zustand: keine Legende und kein leerer Tabellenkopf
+        // (docs/design-regeln.md, Abschnitte 1 und 19).
+        <EmptyState compact icon={EthernetPort} title="Keine Ports vorhanden." />
+      ) : (
+        <>
+          {/* Port-Matrix wie am physischen Switch */}
+          <div className="glass-tile p-4">
+            <div className="flex flex-wrap gap-2">
+              {ports.map((p) => {
+                const inactive = p.status === "INACTIVE";
+                const faulty = p.status === "FAULTY";
+                const reserved = p.status === "RESERVED";
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => openPort(p)}
+                    title={[
+                      `Port ${p.number}`,
+                      p.uplink ? "Uplink / Zuleitung" : null,
+                      p.label,
+                      p.vlan ? `VLAN ${p.vlan.vlanId} (${p.vlan.name})` : null,
+                      p.client ? `Gerät: ${p.client.name}` : null,
+                      p.outlet ? `Dose: ${p.outlet.label}` : null,
+                    ].filter(Boolean).join(" · ")}
                     className={cn(
-                      "text-[10px]",
-                      p.status === "FAULTY" && "bg-destructive/12 text-destructive",
-                      p.status === "RESERVED" && "bg-warning/14 text-warning",
-                      p.status === "INACTIVE" && "text-muted-foreground/70",
+                      "press relative flex flex-col items-center justify-center h-14 w-14 rounded-control border text-xs font-mono font-semibold outline-none hover:-translate-y-0.5 focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                      // Uplink ist eine Rolle, kein Zustand: Akzentfarbe mit vollem Rand,
+                      // damit er sich von den getönten VLAN-Ports abhebt. Die Portnummer steht
+                      // wie bei den VLAN-Ports in Schriftfarbe auf der Tönung; Rand und Symbol
+                      // tragen die Zustandsfarbe (farbige Schrift auf eigener Tönung lag bei
+                      // 3,0–4,2 : 1; docs/design-regeln.md, Abschnitt 10 verlangt 4,5 : 1).
+                      faulty
+                        ? "border-destructive/45 bg-destructive/12 text-foreground"
+                        : inactive
+                          ? "border-border bg-muted/60 text-muted-foreground"
+                          : reserved
+                            ? "border-warning/45 bg-warning/12 text-foreground"
+                            : p.uplink
+                              ? "border-primary bg-primary/12 text-foreground"
+                              : p.vlan
+                                ? vlanColor(p.vlan.id, vlans)
+                                : "border-border bg-glass-tile text-muted-foreground"
                     )}
                   >
-                    {PORT_STATUS.find((s) => s.value === p.status)?.label ?? p.status}
-                  </Badge>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+                    <span>{p.number}</span>
+                    {/* Reserviert und Defekt tragen zusätzlich ein Symbol: die VLAN-Farben aus den
+                        Diagramm-Tokens liegen nahe an den Zustandsfarben (docs/design-regeln.md,
+                        Abschnitt 12). PoE ist eine Eigenschaft und übernimmt die Schriftfarbe. */}
+                    <span className="flex items-center gap-0.5 mt-0.5">
+                      {reserved && <Lock className="h-3 w-3 text-warning" />}
+                      {faulty && <AlertTriangle className="h-3 w-3 text-destructive" />}
+                      {p.uplink && <ArrowUp className="h-3 w-3 text-primary" />}
+                      {p.poe && <Zap className="h-3 w-3" />}
+                      {p.outlet && <Cable className="h-3 w-3" />}
+                      {p.client && <MonitorSmartphone className="h-3 w-3" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Legende */}
+            <div className="flex flex-wrap items-center gap-3 mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1"><ArrowUp className="h-3 w-3 text-primary" /> Uplink / Zuleitung</span>
+              <span className="inline-flex items-center gap-1"><Lock className="h-3 w-3 text-warning" /> Reserviert</span>
+              <span className="inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-destructive" /> Defekt</span>
+              <span className="inline-flex items-center gap-1"><Zap className="h-3 w-3" /> PoE</span>
+              <span className="inline-flex items-center gap-1"><Cable className="h-3 w-3" /> Anschluss verbunden</span>
+              <span className="inline-flex items-center gap-1"><MonitorSmartphone className="h-3 w-3" /> Gerät zugewiesen</span>
+              <span>Farbe = untagged VLAN</span>
+            </div>
+          </div>
+
+          {/* Tabellen-Ansicht: läuft bis an die Kartenränder (docs/design-regeln.md, Abschnitt 17). */}
+          <div className="-mx-4 sm:-mx-[18px]">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-16 pl-4 sm:pl-[18px]">Port</TableHead>
+                  <TableHead className="hidden sm:table-cell">Beschriftung</TableHead>
+                  <TableHead>VLAN</TableHead>
+                  <TableHead className="hidden md:table-cell">Tagged</TableHead>
+                  <TableHead className="hidden sm:table-cell">Anschluss</TableHead>
+                  <TableHead className="pr-4 sm:pr-[18px] lg:pr-2">Gerät</TableHead>
+                  <TableHead className="hidden lg:table-cell w-20 pr-4 sm:pr-[18px]">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ports.map((p) => (
+                  <TableRow
+                    key={p.id}
+                    className="cursor-pointer max-sm:h-11"
+                    onClick={() => openPort(p)}
+                  >
+                    <TableCell className="pl-4 sm:pl-[18px] font-mono font-semibold text-sm">
+                      {p.number}
+                      {p.poe && <Zap className="inline h-3 w-3 ml-1 text-muted-foreground" />}
+                      {p.uplink && <ArrowUp className="inline h-3 w-3 ml-1 text-primary" />}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        {p.label || <span className="text-muted-foreground">–</span>}
+                        {p.uplink && <Badge variant="outline">Uplink</Badge>}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {p.vlan ? (
+                        <Badge className={vlanColor(p.vlan.id, vlans)}>
+                          {p.vlan.vlanId} · {p.vlan.name}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">–</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {p.taggedVlans.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {p.taggedVlans.map((v) => (
+                            <Badge key={v.id} variant="secondary" className="text-[10px] font-mono">
+                              {v.vlanId}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">–</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
+                      {p.outlet?.label || <span className="text-muted-foreground">–</span>}
+                    </TableCell>
+                    <TableCell className="text-xs pr-4 sm:pr-[18px] lg:pr-2">
+                      {p.client ? (
+                        <span className="text-foreground/80">{p.client.name}</span>
+                      ) : (
+                        <span className="text-muted-foreground">–</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell pr-4 sm:pr-[18px]">
+                      <Badge variant={PORT_STATUS_VARIANT[p.status] ?? "secondary"} className="text-[10px]">
+                        {PORT_STATUS.find((s) => s.value === p.status)?.label ?? p.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
 
       {/* Port-Dialog */}
       <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null); }}>
-        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Port {selected?.number} bearbeiten</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSave} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Beschriftung</Label>
                 <Input
@@ -288,7 +304,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
               <div className="space-y-1.5">
                 <Label>Status</Label>
                 <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PORT_STATUS.map((s) => (
                       <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
@@ -301,7 +317,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
             <div className="space-y-1.5">
               <Label>Untagged VLAN (PVID)</Label>
               <Select value={form.vlanId} onValueChange={(v) => setForm((f) => ({ ...f, vlanId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Kein VLAN" /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Kein VLAN" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Kein VLAN</SelectItem>
                   {vlans.map((v) => (
@@ -322,11 +338,12 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                         key={v.id}
                         type="button"
                         onClick={() => toggleTagged(v.id)}
+                        aria-pressed={active}
                         className={cn(
-                          "rounded-md border px-2 py-1 text-xs font-mono transition-all",
+                          "press inline-flex h-8 items-center rounded-full border px-3 text-xs font-mono outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:h-11",
                           active
-                            ? cn("border-transparent", vlanColor(v.id))
-                            : "border-border text-muted-foreground/70 hover:border-input"
+                            ? vlanColor(v.id, vlans)
+                            : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                         )}
                       >
                         {v.vlanId} · {v.name}
@@ -340,7 +357,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
             <div className="space-y-1.5">
               <Label>Verbunden mit Anschluss</Label>
               <Select value={form.outletId} onValueChange={(v) => setForm((f) => ({ ...f, outletId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Nicht verbunden" /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Nicht verbunden" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Nicht verbunden</SelectItem>
                   {selectableOutlets.map((o) => (
@@ -350,20 +367,20 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
               </Select>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">Uplink / Zuleitung</p>
                 <p className="text-xs text-muted-foreground">Verbindung zu einem anderen Switch/Router</p>
               </div>
-              <Switch checked={form.uplink} onCheckedChange={(v) => setForm((f) => ({ ...f, uplink: v }))} />
+              <Switch aria-label="Uplink / Zuleitung" checked={form.uplink} onCheckedChange={(v) => setForm((f) => ({ ...f, uplink: v }))} />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">PoE</p>
                 <p className="text-xs text-muted-foreground">Port liefert Power over Ethernet</p>
               </div>
-              <Switch checked={form.poe} onCheckedChange={(v) => setForm((f) => ({ ...f, poe: v }))} />
+              <Switch aria-label="PoE" checked={form.poe} onCheckedChange={(v) => setForm((f) => ({ ...f, poe: v }))} />
             </div>
 
             <div className="space-y-1.5">
@@ -376,24 +393,22 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
             </div>
 
             {selected?.client && (
-              <p className="text-xs text-muted-foreground/70">
-                Zugewiesenes Gerät: <span className="text-muted-foreground">{selected.client.name}</span>{" "}
+              <p className="text-xs text-muted-foreground">
+                Zugewiesenes Gerät: <span className="text-foreground">{selected.client.name}</span>{" "}
                 (Zuordnung im Tab &bdquo;Geräte&ldquo; ändern)
               </p>
             )}
 
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
-            )}
+            {error && <Notice tone="danger" compact title={error} />}
 
-            <div className="flex justify-end gap-2 pt-1">
+            <DialogFooter className="pt-1">
               <Button type="button" variant="outline" onClick={() => setSelected(null)} disabled={saving}>
                 Abbrechen
               </Button>
               <Button type="submit" disabled={saving} className="min-w-28">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Speichern"}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

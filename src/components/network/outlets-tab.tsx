@@ -9,14 +9,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
 import {
   Plus, Loader2, Cable, Pencil, Trash2, MapPin, EthernetPort,
 } from "lucide-react";
@@ -32,6 +39,10 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState("");
+  // Rückfrage vor dem Löschen als AlertDialog (docs/design-regeln.md, Abschnitt 18);
+  // der Anschluss bleibt gesetzt, solange der Dialog ausblendet.
+  const [toDelete, setToDelete] = useState<OutletRow | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((p) => ({ ...p, [key]: value }));
@@ -90,8 +101,12 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
     }
   }
 
+  function askDelete(o: OutletRow) {
+    setToDelete(o);
+    setConfirmOpen(true);
+  }
+
   async function handleDelete(o: OutletRow) {
-    if (!confirm(`Anschluss "${o.label}" wirklich löschen?`)) return;
     setDeletingId(o.id);
     try {
       const res = await fetch(`/api/network/outlets/${o.id}`, { method: "DELETE" });
@@ -102,47 +117,44 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4">
-        <CardTitle className="text-base sm:text-xl">Anschlüsse ({outlets.length})</CardTitle>
-        <Button onClick={openAdd} className="gap-2 shadow-sm">
+    <Card className="overflow-hidden pb-0 sm:pb-0">
+      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+        <CardTitle className="tabular-nums">Anschlüsse ({outlets.length})</CardTitle>
+        <Button onClick={openAdd} className="gap-2 max-sm:h-11">
           <Plus className="h-4 w-4" />
           Anschluss hinzufügen
         </Button>
       </CardHeader>
-      <CardContent className="p-0 sm:px-6 sm:pb-6">
-        <div className="rounded-lg border border-border overflow-x-auto">
+      <CardContent>
+        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        <div className="-mx-4 sm:-mx-[18px]">
           <Table>
             <TableHeader>
-              <TableRow className="border-border hover:bg-transparent bg-muted/40">
-                <TableHead className="min-w-[140px]">Beschriftung</TableHead>
+              <TableRow>
+                <TableHead className="min-w-[140px] pl-4 sm:pl-[18px]">Beschriftung</TableHead>
                 <TableHead>Typ</TableHead>
                 <TableHead className="hidden sm:table-cell">Standort</TableHead>
                 <TableHead>Verbunden mit</TableHead>
-                <TableHead className="w-20" />
+                <TableHead className="w-20 pr-4 sm:pr-[18px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {outlets.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={5} className="text-center py-16">
-                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                      <Cable className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                      <p className="font-medium text-muted-foreground">Keine Anschlüsse erfasst</p>
-                      <p className="text-sm">
-                        Erfasse Wanddosen und Patchpanel-Ports, um die Verkabelung zu dokumentieren.
-                      </p>
-                    </div>
+                  <TableCell colSpan={5} className="p-0 whitespace-normal">
+                    <EmptyState
+                      icon={Cable}
+                      title="Keine Anschlüsse erfasst"
+                      description="Erfasse Wanddosen und Patchpanel-Ports, um die Verkabelung zu dokumentieren."
+                    />
                   </TableCell>
                 </TableRow>
               )}
               {outlets.map((o) => (
-                <TableRow key={o.id} className="border-border">
-                  <TableCell>
+                <TableRow key={o.id}>
+                  <TableCell className="pl-4 sm:pl-[18px]">
                     <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-lg bg-info/10 text-info flex items-center justify-center shrink-0">
-                        <Cable className="h-4 w-4" />
-                      </div>
+                      <IconChip icon={Cable} />
                       <p className="font-medium text-sm text-foreground">{o.label}</p>
                     </div>
                   </TableCell>
@@ -158,7 +170,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
                         {o.location}
                       </span>
                     ) : (
-                      <span className="text-slate-300">–</span>
+                      <span className="text-muted-foreground">–</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -171,25 +183,27 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
                         {o.port.deviceName} · Port {o.port.number}
                       </Link>
                     ) : (
-                      <span className="text-xs text-muted-foreground/70">Nicht verbunden</span>
+                      <span className="text-xs text-muted-foreground">Nicht verbunden</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="pr-4 sm:pr-[18px]">
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground/70 hover:text-primary"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-primary max-sm:size-11"
                         onClick={() => openEdit(o)}
+                        aria-label="Bearbeiten"
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
-                        onClick={() => handleDelete(o)}
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-destructive max-sm:size-11"
+                        onClick={() => askDelete(o)}
                         disabled={deletingId === o.id}
+                        aria-label="Löschen"
                       >
                         {deletingId === o.id
                           ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -210,7 +224,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
             <DialogTitle>{editing ? "Anschluss bearbeiten" : "Neuer Anschluss"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Beschriftung <span className="text-destructive">*</span></Label>
                 <Input
@@ -224,7 +238,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
               <div className="space-y-1.5">
                 <Label>Typ</Label>
                 <Select value={form.type} onValueChange={(v) => set("type", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {OUTLET_TYPES.map((t) => (
                       <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
@@ -241,15 +255,13 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
               <Label>Notizen</Label>
               <Input value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="optional" />
             </div>
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               Die Verbindung zu einem Switch-Port stellst du auf der Switch-Detailseite am jeweiligen Port her.
             </p>
 
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
-            )}
+            {error && <Notice tone="danger" compact title={error} />}
 
-            <div className="flex justify-end gap-2 pt-1">
+            <DialogFooter className="pt-1">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                 Abbrechen
               </Button>
@@ -260,10 +272,31 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {toDelete ? `Anschluss "${toDelete.label}" wirklich löschen?` : ""}
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (toDelete) void handleDelete(toDelete);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
