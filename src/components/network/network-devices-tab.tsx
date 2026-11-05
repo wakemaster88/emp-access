@@ -9,19 +9,27 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
+import { StatusDot } from "@/components/ui/status-dot";
 import {
   Plus, Loader2, Server, Router, Wifi, Shield, HardDrive,
   Pencil, Trash2, ChevronRight, MapPin, EthernetPort,
+  type LucideIcon,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import {
   NETWORK_DEVICE_TYPES,
   scanOnline,
@@ -33,12 +41,14 @@ function lastSeenLabel(iso: string | null): string {
   return `Zuletzt gesehen: ${new Date(iso).toLocaleString("de-DE")}`;
 }
 
-const TYPE_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  SWITCH:       { label: "Switch",       icon: Server,    color: "bg-primary/10 text-primary" },
-  ROUTER:       { label: "Router",       icon: Router,    color: "bg-success/10 text-success" },
-  ACCESS_POINT: { label: "Access Point", icon: Wifi,      color: "bg-info/10 text-info" },
-  FIREWALL:     { label: "Firewall",     icon: Shield,    color: "bg-destructive/10 text-destructive" },
-  OTHER:        { label: "Sonstiges",    icon: HardDrive, color: "bg-slate-500/10 text-muted-foreground" },
+// Der Gerätetyp ist kein Zustand: neutrales Symbol statt Zustandsfarben
+// (docs/design-regeln.md, Abschnitt 3). Online/Offline trägt die Status-Spalte.
+const TYPE_META: Record<string, { label: string; icon: LucideIcon }> = {
+  SWITCH:       { label: "Switch",       icon: Server },
+  ROUTER:       { label: "Router",       icon: Router },
+  ACCESS_POINT: { label: "Access Point", icon: Wifi },
+  FIREWALL:     { label: "Firewall",     icon: Shield },
+  OTHER:        { label: "Sonstiges",    icon: HardDrive },
 };
 
 const EMPTY = {
@@ -61,6 +71,10 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState("");
+  // Rückfrage vor dem Löschen als AlertDialog (docs/design-regeln.md, Abschnitt 18);
+  // das Gerät bleibt gesetzt, solange der Dialog ausblendet.
+  const [toDelete, setToDelete] = useState<NetworkDeviceRow | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((p) => ({ ...p, [key]: value }));
@@ -133,8 +147,12 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
     }
   }
 
+  function askDelete(d: NetworkDeviceRow) {
+    setToDelete(d);
+    setConfirmOpen(true);
+  }
+
   async function handleDelete(d: NetworkDeviceRow) {
-    if (!confirm(`"${d.name}" inklusive aller Ports wirklich löschen?`)) return;
     setDeletingId(d.id);
     try {
       const res = await fetch(`/api/network/devices/${d.id}`, { method: "DELETE" });
@@ -145,43 +163,40 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4">
-        <CardTitle className="text-base sm:text-xl">
+    <Card className="overflow-hidden pb-0 sm:pb-0">
+      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+        <CardTitle className="tabular-nums">
           Switches &amp; Router ({devices.length})
         </CardTitle>
-        <Button onClick={openAdd} className="gap-2 shadow-sm">
+        <Button onClick={openAdd} className="gap-2 max-sm:h-11">
           <Plus className="h-4 w-4" />
           Hardware hinzufügen
         </Button>
       </CardHeader>
-      <CardContent className="p-0 sm:px-6 sm:pb-6">
-        <div className="rounded-lg border border-border overflow-x-auto">
+      <CardContent>
+        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        <div className="-mx-4 sm:-mx-[18px]">
           <Table>
             <TableHeader>
-              <TableRow className="border-border hover:bg-transparent bg-muted/40">
-                <TableHead className="min-w-[180px]">Gerät</TableHead>
+              <TableRow>
+                <TableHead className="min-w-[180px] pl-4 sm:pl-[18px]">Gerät</TableHead>
                 <TableHead className="hidden md:table-cell">Modell</TableHead>
                 <TableHead className="hidden lg:table-cell">IP-Adresse</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden sm:table-cell">Standort</TableHead>
                 <TableHead>Ports</TableHead>
-                <TableHead className="w-24" />
+                <TableHead className="w-24 pr-4 sm:pr-[18px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {devices.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="text-center py-16">
-                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                      <Server className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                      <p className="font-medium text-muted-foreground">
-                        Keine Netzwerk-Hardware erfasst
-                      </p>
-                      <p className="text-sm">
-                        Lege Switches, Router oder Access Points an, um dein Netzwerk zu dokumentieren.
-                      </p>
-                    </div>
+                  <TableCell colSpan={7} className="p-0 whitespace-normal">
+                    <EmptyState
+                      icon={Server}
+                      title="Keine Netzwerk-Hardware erfasst"
+                      description="Lege Switches, Router oder Access Points an, um dein Netzwerk zu dokumentieren."
+                    />
                   </TableCell>
                 </TableRow>
               )}
@@ -191,26 +206,24 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                 return (
                   <TableRow
                     key={d.id}
-                    className="group border-border hover:bg-primary/10"
+                    className="group"
                   >
-                    <TableCell>
+                    <TableCell className="pl-4 sm:pl-[18px]">
                       <Link href={`/network/${d.id}`} className="flex items-center gap-3 min-w-0">
-                        <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center shrink-0", meta.color)}>
-                          <Icon className="h-4 w-4" />
-                        </div>
+                        <IconChip icon={Icon} />
                         <div className="min-w-0">
-                          <p className="font-medium text-sm text-foreground group-hover:text-indigo-600 dark:group-hover:text-indigo-400 truncate">
+                          <p className="font-medium text-sm text-foreground group-hover:text-primary truncate">
                             {d.name}
                           </p>
-                          <p className="text-xs text-muted-foreground/70">{meta.label}</p>
+                          <p className="text-xs text-muted-foreground">{meta.label}</p>
                         </div>
                       </Link>
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                      {[d.vendor, d.model].filter(Boolean).join(" ") || <span className="text-slate-300">–</span>}
+                      {[d.vendor, d.model].filter(Boolean).join(" ") || <span className="text-muted-foreground">–</span>}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
-                      {d.ipAddress || <span className="text-slate-300">–</span>}
+                      {d.ipAddress || <span className="text-muted-foreground">–</span>}
                     </TableCell>
                     <TableCell>
                       {(() => {
@@ -218,10 +231,11 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                         if (online === true) {
                           return (
                             <Badge
-                              className="bg-success/12 text-success gap-1.5 text-xs h-5"
+                              variant="success"
+                              className="gap-1.5"
                               title={lastSeenLabel(d.lastSeenAt)}
                             >
-                              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                              <StatusDot tone="success" size="xs" />
                               Online
                             </Badge>
                           );
@@ -229,17 +243,17 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                         if (online === false) {
                           return (
                             <Badge
-                              variant="secondary"
-                              className="text-muted-foreground gap-1.5 text-xs h-5"
+                              variant="neutral"
+                              className="gap-1.5"
                               title={lastSeenLabel(d.lastSeenAt)}
                             >
-                              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                              <StatusDot tone="neutral" size="xs" />
                               Offline
                             </Badge>
                           );
                         }
                         return (
-                          <span className="text-xs text-slate-300" title={lastSeenLabel(d.lastSeenAt)}>
+                          <span className="text-xs text-muted-foreground" title={lastSeenLabel(d.lastSeenAt)}>
                             –
                           </span>
                         );
@@ -252,42 +266,48 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                           {d.location}
                         </span>
                       ) : (
-                        <span className="text-slate-300">–</span>
+                        <span className="text-muted-foreground">–</span>
                       )}
                     </TableCell>
                     <TableCell>
                       {d.portCount > 0 ? (
-                        <Badge variant="secondary" className="gap-1 text-xs">
+                        <Badge variant="secondary" className="gap-1 text-xs tabular-nums">
                           <EthernetPort className="h-3 w-3" />
                           {d.usedPorts} / {d.portCount}
                         </Badge>
                       ) : (
-                        <span className="text-slate-300 text-xs">–</span>
+                        <span className="text-muted-foreground text-xs">–</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="pr-4 sm:pr-[18px]">
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground/70 hover:text-primary"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-primary max-sm:size-11"
                           onClick={() => openEdit(d)}
+                          aria-label="Bearbeiten"
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
-                          onClick={() => handleDelete(d)}
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-destructive max-sm:size-11"
+                          onClick={() => askDelete(d)}
                           disabled={deletingId === d.id}
+                          aria-label="Löschen"
                         >
                           {deletingId === d.id
                             ? <Loader2 className="h-4 w-4 animate-spin" />
                             : <Trash2 className="h-4 w-4" />}
                         </Button>
-                        <Link href={`/network/${d.id}`}>
-                          <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-500" />
+                        <Link
+                          href={`/network/${d.id}`}
+                          aria-label={d.name}
+                          className="inline-flex size-8 items-center justify-center rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:size-11"
+                        >
+                          <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary" />
                         </Link>
                       </div>
                     </TableCell>
@@ -300,13 +320,14 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
       </CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing ? "Hardware bearbeiten" : "Neue Hardware"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5 col-span-2 sm:col-span-1">
+            {/* Auf dem Handy eine Spalte, damit IP- und MAC-Adresse nicht abgeschnitten werden. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
                 <Label>Name <span className="text-destructive">*</span></Label>
                 <Input
                   value={form.name}
@@ -316,10 +337,10 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                   autoFocus
                 />
               </div>
-              <div className="space-y-1.5 col-span-2 sm:col-span-1">
+              <div className="space-y-1.5">
                 <Label>Typ</Label>
                 <Select value={form.type} onValueChange={(v) => set("type", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {NETWORK_DEVICE_TYPES.map((t) => (
                       <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
@@ -357,20 +378,18 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                     value={form.portCount}
                     onChange={(e) => set("portCount", e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground/70">Ports werden automatisch angelegt (1–n).</p>
+                  <p className="text-xs text-muted-foreground">Ports werden automatisch angelegt (1–n).</p>
                 </div>
               )}
-              <div className="space-y-1.5 col-span-2">
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label>Notizen</Label>
                 <Input value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="optional" />
               </div>
             </div>
 
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
-            )}
+            {error && <Notice tone="danger" compact title={error} />}
 
-            <div className="flex justify-end gap-2 pt-1">
+            <DialogFooter className="pt-1">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                 Abbrechen
               </Button>
@@ -381,10 +400,31 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {toDelete ? `"${toDelete.name}" inklusive aller Ports wirklich löschen?` : ""}
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (toDelete) void handleDelete(toDelete);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

@@ -8,11 +8,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
 import {
   Plus, Loader2, Network, Pencil, Trash2, EthernetPort, MonitorSmartphone,
 } from "lucide-react";
@@ -29,6 +35,10 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState("");
+  // Rückfrage vor dem Löschen als AlertDialog (docs/design-regeln.md, Abschnitt 18);
+  // das VLAN bleibt gesetzt, solange der Dialog ausblendet.
+  const [toDelete, setToDelete] = useState<VlanRow | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((p) => ({ ...p, [key]: value }));
@@ -89,8 +99,12 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
     }
   }
 
+  function askDelete(v: VlanRow) {
+    setToDelete(v);
+    setConfirmOpen(true);
+  }
+
   async function handleDelete(v: VlanRow) {
-    if (!confirm(`VLAN ${v.vlanId} (${v.name}) wirklich löschen?`)) return;
     setDeletingId(v.id);
     try {
       const res = await fetch(`/api/network/vlans/${v.id}`, { method: "DELETE" });
@@ -101,53 +115,54 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4">
-        <CardTitle className="text-base sm:text-xl">VLANs ({vlans.length})</CardTitle>
-        <Button onClick={openAdd} className="gap-2 shadow-sm">
+    <Card className="overflow-hidden pb-0 sm:pb-0">
+      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+        <CardTitle className="tabular-nums">VLANs ({vlans.length})</CardTitle>
+        <Button onClick={openAdd} className="gap-2 max-sm:h-11">
           <Plus className="h-4 w-4" />
           VLAN hinzufügen
         </Button>
       </CardHeader>
-      <CardContent className="p-0 sm:px-6 sm:pb-6">
-        <div className="rounded-lg border border-border overflow-x-auto">
+      <CardContent>
+        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        <div className="-mx-4 sm:-mx-[18px]">
           <Table>
             <TableHeader>
-              <TableRow className="border-border hover:bg-transparent bg-muted/40">
-                <TableHead className="w-20">VLAN</TableHead>
+              <TableRow>
+                <TableHead className="w-20 pl-4 sm:pl-[18px]">VLAN</TableHead>
                 <TableHead className="min-w-[140px]">Name</TableHead>
                 <TableHead className="hidden md:table-cell">Subnetz</TableHead>
                 <TableHead className="hidden lg:table-cell">Gateway</TableHead>
                 <TableHead>Nutzung</TableHead>
-                <TableHead className="w-20" />
+                <TableHead className="w-20 pr-4 sm:pr-[18px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {vlans.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="text-center py-16">
-                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                      <Network className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                      <p className="font-medium text-muted-foreground">Keine VLANs erfasst</p>
-                      <p className="text-sm">Lege VLANs an, z. B. Management, IoT oder Gäste-WLAN.</p>
-                    </div>
+                  <TableCell colSpan={6} className="p-0 whitespace-normal">
+                    <EmptyState
+                      icon={Network}
+                      title="Keine VLANs erfasst"
+                      description="Lege VLANs an, z. B. Management, IoT oder Gäste-WLAN."
+                    />
                   </TableCell>
                 </TableRow>
               )}
               {vlans.map((v) => (
-                <TableRow key={v.id} className="border-border">
-                  <TableCell>
-                    <Badge className={cn("text-xs font-mono", vlanColor(v.id))}>{v.vlanId}</Badge>
+                <TableRow key={v.id}>
+                  <TableCell className="pl-4 sm:pl-[18px]">
+                    <Badge className={cn("text-xs font-mono", vlanColor(v.id, vlans))}>{v.vlanId}</Badge>
                   </TableCell>
                   <TableCell>
                     <p className="font-medium text-sm text-foreground">{v.name}</p>
-                    {v.description && <p className="text-xs text-muted-foreground/70 truncate max-w-[220px]">{v.description}</p>}
+                    {v.description && <p className="text-xs text-muted-foreground truncate max-w-[220px]">{v.description}</p>}
                   </TableCell>
                   <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">
-                    {v.subnet || <span className="text-slate-300">–</span>}
+                    {v.subnet || <span className="text-muted-foreground">–</span>}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
-                    {v.gateway || <span className="text-slate-300">–</span>}
+                    {v.gateway || <span className="text-muted-foreground">–</span>}
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
@@ -161,22 +176,24 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="pr-4 sm:pr-[18px]">
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground/70 hover:text-primary"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-primary max-sm:size-11"
                         onClick={() => openEdit(v)}
+                        aria-label="Bearbeiten"
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
-                        onClick={() => handleDelete(v)}
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-destructive max-sm:size-11"
+                        onClick={() => askDelete(v)}
                         disabled={deletingId === v.id}
+                        aria-label="Löschen"
                       >
                         {deletingId === v.id
                           ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -221,7 +238,7 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Subnetz</Label>
                 <Input value={form.subnet} onChange={(e) => set("subnet", e.target.value)} placeholder="192.168.10.0/24" className="font-mono" />
@@ -236,11 +253,9 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
               <Input value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="optional" />
             </div>
 
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
-            )}
+            {error && <Notice tone="danger" compact title={error} />}
 
-            <div className="flex justify-end gap-2 pt-1">
+            <DialogFooter className="pt-1">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                 Abbrechen
               </Button>
@@ -251,10 +266,31 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {toDelete ? `VLAN ${toDelete.vlanId} (${toDelete.name}) wirklich löschen?` : ""}
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (toDelete) void handleDelete(toDelete);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

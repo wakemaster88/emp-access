@@ -2,16 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatCard } from "@/components/ui/stat-card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { Segmented } from "@/components/ui/segmented";
+import { StatusDot } from "@/components/ui/status-dot";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -20,6 +30,7 @@ import {
   Wifi, WifiOff, Play, Square, Sparkles, Plus, Pencil, Trash2, Clock,
   CalendarDays, Gauge, Loader2, RefreshCw, CircleAlert, Sprout, CheckCircle2,
   Check, X, Activity, Timer, Waves, ChevronUp, ChevronDown, BarChart3, History,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Weather } from "@/lib/weather";
@@ -133,6 +144,14 @@ interface IrrigationStatsResponse {
 
 const ASSUMED_FLOW_L_PER_HOUR = 720;
 const DURATION_PRESETS = [5, 10, 15, 20, 30, 45, 60] as const;
+// Dauer-Chips (Pumpe und Ventil): Auswahl in Akzentfarbe, sonst ruhige Pille.
+// Im Dunkeln Schrift etwas heller als muted: auf der Pille über der Glaskarte lag
+// muted bei 3,5–4,4 : 1 (docs/design-regeln.md, Abschnitt 10: 4,5 : 1).
+const DURATION_CHIP =
+  "press h-8 rounded-full px-2.5 text-xs font-medium tabular-nums outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 max-sm:h-11 max-sm:min-w-11";
+const DURATION_CHIP_ON = "bg-primary text-primary-foreground";
+const DURATION_CHIP_OFF =
+  "bg-foreground/[0.06] text-muted-foreground hover:text-foreground dark:bg-white/[0.08] dark:text-foreground/80 dark:hover:text-foreground";
 const DAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const DAY_LABELS_LONG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 
@@ -224,22 +243,26 @@ function computeNextRun(schedules: Schedule[]): { label: string; when: Date } | 
   return best;
 }
 
-function fmtNext(when: Date): string {
+// Tag und Uhrzeit getrennt: die Kennzahl zeigt die Uhrzeit, der Tag steht im
+// Nebentext – so passt die Kachel auch im Zweier-Raster auf dem Handy.
+function fmtNext(when: Date): { day: string; time: string } {
   const now = new Date();
   const sameDay = when.toDateString() === now.toDateString();
   const tmr = new Date(now); tmr.setDate(now.getDate() + 1);
   const isTmr = when.toDateString() === tmr.toDateString();
   const time = `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
-  if (sameDay) return `Heute ${time}`;
-  if (isTmr) return `Morgen ${time}`;
-  return `${DAY_LABELS[(when.getDay() + 6) % 7]} ${time}`;
+  if (sameDay) return { day: "Heute", time };
+  if (isTmr) return { day: "Morgen", time };
+  return { day: DAY_LABELS[(when.getDay() + 6) % 7], time };
 }
 
-const LEVEL_STYLES: Record<IrrigationLevel, { badge: string; label: string; icon: React.ComponentType<{ className?: string }> }> = {
-  skip: { badge: "bg-info/10 text-info ", label: "Aussetzen", icon: CloudRain },
-  reduced: { badge: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300", label: "Reduziert", icon: Droplet },
-  normal: { badge: "bg-success/10 text-success ", label: "Normal", icon: Droplets },
-  increased: { badge: "bg-warning/10 text-warning ", label: "Mehr", icon: Sun },
+// Stufe der Empfehlung als Badge-Variante: Aussetzen informiert, Reduziert ist ruhig,
+// Normal ist in Ordnung, Mehr ist ein Hinweis (docs/design-regeln.md, Abschnitt 3).
+const LEVEL_STYLES: Record<IrrigationLevel, { variant: "info" | "neutral" | "success" | "warning"; label: string; icon: LucideIcon }> = {
+  skip: { variant: "info", label: "Aussetzen", icon: CloudRain },
+  reduced: { variant: "neutral", label: "Reduziert", icon: Droplet },
+  normal: { variant: "success", label: "Normal", icon: Droplets },
+  increased: { variant: "warning", label: "Mehr", icon: Sun },
 };
 
 // ── Hauptkomponente ────────────────────────────────────────────────────────────
@@ -270,6 +293,25 @@ export function IrrigationClient({
   // Zeitplan-Dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
+
+  // Rückfrage vor dem Löschen als AlertDialog (docs/design-regeln.md, Abschnitt 18);
+  // der Zeitplan bleibt gesetzt, solange der Dialog ausblendet.
+  const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Rückfrage „Trotzdem starten?“ als AlertDialog statt Browser-Dialog (Abschnitte 16
+  // und 18). Die Antwort kommt als Promise zurück, damit runScheduleNow wie bisher
+  // darauf wartet; Abbrechen, Escape und Schließen zählen als „nein“.
+  const [forceAsk, setForceAsk] = useState<{ name: string; reason: string; answer: (ok: boolean) => void } | null>(null);
+  const [forceOpen, setForceOpen] = useState(false);
+  const askForceRun = useCallback(
+    (name: string, reason: string) =>
+      new Promise<boolean>((resolve) => {
+        setForceAsk({ name, reason, answer: resolve });
+        setForceOpen(true);
+      }),
+    [],
+  );
 
   const controllableIds = useMemo(
     () => zoneList.filter((z) => z.serviceId && z.isActive).map((z) => z.id),
@@ -586,9 +628,7 @@ export function IrrigationClient({
       if (!res.ok) throw new Error(data.error ?? "Start fehlgeschlagen");
       if (data.skipped) {
         setBusySchedule((b) => ({ ...b, [s.id]: false }));
-        const proceed = window.confirm(
-          `${s.deviceName} wurde nicht gestartet:\n${data.skipped}\n\nTrotzdem mit den geplanten Dauern starten?`,
-        );
+        const proceed = await askForceRun(s.deviceName, data.skipped);
         if (proceed) {
           await runScheduleNowRef.current?.(s, true);
         } else {
@@ -606,7 +646,7 @@ export function IrrigationClient({
     } finally {
       setBusySchedule((b) => ({ ...b, [s.id]: false }));
     }
-  }, [flash, fetchStatuses, fetchStats]);
+  }, [flash, fetchStatuses, fetchStats, askForceRun]);
 
   // Selbstreferenz fuer den rekursiven Force-Aufruf aus der Rueckfrage.
   const runScheduleNowRef = useRef<typeof runScheduleNow | null>(null);
@@ -709,112 +749,101 @@ export function IrrigationClient({
   // ── Nicht verbunden / keine Zonen ────────────────────────────────────────────
   if (!connected || zoneList.length === 0) {
     return (
-      <div className="p-4 sm:p-6">
-        <Card className="max-w-2xl">
-          <CardContent className="pt-8 pb-8 flex flex-col items-center text-center gap-4">
-            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-sky-400 to-emerald-500 flex items-center justify-center">
-              <Sprout className="h-7 w-7 text-white" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">
-                {connected ? "Noch keine Bewässerungs-Zonen" : "GARDENA nicht verbunden"}
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                {connected
-                  ? "Importiere deine GARDENA-Ventile und Pumpen, um sie hier als Zonen zu steuern."
-                  : "Verbinde dein GARDENA smart system und importiere die Ventile/Pumpen, um die smarte Bewässerung zu nutzen."}
-              </p>
-            </div>
-            <Button asChild className="bg-success hover:bg-success/90 text-success-foreground">
-              <Link href="/settings">Zu den Einstellungen</Link>
-            </Button>
-          </CardContent>
+      <div className="page-content">
+        <Card className="max-w-2xl py-0 sm:py-0">
+          <EmptyState
+            icon={Sprout}
+            title={connected ? "Noch keine Bewässerungs-Zonen" : "GARDENA nicht verbunden"}
+            description={connected
+              ? "Importiere deine GARDENA-Ventile und Pumpen, um sie hier als Zonen zu steuern."
+              : "Verbinde dein GARDENA smart system und importiere die Ventile/Pumpen, um die smarte Bewässerung zu nutzen."}
+            action={
+              <Button asChild className="max-sm:h-11">
+                <Link href="/settings">Zu den Einstellungen</Link>
+              </Button>
+            }
+          />
         </Card>
       </div>
     );
   }
 
   const LevelIcon = LEVEL_STYLES[recommendation.level].icon;
+  const next = nextRun ? fmtNext(nextRun.when) : null;
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-6xl">
+    <div className="page-content max-w-6xl space-y-4 sm:space-y-5">
       {/* Banner */}
       {banner && (
-        <div className={cn(
-          "flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm border",
-          banner.type === "ok"
-            ? "bg-success/10 text-success border-success/30 "
-            : "bg-destructive/10 text-destructive border-destructive/30 ",
-        )}>
-          {banner.type === "ok" ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <CircleAlert className="h-4 w-4 shrink-0" />}
-          {banner.msg}
-        </div>
+        <Notice
+          tone={banner.type === "ok" ? "success" : "danger"}
+          icon={banner.type === "ok" ? CheckCircle2 : CircleAlert}
+          compact
+          title={banner.msg}
+        />
       )}
 
-      {/* Wetter + Empfehlung */}
-      <Card className="overflow-hidden">
-        <div className="bg-gradient-to-br from-sky-500 via-sky-600 to-emerald-600 p-5 sm:p-6 text-white">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <div className="h-12 w-12 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center shrink-0">
-                <LevelIcon className="h-6 w-6" />
+      {/* Wetter + Empfehlung: Glaskarte statt Farbverlauf mit weißer Schrift (docs/design-regeln.md, Abschnitt 15). */}
+      <Card>
+        <CardContent className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3 sm:gap-4">
+            <IconChip icon={LevelIcon} tone="water" size="lg" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-label">Smarte Empfehlung</span>
+                <Badge variant={LEVEL_STYLES[recommendation.level].variant}>
+                  {LEVEL_STYLES[recommendation.level].label}
+                </Badge>
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-white/80">Smarte Empfehlung</span>
-                  <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/20")}>
-                    {LEVEL_STYLES[recommendation.level].label}
-                  </span>
-                </div>
-                <p className="text-base sm:text-lg font-medium mt-1 max-w-xl">{recommendation.reason}</p>
-              </div>
+              <p className="text-base sm:text-lg font-medium mt-1 max-w-xl text-foreground">{recommendation.reason}</p>
             </div>
-            {weather && (
-              <div className="flex items-center gap-4 text-sm">
-                <div className="flex items-center gap-1.5" title="Aktuelle Temperatur">
-                  <Thermometer className="h-4 w-4 text-white/80" />
-                  <span className="font-semibold">{weather.currentTemp != null ? `${Math.round(weather.currentTemp)}°` : "—"}</span>
-                </div>
-                <div className="flex items-center gap-1.5" title="Höchsttemperatur heute">
-                  <Sun className="h-4 w-4 text-white/80" />
-                  <span className="font-semibold">{weather.tempMaxToday != null ? `${Math.round(weather.tempMaxToday)}°` : "—"}</span>
-                </div>
-                <div className="flex items-center gap-1.5" title="Regen heute">
-                  <CloudRain className="h-4 w-4 text-white/80" />
-                  <span className="font-semibold">
-                    {weather.precipProbToday != null ? `${Math.round(weather.precipProbToday)}%` : "—"}
-                    {weather.precipSumToday != null && weather.precipSumToday > 0 ? ` · ${weather.precipSumToday.toFixed(1)}mm` : ""}
-                  </span>
-                </div>
-                {weather.et0Today != null && (
-                  <div className="flex items-center gap-1.5" title="Verdunstung heute (ET₀) – Basis der Wasserbilanz">
-                    <Waves className="h-4 w-4 text-white/80" />
-                    <span className="font-semibold">{weather.et0Today.toFixed(1)}mm</span>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
-        </div>
+          {weather && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm tabular-nums">
+              <div className="flex items-center gap-1.5" title="Aktuelle Temperatur">
+                <Thermometer className="h-4 w-4 text-muted-foreground" />
+                <span className="font-semibold">{weather.currentTemp != null ? `${Math.round(weather.currentTemp)}°` : "—"}</span>
+              </div>
+              <div className="flex items-center gap-1.5" title="Höchsttemperatur heute">
+                <Sun className="h-4 w-4 text-muted-foreground" />
+                <span className="font-semibold">{weather.tempMaxToday != null ? `${Math.round(weather.tempMaxToday)}°` : "—"}</span>
+              </div>
+              <div className="flex items-center gap-1.5" title="Regen heute">
+                <CloudRain className="h-4 w-4 text-muted-foreground" />
+                <span className="font-semibold">
+                  {weather.precipProbToday != null ? `${Math.round(weather.precipProbToday)}%` : "—"}
+                  {weather.precipSumToday != null && weather.precipSumToday > 0 ? ` · ${weather.precipSumToday.toFixed(1)}mm` : ""}
+                </span>
+              </div>
+              {weather.et0Today != null && (
+                <div className="flex items-center gap-1.5" title="Verdunstung heute (ET₀) – Basis der Wasserbilanz">
+                  <Waves className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-semibold">{weather.et0Today.toFixed(1)}mm</span>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
 
         {/* Smart-Run-Leiste */}
-        <CardContent className="pt-4 pb-4">
+        <CardContent className="border-t border-border pt-4">
           {run ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin text-info" />
-                  Zone {run.index + 1}/{run.total}: <span className="text-info">{run.zoneName}</span>
-                  <span className="text-muted-foreground/70">·</span>
+                {/* Laufende Bewässerung in Himmelblau (Wasser), docs/design-regeln.md, Abschnitt 3. */}
+                <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin text-sky-600 dark:text-sky-400" />
+                  Zone {run.index + 1}/{run.total}: <span className="text-sky-700 dark:text-sky-300">{run.zoneName}</span>
+                  <span className="text-muted-foreground">·</span>
                   <span className="tabular-nums">{fmtCountdown(run.remainingSec)}</span>
                 </div>
-                <Button size="sm" variant="destructive" onClick={stopSmartRun}>
-                  <Square className="h-4 w-4 mr-1.5" /> Alles stoppen
+                <Button size="sm" variant="destructive" onClick={stopSmartRun} className="max-sm:h-11">
+                  <Square className="h-4 w-4" /> Alles stoppen
                 </Button>
               </div>
-              <div className="h-2 rounded-full bg-border dark:bg-muted overflow-hidden">
+              <div className="h-2 rounded-full bg-foreground/[0.08] dark:bg-white/[0.08] overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-sky-500 to-emerald-500 transition-all duration-500"
+                  className="h-full bg-sky-500 transition-all duration-500"
                   style={{ width: `${((run.index + (1 - run.remainingSec / (run.minutes * 60))) / run.total) * 100}%` }}
                 />
               </div>
@@ -822,7 +851,7 @@ export function IrrigationClient({
           ) : (
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-success" />
+                <Sparkles className="h-5 w-5 text-primary" />
                 <div>
                   <p className="text-sm font-medium text-foreground">Smart-Bewässerung starten</p>
                   <p className="text-xs text-muted-foreground">
@@ -831,18 +860,18 @@ export function IrrigationClient({
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <Label className="text-xs text-muted-foreground">Basis</Label>
                   <Select value={String(baseMinutes)} onValueChange={(v) => setBaseMinutes(Number(v))}>
-                    <SelectTrigger size="sm" className="w-[92px]"><SelectValue /></SelectTrigger>
+                    <SelectTrigger size="sm" className="w-[92px] max-sm:data-[size=sm]:h-11"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {DURATION_PRESETS.map((d) => <SelectItem key={d} value={String(d)}>{d} Min</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <Button onClick={startSmartRun} className="bg-gradient-to-r from-sky-600 to-emerald-600 hover:from-sky-700 hover:to-emerald-700 text-white">
-                  <Play className="h-4 w-4 mr-1.5" /> Starten
+                <Button onClick={startSmartRun} className="max-sm:h-11">
+                  <Play className="h-4 w-4" /> Starten
                 </Button>
               </div>
             </div>
@@ -850,26 +879,28 @@ export function IrrigationClient({
         </CardContent>
       </Card>
 
-      {/* Statistik */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={Droplets} label="Ventile" value={`${zoneList.length - pumps.length}`} hint={`${pumps.length} Pumpe${pumps.length === 1 ? "" : "n"} · ${wateringCount} aktiv`} tone="info" />
-        <StatCard icon={CalendarDays} label="Aktive Zeitpläne" value={`${activeSchedules}`} hint={`${schedules.length} gesamt`} tone="success" />
-        <StatCard icon={Gauge} label="Verbrauch / Woche" value={`${(weeklyLiters / 1000).toFixed(weeklyLiters >= 1000 ? 1 : 0)}${weeklyLiters >= 1000 ? " m³" : " L"}`} hint="geschätzt" tone="info" />
-        <StatCard icon={Clock} label="Nächste Bewässerung" value={nextRun ? fmtNext(nextRun.when) : "—"} hint={nextRun?.label ?? "kein Zeitplan"} tone="primary" />
+      {/* Statistik: Anzahlen und Termine sind kein Zustand, daher neutral (docs/design-regeln.md, Abschnitt 3).
+          Abstand wie die Kennzahlen auf /network (Karten 16 px ab sm, Abschnitt 5). */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <StatCard icon={Droplets} label="Ventile" value={`${zoneList.length - pumps.length}`} hint={`${pumps.length} Pumpe${pumps.length === 1 ? "" : "n"} · ${wateringCount} aktiv`} tone="neutral" />
+        <StatCard icon={CalendarDays} label="Aktive Zeitpläne" value={`${activeSchedules}`} hint={`${schedules.length} gesamt`} tone="neutral" />
+        <StatCard icon={Gauge} label="Verbrauch / Woche" value={`${(weeklyLiters / 1000).toFixed(weeklyLiters >= 1000 ? 1 : 0)}${weeklyLiters >= 1000 ? " m³" : " L"}`} hint="geschätzt" tone="neutral" />
+        <StatCard icon={Clock} label="Nächste Bewässerung" value={next?.time ?? "—"} hint={nextRun && next ? `${next.day} · ${nextRun.label}` : "kein Zeitplan"} tone="neutral" />
       </div>
 
       {/* Zonen nach Pumpe gruppiert */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <Droplets className="h-4 w-4" /> Bewässerung
-          </h2>
-          <Button variant="ghost" size="sm" onClick={() => fetchStatuses(true)} disabled={statusLoading} className="text-muted-foreground">
-            <RefreshCw className={cn("h-4 w-4 mr-1.5", statusLoading && "animate-spin")} /> Aktualisieren
-          </Button>
-        </div>
+      <div className="space-y-3">
+        <SectionHeading
+          title="Bewässerung"
+          icon={Droplets}
+          aside={
+            <Button variant="ghost" size="sm" onClick={() => fetchStatuses(true)} disabled={statusLoading} className="text-muted-foreground max-sm:h-11">
+              <RefreshCw className={cn("h-4 w-4", statusLoading && "animate-spin")} /> Aktualisieren
+            </Button>
+          }
+        />
 
-        <div className="space-y-5">
+        <div className="space-y-4 sm:space-y-5">
           {pumps.map((pump) => {
             const st = pumpStats.find((s) => s.pumpId === pump.id);
             const valves = st?.valves ?? [];
@@ -894,9 +925,12 @@ export function IrrigationClient({
                 onRename={(name) => renameZone(pump.id, name)}
               >
                 {valves.length === 0 ? (
-                  <p className="text-sm text-muted-foreground/70 col-span-full py-2">
-                    Noch keine Ventile zugeordnet – wähle in einer Ventil-Karte unten diese Pumpe aus.
-                  </p>
+                  <EmptyState
+                    compact
+                    icon={Droplet}
+                    title="Noch keine Ventile zugeordnet – wähle in einer Ventil-Karte unten diese Pumpe aus."
+                    className="col-span-full"
+                  />
                 ) : (
                   valves.map((zone) => (
                     <ZoneCard
@@ -923,11 +957,13 @@ export function IrrigationClient({
           })}
 
           {unassignedValves.length > 0 && (
-            <div className="rounded-xl border border-border p-3 sm:p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Droplet className="h-4 w-4 text-muted-foreground/70" />
-                <h3 className="text-sm font-semibold text-foreground/80">Ohne Pumpe</h3>
-                <span className="text-xs text-muted-foreground/70">{unassignedValves.length} Ventil{unassignedValves.length === 1 ? "" : "e"}</span>
+            <Card className="gap-3 px-4 sm:px-[18px]">
+              <div className="flex items-center gap-2">
+                <Droplet className="h-4 w-4 text-muted-foreground" />
+                <CardTitle>
+                  <h3>Ohne Pumpe</h3>
+                </CardTitle>
+                <span className="text-xs text-muted-foreground tabular-nums">{unassignedValves.length} Ventil{unassignedValves.length === 1 ? "" : "e"}</span>
               </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {unassignedValves.map((zone) => (
@@ -950,31 +986,38 @@ export function IrrigationClient({
                   />
                 ))}
               </div>
-            </div>
+            </Card>
           )}
 
           {pumps.length === 0 && unassignedValves.length === 0 && (
-            <p className="text-sm text-muted-foreground/70">Keine Zonen vorhanden.</p>
+            <Card className="py-0 sm:py-0">
+              <EmptyState compact icon={Droplets} title="Keine Zonen vorhanden." />
+            </Card>
           )}
         </div>
       </div>
 
       {/* Zeitpläne */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <CalendarDays className="h-4 w-4" /> Zeitpläne
-          </h2>
-          <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }} className="bg-success hover:bg-success/90 text-success-foreground">
-            <Plus className="h-4 w-4 mr-1.5" /> Neuer Zeitplan
-          </Button>
-        </div>
-        <Card>
-          <CardContent className="p-0 divide-y divide-border/60">
+      <div className="space-y-3">
+        <SectionHeading
+          title="Zeitpläne"
+          icon={CalendarDays}
+          aside={
+            <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }} className="max-sm:h-11">
+              <Plus className="h-4 w-4" /> Neuer Zeitplan
+            </Button>
+          }
+        />
+        {/* Zeilen mit Haarlinie in einer Karte (docs/design-regeln.md, Abschnitt 17). */}
+        <Card className="gap-0 overflow-hidden py-0 sm:py-0">
+          <CardContent className="px-0 sm:px-0 divide-y divide-border">
             {schedules.length === 0 ? (
-              <div className="p-6 text-center text-sm text-muted-foreground">
-                Noch keine Zeitpläne. Lege einen an, damit die Bewässerung automatisch (wetterabhängig) läuft.
-              </div>
+              <EmptyState
+                compact
+                icon={CalendarDays}
+                title="Noch keine Zeitpläne."
+                description="Lege einen an, damit die Bewässerung automatisch (wetterabhängig) läuft."
+              />
             ) : (
               schedules.map((s) => (
                 <ScheduleRow
@@ -991,14 +1034,14 @@ export function IrrigationClient({
                   onRunNow={() => runScheduleNow(s)}
                   onStop={() => stopScheduleDevice(s)}
                   onEdit={() => { setEditing(s); setDialogOpen(true); }}
-                  onDelete={() => deleteSchedule(s.id)}
+                  onDelete={() => { setScheduleToDelete(s); setDeleteOpen(true); }}
                 />
               ))
             )}
           </CardContent>
         </Card>
-        <p className="text-xs text-muted-foreground/70 mt-2 flex items-center gap-1.5">
-          <CircleAlert className="h-3.5 w-3.5" />
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <CircleAlert className="h-3.5 w-3.5 shrink-0" />
           Zeitpläne werden serverseitig automatisch ausgeführt (alle 5 Min geprüft). „Bei Regen aussetzen“ nutzt die Wetterprognose.
         </p>
       </div>
@@ -1022,6 +1065,50 @@ export function IrrigationClient({
           onSave={saveSchedule}
         />
       )}
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {scheduleToDelete ? `Zeitplan „${scheduleToDelete.deviceName} · ${scheduleToDelete.startTime}“ wirklich löschen?` : ""}
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (scheduleToDelete) void deleteSchedule(scheduleToDelete.id);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={forceOpen}
+        onOpenChange={(o) => {
+          setForceOpen(o);
+          // Nach „Trotzdem starten“ ist die Antwort schon gegeben, ein zweites Auflösen bleibt wirkungslos.
+          if (!o) forceAsk?.answer(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{forceAsk ? `${forceAsk.name} wurde nicht gestartet` : ""}</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="block">{forceAsk?.reason}</span>
+              <span className="mt-2 block">Trotzdem mit den geplanten Dauern starten?</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction onClick={() => forceAsk?.answer(true)}>Trotzdem starten</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1054,20 +1141,17 @@ function PumpGroup({
   };
 
   return (
+    // Eigene Glaskarte je Pumpe; läuft sie, färbt sich die Karte im Wasser-Ton
+    // (docs/design-regeln.md, Abschnitte 2 und 3).
     <section className={cn(
-      "rounded-xl border overflow-hidden transition-shadow",
-      running ? "border-info/30 ring-1 ring-info/40" : "border-border",
+      "glass-card overflow-hidden",
+      running && "border-sky-400/45 bg-gradient-to-b from-sky-500/12 to-transparent",
     )}>
       {/* Pumpen-Kopf */}
-      <div className="bg-muted/50 dark:bg-card/40 p-4 space-y-4 border-b border-border/60">
+      <div className="p-4 sm:p-[18px] space-y-4 border-b border-border">
         <div className="flex items-start justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className={cn(
-              "h-9 w-9 rounded-lg flex items-center justify-center shrink-0",
-              running ? "bg-info/10 " : "bg-muted",
-            )}>
-              <Activity className={cn("h-5 w-5", running ? "text-info animate-pulse" : "text-muted-foreground/70")} />
-            </div>
+            <IconChip icon={Activity} tone="water" active={running} size="lg" />
             <div className="min-w-0">
               {editing ? (
                 <div className="flex items-center gap-1">
@@ -1079,14 +1163,14 @@ function PumpGroup({
                       if (e.key === "Enter") commitRename();
                       if (e.key === "Escape") { setEditing(false); setDraft(pump.name); }
                     }}
-                    className="h-7 py-1 text-sm"
+                    className="h-8 py-1 max-sm:h-11"
                   />
-                  <button onClick={commitRename} className="text-success hover:text-success shrink-0" title="Speichern">
+                  <Button variant="ghost" size="icon-sm" onClick={commitRename} className="text-primary max-sm:size-11" title="Speichern" aria-label="Speichern">
                     <Check className="h-4 w-4" />
-                  </button>
-                  <button onClick={() => { setEditing(false); setDraft(pump.name); }} className="text-muted-foreground/70 hover:text-foreground shrink-0" title="Abbrechen">
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" onClick={() => { setEditing(false); setDraft(pump.name); }} className="text-muted-foreground hover:text-foreground max-sm:size-11" title="Abbrechen" aria-label="Abbrechen">
                     <X className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <div className="group/pname flex items-center gap-1.5">
@@ -1094,108 +1178,108 @@ function PumpGroup({
                   <Badge variant="secondary" className="text-[10px] gap-1 shrink-0">
                     <Activity className="h-3 w-3" /> Pumpe
                   </Badge>
+                  {/* Tippfläche 44 × 34 px: wächst seitlich und nach oben, nach unten nur bis
+                      vor die Zeile „n Ventile“, damit ein Tipp dort nicht umbenennt. */}
                   <button
                     onClick={() => { setDraft(pump.name); setEditing(true); }}
-                    className="opacity-0 group-hover/pname:opacity-100 transition-opacity text-muted-foreground/70 hover:text-foreground shrink-0"
+                    className="opacity-0 group-hover/pname:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0 relative rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 after:absolute after:-inset-x-[15px] after:-top-4 after:-bottom-1 after:content-['']"
                     title="Umbenennen"
+                    aria-label="Umbenennen"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground/70 mt-0.5">
+              <p className="text-xs text-muted-foreground tabular-nums mt-0.5">
                 {running ? `${consumerCount} von ${valveCount} Ventil${valveCount === 1 ? "" : "en"} aktiv` : `${valveCount} Ventil${valveCount === 1 ? "" : "e"}`}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {online != null && (
               online ? (
-                <Badge variant="outline" className="text-[10px] gap-1 border-success/30 text-success">
+                <Badge variant="success" className="text-[10px] gap-1">
                   <Wifi className="h-3 w-3" /> Online
                 </Badge>
               ) : (
-                <Badge variant="outline" className="text-[10px] gap-1 border-border text-muted-foreground/70">
+                <Badge variant="neutral" className="text-[10px] gap-1">
                   <WifiOff className="h-3 w-3" /> Offline
                 </Badge>
               )
             )}
+            {/* Schwacher Akku ist ein Hinweis (warning), keine Störung (docs/design-regeln.md, Abschnitt 3). */}
             {battery != null && (
-              <span className={cn("text-[10px] flex items-center gap-0.5", battery <= 20 ? "text-destructive" : "text-muted-foreground/70")}>
+              <span className={cn("text-[10px] tabular-nums flex items-center gap-0.5", battery <= 20 ? "text-warning" : "text-muted-foreground")}>
                 {battery <= 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />} {battery}%
               </span>
             )}
-            <span className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
-              running
-                ? "bg-info/10 text-info"
-                : "bg-muted text-muted-foreground",
-            )}>
+            <Badge
+              variant={running ? "default" : "neutral"}
+              className={cn("gap-1.5 text-[11px] font-medium", running && "bg-sky-500/15 text-sky-700 dark:text-sky-300")}
+            >
               {running ? (
                 <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-info" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75 motion-reduce:animate-none" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
                 </span>
               ) : (
-                <span className="h-2 w-2 rounded-full bg-slate-400" />
+                <StatusDot tone="neutral" />
               )}
               {running ? "Läuft" : "Aus"}
-            </span>
+            </Badge>
           </div>
         </div>
 
-        {/* Live-Kennzahlen */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <PumpMetric icon={Waves} accent="text-info" label="Durchfluss" value={running ? `${flowLph}` : "0"} unit="L/h" />
-          <PumpMetric icon={Timer} accent="text-primary" label="Laufzeit" value={fmtCountdown(elapsed)} unit="min" />
-          <PumpMetric icon={Droplet} accent="text-info" label="Durchlauf" value={fmtLiters(liters)} unit="" />
-          <PumpMetric icon={Droplets} accent="text-success" label="Aktive Ventile" value={`${consumerCount}`} unit={`/ ${valveCount}`} />
+        {/* Live-Kennzahlen: vier Spalten erst ab lg, sonst kürzen die Versalien-Beschriftungen
+            neben der Seitenleiste (iPad hochkant) ab. */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <PumpMetric icon={Waves} accent={running ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"} label="Durchfluss" value={running ? `${flowLph}` : "0"} unit="L/h" />
+          <PumpMetric icon={Timer} accent="text-muted-foreground" label="Laufzeit" value={fmtCountdown(elapsed)} unit="min" />
+          <PumpMetric icon={Droplet} accent={running ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"} label="Durchlauf" value={fmtLiters(liters)} unit="" />
+          <PumpMetric icon={Droplets} accent="text-muted-foreground" label="Aktive Ventile" value={`${consumerCount}`} unit={`/ ${valveCount}`} />
         </div>
 
-        {/* Fluss-Animation */}
-        <div className="h-2 rounded-full bg-muted overflow-hidden">
+        {/* Fluss-Animation: Streifen im Wasser-Ton aus den Theme-Variablen statt fester RGB-Werte. */}
+        <div className="h-2 rounded-full bg-foreground/[0.08] dark:bg-white/[0.08] overflow-hidden">
           {running && (
             <div
-              className="h-full w-full animate-pump-flow"
-              style={{ backgroundImage: "repeating-linear-gradient(90deg, rgba(56,189,248,0.9) 0, rgba(56,189,248,0.9) 8px, rgba(16,185,129,0.7) 8px, rgba(16,185,129,0.7) 16px)" }}
+              className="h-full w-full animate-pump-flow motion-reduce:animate-none"
+              style={{ backgroundImage: "repeating-linear-gradient(90deg, var(--color-sky-400) 0, var(--color-sky-400) 8px, var(--color-sky-600) 8px, var(--color-sky-600) 16px)" }}
             />
           )}
         </div>
 
         {/* Manuelle Pumpen-Steuerung */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Dauer-Chips umbrechen in schmalen Breiten (eine Segmentwahl würde waagerecht scrollen). */}
           <div className="flex flex-wrap gap-1">
             {DURATION_PRESETS.map((d) => (
               <button
                 key={d}
                 onClick={() => onDuration(d)}
                 disabled={disabled || watering}
-                className={cn(
-                  "px-2 py-1 rounded-md text-xs font-medium transition-colors disabled:opacity-50",
-                  duration === d
-                    ? "bg-info text-info-foreground"
-                    : "bg-card text-muted-foreground hover:bg-muted",
-                )}
+                aria-pressed={duration === d}
+                className={cn(DURATION_CHIP, duration === d ? DURATION_CHIP_ON : DURATION_CHIP_OFF)}
               >
                 {d}′
               </button>
             ))}
           </div>
           {watering ? (
-            <Button onClick={onStop} disabled={busy || disabled} variant="destructive" size="sm" className="ml-auto">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Square className="h-4 w-4 mr-1.5" /> Pumpe stoppen</>}
+            <Button onClick={onStop} disabled={busy || disabled} variant="destructive" size="sm" className="ml-auto max-sm:h-11">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Square className="h-4 w-4" /> Pumpe stoppen</>}
             </Button>
           ) : (
-            <Button onClick={onStart} disabled={busy || disabled || !pump.serviceId} size="sm" className="ml-auto bg-info hover:bg-info/90 text-info-foreground">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Play className="h-4 w-4 mr-1.5" /> {duration} Min laufen</>}
+            <Button onClick={onStart} disabled={busy || disabled || !pump.serviceId} size="sm" className="ml-auto max-sm:h-11">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Play className="h-4 w-4" /> {duration} Min laufen</>}
             </Button>
           )}
         </div>
       </div>
 
       {/* Zugeordnete Ventile */}
-      <div className="p-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">Zugeordnete Ventile</p>
+      <div className="p-4 sm:p-[18px]">
+        <p className="text-label mb-2">Zugeordnete Ventile</p>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {children}
         </div>
@@ -1207,14 +1291,16 @@ function PumpGroup({
 function PumpMetric({ icon: Icon, accent, label, value, unit }: {
   icon: React.ComponentType<{ className?: string }>; accent: string; label: string; value: string; unit: string;
 }) {
+  // Kennzahl in einer Karte: Kachel im Stil von StatCard (sm), aber als glass-tile,
+  // weil StatCard selbst eine Glaskarte mit Weichzeichner ist (docs/design-regeln.md, Abschnitt 22).
   return (
-    <div className="rounded-lg bg-muted/40 p-3">
-      <div className="flex items-center gap-1.5 text-muted-foreground">
-        <Icon className={cn("h-3.5 w-3.5", accent)} />
-        <span className="text-[11px] font-medium">{label}</span>
+    <div className="glass-tile px-3 py-2.5">
+      <div className="flex items-center gap-1.5">
+        <span className="text-label text-[10px] tracking-[0.1em] truncate">{label}</span>
+        <Icon className={cn("ml-auto h-3.5 w-3.5 shrink-0", accent)} />
       </div>
-      <p className="mt-1 text-lg font-bold text-foreground tabular-nums truncate">
-        {value}{unit && <span className="text-xs font-medium text-muted-foreground/70 ml-1">{unit}</span>}
+      <p className="mt-1 text-xl font-bold leading-none tracking-tight text-foreground tabular-nums truncate">
+        {value}{unit && <span className="text-xs font-medium tracking-normal text-muted-foreground ml-1">{unit}</span>}
       </p>
     </div>
   );
@@ -1224,44 +1310,45 @@ function PumpMetric({ icon: Icon, accent, label, value, unit }: {
 
 // Klare An/Aus-Anzeige des Ventils.
 function ZoneStateBadge({ status }: { status?: ZoneStatus }) {
-  const base = "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium";
+  const base = "gap-1.5 text-[11px] font-medium";
 
   if (!status || status.source === "unavailable") {
     return (
-      <span className={cn(base, "bg-muted text-muted-foreground/70")}>
-        <span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+      <Badge variant="outline" className={cn(base, "text-muted-foreground")}>
+        <StatusDot tone="neutral" />
         Status unbekannt
-      </span>
+      </Badge>
     );
   }
 
   if (status.watering) {
     const label = status.activity === "SCHEDULED_WATERING" ? "An · Zeitplan" : "An · bewässert";
+    // Ventil offen = Wasser-Zustand in Himmelblau (docs/design-regeln.md, Abschnitt 3).
     return (
-      <span className={cn(base, "bg-info/10 text-info")}>
+      <Badge className={cn(base, "bg-sky-500/15 text-sky-700 dark:text-sky-300")}>
         <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-info" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75 motion-reduce:animate-none" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
         </span>
         {label}
-      </span>
+      </Badge>
     );
   }
 
   if (status.activity === "PAUSED") {
     return (
-      <span className={cn(base, "bg-warning/10 text-warning")}>
-        <span className="h-2 w-2 rounded-full bg-warning" />
+      <Badge variant="warning" className={base}>
+        <StatusDot tone="warning" />
         Pausiert
-      </span>
+      </Badge>
     );
   }
 
   return (
-    <span className={cn(base, "bg-muted text-muted-foreground")}>
-      <span className="h-2 w-2 rounded-full bg-slate-400" />
+    <Badge variant="neutral" className={base}>
+      <StatusDot tone="neutral" />
       Aus · geschlossen
-    </span>
+    </Badge>
   );
 }
 
@@ -1299,19 +1386,16 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
   };
 
   return (
-    <Card className={cn(
-      "border-border transition-shadow",
-      watering && "ring-2 ring-info/60 ",
+    // Kachel in der Pumpen-Karte; bewässert sie, leuchtet sie im Wasser-Ton
+    // (aktive Kachel, docs/design-regeln.md, Abschnitt 15).
+    <div className={cn(
+      "glass-tile p-3 sm:p-4",
+      watering && "border-sky-400/45 bg-gradient-to-br from-sky-400/25 to-sky-400/5",
     )}>
-      <CardContent className="p-4 space-y-3">
+      <div className="space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <div className={cn(
-              "h-9 w-9 rounded-lg flex items-center justify-center shrink-0",
-              watering ? "bg-info/10 " : "bg-muted",
-            )}>
-              <Droplets className={cn("h-5 w-5", watering ? "text-info animate-pulse" : "text-muted-foreground/70")} />
-            </div>
+            <IconChip icon={Droplets} tone="water" active={watering} />
             <div className="min-w-0 flex-1">
               {editing ? (
                 <div className="flex items-center gap-1">
@@ -1323,14 +1407,14 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
                       if (e.key === "Enter") commitRename();
                       if (e.key === "Escape") { setEditing(false); setDraft(zone.name); }
                     }}
-                    className="h-7 py-1 text-sm"
+                    className="h-8 py-1 max-sm:h-11"
                   />
-                  <button onClick={commitRename} className="text-success hover:text-success shrink-0" title="Speichern">
+                  <Button variant="ghost" size="icon-sm" onClick={commitRename} className="text-primary max-sm:size-11" title="Speichern" aria-label="Speichern">
                     <Check className="h-4 w-4" />
-                  </button>
-                  <button onClick={() => { setEditing(false); setDraft(zone.name); }} className="text-muted-foreground/70 hover:text-foreground shrink-0" title="Abbrechen">
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" onClick={() => { setEditing(false); setDraft(zone.name); }} className="text-muted-foreground hover:text-foreground max-sm:size-11" title="Abbrechen" aria-label="Abbrechen">
                     <X className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <div className="group/name flex items-center gap-1">
@@ -1340,10 +1424,13 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
                       <Activity className="h-3 w-3" /> Pumpe
                     </Badge>
                   )}
+                  {/* Tippfläche 44 × 34 px: wächst seitlich und nach oben, nach unten nur bis
+                      vor den Zustand darunter, damit ein Tipp dort nicht umbenennt. */}
                   <button
                     onClick={() => { setDraft(zone.name); setEditing(true); }}
-                    className="opacity-0 group-hover/name:opacity-100 transition-opacity text-muted-foreground/70 hover:text-foreground shrink-0"
+                    className="opacity-0 group-hover/name:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0 relative rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 after:absolute after:-inset-x-[15px] after:-top-4 after:-bottom-1 after:content-['']"
                     title="Umbenennen"
+                    aria-label="Umbenennen"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -1354,16 +1441,16 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
           </div>
           <div className="flex flex-col items-end gap-1">
             {online ? (
-              <Badge variant="outline" className="text-[10px] gap-1 border-success/30 text-success">
+              <Badge variant="success" className="text-[10px] gap-1">
                 <Wifi className="h-3 w-3" /> Online
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-[10px] gap-1 border-border text-muted-foreground/70">
+              <Badge variant="neutral" className="text-[10px] gap-1">
                 <WifiOff className="h-3 w-3" /> Offline
               </Badge>
             )}
             {battery != null && (
-              <span className={cn("text-[10px] flex items-center gap-0.5", battery <= 20 ? "text-destructive" : "text-muted-foreground/70")}>
+              <span className={cn("text-[10px] tabular-nums flex items-center gap-0.5", battery <= 20 ? "text-warning" : "text-muted-foreground")}>
                 {battery <= 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />} {battery}%
               </span>
             )}
@@ -1377,12 +1464,8 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
               key={d}
               onClick={() => onDuration(d)}
               disabled={disabled || watering}
-              className={cn(
-                "px-2 py-1 rounded-md text-xs font-medium transition-colors disabled:opacity-50",
-                duration === d
-                  ? "bg-info text-info-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-accent",
-              )}
+              aria-pressed={duration === d}
+              className={cn(DURATION_CHIP, duration === d ? DURATION_CHIP_ON : DURATION_CHIP_OFF)}
             >
               {d}′
             </button>
@@ -1391,7 +1474,7 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
             <button
               onClick={() => onDuration(recommended)}
               disabled={disabled || watering}
-              className="px-2 py-1 rounded-md text-xs font-medium bg-success/10 text-success hover:bg-success/10 disabled:opacity-50 flex items-center gap-1"
+              className={cn(DURATION_CHIP, "inline-flex items-center gap-1 bg-primary/12 text-primary hover:bg-primary/20")}
               title="Wetter-Empfehlung übernehmen"
             >
               <Sparkles className="h-3 w-3" /> {recommended}′
@@ -1401,7 +1484,7 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
 
         {/* Zonen-Stammdaten: Durchsatz + Flaeche fuer die Wasserbilanz */}
         <div className="flex items-center gap-2" title="Zonen-Daten für die Wasserbilanz: Durchflussrate und bewässerte Fläche">
-          <Waves className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+          <Waves className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <div className="flex items-center gap-1 flex-1 min-w-0">
             <Input
               type="number"
@@ -1412,9 +1495,10 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
               onChange={(e) => setFlowDraft(e.target.value)}
               onBlur={commitMeta}
               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-              className="h-7 text-xs px-2"
+              aria-label="Durchfluss in L/h"
+              className="px-2 max-sm:h-11"
             />
-            <span className="text-[10px] text-muted-foreground/70 shrink-0">L/h</span>
+            <span className="text-[10px] text-muted-foreground shrink-0">L/h</span>
           </div>
           <div className="flex items-center gap-1 flex-1 min-w-0">
             <Input
@@ -1426,22 +1510,23 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
               onChange={(e) => setAreaDraft(e.target.value)}
               onBlur={commitMeta}
               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-              className="h-7 text-xs px-2"
+              aria-label="Bewässerte Fläche in m²"
+              className="px-2 max-sm:h-11"
             />
-            <span className="text-[10px] text-muted-foreground/70 shrink-0">m²</span>
+            <span className="text-[10px] text-muted-foreground shrink-0">m²</span>
           </div>
         </div>
 
         {/* Pumpen-Zuordnung (nur fuer Ventile, nicht fuer die Pumpe selbst) */}
         {!isPump && pumpOptions.length > 0 && (
           <div className="flex items-center gap-2">
-            <Gauge className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+            <Gauge className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <Select
               value={zone.pumpDeviceId ? String(zone.pumpDeviceId) : "none"}
               onValueChange={(v) => onAssignPump(v === "none" ? null : Number(v))}
               disabled={disabled}
             >
-              <SelectTrigger size="sm" className="h-7 flex-1 text-xs">
+              <SelectTrigger size="sm" className="flex-1 text-xs max-sm:data-[size=sm]:h-11">
                 <SelectValue placeholder="Pumpe zuordnen" />
               </SelectTrigger>
               <SelectContent>
@@ -1457,17 +1542,17 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
         {/* Aktionen */}
         <div className="flex gap-2">
           {watering ? (
-            <Button onClick={onStop} disabled={busy || disabled} variant="destructive" className="flex-1">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Square className="h-4 w-4 mr-1.5" /> Stopp</>}
+            <Button onClick={onStop} disabled={busy || disabled} variant="destructive" className="flex-1 max-sm:h-11">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Square className="h-4 w-4" /> Stopp</>}
             </Button>
           ) : (
-            <Button onClick={onStart} disabled={busy || disabled || !zone.serviceId} className="flex-1 bg-info hover:bg-info/90 text-info-foreground">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Play className="h-4 w-4 mr-1.5" /> {duration} Min bewässern</>}
+            <Button onClick={onStart} disabled={busy || disabled || !zone.serviceId} className="flex-1 max-sm:h-11">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Play className="h-4 w-4" /> {duration} Min bewässern</>}
             </Button>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -1482,32 +1567,32 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
   const moistEnough = humidity != null && threshold != null && humidity >= threshold;
   return (
     <div className={cn(
-      "flex items-center gap-3 p-3 sm:p-4 transition-colors",
-      running && "bg-info/10 ",
+      "flex flex-wrap items-center gap-3 px-4 py-3 sm:flex-nowrap sm:px-[18px] transition-colors",
+      running && "bg-sky-500/10",
     )}>
       <div className="flex flex-col items-center gap-1 shrink-0">
         <Switch checked={schedule.isActive} onCheckedChange={onToggle} title={schedule.isActive ? "Aktiv – klicken zum Pausieren" : "Pausiert – klicken zum Aktivieren"} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={cn("font-medium truncate", schedule.isActive ? "text-foreground" : "text-muted-foreground/70")}>
+          <span className={cn("font-medium truncate", schedule.isActive ? "text-foreground" : "text-muted-foreground")}>
             {schedule.deviceName}
           </span>
           {running ? (
-            <Badge className="text-[10px] gap-1 bg-info/10 text-info border-transparent">
+            <Badge className="text-[10px] gap-1 bg-sky-500/15 text-sky-700 dark:text-sky-300">
               <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-info" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75 motion-reduce:animate-none" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sky-500" />
               </span>
               Läuft
             </Badge>
           ) : schedule.isActive ? (
-            <Badge variant="outline" className="text-[10px] gap-1 text-success border-success/30">
-              <span className="h-1.5 w-1.5 rounded-full bg-success" /> Aktiv
+            <Badge variant="success" className="text-[10px] gap-1">
+              <StatusDot tone="success" size="xs" /> Aktiv
             </Badge>
           ) : (
-            <Badge variant="outline" className="text-[10px] gap-1 text-muted-foreground/70 border-border">
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Pausiert
+            <Badge variant="neutral" className="text-[10px] gap-1">
+              <StatusDot tone="neutral" size="xs" /> Pausiert
             </Badge>
           )}
           {sequenceNames.length > 0 && (
@@ -1522,14 +1607,14 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
             {schedule.durationMinutes} Min{sequenceNames.length > 0 ? "/Ventil" : ""}
           </Badge>
           {schedule.skipOnRain && (
-            <Badge variant="outline" className="text-[10px] gap-1 text-info border-info/30">
+            <Badge variant="info" className="text-[10px] gap-1">
               <CloudRain className="h-3 w-3" /> Regen-Stopp
             </Badge>
           )}
           {schedule.smartRain && (
             <Badge
               variant="outline"
-              className="text-[10px] gap-1 text-primary border-primary/30"
+              className="text-[10px] gap-1 text-primary border-primary/30 dark:border-primary/30"
               title="Dauer wird aus der Wasserbilanz berechnet (Verdunstung ET₀ − Regen seit letztem Lauf)"
             >
               <Sparkles className="h-3 w-3" /> Wasserbilanz
@@ -1537,14 +1622,11 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
           )}
           {schedule.sensorServiceId && (
             <>
+              {/* Sensor ohne Messwert ist ein Hinweis, „setzt aus“ informiert wie Regen-Stopp,
+                  trockener Boden ist der Normalfall (docs/design-regeln.md, Abschnitt 3). */}
               <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] gap-1",
-                  moistEnough
-                    ? "text-success border-success/30"
-                    : "text-warning border-warning/30",
-                )}
+                variant={humidity == null ? "warning" : moistEnough ? "info" : "neutral"}
+                className="text-[10px] gap-1"
                 title={sensor
                   ? [
                       `${sensor.name}`,
@@ -1561,33 +1643,34 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
                 {moistEnough && " · setzt aus"}
               </Badge>
               {sensor?.batteryLevel != null && (
-                <Badge variant="outline" className="text-[10px] gap-1 text-muted-foreground border-border">
+                <Badge variant="neutral" className="text-[10px] gap-1 tabular-nums">
                   <Battery className="h-3 w-3" /> Akku {Math.round(sensor.batteryLevel)}%
                 </Badge>
               )}
             </>
           )}
         </div>
-        <p className="text-xs text-muted-foreground/70 mt-0.5">
+        <p className="text-xs text-muted-foreground mt-0.5">
           {fmtDays(schedule.daysOfWeek)}
           {sequenceNames.length > 0 && <> · {sequenceNames.join(" → ")}</>}
           {schedule.lastRunAt && <> · Zuletzt: {fmtLastRun(schedule.lastRunAt)}</>}
         </p>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
+      {/* Auf dem Handy rutschen die Tasten unter den Text, damit er Platz hat. */}
+      <div className="flex items-center gap-1 shrink-0 max-sm:w-full max-sm:justify-end">
         {running ? (
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10" onClick={onStop} disabled={busy}>
+          <Button variant="outline" size="sm" className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 max-sm:h-11" onClick={onStop} disabled={busy}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Square className="h-3.5 w-3.5" /> Stopp</>}
           </Button>
         ) : (
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-info border-info/30 hover:bg-info/10" onClick={onRunNow} disabled={busy} title="Zeitplan jetzt ausführen">
+          <Button variant="outline" size="sm" className="gap-1.5 max-sm:h-11" onClick={onRunNow} disabled={busy} title="Zeitplan jetzt ausführen">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Play className="h-3.5 w-3.5" /> Jetzt</>}
           </Button>
         )}
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground/70 hover:text-foreground" onClick={onEdit}>
+        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground max-sm:size-11" onClick={onEdit} aria-label="Bearbeiten">
           <Pencil className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground/70 hover:text-destructive" onClick={onDelete}>
+        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive max-sm:size-11" onClick={onDelete} aria-label="Löschen">
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
@@ -1621,94 +1704,80 @@ function IrrigationStatsPanel({
   const dayOptions = [7, 14, 30] as const;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-          <BarChart3 className="h-4 w-4" /> Statistik
-        </h2>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-border overflow-hidden">
-            {dayOptions.map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => onDaysChange(d)}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-medium transition-colors",
-                  days === d
-                    ? "bg-info text-info-foreground"
-                    : "bg-card text-muted-foreground hover:bg-muted/50",
-                )}
-              >
-                {d} Tage
-              </button>
-            ))}
-          </div>
-          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading} className="text-muted-foreground">
-            <RefreshCw className={cn("h-4 w-4 mr-1.5", loading && "animate-spin")} /> Aktualisieren
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SectionHeading title="Statistik" icon={BarChart3} />
+        {/* Zeitraum als Segmentwahl (docs/design-regeln.md, Abschnitt 6). */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented
+            aria-label="Zeitraum"
+            value={String(days)}
+            onValueChange={(v) => onDaysChange(Number(v))}
+            options={dayOptions.map((d) => ({ value: String(d), label: `${d} Tage` }))}
+          />
+          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading} className="text-muted-foreground max-sm:h-11">
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} /> Aktualisieren
           </Button>
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
+      <Card className="gap-0 overflow-hidden py-0 sm:py-0">
+        <CardContent className="px-0 sm:px-0">
           {loading && !stats ? (
-            <div className="p-8 flex items-center justify-center text-sm text-muted-foreground/70 gap-2">
+            <div className="p-8 flex items-center justify-center text-sm text-muted-foreground gap-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Statistik wird geladen…
             </div>
           ) : !stats || stats.summary.runCount === 0 ? (
-            <div className="p-8 text-center">
-              <History className="h-10 w-10 mx-auto text-slate-300 mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">Noch keine Läufe im gewählten Zeitraum</p>
-              <p className="text-xs text-muted-foreground/70 mt-1 max-w-md mx-auto">
-                Ab jetzt werden alle Bewässerungen (Zeitplan, „Jetzt“ und manuelle Starts) automatisch protokolliert.
-              </p>
-            </div>
+            <EmptyState
+              icon={History}
+              title="Noch keine Läufe im gewählten Zeitraum"
+              description="Ab jetzt werden alle Bewässerungen (Zeitplan, „Jetzt“ und manuelle Starts) automatisch protokolliert."
+            />
           ) : (
             <>
-              <div className="px-4 py-3 border-b border-border/60 bg-muted/50 dark:bg-card/30 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+              <div className="px-4 py-3 sm:px-[18px] border-b border-border bg-glass-tile flex flex-wrap gap-x-4 gap-y-1 text-sm">
                 <span className="text-muted-foreground">
                   <span className="font-semibold tabular-nums">{stats.summary.totalMinutes}</span> Min gesamt
                 </span>
-                <span className="text-muted-foreground/70">·</span>
+                <span className="text-muted-foreground">·</span>
                 <span className="text-muted-foreground">
                   <span className="font-semibold tabular-nums">{fmtLiters(stats.summary.totalLiters)}</span> geschätzt
                 </span>
-                <span className="text-muted-foreground/70">·</span>
+                <span className="text-muted-foreground">·</span>
                 <span className="text-muted-foreground">
                   <span className="font-semibold tabular-nums">{stats.summary.runCount}</span> Läufe
                 </span>
               </div>
-              <div className="divide-y divide-border/60">
+              <div className="divide-y divide-border">
                 {stats.days.map((day) => (
-                  <div key={day.date} className="p-4">
+                  <div key={day.date} className="p-4 sm:px-[18px]">
                     <div className="flex items-center justify-between gap-2 mb-3">
                       <p className="text-sm font-semibold text-foreground">{day.label}</p>
-                      <span className="text-xs text-muted-foreground/70 tabular-nums">
+                      <span className="text-xs text-muted-foreground tabular-nums">
                         {day.totalMinutes} Min · {fmtLiters(day.totalLiters)} · {day.runCount} Läufe
                       </span>
                     </div>
                     <div className="space-y-3">
                       {day.valves.map((valve) => (
-                        <div key={valve.deviceId} className="rounded-lg border border-border/60 overflow-hidden">
-                          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-muted/50 dark:bg-card/20">
+                        <div key={valve.deviceId} className="glass-tile overflow-hidden">
+                          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border">
                             <div className="flex items-center gap-2 min-w-0">
-                              <Droplets className="h-4 w-4 text-info shrink-0" />
+                              <Droplets className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />
                               <span className="text-sm font-medium text-foreground/90 truncate">{valve.deviceName}</span>
                             </div>
-                            <span className="text-xs font-semibold text-info tabular-nums shrink-0">
+                            <span className="text-xs font-semibold text-foreground tabular-nums shrink-0">
                               {valve.totalMinutes} Min
                               {valve.runCount > 1 && ` (${valve.runCount}×)`}
                             </span>
                           </div>
-                          <ul className="divide-y divide-slate-50 dark:divide-border/80">
+                          <ul className="divide-y divide-border">
                             {valve.runs.map((run) => (
                               <li key={run.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs text-muted-foreground">
                                 <span className="tabular-nums">{fmtRunTime(run.startedAt)}</span>
                                 <span className="flex items-center gap-2">
                                   <span className="tabular-nums font-medium text-foreground/80">{run.durationMinutes} Min</span>
                                   {run.litersEstimate != null && (
-                                    <span className="text-muted-foreground/70">· {fmtLiters(run.litersEstimate)}</span>
+                                    <span className="text-muted-foreground">· {fmtLiters(run.litersEstimate)}</span>
                                   )}
                                   <Badge variant="outline" className="text-[10px] h-5 px-1.5">{run.sourceLabel}</Badge>
                                 </span>
@@ -1725,8 +1794,8 @@ function IrrigationStatsPanel({
           )}
         </CardContent>
       </Card>
-      <p className="text-xs text-muted-foreground/70 mt-2 flex items-center gap-1.5">
-        <History className="h-3.5 w-3.5" />
+      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+        <History className="h-3.5 w-3.5 shrink-0" />
         Verbrauch geschätzt aus Durchflussrate (L/h) der Zone, sonst 720 L/h Standard.
       </p>
     </div>
@@ -1837,7 +1906,7 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{editing ? "Zeitplan bearbeiten" : "Neuer Zeitplan"}</DialogTitle>
         </DialogHeader>
@@ -1891,29 +1960,36 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label>Reihenfolge der Ventile</Label>
-                <span className="text-[11px] text-muted-foreground/70">
+                <span className="text-[11px] text-muted-foreground tabular-nums">
                   {form.valveOrder.length} Ventile · gesamt ca. {totalMinutes} Min
                 </span>
               </div>
               {pumpValves.length === 0 ? (
-                <p className="text-xs text-muted-foreground/70 rounded-lg border border-dashed border-border p-3">
-                  Dieser Pumpe sind noch keine Ventile zugeordnet. Ordne Ventile in der Zonen-Ansicht der Pumpe zu.
-                </p>
+                <EmptyState
+                  compact
+                  icon={Droplet}
+                  title="Dieser Pumpe sind noch keine Ventile zugeordnet."
+                  description="Ordne Ventile in der Zonen-Ansicht der Pumpe zu."
+                  className="glass-tile"
+                />
               ) : (
-                <div className="rounded-lg border border-border divide-y divide-border/60">
+                <div className="glass-tile divide-y divide-border overflow-hidden">
                   {orderedValves.map((z) => {
                     const pos = form.valveOrder.indexOf(z.id);
                     const selected = pos >= 0;
                     return (
                       <div key={z.id} className={cn("flex items-center gap-2 px-3 py-2", !selected && "opacity-50")}>
+                        {/* Wie das Kästchen (Checkbox), zeigt aber die Position in der Sequenz; die
+                            unsichtbare Fläche (after:) vergrößert das Tippziel auf 44 px. */}
                         <button
                           type="button"
                           onClick={() => toggleValve(z.id)}
+                          aria-pressed={selected}
                           className={cn(
-                            "h-5 w-5 rounded-md border flex items-center justify-center shrink-0 text-[10px] font-bold transition-colors",
+                            "relative size-5 rounded-[6px] border flex items-center justify-center shrink-0 text-[10px] font-bold tabular-nums outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 after:absolute after:-inset-3 after:content-['']",
                             selected
-                              ? "bg-info border-info text-info-foreground"
-                              : "border-input text-transparent hover:border-info/60",
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-foreground/35 bg-field text-transparent hover:border-foreground/55 dark:border-white/30",
                           )}
                           title={selected ? "Aus Sequenz entfernen" : "Zur Sequenz hinzufügen"}
                         >
@@ -1922,24 +1998,30 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                         <span className="text-sm text-foreground truncate flex-1">{z.name}</span>
                         {selected && (
                           <div className="flex items-center gap-0.5 shrink-0">
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="icon-sm"
                               onClick={() => moveValve(z.id, -1)}
                               disabled={pos === 0}
-                              className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground/70 hover:text-foreground disabled:opacity-30"
+                              className="text-muted-foreground hover:text-foreground max-sm:size-11"
                               title="Früher"
+                              aria-label="Früher"
                             >
                               <ChevronUp className="h-4 w-4" />
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="icon-sm"
                               onClick={() => moveValve(z.id, 1)}
                               disabled={pos === form.valveOrder.length - 1}
-                              className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground/70 hover:text-foreground disabled:opacity-30"
+                              className="text-muted-foreground hover:text-foreground max-sm:size-11"
                               title="Später"
+                              aria-label="Später"
                             >
                               <ChevronDown className="h-4 w-4" />
-                            </button>
+                            </Button>
                           </div>
                         )}
                       </div>
@@ -1947,7 +2029,7 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                   })}
                 </div>
               )}
-              <p className="text-[11px] text-muted-foreground/70">
+              <p className="text-[11px] text-muted-foreground">
                 Die Ventile laufen nacheinander (je {form.durationMinutes} Min) – die Pumpe schaltet automatisch mit.
                 {form.smartRain && " Mit Wasserbilanz + Zonen-Daten (L/h, m²) wird die Dauer je Ventil automatisch berechnet."}
               </p>
@@ -1964,11 +2046,12 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                   type="button"
                   onClick={() => toggleDay(i)}
                   title={DAY_LABELS_LONG[i]}
+                  aria-pressed={((form.daysOfWeek >> i) & 1) === 1}
                   className={cn(
-                    "flex-1 py-2 rounded-md text-xs font-medium transition-colors",
+                    "press flex-1 h-9 max-sm:h-11 rounded-control text-xs font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                     (form.daysOfWeek >> i) & 1
-                      ? "bg-info text-info-foreground"
-                      : "bg-muted text-muted-foreground hover:bg-accent",
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-foreground/[0.06] text-muted-foreground hover:text-foreground dark:bg-white/[0.08] dark:text-foreground/80 dark:hover:text-foreground",
                   )}
                 >
                   {d}
@@ -1978,39 +2061,39 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
           </div>
 
           {/* 5. Smart-Regen */}
-          <div className="rounded-lg border border-border p-3 space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="glass-tile p-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <CloudRain className="h-4 w-4 text-info" />
+                <CloudRain className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
                 <div>
                   <p className="text-sm font-medium text-foreground">Bei Regen aussetzen</p>
-                  <p className="text-xs text-muted-foreground/70">Überspringt den Lauf bei deutlicher Regenprognose</p>
+                  <p className="text-xs text-muted-foreground">Überspringt den Lauf bei deutlicher Regenprognose</p>
                 </div>
               </div>
-              <Switch checked={form.skipOnRain} onCheckedChange={(v) => setForm((f) => ({ ...f, skipOnRain: v }))} />
+              <Switch aria-label="Bei Regen aussetzen" checked={form.skipOnRain} onCheckedChange={(v) => setForm((f) => ({ ...f, skipOnRain: v }))} />
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
+                <Sparkles className="h-4 w-4 shrink-0 text-primary" />
                 <div>
                   <p className="text-sm font-medium text-foreground">Wasserbilanz (Dauer berechnen)</p>
-                  <p className="text-xs text-muted-foreground/70">
+                  <p className="text-xs text-muted-foreground">
                     Dauer aus Verdunstung (ET₀) minus gefallenem Regen seit dem letzten Lauf.
                     Mit L/h + m² an der Zone wird sie je Ventil exakt berechnet.
                   </p>
                 </div>
               </div>
-              <Switch checked={form.smartRain} onCheckedChange={(v) => setForm((f) => ({ ...f, smartRain: v }))} />
+              <Switch aria-label="Wasserbilanz (Dauer berechnen)" checked={form.smartRain} onCheckedChange={(v) => setForm((f) => ({ ...f, smartRain: v }))} />
             </div>
           </div>
 
           {/* 6. Bodenfeuchte-Sensor */}
-          <div className="rounded-lg border border-border p-3 space-y-3">
+          <div className="glass-tile p-3 space-y-3">
             <div className="flex items-center gap-2">
-              <Sprout className="h-4 w-4 text-success" />
+              <Sprout className="h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
                 <p className="text-sm font-medium text-foreground">Smart-Feuchtigkeit (Sensor)</p>
-                <p className="text-xs text-muted-foreground/70">Setzt bei feuchtem Boden aus, passt die Dauer smart an</p>
+                <p className="text-xs text-muted-foreground">Setzt bei feuchtem Boden aus, passt die Dauer smart an</p>
               </div>
             </div>
             <Select
@@ -2035,23 +2118,23 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
               if (!sel) return null;
               const age = fmtSensorAge(sel.soilHumidityAt);
               return (
-                <div className="rounded-md bg-muted/50/40 px-3 py-2 text-xs text-muted-foreground grid grid-cols-2 gap-x-3 gap-y-1">
+                <div className="rounded-control bg-glass-tile px-3 py-2 text-xs text-muted-foreground grid grid-cols-2 gap-x-3 gap-y-1">
                   <span className="flex items-center gap-1.5">
-                    <Sprout className="h-3.5 w-3.5 text-success shrink-0" />
+                    <Sprout className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     Bodenfeuchte: <strong className="tabular-nums">{sel.soilHumidity != null ? `${Math.round(sel.soilHumidity)} %` : "—"}</strong>
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <Battery className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+                    <Battery className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     Akku: <strong className="tabular-nums">{sel.batteryLevel != null ? `${Math.round(sel.batteryLevel)} %` : "—"}</strong>
                   </span>
                   {sel.soilTemperature != null && (
                     <span className="flex items-center gap-1.5">
-                      <Thermometer className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+                      <Thermometer className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       Boden: <strong className="tabular-nums">{Math.round(sel.soilTemperature)} °C</strong>
                     </span>
                   )}
                   {age && (
-                    <span className="text-muted-foreground/70 col-span-2">Letzte Messung {age}</span>
+                    <span className="text-muted-foreground col-span-2">Letzte Messung {age}</span>
                   )}
                 </div>
               );
@@ -2059,39 +2142,42 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
             {form.sensorServiceId && (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs">Aussetzen ab Bodenfeuchte</Label>
+                  <Label htmlFor="moisture-threshold">Aussetzen ab Bodenfeuchte</Label>
                   <span className="text-xs font-semibold tabular-nums text-foreground/80">{form.moistureThresholdPct} %</span>
                 </div>
+                {/* System-Regler (globals.css, touch-slider): großer Daumen, gefüllte Schiene bis zum Wert. */}
                 <input
+                  id="moisture-threshold"
                   type="range"
                   min={5}
                   max={95}
                   step={5}
                   value={form.moistureThresholdPct}
                   onChange={(e) => setForm((f) => ({ ...f, moistureThresholdPct: Number(e.target.value) }))}
-                  className="w-full accent-success"
+                  style={{ "--slider-fill": `${((form.moistureThresholdPct - 5) / 90) * 100}%` } as React.CSSProperties}
+                  className="touch-slider w-full"
                 />
-                <p className="text-[11px] text-muted-foreground/70">
+                <p className="text-[11px] text-muted-foreground">
                   Feuchter als {form.moistureThresholdPct} % → Lauf wird übersprungen. Fast so feucht → halbe Dauer, sehr trocken → 25 % länger.
                 </p>
               </div>
             )}
             {sensors.length === 0 && !form.sensorServiceId && (
-              <p className="text-[11px] text-muted-foreground/70">Kein GARDENA-Sensor gefunden. Sensoren erscheinen hier automatisch, sobald sie im GARDENA-Konto eingebunden sind.</p>
+              <p className="text-[11px] text-muted-foreground">Kein GARDENA-Sensor gefunden. Sensoren erscheinen hier automatisch, sobald sie im GARDENA-Konto eingebunden sind.</p>
             )}
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <div className="glass-tile flex items-center justify-between gap-3 p-3">
             <div className="flex items-center gap-2">
-              <Play className="h-4 w-4 text-success" />
+              <Play className="h-4 w-4 text-muted-foreground" />
               <p className="text-sm font-medium text-foreground">Aktiv</p>
             </div>
-            <Switch checked={form.isActive} onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
+            <Switch aria-label="Aktiv" checked={form.isActive} onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button>
-          <Button onClick={submit} disabled={saving || !canSave} className="bg-success hover:bg-success/90 text-success-foreground">
+          <Button onClick={submit} disabled={saving || !canSave}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
           </Button>
         </DialogFooter>

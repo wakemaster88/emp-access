@@ -2,7 +2,7 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { NetworkTabs } from "@/components/network/network-tabs";
 import { HubLogButton } from "@/components/network/hub-log-button";
 import { HubRestartButton } from "@/components/network/hub-restart-button";
@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Network, Server, EthernetPort, Cable, Cpu, type LucideIcon } from "lucide-react";
 import { StatCard, type StatTone } from "@/components/ui/stat-card";
 import { StatusDot } from "@/components/ui/status-dot";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
 import { macVendor, isVirtualMac } from "@/lib/oui";
 
 export default async function NetworkPage() {
@@ -112,11 +114,19 @@ export default async function NetworkPage() {
     0
   );
 
-  const stats: { label: string; value: string | number; icon: LucideIcon; tone: StatTone }[] = [
-    { label: "Switches & Router", value: networkDevices.length, icon: Server, tone: "primary" },
-    { label: "VLANs", value: vlans.length, icon: Network, tone: "success" },
-    { label: "Ports (belegt)", value: totalPorts > 0 ? `${usedPorts} / ${totalPorts}` : "0", icon: EthernetPort, tone: "warning" },
-    { label: "Anschlüsse", value: outlets.length, icon: Cable, tone: "info" },
+  // Reine Anzahlen sind kein Zustand: ruhig in neutral, keine Farbe als Dekoration
+  // (docs/design-regeln.md, Abschnitt 3). Die Belegung zeigt zusätzlich den Balken.
+  const stats: { label: string; value: string | number; icon: LucideIcon; tone: StatTone; progress?: number }[] = [
+    { label: "Switches & Router", value: networkDevices.length, icon: Server, tone: "neutral" },
+    { label: "VLANs", value: vlans.length, icon: Network, tone: "neutral" },
+    {
+      label: "Ports (belegt)",
+      value: totalPorts > 0 ? `${usedPorts} / ${totalPorts}` : "0",
+      icon: EthernetPort,
+      tone: "neutral",
+      progress: totalPorts > 0 ? usedPorts / totalPorts : undefined,
+    },
+    { label: "Anschlüsse", value: outlets.length, icon: Cable, tone: "neutral" },
   ];
 
   const fiveMinAgo = new Date();
@@ -183,19 +193,24 @@ export default async function NetworkPage() {
       };
     });
 
+  // Hinweise des Hubs zum Mac selbst: Auto-Login, Ruhezustand, Einschaltplan.
+  const hubHints = hubAgents.flatMap((h) => {
+    const sys = (h.status as { system?: { hints?: unknown } } | null)?.system;
+    const hints = Array.isArray(sys?.hints) ? (sys!.hints as string[]) : [];
+    return hints.map((hint, i) => ({ key: `${h.id}-${i}`, hubName: h.name, hint }));
+  });
+
   return (
     <>
       <Header title="Netzwerk" accountName={session.user.accountName} />
-      <div className="page-content space-y-4 sm:space-y-6">
+      <div className="page-content space-y-4 sm:space-y-5">
         {/* Lokaler Hub-Status */}
         {hubAgents.length > 0 && (
           <Card>
-            <CardContent className="flex flex-wrap items-center gap-3 p-4">
-              <div className="h-10 w-10 rounded-xl bg-chart-5/12 text-chart-5 flex items-center justify-center shrink-0">
-                <Cpu className="h-5 w-5" />
-              </div>
+            <CardContent className="flex flex-wrap items-center gap-3">
+              <IconChip icon={Cpu} size="lg" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground">Lokaler Hub</p>
+                <CardTitle>Lokaler Hub</CardTitle>
                 <div className="flex flex-wrap items-center gap-2 mt-0.5">
                   {hubAgents.map((h) => {
                     const online = !!h.lastSeenAt && h.lastSeenAt > fiveMinAgo;
@@ -206,7 +221,7 @@ export default async function NetworkPage() {
                             <StatusDot tone="success" size="xs" pulse /> {h.name}
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
+                          <Badge variant="neutral" className="gap-1 text-xs h-5">
                             <StatusDot tone="neutral" size="xs" /> {h.name}
                           </Badge>
                         )}
@@ -215,17 +230,6 @@ export default async function NetworkPage() {
                     );
                   })}
                 </div>
-                {/* Hinweise des Hubs zum Mac selbst: Auto-Login, Ruhezustand, Einschaltplan. */}
-                {hubAgents.flatMap((h) => {
-                  const sys = (h.status as { system?: { hints?: unknown } } | null)?.system;
-                  const hints = Array.isArray(sys?.hints) ? (sys!.hints as string[]) : [];
-                  return hints.map((hint, i) => (
-                    <p key={`${h.id}-${i}`} className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-                      {hubAgents.length > 1 ? `${h.name}: ` : ""}
-                      {hint}
-                    </p>
-                  ));
-                })}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <HubLogButton hubName={hubAgents.length === 1 ? hubAgents[0].name : undefined} />
@@ -240,13 +244,27 @@ export default async function NetworkPage() {
                   confirmText="Den Hub-Prozess jetzt neu starten? Kameras, DoorBird und Kennzeichen-Erkennung sind für etwa 10 Sekunden nicht aktiv."
                 />
               </div>
+              {/* Hinweise als eine Notice unter der Zeile statt loser Warnfarben-Zeilen
+                  (docs/design-regeln.md, Abschnitt 14). */}
+              {hubHints.length > 0 && (
+                <Notice tone="warning" compact title="Hinweise zum Hub" className="basis-full">
+                  <ul className="space-y-0.5">
+                    {hubHints.map((h) => (
+                      <li key={h.key}>
+                        {hubAgents.length > 1 ? `${h.hubName}: ` : ""}
+                        {h.hint}
+                      </li>
+                    ))}
+                  </ul>
+                </Notice>
+              )}
             </CardContent>
           </Card>
         )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {stats.map((s) => (
-            <StatCard key={s.label} label={s.label} value={s.value} icon={s.icon} tone={s.tone} />
+            <StatCard key={s.label} label={s.label} value={s.value} icon={s.icon} tone={s.tone} progress={s.progress} />
           ))}
         </div>
 

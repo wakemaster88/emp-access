@@ -3,25 +3,35 @@
 import { useMemo, useState, Fragment } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
+import { StatusDot } from "@/components/ui/status-dot";
 import {
   Plus, Loader2, Pencil, Trash2, MonitorSmartphone, Monitor as MonitorIcon,
   Printer, Camera, HardDrive, Phone, Cpu, Laptop, EthernetPort, Link2,
   Radar, AlertTriangle, RefreshCw, BadgeCheck, Lock,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { findAreaForIp, findVlanForIp, ipToInt } from "@/lib/ip";
@@ -43,22 +53,22 @@ import {
 function StatusBadge({ online }: { online: boolean | null }) {
   if (online === true) {
     return (
-      <Badge className="bg-success/10 text-success gap-1 text-[11px] h-5 px-1.5 font-medium">
-        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+      <Badge variant="success" className="gap-1 text-[11px] h-5 px-1.5 font-medium">
+        <StatusDot tone="success" size="xs" />
         Online
       </Badge>
     );
   }
   if (online === false) {
     return (
-      <Badge variant="secondary" className="text-muted-foreground gap-1 text-[11px] h-5 px-1.5 font-medium">
-        <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+      <Badge variant="neutral" className="gap-1 text-[11px] h-5 px-1.5 font-medium">
+        <StatusDot tone="neutral" size="xs" />
         Offline
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="text-muted-foreground/70 gap-1 text-[11px] h-5 px-1.5 font-normal">
+    <Badge variant="outline" className="text-muted-foreground gap-1 text-[11px] h-5 px-1.5 font-normal">
       ?
     </Badge>
   );
@@ -76,7 +86,7 @@ function IpCell({
   isStatic?: boolean;
   conflict?: boolean;
 }) {
-  if (!ip) return <span className="text-slate-300">–</span>;
+  if (!ip) return <span className="text-muted-foreground">–</span>;
   return (
     <span
       className={cn(
@@ -85,8 +95,9 @@ function IpCell({
       )}
     >
       {isStatic && (
+        // Feste IP ist eine Eigenschaft, kein Hinweis: gedämpft statt Warnfarbe.
         <Lock
-          className="h-3 w-3 text-warning shrink-0"
+          className="h-3 w-3 text-muted-foreground shrink-0"
           aria-label="Feste IP"
         />
       )}
@@ -101,7 +112,7 @@ function IpCell({
   );
 }
 
-const TYPE_ICON: Record<string, React.ElementType> = {
+const TYPE_ICON: Record<string, LucideIcon> = {
   PC: Laptop,
   PRINTER: Printer,
   CAMERA: Camera,
@@ -185,25 +196,39 @@ export function ClientsTab({
   const [filter, setFilter] = useState<ListFilter>("all");
   const [vlanFilter, setVlanFilter] = useState<VlanFilter>("all");
 
+  // Rückfrage vor dem Entfernen als AlertDialog (docs/design-regeln.md, Abschnitt 18);
+  // das Gerät bleibt gesetzt, solange der Dialog ausblendet.
+  const [toDelete, setToDelete] = useState<ClientRow | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   const [adopting, setAdopting] = useState<DiscoveredRow | null>(null);
   const [adoptForm, setAdoptForm] = useState({ name: "", type: "OTHER", areaId: "none" });
   const [adoptSaving, setAdoptSaving] = useState(false);
   const [adoptError, setAdoptError] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState("");
+  // Fehler getrennt vom Fortschritt, damit sie als Notice erscheinen
+  // (docs/design-regeln.md, Abschnitt 19).
+  const [scanError, setScanError] = useState("");
 
   const activeCutoff = Date.now() - 15 * 60_000;
+
+  function failScan(message: string) {
+    setScanMsg("");
+    setScanError(message);
+    setScanning(false);
+  }
 
   async function triggerScan() {
     if (scanning) return;
     setScanning(true);
+    setScanError("");
     setScanMsg("Scan wird gestartet …");
     try {
       const res = await fetch("/api/network/scan", { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setScanMsg(data.error ?? "Scan konnte nicht gestartet werden");
-        setScanning(false);
+        failScan(data.error ?? "Scan konnte nicht gestartet werden");
         return;
       }
       const taskId = data.taskId as number;
@@ -228,21 +253,18 @@ export function ClientsTab({
         }
         if (body.status === "FAILED") {
           const err = String(body.error ?? "");
-          setScanMsg(
+          failScan(
             /arp fehlgeschlagen/i.test(err)
               ? "Hub-Software veraltet – bitte auf dem iMac einmal aktualisieren: hub/install/update.sh"
               : (body.error ?? "Scan fehlgeschlagen")
           );
-          setScanning(false);
           return;
         }
         setScanMsg(body.status === "RUNNING" ? "Hub scannt …" : "Warte auf Hub …");
       }
-      setScanMsg("Timeout – Seite später neu laden");
-      setScanning(false);
+      failScan("Timeout – Seite später neu laden");
     } catch {
-      setScanMsg("Netzwerkfehler");
-      setScanning(false);
+      failScan("Netzwerkfehler");
     }
   }
 
@@ -404,8 +426,12 @@ export function ClientsTab({
     }
   }
 
+  function askDelete(c: ClientRow) {
+    setToDelete(c);
+    setConfirmOpen(true);
+  }
+
   async function handleDelete(c: ClientRow) {
-    if (!confirm(`"${c.name}" aus der Netzwerk-Verwaltung entfernen?`)) return;
     setDeletingId(c.id);
     try {
       const res = await fetch(`/api/network/clients/${c.id}`, { method: "DELETE" });
@@ -617,21 +643,23 @@ export function ClientsTab({
     return counts;
   }, [clients, unlinkedIot, unknownDiscovered, vlans, filter]);
 
-  const FILTERS: { value: ListFilter; label: string }[] = [
-    { value: "all", label: `Alle (${managedCount + unknownDiscovered.length})` },
-    { value: "managed", label: `Verwaltet (${managedCount})` },
-    { value: "unknown", label: `Neu vom Scan (${unknownDiscovered.length})` },
+  // Anzahlen als Zahl im Segment (count), wie in den übrigen Segmentwahlen.
+  const FILTERS: { value: ListFilter; label: string; count: number }[] = [
+    { value: "all", label: "Alle", count: managedCount + unknownDiscovered.length },
+    { value: "managed", label: "Verwaltet", count: managedCount },
+    { value: "unknown", label: "Neu vom Scan", count: unknownDiscovered.length },
   ];
 
   const totalForVlanChips = [...vlanChipCounts.values()].reduce((a, b) => a + b, 0);
-  const VLAN_FILTERS: { value: VlanFilter; label: string }[] = [
-    { value: "all", label: `Alle VLANs (${totalForVlanChips})` },
+  const VLAN_FILTERS: { value: VlanFilter; label: string; count?: number }[] = [
+    { value: "all", label: "Alle VLANs", count: totalForVlanChips },
     ...vlans.map((v) => ({
       value: v.id as VlanFilter,
-      label: `${v.vlanId} · ${v.name}${vlanChipCounts.has(v.id) ? ` (${vlanChipCounts.get(v.id)})` : ""}`,
+      label: `${v.vlanId} · ${v.name}`,
+      count: vlanChipCounts.get(v.id),
     })),
     ...((vlanChipCounts.get("none") ?? 0) > 0 || vlanFilter === "none"
-      ? [{ value: "none" as VlanFilter, label: `Ohne VLAN (${vlanChipCounts.get("none") ?? 0})` }]
+      ? [{ value: "none" as VlanFilter, label: "Ohne VLAN", count: vlanChipCounts.get("none") ?? 0 }]
       : []),
   ];
 
@@ -661,18 +689,20 @@ export function ClientsTab({
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 pb-4">
+    <Card className="overflow-hidden pb-0 sm:pb-0">
+      {/* items-stretch: Titelzeile, Scan-Hinweis und Filter nehmen die volle Breite ein,
+          damit die Tasten rechts stehen wie in den anderen Tabs (CardHeader setzt items-start). */}
+      <CardHeader className="flex flex-col items-stretch gap-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <CardTitle className="text-base sm:text-xl">
+            <CardTitle className="tabular-nums">
               Geräte im Netzwerk ({visibleCount})
             </CardTitle>
-            <p className="text-xs text-muted-foreground mt-1">
+            <CardDescription className="text-xs mt-1">
               {lastScanAt
                 ? <>Letzter Hub-Scan: <span className="text-foreground/80 font-medium">{formatLastScan(lastScanAt)}</span></>
                 : "Noch kein Hub-Scan in der Cloud"}
-            </p>
+            </CardDescription>
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
             <Button
@@ -680,14 +710,14 @@ export function ClientsTab({
               variant="outline"
               onClick={triggerScan}
               disabled={scanning}
-              className="gap-2"
+              className="gap-2 max-sm:h-11"
             >
               {scanning
                 ? <Loader2 className="h-4 w-4 animate-spin" />
                 : <RefreshCw className="h-4 w-4" />}
               {scanning ? "Scannt …" : "Netzwerk scannen"}
             </Button>
-            <Button onClick={() => openAdd()} className="bg-primary hover:bg-primary/90 gap-2 shadow-sm">
+            <Button onClick={() => openAdd()} className="gap-2 max-sm:h-11">
               <Plus className="h-4 w-4" />
               Gerät hinzufügen
             </Button>
@@ -696,90 +726,66 @@ export function ClientsTab({
         {scanMsg && (
           <p className="text-xs text-muted-foreground">{scanMsg}</p>
         )}
+        {scanError && <Notice tone="danger" compact title={scanError} />}
+        {/* Filter und VLAN-Wahl als Segmentwahl (docs/design-regeln.md, Abschnitt 6).
+            Auf dem Handy enger gesetzt, damit „Neu vom Scan“ samt Zahl in die Kapsel passt
+            (bei 390 px sonst 356 px Inhalt auf 322 px, die Zahl verschwand im Scrollbereich). */}
         <div className="flex flex-col gap-2 w-full min-w-0">
-          <div className="flex items-center gap-1 rounded-lg bg-muted p-1 self-start flex-wrap">
-            {FILTERS.map((f) => (
-              <button
-                key={f.value}
-                type="button"
-                onClick={() => setFilter(f.value)}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-medium transition-all",
-                  filter === f.value
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            aria-label="Filter"
+            value={filter}
+            onValueChange={setFilter}
+            options={FILTERS}
+            className="self-start max-sm:[&>button]:gap-1 max-sm:[&>button]:px-2"
+          />
           {vlans.length > 0 && (
-            <div className="flex items-center gap-1 rounded-lg bg-muted p-1 overflow-x-auto max-w-full">
-              {VLAN_FILTERS.map((f) => (
-                <button
-                  key={String(f.value)}
-                  type="button"
-                  onClick={() => setVlanFilter(f.value)}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 text-xs font-medium transition-all whitespace-nowrap shrink-0",
-                    vlanFilter === f.value
-                      ? "bg-card text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              aria-label="VLAN"
+              value={String(vlanFilter)}
+              onValueChange={(v) => setVlanFilter(v === "all" || v === "none" ? v : Number(v))}
+              options={VLAN_FILTERS.map((f) => ({ value: String(f.value), label: f.label, count: f.count }))}
+              className="self-start max-sm:[&>button]:gap-1 max-sm:[&>button]:px-2"
+            />
           )}
         </div>
       </CardHeader>
-      <CardContent className="p-0 sm:px-6 sm:pb-6 space-y-3">
+      <CardContent className="space-y-3">
+        {/* Dauerhinweis, kein frisch aufgetretener Fehler: status statt alert,
+            sonst liest der Screenreader ihn bei jedem Tabwechsel laut vor. */}
         {duplicateIps.size > 0 && filter !== "managed" && (
-          <div className="mx-4 sm:mx-0 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>
-              <strong>IP-Doppelbelegung:</strong>{" "}
-              {[...duplicateIps].sort((a, b) => (ipToInt(a) ?? 0) - (ipToInt(b) ?? 0)).join(", ")}
-            </span>
-          </div>
+          <Notice tone="danger" compact icon={AlertTriangle} title="IP-Doppelbelegung:" role="status">
+            {[...duplicateIps].sort((a, b) => (ipToInt(a) ?? 0) - (ipToInt(b) ?? 0)).join(", ")}
+          </Notice>
         )}
 
-        <div className="rounded-lg border border-border overflow-x-auto">
+        {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        <div className="-mx-4 sm:-mx-[18px]">
           <Table className="table-fixed w-full min-w-[640px]">
             <TableHeader>
-              <TableRow className="border-border hover:bg-transparent bg-muted/40">
-                <TableHead className="w-[88px]">Status</TableHead>
+              <TableRow>
+                <TableHead className="w-[88px] pl-4 sm:pl-[18px]">Status</TableHead>
                 <TableHead className="w-[28%]">Gerät</TableHead>
                 <TableHead className="w-[140px]">IP</TableHead>
                 <TableHead className="hidden xl:table-cell w-[140px]">MAC</TableHead>
                 <TableHead className="hidden lg:table-cell w-[130px]">Port</TableHead>
                 <TableHead className="w-[100px]">Bereich</TableHead>
-                <TableHead className="w-[72px]" />
+                {/* Breit genug für „Übernehmen“, sonst ragt die Taste in die Nachbarspalte. */}
+                <TableHead className="w-[152px] pr-4 sm:pr-[18px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {visibleCount === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="text-center py-16">
-                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                      {filter === "unknown" ? (
-                        <Radar className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                      ) : (
-                        <MonitorSmartphone className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                      )}
-                      <p className="font-medium text-muted-foreground">
-                        {filter === "unknown"
-                          ? "Keine unbekannten Scan-Funde"
-                          : "Keine Geräte erfasst"}
-                      </p>
-                      <p className="text-sm">
-                        {filter === "unknown"
-                          ? "Alle gescannten Hosts sind bereits zugeordnet."
-                          : "Erfasse Geräte manuell oder übernehme Funde vom Hub-Scan."}
-                      </p>
-                    </div>
+                  <TableCell colSpan={7} className="p-0 whitespace-normal">
+                    <EmptyState
+                      icon={filter === "unknown" ? Radar : MonitorSmartphone}
+                      title={filter === "unknown"
+                        ? "Keine unbekannten Scan-Funde"
+                        : "Keine Geräte erfasst"}
+                      description={filter === "unknown"
+                        ? "Alle gescannten Hosts sind bereits zugeordnet."
+                        : "Erfasse Geräte manuell oder übernehme Funde vom Hub-Scan."}
+                    />
                   </TableCell>
                 </TableRow>
               )}
@@ -788,20 +794,20 @@ export function ClientsTab({
                 const vlanCount = group.areas.reduce((n, a) => n + a.items.length, 0);
                 return (
                   <Fragment key={group.meta.vlanDbId ?? "none"}>
-                    <TableRow className="border-border hover:bg-transparent bg-muted/80 dark:bg-card/80">
-                      <TableCell colSpan={7} className="py-2">
+                    <TableRow className="bg-glass-tile hover:bg-glass-tile">
+                      <TableCell colSpan={7} className="py-2 pl-4 sm:pl-[18px]">
                         <div className="flex flex-wrap items-center gap-2">
                           {group.meta.vlanDbId != null ? (
-                            <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId))}>
+                            <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId, vlans))}>
                               VLAN {group.meta.vlanId} · {group.meta.name}
                             </Badge>
                           ) : (
                             <Badge variant="secondary" className="text-xs">Ohne VLAN</Badge>
                           )}
                           {group.meta.subnet && (
-                            <span className="text-[11px] font-mono text-muted-foreground/70">{group.meta.subnet}</span>
+                            <span className="text-[11px] font-mono text-muted-foreground">{group.meta.subnet}</span>
                           )}
-                          <span className="text-[11px] text-muted-foreground/70">{vlanCount} Geräte</span>
+                          <span className="text-[11px] text-muted-foreground tabular-nums">{vlanCount} Geräte</span>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -809,13 +815,13 @@ export function ClientsTab({
                     {group.areas.map((areaGroup) => (
                       <Fragment key={`${group.meta.vlanDbId ?? "none"}-${areaGroup.meta.areaId ?? "none"}`}>
                         {group.showAreas && (
-                          <TableRow className="border-border hover:bg-transparent bg-muted/50 dark:bg-card/40">
-                            <TableCell colSpan={7} className="py-1.5 pl-6">
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={7} className="py-1.5 pl-8 sm:pl-[34px]">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-xs font-medium text-muted-foreground">
+                                <span className="text-label">
                                   {areaGroup.meta.name}
                                 </span>
-                                <span className="text-[11px] text-muted-foreground/70">
+                                <span className="text-[11px] text-muted-foreground tabular-nums">
                                   {areaGroup.items.length} Geräte
                                 </span>
                               </div>
@@ -842,20 +848,18 @@ export function ClientsTab({
                                 : scanned === true || deviceOnline === true;
                             const verified = ipVerified(c.macAddress, ip);
                             return (
-                              <TableRow key={`c-${c.id}`} className="border-border">
-                                <TableCell>
+                              <TableRow key={`c-${c.id}`}>
+                                <TableCell className="pl-4 sm:pl-[18px]">
                                   <StatusBadge online={online} />
                                 </TableCell>
                                 <TableCell className="max-w-0">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <div className="h-7 w-7 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                                      <Icon className="h-3.5 w-3.5" />
-                                    </div>
+                                    <IconChip icon={Icon} size="sm" />
                                     <div className="min-w-0 flex-1">
                                       <p className="font-medium text-sm text-foreground truncate" title={c.name}>
                                         {c.name}
                                       </p>
-                                      <p className="text-[11px] text-muted-foreground/70 truncate">
+                                      <p className="text-[11px] text-muted-foreground truncate">
                                         {CLIENT_TYPES.find((t) => t.value === c.type)?.label ?? c.type}
                                         {c.device && (
                                           <>
@@ -876,7 +880,7 @@ export function ClientsTab({
                                   <IpCell ip={ip} verified={verified} isStatic={c.isStatic} />
                                 </TableCell>
                                 <TableCell className="hidden xl:table-cell font-mono text-xs text-muted-foreground truncate">
-                                  {c.macAddress || <span className="text-slate-300">–</span>}
+                                  {c.macAddress || <span className="text-muted-foreground">–</span>}
                                 </TableCell>
                                 <TableCell className="hidden lg:table-cell">
                                   {c.port ? (
@@ -889,7 +893,7 @@ export function ClientsTab({
                                       <span className="truncate">P{c.port.number}</span>
                                     </Link>
                                   ) : (
-                                    <span className="text-xs text-muted-foreground/70">–</span>
+                                    <span className="text-xs text-muted-foreground">–</span>
                                   )}
                                 </TableCell>
                                 <TableCell className="max-w-0">
@@ -898,25 +902,27 @@ export function ClientsTab({
                                       {row.areaName}
                                     </Badge>
                                   ) : (
-                                    <span className="text-xs text-muted-foreground/70">–</span>
+                                    <span className="text-xs text-muted-foreground">–</span>
                                   )}
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="pr-4 sm:pr-[18px]">
                                   <div className="flex items-center justify-end gap-0.5">
                                     <Button
                                       variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-muted-foreground/70 hover:text-primary"
+                                      size="icon-sm"
+                                      className="text-muted-foreground hover:text-primary max-sm:size-11"
                                       onClick={() => openEdit(c)}
+                                      aria-label="Bearbeiten"
                                     >
                                       <Pencil className="h-3.5 w-3.5" />
                                     </Button>
                                     <Button
                                       variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-muted-foreground/70 hover:text-destructive"
-                                      onClick={() => handleDelete(c)}
+                                      size="icon-sm"
+                                      className="text-muted-foreground hover:text-destructive max-sm:size-11"
+                                      onClick={() => askDelete(c)}
                                       disabled={deletingId === c.id}
+                                      aria-label="Entfernen"
                                     >
                                       {deletingId === c.id
                                         ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -934,15 +940,13 @@ export function ClientsTab({
                               ? new Date(d.lastUpdate).getTime() > fiveMinAgo
                               : null;
                             return (
-                              <TableRow key={`iot-${d.id}`} className="border-border bg-muted/50 dark:bg-card/30">
-                                <TableCell>
+                              <TableRow key={`iot-${d.id}`}>
+                                <TableCell className="pl-4 sm:pl-[18px]">
                                   <StatusBadge online={online} />
                                 </TableCell>
                                 <TableCell className="max-w-0">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <div className="h-7 w-7 rounded-md bg-slate-500/10 text-muted-foreground flex items-center justify-center shrink-0">
-                                      <Cpu className="h-3.5 w-3.5" />
-                                    </div>
+                                    <IconChip icon={Cpu} size="sm" />
                                     <div className="min-w-0 flex-1">
                                       <Link
                                         href={`/devices/${d.id}`}
@@ -951,7 +955,7 @@ export function ClientsTab({
                                       >
                                         {d.name}
                                       </Link>
-                                      <p className="text-[11px] text-muted-foreground/70 truncate">IoT (nicht zugeordnet)</p>
+                                      <p className="text-[11px] text-muted-foreground truncate">IoT (nicht zugeordnet)</p>
                                     </div>
                                   </div>
                                 </TableCell>
@@ -959,10 +963,10 @@ export function ClientsTab({
                                   <IpCell ip={d.ipAddress} verified={false} />
                                 </TableCell>
                                 <TableCell className="hidden xl:table-cell">
-                                  <span className="text-slate-300 text-xs">–</span>
+                                  <span className="text-muted-foreground text-xs">–</span>
                                 </TableCell>
                                 <TableCell className="hidden lg:table-cell">
-                                  <span className="text-xs text-muted-foreground/70">–</span>
+                                  <span className="text-xs text-muted-foreground">–</span>
                                 </TableCell>
                                 <TableCell>
                                   {row.areaId != null ? (
@@ -970,18 +974,18 @@ export function ClientsTab({
                                       {row.areaName}
                                     </Badge>
                                   ) : (
-                                    <span className="text-xs text-muted-foreground/70">–</span>
+                                    <span className="text-xs text-muted-foreground">–</span>
                                   )}
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="pr-4 sm:pr-[18px]">
                                   <div className="flex items-center justify-end">
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      className="h-7 text-xs gap-1"
+                                      className="max-sm:h-11"
                                       onClick={() => openAdd(d)}
                                     >
-                                      <Link2 className="h-3 w-3" />
+                                      <Link2 />
                                       Zuordnen
                                     </Button>
                                   </div>
@@ -997,23 +1001,19 @@ export function ClientsTab({
                             || d.vendor
                             || "Unbekanntes Gerät";
                           return (
-                            <TableRow
-                              key={`scan-${d.id}`}
-                              className="border-border bg-violet-50/40 dark:bg-violet-950/20"
-                            >
-                              <TableCell>
+                            <TableRow key={`scan-${d.id}`}>
+                              <TableCell className="pl-4 sm:pl-[18px]">
                                 <StatusBadge online={active} />
                               </TableCell>
                               <TableCell className="max-w-0">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <div className="h-7 w-7 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
-                                    <Radar className="h-3.5 w-3.5" />
-                                  </div>
+                                  {/* Neuer Scan-Fund wartet auf Zuordnung: Hinweisfarbe statt Violett (Musik). */}
+                                  <IconChip icon={Radar} size="sm" tone="warning" />
                                   <div className="min-w-0 flex-1">
                                     <p className="font-medium text-sm text-foreground truncate" title={label}>
                                       {label}
                                     </p>
-                                    <p className="text-[11px] text-muted-foreground/70 truncate">
+                                    <p className="text-[11px] text-muted-foreground truncate">
                                       neu vom Scan
                                       {d.deviceType ? ` · ${d.deviceType}` : ""}
                                     </p>
@@ -1031,7 +1031,7 @@ export function ClientsTab({
                                 {d.macAddress}
                               </TableCell>
                               <TableCell className="hidden lg:table-cell">
-                                <span className="text-xs text-muted-foreground/70">–</span>
+                                <span className="text-xs text-muted-foreground">–</span>
                               </TableCell>
                               <TableCell>
                                 {row.areaId != null ? (
@@ -1039,18 +1039,18 @@ export function ClientsTab({
                                     {row.areaName}
                                   </Badge>
                                 ) : (
-                                  <span className="text-xs text-muted-foreground/70">–</span>
+                                  <span className="text-xs text-muted-foreground">–</span>
                                 )}
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="pr-4 sm:pr-[18px]">
                                 <div className="flex items-center justify-end">
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-7 text-xs gap-1"
+                                    className="max-sm:h-11"
                                     onClick={() => openAdopt(d)}
                                   >
-                                    <Plus className="h-3 w-3" />
+                                    <Plus />
                                     Übernehmen
                                   </Button>
                                 </div>
@@ -1069,13 +1069,14 @@ export function ClientsTab({
       </CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing ? "Gerät bearbeiten" : "Neues Netzwerkgerät"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5 col-span-2 sm:col-span-1">
+            {/* Auf dem Handy eine Spalte, damit IP- und MAC-Adresse nicht abgeschnitten werden. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
                 <Label>Name <span className="text-destructive">*</span></Label>
                 <Input
                   value={form.name}
@@ -1085,10 +1086,10 @@ export function ClientsTab({
                   autoFocus
                 />
               </div>
-              <div className="space-y-1.5 col-span-2 sm:col-span-1">
+              <div className="space-y-1.5">
                 <Label>Typ</Label>
                 <Select value={form.type} onValueChange={(v) => set("type", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {CLIENT_TYPES.map((t) => (
                       <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
@@ -1106,20 +1107,20 @@ export function ClientsTab({
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">Feste IP</p>
                 <p className="text-xs text-muted-foreground">Statisch vergeben statt DHCP</p>
               </div>
-              <Switch checked={form.isStatic} onCheckedChange={(v) => set("isStatic", v)} />
+              <Switch aria-label="Feste IP" checked={form.isStatic} onCheckedChange={(v) => set("isStatic", v)} />
             </div>
 
-            <div className="rounded-xl border border-border p-4 space-y-3">
-              <p className="text-sm font-medium text-foreground/80">Zuordnung</p>
+            <div className="glass-tile p-4 space-y-3">
+              <p className="text-label">Zuordnung</p>
               <div className="space-y-1.5">
-                <Label className="text-xs">Verknüpftes IoT-Gerät</Label>
+                <Label>Verknüpftes IoT-Gerät</Label>
                 <Select value={form.deviceId} onValueChange={(v) => set("deviceId", v)}>
-                  <SelectTrigger><SelectValue placeholder="Kein Gerät" /></SelectTrigger>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Kein Gerät" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Kein Gerät</SelectItem>
                     {iotDevices
@@ -1130,11 +1131,11 @@ export function ClientsTab({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Switch-Port</Label>
+                  <Label>Switch-Port</Label>
                   <Select value={form.portId} onValueChange={(v) => set("portId", v)}>
-                    <SelectTrigger><SelectValue placeholder="Kein Port" /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Kein Port" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Kein Port (WLAN)</SelectItem>
                       {selectablePorts.map((p) => (
@@ -1146,9 +1147,9 @@ export function ClientsTab({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">VLAN</Label>
+                  <Label>VLAN</Label>
                   <Select value={form.vlanId} onValueChange={(v) => set("vlanId", v)}>
-                    <SelectTrigger><SelectValue placeholder="Kein VLAN" /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Kein VLAN" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Kein VLAN</SelectItem>
                       {vlans.map((v) => (
@@ -1159,10 +1160,10 @@ export function ClientsTab({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5 col-span-2">
-                  <Label className="text-xs">Bereich</Label>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label>Bereich</Label>
                   <Select value={form.areaId} onValueChange={(v) => set("areaId", v)}>
-                    <SelectTrigger><SelectValue placeholder="Kein Bereich" /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Kein Bereich" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Kein Bereich / automatisch</SelectItem>
                       {areas.map((a) => (
@@ -1182,11 +1183,9 @@ export function ClientsTab({
               <Input value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="optional" />
             </div>
 
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
-            )}
+            {error && <Notice tone="danger" compact title={error} />}
 
-            <div className="flex justify-end gap-2 pt-1">
+            <DialogFooter className="pt-1">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                 Abbrechen
               </Button>
@@ -1197,7 +1196,7 @@ export function ClientsTab({
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -1208,7 +1207,7 @@ export function ClientsTab({
             <DialogTitle>Gerät übernehmen</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAdopt} className="space-y-4">
-            <div className="rounded-lg bg-muted/40 border border-border p-3 text-xs font-mono text-muted-foreground space-y-0.5">
+            <div className="glass-tile p-3 text-xs font-mono text-muted-foreground space-y-0.5">
               <p>IP: {adopting?.ipAddress ?? "–"}</p>
               <p>MAC: {adopting?.macAddress}</p>
               {adopting?.hostname && <p>Hostname: {adopting.hostname}</p>}
@@ -1229,7 +1228,7 @@ export function ClientsTab({
             <div className="space-y-1.5">
               <Label>Typ</Label>
               <Select value={adoptForm.type} onValueChange={(v) => setAdoptForm((f) => ({ ...f, type: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {CLIENT_TYPES.map((t) => (
                     <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
@@ -1241,7 +1240,7 @@ export function ClientsTab({
               <div className="space-y-1.5">
                 <Label>Bereich</Label>
                 <Select value={adoptForm.areaId} onValueChange={(v) => setAdoptForm((f) => ({ ...f, areaId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Automatisch" /></SelectTrigger>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Automatisch" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Automatisch aus IP</SelectItem>
                     {areas.map((a) => (
@@ -1252,11 +1251,9 @@ export function ClientsTab({
               </div>
             )}
 
-            {adoptError && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{adoptError}</p>
-            )}
+            {adoptError && <Notice tone="danger" compact title={adoptError} />}
 
-            <div className="flex justify-end gap-2 pt-1">
+            <DialogFooter className="pt-1">
               <Button type="button" variant="outline" onClick={() => setAdopting(null)} disabled={adoptSaving}>
                 Abbrechen
               </Button>
@@ -1267,10 +1264,31 @@ export function ClientsTab({
               >
                 {adoptSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Übernehmen"}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {toDelete ? `"${toDelete.name}" aus der Netzwerk-Verwaltung entfernen?` : ""}
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (toDelete) void handleDelete(toDelete);
+              }}
+            >
+              Entfernen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

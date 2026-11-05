@@ -59,8 +59,11 @@ export function NetworkTabs({
         <TabsTrigger value="clients" className="gap-1.5">
           <MonitorSmartphone className="h-4 w-4" />
           Geräte
+          {/* Neue Scan-Funde warten auf Zuordnung: Hinweisfarbe wie „Ohne Raum“ (docs/design-regeln.md, Abschnitt 3).
+              Die Tönung trägt den Hinweis, die Zahl steht in Schriftfarbe: text-warning auf der
+              eigenen Tönung lag bei 3,9–4,1 : 1 (Abschnitt 10 verlangt 4,5 : 1). */}
           {unknownScanCount > 0 && (
-            <span className="ml-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 px-1.5 text-[10px] font-semibold tabular-nums">
+            <span className="ml-0.5 rounded-full bg-warning/15 px-1.5 text-[10px] font-semibold tabular-nums text-foreground">
               {unknownScanCount}
             </span>
           )}

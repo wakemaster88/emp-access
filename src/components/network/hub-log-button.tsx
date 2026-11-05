@@ -10,6 +10,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, Copy, FileText, Loader2, RefreshCw } from "lucide-react";
 
 type HubLogFile = "hub" | "error" | "improve";
@@ -182,13 +188,13 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={openDialog} className="gap-1.5">
+      <Button variant="outline" size="sm" onClick={openDialog} className="gap-1.5 max-sm:h-11">
         <FileText className="h-3.5 w-3.5" />
         Log abrufen
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col gap-3">
+        <DialogContent className="sm:max-w-5xl flex flex-col gap-3">
           <DialogHeader>
             <DialogTitle>Hub-Log{hubName ? ` · ${hubName}` : ""}</DialogTitle>
             <DialogDescription>
@@ -198,35 +204,25 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
           </DialogHeader>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-md border border-border overflow-hidden">
-              {FILES.map((f) => (
-                <button
-                  key={f.value}
-                  type="button"
-                  onClick={() => setFile(f.value)}
-                  className={
-                    "px-2.5 py-1 text-xs " +
-                    (file === f.value
-                      ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                      : "bg-transparent text-muted-foreground hover:bg-muted")
-                  }
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <select
-              value={lines}
-              onChange={(e) => setLines(Number(e.target.value))}
-              className="h-7 rounded-md border border-border bg-transparent px-2 text-xs"
-              aria-label="Anzahl Zeilen"
-            >
-              {LINE_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n} Zeilen
-                </option>
-              ))}
-            </select>
+            {/* Datei-Wahl als Segmentwahl, Zeilenzahl als Auswahlfeld (docs/design-regeln.md, Abschnitt 14). */}
+            <Segmented
+              aria-label="Log-Datei"
+              value={file}
+              onValueChange={setFile}
+              options={FILES}
+            />
+            <Select value={String(lines)} onValueChange={(v) => setLines(Number(v))}>
+              <SelectTrigger size="sm" aria-label="Anzahl Zeilen">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LINE_OPTIONS.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n} Zeilen
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Input
               value={grep}
               onChange={(e) => setGrep(e.target.value)}
@@ -234,7 +230,7 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
                 if (e.key === "Enter" && !loading) void fetchLog();
               }}
               placeholder="Filter, z. B. ALPR oder Fahrzeug-Burst"
-              className="h-7 w-52 text-xs"
+              className="h-8 w-full sm:w-52"
             />
             <Button size="sm" variant="secondary" onClick={() => void fetchLog()} disabled={loading} className="gap-1.5">
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -247,15 +243,15 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <label className="text-xs text-muted-foreground" htmlFor="hub-log-at">
+            <Label className="text-[13px] font-normal text-muted-foreground" htmlFor="hub-log-at">
               Ab Zeitpunkt
-            </label>
+            </Label>
             <Input
               id="hub-log-at"
               type="datetime-local"
               value={atInput}
               onChange={(e) => setAtInput(e.target.value)}
-              className="h-7 w-52 text-xs"
+              className="h-8 w-full sm:w-52"
               disabled={file !== "hub"}
             />
             <Button size="sm" variant="secondary" onClick={fetchAt} disabled={loading || file !== "hub"}>
@@ -284,10 +280,10 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
             </Button>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <Notice tone="danger" compact title={error} />}
 
           {result && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground tabular-nums">
               {result.hub} ({result.version}) · {result.exists ? result.path : "Datei fehlt, Zeilen aus dem Speicher"}
               {result.exists ? ` · ${formatBytes(result.sizeBytes)}` : ""}
               {result.mtime ? ` · zuletzt ${formatTs(result.mtime)}` : ""}
@@ -306,7 +302,7 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
 
           <pre
             ref={preRef}
-            className="flex-1 min-h-[40vh] max-h-[60vh] overflow-auto rounded-md border border-border bg-slate-950 text-slate-100 p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono"
+            className="glass-tile flex-1 min-h-[40vh] max-h-[60vh] overflow-auto scrollbar-thin p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono text-foreground"
           >
             {result
               ? result.lines.length > 0
