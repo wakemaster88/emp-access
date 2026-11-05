@@ -713,7 +713,9 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                         <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap max-sm:hidden">
                           {new Date(s.seenAt).toLocaleString("de-DE")}
                         </TableCell>
-                        <TableCell className="text-sm max-sm:whitespace-normal">
+                        {/* Lange Namen brechen auf jeder Breite um: mit acht Spalten wäre die Tabelle sonst auch
+                            bei 1280 px breiter als die Karte und scrollte seitlich (docs/design-regeln.md, Abschnitt 17). */}
+                        <TableCell className="text-sm whitespace-normal">
                           {s.listedPerson?.name ?? <span className="text-muted-foreground">unbekannt</span>}
                           <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground sm:hidden">
                             <span>{new Date(s.seenAt).toLocaleString("de-DE")}</span>

@@ -272,22 +272,26 @@ export function ParkingLot({
                   <p className="text-[13px] font-mono font-semibold truncate">
                     {s.plate ?? "ohne Kennzeichen"}
                   </p>
-                  <p className="text-[11px] text-muted-foreground truncate">
+                  {/* Handy: Nebenzeile bricht um statt abzuschneiden – sonst fehlen Kamera und Zeit („vor 9 Std.“).
+                      Der Trennpunkt hängt mit geschütztem Leerzeichen am Wort davor, damit keine Zeile mit „·“ beginnt. */}
+                  <p className="text-[11px] text-muted-foreground sm:truncate">
                     {s.allowedVehicle?.name ?? "unbekannt"}
-                    {s.camera ? ` · ${s.camera.name}` : ""}
-                    {" · "}
-                    {ago(s.seenAt)}
+                    {s.camera ? `\u00a0· ${s.camera.name}` : ""}
+                    {"\u00a0· "}
+                    <span className="whitespace-nowrap">{ago(s.seenAt)}</span>
                   </p>
                 </div>
                 {!s.matched && (
+                  // Handy: nur Symbol (wie „Zuordnen“ in der Historie), damit die Nebenzeile Platz hat.
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-1 shrink-0 max-sm:h-11"
+                    className="gap-1 shrink-0 max-sm:size-11"
                     onClick={() => onAssign(s)}
+                    aria-label="Zuordnen"
                   >
                     <Link2 className="h-3.5 w-3.5" />
-                    Zuordnen
+                    <span className="hidden sm:inline">Zuordnen</span>
                   </Button>
                 )}
               </div>

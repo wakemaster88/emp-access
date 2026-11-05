@@ -341,7 +341,8 @@ export function InfoFormClient({ token }: { token: string }) {
                           {field.required && <span className="text-destructive ml-0.5">*</span>}
                         </Label>
 
-                        {/* Auswahl als Tasten: gewählt in Akzentfarbe, sonst Glas mit Haarlinie. */}
+                        {/* Auswahl als Tasten: gewählt in Akzentfarbe, sonst Glas mit Haarlinie. Die Tasten
+                            füllen ihre Zeile (flex-auto) wie „Ja / Nein“ darunter. */}
                         {field.type === "choice" && (
                           <div className="flex flex-wrap gap-2">
                             {(field.options ?? []).map((opt) => (
@@ -351,7 +352,7 @@ export function InfoFormClient({ token }: { token: string }) {
                                 variant={value === opt ? "default" : "secondary"}
                                 aria-pressed={value === opt}
                                 onClick={() => setValue(place.primaryTicketId, field.label, opt)}
-                                className="h-auto min-h-11 max-w-full whitespace-normal px-4 py-2 font-semibold"
+                                className="h-auto min-h-11 max-w-full flex-auto whitespace-normal px-4 py-2 font-semibold"
                               >
                                 {opt}
                               </Button>

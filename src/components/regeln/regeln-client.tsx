@@ -38,6 +38,7 @@ import { RuleDialog } from "@/components/regeln/rule-dialog";
 import {
   OPERATING_LABELS,
   TRIGGER_KIND_LABELS,
+  triggerLabel,
   TRIGGER_LABELS,
   cooldownLabel,
   describeAction,
@@ -164,36 +165,33 @@ function RuleCard({
         </dl>
       </CardContent>
 
+      {/* Angaben mit Trennpunkt am Ende des Eintrags: bricht die Zeile um, steht kein „·“ allein am Zeilenanfang. */}
       <CardFooter className="flex-wrap gap-x-1.5 gap-y-1 border-t text-[11px] text-muted-foreground tabular-nums">
-        <span>{weekdayLabel(rule.daysOfWeek)}</span>
-        {rule.windowStart && rule.windowEnd && (
-          <>
-            <span>·</span>
-            <span className="flex items-center gap-0.5">
+        {[
+          <span key="days">{weekdayLabel(rule.daysOfWeek)}</span>,
+          rule.windowStart && rule.windowEnd && (
+            <span key="window" className="flex items-center gap-0.5">
               <Clock className="h-3 w-3" />
               {rule.windowStart}–{rule.windowEnd}
             </span>
-          </>
-        )}
-        {rule.operating !== "ANY" && (
-          <>
-            <span>·</span>
-            <span>{OPERATING_LABELS[rule.operating]}</span>
-          </>
-        )}
-        {rule.onlyWhenDark && (
-          <>
-            <span>·</span>
-            <span className="flex items-center gap-0.5">
+          ),
+          rule.operating !== "ANY" && <span key="operating">{OPERATING_LABELS[rule.operating]}</span>,
+          rule.onlyWhenDark && (
+            <span key="dark" className="flex items-center gap-0.5">
               <Moon className="h-3 w-3" />
               nur dunkel
             </span>
-          </>
-        )}
-        <span>·</span>
-        <span>{cooldownLabel(rule.cooldownSeconds)}</span>
-        <span>·</span>
-        <span>zuletzt {fmtAgo(rule.lastRunAt, nowMs)}</span>
+          ),
+          <span key="cooldown">{cooldownLabel(rule.cooldownSeconds)}</span>,
+          <span key="last">zuletzt {fmtAgo(rule.lastRunAt, nowMs)}</span>,
+        ]
+          .filter(Boolean)
+          .map((item, index, items) => (
+            <span key={index} className="flex items-center gap-1.5">
+              {item}
+              {index < items.length - 1 && <span aria-hidden>·</span>}
+            </span>
+          ))}
       </CardFooter>
     </Card>
   );
@@ -364,7 +362,8 @@ export function RegelnClient({ data }: { data: RegelnData }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-medium">{run.ruleName}</span>
                       <span className="text-muted-foreground">
-                        {TRIGGER_KIND_LABELS[run.triggerKind] ?? run.triggerKind}
+                        {/* Verlauf kennt beide Schreibweisen („closing“ und „CLOSING“) – nie den rohen Code zeigen. */}
+                        {TRIGGER_KIND_LABELS[run.triggerKind] ?? triggerLabel(run.triggerKind)}
                       </span>
                     </div>
                     {run.errorMessage && (

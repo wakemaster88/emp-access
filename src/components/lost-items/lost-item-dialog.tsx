@@ -372,7 +372,9 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
               </div>
             </div>
           ) : (
-            /* Handy: volle Breite, Primärtaste oben, Löschen zuunterst. Ab sm: Löschen links (`DialogFooter start`), Handlungen rechts. */
+            /* Handy: volle Breite, Primärtaste oben, Löschen zuunterst. Ab sm: Löschen links (`DialogFooter start`), Handlungen rechts.
+               „Löschen“ in Nebentextfarbe, rot erst beim Darüberfahren – wie in den Dialogen für Schließfächer, Vereine,
+               Services und Ressourcen; rot ist die Taste in der Rückfrage. */
             <DialogFooter
               className="pt-2"
               start={!isNew ? (
@@ -381,7 +383,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   variant="ghost"
                   onClick={() => setConfirmDelete(true)}
                   disabled={deleting || saving}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5 h-11 sm:h-9"
+                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5 h-11 sm:h-9"
                 >
                   <Trash2 className="h-4 w-4" />
                   Löschen

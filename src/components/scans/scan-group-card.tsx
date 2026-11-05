@@ -134,15 +134,19 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
                   <ResultBadge result={scan.result} />
                 </span>
               </div>
-              {/* Handy: einzige Stelle für das Gerät – umbrechen statt quetschen, lange Namen kürzen. */}
-              <div className="sm:hidden mt-1 ml-4 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                <Wifi className="h-3 w-3 shrink-0" aria-hidden />
-                <span className="min-w-0 truncate">{scan.deviceName}</span>
+              {/* Handy: einzige Stelle für Gerät und Tickettyp – umbrechen statt quetschen, lange Namen kürzen.
+                  Symbol und Text als Paar (wie ab md), die Paare brechen als Ganzes um; ein „·“ dazwischen
+                  bliebe sonst am Zeilenende hängen. */}
+              <div className="sm:hidden mt-1 ml-4 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                  <Wifi className="h-3 w-3 shrink-0" aria-hidden />
+                  <span className="truncate">{scan.deviceName}</span>
+                </span>
                 {scan.ticketTypeName && (
-                  <>
-                    <span className="text-muted-foreground/50">·</span>
-                    <span className="min-w-0 truncate">{scan.ticketTypeName}</span>
-                  </>
+                  <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                    <Ticket className="h-3 w-3 shrink-0" aria-hidden />
+                    <span className="truncate">{scan.ticketTypeName}</span>
+                  </span>
                 )}
                 {scan.cameraId != null && (
                   // Tippfläche 44 px über eine unsichtbare Fläche (wie beim Baustein Checkbox), damit die Nebentextzeile nicht aufgeht.

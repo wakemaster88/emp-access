@@ -970,7 +970,8 @@ export function IrrigationClient({
               </div>
               {/* `grid-cols-1` (minmax(0, 1fr)) wie bei den zugeordneten Ventilen: ohne feste Spalte
                   wuchs die Kachel bei 360 px auf ihre Inhaltsbreite (332 px) und die Seite scrollte seitlich. */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* Eine Spalte bis lg (ab md mit Seitenleiste daneben), sonst kürzen Name und Felder auf wenige Zeichen. */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
                 {unassignedValves.map((zone) => (
                   <ZoneCard
                     key={zone.id}
@@ -1009,7 +1010,8 @@ export function IrrigationClient({
           icon={CalendarDays}
           aside={
             <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }} className="max-sm:h-11">
-              <Plus className="h-4 w-4" /> Neuer Zeitplan
+              <Plus className="h-4 w-4" />
+              <span><span className="max-sm:sr-only">Neuer </span>Zeitplan</span>
             </Button>
           }
         />
@@ -1250,8 +1252,9 @@ function PumpGroup({
 
         {/* Manuelle Pumpen-Steuerung */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Dauer-Chips umbrechen in schmalen Breiten (eine Segmentwahl würde waagerecht scrollen). */}
-          <div className="flex flex-wrap gap-1">
+          {/* Dauer-Chips umbrechen in schmalen Breiten (eine Segmentwahl würde waagerecht scrollen);
+              auf dem Handy vier gleiche Spalten, damit kein einzelner Chip allein in der zweiten Zeile steht. */}
+          <div className="flex flex-wrap gap-1 max-sm:grid max-sm:w-full max-sm:grid-cols-4">
             {DURATION_PRESETS.map((d) => (
               <button
                 key={d}
@@ -1281,8 +1284,9 @@ function PumpGroup({
         <p className="text-label mb-2">Zugeordnete Ventile</p>
         {/* `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte nimmt die Spalte die Inhaltsbreite
             der Kachel (Name `truncate` plus Zustand und Online-Badge) – auf dem Handy breiter als
-            die Karte, die den rechten Rand dann abschneidet. Mit fester Spalte kürzt der Name. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            die Karte, die den rechten Rand dann abschneidet. Mit fester Spalte kürzt der Name.
+            Eine Spalte bis lg (ab md mit Seitenleiste daneben), zwei ab lg, drei ab xl. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
           {children}
         </div>
       </div>
@@ -1399,7 +1403,9 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
                 </div>
               ) : (
                 <div className="group/name flex items-center gap-1">
-                  <p className="font-medium text-foreground truncate">{zone.name}</p>
+                  {/* Name bricht um statt gekürzt zu enden – „Ventil Liegewiese Nord“ und „… Süd“ wären sonst
+                      nicht zu unterscheiden. Die Kachel ist dafür breit genug (eine Spalte ab md neben der Seitenleiste). */}
+                  <p className="min-w-0 font-medium text-foreground break-words">{zone.name}</p>
                   {isPump && (
                     <Badge variant="secondary" className="text-[10px] gap-1 shrink-0">
                       <Activity className="h-3 w-3" /> Pumpe
@@ -1438,8 +1444,9 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
           </div>
         </div>
 
-        {/* Dauer-Picker */}
-        <div className="flex flex-wrap gap-1">
+        {/* Dauer-Picker: vier gleiche Spalten (4 + 3, mit Empfehlung 4 + 4) – frei umbrechend
+            stünde in der schmalen Kachel „60′“ allein in der zweiten Zeile. */}
+        <div className="grid grid-cols-4 gap-1">
           {DURATION_PRESETS.map((d) => (
             <button
               key={d}
@@ -1718,15 +1725,16 @@ function IrrigationStatsPanel({
             />
           ) : (
             <>
+              {/* Auf dem Handy ohne Trennpunkte: bricht die Zeile um, stünde sonst ein „·“ allein am Zeilenanfang. */}
               <div className="px-4 py-3 sm:px-[18px] border-b border-border bg-glass-tile flex flex-wrap gap-x-4 gap-y-1 text-sm">
                 <span className="text-muted-foreground">
                   <span className="font-semibold tabular-nums">{stats.summary.totalMinutes}</span> Min gesamt
                 </span>
-                <span className="text-muted-foreground">·</span>
+                <span className="text-muted-foreground max-sm:hidden" aria-hidden>·</span>
                 <span className="text-muted-foreground">
                   <span className="font-semibold tabular-nums">{fmtLiters(stats.summary.totalLiters)}</span> geschätzt
                 </span>
-                <span className="text-muted-foreground">·</span>
+                <span className="text-muted-foreground max-sm:hidden" aria-hidden>·</span>
                 <span className="text-muted-foreground">
                   <span className="font-semibold tabular-nums">{stats.summary.runCount}</span> Läufe
                 </span>

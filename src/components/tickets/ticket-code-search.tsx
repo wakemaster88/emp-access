@@ -67,14 +67,15 @@ export function TicketCodeSearch({
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss.
-        className="font-mono text-ellipsis"
+        // Auf dem Handy 44 px hoch wie die Suchfelder der übrigen Listen (Gutscheine, Schließfächer).
+        className="font-mono text-ellipsis max-sm:h-11"
         // basis-40 auf dem Handy: Feld und „Suchen“ bleiben in einer Zeile (auch bei 360 px),
         // „Filter zurücksetzen“ rückt darunter.
         containerClassName="flex-1 basis-40 sm:basis-56 max-w-md"
         autoComplete="off"
         autoFocus
       />
-      <Button type="button" variant="outline" onClick={handleSearch} className="shrink-0">
+      <Button type="button" variant="outline" onClick={handleSearch} className="shrink-0 max-sm:h-11">
         Suchen
       </Button>
       {currentCode && (

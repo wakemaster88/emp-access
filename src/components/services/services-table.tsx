@@ -190,9 +190,11 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                   Wiedereinlass
                 </span>
               </TableHead>
-              <TableHead className="w-[90px] text-right">
+              <TableHead className="w-[90px] text-right max-sm:w-auto">
+                {/* Handy: ohne Symbol und feste Breite ist die Spalte 22 px schmaler, und in der Namensspalte
+                    stehen zwei Ressourcen nebeneinander statt untereinander (360 px). */}
                 <span className="inline-flex items-center justify-end gap-1.5">
-                  <Ticket className="h-4 w-4 text-muted-foreground/70" />
+                  <Ticket className="h-4 w-4 text-muted-foreground/70 max-sm:hidden" />
                   Tickets
                 </span>
               </TableHead>

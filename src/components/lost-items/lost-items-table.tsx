@@ -111,7 +111,7 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
               <TableHead className="hidden sm:table-cell w-[120px]">Datum</TableHead>
               <TableHead className="hidden md:table-cell w-[200px]">Kontakt</TableHead>
               <TableHead className="hidden sm:table-cell sm:w-[120px] text-right">Status</TableHead>
-              {!readonly && <TableHead className="sm:w-[130px] text-right" />}
+              {!readonly && <TableHead className="md:w-[130px] text-right" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -199,18 +199,19 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                         size="sm"
                         disabled={togglingId === item.id}
                         onClick={(e) => { e.stopPropagation(); togglePickedUp(item); }}
-                        className="gap-1.5 max-sm:size-11"
+                        className="gap-1.5 max-md:size-11"
                       >
-                        {/* Handy: nur Symbol (44 px), die Beschriftung bleibt für Screenreader. */}
+                        {/* Handy und bis md: nur Symbol (44 px), die Beschriftung bleibt für Screenreader.
+                            Mit Beschriftung war die Tabelle bei 640 px (Handy quer) um 38 px zu breit. */}
                         {item.pickedUp ? (
                           <>
                             <Undo2 className="h-3.5 w-3.5" />
-                            <span className="max-sm:sr-only">Zurücksetzen</span>
+                            <span className="max-md:sr-only">Zurücksetzen</span>
                           </>
                         ) : (
                           <>
                             <CheckCircle2 className="h-3.5 w-3.5" />
-                            <span className="max-sm:sr-only">{isLostReport ? "Erledigt" : "Abgeholt"}</span>
+                            <span className="max-md:sr-only">{isLostReport ? "Erledigt" : "Abgeholt"}</span>
                           </>
                         )}
                       </Button>

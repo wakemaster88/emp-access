@@ -211,12 +211,15 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                     key={d.id}
                     className="group"
                   >
-                    {/* Gerät – auf dem Handy nimmt die Spalte den Rest der Breite und kürzt den Namen. */}
+                    {/* Gerät – auf dem Handy nimmt die Spalte den Rest der Breite; der Name bricht um
+                        statt mitten im Wort zu enden („Core-Switch Technikra…“). */}
                     <TableCell className="max-sm:w-full max-sm:max-w-0">
-                      <Link href={`/network/${d.id}`} className="flex items-center gap-3 min-w-0">
+                      {/* Handy: der Link reicht über den Zellenabstand (-my-2 py-2), so ist auch eine
+                          Zeile ohne Nebenzeile („AP Bootshaus“, 36 px) auf ganzer Höhe tippbar. */}
+                      <Link href={`/network/${d.id}`} className="flex items-center gap-3 min-w-0 max-sm:-my-2 max-sm:py-2">
                         <IconChip icon={Icon} />
                         <div className="min-w-0">
-                          <p className="font-medium text-sm text-foreground group-hover:text-primary truncate">
+                          <p className="font-medium text-sm text-foreground group-hover:text-primary sm:truncate max-sm:whitespace-normal max-sm:break-words">
                             {d.name}
                           </p>
                           <p className="text-xs text-muted-foreground">{meta.label}</p>

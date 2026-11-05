@@ -767,6 +767,8 @@ export function ClientsTab({
                   {VLAN_FILTERS.map((f) => (
                     <SelectItem key={String(f.value)} value={String(f.value)}>
                       {f.label}
+                      {/* Leerzeichen: in der Taste steht der Eintrag als Fließtext („Alle VLANs 51“, nicht „Alle VLANs51“). */}
+                      {" "}
                       {f.count !== undefined && (
                         <span className="tabular-nums text-muted-foreground">{f.count}</span>
                       )}
@@ -788,13 +790,16 @@ export function ClientsTab({
         {/* Tabelle bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17).
             Handy (326 px): Gerät und Tasten; Status und IP stehen als Nebenzeile unter dem Namen,
             der Bereich steht schon in der Zwischenzeile darüber. Die erste sichtbare Spalte ist
-            dann „Gerät“ und bekommt den Randabstand selbst (edge trifft die erste Zelle im DOM). */}
+            dann „Gerät“ und bekommt den Randabstand selbst (edge trifft die erste Zelle im DOM).
+            Feste Spaltenbreiten erst ab sm: die Zwischenzeilen spannen 7 Spalten, auf dem Handy
+            sind 2 sichtbar – mit table-fixed teilten sich die 5 leeren den Platz, „Gerät“ blieb
+            16 px breit. Ohne sie nimmt „Gerät“ (w-full) den Rest neben den Tasten. */}
         <div className="-mx-4 sm:-mx-[18px]">
-          <Table edge className="table-fixed w-full sm:min-w-[640px]">
+          <Table edge className="w-full sm:table-fixed sm:min-w-[640px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[88px] max-sm:hidden">Status</TableHead>
-                <TableHead className="sm:w-[28%] max-sm:pl-4">Gerät</TableHead>
+                <TableHead className="sm:w-[28%] max-sm:w-full max-sm:pl-4">Gerät</TableHead>
                 <TableHead className="w-[140px] max-sm:hidden">IP</TableHead>
                 <TableHead className="hidden xl:table-cell w-[140px]">MAC</TableHead>
                 <TableHead className="hidden lg:table-cell w-[130px]">Port</TableHead>
@@ -836,7 +841,7 @@ export function ClientsTab({
                           {group.meta.subnet && (
                             <span className="text-[11px] font-mono text-muted-foreground">{group.meta.subnet}</span>
                           )}
-                          <span className="text-[11px] text-muted-foreground tabular-nums">{vlanCount} Geräte</span>
+                          <span className="text-[11px] text-muted-foreground tabular-nums">{vlanCount} {vlanCount === 1 ? "Gerät" : "Geräte"}</span>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -852,7 +857,7 @@ export function ClientsTab({
                                   {areaGroup.meta.name}
                                 </span>
                                 <span className="text-[11px] text-muted-foreground tabular-nums">
-                                  {areaGroup.items.length} Geräte
+                                  {areaGroup.items.length} {areaGroup.items.length === 1 ? "Gerät" : "Geräte"}
                                 </span>
                               </div>
                             </TableCell>
@@ -884,10 +889,11 @@ export function ClientsTab({
                                 </TableCell>
                                 <TableCell className="max-w-0 max-sm:pl-4">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    {/* Auf dem Handy ohne Symbol: der Typ steht in der Zeile darunter. */}
+                                    {/* Auf dem Handy ohne Symbol: der Typ steht in der Zeile darunter.
+                                        Der Name bricht dort um statt zu kürzen (Abschnitt 17). */}
                                     <IconChip icon={Icon} size="sm" className="max-sm:hidden" />
                                     <div className="min-w-0 flex-1">
-                                      <p className="font-medium text-sm text-foreground truncate" title={c.name}>
+                                      <p className="font-medium text-sm text-foreground sm:truncate max-sm:whitespace-normal max-sm:break-words" title={c.name}>
                                         {c.name}
                                       </p>
                                       <p className="text-[11px] text-muted-foreground truncate">
@@ -986,7 +992,7 @@ export function ClientsTab({
                                     <div className="min-w-0 flex-1">
                                       <Link
                                         href={`/devices/${d.id}`}
-                                        className="font-medium text-sm text-foreground/80 hover:text-primary truncate block"
+                                        className="font-medium text-sm text-foreground/80 hover:text-primary block sm:truncate max-sm:whitespace-normal max-sm:break-words"
                                         title={d.name}
                                       >
                                         {d.name}
@@ -1053,7 +1059,7 @@ export function ClientsTab({
                                       Auf dem Handy trägt die Zeile „neu vom Scan“ den Hinweis. */}
                                   <IconChip icon={Radar} size="sm" tone="warning" className="max-sm:hidden" />
                                   <div className="min-w-0 flex-1">
-                                    <p className="font-medium text-sm text-foreground truncate" title={label}>
+                                    <p className="font-medium text-sm text-foreground sm:truncate max-sm:whitespace-normal max-sm:break-words" title={label}>
                                       {label}
                                     </p>
                                     <p className="text-[11px] text-muted-foreground truncate">

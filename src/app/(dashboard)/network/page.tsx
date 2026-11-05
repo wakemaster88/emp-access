@@ -116,8 +116,10 @@ export default async function NetworkPage() {
 
   // Reine Anzahlen sind kein Zustand: ruhig in neutral, keine Farbe als Dekoration
   // (docs/design-regeln.md, Abschnitt 3). Die Belegung zeigt zusätzlich den Balken.
+  // „Hardware“ wie Reiter und Taste auf dem Handy: „Switches & Router“ endete bei 360 px als
+  // „Switches & Rou…“ (die Beschriftung der Kachel kürzt, bricht nicht um).
   const stats: { label: string; value: string | number; icon: LucideIcon; tone: StatTone; progress?: number }[] = [
-    { label: "Switches & Router", value: networkDevices.length, icon: Server, tone: "neutral" },
+    { label: "Hardware", value: networkDevices.length, icon: Server, tone: "neutral" },
     { label: "VLANs", value: vlans.length, icon: Network, tone: "neutral" },
     {
       label: "Ports (belegt)",

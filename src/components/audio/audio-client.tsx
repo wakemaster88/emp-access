@@ -497,9 +497,9 @@ export function AudioClient({
             <Card flush="y" className="divide-y divide-border">
               {playlists.map((playlist) => (
                 <div key={playlist.id} className="px-4 py-3 sm:px-[18px]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
+                  {/* Handy: Tasten neben Titel und Badges, die Angaben darunter über die volle Breite */}
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <h3 className="text-sm font-semibold text-foreground">
                           {playlist.name}
                         </h3>
@@ -511,14 +511,8 @@ export function AudioClient({
                             Zufall
                           </Badge>
                         )}
-                      </div>
-                      <p className="text-xs tabular-nums text-muted-foreground mt-1">
-                        {playlist.description ? `${playlist.description} · ` : ""}
-                        Gesamtlänge {formatDuration(playlist.totalSec || null)}
-                        {playlist.crossfadeSec > 0 && ` · ${playlist.crossfadeSec}s Überblendung`}
-                      </p>
                     </div>
-                    <div className="flex shrink-0 gap-1">
+                    <div className="flex shrink-0 gap-1 sm:row-span-2">
                       <IconAction
                         icon={Pencil}
                         label={`Playlist ${playlist.name} bearbeiten`}
@@ -538,6 +532,13 @@ export function AudioClient({
                           })
                         }
                       />
+                    </div>
+                    <div className="col-span-2 min-w-0 sm:col-span-1">
+                      <p className="text-xs tabular-nums text-muted-foreground mt-1">
+                        {playlist.description ? `${playlist.description} · ` : ""}
+                        Gesamtlänge {formatDuration(playlist.totalSec || null)}
+                        {playlist.crossfadeSec > 0 && ` · ${playlist.crossfadeSec}s Überblendung`}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -617,9 +618,9 @@ export function AudioClient({
             <Card flush="y" className="divide-y divide-border">
               {templates.map((template) => (
                 <div key={template.id} className="px-4 py-3 sm:px-[18px]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
+                  {/* Handy: Tasten neben Titel und Badges, die Angaben darunter über die volle Breite */}
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <h3 className="text-sm font-semibold text-foreground">
                           {template.name}
                         </h3>
@@ -636,22 +637,8 @@ export function AudioClient({
                             {template.repeatCount}×
                           </Badge>
                         )}
-                      </div>
-                      {template.text && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{template.text}</p>
-                      )}
-                      <p className="text-xs tabular-nums text-muted-foreground mt-1">
-                        {template.zoneIds.length === 0
-                          ? "Alle aktiven Zonen"
-                          : `${template.zoneIds.length} Zone${template.zoneIds.length === 1 ? "" : "n"}`}
-                        {template.lastPlayedAt &&
-                          ` · zuletzt ${new Date(template.lastPlayedAt).toLocaleString("de-DE", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}`}
-                      </p>
                     </div>
-                    <div className="flex shrink-0 gap-1">
+                    <div className="flex shrink-0 gap-1 sm:row-span-2">
                       <IconAction
                         icon={Pencil}
                         label={`Durchsage ${template.name} bearbeiten`}
@@ -671,6 +658,21 @@ export function AudioClient({
                           })
                         }
                       />
+                    </div>
+                    <div className="col-span-2 min-w-0 sm:col-span-1">
+                      {template.text && (
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{template.text}</p>
+                      )}
+                      <p className="text-xs tabular-nums text-muted-foreground mt-1">
+                        {template.zoneIds.length === 0
+                          ? "Alle aktiven Zonen"
+                          : `${template.zoneIds.length} Zone${template.zoneIds.length === 1 ? "" : "n"}`}
+                        {template.lastPlayedAt &&
+                          ` · zuletzt ${new Date(template.lastPlayedAt).toLocaleString("de-DE", {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          })}`}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -698,9 +700,9 @@ export function AudioClient({
             <Card flush="y" className="divide-y divide-border">
               {schedules.map((schedule) => (
                 <div key={schedule.id} className="px-4 py-3 sm:px-[18px]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
+                  {/* Handy: Tasten neben Titel und Badges, die Angaben darunter über die volle Breite */}
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <h3
                           className={cn(
                             "text-sm font-semibold",
@@ -722,7 +724,39 @@ export function AudioClient({
                             {AUDIO_OPERATING_LABELS[schedule.operating]}
                           </Badge>
                         )}
-                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-1 sm:row-span-2">
+                      <IconAction
+                        icon={schedule.isActive ? CheckCircle2 : XCircle}
+                        iconClassName={
+                          schedule.isActive ? "text-success" : "text-muted-foreground/70"
+                        }
+                        label={`Zeitplan ${schedule.name} ${schedule.isActive ? "deaktivieren" : "aktivieren"}`}
+                        title={schedule.isActive ? "Deaktivieren" : "Aktivieren"}
+                        pressed={schedule.isActive}
+                        onClick={() => toggleSchedule(schedule)}
+                      />
+                      <IconAction
+                        icon={Pencil}
+                        label={`Zeitplan ${schedule.name} bearbeiten`}
+                        title="Bearbeiten"
+                        onClick={() => setScheduleDialog({ open: true, schedule })}
+                      />
+                      <IconAction
+                        icon={Trash2}
+                        label={`Zeitplan ${schedule.name} löschen`}
+                        title="Löschen"
+                        tone="danger"
+                        onClick={() =>
+                          setDeleteConfirm({
+                            kind: "schedule",
+                            id: schedule.id,
+                            name: schedule.name,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="col-span-2 min-w-0 sm:col-span-1">
                       <p className="text-xs text-muted-foreground mt-1">
                         {ACTION_LABELS[schedule.action]}
                         {schedule.announcementName && `: ${schedule.announcementName}`}
@@ -763,37 +797,6 @@ export function AudioClient({
                             </p>
                           )
                         )}
-                    </div>
-                    <div className="flex shrink-0 gap-1">
-                      <IconAction
-                        icon={schedule.isActive ? CheckCircle2 : XCircle}
-                        iconClassName={
-                          schedule.isActive ? "text-success" : "text-muted-foreground/70"
-                        }
-                        label={`Zeitplan ${schedule.name} ${schedule.isActive ? "deaktivieren" : "aktivieren"}`}
-                        title={schedule.isActive ? "Deaktivieren" : "Aktivieren"}
-                        pressed={schedule.isActive}
-                        onClick={() => toggleSchedule(schedule)}
-                      />
-                      <IconAction
-                        icon={Pencil}
-                        label={`Zeitplan ${schedule.name} bearbeiten`}
-                        title="Bearbeiten"
-                        onClick={() => setScheduleDialog({ open: true, schedule })}
-                      />
-                      <IconAction
-                        icon={Trash2}
-                        label={`Zeitplan ${schedule.name} löschen`}
-                        title="Löschen"
-                        tone="danger"
-                        onClick={() =>
-                          setDeleteConfirm({
-                            kind: "schedule",
-                            id: schedule.id,
-                            name: schedule.name,
-                          })
-                        }
-                      />
                     </div>
                   </div>
                 </div>

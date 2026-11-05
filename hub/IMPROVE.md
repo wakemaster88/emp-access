@@ -802,3 +802,20 @@ Offen:
 - Gestapelte Tabellen sind lang (Netzwerk mit 47 Geräten gut 10 000 px).
 - Netzwerk-Kopf: Sichtbar steht der Scan oben rechts, beim Tabben kommt „Switches abfragen“ zuerst.
 - Bei 1024 px scrollt die Netzwerk-Tabelle in ihrer Karte weiter 31 px seitlich (wie vorher).
+
+### Nachtrag: Abschlussprüfung Handy
+
+Hub-Mock, Touch, 390 und 360 px, hell und dunkel, 13 Bereiche plus Mehr-Sheet, Zustände normal und Notbetrieb (leer, ruhig, Mäher-Einrichtung nur gemessen): Seite nie breiter als das Fenster, kein innerer Scroller, nichts über den Rand – vorher wie nachher, zuletzt 156 von 156 Messungen ohne Befund.
+
+Gefunden und geändert (`dashboard.css`, `dashboard.js`):
+
+- Segment-Leisten wie §6 der Cloud: der aktive Eintrag bleibt bei 500 statt 600 (fetter war er breiter, die umbrochene Leiste sprang beim Wechseln), auf dem Telefon 10 px Innenabstand. Damit passt der Raum-Filter bei 360 px in eine Zeile („Halle“ stand allein in Zeile zwei, Punkt aus „Offen“ oben erledigt).
+- Ereignis-Filter: auf dem Telefon zwei gleiche Spalten (bei 390 px vorher 3/2/2/1 mit „Aufgaben“ allein), bei 600–1019 px Bereichsbreite vier Spalten (bei 1280 px vorher 7/1, bei 768/1024 px 5/3). Ab ~1020 px eine Zeile wie bisher.
+- Netzwerk-Tabelle auf dem Telefon kompakt: Name mit Status rechts, darunter IP und VLAN, dann Hersteller und Typ, Ports nur wenn offen. Die Zeile ist rund 110 statt 220 px hoch, die Seite bei 360 px 10 700 statt 15 000 px. Die anderen Tabellen bleiben gestapelt mit Labels.
+- Kennzahl-Kacheln auf dem Telefon mit 8 px Abstand (§5) und engerem Kopf: „Übersprungen“ (Fahrzeuge) war bei 360 px gekürzt.
+- Relative Zeiten („vor 20 s“, „vor 18 min“) mit geschütztem Leerzeichen: die Einheit stand allein in der nächsten Zeile (Mäher-Kopf, Lage-Orte).
+
+Offen:
+
+- VLAN-Filter: bei 768/1024 px 6/1 (sieben VLANs im Mock). Die Zahl hängt vom Standort ab, eine feste Spaltenzahl hilft nicht immer.
+- Kamera-Kacheln der Zentrale kürzen lange Namen bei zwei Spalten („Luba Seewiese · vor…“); der volle Name steht im Dialog.

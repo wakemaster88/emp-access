@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -140,6 +140,52 @@ function formatTime(iso: string): string {
   });
 }
 
+// Ab md (768 px, Auswahl in 12 px) passt die volle Zeitraum-Beschriftung ins Auswahlfeld;
+// schmaler (Handy, 16 px) blieb von „Mi., 4. Nov. 22:00 – Do., 5. Nov. 06:00“ nur
+// „Mi., 4. Nov. 22:00 – Do.“ zwischen den Pfeilen stehen.
+const WIDE_QUERY = "(min-width: 768px)";
+
+function subscribeWide(onChange: () => void) {
+  const mq = window.matchMedia(WIDE_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+function useWideScreen(): boolean {
+  return useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => false);
+}
+
+// Wochentag und Monat aus dem kombinierten Format lesen: einzeln formatiert liefert Intl die
+// alleinstehenden Formen ohne Punkt („Mi“, „Nov“), die volle Beschriftung schreibt „Mi.“, „Nov.“.
+const DAY_FMT = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+function dayParts(d: Date): { weekday: string; month: string } {
+  const parts = DAY_FMT.formatToParts(d);
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return { weekday: pick("weekday"), month: pick("month") };
+}
+
+/**
+ * Kurze Beschriftung eines Zeitraums für schmale Auswahlfelder: nur die Tage, die Uhrzeiten
+ * stehen schon in der Beschreibung („Fenster 22:00–06:00“). Der Schlüssel ist der Starttag
+ * (YYYY-MM-DD, Zeitzone des Kontos), darum wird in UTC formatiert.
+ * Über Mitternacht „Mi./Do., 4./5.11.“ bzw. „Sa./So., 31.10./1.11.“ (Monat als Zahl: mit
+ * Namen wurde „So./Mo., 29./30. März“ bei 360 px 165 px breit, Platz sind 148 px; so höchstens
+ * 142 px), sonst „Mi., 4. Nov.“.
+ */
+function shortPeriodLabel(key: string, overnight: boolean): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  const start = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12));
+  const s = dayParts(start);
+  if (!overnight) return `${s.weekday}, ${start.getUTCDate()}. ${s.month}`;
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const days = `${s.weekday}/${dayParts(end).weekday}`;
+  const endDate = `${end.getUTCDate()}.${end.getUTCMonth() + 1}.`;
+  if (start.getUTCMonth() === end.getUTCMonth()) return `${days}, ${start.getUTCDate()}./${endDate}`;
+  return `${days}, ${start.getUTCDate()}.${start.getUTCMonth() + 1}./${endDate}`;
+}
+
 export function SurveillanceClient({ initial, cameras }: Props) {
   const [form, setForm] = useState({
     manualArmed: initial.manualArmed,
@@ -165,6 +211,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
   const [reportLoading, setReportLoading] = useState(true);
   const [reportError, setReportError] = useState("");
   const [preview, setPreview] = useState<{ url: string; title: string } | null>(null);
+  const widePeriodLabel = useWideScreen();
 
   const loadReport = useCallback(async (period?: string | null) => {
     setReportLoading(true);
@@ -358,9 +405,11 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               <ChevronLeft className="h-4 w-4" />
             </Button>
             {/* Natives Auswahlfeld (NativeSelect) in Glas-Optik wie Input, 32 px hoch wie die Pfeiltasten daneben.
-                Handy: Breite 0 plus flex-1, sonst gibt die längste Option die Breite vor und schiebt den Kopf über den Kartenrand. */}
+                Handy: Breite 0 plus flex-1, sonst gibt die längste Option die Breite vor und schiebt den Kopf über den Kartenrand.
+                Unter md die kurze Beschriftung ohne Uhrzeiten und ohne „(läuft)“ (das zeigt das Badge im Titel),
+                ab md die volle in ganzer Länge (vorher bei 220 px abgeschnitten). Werte und Auswahl bleiben gleich. */}
             <NativeSelect
-              containerClassName="w-auto max-w-[220px] max-sm:w-0 max-sm:max-w-none max-sm:flex-1"
+              containerClassName="w-auto max-w-[220px] md:max-w-none max-sm:w-0 max-sm:max-w-none max-sm:flex-1"
               className="h-8 md:text-xs max-sm:h-11"
               aria-label="Periode"
               value={reportKey ?? ""}
@@ -369,8 +418,9 @@ export function SurveillanceClient({ initial, cameras }: Props) {
             >
               {(report?.periods ?? []).map((p) => (
                 <option key={p.key} value={p.key}>
-                  {p.label}
-                  {p.inProgress ? " (läuft)" : ""}
+                  {widePeriodLabel
+                    ? `${p.label}${p.inProgress ? " (läuft)" : ""}`
+                    : shortPeriodLabel(p.key, report?.period.overnight ?? true) ?? p.label}
                 </option>
               ))}
             </NativeSelect>

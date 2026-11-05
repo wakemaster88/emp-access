@@ -25,7 +25,9 @@ export default async function FundsachenPage() {
         {/* Tabelle läuft bis an den Kartenrand: Karte unten und Inhalt seitlich ohne Innenabstand. */}
         <Card flush>
           <CardHeader>
-            <CardTitle>Fundsachen & Verlustmeldungen ({items.length})</CardTitle>
+            {/* Geschütztes Leerzeichen: auf dem Handy bricht der Titel vor „Verlustmeldungen“ um,
+                statt die Anzahl allein in die zweite Zeile zu stellen. */}
+            <CardTitle>Fundsachen & Verlustmeldungen&nbsp;({items.length})</CardTitle>
             <CardDescription>
               Gefundene Gegenstände und Verlustmeldungen können hier im Backend oder am Shop-Monitor erfasst und als erledigt markiert werden.
             </CardDescription>

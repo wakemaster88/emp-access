@@ -274,7 +274,10 @@ export function EmailSettings({ initialConfig, subscriptions = [], services = []
             <CardAction>
               <Button size="sm" className={cn("gap-1.5", TOUCH_SM)} onClick={handleNewBlank}>
                 <Plus className="h-4 w-4" />
-                Neue Regel
+                {/* Handy: nur das Hauptwort („+ Regel“), docs/design-regeln.md, Abschnitt 13. */}
+                <span>
+                  <span className="max-sm:sr-only">Neue </span>Regel
+                </span>
               </Button>
             </CardAction>
           </CardHeader>
@@ -1239,8 +1242,10 @@ function RuleRow({
             {rule.sentCount} versendet
           </p>
         </div>
-        {/* Darf umbrechen: auf sehr schmalen Handys schneidet die Kachel (overflow-hidden) sonst „Löschen“ ab. */}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+        {/* Darf umbrechen: auf sehr schmalen Handys schneidet die Kachel (overflow-hidden) sonst „Löschen“ ab.
+            Handy: eigene Zeile über die volle Breite, Tasten ohne Lücke verteilt – so passen Schalter und
+            fünf 44-px-Tasten auch bei 360 px in eine Zeile, statt „Löschen“ allein umbrechen zu lassen. */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1 max-sm:w-full max-sm:justify-between max-sm:gap-0">
           <Switch
             checked={rule.isActive}
             onCheckedChange={toggle}

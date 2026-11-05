@@ -356,7 +356,8 @@ function TrackItem({
         <p className="text-xs tabular-nums text-muted-foreground">
           {track.artist ? `${track.artist} · ` : ""}
           {formatDuration(track.durationSec)}
-          {track.sizeBytes ? ` · ${(track.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ""}
+          {/* geschütztes Leerzeichen: Zahl und Einheit brechen nicht auseinander */}
+          {track.sizeBytes ? ` · ${(track.sizeBytes / 1024 / 1024).toFixed(1)}\u00a0MB` : ""}
         </p>
       </div>
 

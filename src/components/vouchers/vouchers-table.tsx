@@ -231,7 +231,8 @@ export function VouchersTable({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Code, Ticket-Typ oder Notiz suchen…"
-          className="h-11 sm:h-9"
+          // text-ellipsis: bei 360 px passt der Platzhalter nicht ganz; Auslassung statt Abriss mitten im Wort.
+          className="h-11 sm:h-9 text-ellipsis"
           containerClassName="flex-1 max-w-md"
         />
       </div>

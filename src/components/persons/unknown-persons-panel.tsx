@@ -184,7 +184,8 @@ export function UnknownPersonsPanel({ people, onChanged }: Props) {
   return (
     <div className="space-y-4 sm:space-y-5">
       <Card>
-        <CardContent className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+        {/* Tasten erst ab lg neben dem Text: bei 768 px (mit Seitenleiste) blieb dem Hinweis sonst nur eine schmale Spalte. */}
+        <CardContent className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
           <div className="text-[13px] text-muted-foreground space-y-0.5">
             <p>
               Ähnliche Gesichter sind gruppiert. Ein Klick ordnet die ganze Gruppe zu oder legt
@@ -192,11 +193,33 @@ export function UnknownPersonsPanel({ people, onChanged }: Props) {
               Bilder, die nicht dazugehören, vorher antippen.
             </p>
             {data && (
+              // Jede Angabe bleibt beim Umbruch zusammen, der Trennpunkt hängt mit geschütztem Leerzeichen an der
+              // Angabe davor – auf dem Handy stand sonst „2“ am Zeilenende („ohne erkennbares Gesicht“ darunter)
+              // oder eine Zeile begann mit „·“.
               <p className="text-xs tabular-nums">
-                {data.total} unbekannt · {data.groups.length} Gruppe{data.groups.length === 1 ? "" : "n"}
-                {data.pending > 0 && <> · {data.pending} noch nicht analysiert</>}
-                {data.noFace > 0 && <> · {data.noFace} ohne erkennbares Gesicht</>}
-                {data.noSnapshot > 0 && <> · {data.noSnapshot} ohne Bild</>}
+                <span className="whitespace-nowrap">{data.total} unbekannt</span>
+                {" · "}
+                <span className="whitespace-nowrap">
+                  {data.groups.length} Gruppe{data.groups.length === 1 ? "" : "n"}
+                </span>
+                {data.pending > 0 && (
+                  <>
+                    {" · "}
+                    <span className="whitespace-nowrap">{data.pending} noch nicht analysiert</span>
+                  </>
+                )}
+                {data.noFace > 0 && (
+                  <>
+                    {" · "}
+                    <span className="whitespace-nowrap">{data.noFace} ohne erkennbares Gesicht</span>
+                  </>
+                )}
+                {data.noSnapshot > 0 && (
+                  <>
+                    {" · "}
+                    <span className="whitespace-nowrap">{data.noSnapshot} ohne Bild</span>
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -365,7 +388,9 @@ function GroupCard({
           </span>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        {/* Handy: Raster mit vier gleich breiten Spalten – füllt die Zeile, statt rechts eine Lücke zu lassen;
+            ab sm umbrechende Reihe fester Kacheln (80 px). */}
+        <div className="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap">
           {visible.map((id) => {
             const off = excluded.has(id);
             return (
@@ -376,7 +401,7 @@ function GroupCard({
                 title={off ? "Wieder einbeziehen" : "Gehört nicht dazu – abwählen"}
                 aria-label={off ? "Wieder einbeziehen" : "Gehört nicht dazu – abwählen"}
                 className={cn(
-                  "press relative h-20 w-20 overflow-hidden rounded-xl border bg-muted",
+                  "press relative aspect-square w-full overflow-hidden rounded-xl border bg-muted sm:h-20 sm:w-20",
                   off ? "border-dashed border-border opacity-35" : "border-glass-border"
                 )}
               >
@@ -400,7 +425,7 @@ function GroupCard({
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
-              className="press h-20 w-20 rounded-xl border border-dashed border-border text-xs text-muted-foreground tabular-nums hover:bg-glass-tile hover:text-foreground"
+              className="press aspect-square w-full rounded-xl border border-dashed border-border text-xs text-muted-foreground tabular-nums hover:bg-glass-tile hover:text-foreground sm:h-20 sm:w-20"
             >
               {showAll ? "weniger" : `+${group.count - THUMBS} weitere`}
             </button>
@@ -432,7 +457,8 @@ function GroupCard({
 
         {mode === "new" ? (
           <form
-            className="flex flex-col sm:flex-row gap-2"
+            // sm:flex-wrap: neben der Seitenleiste (768 px) schrumpfte das Namensfeld sonst auf wenige Pixel.
+            className="flex flex-col sm:flex-row sm:flex-wrap gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               if (!name.trim()) {
@@ -471,7 +497,9 @@ function GroupCard({
             </div>
           </form>
         ) : (
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          // Ab sm eine Zeile, die umbricht: neben der Seitenleiste (768 px) ist die Karte schmaler als
+          // Auswahl + Zuordnen + Neue Person + Verwerfen, die Seite scrollte sonst seitlich.
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
             {people.length > 0 && (
               <div className="flex gap-2">
                 <Select value={personId} onValueChange={setPersonId}>

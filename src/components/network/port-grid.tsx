@@ -276,6 +276,10 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                       ) : (
                         <span className="text-muted-foreground">–</span>
                       )}
+                      {/* Handy: die Beschriftung des Ports (eigene Spalte erst ab sm) als Nebenzeile,
+                          sonst fehlte z. B. „Reserve Kasse 3“; Anschluss und Tagged-VLANs zeigt der
+                          Port-Dialog beim Antippen (docs/design-regeln.md, Abschnitt 17). */}
+                      {p.label && <span className="block text-muted-foreground sm:hidden">{p.label}</span>}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       <Badge variant={PORT_STATUS_VARIANT[p.status] ?? "secondary"} className="text-[10px]">

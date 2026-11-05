@@ -38,6 +38,22 @@ function lockSummary(labels: string[]): string {
   return `${labels[0]} +${labels.length - 1} weitere`;
 }
 
+/**
+ * Kurze Nummern in Klammern („(T-071)“, „[V-0171]“) bleiben beim Umbruch zusammen – sonst bricht
+ * der Browser nach dem Bindestrich („[V-“ / „0171]“). Längere Klammerinhalte dürfen weiter umbrechen.
+ */
+function keepCodes(text: string): React.ReactNode {
+  return text.split(/([([][^\s()[\]]{1,12}[)\]])/).map((part, i) =>
+    i % 2 === 1 ? (
+      <span key={i} className="whitespace-nowrap">
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
+
 export function KeysTab({ keys, lockOptions, readonly }: Props) {
   const [query, setQuery] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
@@ -101,7 +117,8 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Nummer, Bezeichnung oder Schloss suchen…"
             containerClassName="min-w-48 flex-1 max-sm:basis-full"
-            className="max-sm:h-11"
+            // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss mitten im Wort.
+            className="text-ellipsis max-sm:h-11"
           />
           {/* Filter in Inhaltsbreite (w-auto statt der vollen Breite von NativeSelect), auf dem Handy teilen sie sich die Zeile. */}
           <NativeSelect
@@ -185,7 +202,7 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                             )}
                           </p>
                         )}
-                        <p className="text-muted-foreground">{lockSummary(k.lockLabels)}</p>
+                        <p className="text-muted-foreground">{keepCodes(lockSummary(k.lockLabels))}</p>
                       </div>
                     </TableCell>
                     <TableCell className="text-xs whitespace-normal max-sm:hidden">
@@ -202,9 +219,9 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                     </TableCell>
                     <TableCell className="text-xs whitespace-normal text-muted-foreground max-sm:hidden sm:min-w-40">
                       {k.lockLabels.length > 2 ? (
-                        <span title={k.lockLabels.join("\n")}>{lockSummary(k.lockLabels)}</span>
+                        <span title={k.lockLabels.join("\n")}>{keepCodes(lockSummary(k.lockLabels))}</span>
                       ) : (
-                        lockSummary(k.lockLabels)
+                        keepCodes(lockSummary(k.lockLabels))
                       )}
                     </TableCell>
                   </TableRow>

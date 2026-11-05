@@ -335,15 +335,19 @@ function ScanResultDonut({ results }: { results: { granted: number; denied: numb
           <Badge variant="secondary" className="tabular-nums">{total}</Badge>
         </CardAction>
       </CardHeader>
-      <CardContent>
+      {/* Ring und Legende nach der Kartenbreite (@container): schmal (Drittelspalte bei 1024 px)
+          untereinander, mittel (360 px, 1280 px) mit kleinerem Ring nebeneinander, breit wie bisher.
+          So bleibt der Legende immer Platz für „Abgelehnt“ statt „Abg…“. */}
+      <CardContent className="@container">
         {total === 0 ? (
           <EmptyState compact title="Noch keine Scans an diesem Tag." />
         ) : (
-          <div className="flex items-center gap-3">
-            <div className="h-[160px] w-[160px] shrink-0 relative">
+          <div className="flex flex-col items-center gap-3 @min-[17rem]:flex-row">
+            <div className="size-40 @min-[17rem]:size-30 @min-[19.5rem]:size-40 shrink-0 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2} stroke="none">
+                  {/* Radien in Prozent, damit der Ring mit der Fläche mitwächst (bei 160 px wie zuvor 45/70 px). */}
+                  <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="56%" outerRadius="88%" paddingAngle={2} stroke="none">
                     {data.map((d) => <Cell key={d.name} fill={d.color} />)}
                   </Pie>
                   <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
@@ -354,7 +358,7 @@ function ScanResultDonut({ results }: { results: { granted: number; denied: numb
                 <span className="text-[11px] text-muted-foreground mt-0.5">Scans</span>
               </div>
             </div>
-            <div className="flex-1 space-y-1.5 min-w-0">
+            <div className="w-full flex-1 space-y-1.5 min-w-0">
               {data.map((d) => {
                 const pct = Math.round((d.value / total) * 100);
                 return (
@@ -380,11 +384,13 @@ function WeekTrendChart({ data, selectedDate }: { data: WeekTrendDay[]; selected
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="flex items-center gap-1.5">
+        {/* Titel bricht nicht am Bindestrich („7-Tage-“ / „Trend“); wird es bei 360 px eng,
+            rückt die Legende rechts in zwei Zeilen. */}
+        <CardTitle className="flex items-center gap-1.5 whitespace-nowrap">
           <Activity className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           7-Tage-Trend
         </CardTitle>
-        <CardAction className="flex items-center gap-3 text-[11px] text-muted-foreground">
+        <CardAction className="flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-full bg-chart-1" /> Scans
             <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">{totalScans}</span>

@@ -150,7 +150,8 @@ export function StatCard({
         )}
         <span
           className={cn(
-            "min-w-0 truncate",
+            // Handy: zwei Zeilen statt mitten im Wort abgeschnitten (schmale Kacheln).
+            "min-w-0 truncate max-sm:line-clamp-2 max-sm:whitespace-normal",
             sm ? "text-label text-[10px] tracking-[0.1em]" : "text-xs text-muted-foreground",
             active && !sm && "font-semibold text-foreground",
           )}
@@ -179,7 +180,7 @@ export function StatCard({
         </p>
       )}
       {hint && (!trend || hintWithTrend) && (
-        <p className={cn("truncate text-muted-foreground", sm ? "text-[11px]" : "text-xs")}>{hint}</p>
+        <p className={cn("truncate text-muted-foreground max-sm:line-clamp-2 max-sm:whitespace-normal", sm ? "text-[11px]" : "text-xs")}>{hint}</p>
       )}
 
       {pct !== null && !sm && (

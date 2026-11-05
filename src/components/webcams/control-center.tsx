@@ -129,9 +129,11 @@ function EventOverlay({ events }: { events: CameraEventRow[] }) {
   const isActive = !e.endedAt;
 
   return (
+    // Nie umbrechen („Fahrzeug“ / „13:45“ in zwei Zeilen); in schmalen Kacheln (Handy 360 px,
+    // drei Spalten bei 1280 px) steht das Ereignis als eigene Zeile über Name und Uhrzeit.
     <span
       className={cn(
-        "flex items-center gap-1 text-[10px] font-medium min-w-0",
+        "flex items-center gap-1 text-[10px] font-medium min-w-0 whitespace-nowrap @max-[22rem]:order-first @max-[22rem]:basis-full",
         meta.color,
         isActive && "animate-pulse"
       )}
@@ -547,7 +549,7 @@ function CameraPanel({
 
   return (
     <>
-      <div className="group relative aspect-video overflow-hidden rounded-tile bg-black flex items-center justify-center">
+      <div className="@container group relative aspect-video overflow-hidden rounded-tile bg-black flex items-center justify-center">
         {go2rtcUrl && streamSrc ? (
           <WebRTCVideo
             go2rtcUrl={go2rtcUrl}
@@ -569,7 +571,7 @@ function CameraPanel({
 
         {/* Name unten links, Ereignisse rechts – dezenter Verlauf wie im alten Kiosk.
             Die Leiste liegt immer auf dem dunklen Bild, daher `dark` für ihre Farben. */}
-        <div className="dark pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-6">
+        <div className="dark pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-x-2 gap-y-0.5 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-6">
           <span className="text-xs font-medium text-white drop-shadow truncate shrink-0">
             {cam.name}
           </span>

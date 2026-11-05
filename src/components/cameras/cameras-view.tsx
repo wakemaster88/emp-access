@@ -328,13 +328,13 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
 
       <Card>
         {/* Kopf: Titel links, Primärhandlung oben rechts (docs/design-regeln.md, Abschnitt 13);
-            der volle Text passt auch auf dem Handy neben den Titel. */}
+            auf dem Handy „+ Kamera“, das Verb bleibt für Screenreader. */}
         <CardHeader>
           <CardTitle className="tabular-nums">Kameras ({cameras.length})</CardTitle>
           <CardAction>
             <Button onClick={openAdd} className="h-11 gap-2 sm:h-9">
               <Plus className="h-4 w-4" />
-              Kamera hinzufügen
+              <span>Kamera<span className="max-sm:sr-only"> hinzufügen</span></span>
             </Button>
           </CardAction>
         </CardHeader>

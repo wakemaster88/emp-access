@@ -170,12 +170,21 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
 
   return (
     <>
-      <div className="mb-4 flex flex-col gap-3 px-4 sm:px-[18px] lg:flex-row lg:items-center">
+      {/* Kapsel und Suche erst ab xl nebeneinander: bei 1024 px (mit Seitenleiste) bräche die Kapsel
+          sonst 3 + 1 um und die Suche würde gestaucht. */}
+      <div className="mb-4 flex flex-col gap-3 px-4 sm:px-[18px] xl:flex-row xl:items-center">
         <Segmented
           aria-label="Filter"
           value={activeFilter}
           onValueChange={setFilter}
-          className="self-start lg:self-auto"
+          // Handy: mit „Offene Schlüssel“ vier Einträge als 2 × 2 statt 3 + 1 (bei 390 px stand
+          // „Offene Schlüssel“ allein und gestreckt in Zeile 2); Spalten gleich breit, wo es passt.
+          // Unter 360 px passen zwei Spalten nicht sicher – dort bleibt der normale Umbruch.
+          className={cn(
+            "self-start xl:self-auto",
+            lockersWithOpenPast.length > 0 &&
+              "min-[360px]:max-sm:grid min-[360px]:max-sm:w-full min-[360px]:max-sm:grid-cols-[repeat(2,minmax(max-content,1fr))]",
+          )}
           options={[
             { value: "all", label: "Alle", count: lockers.length },
             { value: "assigned", label: `Belegt ${currentYear}`, count: assignedCount },
@@ -199,13 +208,14 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           ]}
         />
 
-        {/* Suche immer sichtbar: auf dem Handy volle Breite, ab sm 16 rem, ab lg rechts neben der
-            Kapsel. „Schließfach anlegen“ steht im Kartenkopf (CreateLockerButton). */}
+        {/* Suche immer sichtbar: auf dem Handy volle Breite, ab sm 20 rem (so passt der Platzhalter
+            ganz hinein), ab xl rechts neben der Kapsel. „Schließfach anlegen“ steht im Kartenkopf
+            (CreateLockerButton). */}
         <SearchInput
           placeholder="Nr., Standort, Mieter, Abo, Jahr…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          containerClassName="w-full sm:w-64 lg:ml-auto"
+          containerClassName="w-full sm:w-80 xl:ml-auto"
           className="h-11 sm:h-9"
         />
       </div>

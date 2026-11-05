@@ -236,7 +236,8 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
       <Table edge>
         <TableHeader>
           <TableRow>
-            <TableHead className="sm:min-w-[180px]">
+            {/* Handy: einzige sichtbare Spalte, trägt darum auch den rechten Randabstand. */}
+            <TableHead className="max-sm:pr-4 sm:min-w-[180px]">
               <span className="inline-flex items-center gap-1.5">
                 <Wifi className="h-4 w-4 text-muted-foreground/70" />
                 Gerät
@@ -260,7 +261,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                 Resourcen
               </span>
             </TableHead>
-            <TableHead className="max-sm:pr-4 sm:w-[200px]">
+            <TableHead className="max-sm:hidden sm:w-[200px]">
               <span className="inline-flex items-center gap-1.5">
                 <Activity className="h-4 w-4 text-muted-foreground/70" />
                 Status
@@ -562,20 +563,23 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               key={device.id}
               className="group"
             >
-              {/* Gerät – auf dem Handy nimmt die Spalte den Rest der Breite und kürzt den Namen. */}
-              <TableCell className="max-sm:w-full max-sm:max-w-0">
+              {/* Gerät – auf dem Handy die einzige Spalte: der Name bricht um statt zu kürzen
+                  („Drehkreuz Seilbah…“ dreimal war nicht zu unterscheiden), der Status steht als
+                  Nebenzeile darunter (docs/design-regeln.md, Abschnitt 17). */}
+              <TableCell className="max-sm:w-full max-sm:max-w-0 max-sm:pr-4">
                 <Link href={`/devices/${device.id}`} className="flex items-center gap-3 min-w-0">
                   {/* Symbol-Chip ruhig: die Geräteart ist kein Zustand, den zeigt die Spalte „Status“ (Abschnitt 3). */}
                   <IconChip
                     icon={isShelly ? Wifi : isNuki ? KeyRound : isGardena ? Sprout : isAudio ? Volume2 : isMower ? Tractor : Cpu}
                   />
                   <div className="min-w-0">
-                    <p className="font-medium text-sm text-foreground group-hover:text-primary transition-colors truncate">
+                    <p className="font-medium text-sm text-foreground group-hover:text-primary transition-colors sm:truncate max-sm:whitespace-normal max-sm:break-words">
                       {device.name}
                     </p>
                     {!device.isActive && (
                       <span className="text-xs text-muted-foreground italic">Inaktiv</span>
                     )}
+                    <div className="mt-1 sm:hidden">{statusCell}</div>
                   </div>
                 </Link>
               </TableCell>
@@ -599,8 +603,8 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               {/* Bereiche */}
               <TableCell className="hidden md:table-cell">{bereicheCell}</TableCell>
 
-              {/* Status – auf dem Handy die letzte Spalte, deshalb mit Karten-Innenabstand. */}
-              <TableCell className="max-sm:pr-4">{statusCell}</TableCell>
+              {/* Status – auf dem Handy als Nebenzeile unter dem Namen. */}
+              <TableCell className="max-sm:hidden">{statusCell}</TableCell>
 
               {/* Letzte Aktivität */}
               <TableCell className="hidden lg:table-cell text-xs text-muted-foreground tabular-nums whitespace-nowrap">

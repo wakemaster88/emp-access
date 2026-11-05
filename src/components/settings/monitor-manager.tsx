@@ -474,7 +474,8 @@ function CopyUrl({ url }: { url: string }) {
 
   return (
     <div className="flex gap-2">
-      <Input value={url} readOnly className="font-mono max-sm:h-11" />
+      {/* Lange Links enden mit „…“ statt mitten im Wort abgeschnitten (16 px bleiben, sonst zoomt iOS). */}
+      <Input value={url} readOnly className="font-mono text-ellipsis max-sm:h-11" />
       <Button
         type="button"
         variant="outline"
@@ -545,7 +546,10 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
           <DialogTrigger asChild>
             <Button className="max-sm:h-11">
               <Plus className="h-4 w-4" />
-              Monitor erstellen
+              {/* Handy: Symbol und Hauptwort („+ Monitor“), docs/design-regeln.md, Abschnitt 13. */}
+              <span>
+                Monitor<span className="max-sm:sr-only"> erstellen</span>
+              </span>
             </Button>
           </DialogTrigger>
           <MonitorDialog

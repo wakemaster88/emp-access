@@ -155,13 +155,14 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
                   <TableCell>
                     <Badge className={cn("text-xs font-mono", vlanColor(v.id, vlans))}>{v.vlanId}</Badge>
                   </TableCell>
-                  {/* Name – auf dem Handy nimmt die Spalte den Rest der Breite und kürzt. */}
-                  <TableCell className="max-sm:w-full max-sm:max-w-0">
-                    <p className="font-medium text-sm text-foreground max-sm:truncate">{v.name}</p>
-                    {v.description && <p className="text-xs text-muted-foreground truncate max-w-[220px]">{v.description}</p>}
+                  {/* Name – auf dem Handy nimmt die Spalte den Rest der Breite; Name und Beschreibung
+                      brechen um statt mitten im Wort zu enden (docs/design-regeln.md, Abschnitt 17). */}
+                  <TableCell className="max-sm:w-full max-sm:max-w-0 max-sm:whitespace-normal">
+                    <p className="font-medium text-sm text-foreground max-sm:break-words">{v.name}</p>
+                    {v.description && <p className="text-xs text-muted-foreground max-sm:break-words sm:truncate sm:max-w-[220px]">{v.description}</p>}
                     {/* Handy: Nutzung als Nebenzeile (ab sm eigene Spalte). */}
                     <p className="text-xs text-muted-foreground tabular-nums sm:hidden">
-                      {v.portCount + v.taggedPortCount} Ports · {v.clientCount} Geräte
+                      {v.portCount + v.taggedPortCount} Ports · {v.clientCount} {v.clientCount === 1 ? "Gerät" : "Geräte"}
                     </p>
                   </TableCell>
                   <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">
@@ -178,7 +179,7 @@ export function VlansTab({ vlans }: { vlans: VlanRow[] }) {
                       </span>
                       <span className="inline-flex items-center gap-1">
                         <MonitorSmartphone className="h-3 w-3 text-muted-foreground/70" />
-                        {v.clientCount} Geräte
+                        {v.clientCount} {v.clientCount === 1 ? "Gerät" : "Geräte"}
                       </span>
                     </div>
                   </TableCell>

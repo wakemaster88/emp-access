@@ -33,7 +33,7 @@ export function AreaFilter({ areas, current }: { areas: Area[]; current?: string
     <Select value={current ?? "all"} onValueChange={handleChange}>
       {/* flex-1 am Wert: steht direkt hinter dem Symbol statt mittig (justify-between im Baustein).
           Feste Breite erst ab sm; auf dem Handy steht das Feld im Filter-Sheet in voller Breite. */}
-      <SelectTrigger className="w-full sm:w-[180px] h-9 text-sm *:data-[slot=select-value]:flex-1">
+      <SelectTrigger aria-label="Resource" className="w-full sm:w-[180px] h-9 text-sm *:data-[slot=select-value]:flex-1">
         <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
         <SelectValue placeholder="Alle Resourcen" />
       </SelectTrigger>

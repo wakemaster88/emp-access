@@ -256,9 +256,13 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                           {v.description && (
                             <p className="ml-6 text-xs text-muted-foreground truncate" title={v.description}>{v.description}</p>
                           )}
-                          <div className="md:hidden mt-1 ml-6">
-                            <AccessTicketBadges tickets={v.accessTickets} />
-                          </div>
+                          {/* Handy: Nebenzeile nur mit Zutritts-Tickets – ein einzelnes „–“ ohne Spaltenkopf
+                              sähe aus wie eine fehlende Beschreibung. */}
+                          {v.accessTickets.length > 0 && (
+                            <div className="md:hidden mt-1 ml-6">
+                              <AccessTicketBadges tickets={v.accessTickets} />
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="hidden md:block w-[280px] shrink-0 py-2 px-2 min-w-0">

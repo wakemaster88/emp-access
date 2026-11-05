@@ -123,7 +123,9 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   Name
                 </span>
               </TableHead>
-              <TableHead className="hidden lg:table-cell">
+              {/* Eigene Spalte erst ab 2xl: bei 1280 px (mit Seitenleiste) war die Tabelle sonst 55 px zu breit
+                  und „Tickets“ lag abgeschnitten im seitlichen Scroller; bis dahin steht „in …“ unter dem Namen. */}
+              <TableHead className="hidden 2xl:table-cell">
                 <span className="inline-flex items-center gap-1.5">
                   <FolderTree className="h-4 w-4 text-muted-foreground/70" />
                   In Resource
@@ -154,8 +156,9 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                 </span>
               </TableHead>
               <TableHead className="text-right">
+                {/* Handy: Kopf ohne Symbol wie bei Services (dort braucht die Namensspalte den Platz). */}
                 <span className="inline-flex items-center justify-end gap-1.5">
-                  <Ticket className="h-4 w-4 text-muted-foreground/70" />
+                  <Ticket className="h-4 w-4 text-muted-foreground/70 max-sm:hidden" />
                   Tickets
                 </span>
               </TableHead>
@@ -195,11 +198,11 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                       {area.name}
                     </span>
                     {area.parent?.name && (
-                      <p className="lg:hidden text-xs text-muted-foreground/70 ml-6 mt-0.5">in {area.parent.name}</p>
+                      <p className="2xl:hidden text-xs text-muted-foreground/70 ml-6 mt-0.5">in {area.parent.name}</p>
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                <TableCell className="hidden 2xl:table-cell text-sm text-muted-foreground">
                   {area.parent?.name ? (
                     <span className="inline-flex items-center gap-1.5">
                       <FolderTree className="h-3.5 w-3.5 text-muted-foreground/70" />
