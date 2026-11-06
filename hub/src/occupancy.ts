@@ -18,7 +18,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
-import { captureSnapshot, listCameraConfigs, listCameraStatus } from "./cameras.js";
+import { captureSnapshot, listCameraConfigs, listCameraStatus, waitCameraAtHome } from "./cameras.js";
 import { detectPersons } from "./person-crop.js";
 import { inside } from "./vision.js";
 import { sendPhoto, sendText } from "./agent/telegram.js";
@@ -47,6 +47,8 @@ const ALERTS = !/^(0|false|off|nein)$/i.test((process.env.HUB_OCCUPANCY_ALERTS ?
 /** Juengere Messung als das reicht fuer „Wie voll ist es?“, sonst wird neu gemessen. */
 const FRESH_MS = 4 * 60_000;
 const HISTORY_MS = 3 * 60 * 60_000;
+/** Kamera folgt oder zoomt: so lange warten, sonst diese Runde ohne sie. */
+const MOVED_WAIT_MS = 20_000;
 
 export interface AreaRate {
   id: number;
@@ -180,6 +182,9 @@ async function refreshAreas(): Promise<void> {
 }
 
 async function countCamera(cam: { id: number; name: string }, zone: { x: number; y: number }[] | undefined): Promise<CameraCount> {
+  if (!(await waitCameraAtHome(cam.id, MOVED_WAIT_MS))) {
+    return { id: cam.id, name: cam.name, persons: null, error: "Kamera bewegt sich" };
+  }
   try {
     const jpeg = await captureSnapshot(cam.id);
     const boxes = await detectPersons(jpeg);

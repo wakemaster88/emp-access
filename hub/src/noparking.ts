@@ -21,6 +21,7 @@
 import { api, log } from "./config.js";
 import {
   announceOnCamera,
+  cameraAtHome,
   captureSnapshot,
   findCameraByRef,
   listCameraConfigs,
@@ -378,6 +379,13 @@ async function checkCamera(cam: CameraConfig): Promise<void> {
     return;
   }
   missingZoneWarned.delete(cam.id);
+
+  // Kamera zoomt gerade auf eine Person: die Flaeche passt nicht zum Bild.
+  // Die Standzeit bleibt erhalten, das naechste Bild zaehlt wieder.
+  if (!cameraAtHome(cam.id)) {
+    improve("noparking", "skip_moved", { cam: cam.name });
+    return;
+  }
 
   let state = states.get(cam.id);
   if (!state) {

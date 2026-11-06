@@ -876,7 +876,31 @@ Snapshot und Log über Cloud-Tasks gelesen (`HUB_LOG` improve, Grep „Wächter�
 
 - Keine am Code. Design in `docs/superpowers/specs/2026-11-06-optischer-zoom-und-folgen-design.md`: immer optisch zoomen und folgen, Zonen-Kameras nur kurz (≤ 6 s, nie folgen), Folgen über das Kamera-Tracking ab dem ersten Signal, höchstens 2 min, dann Grundstellung und 1 min Pause, Belegung wartet auf die Grundstellung.
 
+### Diagnose (CAMERA_CAPS mit `motion`, Hub `a121111`, 10:13 UTC)
+
+- Ursache „folgt nicht“: Gastro, Shop (E1 Pro), Halle (RLC-823S1), Übungslift (RLC-823A 16X) melden alle `aiTrack: 1` und `bSmartTrack: 0`. `readAutoTrack` nahm `aiTrack` zuerst, hielt das Tracking für an und schrieb nie; der Schalter `bSmartTrack` blieb 0. Die 21 „folgen an“ seit 05.11. waren wirkungslos, ebenso die Regel „Klingel → Halle folgen“.
+- Tracking-Einstellungen: `trackType.people` überall 1; Rückkehr der Kamera nach Verschwinden/Stillstand: E1 Pro und RLC-823S1 10/20 s, RLC-823A 16X 30/30 s.
+- Wachposition: alle 8 Kameras beantworten `GetPtzGuard`, keine hat eine (`bexistPos: 0`, `benable: 0`).
+- Zoom-Positionen jetzt: Übungslift 18, Halle 8, Drehkreuz 2, Seilbahn B, Eingang, Halle 2 je 0. E1 Pro ohne Zoom (`GetZoomFocus` rspCode -17).
+- Drehkreuz (RLC-811A, ältere Firmware): nur `aiTrack: 0`, kein `bSmartTrack` (ohne Schwenkkopf ohnehin ohne Folgen).
+
 ### Nächster Schritt
 
-- Schritt 1 des Designs: `CAMERA_CAPS` um `GetAiCfg` und Wachposition erweitern (nur lesen), danach für alle Kameras abfragen.
 - Seilbahn A prüfen (nicht erreichbar).
+
+## 2026-11-06 (Personen: optischer Zoom und Folgen umgesetzt)
+
+### Änderung
+
+- `camera-motion.ts`: Folgen ab der ersten PERSON-Flanke (Gastro, Shop, Halle, Übungslift) über `bSmartTrack`, höchstens 120 s, dann Wachposition (fehlt sie: nach 10 min ohne Bewegung gespeichert) bzw. Preset „Grundstellung“ und 60 s Pause. Hand sperrt 5 min, Regeln gehen vor (Tracking des Hubs vorher aus, sonst merkt sich die Regel „an“), Neustart stellt zurück (`.cache/camera-motion.json`).
+- Optische Nahaufnahme für Gesichtserkennung und Wächter, gezielt aus den YOLO-Boxen (Schwenk-Kameras nach dem Zentrieren), relativ zur aktuellen Zoom-Position. Zonen-Kameras Eingang und Halle 2: ≤ 6 s, alle 2 min, nie bei Fahrzeug.
+- Halteverbot überspringt, Parkfläche hält, Belegung wartet bis 20 s, Fahrzeug-Burst bis 3 s, solange eine Kamera bewegt ist.
+- Regel-Aktion „Kamera steuern“ nutzt denselben Schalter (`bSmartTrack` vor `aiTrack`).
+- Geprüft: `tsc` Hub, `npm test` 321/321 (neu: 31 für Regeln und Abläufe mit Fake-Treiber), Module laden.
+
+### Nächster Schritt
+
+- Nach dem Deploy: `follow.*`, `face.optical*` und `camera.zoom_ratio` im Snapshot. Ziele nach zwei Tagen: `face.optical_face / face.optical` ≥ 50 %, mehr Gesichter optisch als digital, `follow.end_gone` > `follow.end_max`, `follow.home_fail` = 0.
+- Im Log „aktuelle Stellung als Grundstellung (Wachposition) gespeichert“ je Schwenk-Kamera prüfen: Die Stellung 10 min nach dem Neustart wird die Grundstellung. Steht eine Kamera dann nicht richtig, Wachposition in der Reolink-App setzen.
+- `camera.zoom_ratio` (erwartet gegen gemessen) je Modell auswerten, Zoomfaktor der RLC-823S1 festlegen.
+- Live ansehen: Übungslift folgt einer Person und kehrt zurück, Eingang zoomt kurz ohne Halteverbots-Fehlmeldung.

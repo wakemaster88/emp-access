@@ -5,7 +5,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
-import { markCameraConfigStale } from "./cameras.js";
+import { cameraAtHome, cameraIdByHost, markCameraConfigStale } from "./cameras.js";
 
 export interface ParkingLotReport {
   kioskId: string;
@@ -121,18 +121,22 @@ export async function collectParkingSnapshot(): Promise<ParkingSnapshot> {
     // Tracker nicht erreichbar – Zonen trotzdem melden.
   }
 
+  const prevLots = new Map(lastSnapshot.lots.map((l) => [l.kioskId, l]));
   return (lastSnapshot = {
     at: new Date().toISOString(),
     trackerOnline,
     lots: lotsCfg.map(({ cam, setup }) => {
       const id = String(cam.id ?? "");
       const live = counters[id] ?? {};
+      // Kamera zoomt gerade auf eine Person: letzte Zaehlung halten.
+      const camId = cameraIdByHost(String(cam.ip ?? "").trim());
+      const held = camId != null && !cameraAtHome(camId) ? prevLots.get(id) : undefined;
       return {
         kioskId: id,
         name: String(cam.name ?? id),
         ip: String(cam.ip ?? ""),
         mode: setup.mode,
-        count: Number(live.count ?? 0) || 0,
+        count: held ? held.count : Number(live.count ?? 0) || 0,
         lastUpdate: Number(live.lastUpdate ?? 0) || 0,
         lastError: typeof live.lastError === "string" ? live.lastError : null,
         fps: Number(live.fps ?? 0) || 0,

@@ -75,7 +75,7 @@ Die Befehlsnamen der Wachposition werden im Diagnose-Schritt an den echten Kamer
 
 ### Optische Nahaufnahme
 
-Eine Funktion `personCloseUp(cameraId)` für Gesichtserkennung und Wächter. Gleichzeitige Aufrufe teilen sich einen Lauf, das Ergebnis gilt 15 s.
+Eine Funktion `personCloseUp(cameraId)` für Gesichtserkennung und Wächter. Gleichzeitige Aufrufe teilen sich einen Lauf, das Ergebnis gilt 45 s (der Wächter fragt erst nach dem Bildmodell).
 
 - Voraussetzungen: Kamera mit Zoom, `HUB_CAMERA_AUTOZOOM` nicht `off`, kein `hand`/`rule`, Abstand seit der letzten Nahaufnahme 30 s (Zonen-Kamera 2 min). Keine Nahaufnahme, wenn das Weitbild schon einen Gallery-Treffer hatte.
 - Zonen-Kamera zusätzlich: nicht bei aktivem `VEHICLE`, laufendem Fahrzeug-Burst oder Lieferdienst-Prüfung. Beginnt `VEHICLE` während der Nahaufnahme, sofort zurück. Gesamtdauer höchstens 6 s.
@@ -92,10 +92,10 @@ Eine Funktion `personCloseUp(cameraId)` für Gesichtserkennung und Wächter. Gle
 
 Prüfen `atHome` und überspringen sonst:
 
-- Halteverbot (`noparking.ts`): Bild auslassen, Standzeit läuft nicht weiter.
+- Halteverbot (`noparking.ts`): Bild auslassen, die Standzeit bleibt erhalten.
 - Parkfläche (`parking.ts`): letzten Wert der betroffenen Fläche halten, nicht melden.
 - Kennzeichen und Lieferdienste: starten nicht, solange die Kamera bewegt ist. Die Nahaufnahme weicht ihnen aus (siehe oben).
-- Belegung (`occupancy.ts`): Messung dieser Kamera verschieben, bis sie in Grundstellung ist, höchstens bis zur nächsten Runde.
+- Belegung (`occupancy.ts`): bis 20 s auf die Grundstellung warten, sonst diese Kamera bis zur nächsten Runde auslassen.
 
 ## Fehlerbehandlung
 
@@ -120,7 +120,7 @@ Zeiten (120 s, 60 s, 30 s, 2 min, 6 s, 5 min) sind Konstanten im Code.
 ## Tests
 
 - Unit-Tests der reinen Logik: Zoom-Ziel (Person am Rand ergibt keinen Zoom, Person in der Mitte bis `M`, Gruppe vor Einzelperson, 5- und 16-fach), Vorrang und Pausen, Ende des Folgens (Person weg, 120 s, Hand).
-- Mock-Reolink um `GetZoomFocus`/`StartZoomFocus`, `GetAiCfg`/`SetAiCfg`, `GetPtzGuard`/`SetPtzGuard` erweitern. Abläufe: Person, Folgen, Person weg, Grundstellung, Pause. Zonen-Kamera zoomt höchstens 6 s, Halteverbot überspringt. Hand bricht ab. Neustart mitten im Folgen stellt zurück.
+- Fake-Treiber in `camera-motion.test.ts` (einen Mock-Reolink gibt es im Repo nicht). Abläufe: Person, Folgen, Person weg, Grundstellung, Pause. Zonen-Kamera zoomt höchstens 6 s, Halteverbot überspringt. Hand bricht ab. Neustart mitten im Folgen stellt zurück.
 - `tsc` Hub und Cloud, ESLint, `npm test`.
 
 ## Erfolgsmessung
