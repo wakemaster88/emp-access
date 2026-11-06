@@ -1648,6 +1648,23 @@ export async function getCameraCaps(cameraId: number, force = false): Promise<Ca
   return caps;
 }
 
+/**
+ * Nur lesen: Tracking-, Wachpositions- und Zoom-Einstellungen roh, wie die
+ * Kamera sie liefert (Diagnose fuer Folgen und Nahaufnahme, CAMERA_CAPS motion).
+ */
+export async function getMotionDiagnostics(cameraId: number): Promise<Record<string, unknown>> {
+  const cam = await getControlCam(cameraId);
+  await ensureLogin(cam);
+  const channel = cam.config.channel;
+  const read = (cmd: string) =>
+    cgi(cam, cmd, { channel }).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+  return {
+    aiCfg: await read("GetAiCfg"),
+    ptzGuard: await read("GetPtzGuard"),
+    zoomFocus: await read("GetZoomFocus"),
+  };
+}
+
 /* ---------------------------------------------------------------------------
  * MAC-basiertes IP-Re-Mapping: Der Hub lernt die MAC-Adresse jeder erreichten
  * Kamera (ARP-Tabelle) und meldet sie an die Cloud. Ist eine Kamera spaeter

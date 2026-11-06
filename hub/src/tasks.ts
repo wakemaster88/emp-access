@@ -13,6 +13,7 @@ import {
   setSiren,
   getPtzPresets,
   getCameraCaps,
+  getMotionDiagnostics,
   ensureCameraConfigs,
 } from "./cameras.js";
 import { analyzeSightings, enrollFromSighting } from "./face.js";
@@ -280,7 +281,9 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
       try {
         const caps = await getCameraCaps(cameraId, task.payload?.force === true);
-        return { success: true, result: { cameraId, caps } };
+        // Nur auf Nachfrage: Rohwerte fuer Folgen und Nahaufnahme.
+        const motion = task.payload?.motion === true ? await getMotionDiagnostics(cameraId) : undefined;
+        return { success: true, result: { cameraId, caps, ...(motion ? { motion } : {}) } };
       } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
       }
