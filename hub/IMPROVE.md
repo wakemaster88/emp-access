@@ -904,3 +904,18 @@ Snapshot und Log über Cloud-Tasks gelesen (`HUB_LOG` improve, Grep „Wächter�
 - Im Log „aktuelle Stellung als Grundstellung (Wachposition) gespeichert“ je Schwenk-Kamera prüfen: Die Stellung 10 min nach dem Neustart wird die Grundstellung. Steht eine Kamera dann nicht richtig, Wachposition in der Reolink-App setzen.
 - `camera.zoom_ratio` (erwartet gegen gemessen) je Modell auswerten, Zoomfaktor der RLC-823S1 festlegen.
 - Live ansehen: Übungslift folgt einer Person und kehrt zurück, Eingang zoomt kurz ohne Halteverbots-Fehlmeldung.
+
+## 2026-11-06 (Post-Auto am Eingang nicht als Lieferdienst gemeldet)
+
+Snapshot (seit 10:21 UTC, Stand 10:56): `delivery.none` 5, `alpr.plate` 1, `alpr.upload_noplate` 4, `camera.closeup_skip` 1, keine Hinweise. Log per `HUB_LOG`.
+
+### Befunde
+
+- 10:58:22–10:58:32 UTC, Kamera Eingang (Modus NOTIFY): Burst 9 Bilder in 10,7 s (je ~1,2 s statt 400 ms, 4K-Snap). Kennzeichen BN-PL 8546 auf Bild 1/2 (conf 0,98/0,97), Sichtung 1969 ohne `deliveryBrand`.
+- Lieferdienst-Prüfung (späte Bilder zuerst): Bild 9–6 Hintergrund (0,08–0,09 %), 5–4 kein Fahrzeug, Bild 3 und 2 Fahrzeug (10,9 % / 7,8 %), Bild 1 mit 1,89 % knapp unter `vehicleMinArea` 2 % übersprungen. „DHL nur auf 1/2 Bildern – kein Treffer“.
+- Bild (Frame 1, 11:58:24 Ortszeit): gelber VW-Transporter frontal von oben links; „DHL/Deutsche Post“ steht seitlich, lesbar nur kurz beim Einbiegen. Zwei Bilder mit Aufschrift sind bei dieser Anfahrt kaum zu schaffen.
+- Folgen/Nahaufnahme haben nicht eingegriffen (keine Zeilen dazu im Burst).
+
+### Nächster Schritt
+
+- Mit Aaron entscheiden: im Modus „Melden“ reicht ein Bild mit Marke (2 Bilder nur fürs Tor öffnen), und/oder Kennzeichen mit erkannter Marke merken, damit dasselbe Fahrzeug beim nächsten Mal am Kennzeichen erkannt wird.
