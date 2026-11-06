@@ -14,7 +14,9 @@ import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { STATE, recordHubEvent } from "./state.js";
 import { embedJpeg, embeddingHeader, scoreGallery, refreshGallery } from "./face.js";
-import { faceViaZoom } from "./person-crop.js";
+import { detectPersons, faceViaZoom } from "./person-crop.js";
+import { CameraMotion, type CloseUp, type MotionDriver, type PersistedMove } from "./camera-motion.js";
+import { RULE_HOLD_MS, isZoneCamera, readTrackingCfg } from "./camera-motion-rules.js";
 import { findAllowedVehicle, scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 import { speakOnCamera } from "./camera-talk.js";
@@ -576,17 +578,32 @@ async function uploadPersonSnapshotBody(
     }
   }
 
-  // Digitaler Zoom: Gesicht zu klein oder ohne Treffer → Kopf-Ausschnitte der
-  // Personen aus dem hochaufgeloesten Bild vergroessern und erneut pruefen.
+  // Gesicht zu klein oder ohne Treffer: erst optisch heranzoomen (Kamera mit
+  // Zoom-Objektiv), sonst Kopf-Ausschnitte digital vergroessern.
+  let optical = false;
   if (buf) {
     await refreshGallery();
     const direct = face ? scoreGallery(face.embedding, { upscaled: face.upscaled }).match : null;
     if (!direct) {
-      const z = await faceViaZoom(buf).catch(() => null);
-      if (z && (z.matched || !face)) {
-        log(`Personen-Snapshot ${cam.config.name}: Gesicht über digitalen Zoom${z.matched ? " (Treffer)" : ""}, ${z.persons} Person(en) im Bild`);
-        improve("face", z.matched ? "zoom_match" : "zoom_face", { cam: cam.config.name, persons: z.persons });
-        face = z.face;
+      const close = await motion.closeUp(cameraId).catch(() => null);
+      if (close) {
+        improve("face", "optical", { cam: cam.config.name, gain: Number(close.gain.toFixed(2)), persons: close.persons });
+        const got = (await embedJpeg(close.jpeg)) ?? (await faceViaZoom(close.jpeg).catch(() => null))?.face ?? null;
+        if (got) {
+          log(`Personen-Snapshot ${cam.config.name}: Gesicht über optischen Zoom ×${close.gain.toFixed(1)}`);
+          improve("face", "optical_face", { cam: cam.config.name, upscaled: got.upscaled });
+          face = got;
+          buf = close.jpeg;
+          optical = true;
+        }
+      }
+      if (!optical) {
+        const z = await faceViaZoom(buf).catch(() => null);
+        if (z && (z.matched || !face)) {
+          log(`Personen-Snapshot ${cam.config.name}: Gesicht über digitalen Zoom${z.matched ? " (Treffer)" : ""}, ${z.persons} Person(en) im Bild`);
+          improve("face", z.matched ? "zoom_match" : "zoom_face", { cam: cam.config.name, persons: z.persons });
+          face = z.face;
+        }
       }
     }
   }
@@ -602,6 +619,7 @@ async function uploadPersonSnapshotBody(
   await refreshGallery();
   const scored = scoreGallery(face.embedding, { upscaled: face.upscaled });
   const match = scored.match;
+  if (match && optical) improve("face", "optical_match", { cam: cam.config.name, score: match.score });
   const qs = new URLSearchParams({ cameraId: String(cameraId) });
   if (match) {
     qs.set("listedPersonId", String(match.listedPersonId));
@@ -707,6 +725,8 @@ async function uploadVehicleSnapshotBody(
   cam: CameraRuntime,
   cameraId: number
 ): Promise<{ bytes: number } | null> {
+  // Laeuft noch eine Nahaufnahme (Waechter), passen Zone und Mindestgroesse nicht.
+  if (!motion.atHome(cameraId)) await motion.waitAtHome(cameraId, 3_000);
 
   await new Promise((r) => setTimeout(r, VEHICLE_SNAP_DELAY_MS));
 
@@ -1177,14 +1197,12 @@ export async function ptzControl(
  * Automatisch folgen (Reolink Auto-Tracking) und Regel-Aktion „Kamera steuern“
  * ------------------------------------------------------------------------- */
 
-/** Schluessel in Get/SetAiCfg: neuere Firmware `aiTrack`, aeltere `bSmartTrack`. */
+/** Schalter in Get/SetAiCfg (readTrackingCfg): `bSmartTrack`, sonst `aiTrack`. */
 async function readAutoTrack(cam: CameraRuntime): Promise<{ key: string; on: boolean }> {
   await ensureLogin(cam);
-  const cfg = await cgi(cam, "GetAiCfg", { channel: cam.config.channel });
-  for (const key of ["aiTrack", "bSmartTrack"]) {
-    if (typeof cfg[key] === "number") return { key, on: cfg[key] === 1 };
-  }
-  throw new Error("Kamera kann nicht automatisch folgen (kein Auto-Tracking in GetAiCfg)");
+  const t = readTrackingCfg(await cgi(cam, "GetAiCfg", { channel: cam.config.channel }));
+  if (!t) throw new Error("Kamera kann nicht automatisch folgen (kein Auto-Tracking in GetAiCfg)");
+  return { key: t.key, on: t.on };
 }
 
 async function writeAutoTrack(cam: CameraRuntime, key: string, on: boolean): Promise<void> {
@@ -1218,6 +1236,9 @@ export async function cameraScene(
   const returnAfter = Number(payload?.returnAfterSeconds) || 0;
   if (presetId != null && !Number.isInteger(presetId)) throw new Error("presetId ungültig");
   if (presetId == null && autoTrack == null) throw new Error("Weder Preset noch Folgen angegeben");
+  // Die Regel bewegt die Kamera: Automatik haelt still, bis sie zurueck ist.
+  // Erst danach lesen, sonst gilt das Tracking des Hubs als Zustand vorher.
+  await motion.noteRule(cameraId, returnAfter > 0 ? returnAfter * 1000 + SCENE_SETTLE_MS + 5_000 : RULE_HOLD_MS);
 
   // Nur Preset: eine Kamera ohne Auto-Tracking ist in Ordnung.
   const track = await readAutoTrack(cam).catch((e) => {
@@ -1666,6 +1687,128 @@ export async function getMotionDiagnostics(cameraId: number): Promise<Record<str
 }
 
 /* ---------------------------------------------------------------------------
+ * Personen: Folgen und optische Nahaufnahme (camera-motion.ts)
+ * ------------------------------------------------------------------------- */
+
+const MOTION_FILE = path.join(CONFIG.hubDir, ".cache", "camera-motion.json");
+const flagOn = (v: string | undefined) => !/^(0|false|off|nein)$/i.test((v ?? "").trim());
+
+const motionDriver: MotionDriver = {
+  now: () => Date.now(),
+  sleep: (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms))),
+  async camera(id) {
+    const cam = cameras.get(id);
+    if (!cam) return null;
+    const caps = await getCameraCaps(id).catch(() => null);
+    if (!caps) return null;
+    const { parkingCameraHosts } = await import("./parking.js");
+    const hosts = await parkingCameraHosts().catch(() => new Set<string>());
+    return { id, name: cam.config.name, model: caps.model, pan: caps.pan, zoom: caps.zoom, zone: isZoneCamera(cam.config, hosts) };
+  },
+  async readZoom(id) {
+    const cam = await getControlCam(id);
+    return ptzSerial(id, () => readZoom(cam));
+  },
+  async writeZoom(id, pos) {
+    const cam = await getControlCam(id);
+    await ptzSerial(id, () => writeZoom(cam, pos));
+  },
+  async readTracking(id) {
+    const cam = await getControlCam(id);
+    await ensureLogin(cam);
+    return cgi(cam, "GetAiCfg", { channel: cam.config.channel });
+  },
+  async writeTracking(id, patch) {
+    const cam = await getControlCam(id);
+    await ptzSerial(id, async () => {
+      await ensureLogin(cam);
+      await cgi(cam, "SetAiCfg", { channel: cam.config.channel, ...patch });
+    });
+  },
+  async readGuard(id) {
+    const cam = await getControlCam(id);
+    await ensureLogin(cam);
+    const value = await cgi(cam, "GetPtzGuard", { channel: cam.config.channel }).catch(() => null);
+    const g = value?.PtzGuard as { bexistPos?: number } | undefined;
+    return { supported: !!g, exists: g?.bexistPos === 1 };
+  },
+  async guard(id, cmd) {
+    const cam = await getControlCam(id);
+    await ptzSerial(id, async () => {
+      await ensureLogin(cam);
+      await cgi(cam, "SetPtzGuard", {
+        PtzGuard: { channel: cam.config.channel, cmdStr: cmd, ...(cmd === "setPos" ? { bSaveCurrentPos: 1 } : {}) },
+      });
+    });
+  },
+  async presets(id) {
+    return ((await getPtzPresets(id)) as { presets: Array<{ id: number; name: string }> }).presets;
+  },
+  async gotoPreset(id, presetId) {
+    const cam = await getControlCam(id);
+    await ptzSerial(id, async () => {
+      await ensureLogin(cam);
+      await cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "ToPos", id: presetId, speed: 48 });
+    });
+  },
+  async snap(id) {
+    return captureSnap(await getControlCam(id));
+  },
+  persons: (jpeg) => detectPersons(jpeg),
+  vehicleActive: (id) => cameras.get(id)?.states.VEHICLE === true,
+  async save(moves) {
+    await fs.mkdir(path.dirname(MOTION_FILE), { recursive: true });
+    await fs.writeFile(MOTION_FILE, JSON.stringify(moves));
+  },
+  async load() {
+    const raw = await fs.readFile(MOTION_FILE, "utf8").catch(() => "[]");
+    const list = JSON.parse(raw) as unknown;
+    return Array.isArray(list) ? (list as PersistedMove[]) : [];
+  },
+  log,
+  count: (kind, event, data) => improve(kind, event, data),
+};
+
+const motion = new CameraMotion(motionDriver, {
+  follow: flagOn(process.env.HUB_CAMERA_AUTOFOLLOW),
+  zoom: flagOn(process.env.HUB_CAMERA_AUTOZOOM),
+});
+
+/** Optische Nahaufnahme fuer Gesichtserkennung und Waechter (null = digital weiter). */
+export function personCloseUp(cameraId: number): Promise<CloseUp | null> {
+  return motion.closeUp(cameraId);
+}
+
+/** Kamera steht in Grundstellung (Zonen-Auswertungen). */
+export function cameraAtHome(cameraId: number): boolean {
+  return motion.atHome(cameraId);
+}
+
+export function waitCameraAtHome(cameraId: number, maxMs: number): Promise<boolean> {
+  return motion.waitAtHome(cameraId, maxMs);
+}
+
+export function cameraFollowing(cameraId: number): boolean {
+  return motion.isFollowing(cameraId);
+}
+
+/** Handsteuerung aus Zentrale, Cloud oder Assistent: Automatik haelt 5 min still. */
+export function noteCameraHand(cameraId: number): void {
+  void motion.noteHand(cameraId);
+}
+
+/** Beim Hub-Start: von einem Neustart unterbrochene Bewegungen zurueckstellen. */
+export function restoreCameraMotion(): Promise<void> {
+  return motion.restore();
+}
+
+/** Kamera-Id zu einer IP (Kiosk-Konfiguration der Parkflaeche). */
+export function cameraIdByHost(host: string): number | null {
+  for (const cam of cameras.values()) if (cam.config.host === host) return cam.config.id;
+  return null;
+}
+
+/* ---------------------------------------------------------------------------
  * MAC-basiertes IP-Re-Mapping: Der Hub lernt die MAC-Adresse jeder erreichten
  * Kamera (ARP-Tabelle) und meldet sie an die Cloud. Ist eine Kamera spaeter
  * unter ihrer IP nicht erreichbar, wird die MAC in der ARP-Tabelle gesucht -
@@ -1855,6 +1998,13 @@ export async function pollCameras(): Promise<void> {
         for (const [type, active] of Object.entries(states)) {
           const was = cam.states[type] ?? false;
           if (active && !was) {
+            if (type === "PERSON") {
+              void motion
+                .onPersonStart(cam.config.id)
+                .catch((e) => log(`Kamera ${cam.config.name}: Folgen: ${e instanceof Error ? e.message : e}`));
+            } else if (type === "VEHICLE") {
+              motion.onVehicleStart(cam.config.id);
+            }
             const idle =
               !cam.snapshotInFlight &&
               Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS;
@@ -1871,6 +2021,11 @@ export async function pollCameras(): Promise<void> {
 
         // Entprellte Ereignisse gehen an Cloud, Regeln und Lagebild.
         for (const ev of debounceEvents(cam.debounce, states, Date.now(), EVENT_END_HOLD_MS)) {
+          if (ev.type === "PERSON" && ev.phase === "end") {
+            void motion
+              .onPersonEnd(cam.config.id)
+              .catch((e) => log(`Kamera ${cam.config.name}: Folgen beenden: ${e instanceof Error ? e.message : e}`));
+          }
           const at = new Date(ev.at).toISOString();
           events.push({ cameraId: cam.config.id, type: ev.type, phase: ev.phase, at });
           cam.lastEventAt = at;
@@ -1971,6 +2126,8 @@ export async function pollCameras(): Promise<void> {
         log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);
       }
     }
+
+    void motion.tick().catch((e) => log(`Kamera-Bewegung: ${e instanceof Error ? e.message : e}`));
 
     const openEvents = [...cameras.values()].reduce(
       (sum, c) => sum + Object.values(c.debounce.reported).filter(Boolean).length,

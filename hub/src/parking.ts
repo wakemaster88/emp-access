@@ -71,6 +71,18 @@ function parkingSetup(
   return null;
 }
 
+let parkingHostsCache: { at: number; hosts: Set<string> } | null = null;
+
+/** IPs der Kameras mit Parkflaeche (Kiosk-Konfiguration) – fester Bildausschnitt. */
+export async function parkingCameraHosts(): Promise<Set<string>> {
+  if (parkingHostsCache && Date.now() - parkingHostsCache.at < 60_000) return parkingHostsCache.hosts;
+  const cfg = await loadKioskConfig();
+  const cams = cfg && Array.isArray(cfg.cams) ? cfg.cams : [];
+  const hosts = new Set(cams.filter((c) => parkingSetup(c)).map((c) => String(c.ip ?? "").trim()).filter(Boolean));
+  parkingHostsCache = { at: Date.now(), hosts };
+  return hosts;
+}
+
 let lastSnapshot: ParkingSnapshot = emptySnapshot();
 
 /** Zuletzt eingesammelte Belegung – fuer das Dashboard, ohne neuen Tracker-Call. */

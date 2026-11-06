@@ -4,7 +4,7 @@ import { checkForUpdate } from "./updater.js";
 import { startDashboard } from "./dashboard.js";
 import { autoScan } from "./scanner.js";
 import { onTaskKick } from "./task-kick.js";
-import { pollCameras, CAMERA_POLL_INTERVAL_MS } from "./cameras.js";
+import { pollCameras, CAMERA_POLL_INTERVAL_MS, restoreCameraMotion } from "./cameras.js";
 import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
 import { alprWarmup } from "./alpr.js";
@@ -262,6 +262,8 @@ if (snmpConfigured()) {
 // VLAN-Soll/Ist je Switch-Port (nur lesend) – meldet halb umgesetzte
 // Insight-Aenderungen, bevor eine Kamera tagelang unbemerkt fehlt.
 startVlanCheck();
+// Folgen/Nahaufnahme, die ein Neustart unterbrochen hat: Kameras zurueckstellen.
+void restoreCameraMotion();
 setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 // Soundweb London: Konfiguration aus der Cloud, dann je Prozessor eine
 // DI-Verbindung mit Abonnements. Ohne eingerichtete Geräte ein Leerlauf.

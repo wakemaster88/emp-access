@@ -14,6 +14,7 @@ import {
   getPtzPresets,
   getCameraCaps,
   getMotionDiagnostics,
+  noteCameraHand,
   ensureCameraConfigs,
 } from "./cameras.js";
 import { analyzeSightings, enrollFromSighting } from "./face.js";
@@ -225,6 +226,7 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
         let result: unknown;
         switch (task.type) {
           case "CAMERA_PTZ":
+            noteCameraHand(cameraId);
             result = await ptzControl(cameraId, task.payload);
             break;
           case "CAMERA_SPOTLIGHT":
@@ -237,6 +239,8 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
             result = await setSiren(cameraId, task.payload);
             break;
           case "CAMERA_ZOOM":
+            // Nur Fahren ist Handsteuerung, Lesen (ohne pos/step) nicht.
+            if (task.payload?.pos != null || task.payload?.step != null) noteCameraHand(cameraId);
             result = { zoom: await cameraZoom(cameraId, task.payload) };
             break;
           default:

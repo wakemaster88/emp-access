@@ -17,6 +17,7 @@ export type ImproveKind =
   | "noparking"
   | "doorbird"
   | "camera"
+  | "follow"
   | "heartbeat"
   | "snmp"
   | "soundweb"
@@ -131,6 +132,12 @@ function hints(): string[] {
   }
   if (n("heartbeat.fail") >= 3) {
     out.push("Heartbeat zur Cloud unzuverlässig");
+  }
+  if (n("follow.home_fail") >= 1) {
+    out.push("Schwenk-Kamera fand nach dem Folgen nicht in die Grundstellung – Wachposition prüfen");
+  }
+  if (n("follow.no_home") >= 1) {
+    out.push("Schwenk-Kamera ohne Grundstellung folgt nicht – Wachposition setzen oder Preset „Grundstellung“ anlegen");
   }
   if (out.length === 0) out.push("Keine auffälligen Raten in dieser Session");
   return out;
