@@ -859,3 +859,24 @@ Offen:
 
 - VLAN-Filter: bei 768/1024 px 6/1 (sieben VLANs im Mock). Die Zahl hängt vom Standort ab, eine feste Spaltenzahl hilft nicht immer.
 - Kamera-Kacheln der Zentrale kürzen lange Namen bei zwei Spalten („Luba Seewiese · vor…“); der volle Name steht im Dialog.
+
+## 2026-11-06 (Personen: optischer Zoom und Folgen – Bestandsaufnahme und Design)
+
+Snapshot und Log über Cloud-Tasks gelesen (`HUB_LOG` improve, Grep „Wächter“/„folgen“), Kamerafähigkeiten über `CAMERA_CAPS` für alle 12 Reolinks. Diese Sitzung lief nicht auf dem Hub-Rechner.
+
+### Befunde
+
+- Snapshot seit 05.11. 17:11 UTC: `face.none` 265, `face.skip_no_face` 29, `face.zoom` 7, `face.zoom_face` 1, `face.person_nomatch` 17, `face.ok` 16. Offener Hinweis: „Gallery-Treffer knapp unter der Schwelle“.
+- Optischer Zoom für Personen praktisch aus: Gesichtserkennung nur digital, Wächter seit `a346114` digital, sobald YOLO Boxen liefert (Mitte-Zoom hatte Personen am Rand verfehlt). README beschreibt noch „optisch, PTZ folgt vorher“.
+- Folgen 21-mal ausgelöst (Übungslift, Shop) seit 05.11. 13:27 UTC, ohne Fehler, aber jeweils 30–60 s nach dem Ereignis (erst nach Bildmodell und Alarm). Aaron: Kameras folgen nicht. Ob es an der Verzögerung oder an der Tracking-Einstellung liegt, ist offen.
+- Fähigkeiten: Schwenken bei Gastro, Shop (E1 Pro), Halle (RLC-823S1), Übungslift (RLC-823A 16X). Zoom ohne Schwenkkopf bei Seilbahn B, Eingang, Drehkreuz, Halle 2 (RLC-811A). Seilbahn A (192.168.1.69): „fetch failed“.
+- Zonen-Kameras: Eingang (Halteverbot, Kennzeichen, Lieferdienste), Halle 2 (Parkfläche). Belegung misst an Übungslift, Seilbahn A/B, Gastro/Imbiss, Drehkreuz.
+
+### Änderung
+
+- Keine am Code. Design in `docs/superpowers/specs/2026-11-06-optischer-zoom-und-folgen-design.md`: immer optisch zoomen und folgen, Zonen-Kameras nur kurz (≤ 6 s, nie folgen), Folgen über das Kamera-Tracking ab dem ersten Signal, höchstens 2 min, dann Grundstellung und 1 min Pause, Belegung wartet auf die Grundstellung.
+
+### Nächster Schritt
+
+- Schritt 1 des Designs: `CAMERA_CAPS` um `GetAiCfg` und Wachposition erweitern (nur lesen), danach für alle Kameras abfragen.
+- Seilbahn A prüfen (nicht erreichbar).
