@@ -44,6 +44,15 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
   Cloud eingestellt (Kameras → Bearbeiten → „Fahrzeug ohne Kennzeichen“, Zone
   per Klick auf den Schnappschuss); `HUB_VEHICLE_MIN_AREA` und
   `HUB_VEHICLE_ZONE(_<id>)` in `.env` sind nur noch der Fallback.
+- **Lieferdienste** (`delivery.ts`): DHL/Deutsche Post, UPS, GLS, DPD, Hermes,
+  Amazon an der Aufschrift, mindestens auf 2 Bildern des Bursts. Steht die
+  Marke auf einem Bild und ist das Kennzeichen sicher gelesen (ab 90 %),
+  merkt sich der Hub „Kennzeichen → Marke“ (`.cache/delivery-plates.json`,
+  90 Tage ab letzter Sichtung, höchstens 200, Logik in
+  `delivery-plates-rules.ts`). Beim nächsten Besuch meldet er den
+  Lieferdienst schon am Kennzeichen, auch wenn die Aufschrift (frontal)
+  nicht lesbar ist. Ein gemerktes Kennzeichen öffnet nie das Tor; dafür das
+  Kennzeichen als freigegebenes Fahrzeug eintragen.
 - **Log-Abruf**: Task `HUB_LOG` liefert Ausschnitte von `emp-hub.log`,
   `emp-hub.error.log` oder der Diagnose an die Cloud (Netzwerk → Lokaler Hub
   → „Log abrufen“): Dateiende, ab Zeitpunkt (Binärsuche über die

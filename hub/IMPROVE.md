@@ -916,6 +916,13 @@ Snapshot (seit 10:21 UTC, Stand 10:56): `delivery.none` 5, `alpr.plate` 1, `alpr
 - Bild (Frame 1, 11:58:24 Ortszeit): gelber VW-Transporter frontal von oben links; „DHL/Deutsche Post“ steht seitlich, lesbar nur kurz beim Einbiegen. Zwei Bilder mit Aufschrift sind bei dieser Anfahrt kaum zu schaffen.
 - Folgen/Nahaufnahme haben nicht eingegriffen (keine Zeilen dazu im Burst).
 
+### Änderung
+
+- Aaron (06.11.): Kennzeichen mit erkannter Marke merken, nur melden, nie öffnen. Eine Marke auf einem Bild reicht weiterhin nicht für eine Meldung.
+- `delivery-plates-rules.ts` + `delivery.ts`: Marke auf ≥ 1 Bild und Kennzeichen ≥ 0,9 → `.cache/delivery-plates.json` (90 Tage ab letzter Sichtung, max. 200). Nachschlagen vor dem Lernen, also erst beim nächsten Besuch: Meldung „am Kennzeichen erkannt“ (`delivery.plate`), `opened` immer false.
+- Geprüft: `tsc` Hub, `npm test` 325/325 (neu: 4).
+
 ### Nächster Schritt
 
-- Mit Aaron entscheiden: im Modus „Melden“ reicht ein Bild mit Marke (2 Bilder nur fürs Tor öffnen), und/oder Kennzeichen mit erkannter Marke merken, damit dasselbe Fahrzeug beim nächsten Mal am Kennzeichen erkannt wird.
+- BN-PL 8546 wird beim nächsten Besuch gelernt, wenn „DHL“ auf einem Bild lesbar ist (Log „als DHL gemerkt“), ab dem übernächsten gemeldet.
+- `delivery.plate` gegen `delivery.weak`/`delivery.none` beobachten.

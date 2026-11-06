@@ -12,14 +12,22 @@
  *
  * Grenze: Wer „DHL“ groß auf ein Auto schreibt, kommt rein. Deshalb das
  * Zeitfenster und der Push bei jeder Öffnung.
+ *
+ * Am Kennzeichen: Steht die Marke auf mindestens einem Bild und ist das
+ * Kennzeichen sicher gelesen, merkt sich der Hub beides. Beim naechsten
+ * Besuch meldet er den Lieferdienst schon am Kennzeichen, oeffnet so aber
+ * nie das Tor (delivery-plates-rules.ts).
  */
-import { log } from "./config.js";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { CONFIG, log } from "./config.js";
 import { listDoorbirdIds, openDoorbirdDoor } from "./doorbird.js";
 import { readTextFromJpeg } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 import { recordHubEvent } from "./state.js";
 import { improve } from "./improve-log.js";
 import { inDeliveryWindow, matchDeliveryBrand } from "./delivery-match.js";
+import { PLATE_MIN_CONF, brandForPlate, rememberPlate, type PlateMemory } from "./delivery-plates-rules.js";
 
 const MIN_FRAMES = Math.max(1, Number(process.env.HUB_DELIVERY_MIN_FRAMES) || 2);
 /** Höchstens so viele Bilder lesen (je ~1,5 s Texterkennung). */
@@ -48,7 +56,46 @@ export interface DeliveryResult {
   reason: string | null;
 }
 
+/** Kennzeichen aus dem Burst (Plate-OCR) fuer das Wiedererkennen am Kennzeichen. */
+export interface DeliveryPlate {
+  plate: string | null;
+  confidence: number;
+  /** Bild mit dem Kennzeichen (fuers Foto). */
+  frameIndex: number;
+}
+
 const lastOpenAt = new Map<number, number>();
+
+const PLATES_FILE = path.join(CONFIG.hubDir, ".cache", "delivery-plates.json");
+let plates: PlateMemory | null = null;
+
+async function plateMemory(): Promise<PlateMemory> {
+  if (plates) return plates;
+  try {
+    const raw = JSON.parse(await fs.readFile(PLATES_FILE, "utf8")) as unknown;
+    plates = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as PlateMemory) : {};
+  } catch {
+    plates = {};
+  }
+  return plates;
+}
+
+async function savePlates(mem: PlateMemory): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(PLATES_FILE), { recursive: true });
+    await fs.writeFile(PLATES_FILE, JSON.stringify(mem));
+  } catch (e) {
+    log(`Lieferdienst: Kennzeichen speichern fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+/** Nur melden: Marke stand nicht (genug) lesbar am Auto, aber das Kennzeichen ist bekannt. */
+function byPlate(cam: DeliveryConfig, brand: string, plate: string, frameIndex: number): DeliveryResult {
+  log(`Lieferdienst ${cam.name}: ${brand} am Kennzeichen ${plate} erkannt – nur melden`);
+  improve("delivery", "plate", { cam: cam.name, brand });
+  recordHubEvent({ kind: "vehicle", severity: "alert", where: cam.name, title: `${brand} erkannt`, detail: "am Kennzeichen" });
+  return { brand, frames: [], frameIndex, opened: false, reason: "am Kennzeichen erkannt" };
+}
 
 function resolveDoorbirdId(): number | null {
   const env = Number(process.env.HUB_DELIVERY_DOORBIRD_ID);
@@ -63,7 +110,8 @@ function resolveDoorbirdId(): number | null {
  */
 export async function checkDelivery(
   cam: DeliveryConfig,
-  snaps: Buffer[]
+  snaps: Buffer[],
+  seen: DeliveryPlate | null = null
 ): Promise<DeliveryResult | null> {
   const mode = cam.deliveryMode === "OPEN" || cam.deliveryMode === "NOTIFY" ? cam.deliveryMode : null;
   if (!mode || snaps.length === 0) return null;
@@ -91,16 +139,28 @@ export async function checkDelivery(
   }
 
   const best = [...counts.entries()].sort((a, b) => b[1].length - a[1].length)[0];
-  if (!best) {
-    if (read > 0) improve("delivery", "none", { cam: cam.name, frames: read });
-    return null;
+
+  // Erst nachschlagen, dann lernen: Eine einzelne Aufschrift zaehlt so erst
+  // beim naechsten Besuch desselben Fahrzeugs.
+  const plate = seen?.plate && seen.confidence >= PLATE_MIN_CONF ? seen.plate : null;
+  const mem = plate ? await plateMemory() : null;
+  const known = plate && mem ? brandForPlate(mem, plate, Date.now()) : null;
+  if (plate && mem && (best || known)) {
+    const brandNow = best?.[0] ?? known!;
+    if (rememberPlate(mem, plate, brandNow, Date.now())) log(`Lieferdienst ${cam.name}: ${plate} als ${brandNow} gemerkt`);
+    await savePlates(mem);
+  }
+
+  if (!best || best[1].length < MIN_FRAMES) {
+    if (!best) {
+      if (read > 0) improve("delivery", "none", { cam: cam.name, frames: read });
+    } else {
+      log(`Lieferdienst ${cam.name}: ${best[0]} nur auf ${best[1].length}/${MIN_FRAMES} Bildern – kein Treffer`);
+      improve("delivery", "weak", { cam: cam.name, brand: best[0], frames: best[1].length });
+    }
+    return known && plate && seen ? byPlate(cam, known, plate, seen.frameIndex) : null;
   }
   const [brand, frames] = best;
-  if (frames.length < MIN_FRAMES) {
-    log(`Lieferdienst ${cam.name}: ${brand} nur auf ${frames.length}/${MIN_FRAMES} Bildern – kein Treffer`);
-    improve("delivery", "weak", { cam: cam.name, brand, frames: frames.length });
-    return null;
-  }
 
   let opened = false;
   let reason: string | null = null;

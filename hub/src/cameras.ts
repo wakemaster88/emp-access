@@ -909,11 +909,13 @@ async function uploadVehicleSnapshotBody(
     plate = await tryReadPlate(cam);
   }
 
-  // Lieferdienst (DHL, UPS, …) an der Aufschrift – nur wenn kein freigegebenes
-  // Kennzeichen schon gehandelt hat. Öffnet je nach Einstellung das Tor.
+  // Lieferdienst (DHL, UPS, …) an der Aufschrift oder am gemerkten Kennzeichen –
+  // nur wenn kein freigegebenes Kennzeichen schon gehandelt hat. Öffnet je
+  // nach Einstellung das Tor (am Kennzeichen allein nie).
   let delivery: DeliveryResult | null = null;
   if (!localPromise && cam.config.deliveryMode) {
-    delivery = await checkDelivery(cam.config, snaps).catch((e) => {
+    const seen = { plate: bestScore?.plate ?? null, confidence: bestScore?.confidence ?? 0, frameIndex: bestIdx ?? snaps.length - 1 };
+    delivery = await checkDelivery(cam.config, snaps, seen).catch((e) => {
       log(`Lieferdienst ${cam.config.name}: Prüfung fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
       return null;
     });
