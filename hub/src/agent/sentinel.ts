@@ -4,10 +4,11 @@
  * Bildern benachrichtigen.
  *
  * Ohne Rueckfrage (harmlos, stellt sich selbst zurueck):
- *  - PTZ-Kamera folgt dem Objekt fuer 3 Minuten (cameraScene, autoTrack),
- *    danach zurueck wie vorher.
+ *  - Schwenk-Kameras folgen Personen schon ab dem ersten Signal
+ *    (camera-motion.ts), nicht erst nach dem Alarm.
  *  - Bildserie: drei Standbilder im Abstand von 4 s.
- * Personen: heranzoomen (Zoom-Objektiv, PTZ folgt), Nahaufnahme bewerten und
+ * Personen: optische Nahaufnahme (personCloseUp, gemeinsam mit der
+ * Gesichtserkennung), sonst digitaler Ausschnitt; bewerten und
  * mit eingestempelten Mitarbeitern (emp-control) und der bestehenden
  * Gesichtserkennung abgleichen; vermutlich Mitarbeiter → kein Alarm
  * (Regeln in sentinel-rules.ts, decidePerson).
@@ -16,7 +17,7 @@
  */
 import { log } from "../config.js";
 import { currentEventSeq, hubEventsSince, recordHubEvent } from "../state.js";
-import { captureSnapshot, findCameraByRef, getCameraCaps, cameraScene, cameraZoom, type CameraCaps } from "../cameras.js";
+import { captureSnapshot, cameraFollowing, findCameraByRef, getCameraCaps, personCloseUp } from "../cameras.js";
 import { captureDoorbirdSnapshot, isDoorbird } from "../doorbird.js";
 import { roomsPayload } from "../rooms.js";
 import { improve } from "../improve-log.js";
@@ -34,7 +35,6 @@ const MODE = (process.env.HUB_AGENT_SENTINEL || "on").trim().toLowerCase();
 const NIGHT = (process.env.HUB_AGENT_SENTINEL_NIGHT || "22-6").trim();
 const COOLDOWN_MS = 3 * 60_000;
 const MAX_PER_HOUR = Number(process.env.HUB_AGENT_SENTINEL_MAX_PER_HOUR) > 0 ? Number(process.env.HUB_AGENT_SENTINEL_MAX_PER_HOUR) : 30;
-const FOLLOW_SECONDS = 180;
 /** So lange gilt eine gemeldete Person als „schon gemeldet“ (keine Wiederholung). */
 const ALERTED_MS = 20 * 60_000;
 
@@ -83,24 +83,6 @@ async function snap(cameraId: number): Promise<Buffer> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Heranzoomen fuer ein Detailbild: Zoom-Objektiv auf ~60 % fahren, Bild,
- * zurueck auf die vorige Position. Ohne Zoom: null (dann zaehlt das Weitbild).
- */
-async function closeUp(cameraId: number, caps: CameraCaps | null): Promise<Buffer | null> {
-  if (!caps?.zoom) return null;
-  const cur = await cameraZoom(cameraId, null);
-  const target = Math.round(cur.min + (cur.max - cur.min) * 0.6);
-  if (target <= cur.pos) return snap(cameraId);
-  try {
-    await cameraZoom(cameraId, { pos: target });
-    await sleep(3_000); // Fokus nachziehen lassen
-    return await snap(cameraId);
-  } finally {
-    await cameraZoom(cameraId, { pos: cur.pos }).catch(() => undefined);
-  }
-}
-
 async function inspect(where: string, title: string, at: number): Promise<void> {
   const cam = findCameraByRef(where);
   if (!cam) return;
@@ -146,18 +128,7 @@ async function inspectCam(cam: NonNullable<ReturnType<typeof findCameraByRef>>, 
       return;
     }
   }
-  // Automatisch: PTZ folgen lassen (stellt sich nach 3 min selbst zurueck).
   const caps = isDoorbird(cam.id) ? null : await getCameraCaps(cam.id).catch(() => null);
-  let followed = false;
-  const follow = async () => {
-    if (!caps?.pan || followed) return;
-    try {
-      await cameraScene(cam.id, { autoTrack: true, returnAfterSeconds: FOLLOW_SECONDS });
-      followed = true;
-    } catch (e) {
-      log(`Wächter: ${cam.name}: Folgen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
-    }
-  };
 
   // Person: heranzoomen, genauer ansehen, mit Stempeldaten/Gesicht abgleichen.
   let close: Buffer | null = null;
@@ -184,16 +155,15 @@ async function inspectCam(cam: NonNullable<ReturnType<typeof findCameraByRef>>, 
         return;
       }
     }
-    // Digitaler Zoom auf die gefundenen Personen (Ausschnitt aus dem Vollbild,
-    // die Kamera bewegt sich dafuer nicht). Nur ohne Boxen optisch zoomen.
+    // Nahaufnahme: optisch, wenn die Kamera ein Zoom-Objektiv hat, sonst
+    // digitaler Ausschnitt um die gefundenen Personen.
     if (boxes?.length) {
-      close = await groupCrop(first, boxes);
-      log(`Wächter: ${cam.name}: digitaler Zoom auf ${boxes.length} Person(en)${close ? "" : " (Ausschnitt lohnt nicht)"}`);
-    } else {
-      close = await closeUp(cam.id, caps).catch((e) => {
-        log(`Wächter: ${cam.name}: Heranzoomen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
-        return null;
-      });
+      const optical = isDoorbird(cam.id) ? null : await personCloseUp(cam.id).catch(() => null);
+      close = optical?.jpeg ?? (await groupCrop(first, boxes));
+      log(
+        `Wächter: ${cam.name}: ${optical ? `optischer Zoom ×${optical.gain.toFixed(1)}` : "digitaler Zoom"} auf ${boxes.length} Person(en)` +
+          (close ? "" : " (Ausschnitt lohnt nicht)")
+      );
     }
     const known = await activeCleared();
     let look: PersonLook | null = null;
@@ -237,7 +207,7 @@ async function inspectCam(cam: NonNullable<ReturnType<typeof findCameraByRef>>, 
   SENTINEL.alerts++;
   log(`Wächter: ${cam.name} AUFFÄLLIG (${verdict.dringlichkeit}): ${verdict.was}`);
   recordHubEvent({ kind: "camera", severity: "alert", where: cam.name, title: "Assistent: auffällig", detail: verdict.was });
-  await follow();
+  const followed = cameraFollowing(cam.id);
 
   const buttons: TgButton[][] = [];
   const row: TgButton[] = [];
@@ -255,7 +225,7 @@ async function inspectCam(cam: NonNullable<ReturnType<typeof findCameraByRef>>, 
   const caption =
     `${icon} ${cam.name}, ${time}: ${verdict.was}` +
     (reason ? `\n${reason}.` : "") +
-    (followed ? `\nKamera folgt ${FOLLOW_SECONDS / 60} Minuten.` : "");
+    (followed ? "\nKamera folgt der Person." : "");
   const ids = deps?.chatIds() ?? [];
   for (const id of ids) await sendPhoto(id, close ?? first, caption, buttons.length ? buttons : undefined).catch(() => undefined);
   if (close) for (const id of ids) await sendPhoto(id, first, `${cam.name} · Übersicht`).catch(() => undefined);
