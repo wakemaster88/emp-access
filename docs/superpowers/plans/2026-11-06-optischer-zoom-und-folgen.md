@@ -550,7 +550,7 @@ git commit -m "Hub: Regeln für Folgen und optische Nahaufnahme (Zoom-Rechnung, 
 - Consumes: alles aus Task 2.
 - Produces:
   - Typen `MotionCam { id; name; model: string | null; pan; zoom; zone }`, `GuardInfo { supported; exists }`, `PersistedMove { cameraId; following; trackKey: string | null; zoomHome: number | null }`, `CloseUp { jpeg: Buffer; at; gain; persons }`, `MotionDriver` (siehe Code).
-  - Klasse `CameraMotion(driver, { follow, zoom })` mit `onPersonStart(id): Promise<void>`, `onPersonEnd(id): Promise<void>`, `onVehicleStart(id): void`, `noteHand(id): Promise<void>`, `noteRule(id, ms): void`, `tick(): Promise<void>`, `closeUp(id): Promise<CloseUp | null>`, `atHome(id): boolean`, `waitAtHome(id, maxMs): Promise<boolean>`, `isFollowing(id): boolean`, `restore(): Promise<void>`.
+  - Klasse `CameraMotion(driver, { follow, zoom })` mit `onPersonStart(id): Promise<void>`, `onPersonEnd(id): Promise<void>`, `onVehicleStart(id): void`, `noteHand(id): Promise<void>`, `noteRule(id, ms): Promise<void>` (schaltet das Tracking des Hubs aus, bevor die Regel es liest; beim Umsetzen ergänzt, Test „Regel übernimmt“), `tick(): Promise<void>`, `closeUp(id): Promise<CloseUp | null>`, `atHome(id): boolean`, `waitAtHome(id, maxMs): Promise<boolean>`, `isFollowing(id): boolean`, `restore(): Promise<void>`.
 
 - [ ] **Step 1: Test schreiben (`hub/src/camera-motion.test.ts`)**
 
@@ -1527,7 +1527,8 @@ Direkt nach `if (presetId == null && autoTrack == null) throw new Error("Weder P
 
 ```ts
   // Die Regel bewegt die Kamera: Automatik haelt still, bis sie zurueck ist.
-  motion.noteRule(cameraId, returnAfter > 0 ? returnAfter * 1000 + SCENE_SETTLE_MS + 5_000 : RULE_HOLD_MS);
+  // Erst danach lesen, sonst gilt das Tracking des Hubs als Zustand vorher.
+  await motion.noteRule(cameraId, returnAfter > 0 ? returnAfter * 1000 + SCENE_SETTLE_MS + 5_000 : RULE_HOLD_MS);
 ```
 
 - [ ] **Step 7: `cameras.ts` – Flanken in `pollOne` und Takt in `pollCameras`**
