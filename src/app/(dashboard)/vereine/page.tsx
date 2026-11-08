@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { CreateVereinButton, VereineTable } from "@/components/vereine/vereine-table";
+import { VereineTabs } from "@/components/vereine/vereine-tabs";
 
 export default async function VereinePage() {
   const session = await safeAuth();
@@ -103,6 +104,7 @@ export default async function VereinePage() {
     <>
       <Header title="Vereine" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
+        <VereineTabs value="vereine" />
         {/* Tabelle läuft bis an den Kartenrand: Karte unten und Inhalt seitlich ohne Innenabstand. */}
         <Card flush>
           <CardHeader>

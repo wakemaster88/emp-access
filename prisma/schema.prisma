@@ -140,6 +140,7 @@ model Account {
   vouchers             Voucher[]
   telegramConfigs      TelegramConfig[]
   vereine              Verein[]
+  vereinSlotBookings   VereinSlotBooking[]
   lockers              Locker[]
   emailConfig          EmailConfig?
   emailRules           EmailRule[]
@@ -463,6 +464,7 @@ model Ticket {
   /// Direkt zugewiesene Geraete (additiv zu `ticketAreas`).
   ticketDevices           TicketDevice[]
   vereinAccess            VereinAccessTicket[] // Vereine, die über DIESES Ticket Zutritt erhalten
+  vereinSlotBookings      VereinSlotBooking[] // Vereinsbuchung, deren Zutritt dieses Ticket traegt
   lockerRentals           LockerRental[] // Schließfach-Vermietungen, in denen dieses Ticket Mieter ist (jahresweise)
   keyHolders              KeyHolder[] // Schlüsselnehmer-Einträge, die auf dieses Mitarbeiter-Ticket zeigen
   emailSends              EmailSend[] // Historie der an dieses Ticket gesendeten Automation-Mails
@@ -762,6 +764,8 @@ model Service {
   serviceAreas                   ServiceArea[]
   tickets                        Ticket[]
   slotBlocks                     SlotBlock[]
+  vereinBookableServices         VereinBookableService[]
+  vereinSlotBookings             VereinSlotBooking[]
   createdAt                      DateTime      @default(now())
   updatedAt                      DateTime      @updatedAt
 
@@ -799,6 +803,8 @@ model SlotBlock {
   annyBookingIds String?
   /// UUID des ANNY-Orders (Diagnose).
   annyOrderId    String?
+  /// Vereinsbuchung, zu der diese Sperre gehoert (leer = manuelle Sperre).
+  vereinBookings VereinSlotBooking[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -1208,18 +1214,106 @@ enum ShellyAction {
 /// – alle Mitglieder erben beim Scan automatisch die Areas dieser Tickets.
 /// Mitglieder bleiben eigenständige Tickets (eigener QR/RFID).
 model Verein {
-  id            Int                  @id @default(autoincrement())
-  name          String
-  description   String?
-  accountId     Int
-  account       Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  members       Ticket[] // Mitglieds-Tickets via Ticket.vereinId
-  accessTickets VereinAccessTicket[] // Zutritts-Tickets, deren Areas alle Mitglieder erben
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  id                Int                     @id @default(autoincrement())
+  name              String
+  description       String?
+  accountId         Int
+  account           Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  members           Ticket[] // Mitglieds-Tickets via Ticket.vereinId
+  accessTickets     VereinAccessTicket[] // Zutritts-Tickets, deren Areas alle Mitglieder erben
+  /// Vereinsportal: geheimer Link `/verein/<portalToken>`, ueber den der
+  /// Verein selbst Slots bucht. NULL = noch kein Link erzeugt.
+  portalToken       String?                 @unique
+  /// Portal an/aus. Aus = Link liefert 404, bestehende Buchungen bleiben.
+  portalEnabled     Boolean                 @default(false)
+  /// Bis wie viele Stunden vor Slot-Beginn der Verein selbst kostenlos
+  /// stornieren darf. Danach nur noch ueber das Backoffice.
+  portalCancelHours Int                     @default(48)
+  /// Wie viele Tage im Voraus der Verein buchen darf.
+  portalHorizonDays Int                     @default(60)
+  /// Zugang ausserhalb des Betriebs: Minuten vor Slot-Beginn (Vorbereitung)
+  /// und nach Slot-Ende (Nachbereitung), in denen Mitglieder rein-/rauskommen
+  /// und das Portal die freigegebenen Tueren oeffnen darf.
+  portalLeadMinutes   Int                     @default(30)
+  portalTrailMinutes  Int                     @default(30)
+  /// Geraete (Device.id, z. B. Shelly-Tuer Technikraum), die der Verein im
+  /// Zugangsfenster seiner Buchung ueber das Portal oeffnen darf.
+  portalDeviceIds     Int[]                   @default([])
+  /// DoorBird-Tore (Camera.id, kind DOORBIRD), ebenso.
+  portalDoorbirdIds   Int[]                   @default([])
+  /// Ansprechpartner/Rechnungsadresse fuer die Abrechnung (Freitext).
+  billingContact    String?
+  bookableServices  VereinBookableService[]
+  slotBookings      VereinSlotBooking[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
 
   @@unique([accountId, name])
   @@index([accountId])
+}
+
+/// Service, den ein Verein im Vereinsportal buchen darf, mit Preis pro Slot.
+model VereinBookableService {
+  id         Int     @id @default(autoincrement())
+  vereinId   Int
+  serviceId  Int
+  /// Preis pro gebuchtem Slot in Cent (brutto). 0 = kostenlos.
+  priceCents Int     @default(0)
+  verein     Verein  @relation(fields: [vereinId], references: [id], onDelete: Cascade)
+  service    Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([vereinId, serviceId])
+  @@index([vereinId])
+  @@index([serviceId])
+}
+
+enum VereinBookingStatus {
+  BOOKED
+  CANCELED
+}
+
+/// Slot-Buchung eines Vereins aus dem Vereinsportal. Sperrt den Slot in ANNY
+/// (ueber `slotBlockId`), gibt den Mitgliedern Zutritt (ueber das
+/// Zutritts-Ticket `accessTicketId`) und wird spaeter abgerechnet
+/// (`billedAt`). Service-Name und Preis sind Schnappschuesse zum Buchungs-
+/// zeitpunkt, damit die Abrechnung stabil bleibt.
+model VereinSlotBooking {
+  id             Int                 @id @default(autoincrement())
+  accountId      Int
+  account        Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  vereinId       Int
+  verein         Verein              @relation(fields: [vereinId], references: [id], onDelete: Cascade)
+  serviceId      Int?
+  service        Service?            @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceName    String
+  /// Tag in Berlin-Zeit (YYYY-MM-DD) und Slot als HH:mm.
+  date           String
+  slotStart      String
+  slotEnd        String
+  startDate      DateTime
+  endDate        DateTime
+  priceCents     Int                 @default(0)
+  status         VereinBookingStatus @default(BOOKED)
+  /// Name, den die buchende Person im Portal angegeben hat.
+  bookedBy       String?
+  note           String?
+  canceledAt     DateTime?
+  /// "VEREIN" (selbst storniert) oder "ADMIN" (vom Backoffice).
+  canceledBy     String?
+  slotBlockId    Int?
+  slotBlock      SlotBlock?          @relation(fields: [slotBlockId], references: [id], onDelete: SetNull)
+  accessTicketId Int?
+  accessTicket   Ticket?             @relation(fields: [accessTicketId], references: [id], onDelete: SetNull)
+  /// Zeitpunkt der Abrechnung. NULL = noch offen.
+  billedAt       DateTime?
+  /// Rechnungsnummer o. ae., frei.
+  invoiceRef     String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([accountId, date])
+  @@index([vereinId, date])
+  @@index([serviceId, date, slotStart])
 }
 
 /// Verknüpfung Verein ↔ Ticket: Mitglieder des Vereins erben beim Scan die
