@@ -4,8 +4,9 @@ export async function sendTelegramMessage(
   botToken: string,
   chatId: string,
   text: string,
-  parseMode: "HTML" | "MarkdownV2" = "HTML"
-): Promise<{ ok: boolean; description?: string }> {
+  parseMode: "HTML" | "MarkdownV2" = "HTML",
+  replyMarkup?: TelegramInlineKeyboard
+): Promise<{ ok: boolean; description?: string; result?: { message_id: number } }> {
   const res = await fetch(`${BASE}${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -13,6 +14,29 @@ export async function sendTelegramMessage(
       chat_id: chatId,
       text,
       parse_mode: parseMode,
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    }),
+  });
+  return res.json();
+}
+
+/** Text einer bestehenden Nachricht ändern (Buttons werden entfernt, wenn keine übergeben). */
+export async function editMessageText(
+  botToken: string,
+  chatId: string | number,
+  messageId: number,
+  text: string,
+  replyMarkup?: TelegramInlineKeyboard
+): Promise<{ ok: boolean; description?: string }> {
+  const res = await fetch(`${BASE}${botToken}/editMessageText`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      text: text.slice(0, 4096),
+      parse_mode: "HTML",
+      reply_markup: replyMarkup ?? { inline_keyboard: [] },
     }),
   });
   return res.json();

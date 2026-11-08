@@ -8,7 +8,7 @@ const bodySchema = z.object({
   serviceId: z.coerce.number().int().positive(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   slotStart: z.string().regex(/^\d{2}:\d{2}$/),
-  bookedBy: z.string().trim().max(120).optional().nullable(),
+  bookedBy: z.string().trim().min(1, "Bitte gebt euren Namen an.").max(120),
   note: z.string().trim().max(500).optional().nullable(),
 });
 
@@ -25,7 +25,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "Ungültige Anfrage" }, { status: 400 });
   }
   const parsed = bodySchema.safeParse(raw);
-  if (!parsed.success) return NextResponse.json({ error: "Ungültige Angaben" }, { status: 400 });
+  if (!parsed.success) {
+    const nameMissing = parsed.error.issues.some((i) => i.path[0] === "bookedBy");
+    return NextResponse.json({ error: nameMissing ? "Bitte gebt euren Namen an." : "Ungültige Angaben" }, { status: 400 });
+  }
 
   const result = await createVereinBooking(verein, {
     serviceId: parsed.data.serviceId,
