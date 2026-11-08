@@ -15,7 +15,7 @@ export default async function VereinePage() {
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
   const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
 
-  const [vereine, allTickets] = await Promise.all([
+  const [vereine, allTickets, pendingRequests] = await Promise.all([
     db.verein.findMany({
       where: accountFilter,
       include: {
@@ -78,6 +78,9 @@ export default async function VereinePage() {
       },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
+    isSuperAdmin
+      ? Promise.resolve(0)
+      : db.vereinSlotBooking.count({ where: { ...accountFilter, status: "REQUESTED", endDate: { gt: new Date() } } }),
   ]);
 
   // Tickets, die als Zutritts-Ticket auswählbar sind (alle aktiven Tickets).
@@ -104,7 +107,7 @@ export default async function VereinePage() {
     <>
       <Header title="Vereine" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
-        <VereineTabs value="vereine" />
+        <VereineTabs value="vereine" openCount={pendingRequests} />
         {/* Tabelle läuft bis an den Kartenrand: Karte unten und Inhalt seitlich ohne Innenabstand. */}
         <Card flush>
           <CardHeader>

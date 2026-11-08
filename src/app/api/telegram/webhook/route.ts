@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { answerCallbackQuery, editMessageCaption, telegramWebhookSecret } from "@/lib/telegram";
+import { answerCallbackQuery, editMessageCaption, editMessageText, telegramWebhookSecret } from "@/lib/telegram";
+import { approveVereinRequest, rejectVereinRequest } from "@/lib/verein-portal";
+import { loadRequestSummary, requestTelegramText, VEREIN_REQUEST_CALLBACK_RE } from "@/lib/verein-request-telegram";
 import { secretsEqual } from "@/lib/cron-auth";
 
 /**
@@ -17,6 +19,8 @@ import { secretsEqual } from "@/lib/cron-auth";
  *
  * Unterstützte Callbacks:
  *   door:<cameraId>  → DOORBIRD_OPEN-Hub-Task (Tor öffnen)
+ *   vreq:ok:<id>     → Wunschzeit-Anfrage eines Vereins freigeben
+ *   vreq:no:<id>     → Wunschzeit-Anfrage ablehnen
  */
 type WebhookConfig = { accountId: number; chatId: string; botToken: string };
 
@@ -117,6 +121,53 @@ export async function POST(request: NextRequest) {
       ).catch(() => undefined);
     }
 
+    return NextResponse.json({ ok: true });
+  }
+
+  const vreqMatch = cb.data.match(VEREIN_REQUEST_CALLBACK_RE);
+  if (vreqMatch) {
+    const approve = vreqMatch[1] === "ok";
+    const requestId = Number(vreqMatch[2]);
+    const who =
+      [cb.from?.first_name, cb.from?.last_name].filter(Boolean).join(" ") ||
+      cb.from?.username ||
+      "Telegram";
+    const result = approve
+      ? await approveVereinRequest(config.accountId, requestId)
+      : await rejectVereinRequest(config.accountId, requestId, null);
+    await answerCallbackQuery(
+      botToken,
+      cb.id,
+      result.ok ? (approve ? "Freigegeben, Slot ist gebucht." : "Abgelehnt.") : result.error,
+    );
+
+    if (cb.message) {
+      const summary = await loadRequestSummary(config.accountId, requestId).catch(() => null);
+      const base = summary ? requestTelegramText(summary) : "Anfrage";
+      const timeStr = new Intl.DateTimeFormat("de-DE", {
+        timeZone: "Europe/Berlin",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date());
+      const status = result.ok
+        ? `${approve ? "✅ Freigegeben" : "❌ Abgelehnt"} von ${who} um ${timeStr} Uhr`
+        : `⚠️ ${result.error}`;
+      // Bei Fehlern (z. B. Slot inzwischen belegt) bleiben die Tasten stehen,
+      // ausser die Anfrage ist schon entschieden.
+      const decided = result.ok || result.status === 404;
+      await editMessageText(
+        botToken,
+        cb.message.chat.id,
+        cb.message.message_id,
+        `${base}\n${status}`,
+        decided ? undefined : {
+          inline_keyboard: [[
+            { text: "✅ Freigeben", callback_data: `vreq:ok:${requestId}` },
+            { text: "❌ Ablehnen", callback_data: `vreq:no:${requestId}` },
+          ]],
+        },
+      ).catch(() => undefined);
+    }
     return NextResponse.json({ ok: true });
   }
 

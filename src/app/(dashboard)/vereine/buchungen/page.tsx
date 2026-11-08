@@ -8,6 +8,7 @@ import { Notice } from "@/components/ui/notice";
 import { VereineTabs } from "@/components/vereine/vereine-tabs";
 import { VereinPortalsCard } from "@/components/vereine/verein-portals-card";
 import { VereinBookingsCard } from "@/components/vereine/verein-bookings-card";
+import { VereinRequestsCard } from "@/components/vereine/verein-requests-card";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export default async function VereinsBuchungenPage({ searchParams }: PageProps) 
 
   const db = tenantClient(accountId);
   const now = new Date();
-  const [vereine, bookings, openCount] = await Promise.all([
+  const [vereine, bookings, openCount, requests] = await Promise.all([
     db.verein.findMany({
       where: { accountId },
       select: {
@@ -58,19 +59,39 @@ export default async function VereinsBuchungenPage({ searchParams }: PageProps) 
       where: {
         accountId,
         date: { gte: bounds.from, lte: bounds.to },
+        status: { in: ["BOOKED", "CANCELED"] },
         ...(vereinId ? { vereinId } : {}),
       },
       include: { verein: { select: { name: true } } },
       orderBy: [{ date: "asc" }, { slotStart: "asc" }],
     }),
     db.vereinSlotBooking.count({ where: { accountId, status: "BOOKED", billedAt: null, endDate: { lt: now } } }),
+    db.vereinSlotBooking.findMany({
+      where: { accountId, status: "REQUESTED", endDate: { gt: now } },
+      include: { verein: { select: { name: true } } },
+      orderBy: [{ date: "asc" }, { slotStart: "asc" }],
+      take: 100,
+    }),
   ]);
 
   return (
     <>
       <Header title="Vereine" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
-        <VereineTabs value="buchungen" openCount={openCount} />
+        <VereineTabs value="buchungen" openCount={openCount + requests.length} />
+        <VereinRequestsCard
+          rows={requests.map((r) => ({
+            id: r.id,
+            vereinName: r.verein.name,
+            serviceName: r.serviceName,
+            date: r.date,
+            slotStart: r.slotStart,
+            slotEnd: r.slotEnd,
+            priceCents: r.priceCents,
+            bookedBy: r.bookedBy,
+            note: r.note,
+          }))}
+        />
         <VereinBookingsCard
           month={month}
           vereinId={vereinId}
@@ -83,7 +104,7 @@ export default async function VereinsBuchungenPage({ searchParams }: PageProps) 
             slotStart: b.slotStart,
             slotEnd: b.slotEnd,
             priceCents: b.priceCents,
-            status: b.status,
+            status: b.status as "BOOKED" | "CANCELED",
             bookedBy: b.bookedBy,
             note: b.note,
             canceledBy: b.canceledBy,

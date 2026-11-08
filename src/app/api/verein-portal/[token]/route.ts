@@ -33,6 +33,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       bookedBy: true,
       note: true,
       canceledBy: true,
+      rejectReason: true,
       billedAt: true,
     },
   });
@@ -73,9 +74,12 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       bookedBy: b.bookedBy,
       note: b.note,
       canceledBy: b.canceledBy,
+      rejectReason: b.rejectReason,
       billed: !!b.billedAt,
       past: b.endDate.getTime() <= Date.now(),
-      canCancel: b.status === "BOOKED" && !b.billedAt && canVereinCancel(b.startDate, verein.portalCancelHours),
+      canCancel:
+        (b.status === "REQUESTED" && b.startDate.getTime() > Date.now())
+        || (b.status === "BOOKED" && !b.billedAt && canVereinCancel(b.startDate, verein.portalCancelHours)),
     })),
   });
 }

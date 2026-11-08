@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     where: {
       accountId: session.accountId,
       date: { gte: bounds.from, lte: bounds.to },
+      status: { in: ["BOOKED", "CANCELED"] },
       ...(Number.isInteger(vereinId) && vereinId > 0 ? { vereinId } : {}),
     },
     include: { verein: { select: { name: true } } },
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
     slotStart: r.slotStart,
     slotEnd: r.slotEnd,
     priceCents: r.priceCents,
-    status: r.status,
+    status: r.status as "BOOKED" | "CANCELED",
     bookedBy: r.bookedBy,
     note: r.note,
     canceledBy: r.canceledBy,

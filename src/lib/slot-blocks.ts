@@ -4,6 +4,7 @@ import {
   fetchAnnyServiceMatch,
   fetchAnnyServiceStartSlots,
   resolveServiceResourceId,
+  berlinOffset,
 } from "@/lib/anny-availability";
 import {
   createAnnyBlocker,
@@ -279,12 +280,9 @@ export async function releaseSlotBlock(
 }
 
 function buildIso(date: string, time: string): string {
-  // Berlin-Offset: simple Naeherung (CET/CEST). Genau genug, weil ANNY den
-  // Slot ohnehin ueber start_date matcht und wir den Wert primaer aus dem
-  // Slot selbst beziehen; das ist nur Fallback.
-  const month = parseInt(date.slice(5, 7), 10);
-  const offset = month >= 4 && month <= 10 ? "+02:00" : "+01:00";
-  return `${date}T${time}:00${offset}`;
+  // Fallback, wenn ANNY den Slot nicht (mehr) listet - etwa bei einer
+  // freigegebenen Wunschzeit-Anfrage des Vereinsportals.
+  return `${date}T${time}:00${berlinOffset(date)}`;
 }
 
 export function serializeBlock(b: {

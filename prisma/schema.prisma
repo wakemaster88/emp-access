@@ -1270,6 +1270,10 @@ model VereinBookableService {
 enum VereinBookingStatus {
   BOOKED
   CANCELED
+  /// Wunschzeit-Anfrage des Vereins, wartet auf Freigabe im Backoffice.
+  REQUESTED
+  /// Anfrage abgelehnt (`rejectReason`).
+  REJECTED
 }
 
 /// Slot-Buchung eines Vereins aus dem Vereinsportal. Sperrt den Slot in ANNY
@@ -1300,6 +1304,10 @@ model VereinSlotBooking {
   canceledAt     DateTime?
   /// "VEREIN" (selbst storniert) oder "ADMIN" (vom Backoffice).
   canceledBy     String?
+  /// Begruendung einer abgelehnten Anfrage (fuer den Verein sichtbar).
+  rejectReason   String?
+  /// Zeitpunkt der Freigabe bzw. Ablehnung einer Anfrage.
+  decidedAt      DateTime?
   slotBlockId    Int?
   slotBlock      SlotBlock?          @relation(fields: [slotBlockId], references: [id], onDelete: SetNull)
   accessTicketId Int?

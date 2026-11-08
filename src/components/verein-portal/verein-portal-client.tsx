@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, Building2, CalendarCheck, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight,
-  Clock, DoorOpen, KeyRound, Loader2, RefreshCw, Users, XCircle,
+  Clock, DoorOpen, Hourglass, Send, KeyRound, Loader2, RefreshCw, Users, XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,10 +36,11 @@ interface PortalBooking {
   slotStart: string;
   slotEnd: string;
   priceCents: number;
-  status: "BOOKED" | "CANCELED";
+  status: "BOOKED" | "CANCELED" | "REQUESTED" | "REJECTED";
   bookedBy: string | null;
   note: string | null;
   canceledBy: string | null;
+  rejectReason: string | null;
   billed: boolean;
   past: boolean;
   canCancel: boolean;
@@ -115,6 +116,11 @@ export function VereinPortalClient({
   const [bookError, setBookError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<PortalBooking | null>(null);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [reqStart, setReqStart] = useState("10:00");
+  const [reqEnd, setReqEnd] = useState("11:00");
+  const [requesting, setRequesting] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -163,13 +169,39 @@ export function VereinPortalClient({
 
   const service = data?.services.find((s) => s.id === serviceId) ?? null;
   const upcoming = useMemo(
-    () => (data?.bookings ?? []).filter((b) => b.status === "BOOKED" && !b.past),
+    () => (data?.bookings ?? []).filter((b) => (b.status === "BOOKED" || b.status === "REQUESTED") && !b.past),
     [data],
   );
   const history = useMemo(
-    () => (data?.bookings ?? []).filter((b) => b.status === "CANCELED" || b.past).reverse(),
+    () => (data?.bookings ?? []).filter((b) => b.status === "CANCELED" || b.status === "REJECTED" || b.past).reverse(),
     [data],
   );
+
+  async function sendRequest() {
+    if (serviceId == null || !date) return;
+    setRequesting(true);
+    setRequestError(null);
+    try {
+      const res = await fetch(`/api/verein-portal/${token}/requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serviceId, date, start: reqStart, end: reqEnd, bookedBy: bookedBy.trim() || null, note: note.trim() || null }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(payload.error ?? "Anfrage fehlgeschlagen.");
+      try {
+        if (bookedBy.trim()) localStorage.setItem(NAME_KEY, bookedBy.trim());
+      } catch { /* egal */ }
+      setSuccess(`Anfrage für ${fmtDay(date)}, ${reqStart}–${reqEnd} Uhr ist raus. Ihr seht unter „Meine Buchungen“, sobald wir sie freigeben.`);
+      setRequestOpen(false);
+      setNote("");
+      await load();
+    } catch (e) {
+      setRequestError(e instanceof Error ? e.message : "Anfrage fehlgeschlagen.");
+    } finally {
+      setRequesting(false);
+    }
+  }
 
   async function confirmBooking() {
     if (!picked || serviceId == null || !date) return;
@@ -202,7 +234,9 @@ export function VereinPortalClient({
     const res = await fetch(`/api/verein-portal/${token}/bookings/${b.id}`, { method: "DELETE" });
     const payload = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) throw new Error(payload.error ?? "Stornieren fehlgeschlagen.");
-    setSuccess(`Buchung am ${fmtDay(b.date)} um ${b.slotStart} ist storniert.`);
+    setSuccess(b.status === "REQUESTED"
+      ? `Anfrage für ${fmtDay(b.date)} um ${b.slotStart} ist zurückgezogen.`
+      : `Buchung am ${fmtDay(b.date)} um ${b.slotStart} ist storniert.`);
     await Promise.all([load(), loadSlots()]);
   }
 
@@ -351,7 +385,7 @@ export function VereinPortalClient({
                       ) : slotsNote ? (
                         <Notice tone="neutral" title={slotsNote} compact />
                       ) : visibleSlots.length === 0 ? (
-                        <EmptyState size="sm" icon={Clock} title="An diesem Tag gibt es keine buchbaren Slots." />
+                        <EmptyState size="sm" icon={Clock} title="An diesem Tag gibt es keine freien Slots." description="Fragt eure Wunschzeit an, wir prüfen sie und geben sie frei." />
                       ) : (
                         <div className={cn("grid grid-cols-2 gap-2 min-[380px]:grid-cols-3 sm:grid-cols-4", slotsLoading && "opacity-60")}>
                           {visibleSlots.map((s) => (
@@ -377,6 +411,13 @@ export function VereinPortalClient({
                           ))}
                         </div>
                       )}
+                    </div>
+
+                    <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-muted-foreground">Passt nichts? Fragt eine eigene Zeit an.</p>
+                      <Button variant="outline" className="max-sm:h-11" disabled={!date} onClick={() => { setRequestError(null); setSuccess(null); setRequestOpen(true); }}>
+                        <Send /> Wunschzeit anfragen
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -430,12 +471,12 @@ export function VereinPortalClient({
               <span className="font-semibold tabular-nums">{formatCents(service?.priceCents ?? 0)}</span>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="vp-name">Gebucht von</Label>
-              <Input id="vp-name" value={bookedBy} onChange={(e) => setBookedBy(e.target.value)} placeholder="Name" maxLength={120} className="max-sm:h-11" autoComplete="name" />
+              <Label htmlFor="vp-name">Gebucht von *</Label>
+              <Input id="vp-name" value={bookedBy} onChange={(e) => setBookedBy(e.target.value)} placeholder="Vor- und Nachname" maxLength={120} className="max-sm:h-11" autoComplete="name" required aria-required />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="vp-note">Notiz (optional)</Label>
-              <Textarea id="vp-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="z. B. Training Jugend" maxLength={500} rows={2} />
+              <Label htmlFor="vp-note">Bemerkung (optional)</Label>
+              <Textarea id="vp-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Namen der Teilnehmer oder Anmerkungen, z. B. Training Jugend" maxLength={500} rows={3} />
             </div>
             <p className="text-xs text-muted-foreground">
               Abgerechnet wird gesammelt. Kostenlos stornierbar bis {data?.verein.cancelHours ?? 48} Std. vorher.
@@ -444,9 +485,48 @@ export function VereinPortalClient({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPicked(null)} disabled={booking}>Abbrechen</Button>
-            <Button onClick={confirmBooking} disabled={booking}>
+            <Button onClick={confirmBooking} disabled={booking || !bookedBy.trim()}>
               {booking && <Loader2 className="animate-spin" />}
               Verbindlich buchen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={requestOpen} onOpenChange={(o) => { if (!requesting) setRequestOpen(o); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Wunschzeit anfragen</DialogTitle>
+            <DialogDescription>
+              {service?.name} · {date && fmtDay(date, true)}. Wir prüfen die Anfrage und geben sie frei. Erst dann ist sie gebucht.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="vr-start">Von</Label>
+                <Input id="vr-start" type="time" step={900} value={reqStart} onChange={(e) => setReqStart(e.target.value)} className="max-sm:h-11" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="vr-end">Bis</Label>
+                <Input id="vr-end" type="time" step={900} value={reqEnd} onChange={(e) => setReqEnd(e.target.value)} className="max-sm:h-11" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vr-name">Angefragt von *</Label>
+              <Input id="vr-name" value={bookedBy} onChange={(e) => setBookedBy(e.target.value)} placeholder="Vor- und Nachname" maxLength={120} className="max-sm:h-11" autoComplete="name" required aria-required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vr-note">Bemerkung (optional)</Label>
+              <Textarea id="vr-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Namen der Teilnehmer oder Anmerkungen, z. B. Training Jugend, 8 Personen" maxLength={500} rows={3} />
+            </div>
+            {requestError && <Notice tone="danger" icon={XCircle} title={requestError} compact role="alert" />}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRequestOpen(false)} disabled={requesting}>Abbrechen</Button>
+            <Button onClick={sendRequest} disabled={requesting || !reqStart || !reqEnd || !bookedBy.trim()}>
+              {requesting && <Loader2 className="animate-spin" />}
+              Anfrage senden
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -455,9 +535,9 @@ export function VereinPortalClient({
       <ConfirmDialog
         open={!!cancelTarget}
         onOpenChange={(o) => { if (!o) setCancelTarget(null); }}
-        title="Buchung stornieren?"
-        description={cancelTarget ? `${cancelTarget.serviceName} am ${fmtDay(cancelTarget.date, true)} um ${cancelTarget.slotStart}. Der Slot wird wieder frei und nicht berechnet.` : undefined}
-        confirmLabel="Stornieren"
+        title={cancelTarget?.status === "REQUESTED" ? "Anfrage zurückziehen?" : "Buchung stornieren?"}
+        description={cancelTarget ? `${cancelTarget.serviceName} am ${fmtDay(cancelTarget.date, true)} um ${cancelTarget.slotStart}.${cancelTarget.status === "REQUESTED" ? "" : " Der Slot wird wieder frei und nicht berechnet."}` : undefined}
+        confirmLabel={cancelTarget?.status === "REQUESTED" ? "Zurückziehen" : "Stornieren"}
         cancelLabel="Behalten"
         onConfirm={async () => {
           if (cancelTarget) await cancelBooking(cancelTarget);
@@ -469,10 +549,11 @@ export function VereinPortalClient({
 }
 
 function BookingRow({ booking: b, onCancel }: { booking: PortalBooking; onCancel?: () => void }) {
-  const canceled = b.status === "CANCELED";
+  const canceled = b.status === "CANCELED" || b.status === "REJECTED";
+  const requested = b.status === "REQUESTED";
   return (
     <div className="glass-tile flex items-center gap-3 px-3 py-2.5">
-      <IconChip icon={canceled ? XCircle : CalendarCheck} tone={canceled ? "neutral" : "primary"} />
+      <IconChip icon={canceled ? XCircle : requested ? Hourglass : CalendarCheck} tone={canceled ? "neutral" : requested ? "warning" : "primary"} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">
           {fmtDay(b.date)} · <span className="tabular-nums">{b.slotStart}–{b.slotEnd}</span>
@@ -480,16 +561,24 @@ function BookingRow({ booking: b, onCancel }: { booking: PortalBooking; onCancel
         <p className="truncate text-xs text-muted-foreground">
           {b.serviceName} · {formatCents(b.priceCents)}{b.bookedBy ? ` · ${b.bookedBy}` : ""}
         </p>
+        {b.status === "REJECTED" && b.rejectReason && (
+          <p className="text-xs text-muted-foreground">Abgelehnt: {b.rejectReason}</p>
+        )}
       </div>
-      {canceled ? (
-        <Badge variant="neutral">Storniert</Badge>
-      ) : b.past ? (
-        <Badge variant={b.billed ? "success" : "neutral"}>{b.billed ? "Abgerechnet" : "Vorbei"}</Badge>
-      ) : onCancel ? (
-        <Button variant="outline" size="sm" onClick={onCancel}>Stornieren</Button>
-      ) : (
-        <Badge variant="neutral">Gebucht</Badge>
-      )}
+      <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
+        {requested && <Badge variant="warning">Angefragt</Badge>}
+        {b.status === "REJECTED" ? (
+          <Badge variant="neutral">Abgelehnt</Badge>
+        ) : b.status === "CANCELED" ? (
+          <Badge variant="neutral">Storniert</Badge>
+        ) : b.past ? (
+          <Badge variant={b.billed ? "success" : "neutral"}>{b.billed ? "Abgerechnet" : "Vorbei"}</Badge>
+        ) : onCancel ? (
+          <Button variant="outline" size="sm" onClick={onCancel}>{requested ? "Zurückziehen" : "Stornieren"}</Button>
+        ) : (
+          !requested && <Badge variant="neutral">Gebucht</Badge>
+        )}
+      </div>
     </div>
   );
 }
