@@ -50,7 +50,12 @@ export function buildGo2rtcYaml(config: Config): string {
   // Reines LAN-Setup: explizite Host-Kandidaten statt Public-STUN.
   // Das spart pro Stream einen STUN-Roundtrip ins Internet und macht den
   // WebRTC-Verbindungsaufbau spürbar schneller/stabiler.
+  // go2rtc fragt ohne ice_servers trotzdem Googles Public-STUN an. Antwortet
+  // der nicht, wartet jede Verbindung ~5 s (2026-11-08 auf dem Mac Studio:
+  // Kacheln der Zentrale blieben bis zu einer Minute schwarz). Leere Liste
+  // schaltet STUN ganz ab.
   lines.push("webrtc:");
+  lines.push("  ice_servers: []");
   lines.push("  candidates:");
   lines.push(`    - 127.0.0.1:${WEBRTC_PORT}`);
   for (const ip of lanIPv4Addresses()) {
