@@ -7,13 +7,17 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     // Die React-Compiler-Regeln aus eslint-config-next 16 melden im Bestand
-    // rund 20 Stellen (setState im Effect, Date.now() im Render). Das sind
-    // Refactorings, keine Bugs – als Warnung sichtbar, aber CI bricht nicht.
+    // etliche Stellen (setState im Effect, Date.now() im Render, Ref-Zugriff
+    // beim Rendern). Das sind Refactorings, keine Bugs – als Warnung sichtbar,
+    // aber CI bricht nicht. `rules-of-hooks` bleibt bewusst ein Fehler:
+    // bedingt aufgerufene Hooks lassen React zur Laufzeit abstuerzen.
     rules: {
       "react-hooks/set-state-in-effect": "warn",
       "react-hooks/purity": "warn",
       "react-hooks/immutability": "warn",
-      "react-hooks/rules-of-hooks": "warn",
+      "react-hooks/refs": "warn",
+      "react-hooks/static-components": "warn",
+      "react-hooks/preserve-manual-memoization": "warn",
     },
   },
   // Override default ignores of eslint-config-next.

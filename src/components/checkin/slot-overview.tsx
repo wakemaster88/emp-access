@@ -235,6 +235,15 @@ export function SlotOverviewSection({
   blockBusyKey?: string | null;
 }) {
   const { summary, services } = data;
+  // Hooks stehen vor dem fruehen `return null` weiter unten: wechselt die
+  // Liste zwischen "leer" und "nicht leer" (Poll), bliebe die Hook-Reihenfolge
+  // sonst nicht gleich und React braeche das Rendern ab.
+  const nowMin = useCurrentMinuteIfToday(currentDate);
+  const [hoverMin, setHoverMin] = useState<number | null>(null);
+  const uiState = useMemo<SlotOverviewUIState>(
+    () => ({ nowMin, hoverMin, setHoverMin, onBlockSlot, onUnblockSlot, blockBusyKey }),
+    [nowMin, hoverMin, onBlockSlot, onUnblockSlot, blockBusyKey],
+  );
   // Saisonale / nicht-heute-buchbare Services werden ausgeblendet (z.B.
   // Ferienkurs erst im Juli, Anfaengerkurs nur am Wochenende). Falls fuer
   // den Service heute aber doch schon EMP-Tickets verkauft wurden, zeigen
@@ -255,12 +264,6 @@ export function SlotOverviewSection({
   //     Gruppe enthaelt nur 1 Service-Gruppe "Strandbad" -> Header waere
   //     reine Doppel-Info).
   const range = computeGlobalRange(visible);
-  const nowMin = useCurrentMinuteIfToday(currentDate);
-  const [hoverMin, setHoverMin] = useState<number | null>(null);
-  const uiState = useMemo<SlotOverviewUIState>(
-    () => ({ nowMin, hoverMin, setHoverMin, onBlockSlot, onUnblockSlot, blockBusyKey }),
-    [nowMin, hoverMin, onBlockSlot, onUnblockSlot, blockBusyKey],
-  );
   const resourceGroups = groupByResource(visible);
   const groupedPerResource = resourceGroups.map((rg) => {
     const serviceGroups = groupOverviewServices(rg.services);
