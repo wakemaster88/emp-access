@@ -12,8 +12,23 @@ import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } fro
 import { runScanRules } from "@/lib/room-rules";
 import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
 
-/** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
+/**
+ * Meldung des Raspberry Pi, dass das Relais per Dashboard-Button geoeffnet
+ * wurde. Sie dient NUR der Protokollierung und liefert nie `granted: true`:
+ * der Pi schickt jeden gelesenen Text an diesen Endpunkt, ein QR-Code mit
+ * dem Marker darf deshalb keine Tuer oeffnen.
+ *
+ * Erkannt wird die Meldung am Feld `event` (das ein gescannter Code nicht
+ * setzen kann). Aeltere Pi-Staende schicken nur den Marker als `code`; der
+ * zaehlt ausschliesslich, solange am Geraet gerade "Einmal oeffnen" ansteht.
+ */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
+const DASHBOARD_OPEN_EVENT = "dashboard_open";
+
+/** Reservierte Steuer-Marker (`__NAME__`) sind nie gueltige Scan-Codes. */
+function isReservedCode(code: string): boolean {
+  return code.length >= 4 && code.startsWith("__") && code.endsWith("__");
+}
 
 /**
  * Mindestlaenge fuer einen plausiblen Scan-Code. Liest der Pi-Scanner
@@ -45,6 +60,7 @@ export async function POST(request: NextRequest) {
   const code = rawCode.replace(/\s+/g, "");
   const stripped = code.replace(/^[#%]+/, "");
   const deviceId = Number(body.deviceId);
+  const isDashboardOpenEvent = body.event === DASHBOARD_OPEN_EVENT;
   // Optional: Drehkreuz/Pi schickt explizit die Bewegungs-Richtung mit
   // ("IN" = Eintritt, "OUT" = Austritt). Dadurch laesst sich auch ein
   // bidirektionales Geraet (accessIn UND accessOut gesetzt) eindeutig
@@ -60,12 +76,14 @@ export async function POST(request: NextRequest) {
           : null
       : null;
 
-  if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
+  if (!code && !isDashboardOpenEvent) return NextResponse.json({ error: "Missing code" }, { status: 400 });
   if (isNaN(deviceId)) return NextResponse.json({ error: "Missing deviceId" }, { status: 400 });
 
-  // Lesefehler abfangen. Reservierte Steuer-Codes wie DASHBOARD_OPEN_CODE
-  // bleiben davon unberuehrt (laenger als das Limit).
-  if (code !== DASHBOARD_OPEN_CODE && code.length < MIN_CODE_LENGTH) {
+  const reservedCode = isDashboardOpenEvent || isReservedCode(code);
+
+  // Lesefehler abfangen. Reservierte Steuer-Marker laufen weiter unten in
+  // ihren eigenen Zweig.
+  if (!reservedCode && code.length < MIN_CODE_LENGTH) {
     return NextResponse.json({
       granted: false,
       message: "Code zu kurz – bitte erneut scannen",
@@ -120,7 +138,7 @@ export async function POST(request: NextRequest) {
   // DASHBOARD_OPEN_CODE ist absichtlich ausgenommen: jeder Button-Klick
   // soll auch dann als separater Scan registriert werden, wenn er kurz
   // hintereinander erfolgt.
-  if (code !== DASHBOARD_OPEN_CODE) {
+  if (!reservedCode) {
     const recent = await db.scan.findFirst({
       where: {
         code,
@@ -186,12 +204,21 @@ export async function POST(request: NextRequest) {
     }).catch(() => { /* Snapshot ist Best-Effort – Scan-Verarbeitung nicht blockieren. */ });
   }
 
-  // Dashboard-Öffnung: Relais wurde per Button geöffnet → GRANTED-Scan ohne Ticket anlegen
-  if (code === DASHBOARD_OPEN_CODE) {
+  // Dashboard-Oeffnung: das Relais wurde bereits per Button geoeffnet, hier
+  // wird sie nur als Scan protokolliert. Die Antwort ist immer
+  // `granted: false` - sie darf nie als Zutrittsentscheidung taugen.
+  if (reservedCode) {
+    const legacyReport = code === DASHBOARD_OPEN_CODE && device.task === 1;
+    if (isDashboardOpenEvent || legacyReport) {
+      await db.scan.create({
+        data: { code: "Dashboard-Öffnung", deviceId, result: "GRANTED", accountId },
+      });
+      return NextResponse.json({ granted: false, logged: true, message: "Dashboard-Öffnung erfasst" });
+    }
     await db.scan.create({
-      data: { code: "Dashboard-Öffnung", deviceId, result: "GRANTED", accountId },
+      data: { code, deviceId, result: "DENIED", note: "reserved_code", accountId },
     });
-    return NextResponse.json({ granted: true, message: "Dashboard-Öffnung erfasst" });
+    return NextResponse.json({ granted: false, message: "Ungültiger Code" });
   }
 
   async function lockedResponse(ticketId?: number | null) {
