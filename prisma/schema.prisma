@@ -362,6 +362,7 @@ model Device {
   motionEvents         RoomMotionEvent[]
 
   @@index([accountId])
+  @@index([gardenaConfigId])
   @@index([keyRoomId])
   @@index([accountId, hueBridgeId, hueLightId])
   @@index([accountId, mowerName])
@@ -486,6 +487,11 @@ model Ticket {
   @@index([accountId, source])
   @@index([accountId, bulkBatchId])
   @@index([annyOrderId])
+  // Kiosk-, Monitor- und Dashboard-Abfragen filtern "Tickets des Tages" ueber
+  // Status + Datumsbereich. Ohne Datums-Index liest jede dieser Abfragen alle
+  // jemals eingeloesten Tickets des Mandanten.
+  @@index([accountId, endDate])
+  @@index([accountId, createdAt])
 }
 
 model Scan {
@@ -498,7 +504,9 @@ model Scan {
   ticketId  Int?
   accountId Int
   account   Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  device    Device?       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  // SetNull statt Cascade: wird ein Geraet geloescht, bleibt seine
+  // Scan-Historie (Statistik, Nachvollziehbarkeit) erhalten.
+  device    Device?       @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   ticket    Ticket?       @relation(fields: [ticketId], references: [id], onDelete: SetNull)
   /// Kamera-Schnappschuss zum Scan-Zeitpunkt (vom Hub aufgenommen).
   snapshot  ScanSnapshot?
@@ -1860,6 +1868,7 @@ model AllowedVehicle {
   @@index([accountId, isActive])
   @@index([shellyDeviceId])
   @@index([cameraId])
+  @@index([doorbirdCameraId])
 }
 
 /// Historie: wann ein Fahrzeug (ggf. mit Kennzeichen) gesehen wurde.
