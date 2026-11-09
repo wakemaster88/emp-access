@@ -37,7 +37,13 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
   stoppt sofort.
 - **Gesichter**: InsightFace-Sidecar (`buffalo_l`, CoreML wenn vorhanden).
 - **Kennzeichen**: fast-alpr (primär), macOS Vision als Fallback; lokale
-  Aktoren (DoorBird/Shelly) ohne Cloud-Roundtrip. Ohne lesbares Kennzeichen
+  Aktoren (DoorBird/Shelly) ohne Cloud-Roundtrip. Tor und Shelly schalten
+  nur bei einem **exakten** Treffer auf der Fahrzeugliste (liefert die Lesung
+  eine Sicherheit, zusätzlich mindestens `HUB_ALPR_ACTUATE_MIN_CONF`,
+  Standard 0,5). Ein unscharfer Treffer
+  (gleiche Ziffern, ein bis zwei Zeichen daneben) steht nur als Hinweis
+  „vermutlich …“ in Log und Ereignis und schaltet nie – weder lokal noch
+  ersatzweise über die Cloud (`plate-match.ts`). Ohne lesbares Kennzeichen
   entscheidet der YOLO-Tracker, ob überhaupt ein Auto an der Einfahrt steht:
   Boxen unter der Mindestgröße (Standard 2 % Bildfläche) oder außerhalb der
   Einfahrtszone gelten als Hintergrundverkehr. Beides wird pro Kamera in der
@@ -91,7 +97,10 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
 - **Streams**: Cloud-Camera ist führend; der Hub schreibt IPs in
   `webcams/config.json` und `go2rtc.yaml` (gitignored, kein Auto-Commit).
 - **Selbst-Update**: alle 5 min `git fetch` (async). Bei neuen Commits:
-  `reset --hard origin/main` + `npm install` + Neustart durch launchd.
+  `reset --hard` auf `origin/main`, bei geändertem Hub-Code `npm ci` (nur
+  wenn sich `package.json`/`package-lock.json` geändert haben), Pre-Flight
+  und erst dann Neustart durch launchd. Schlägt etwas fehl, geht der Checkout
+  zurück auf den vorherigen Commit (siehe „Selbst-Update absichern“).
 
 ## Mehrere VLANs
 
@@ -243,6 +252,53 @@ Ab da genügt ein Push auf `main`: jeder Hub zieht die Änderung innerhalb von
 Commit im Heartbeat. Im Cloud-Dashboard zeigt die Hub-Karte, welcher Hub
 verbunden ist und ob einer noch auf einem älteren Commit läuft.
 
+### Selbst-Update absichern
+
+Bevor der Hub auf einen neuen Stand neu startet (`src/updater.ts`):
+
+1. **Installation** nur, wenn sich `hub/package.json` oder
+   `hub/package-lock.json` geändert haben: `npm ci` (ohne Lockfile
+   `npm install`), asynchron und mit 5 min Zeitlimit – Tasks, DoorBird-Monitor
+   und „Tor offen halten“ laufen währenddessen weiter.
+2. **Pre-Flight**: Der neue Stand wird einmal in einem Kindprozess geladen
+   (`HUB_PREFLIGHT=1 npx tsx src/index.ts`, Zeitlimit 2 min). `index.ts`
+   beendet sich dabei direkt nach dem Laden aller Module, ohne etwas zu
+   starten. Das fängt Syntaxfehler, fehlende Dateien, fehlende Exporte und
+   fehlende Pakete ab – keine Fehler, die erst im Betrieb auftreten.
+3. Scheitert eins von beiden: **Rollback** (`git reset --hard` auf den
+   vorherigen Commit), **kein Neustart**, der Hub läuft mit dem bisherigen
+   Code weiter. Im Log steht „Update ABGEBROCHEN: …“; die Hub-Karte in der
+   Cloud zeigt weiter den alten Commit. Derselbe Stand wird frühestens nach
+   30 min erneut probiert, ein neuer Commit sofort.
+
+Die Abfrage `HUB_PREFLIGHT` am Anfang von `src/index.ts` darf nie entfallen
+oder umbenannt werden: Der jeweils laufende (alte) Updater verlässt sich
+darauf. Notausgang, falls sich ein Hub nicht mehr selbst aktualisiert:
+`hub/install/update.sh` auf der Maschine.
+
+**Signaturprüfung (optional, Standard aus):**
+
+```bash
+# hub/.env
+HUB_UPDATE_VERIFY_SIGNATURE=1
+```
+
+Dann spielt der Hub nur Commits ein, für die `git verify-commit` gelingt;
+sonst bleibt er auf dem alten Stand und loggt „Update ABGELEHNT“. **Vorher**
+müssen auf dem Hub-Rechner (im Benutzerkonto, unter dem der Hub läuft) die
+Signaturschlüssel installiert sein – sonst kommt kein Update mehr an:
+
+- GPG-signierte Commits: öffentliche Schlüssel aller, die auf `main`
+  schreiben, mit `gpg --import` einspielen. Für Merges über die
+  GitHub-Oberfläche auch den GitHub-Schlüssel
+  (`curl https://github.com/web-flow.gpg | gpg --import`). Jeder Schlüssel
+  im Schlüsselbund gilt als vertraut – dort nur die erlaubten ablegen.
+- SSH-signierte Commits: `git config gpg.ssh.allowedSignersFile <Datei>` im
+  Repo setzen und die erlaubten Schlüssel dort eintragen.
+
+Test vor dem Einschalten: `git fetch origin main && git verify-commit origin/main`
+im Repo muss ohne Fehler durchlaufen.
+
 Wird eine Maschine dauerhaft abgebaut, bleibt ihr `HubAgent` in der Cloud
 stehen. Einträge, die länger als sieben Tage stumm sind, blendet das Widget
 aus; sauber ist es, den Datensatz zu löschen.
@@ -271,6 +327,36 @@ Ohne Token bleibt das Dashboard strikt auf `127.0.0.1`. Es gibt keine
 Benutzerverwaltung – nur im vertrauenswuerdigen Netz (LAN/VPN) nutzen.
 Das Cookie gilt ein Jahr und verlaengert sich bei jedem Aufruf; das Token
 wird nach der Anmeldung aus der Adresse entfernt.
+
+**Schutz der schreibenden Routen** (`src/dashboard-guard.ts`): Anfragen vom
+Hub-Rechner selbst (127.0.0.1) brauchen kein Token. Damit keine fremde
+Webseite im Browser des Hub-Rechners das ausnutzt (CSRF, DNS-Rebinding),
+prueft der Hub jede Anfrage ausser GET/HEAD:
+
+- `Content-Type: application/json` ist Pflicht (Ausnahmen: das
+  WebRTC-Angebot der Kamera-Zentrale mit `application/sdp` und der
+  Messwert-Eingang `/api/climate/report`).
+- Ein `Origin`-Header muss zum Dashboard selbst gehoeren (gleicher Host und
+  Port wie die Anfrage).
+- Ohne gueltiges Token muss der `Host` ein eigener Name des Hubs sein:
+  `localhost`, `127.0.0.1`, der Rechnername (auch `<name>.local`), seine
+  IP-Adressen sowie alles aus `HUB_DASHBOARD_TLS_NAMES` und
+  `HUB_DASHBOARD_ALLOWED_HOSTS`. Geraete im LAN, die sich mit Token
+  angemeldet haben, erreichen den Hub weiter unter jedem Namen.
+
+Abgelehnte Anfragen antworten mit 403/415 und stehen (gedrosselt) als
+„Dashboard: … abgelehnt“ im Log. Wird das Dashboard **am Hub-Rechner
+selbst** oder ohne Token unter einem weiteren Namen aufgerufen (DNS-Eintrag
+im Router, Reverse-Proxy), diesen eintragen:
+
+```bash
+# hub/.env – mehrere durch Komma trennen, ohne Port
+HUB_DASHBOARD_ALLOWED_HOSTS=hub.example.lan
+```
+
+Skripte, die schreibend zugreifen (z. B. `curl -X POST …/api/action`),
+muessen `-H "Content-Type: application/json"` mitschicken. Der Shelly-H&T-
+Webhook (`GET /api/climate/report?token=…`) ist nicht betroffen.
 
 ### Als App auf iPhone/iPad (PWA)
 

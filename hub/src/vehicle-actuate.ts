@@ -7,6 +7,8 @@ import { listDoorbirdIds, openDoorbirdDoor } from "./doorbird.js";
 import {
   findAllowedVehicle,
   markVehicleTriggered,
+  plateActuationAllowed,
+  plateActuationMinConf,
   vehicleLocalActuatorsEnabled,
   type CachedVehicle,
 } from "./plate.js";
@@ -58,12 +60,38 @@ function resolveDoorbirdId(vehicle: CachedVehicle): number | null {
   return ids.length === 1 ? ids[0] : null;
 }
 
+/**
+ * Schaltet Tor/Shelly fuer ein freigegebenes Kennzeichen.
+ *
+ * `exact`/`confidence` beschreiben die Lesung (PlateScore.matchKind und
+ * .matchConfidence). Geschaltet wird nur bei exaktem Whitelist-Treffer – nie
+ * auf einen unscharfen. Hat die Lesung eine Confidence, muss sie mindestens
+ * HUB_ALPR_ACTUATE_MIN_CONF erreichen; ohne Messwert (Kamera-eigene
+ * Erkennung) zaehlt der exakte Treffer. Ist der Treffer zu unsicher, meldet
+ * das Ergebnis `skipCloud`, damit auch die Cloud nicht ersatzweise einen
+ * Tueroeffner-Task anlegt.
+ */
 export async function actuateIfAllowed(opts: {
   cameraId: number;
   plate: string;
+  exact: boolean;
+  /** null = kein Messwert (Kamera-eigene Erkennung, Roh-Text). */
+  confidence: number | null;
 }): Promise<LocalActuation | null> {
   const vehicle = findAllowedVehicle(opts.plate);
   if (!vehicle) return null;
+  if (!plateActuationAllowed(opts.exact, opts.confidence)) {
+    log(
+      `Fahrzeug ${vehicle.name}: Treffer zu unsicher (${opts.exact ? "exakt" : "nicht exakt"}, conf ${opts.confidence == null ? "unbekannt" : opts.confidence.toFixed(2)}, noetig ≥ ${plateActuationMinConf()}) – keine Schaltung`
+    );
+    return {
+      vehicle,
+      skipCloud: true,
+      doorOpened: false,
+      shellyTriggered: false,
+      shellyOk: null,
+    };
+  }
   if (!vehicleLocalActuatorsEnabled()) return null;
 
   if (vehicle.cameraId != null && vehicle.cameraId !== opts.cameraId) {

@@ -1,6 +1,8 @@
+import { writeSync } from "node:fs";
 import { CONFIG, api, log } from "./config.js";
 import { executeTask, type HubTask } from "./tasks.js";
 import { checkForUpdate } from "./updater.js";
+import { PREFLIGHT_OK, isPreflightRun } from "./updater-rules.js";
 import { startDashboard } from "./dashboard.js";
 import { autoScan } from "./scanner.js";
 import { onTaskKick } from "./task-kick.js";
@@ -26,6 +28,43 @@ import { startMower, stopMowerSidecar } from "./mower.js";
 import { startAgent } from "./agent/agent.js";
 import { startHealthTrends } from "./health-trends.js";
 import { startStaff } from "./staff.js";
+
+// Pre-Flight des Selbst-Updates (updater.ts): Bis hierher sind alle Module
+// geladen – Syntax, Importe und Abhaengigkeiten des neuen Stands stimmen also.
+// Nichts starten, nur bestaetigen und beenden. Muss VOR allem anderen stehen
+// und darf nie entfallen (Vertrag mit dem laufenden Updater, updater-rules.ts).
+if (isPreflightRun(process.env)) {
+  // Synchron schreiben: nach process.exit ginge eine gepufferte Ausgabe verloren.
+  writeSync(1, `${PREFLIGHT_OK}\n`);
+  process.exit(0);
+}
+
+/**
+ * Unerwarteter Fehler: laut loggen, aufraeumen, beenden – launchd (KeepAlive)
+ * startet neu. Ohne Handler beendet Node den Prozess in beiden Faellen
+ * ebenfalls, aber nur mit einer Zeile in emp-hub.error.log; so steht der
+ * Grund auch im Hub-Log und der Maeher-Sidecar wird gestoppt. Bewusst kein
+ * Weiterlaufen: Der Zustand ist danach unklar.
+ */
+let fatalHandled = false;
+function fatal(kind: string, err: unknown): void {
+  const text = err instanceof Error ? err.stack || err.message : String(err);
+  // Auch nach stderr (emp-hub.error.log), wie Node es ohne Handler taete.
+  console.error(`[${new Date().toISOString()}] ${kind}: ${text}`);
+  if (fatalHandled) return;
+  fatalHandled = true;
+  // Aufraeumen darf den Neustart nie aufhalten.
+  setTimeout(() => process.exit(1), 5_000).unref();
+  try {
+    log(`FATAL – ${kind}: ${text} – Hub beendet sich (launchd startet neu).`);
+    stopMowerSidecar();
+    void flushImproveSnapshot("exit").finally(() => process.exit(1));
+  } catch {
+    process.exit(1);
+  }
+}
+process.on("uncaughtException", (err) => fatal("unbehandelte Ausnahme", err));
+process.on("unhandledRejection", (reason) => fatal("unbehandelte Promise-Ablehnung", reason));
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
