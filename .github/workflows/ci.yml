@@ -6,6 +6,7 @@ on:
   pull_request:
 
 jobs:
+  # Cloud-App (src/) und Hub (hub/): Typen, Lint, Tests.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -18,5 +19,70 @@ jobs:
       - run: npx prisma generate
       - run: node scripts/gen-tenant-models.mjs --check
       - run: npm run typecheck
+      # Der Hub ist aus dem Haupt-tsconfig ausgenommen, spielt sich aber selbst
+      # von main ein - deshalb hier eigens pruefen.
+      - run: npx tsc -p hub --noEmit
       - run: npm run lint
       - run: npm test
+
+  # Migrationen: eine leere Datenbank muss sich vollstaendig aus
+  # prisma/migrations aufbauen lassen.
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: emp_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/emp_ci
+      DATABASE_URL_UNPOOLED: postgresql://postgres:postgres@localhost:5432/emp_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx prisma migrate deploy
+
+  # Raspberry Pi und Python-Helfer: laufen auf Tuersteuerungen und spielen
+  # sich selbst von main ein, also mindestens Syntax und Unit-Tests pruefen.
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m compileall -q raspberry-pi hub/alpr hub/face hub/plate hub/mower webcams/tracker
+      - run: python -m unittest discover -s raspberry-pi/tests
+
+  # Kiosk-Dashboard (webcams/): eigenes Paket mit pnpm.
+  webcams:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webcams
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: webcams/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm exec eslint .
+      - run: pnpm exec vitest run
