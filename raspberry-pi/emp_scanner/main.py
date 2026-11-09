@@ -9,9 +9,13 @@ Workflow:
 5. Background: task poll (Standard 5 s, min. 2 s) + Heartbeat mit System-Info (Standard 30 s)
 6. Background: auto-update check every 5 min
 7. Background: systemd watchdog ping every 30s
+
+Aufruf mit ``--reset-config`` löscht die Server-Zuordnung (URL, Token, Geräte-ID),
+danach wartet der Scanner wieder auf einen Konfigurations-QR.
 """
 from __future__ import annotations
 
+import argparse
 import signal
 import sys
 import time
@@ -20,10 +24,10 @@ import threading
 import os
 
 from emp_scanner import VERSION
-from emp_scanner.config import Config
+from emp_scanner.config import Config, looks_like_config_qr
 from emp_scanner.scanner import ScannerInput
 from emp_scanner.relay import RelayController
-from emp_scanner.api_client import ApiClient
+from emp_scanner.api_client import ApiClient, is_reserved_code
 from emp_scanner.updater import check_and_update, restart_service
 
 logging.basicConfig(
@@ -32,6 +36,12 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("emp.main")
+
+
+def _mask_code(code: str) -> str:
+    """Scan-Code fürs Log kürzen: nur kurzer Präfix + Länge, nie der ganze Code."""
+    visible = min(4, len(code) // 2)
+    return "%s… (%d Zeichen)" % (code[:visible], len(code))
 
 
 def _sd_notify(state: str):
@@ -59,6 +69,9 @@ class EmpScanner:
         self._running = False
         self._current_task = 0
         self._scan_lock = threading.Lock()
+        # Task-Poll und Heartbeat wenden Tasks an – Zustand + Relais gemeinsam umschalten.
+        self._task_lock = threading.Lock()
+        self._scanner_dead_logged = False
 
     def start(self):
         logger.info("═══════════════════════════════════════")
@@ -129,10 +142,32 @@ class EmpScanner:
         try:
             while self._running:
                 time.sleep(1)
+                self._check_scanner_health()
         except KeyboardInterrupt:
             pass
         finally:
             self._cleanup()
+
+    def _scanner_alive(self) -> bool:
+        return bool(self.scanner and self.scanner.is_alive())
+
+    def _check_scanner_health(self):
+        """
+        Meldet einmalig, wenn der Lese-Thread nicht mehr läuft (z. B. stdin-Fallback
+        unter systemd). Der Dienst läuft bewusst weiter: Öffnen per Dashboard,
+        NOT-AUF und Sperren funktionieren auch ohne Scanner, und ein Neustart
+        würde weder den Scanner zurückbringen noch das Relais in Ruhe lassen.
+        """
+        if self._scanner_alive():
+            self._scanner_dead_logged = False
+            return
+        if not self._scanner_dead_logged:
+            self._scanner_dead_logged = True
+            logger.error(
+                "Scanner-Thread läuft nicht mehr – es werden keine Codes gelesen. "
+                "Tasks (Öffnen per Dashboard, NOT-AUF) laufen weiter. "
+                "Scanner/evdev prüfen und Dienst neu starten."
+            )
 
     def _handle_scan(self, code: str):
         if not self._scan_lock.acquire(blocking=False):
@@ -143,19 +178,36 @@ class EmpScanner:
             self._scan_lock.release()
 
     def _process_scan(self, code: str):
-        logger.info("Scan: %s", code[:40] + ("..." if len(code) > 40 else ""))
+        logger.info("Scan: %s", _mask_code(code))
 
-        if code.startswith("{") and self.config.apply_qr_config(code):
-            logger.info("Neue Konfiguration übernommen – Neustart...")
-            self._cleanup()
-            sys.exit(0)
+        if is_reserved_code(code):
+            # Reservierte Marker (z. B. __DASHBOARD_OPEN__) sind nie gültige Tickets:
+            # lokal ablehnen, nicht an den Server senden.
+            logger.warning("Reservierter Code gescannt – lokal abgelehnt")
+            if self.relay:
+                self.relay.deny()
+            return
+
+        if looks_like_config_qr(code):
+            # Ein konfigurierter Scanner nimmt keinen Konfigurations-QR mehr an (sonst
+            # könnte jeder das Gerät auf einen fremden Server umstellen) und schickt
+            # ihn auch nicht als Ticket zum Server – er enthält ein API-Token.
+            logger.warning(
+                "Konfigurations-QR ignoriert – Gerät ist bereits konfiguriert "
+                "(Reset nur per Shell: --reset-config, siehe README)"
+            )
+            if self.relay:
+                self.relay.deny()
+            return
 
         if not self.api:
             logger.warning("Nicht konfiguriert – Scan ignoriert")
             return
 
         if self._current_task == 2:
-            logger.info("NOT-AUF aktiv – Zutritt ohne Prüfung")
+            # relay.grant() ist während NOT-AUF ein No-op für das Relais (nur Ton):
+            # es startet keinen Timer, der das Drehkreuz wieder schließen würde.
+            logger.info("NOT-AUF aktiv – Zutritt ohne Prüfung, Relais bleibt offen")
             if self.relay:
                 self.relay.grant()
             return
@@ -177,6 +229,14 @@ class EmpScanner:
                 logger.info("  Ticket: %s %s", ticket.get("firstName", ""), ticket.get("lastName", ""))
             if self.relay:
                 self.relay.grant()
+        elif result.get("offline"):
+            # Fail-closed, aber eigenes Signal: das Ticket wurde nicht geprüft.
+            logger.error(
+                "OFFLINE: Server nicht erreichbar – Ticket NICHT geprüft, Zutritt verweigert (%s)",
+                message,
+            )
+            if self.relay:
+                self.relay.offline()
         else:
             logger.info("DENIED: %s", message)
             if self.relay:
@@ -226,25 +286,34 @@ class EmpScanner:
                 time.sleep(1)
 
     def _apply_task(self, task: int):
-        self._current_task = task
-        if not self.relay:
-            return
-        if task == 1:
-            logger.info("Task: Einmal öffnen")
-            self.relay.grant()
-            self._current_task = 0
-            if self.api:
-                self.api.report_dashboard_open()
-                self.api.report_task_completed(0)
-        elif task == 2:
-            logger.warning("Task: NOT-AUF")
-            self.relay.emergency_open()
-        elif task == 3:
-            logger.warning("Task: Deaktiviert")
-            self.relay.close()
-        elif task == 0:
-            logger.info("Task: Reset/Idle")
-            self.relay.close()
+        report_open = False
+        # Task-Poll- und Heartbeat-Thread rufen beide hier hinein. Unter dem Lock
+        # bleiben _current_task und Relais-Zustand (inkl. NOT-AUF) immer zusammen.
+        with self._task_lock:
+            self._current_task = task
+            if not self.relay:
+                return
+            if task != 2:
+                # NOT-AUF endet mit jedem anderen Task – Relais wieder normal schaltbar.
+                self.relay.end_emergency()
+            if task == 1:
+                logger.info("Task: Einmal öffnen")
+                self.relay.grant()
+                self._current_task = 0
+                report_open = True
+            elif task == 2:
+                logger.warning("Task: NOT-AUF")
+                self.relay.emergency_open()
+            elif task == 3:
+                logger.warning("Task: Deaktiviert")
+                self.relay.close()
+            elif task == 0:
+                logger.info("Task: Reset/Idle")
+                self.relay.close()
+        # Server-Rückmeldung außerhalb des Locks (Netzwerk kann dauern).
+        if report_open and self.api:
+            self.api.report_dashboard_open()
+            self.api.report_task_completed(0)
 
     def _update_loop(self):
         time.sleep(60)
@@ -275,13 +344,18 @@ class EmpScanner:
         )
         setup_scanner.start()
 
+        dead_logged = False
         while not self.config.is_configured and self._running:
             _sd_notify("WATCHDOG=1")
+            if not setup_scanner.is_alive() and not dead_logged:
+                dead_logged = True
+                logger.error("Scanner-Thread ist beendet – Konfiguration per QR nicht möglich (Scanner/evdev prüfen)")
             time.sleep(1)
 
         setup_scanner.stop()
 
     def _setup_scan(self, code: str):
+        # Nur hier – solange das Gerät unkonfiguriert ist – wird ein Konfigurations-QR angenommen.
         self.config.apply_qr_config(code)
 
     def _shutdown(self, signum, frame):
@@ -297,7 +371,25 @@ class EmpScanner:
         logger.info("Beendet")
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="emp_scanner.main", description="EMP Access Scanner")
+    parser.add_argument(
+        "--reset-config",
+        action="store_true",
+        help="Server-Konfiguration (URL, Token, Geräte-ID) löschen; "
+             "danach wartet der Scanner wieder auf einen Konfigurations-QR",
+    )
+    args = parser.parse_args(argv)
+
+    if args.reset_config:
+        # Bewusster Reset mit Shell-Zugang – der einzige Weg, ein konfiguriertes
+        # Gerät einem anderen Server/Token zuzuordnen.
+        if not Config().reset_server_config():
+            logger.error("Zurücksetzen fehlgeschlagen – config.json nicht schreibbar")
+            sys.exit(1)
+        logger.info("Fertig. Dienst neu starten: sudo systemctl restart emp-scanner")
+        return
+
     app = EmpScanner()
     app.start()
 

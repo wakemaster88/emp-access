@@ -14,6 +14,18 @@ logger = logging.getLogger("emp.api")
 
 TIMEOUT_SCAN = 5
 TIMEOUT_HEARTBEAT = 10
+# Kurze Pause vor dem einen Wiederholungsversuch bei Verbindungsfehlern.
+SCAN_RETRY_DELAY = 0.3
+
+# Reservierte Steuer-Marker (`__NAME__`) sind nie gültige Scan-Codes.
+DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__"
+DASHBOARD_OPEN_EVENT = "dashboard_open"
+
+
+def is_reserved_code(code: str) -> bool:
+    """True für reservierte Marker wie `__DASHBOARD_OPEN__` (beginnt und endet mit `__`)."""
+    text = code.strip()
+    return len(text) >= 4 and text.startswith("__") and text.endswith("__")
 
 
 class ApiClient:
@@ -37,25 +49,49 @@ class ApiClient:
         """
         Send scanned code to server for validation.
         Returns: {"granted": bool, "message": str, "ticket"?: {...}}
+
+        Fail-closed: ist der Server nicht erreichbar, kommt
+        {"granted": False, "offline": True} zurück. Ein schneller Verbindungsfehler
+        (z. B. abgelaufene Keep-Alive-Verbindung, DNS, Verbindung abgelehnt) wird
+        genau einmal kurz wiederholt. Timeouts werden NICHT wiederholt: der Gast
+        hat dann schon TIMEOUT_SCAN Sekunden gewartet, und nach einem
+        Antwort-Timeout kann der Server den Scan bereits gebucht haben – ein
+        zweiter Versuch liefe nur in dessen Doppel-Scan-Sperre.
         """
-        try:
-            body: dict = {"code": code, "deviceId": self.device_id}
-            if direction in ("IN", "OUT"):
-                body["direction"] = direction
-            resp = self._session.post(
-                f"{self.server_url}/api/devices/pi/scan",
-                json=body,
-                timeout=TIMEOUT_SCAN,
-            )
-            if resp.status_code == 200:
-                return resp.json()
-            logger.error("Scan-Validierung fehlgeschlagen: HTTP %d", resp.status_code)
-        except requests.ConnectionError:
-            logger.error("Server nicht erreichbar")
-        except requests.Timeout:
-            logger.error("Scan-Timeout")
-        except Exception as e:
-            logger.error("Scan-Fehler: %s", e)
+        if is_reserved_code(code):
+            # Reservierte Marker werden nie als Scan zum Server geschickt.
+            logger.warning("Reservierter Code – nicht an den Server gesendet")
+            return {"granted": False, "message": "Ungültiger Code"}
+
+        body: dict = {"code": code, "deviceId": self.device_id}
+        if direction in ("IN", "OUT"):
+            body["direction"] = direction
+
+        for attempt in (1, 2):
+            try:
+                resp = self._session.post(
+                    f"{self.server_url}/api/devices/pi/scan",
+                    json=body,
+                    timeout=TIMEOUT_SCAN,
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+                logger.error("Scan-Validierung fehlgeschlagen: HTTP %d", resp.status_code)
+                break
+            except requests.Timeout:
+                # Muss vor ConnectionError stehen: ConnectTimeout ist beides.
+                logger.error("Scan-Timeout")
+                break
+            except requests.ConnectionError:
+                if attempt == 1:
+                    logger.warning("Server nicht erreichbar – Scan wird einmal wiederholt")
+                    time.sleep(SCAN_RETRY_DELAY)
+                    continue
+                logger.error("Server nicht erreichbar (auch im zweiten Versuch)")
+                break
+            except Exception as e:
+                logger.error("Scan-Fehler: %s", e)
+                break
 
         return {"granted": False, "message": "Server nicht erreichbar", "offline": True}
 
@@ -63,11 +99,18 @@ class ApiClient:
         """
         Meldet eine Dashboard-Öffnung (Relais per Button) als gültigen Scan am Server.
         Wird vom Pi aufgerufen, nachdem task=1 ausgeführt wurde.
+
+        Der Server erkennt die Meldung am Feld `event` (das ein gescannter Code
+        nie setzen kann). `code` bleibt für ältere Server-Stände erhalten.
         """
         try:
             resp = self._session.post(
                 f"{self.server_url}/api/devices/pi/scan",
-                json={"code": "__DASHBOARD_OPEN__", "deviceId": self.device_id},
+                json={
+                    "event": DASHBOARD_OPEN_EVENT,
+                    "code": DASHBOARD_OPEN_CODE,
+                    "deviceId": self.device_id,
+                },
                 timeout=TIMEOUT_SCAN,
             )
             return resp.status_code == 200
