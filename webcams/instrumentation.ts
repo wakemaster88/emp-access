@@ -8,6 +8,13 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // Shared Secret für den Sidecar bereitstellen, bevor er die Tür öffnen will.
+  try {
+    const { ensureInternalToken } = await import("./lib/config");
+    await ensureInternalToken();
+  } catch (e) {
+    console.warn("[internal-token] konnte nicht erzeugt werden", (e as Error).message);
+  }
   const { ensureTailgateStarted } = await import("./lib/tailgate");
   ensureTailgateStarted();
   const { ensureTailgateLiveStarted } = await import("./lib/tailgate-live");

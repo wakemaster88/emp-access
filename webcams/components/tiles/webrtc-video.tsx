@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 interface WebRTCVideoProps {
+  /** Basis des go2rtc-Proxys der Next-App (`/api/go2rtc`), nicht go2rtc selbst. */
   go2rtcUrl: string;
   src: string;
   audio?: boolean;
@@ -19,7 +20,8 @@ interface WebRTCVideoProps {
 }
 
 /**
- * Verbindet sich via WHEP-ähnlichem POST gegen go2rtc /api/webrtc.
+ * Verbindet sich via WHEP-ähnlichem POST gegen go2rtc /api/webrtc — über den
+ * Proxy der Next-App (`/api/go2rtc/webrtc`), nicht direkt.
  * go2rtc erwartet das SDP als request body und liefert das SDP-Answer im response body.
  */
 export function WebRTCVideo({
@@ -214,7 +216,7 @@ export function WebRTCVideo({
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        const url = `${go2rtcUrl.replace(/\/$/, "")}/api/webrtc?src=${encodeURIComponent(src)}`;
+        const url = `${go2rtcUrl.replace(/\/$/, "")}/webrtc?src=${encodeURIComponent(src)}`;
         let res: Response;
         try {
           res = await fetch(url, {

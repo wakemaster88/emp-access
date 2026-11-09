@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { injectRuntimePatch, rewriteAbsolutePaths } from "@/lib/embed-rewrite";
+import {
+  injectRuntimePatch,
+  rewriteAbsolutePaths,
+  stripCookies,
+} from "@/lib/embed-rewrite";
 
 const base = new URL("https://upstream.example.com");
 const prefix = "/api/embed/w1";
@@ -51,5 +55,27 @@ describe("injectRuntimePatch", () => {
   it("stellt das Script voran, wenn kein <head> existiert", () => {
     const out = injectRuntimePatch("<div>x</div>", prefix);
     expect(out.startsWith("<script>")).toBe(true);
+  });
+});
+
+describe("stripCookies", () => {
+  it("entfernt das Login-Cookie der App, behält Upstream-Cookies", () => {
+    expect(
+      stripCookies("session=abc; webcams_auth=deadbeef; theme=dark", ["webcams_auth"]),
+    ).toBe("session=abc; theme=dark");
+  });
+
+  it("liefert leer, wenn nur das App-Cookie da war", () => {
+    expect(stripCookies("webcams_auth=deadbeef", ["webcams_auth"])).toBe("");
+  });
+
+  it("verwechselt keine Cookies mit ähnlichem Namen", () => {
+    expect(stripCookies("webcams_auth2=x; my_webcams_auth=y", ["webcams_auth"])).toBe(
+      "webcams_auth2=x; my_webcams_auth=y",
+    );
+  });
+
+  it("lässt Werte mit '=' intakt", () => {
+    expect(stripCookies("a=b=c; webcams_auth=x", ["webcams_auth"])).toBe("a=b=c");
   });
 });

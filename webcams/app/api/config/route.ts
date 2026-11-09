@@ -3,6 +3,7 @@ import { loadConfig, saveConfig } from "@/lib/config";
 import { ConfigSchema } from "@/lib/types";
 import { ensureWorkersStarted } from "@/lib/people-counter";
 import { requireAuth } from "@/lib/auth";
+import { maskConfigSecrets, restoreConfigSecrets } from "@/lib/config-secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -10,17 +11,9 @@ export async function GET() {
   // Idempotent: startet Counter-Worker beim ersten Aufruf.
   await ensureWorkersStarted();
   const config = await loadConfig();
-  // Strip secrets before returning to clients
-  const safe = {
-    ...config,
-    cams: config.cams.map((c) => ({ ...c, password: c.password ? "***" : "" })),
-    doorbird: {
-      ...config.doorbird,
-      password: config.doorbird.password ? "***" : "",
-      webhookSecret: config.doorbird.webhookSecret ? "***" : "",
-    },
-  };
-  return NextResponse.json(safe);
+  // Alle Secrets maskieren (Passwörter, Admin-PIN, Bot-/API-Token,
+  // Webhook-Secrets) — die Antwort geht an jeden Dashboard-Browser.
+  return NextResponse.json(maskConfigSecrets(config));
 }
 
 export async function PUT(req: Request) {
@@ -42,22 +35,10 @@ export async function PUT(req: Request) {
     );
   }
 
-  // Restore masked secrets from existing config if value is "***"
+  // Maskierte Secrets ("***") aus der gespeicherten Config zurückholen —
+  // ein Platzhalter darf nie ein echtes Secret überschreiben.
   const current = await loadConfig();
-  const next = parsed.data;
-  next.cams = next.cams.map((c) => {
-    if (c.password === "***") {
-      const prev = current.cams.find((p) => p.id === c.id);
-      if (prev) return { ...c, password: prev.password };
-    }
-    return c;
-  });
-  if (next.doorbird.password === "***") {
-    next.doorbird.password = current.doorbird.password;
-  }
-  if (next.doorbird.webhookSecret === "***") {
-    next.doorbird.webhookSecret = current.doorbird.webhookSecret;
-  }
+  const next = restoreConfigSecrets(parsed.data, current);
 
   const saved = await saveConfig(next);
   // Worker neu syncen (Cam evt. enabled/disabled, Intervall geändert)

@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/config";
 import { doorbirdLightOn } from "@/lib/doorbird";
 import { logEvent } from "@/lib/audit";
+import { requireSameOrigin } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(req: Request) {
+  const crossOrigin = requireSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   const config = await loadConfig();
   if (!config.doorbird.enabled || !config.doorbird.ip) {
     return NextResponse.json({ error: "doorbird not configured" }, { status: 400 });

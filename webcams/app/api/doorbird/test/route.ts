@@ -3,20 +3,26 @@ import { loadConfig } from "@/lib/config";
 import { doorbirdInfo } from "@/lib/doorbird";
 import { publishRing } from "@/lib/event-bus";
 import { logEvent } from "@/lib/audit";
+import { requireSameOrigin } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
 /**
  * `?action=info` → Verbindungstest gegen Doorbird (info.cgi).
- * `?action=ring` → simuliert eine Klingel (lokal).
+ * `?action=ring` → simuliert eine Klingel (lokal, nur Anzeige: das
+ *                  Ring-Fenster fürs Tür-Öffnen geht dabei nicht auf).
  */
 export async function POST(req: Request) {
+  const crossOrigin = requireSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   const url = new URL(req.url);
   const action = url.searchParams.get("action") ?? "info";
   const config = await loadConfig();
 
   if (action === "ring") {
-    const accepted = publishRing({ test: true });
+    // Test-Klingel zeigt nur das Overlay — sie öffnet kein Ring-Fenster.
+    const accepted = publishRing({ test: true }, { test: true });
     await logEvent({ action: "doorbird-ring", ok: true, meta: { test: true } });
     return NextResponse.json({ ok: true, accepted });
   }

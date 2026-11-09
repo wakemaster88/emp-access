@@ -142,7 +142,7 @@ export default function DoorbirdPage() {
           <div>
             <CardTitle>Verbindung</CardTitle>
             <CardDescription>
-              IP und API-User aus der Doorbird-App. API-User braucht „API-Operator", „Watch", „Listen/Talk", „Open doors".
+              IP und API-User aus der Doorbird-App. API-User braucht „API-Operator“, „Watch“, „Listen/Talk“, „Open doors“.
             </CardDescription>
           </div>
         </CardHeader>
@@ -201,7 +201,7 @@ export default function DoorbirdPage() {
             <CardTitle>Webhook</CardTitle>
             <CardDescription>
               Diese URL trägst du in der Doorbird-App unter „HTTP-Anrufe bei
-              Klingelvorgang" ein. Das Secret in der URL schützt vor fremden Auslösungen.
+              Klingelvorgang“ ein. Das Secret in der URL schützt vor fremden Auslösungen.
             </CardDescription>
           </div>
         </CardHeader>
@@ -340,7 +340,9 @@ export default function DoorbirdPage() {
             onClick={async () => {
               const r = await fetch("/api/doorbird/test?action=ring", { method: "POST" });
               const j = await r.json();
-              if (j.ok && j.accepted) toast("Test-Klingel ausgelöst", "success");
+              // Nur Anzeige-Test: das Ring-Fenster fürs Tür-Öffnen geht dabei nicht auf.
+              if (j.ok && j.accepted)
+                toast("Test-Klingel ausgelöst (Tür öffnen bleibt gesperrt)", "success");
               else if (j.ok) toast("Klingel ignoriert (Cooldown)", "info");
               else toast(j.error ?? "Fehler", "error");
             }}

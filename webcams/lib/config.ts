@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ConfigSchema, type Config } from "./types";
+import { generateInternalToken } from "./internal-token";
 
 /**
  * Lokale Quelle der Wahrheit: `webcams/config.json` (gitignored).
@@ -49,12 +50,31 @@ export async function loadConfig(): Promise<Config> {
 
 export async function saveConfig(config: Config): Promise<Config> {
   const validated = ConfigSchema.parse(config);
+  // Shared Secret Next ↔ Sidecar: einmalig erzeugen, danach bleibt es stehen.
+  if (!validated.internalToken) validated.internalToken = generateInternalToken();
   const tmpPath = `${CONFIG_PATH}.tmp`;
   await fs.writeFile(tmpPath, JSON.stringify(validated, null, 2), "utf8");
   await fs.rename(tmpPath, CONFIG_PATH);
   const stat = await fs.stat(CONFIG_PATH);
   cache = { config: validated, mtimeMs: stat.mtimeMs };
   return validated;
+}
+
+/**
+ * Sorgt dafür, dass `internalToken` in der config.json steht (wird beim
+ * Server-Start aufgerufen). Bestand-Configs bekommen es so ohne Zutun;
+ * der Sidecar liest es von dort. Existiert noch keine config.json, legen
+ * wir keine an — das Token entsteht dann beim ersten Speichern.
+ */
+export async function ensureInternalToken(): Promise<void> {
+  const config = await loadConfig();
+  if (config.internalToken) return;
+  try {
+    await fs.access(CONFIG_PATH);
+  } catch {
+    return;
+  }
+  await saveConfig(config);
 }
 
 export function invalidateCache() {

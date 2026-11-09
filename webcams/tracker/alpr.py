@@ -21,7 +21,7 @@ Pipeline pro Tick:
     Cooldown-Check pro Schild
         │
         ▼
-    POST {appUrl}/api/doorbird/open  (Loopback)
+    POST {appUrl}/api/doorbird/open  (Loopback, Header x-internal-token)
         │
         ▼
     Audit-Event (in-memory + Snapshot-Cache)

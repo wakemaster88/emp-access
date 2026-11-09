@@ -620,7 +620,7 @@ export function CamForm({
             <div className="text-sm font-medium">Drehkreuz-Kontrolle</div>
             <div className="text-xs text-foreground/60">
               Vergleicht die gezählten Durchgänge mit den gültigen Scans dieser
-              Geräte. Braucht den Personenzähler im Modus „Crossing rein/raus"
+              Geräte. Braucht den Personenzähler im Modus „Crossing rein/raus“
               und eine Zähllinie.
             </div>
           </div>

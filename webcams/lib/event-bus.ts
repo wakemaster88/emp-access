@@ -47,6 +47,7 @@ declare global {
   var __webcams_event_bus: EventEmitter | undefined;
   // eslint-disable-next-line no-var
   var __webcams_last_ring_at: number | undefined;
+  var __webcams_last_test_ring_at: number | undefined;
 }
 
 const bus = (globalThis.__webcams_event_bus ??= new EventEmitter());
@@ -54,13 +55,28 @@ bus.setMaxListeners(50);
 
 const RING_DEDUPE_MS = 5000;
 
-export function publishRing(meta?: Record<string, unknown>) {
+/**
+ * Meldet ein Klingeln an alle Dashboards.
+ *
+ * Nur ein echtes Klingeln (DoorBird-Webhook mit Secret) öffnet das
+ * Ring-Fenster fürs Tür-Öffnen. Eine Test-Klingel (`test: true`) zeigt das
+ * Overlay, setzt aber `getLastRingAt()` nicht — sonst könnte jeder
+ * Dashboard-Nutzer sich das Fenster selbst aufmachen.
+ */
+export function publishRing(
+  meta?: Record<string, unknown>,
+  opts: { test?: boolean } = {},
+) {
   const now = Date.now();
-  const last = globalThis.__webcams_last_ring_at ?? 0;
-  if (now - last < RING_DEDUPE_MS) {
-    return false;
+  const lastReal = globalThis.__webcams_last_ring_at ?? 0;
+  if (opts.test) {
+    const lastTest = globalThis.__webcams_last_test_ring_at ?? 0;
+    if (now - Math.max(lastReal, lastTest) < RING_DEDUPE_MS) return false;
+    globalThis.__webcams_last_test_ring_at = now;
+  } else {
+    if (now - lastReal < RING_DEDUPE_MS) return false;
+    globalThis.__webcams_last_ring_at = now;
   }
-  globalThis.__webcams_last_ring_at = now;
   const event: RingEvent = {
     type: "ring",
     source: "doorbird",
@@ -71,6 +87,7 @@ export function publishRing(meta?: Record<string, unknown>) {
   return true;
 }
 
+/** Zeitpunkt des letzten echten Klingelns (Test-Klingeln zählen nicht). */
 export function getLastRingAt(): number {
   return globalThis.__webcams_last_ring_at ?? 0;
 }
