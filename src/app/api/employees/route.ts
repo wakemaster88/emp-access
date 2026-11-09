@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { employeeCreateSchema } from "@/lib/validators";
 import { randomBytes } from "crypto";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 /**
  * Mitarbeiter sind Tickets mit `source = EMP_CONTROL` und `uuid = "emp-<id>"`.
@@ -159,6 +160,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const data = parsed.data;
+
+  const refError = await foreignRefError(db, accountId, {
+    accessAreaIds: data.areaIds,
+    deviceIds: data.deviceIds,
+  });
+  if (refError) {
+    return NextResponse.json({ error: { formErrors: [refError], fieldErrors: {} } }, { status: 400 });
+  }
 
   // UUID kollisionsfrei (sonst kann der EMP_CONTROL-Webhook nichts ueberschreiben)
   const uuid = `emp-manual-${randomBytes(6).toString("hex")}`;

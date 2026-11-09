@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 export async function GET() {
   const session = await getSessionWithDb();
@@ -28,6 +29,8 @@ export async function POST(request: NextRequest) {
 
   const { db, accountId } = session;
   const areaIds: number[] = Array.isArray(body.areaIds) ? body.areaIds.map(Number) : [];
+  const refError = await foreignRefError(db, accountId, { accessAreaIds: areaIds });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
   const annyNames: string[] = Array.isArray(body.annyNames) ? body.annyNames : [];
 
   const defaultValidityType = ["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(body.defaultValidityType)

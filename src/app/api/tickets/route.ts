@@ -5,6 +5,7 @@ import { validateApiToken } from "@/lib/api-auth";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
 import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 // Backoffice: gleiche Schema-Erweiterung wie im Public-Endpoint, damit
 // auch hier ein "Baendchen umhaengen" moeglich ist (transferCode=true).
@@ -65,6 +66,16 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const data = parsed.data;
   const transferCode = data.transferCode === true;
+
+  const refError = await foreignRefError(db, accountId, {
+    accessAreaIds: [data.accessAreaId],
+    subscriptionIds: [data.subscriptionId],
+    serviceIds: [data.serviceId],
+    vereinIds: [data.vereinId],
+  });
+  if (refError) {
+    return NextResponse.json({ error: { formErrors: [refError], fieldErrors: {} } }, { status: 400 });
+  }
 
   let serviceAreaIds: number[] = [];
   if (data.serviceId) {

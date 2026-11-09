@@ -50,9 +50,19 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const data = parsed.data;
   const accessTicketIds = data.accessTicketIds ?? [];
-  const memberIds = data.memberTicketIds ?? [];
+  const requestedMemberIds = data.memberTicketIds ?? [];
 
   try {
+    // `connect` ist ein verschachtelter Schreibzugriff, den die Mandanten-
+    // Erweiterung nicht filtert: ohne diese Pruefung liessen sich Tickets
+    // eines fremden Mandanten in den eigenen Verein ziehen.
+    const memberIds = requestedMemberIds.length > 0
+      ? (await db.ticket.findMany({
+          where: { id: { in: requestedMemberIds }, accountId: accountId! },
+          select: { id: true },
+        })).map((t) => t.id)
+      : [];
+
     const validIds = accessTicketIds.length > 0
       ? (await db.ticket.findMany({
           where: { id: { in: accessTicketIds }, accountId: accountId! },

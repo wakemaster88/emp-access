@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ValidityType } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { parseSlotCapacity } from "../route";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 const VALIDITY_TYPES: ValidityType[] = ["DATE_RANGE", "TIME_SLOT", "DURATION"];
 function toValidityType(v: string | null | undefined): ValidityType | null {
@@ -54,6 +55,10 @@ export async function PUT(
 
   const areasPayload: { areaId: number; defaultValidityType?: string; defaultStartDate?: string; defaultEndDate?: string; defaultSlotStart?: string; defaultSlotEnd?: string; defaultValidityDurationMinutes?: number }[] | undefined = Array.isArray(body.areas) ? body.areas : undefined;
   const annyNames: string[] | undefined = Array.isArray(body.annyNames) ? body.annyNames : undefined;
+  const refError = await foreignRefError(db, accountId, {
+    accessAreaIds: (areasPayload ?? []).map((a) => Number(a.areaId)),
+  });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
   const defaultValidityType =
     body.defaultValidityType !== undefined
       ? (["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(body.defaultValidityType) ? body.defaultValidityType : null)

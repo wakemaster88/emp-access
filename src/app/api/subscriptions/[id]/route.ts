@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 export async function GET(
   _request: NextRequest,
@@ -44,6 +45,8 @@ export async function PUT(
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   const areaIds: number[] | undefined = Array.isArray(body.areaIds) ? body.areaIds.map(Number) : undefined;
+  const refError = await foreignRefError(db, accountId, { accessAreaIds: areaIds });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
   const annyNames: string[] | undefined = Array.isArray(body.annyNames) ? body.annyNames : undefined;
   const defaultValidityType =
     body.defaultValidityType !== undefined
