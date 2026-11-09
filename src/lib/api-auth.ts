@@ -130,10 +130,33 @@ export function deviceTokenMismatch(
   return null;
 }
 
-export async function getSessionWithDb() {
+/**
+ * Mandanten-Rollen: USER darf bedienen (Tickets, Check-in, Tueren oeffnen),
+ * aber weder Zugangsdaten/Schnittstellen noch Regeln und Betriebszeiten
+ * aendern. Das Dashboard blendet diese Teile fuer USER aus bzw. zeigt sie
+ * schreibgeschuetzt; ohne Pruefung am Server waere das nur Kosmetik.
+ */
+export function isTenantAdminRole(role: string | null | undefined): boolean {
+  return role === "ADMIN" || role === "SUPER_ADMIN";
+}
+
+/** 403-Antwort, wenn die Rolle keine Verwaltungsrechte hat; sonst null. */
+export function adminRoleRequired(role: string | null | undefined): NextResponse | null {
+  if (isTenantAdminRole(role)) return null;
+  return NextResponse.json(
+    { error: "Keine Berechtigung – dafür ist ein Admin-Zugang nötig." },
+    { status: 403 },
+  );
+}
+
+export async function getSessionWithDb(options: { requireAdmin?: boolean } = {}) {
   const session = await auth();
   if (!session?.user) {
     return { error: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
+  }
+  if (options.requireAdmin) {
+    const denied = adminRoleRequired(session.user.role);
+    if (denied) return { error: denied };
   }
 
   const isSuperAdmin = session.user.role === "SUPER_ADMIN";
@@ -181,13 +204,16 @@ export async function getAccountFromRequest(request: NextRequest): Promise<
  */
 export async function getSessionOrApiToken(
   request: NextRequest,
+  options: { requireAdmin?: boolean } = {},
 ): Promise<{ error: NextResponse } | { db: TenantDb; accountId: number | null | undefined }> {
   if (request.headers.has("authorization")) {
     const auth = await validateApiToken(request);
     if ("error" in auth) return { error: auth.error as NextResponse };
     return { db: auth.db, accountId: auth.account.id };
   }
-  const session = await getSessionWithDb();
+  // `requireAdmin` betrifft nur die Sitzung: das Account-Token ist ohnehin
+  // ein Verwaltungs-Zugang (Hub).
+  const session = await getSessionWithDb(options);
   if ("error" in session) return { error: session.error as NextResponse };
   return { db: session.db, accountId: session.accountId };
 }

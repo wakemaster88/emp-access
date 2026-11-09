@@ -29,7 +29,7 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 
@@ -89,7 +89,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE() {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 

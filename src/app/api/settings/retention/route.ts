@@ -33,7 +33,7 @@ const retentionPatchSchema = z
 
 /** GET (Session): aktuelle Löschfristen inkl. Defaults. */
 export async function GET() {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 
@@ -50,7 +50,7 @@ export async function GET() {
 
 /** PATCH (Session): Löschfristen speichern. */
 export async function PATCH(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 
