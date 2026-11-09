@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { berlinOffset } from "@/lib/anny-availability";
+import { checkinPhotoUrl } from "@/lib/photo-url";
 
 export async function GET(
   request: NextRequest,
@@ -41,7 +42,11 @@ export async function GET(
     firstScanAt: true,
     startDate: true,
     endDate: true,
-    profileImage: true,
+    // Das Foto selbst (Base64, oft >100 KB) wird NICHT mitgeschickt: der
+    // Kiosk pollt alle paar Sekunden, und mit jedem Foto-Ticket wuchs die
+    // Antwort Richtung Vercel-Limit. Stattdessen liefert die Antwort eine
+    // URL auf /photo/[id] (siehe `photoUrl` unten), die der Browser cacht.
+    updatedAt: true,
     rfidCode: true,
     barcode: true,
     qrCode: true,
@@ -78,6 +83,7 @@ export async function GET(
     recentScans,
     grantedTicketIdsToday,
     openableDevices,
+    ticketsWithPhoto,
   ] = await Promise.all([
     prisma.ticket.findMany({
       where: {
@@ -248,7 +254,29 @@ export async function GET(
       select: { id: true, name: true, category: true, lastUpdate: true },
       orderBy: { name: "asc" },
     }),
+
+    // Nur die IDs der Tages-Tickets mit Foto (gleicher Status-/Datumsfilter
+    // wie oben, deckt Einzel- und Abo-Tickets ab).
+    prisma.ticket.findMany({
+      where: {
+        accountId,
+        status: { in: ["VALID", "REDEEMED", "PAUSED"] },
+        profileImage: { not: null },
+        OR: [
+          { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
+          { startDate: { gte: dayStart, lte: dayEnd }, endDate: null },
+          { startDate: null, endDate: { gte: dayStart } },
+        ],
+      },
+      select: { id: true },
+    }),
   ]);
+
+  const photoTicketIds = new Set(ticketsWithPhoto.map((t) => t.id));
+  /** Foto-URL (oder null). `v` aendert sich mit jedem Ticket-Update, die
+   *  Foto-Route darf deshalb unbegrenzt cachen. */
+  const photoUrl = (t: { id: number; updatedAt: Date }) =>
+    photoTicketIds.has(t.id) ? checkinPhotoUrl(token, t.id, t.updatedAt) : null;
 
   // Offene Info-Anfragen: Tickets, die per Mail um Zusatzinfos gebeten
   // wurden, aber noch keine Antwort haben -> "Infos fehlen"-Badge im UI.
@@ -359,6 +387,7 @@ export async function GET(
 
   const enrichedTickets = tickets.filter((t) => !hiddenWeekTicketIds.has(t.id)).map((t) => ({
     ...t,
+    profileImage: photoUrl(t),
     checkedIn: checkedInForTicket(t),
     infoPending:
       pendingInfoTicketIds.has(t.id) &&
@@ -382,6 +411,7 @@ export async function GET(
     ...sub,
     tickets: sub.tickets.map((t) => ({
       ...t,
+      profileImage: photoUrl(t),
       checkedIn: checkedInForTicket(t),
       infoPending:
         pendingInfoTicketIds.has(t.id) &&
