@@ -42,25 +42,35 @@ fi
 chmod 600 "$KEY"
 export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=$KNOWN -o StrictHostKeyChecking=yes -o ConnectTimeout=15"
 
-if [ -d "$INSTALL_DIR/.git" ]; then
-    echo "→ $INSTALL_DIR ist schon vorhanden – starte den Installer daraus."
+if GIT_TERMINAL_PROMPT=0 git ls-remote "$HTTPS_URL" HEAD >/dev/null 2>&1; then
+    URL="$HTTPS_URL"
 else
-    if GIT_TERMINAL_PROMPT=0 git ls-remote "$HTTPS_URL" HEAD >/dev/null 2>&1; then
-        URL="$HTTPS_URL"
-    else
-        until git ls-remote "$SSH_URL" HEAD >/dev/null 2>&1; do
-            echo ""
-            echo "════════════════════════════════════════════════════════════"
-            echo "  Dieses Geraet braucht Lesezugriff auf das Repository."
-            echo "  GitHub → $REPO → Settings → Deploy keys → Add deploy key"
-            echo "  Titel: $(hostname), Schreibzugriff NICHT erlauben, Schluessel:"
-            echo ""
-            cat "$KEY.pub"
-            echo "════════════════════════════════════════════════════════════"
-            read -r -p "Eingetragen? Enter druecken zum Pruefen (Strg+C bricht ab) " _ < /dev/tty
-        done
-        URL="$SSH_URL"
-    fi
+    until git ls-remote "$SSH_URL" HEAD >/dev/null 2>&1; do
+        echo ""
+        echo "════════════════════════════════════════════════════════════"
+        echo "  Dieses Geraet braucht Lesezugriff auf das Repository."
+        echo "  GitHub → $REPO → Settings → Deploy keys → Add deploy key"
+        echo "  Titel: $(hostname), Schreibzugriff NICHT erlauben, Schluessel:"
+        echo ""
+        cat "$KEY.pub"
+        echo "════════════════════════════════════════════════════════════"
+        read -r -p "Eingetragen? Enter druecken zum Pruefen (Strg+C bricht ab) " _ < /dev/tty
+    done
+    URL="$SSH_URL"
+fi
+
+if [ -d "$INSTALL_DIR/.git" ]; then
+    # Bestehende Installation (auch ein Pi mit altem Stand, der ein privates
+    # Repo nicht mehr lesen kann): auf den erreichbaren Zugang umstellen und
+    # den aktuellen Stand holen, bevor dessen Installer laeuft.
+    echo "→ $INSTALL_DIR aktualisieren ($URL)..."
+    case "$(git -C "$INSTALL_DIR" remote get-url origin 2>/dev/null)" in
+        ssh://*|git@*) : ;;
+        *) git -C "$INSTALL_DIR" remote set-url origin "$URL" ;;
+    esac
+    git -C "$INSTALL_DIR" fetch origin
+    git -C "$INSTALL_DIR" reset --hard origin/main
+else
     echo "→ Repository klonen ($URL)..."
     git clone "$URL" "$INSTALL_DIR"
 fi

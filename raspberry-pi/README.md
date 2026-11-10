@@ -154,6 +154,12 @@ Lese-Schlüssel (`emp_scanner/repo_access.py`):
    danach „per Schlüssel angebunden“.
 
 Solange der Schlüssel nicht eingetragen ist, bleibt alles wie bisher (HTTPS).
+
+**Pi mit altem Stand nach dem Privatstellen** (war offline, als die Deploy-Key-Logik
+kam, und bekommt deshalb keine Updates mehr): einmal den Einrichtungsbefehl oben
+auf dem Pi ausführen. Er erzeugt den Schlüssel, wartet, bis er eingetragen ist,
+stellt die bestehende Installation auf SSH um, holt den aktuellen Stand und
+startet den Installer. Konfiguration (`config.json`) bleibt erhalten.
 Ein Pi mit Scanner und Audio-Abspieler nutzt einen gemeinsamen Schlüssel.
 Widerrufen: Deploy-Key bei GitHub löschen.
 
