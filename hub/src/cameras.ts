@@ -746,20 +746,29 @@ async function uploadVehicleSnapshotBody(
 
   const considerPlate = (index: number, score: PlateScore): void => {
     scored[index] = { index, score };
+    // Unscharfer Whitelist-Treffer: nur Hinweis im Log, schaltet nie.
+    const hint = score.probable ? ` · vermutlich ${score.probable} (unscharf, schaltet nicht)` : "";
     if (score.plate) {
       log(
-        `Fahrzeug-Burst ${cam.config.name}: Frame ${index + 1} → ${score.plate} conf=${score.confidence.toFixed(2)}${score.viaWhitelist ? " WL" : ""}`
+        `Fahrzeug-Burst ${cam.config.name}: Frame ${index + 1} → ${score.plate} conf=${score.confidence.toFixed(2)}${score.viaWhitelist ? " WL" : ""}${hint}`
       );
     } else {
       log(
-        `Fahrzeug-Burst ${cam.config.name}: Frame ${index + 1} → ${score.candidates[0]?.plate ?? "—"} (${score.confidence.toFixed(2)})`
+        `Fahrzeug-Burst ${cam.config.name}: Frame ${index + 1} → ${score.candidates[0]?.plate ?? "—"} (${score.confidence.toFixed(2)})${hint}`
       );
     }
-    if (localPromise || !score.plate || !score.viaWhitelist) return;
+    // Sofort schalten nur bei exaktem Treffer mit genug Confidence (score.actuate).
+    // Ein unsicheres Bild darf ein spaeteres, sicheres nicht blockieren.
+    if (localPromise || !score.plate || !score.actuate) return;
     if (isRepeatPlate(score.plate)) return;
     actedPlate = score.plate;
     log(`Fahrzeug-Burst ${cam.config.name}: ${score.plate} – DoorBird sofort (Frame ${index + 1})`);
-    localPromise = actuateIfAllowed({ cameraId, plate: score.plate });
+    localPromise = actuateIfAllowed({
+      cameraId,
+      plate: score.plate,
+      exact: score.matchKind === "exact",
+      confidence: score.matchConfidence,
+    });
   };
 
   log(
@@ -957,6 +966,8 @@ async function uploadVehicleSnapshotBody(
     wl: bestScore?.viaWhitelist,
   });
   const listed = plate ? findAllowedVehicle(plate) : null;
+  // Unscharfer Whitelist-Treffer irgendwo im Burst: nur als Hinweis anzeigen.
+  const probable = bestScore?.probable ?? scores.find((r) => r.score.probable)?.score.probable ?? null;
   cam.lastPlate = {
     at: new Date().toISOString(),
     plate,
@@ -970,13 +981,26 @@ async function uploadVehicleSnapshotBody(
     title: plate
       ? `Kennzeichen ${plate}${listed ? ` – ${listed.name}` : ""}`
       : "Fahrzeug ohne Kennzeichen",
-    detail: `${snaps.length} Frames${bestScore ? ` · conf ${bestScore.confidence.toFixed(2)}` : ""}`,
+    detail: `${snaps.length} Frames${bestScore ? ` · conf ${bestScore.confidence.toFixed(2)}` : ""}${
+      !listed && probable ? ` · vermutlich ${probable} (unscharf, nicht geschaltet)` : ""
+    }`,
     plate: plate ?? undefined,
     listed: !!listed,
   });
 
+  // Lesung hinter `plate`. Kommt das Kennzeichen nicht aus der eigenen OCR,
+  // sondern von der Kamera-eigenen Erkennung (Reolink-LPR), gibt es keine
+  // Confidence und keinen unscharfen Abgleich: `actuateIfAllowed` findet das
+  // Fahrzeug dann nur ueber den exakten normalisierten Vergleich.
+  const plateScore = plate && bestScore?.plate === plate ? bestScore : null;
+  const mayActuate = plateScore ? plateScore.actuate : true;
   if (plate && !localPromise && !isRepeatPlate(plate)) {
-    localPromise = actuateIfAllowed({ cameraId, plate });
+    localPromise = actuateIfAllowed({
+      cameraId,
+      plate,
+      exact: plateScore ? plateScore.matchKind === "exact" : true,
+      confidence: plateScore?.matchConfidence ?? null,
+    });
   }
   if (delivery) {
     qs.set("delivery", delivery.brand);
@@ -987,6 +1011,10 @@ async function uploadVehicleSnapshotBody(
     qs.set("localActed", "1");
     if (local.doorOpened) qs.set("localDoor", "1");
     if (local.shellyTriggered) qs.set("localShelly", local.shellyOk ? "1" : "0");
+  } else if (plate && !mayActuate) {
+    // Kein exakter, sicherer Treffer: Auch die Cloud darf nicht ersatzweise
+    // schalten (sie legt sonst bei Whitelist-Treffer einen DOORBIRD_OPEN-Task an).
+    qs.set("localActed", "1");
   }
 
   try {

@@ -12,7 +12,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   if (session.accountId == null) {
     return NextResponse.json({ error: "Kein Mandant zugeordnet" }, { status: 403 });
@@ -60,7 +60,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   if (session.accountId == null) {
     return NextResponse.json({ error: "Kein Mandant zugeordnet" }, { status: 403 });

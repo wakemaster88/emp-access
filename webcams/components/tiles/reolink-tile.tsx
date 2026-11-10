@@ -124,7 +124,7 @@ export function ReolinkTile({
       {(() => {
         const media = useSnapshot ? (
           <SnapshotImage
-            url={`${go2rtcUrl.replace(/\/$/, "")}/api/frame.jpeg?src=${encodeURIComponent(streamAlias)}`}
+            url={`${go2rtcUrl.replace(/\/$/, "")}/frame.jpeg?src=${encodeURIComponent(streamAlias)}`}
             intervalMs={3000}
             fit={fit}
             onError={() => setErrored(true)}

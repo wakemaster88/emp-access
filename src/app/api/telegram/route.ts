@@ -4,7 +4,7 @@ import { sendTelegramMessage, getMe, getUpdates } from "@/lib/telegram";
 import { buildTelegramDailyReport } from "@/lib/telegram-daily-report";
 
 export async function GET() {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const configs = await session.db.telegramConfig.findMany({
@@ -25,7 +25,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const body = await request.json();

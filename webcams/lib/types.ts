@@ -766,7 +766,8 @@ export const SettingsSchema = z.object({
    *
    * `appUrl` ist die Adresse, unter der der Sidecar selbst die Next-App
    * erreichen kann — für ALPR-getriggertes Tür-Öffnen ruft der Sidecar
-   * `${appUrl}/api/doorbird/open` auf (Loopback, kein Auth nötig).
+   * `${appUrl}/api/doorbird/open` auf (Loopback; weist sich mit dem
+   * `internalToken` der Config aus, siehe `lib/internal-token.ts`).
    */
   tracker: z.object({
     url: z.string().default("http://127.0.0.1:8088"),
@@ -829,6 +830,15 @@ export const ConfigSchema = z.object({
   activeLayoutId: z.string().nullable().default(null),
   doorbird: DoorbirdSchema.default({} as DoorbirdConfig),
   settings: SettingsSchema.default({} as Settings),
+  /**
+   * Shared Secret zwischen Next-App und Tracker-Sidecar (Header
+   * `x-internal-token`). Weist automatische Tür-Öffnungen (ALPR,
+   * Ausfahrt-Zone) als echt aus — nur damit dürfen sie das Ring-Fenster
+   * umgehen. Wird beim ersten Start/Speichern automatisch erzeugt
+   * (`lib/config.ts`), verlässt den Server nie und ist nicht über die
+   * UI änderbar. Siehe `lib/internal-auth.ts`.
+   */
+  internalToken: z.string().default(""),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

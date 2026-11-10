@@ -3,13 +3,16 @@ import { loadConfig } from "@/lib/config";
 import { doorbirdOpenDoor } from "@/lib/doorbird";
 import { getLastRingAt } from "@/lib/event-bus";
 import { logEvent } from "@/lib/audit";
-import { requireAuth } from "@/lib/auth";
-import { evaluateDoorOpen } from "@/lib/door-policy";
+import { isInternalRequest, requireAuth } from "@/lib/auth";
+import { evaluateDoorOpen, resolveDoorSource } from "@/lib/door-policy";
+import { requireSameOrigin } from "@/lib/same-origin";
 import { scheduleDoorbirdOpenSnapshotPipeline } from "@/lib/doorbird-event-followup";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  const crossOrigin = requireSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
   const denied = await requireAuth(req);
   if (denied) return denied;
 
@@ -21,7 +24,7 @@ export async function POST(req: Request) {
   // Optionaler Trigger-Kontext (z.B. vom ALPR-Sidecar). Body ist optional —
   // wenn keiner kommt, ignorieren wir das stillschweigend, damit das UI
   // weiter ohne Body POSTen kann.
-  let source = "ui";
+  let requestedSource: string | undefined;
   let plate: string | undefined;
   let owner: string | undefined;
   try {
@@ -29,7 +32,7 @@ export async function POST(req: Request) {
       | { source?: string; plate?: string; owner?: string }
       | undefined;
     if (body) {
-      if (typeof body.source === "string") source = body.source;
+      if (typeof body.source === "string") requestedSource = body.source;
       if (typeof body.plate === "string") plate = body.plate;
       if (typeof body.owner === "string") owner = body.owner;
     }
@@ -37,12 +40,29 @@ export async function POST(req: Request) {
     // kein Body — ok
   }
 
+  // `source` (und Kennzeichen/Halter fürs Audit-Log) zählen nur, wenn der
+  // Aufrufer das interne Token vorlegt (Tracker-Sidecar). Sonst ist es ein
+  // normaler UI-Aufruf — ein Browser kann sich nicht als "alpr" ausgeben.
+  const internal = await isInternalRequest(req);
+  const source = resolveDoorSource(requestedSource, internal);
+  // Fürs Audit-Log festhalten, wenn jemand ohne Token eine Quelle behauptet.
+  const claimedSource =
+    !internal && requestedSource && requestedSource !== source
+      ? requestedSource
+      : undefined;
+  if (!internal) {
+    plate = undefined;
+    owner = undefined;
+  }
+
   // Ring-Fenster wird serverseitig erzwungen (konfigurierbar über
   // `doorbird.enforceRingWindow`). ALPR- und Ausfahrt-Auto-Open sind
   // ausgenommen — deren Schutz sitzt im Sidecar (Whitelist bzw. Zone + Cooldown).
+  // Die Ausnahme gilt nur für intern authentifizierte Aufrufe.
   const decision = evaluateDoorOpen({
     enforceRingWindow: config.doorbird.enforceRingWindow,
     source,
+    internal,
     lastRingAt: getLastRingAt(),
     now: Date.now(),
     ringWindowSec: config.doorbird.ringWindowSec,
@@ -53,7 +73,14 @@ export async function POST(req: Request) {
     await logEvent({
       action: "doorbird-open",
       ok: false,
-      meta: { source, plate, owner, reason: decision.reason, elapsedSinceRingMs: elapsed },
+      meta: {
+        source,
+        claimedSource,
+        plate,
+        owner,
+        reason: decision.reason,
+        elapsedSinceRingMs: elapsed,
+      },
     });
     return NextResponse.json({ error: decision.reason }, { status: 403 });
   }

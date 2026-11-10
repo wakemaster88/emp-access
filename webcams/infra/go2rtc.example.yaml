@@ -9,10 +9,15 @@
 # Starten:
 #   go2rtc -config infra/go2rtc.example.yaml
 #
-# Web-UI: http://localhost:1984
+# Web-UI: http://localhost:1984 (nur auf diesem Rechner)
 
+# API nur auf Loopback binden: /api/config und /api/streams liefern die
+# RTSP-URLs samt Kamera-Passwörtern, und die API hat keine Anmeldung.
+# Das Kiosk-Dashboard spricht über die Next-App (/api/go2rtc/webrtc).
+# `origin: "*"` bleibt nur für die Kamera-Seite der Cloud-App, die go2rtc
+# direkt aus dem Browser dieses Rechners abfragt.
 api:
-  listen: ":1984"
+  listen: "127.0.0.1:1984"
   origin: "*"
 
 log:

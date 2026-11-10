@@ -106,6 +106,7 @@ export default function SettingsPage() {
             <CardTitle>go2rtc</CardTitle>
             <CardDescription>
               Bridge zwischen RTSP-Cams und WebRTC im Browser. Standard: lokal auf Port 1984.
+              Die API lauscht nur auf 127.0.0.1 — die URL muss auf diesen Rechner zeigen.
             </CardDescription>
           </div>
           {go2rtcStatus &&

@@ -54,6 +54,34 @@ export async function DELETE(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
+  // Ein Ticket ohne Bereich gilt an jedem Leser ("Kein Bereich" ist eine
+  // bewusste Einstellung). Wuerde der Bereich einfach geloescht, verloeren
+  // die daran haengenden Tickets ihre Einschraenkung stillschweigend
+  // (accessAreaId -> NULL, TicketArea-Zeilen weg) und kaemen ueberall durch.
+  // Deshalb erst loeschen, wenn kein noch gueltiges Ticket mehr daran haengt.
+  const now = new Date();
+  const ticketsInUse = await db.ticket.count({
+    where: {
+      accountId: accountId!,
+      status: { in: ["VALID", "REDEEMED", "PAUSED"] },
+      AND: [
+        { OR: [{ accessAreaId: areaId }, { ticketAreas: { some: { accessAreaId: areaId } } }] },
+        { OR: [{ endDate: null }, { endDate: { gte: now } }] },
+      ],
+    },
+  });
+  if (ticketsInUse > 0) {
+    return NextResponse.json(
+      {
+        error:
+          `Der Bereich wird noch von ${ticketsInUse} gültigen Ticket(s) verwendet. ` +
+          "Bitte die Tickets zuerst einem anderen Bereich zuordnen oder ungültig setzen.",
+        ticketsInUse,
+      },
+      { status: 409 },
+    );
+  }
+
   await db.accessArea.delete({ where: { id: areaId } });
   return NextResponse.json({ ok: true });
 }

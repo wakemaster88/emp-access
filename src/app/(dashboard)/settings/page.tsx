@@ -16,6 +16,7 @@ import { PushCard } from "@/components/settings/push-card";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { DataRetentionCard } from "@/components/settings/data-retention-card";
 import { parseDataRetention } from "@/lib/data-retention";
+import { isTenantAdminRole } from "@/lib/api-auth";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED"] as const;
 
@@ -28,15 +29,20 @@ export default async function SettingsPage() {
 
   const db = tenantClient(session.user.accountId);
 
+  // Zugangsdaten (Account-Token, Schnittstellen, Telegram, Loeschfristen)
+  // sehen und aendern nur Admins. Fuer die Rolle USER werden sie gar nicht
+  // erst geladen - die zugehoerigen API-Routen lehnen sie ebenfalls ab.
+  const isAdmin = isTenantAdminRole(session.user.role);
+
   const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig] = await Promise.all([
-    db.apiConfig.findMany({ where: { accountId: session.user.accountId } }),
+    isAdmin ? db.apiConfig.findMany({ where: { accountId: session.user.accountId } }) : [],
     db.account.findUnique({
       where: { id: session.user.accountId },
       select: {
         id: true,
         name: true,
         subdomain: true,
-        apiToken: true,
+        apiToken: isAdmin,
         dataRetention: true,
       },
     }),
@@ -92,6 +98,7 @@ export default async function SettingsPage() {
                 <span className="text-sm text-muted-foreground">Subdomain</span>
                 <Badge variant="mono">{account?.subdomain}</Badge>
               </div>
+              {isAdmin && (<>
               <div className="flex items-center justify-between gap-3">
                 {/* shrink-0: Die Beschriftung bleibt eine Zeile (auf dem Handy sonst drei Zeilen neben dem Token). */}
                 <span className="shrink-0 text-sm text-muted-foreground">API Token (Geräte)</span>
@@ -103,10 +110,17 @@ export default async function SettingsPage() {
               <Notice tone="warning" compact icon={Info}>
                 Dieser Token wird von Raspberry Pi und Shelly-Geräten zur Authentifizierung verwendet.
               </Notice>
+              </>)}
+              {!isAdmin && (
+                <Notice tone="info" compact icon={Info}>
+                  Zugangsdaten, Schnittstellen und Löschfristen verwaltet ein Admin-Zugang.
+                </Notice>
+              )}
             </CardContent>
           </Card>
         </section>
 
+        {isAdmin && (<>
         {/* Eigene API */}
         <section className="space-y-2">
           <SectionHeading icon={Globe} title="Eigene API" />
@@ -145,6 +159,7 @@ export default async function SettingsPage() {
           <SectionHeading icon={Trash2} title="Datenschutz" />
           <DataRetentionCard initial={dataRetention} />
         </section>
+        </>)}
 
         {/* App auf dem Handy */}
         <section className="space-y-2">
@@ -158,6 +173,7 @@ export default async function SettingsPage() {
           <PushCard />
         </section>
 
+        {isAdmin && (<>
         {/* Telegram Bot */}
         <section className="space-y-2">
           {/* „Verbunden“ zeigt die Karte selbst (Status) – und aktuell, auch nach dem Entfernen. */}
@@ -187,6 +203,7 @@ export default async function SettingsPage() {
             ))}
           </div>
         </section>
+        </>)}
 
       </div>
     </>

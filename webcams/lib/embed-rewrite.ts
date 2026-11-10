@@ -3,6 +3,18 @@
  * Als eigene Lib, damit die Regex-Logik ohne HTTP-Kontext testbar ist.
  */
 
+/**
+ * Entfernt einzelne Cookies (per Name) aus einem `Cookie`-Request-Header.
+ * Gibt den restlichen Header zurück, `""` wenn nichts übrig bleibt.
+ */
+export function stripCookies(header: string, names: readonly string[]): string {
+  return header
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part && !names.includes(part.split("=")[0].trim()))
+    .join("; ");
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

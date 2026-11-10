@@ -8,6 +8,7 @@ import { REOLINK_CAPS } from "@/lib/types";
 import { getRemainingMs, trigger as triggerCooldown } from "@/lib/cooldown";
 
 import { requireAuth } from "@/lib/auth";
+import { requireSameOrigin } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ interface RouteCtx {
 }
 
 export async function POST(req: Request, ctx: RouteCtx) {
+  const crossOrigin = requireSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
   const denied = await requireAuth(req);
   if (denied) return denied;
 
@@ -87,7 +90,10 @@ export async function POST(req: Request, ctx: RouteCtx) {
   }
 }
 
-export async function DELETE(_req: Request, ctx: RouteCtx) {
+export async function DELETE(req: Request, ctx: RouteCtx) {
+  const crossOrigin = requireSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   const { id } = await ctx.params;
   try {
     const cam = await getCamOrThrow(id);

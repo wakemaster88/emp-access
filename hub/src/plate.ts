@@ -11,6 +11,15 @@ import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { CONFIG, api, log } from "./config.js";
 import { alprDetect, alprAvailable, type AlprCandidate } from "./alpr.js";
+import {
+  KNOWN_CITY,
+  normalizePlate,
+  pickPlate,
+  plateMayActuate,
+  type OcrCandidate,
+  type OcrResult,
+  type PlateMatchKind,
+} from "./plate-match.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -21,22 +30,15 @@ const SRC = path.join(PLATE_DIR, "PlateOCR.swift");
 const MIN_CONF = Number(process.env.HUB_PLATE_MIN_CONF || 0.8);
 /** fast-alpr Plate-OCR ist spezialisiert – Auto-Übernahme ab dieser Confidence. */
 const ALPR_MIN_CONF = Number(process.env.HUB_ALPR_MIN_CONF || 0.88);
+/**
+ * Mindest-Confidence, ab der ein EXAKTER Whitelist-Treffer Tor/Shelly schalten
+ * darf (plateActuationAllowed). Bewusst deutlich unter der Auto-Übernahme:
+ * der exakte Treffer ist das eigentliche Kriterium.
+ */
+const ALPR_ACTUATE_MIN_CONF = Number(process.env.HUB_ALPR_ACTUATE_MIN_CONF || 0.5);
 const OCR_TIMEOUT_MS = Number(process.env.HUB_PLATE_TIMEOUT_MS || 45_000);
 // 5 min: Whitelist aendert sich selten – weniger Cloud-Requests bei Bursts.
 const WHITELIST_TTL_MS = 300_000;
-
-interface OcrCandidate {
-  plate: string;
-  confidence: number;
-  source: string;
-}
-
-interface OcrResult {
-  plate: string | null;
-  confidence: number;
-  candidates: OcrCandidate[];
-  raw: string[];
-}
 
 export interface CachedVehicle {
   id: number;
@@ -83,17 +85,6 @@ function hydrateVehicle(v: Partial<CachedVehicle> | Record<string, unknown>): Ca
     timerSeconds: r.timerSeconds == null ? null : Number(r.timerSeconds),
     shellyIp: r.shellyIp ? String(r.shellyIp) : null,
   };
-}
-
-function normalizePlate(plate: string): string {
-  return plate
-    .trim()
-    .toUpperCase()
-    .replace(/[Ä]/g, "AE")
-    .replace(/[Ö]/g, "OE")
-    .replace(/[Ü]/g, "UE")
-    .replace(/ß/g, "SS")
-    .replace(/[^A-Z0-9]/g, "");
 }
 
 async function ensureBinary(): Promise<boolean> {
@@ -273,13 +264,6 @@ function runOcr(imagePath: string): Promise<OcrResult> {
   });
 }
 
-/** Bekannte Kreise (NRW/Umgebung) – gleiche Basis wie PlateOCR.swift. */
-const KNOWN_CITY = new Set([
-  "RE", "BOR", "UN", "GE", "EN", "DO", "BO", "E", "HA", "HER", "HAM", "BOT",
-  "MG", "NE", "D", "K", "AC", "BN", "SU", "LEV", "GL", "ME", "RS", "W", "SG",
-  "OB", "MH", "DU", "KR", "VIE", "WES", "KLE", "COE", "ST", "SO",
-]);
-
 /** Bewertung eines formatierten Kennzeichens (analog scorePlate in PlateOCR.swift). */
 function scorePlateFormat(plate: string): number {
   const m = plate.match(/^([A-Z]{1,3})-([A-Z]{1,2}) (\d{1,4})([EH]?)$/);
@@ -336,82 +320,39 @@ function alprToOcrResult(cands: AlprCandidate[]): OcrResult {
   };
 }
 
-function digitSuffix(normalized: string): string {
-  const m = normalized.match(/(\d{3,4}[EH]?)$/);
-  return m?.[1] ?? "";
-}
-
-/** DE-Kennzeichen grob plausibel: 1–3 + 1–2 Buchstaben, ≥3 Ziffern. */
-function isPlausiblePlate(plate: string): boolean {
-  return /^[A-ZÄÖÜ]{1,3}-[A-ZÄÖÜ]{1,2} \d{3,4}[EH]?$/.test(plate.trim().toUpperCase());
-}
-
-function hamming(a: string, b: string): number {
-  if (a.length !== b.length) return 99;
-  let d = 0;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
-  return d;
-}
-
-function pickPlate(result: OcrResult, wl: WhitelistEntry[]): string | null {
-  const byNorm = new Map(wl.map((v) => [v.plateNormalized, v.plate]));
-  const candNorms = result.candidates.map((c) => ({
-    plate: c.plate,
-    n: normalizePlate(c.plate),
-    conf: c.confidence,
-  }));
-  const rawNorms = result.raw.map((r) => normalizePlate(r)).filter((n) => n.length >= 5);
-
-  // 1) Exakter Whitelist-Treffer.
-  for (const { n } of candNorms) {
-    const hit = byNorm.get(n);
-    if (hit) return hit;
-  }
-  for (const n of rawNorms) {
-    const hit = byNorm.get(n);
-    if (hit) return hit;
-  }
-
-  // 2) Fuzzy nur bei gleicher Länge ±1 und ≤2 Zeichenunterschied, gleiche Ziffern-Endung.
-  for (const v of wl) {
-    const want = v.plateNormalized;
-    const wantDigits = digitSuffix(want);
-    if (wantDigits.length < 3) continue;
-    for (const { n, conf } of candNorms) {
-      if (conf < 0.25) continue;
-      if (digitSuffix(n) !== wantDigits) continue;
-      if (Math.abs(n.length - want.length) > 1) continue;
-      if (n.length === want.length && hamming(n, want) <= 2) return v.plate;
-      // Gleicher Ziffernblock, Buchstaben leicht daneben (Q-L 626E vs BOQC626E)
-      if (n.endsWith(wantDigits) && want.endsWith(wantDigits)) {
-        const nLetters = n.slice(0, -wantDigits.length);
-        const wLetters = want.slice(0, -wantDigits.length);
-        if (nLetters.length >= 2 && wLetters.includes(nLetters)) return v.plate;
-      }
-    }
-  }
-
-  // 3) Auto-Wahl: plausibles DE-Kennzeichen + bekannter Kreis.
-  const autoOk = (plate: string, conf: number) => {
-    if (conf < MIN_CONF || !isPlausiblePlate(plate)) return false;
-    const city = plate.split("-")[0] ?? "";
-    return city.length >= 2 && KNOWN_CITY.has(city);
-  };
-
-  if (result.plate && autoOk(result.plate, result.confidence)) {
-    return result.plate;
-  }
-  const top = result.candidates.find((c) => autoOk(c.plate, c.confidence));
-  return top?.plate ?? null;
-}
-
 export interface PlateScore {
   plate: string | null;
   /** Confidence des gewählten Plates bzw. besten Kandidaten. */
   confidence: number;
   candidates: OcrCandidate[];
   raw: string[];
+  /** Exakter Whitelist-Treffer (matchKind === "exact"). */
   viaWhitelist: boolean;
+  /** exact = steht normalisiert genau so auf der Whitelist; auto = sicher gelesen, nicht gelistet. */
+  matchKind: PlateMatchKind | null;
+  /** Confidence genau der Lesung hinter `plate`; null = unbekannt. Massgeblich fuers Schalten. */
+  matchConfidence: number | null;
+  /**
+   * Unscharfer Whitelist-Treffer („vermutlich dieses Kennzeichen“). Nur fuer
+   * Log und Anzeige – steht nie in `plate` und schaltet nie (plate-match.ts).
+   */
+  probable: string | null;
+  /** Darf Tor/Shelly schalten: exakter Treffer mit Confidence ≥ HUB_ALPR_ACTUATE_MIN_CONF. */
+  actuate: boolean;
+}
+
+/**
+ * Sicherheitsregel fuer alle Aktoren: nur exakter Whitelist-Treffer, und wenn
+ * die Lesung eine Confidence hat, mindestens HUB_ALPR_ACTUATE_MIN_CONF
+ * (Standard 0.5). Jeder Pfad, der Tor oder Shelly schaltet, muss hier durch.
+ */
+export function plateActuationAllowed(exact: boolean, confidence: number | null): boolean {
+  return plateMayActuate({ exact, confidence }, ALPR_ACTUATE_MIN_CONF);
+}
+
+/** Schwelle fuer Log-Texte. */
+export function plateActuationMinConf(): number {
+  return ALPR_ACTUATE_MIN_CONF;
 }
 
 /**
@@ -430,6 +371,10 @@ export async function scorePlateFromJpeg(
     candidates: [],
     raw: [],
     viaWhitelist: false,
+    matchKind: null,
+    matchConfidence: null,
+    probable: null,
+    actuate: false,
   };
   if (process.env.HUB_PLATE_OCR === "0" || process.env.HUB_PLATE_OCR === "never") {
     return empty;
@@ -439,6 +384,8 @@ export async function scorePlateFromJpeg(
   try {
     await fs.writeFile(tmp, jpeg);
     const wlPromise = ensureWhitelist();
+    /** Unscharfer Hinweis aus Stufe 1, falls Stufe 2 nichts Eigenes findet. */
+    let alprProbable: string | null = null;
 
     // Stufe 1: fast-alpr (YOLO-Detektor + Plate-OCR) – findet auch kleine/ferne Plates.
     if (alprAvailable()) {
@@ -446,11 +393,11 @@ export async function scorePlateFromJpeg(
       if (alprCands.length > 0) {
         const result = alprToOcrResult(alprCands);
         const wl = await wlPromise;
-        const plate = pickPlate(result, wl);
+        const pick = pickPlate(result, wl, MIN_CONF);
+        const plate = pick.plate;
+        alprProbable = pick.probable;
         if (plate) {
-          const viaWhitelist = wl.some(
-            (v) => normalizePlate(v.plate) === normalizePlate(plate)
-          );
+          const exact = pick.matchKind === "exact";
           const match = result.candidates.find(
             (c) => normalizePlate(c.plate) === normalizePlate(plate)
           );
@@ -459,7 +406,11 @@ export async function scorePlateFromJpeg(
             confidence: match?.confidence ?? result.confidence,
             candidates: result.candidates,
             raw: result.raw,
-            viaWhitelist,
+            viaWhitelist: exact,
+            matchKind: pick.matchKind,
+            matchConfidence: pick.confidence,
+            probable: pick.probable,
+            actuate: plateActuationAllowed(exact, pick.confidence),
           };
         }
         // ALPR fand etwas, aber keine sichere Wahl → Vision darf ergänzen.
@@ -470,6 +421,10 @@ export async function scorePlateFromJpeg(
             candidates: result.candidates,
             raw: result.raw,
             viaWhitelist: false,
+            matchKind: null,
+            matchConfidence: null,
+            probable: pick.probable,
+            actuate: false,
           };
         }
       } else if (!allowVision) {
@@ -482,10 +437,9 @@ export async function scorePlateFromJpeg(
     // Stufe 2: macOS Vision (Fallback), nur wenn der Aufrufer sie will.
     if (!(await ensureBinary())) return empty;
     const [result, wl] = await Promise.all([runOcr(tmp), wlPromise]);
-    const plate = pickPlate(result, wl);
-    const viaWhitelist = !!(
-      plate && wl.some((v) => normalizePlate(v.plate) === normalizePlate(plate))
-    );
+    const pick = pickPlate(result, wl, MIN_CONF);
+    const plate = pick.plate;
+    const viaWhitelist = pick.matchKind === "exact";
     let confidence = 0;
     if (plate) {
       const match = result.candidates.find(
@@ -502,6 +456,11 @@ export async function scorePlateFromJpeg(
       candidates: result.candidates,
       raw: result.raw,
       viaWhitelist,
+      matchKind: pick.matchKind,
+      // Bewusst pick.confidence, nicht der oben fuer die Anzeige angehobene Wert.
+      matchConfidence: pick.confidence,
+      probable: pick.probable ?? alprProbable,
+      actuate: plateActuationAllowed(viaWhitelist, pick.confidence),
     };
   } catch (e) {
     log(`Plate-OCR Fehler: ${e instanceof Error ? e.message : e}`);
@@ -533,6 +492,9 @@ export async function readPlateFromJpeg(jpeg: Buffer): Promise<string | null> {
     log(
       `Plate-OCR: keines (top=${score.candidates[0]?.plate ?? "—"} conf=${score.confidence.toFixed(2)})`
     );
+  }
+  if (score.probable) {
+    log(`Plate-OCR: vermutlich ${score.probable} (unscharfer Whitelist-Treffer – schaltet nicht)`);
   }
   return score.plate;
 }

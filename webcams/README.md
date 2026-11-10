@@ -43,10 +43,15 @@ Im Browser **/admin** öffnen und Cams + Doorbird konfigurieren.
 ```
 TV ◀── HDMI ── Mac
                 ├─ Safari (Vollbild) → http://localhost:3000
-                ├─ Next.js 16 (next start)  Port 3000
-                └─ go2rtc                Port 1984
+                ├─ Next.js 16 (next start)  Port 3000 (nur 127.0.0.1)
+                └─ go2rtc                API Port 1984 (nur 127.0.0.1)
+                       │                 WebRTC-Medien Port 8555
                        └─ Reolink + Doorbird (LAN)
 ```
+
+Der Browser spricht nie direkt mit der go2rtc-API: Signalisierung und
+Standbilder laufen über die Next-App (`/api/go2rtc/webrtc`,
+`/api/go2rtc/frame.jpeg`), das Video selbst kommt per WebRTC von go2rtc.
 
 ## Workflow
 
@@ -120,17 +125,68 @@ Das Steuer-Panel blendet automatisch nur die Buttons ein, die das Modell beherrs
   (`x-admin-token`) für alle Endpunkte außer `/health`.
 - `config.json` enthält Passwörter und ist `.gitignore`d.
 - Cam-/Doorbird-Credentials verlassen den Server nie (alle Aufrufe über `/api/`-Routen).
-- API-Routen maskieren Passwörter zu `***`.
+- API-Routen und die Dashboard-Seite maskieren **alle** Secrets zu `***`
+  (Cam-/Doorbird-Passwort, Admin-PIN, Telegram-Bot-Token, emp-access-API-Token,
+  Webhook-Secrets). Kommt `***` beim Speichern zurück, bleibt der gespeicherte
+  Wert stehen (`lib/config-secrets.ts`).
+- **go2rtc-API nur auf Loopback** (`api.listen: "127.0.0.1:1984"`). `origin: "*"`
+  bleibt vorerst, weil die Kamera-Seite der Cloud-App go2rtc direkt aus dem
+  Browser dieses Macs abfragt. `/api/config` und `/api/streams` von go2rtc enthalten die
+  RTSP-URLs samt Passwörtern im Klartext und haben keine Anmeldung — sie
+  dürfen im LAN nicht erreichbar sein. Next-Server, Hub und Sidecar laufen
+  auf demselben Mac und nutzen `http://127.0.0.1:1984`; die
+  **go2rtc-URL in den Einstellungen muss deshalb auf `127.0.0.1` (oder
+  `localhost`) zeigen**, nicht auf die LAN-IP des Macs. Der RTSP-Port 8554
+  und der WebRTC-Port 8555 von go2rtc sind unverändert.
 - Tür öffnen nur innerhalb des Ring-Fensters (Default 90 s) — **serverseitig
   erzwungen** (abschaltbar unter Admin → Doorbird), plus Hold-to-confirm 1 s.
-  ALPR-Auto-Open ist ausgenommen (Whitelist + Confirm-Frames + Cooldown).
+  Nur ein echtes Klingeln (DoorBird-Webhook mit Secret) öffnet das Fenster;
+  die Test-Klingel im Admin zeigt nur das Overlay.
+  ALPR-Auto-Open und Ausfahrt-Zone sind ausgenommen (Whitelist +
+  Confirm-Frames + Cooldown bzw. Zone + Cooldown) — aber nur, wenn sich der
+  Aufrufer als Tracker-Sidecar ausweist: Header `x-internal-token` mit dem
+  `internalToken` aus der `config.json`. Die Next-App erzeugt das Token beim
+  Start automatisch, der Sidecar liest es aus derselben Datei; es wird über
+  keine API ausgeliefert. Ein Request ohne gültiges Token gilt als UI-Klick
+  (`source` im Body wird ignoriert); `/api/vehicle-gate/open` lehnt ihn ab.
+- Tür-, Licht- und Sirenen-Routen prüfen den `Origin`-Header: fremde Seiten
+  im Kiosk-Browser (iFrame-Widgets) können sie nicht auslösen.
+- Der Embed-Proxy (`/api/embed/…`) reicht Login-Cookie, `x-admin-token` und
+  internes Token der App nicht an die eingebettete Seite weiter.
 - Sirene mit Bestätigungs-Dialog, Dauer-Wahl, Cooldown 60 s, Max-Dauer 30 s, Audit-Log.
 
 ## Tests
 
 ```bash
-pnpm test    # vitest: Auth, Tür-Öffnen-Policy, Embed-Proxy-Rewrites
+pnpm test                 # vitest: Auth, Tür-Öffnen-Policy, Secret-Maskierung, go2rtc-yaml, Embed-Proxy
+pnpm exec tsc --noEmit    # Typecheck (inkl. Tests, nichts ausgenommen)
 ```
+
+## Nach einem Update auf dem Mac
+
+Der Hub zieht den Checkout automatisch nach, baut und startet die Kiosk-Dienste
+aber nicht neu. Nach einem Update, das `webcams/` betrifft:
+
+```bash
+cd webcams
+pnpm install --frozen-lockfile && pnpm build
+launchctl kickstart -k gui/$UID/com.local.webcams           # Next.js
+launchctl kickstart -k gui/$UID/com.local.webcams-tracker   # Sidecar (liest internalToken)
+```
+
+Damit eine geänderte go2rtc-Konfiguration greift (z. B. API nur noch auf
+Loopback): in **Admin → Einstellungen** prüfen, dass die go2rtc-URL
+`http://127.0.0.1:1984` lautet, dann **„yaml schreiben & reloaden"** klicken
+(schreibt `infra/go2rtc.yaml` neu und startet go2rtc neu). Kontrolle:
+
+```bash
+lsof -nP -iTCP:1984 -sTCP:LISTEN     # muss 127.0.0.1:1984 zeigen, nicht *:1984
+launchctl kickstart -k gui/$UID/com.local.go2rtc   # falls noch *:1984
+```
+
+Jedes Neuschreiben der yaml entfernt den `ffmpeg:`-Block, den der Hub dort
+einträgt; er kommt beim nächsten Hub-Start zurück
+(`launchctl kickstart -k gui/$UID/com.emp-access.hub`).
 
 ## Datei-Struktur
 
@@ -157,8 +213,11 @@ webcams/
 │  ├─ reolink-control.ts         # PTZ/Spot/IR/Siren wrappers
 │  ├─ doorbird.ts                # Doorbird HTTP API
 │  ├─ event-bus.ts               # SSE pub/sub
+│  ├─ config-secrets.ts          # Secrets maskieren / beim Speichern wiederherstellen
+│  ├─ internal-token.ts          # Shared Secret Next ↔ Sidecar
+│  ├─ same-origin.ts             # Origin-Prüfung für Tür/Licht/Sirene
 │  ├─ audit.ts                   # rolling audit log
-│  └─ go2rtc.ts                  # yaml-Generator + reload
+│  └─ go2rtc.ts                  # yaml-Generator + reload + Proxy-Helfer
 ├─ infra/
 │  ├─ go2rtc.example.yaml        # Vorlage
 │  └─ go2rtc.yaml                # generiert (gitignored)

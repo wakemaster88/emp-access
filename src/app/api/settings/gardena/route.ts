@@ -17,7 +17,7 @@ function maskKey(key: string | null): string {
 // Verbindungen listen ODER (mit ?configId=) Ventile einer gespeicherten
 // Verbindung laden.
 export async function GET(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const { db, accountId } = session;
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
 
 // Verbindung testen mit uebergebenen Zugangsdaten (Key + Secret).
 export async function POST(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const body = await request.json();
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
 
 // Verbindung anlegen (ohne id) oder aktualisieren (mit id).
 export async function PUT(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const body = await request.json();
@@ -160,7 +160,7 @@ export async function PUT(request: NextRequest) {
 // Einzelnes Ventil/Pumpe als Device importieren (Upsert ueber gardenaServiceId),
 // zugeordnet zur angegebenen GARDENA-Verbindung (configId).
 export async function PATCH(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const body = await request.json();
@@ -216,7 +216,7 @@ export async function PATCH(request: NextRequest) {
 
 // Einzelne GARDENA-Verbindung trennen (?configId=). Ohne configId: alle.
 export async function DELETE(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const { db, accountId } = session;

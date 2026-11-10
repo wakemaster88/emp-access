@@ -4,6 +4,8 @@ import path from "node:path";
 import type { Cam, Config, DoorbirdConfig } from "./types";
 
 const WEBRTC_PORT = 8555;
+/** go2rtc-API (Signalisierung, Config, Restart) — bewusst nur Loopback. */
+export const GO2RTC_API_LISTEN = "127.0.0.1:1984";
 
 /**
  * Liefert alle nicht-internen IPv4-Adressen des Hosts. Werden als explizite
@@ -40,8 +42,21 @@ export function buildGo2rtcYaml(config: Config): string {
   lines.push("# AUTO-GENERIERT von /admin – nicht manuell editieren.");
   lines.push("# Manuelle Anpassungen bitte in der UI vornehmen.");
   lines.push("");
+  // API nur auf Loopback: `/api/config` und `/api/streams` liefern die
+  // RTSP-URLs samt Kamera-/DoorBird-Passwörtern im Klartext, und go2rtc hat
+  // hier keine eigene Anmeldung – im LAN darf sie nicht erreichbar sein. Alle
+  // Clients laufen auf diesem Rechner (Next-Server, Hub, Sidecar); das
+  // Kiosk-Dashboard spricht über die Next-App (`/api/go2rtc/webrtc`,
+  // `/api/go2rtc/frame.jpeg`). Das Video selbst läuft weiter direkt über den
+  // WebRTC-Port unten.
+  //
+  // `origin: "*"` bleibt vorerst: Die Kamera-Seite der Cloud-App
+  // (emp-access /webcams) fragt go2rtc direkt aus dem Browser dieses Rechners
+  // ab und braucht dafür CORS. Sobald sie über den Hub-Proxy läuft, kann die
+  // Zeile entfallen (dann kann auch keine lokal geöffnete Fremdseite die API
+  // mehr auslesen).
   lines.push("api:");
-  lines.push('  listen: ":1984"');
+  lines.push(`  listen: "${GO2RTC_API_LISTEN}"`);
   lines.push('  origin: "*"');
   lines.push("");
   lines.push("log:");
@@ -81,6 +96,26 @@ export function buildGo2rtcYaml(config: Config): string {
   }
 
   return lines.join("\n") + "\n";
+}
+
+/**
+ * Gültiger go2rtc-Stream-Name (`<camId>_main`, `<camId>_sub`, `doorbird`)?
+ * Hält alles fern, was die weitergereichte URL verändern könnte.
+ */
+export function isValidStreamName(src: string): boolean {
+  return /^[^\s/?#&]{1,120}$/.test(src);
+}
+
+/**
+ * Server-seitige URL zur go2rtc-API, z. B. `/api/webrtc?src=…`.
+ * Ohne konfigurierte go2rtc-URL gilt der Standard — wie zuvor im Dashboard.
+ */
+export function go2rtcApiUrl(
+  go2rtcUrl: string | undefined,
+  pathAndQuery: string,
+): string {
+  const base = go2rtcUrl || `http://${GO2RTC_API_LISTEN}`;
+  return `${base.replace(/\/$/, "")}${pathAndQuery}`;
 }
 
 export async function writeGo2rtcYaml(config: Config): Promise<string> {

@@ -3,7 +3,7 @@ import { getSessionWithDb } from "@/lib/api-auth";
 
 // Fetch Shelly device list using saved credentials (no key required in request)
 export async function GET() {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const { db, accountId } = session;
@@ -63,7 +63,7 @@ export interface ShellyCloudDevice {
 
 // Test connection and list Shelly Cloud devices
 export async function POST(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const body = await request.json();
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
 
 // Save Shelly Cloud credentials to ApiConfig
 export async function PUT(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const body = await request.json();
@@ -182,7 +182,7 @@ export async function PUT(request: NextRequest) {
 
 // Import a single Shelly Cloud device OR sync names of all imported devices
 export async function PATCH(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const body = await request.json();
@@ -295,7 +295,7 @@ export async function PATCH(request: NextRequest) {
 
 // Delete Shelly Cloud config
 export async function DELETE() {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const { db, accountId } = session;

@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
-import { triggerDeviceAction, DEVICE_TASK_MAP } from "@/lib/device-open";
+import { triggerDeviceAction } from "@/lib/device-open";
 
 /**
  * Quick-Open-Endpoint für den oeffentlichen Check-In Monitor. Validiert
- * Monitor-Token und Geraete-Zugehoerigkeit (Account + optional die im
- * MonitorConfig hinterlegten deviceIds), bevor der Open-/Reset-Befehl an
- * das Geraet gesendet wird.
+ * Monitor-Token und Account-Zugehoerigkeit des Geraets, bevor der
+ * Oeffnen-Befehl gesendet wird.
+ *
+ * Der Kiosk-Token steckt in einer URL und darf deshalb nur "einmal oeffnen"
+ * ausloesen. NOT-AUF ("emergency") und Sperren ("deactivate") bleiben dem
+ * angemeldeten Dashboard vorbehalten: bei NOT-AUF laesst der Pi jeden Scan
+ * ohne Serverpruefung durch.
  */
+const KIOSK_ACTIONS = ["open"] as const;
+type KioskAction = (typeof KIOSK_ACTIONS)[number];
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ token: string; id: string }> },
@@ -31,7 +37,7 @@ export async function POST(
 
   const body = (await request.json().catch(() => ({}))) as { action?: string };
   const action = body.action ?? "open";
-  if (!(action in DEVICE_TASK_MAP)) {
+  if (!(KIOSK_ACTIONS as readonly string[]).includes(action)) {
     return NextResponse.json({ error: "Ungültige Aktion" }, { status: 400 });
   }
 
@@ -57,7 +63,7 @@ export async function POST(
     prisma,
     device,
     monitor.accountId,
-    action as keyof typeof DEVICE_TASK_MAP,
+    action as KioskAction,
   );
 
   return NextResponse.json({ ok: true, task, sent });

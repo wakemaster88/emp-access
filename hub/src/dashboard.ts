@@ -7,6 +7,8 @@
  *
  * Zugriff: ohne HUB_DASHBOARD_TOKEN nur 127.0.0.1. Mit Token bindet der
  * Server ans LAN und verlangt das Token fuer jede Anfrage von aussen.
+ * Schreibende Anfragen pruefen zusaetzlich Host, Origin und Content-Type
+ * (CSRF/DNS-Rebinding, siehe dashboard-guard.ts).
  */
 import { staffPayload } from "./staff-insights.js";
 import { deviceAction, liveStates, roomsPayload, syncRooms } from "./rooms.js";
@@ -17,6 +19,7 @@ import http from "node:http";
 import https from "node:https";
 import net from "node:net";
 import path from "node:path";
+import { hostname, networkInterfaces } from "node:os";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { CONFIG, api, log } from "./config.js";
@@ -40,6 +43,7 @@ import { configuredVlans, routerHost } from "./netmap.js";
 import { soundwebSummary } from "./soundweb.js";
 import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
 import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
+import { buildAllowedHosts, checkDashboardRequest } from "./dashboard-guard.js";
 import { personBoxes, seenPeople } from "./live-people.js";
 import { getFrame, startFrameWarmer } from "./frame-cache.js";
 import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
@@ -233,6 +237,18 @@ function cookieToken(req: http.IncomingMessage): string | null {
   return null;
 }
 
+/** Gueltiges Token in Adresse, Header oder Cookie (false, wenn keins konfiguriert ist). */
+function hasValidToken(req: http.IncomingMessage, url: URL): boolean {
+  const expected = CONFIG.dashboardToken;
+  if (!expected) return false;
+  const header = req.headers["x-hub-token"];
+  const given =
+    url.searchParams.get("token") ??
+    (typeof header === "string" ? header : null) ??
+    cookieToken(req);
+  return !!given && sameToken(given, expected);
+}
+
 function authorized(
   req: http.IncomingMessage,
   url: URL,
@@ -242,12 +258,7 @@ function authorized(
   if (!expected) return true;
   if (isLoopback(req)) return true;
 
-  const header = req.headers["x-hub-token"];
-  const given =
-    url.searchParams.get("token") ??
-    (typeof header === "string" ? header : null) ??
-    cookieToken(req);
-  if (!given || !sameToken(given, expected)) return false;
+  if (!hasValidToken(req, url)) return false;
 
   // Bei jedem Seitenaufruf erneuern (gleitend ein Jahr), damit die
   // Home-Bildschirm-App nicht nach einem Monat wieder nach dem Token fragt.
@@ -260,6 +271,53 @@ function authorized(
     );
   }
   return true;
+}
+
+/* ---------------------------------------------------------------------------
+ * Schreibende Anfragen: Host / Origin / Content-Type (dashboard-guard.ts)
+ * ------------------------------------------------------------------------- */
+
+const ALLOWED_HOSTS_TTL_MS = 60_000;
+let allowedHostsCache: { at: number; hosts: Set<string> } | null = null;
+
+/**
+ * Namen und Adressen, unter denen dieser Hub sein Dashboard ausliefert:
+ * localhost, Rechnername (auch .local), alle eigenen IPs, dazu
+ * HUB_DASHBOARD_ALLOWED_HOSTS und HUB_DASHBOARD_TLS_NAMES. Kurz gecacht,
+ * weil sich IPs per DHCP aendern koennen.
+ */
+function allowedDashboardHosts(): Set<string> {
+  if (allowedHostsCache && Date.now() - allowedHostsCache.at < ALLOWED_HOSTS_TTL_MS) {
+    return allowedHostsCache.hosts;
+  }
+  const addresses: string[] = [];
+  for (const list of Object.values(networkInterfaces())) {
+    for (const a of list ?? []) addresses.push(a.address);
+  }
+  if (!["0.0.0.0", "::"].includes(CONFIG.dashboardHost)) addresses.push(CONFIG.dashboardHost);
+  const hosts = buildAllowedHosts({
+    hostname: hostname(),
+    addresses,
+    extra: [process.env.HUB_DASHBOARD_ALLOWED_HOSTS ?? "", process.env.HUB_DASHBOARD_TLS_NAMES ?? ""],
+  });
+  allowedHostsCache = { at: Date.now(), hosts };
+  return hosts;
+}
+
+/** Abgelehnte Anfragen gedrosselt loggen (je Grund hoechstens alle 10 min). */
+const GUARD_LOG_EVERY_MS = 10 * 60_000;
+const guardLoggedAt = new Map<string, number>();
+
+function logGuardReject(req: http.IncomingMessage, url: URL, reason: string): void {
+  const now = Date.now();
+  if (now - (guardLoggedAt.get(reason) ?? 0) < GUARD_LOG_EVERY_MS) return;
+  guardLoggedAt.set(reason, now);
+  // Header kommen von aussen: kuerzen, keine Steuerzeichen ins Log.
+  const clean = (v: unknown) => String(v ?? "-").replace(/[^\x20-\x7e]/g, "?").slice(0, 80);
+  log(
+    `Dashboard: ${clean(req.method)} ${clean(url.pathname)} abgelehnt (${reason}) – Host „${clean(req.headers.host)}“, Origin „${clean(req.headers.origin)}“, Content-Type „${clean(req.headers["content-type"])}“` +
+      (reason === "host" ? " · eigenen Namen ggf. in HUB_DASHBOARD_ALLOWED_HOSTS (hub/.env) eintragen" : "")
+  );
 }
 
 function loginPage(failed: boolean): string {
@@ -614,6 +672,27 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       if (url.pathname.startsWith("/api/")) return json(res, 401, { error: "Token fehlt" });
       res.writeHead(401, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
       return void res.end(loginPage(url.searchParams.has("token")));
+    }
+
+    // Schreibende Anfragen: nur vom Dashboard selbst (kein CSRF von fremden
+    // Seiten im Browser des Hub-Rechners, kein DNS-Rebinding). GET/HEAD
+    // bleiben unberuehrt.
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      const guard = checkDashboardRequest(
+        {
+          method: req.method ?? "",
+          pathname: url.pathname,
+          host: req.headers.host,
+          origin: typeof req.headers.origin === "string" ? req.headers.origin : undefined,
+          contentType: req.headers["content-type"],
+          tokenAuthenticated: hasValidToken(req, url),
+        },
+        { port: CONFIG.dashboardPort, allowedHosts: allowedDashboardHosts() }
+      );
+      if (!guard.ok) {
+        logGuardReject(req, url, guard.reason);
+        return json(res, guard.status, { error: guard.error });
+      }
     }
 
     // Token aus der Adresse entfernen, sobald das Cookie gesetzt ist: So landet

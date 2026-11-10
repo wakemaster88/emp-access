@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
 import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 export async function GET(
   request: NextRequest,
@@ -49,6 +50,16 @@ export async function PUT(
     where: { id: ticketId, accountId: accountId! },
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+
+  const refError = await foreignRefError(db, accountId, {
+    accessAreaIds: [data.accessAreaId],
+    subscriptionIds: [data.subscriptionId],
+    serviceIds: [data.serviceId],
+    vereinIds: [data.vereinId],
+  });
+  if (refError) {
+    return NextResponse.json({ error: { formErrors: [refError], fieldErrors: {} } }, { status: 400 });
+  }
 
   // Code-Eindeutigkeit erzwingen: rfidCode/qrCode sind im Schema NICHT unique
   // (nur barcode/uuid). Ohne diese Pruefung kann derselbe Code an mehreren

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadConfig } from "@/lib/config";
-import { injectRuntimePatch, rewriteAbsolutePaths } from "@/lib/embed-rewrite";
+import {
+  injectRuntimePatch,
+  rewriteAbsolutePaths,
+  stripCookies,
+} from "@/lib/embed-rewrite";
+import { ADMIN_TOKEN_HEADER, AUTH_COOKIE } from "@/lib/auth";
+import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +19,11 @@ export const dynamic = "force-dynamic";
  * frame-ancestors). Cookies werden mit entferntem Domain-Attribut weitergereicht,
  * damit sie auf der lokalen Origin (localhost:3000) wirken. HTML-Body wird so
  * umgeschrieben, dass absolute Pfade auf den Proxy zurückgeleitet werden.
+ *
+ * Zugangsdaten der Dashboard-App selbst (Login-Cookie, `x-admin-token`,
+ * internes Token) gehen nie an den fremden Upstream — die proxied Seite
+ * läuft auf unserer Origin, der Browser hängt das Cookie also automatisch an.
+ * Cookies, die der Upstream selbst gesetzt hat, werden weiter durchgereicht.
  */
 
 const STRIPPED_RESPONSE_HEADERS = new Set([
@@ -39,7 +50,13 @@ const STRIPPED_REQUEST_HEADERS = new Set([
   "x-forwarded-proto",
   "x-real-ip",
   "x-vercel-id",
+  // Zugangsdaten dieser App — nichts für Dritte.
+  ADMIN_TOKEN_HEADER,
+  INTERNAL_TOKEN_HEADER,
 ]);
+
+/** Cookies dieser App, die nicht an den Upstream dürfen. */
+const APP_COOKIES = [AUTH_COOKIE];
 
 interface RouteCtx {
   params: Promise<{ widgetId: string; path?: string[] }>;
@@ -86,7 +103,14 @@ async function handle(req: NextRequest, ctx: RouteCtx) {
 
   const headers = new Headers();
   for (const [k, v] of req.headers) {
-    if (STRIPPED_REQUEST_HEADERS.has(k.toLowerCase())) continue;
+    const lk = k.toLowerCase();
+    if (STRIPPED_REQUEST_HEADERS.has(lk)) continue;
+    if (lk === "cookie") {
+      // Eigenes Login-Cookie herausfiltern, Upstream-Cookies behalten.
+      const rest = stripCookies(v, APP_COOKIES);
+      if (rest) headers.set("cookie", rest);
+      continue;
+    }
     headers.set(k, v);
   }
   headers.set("host", baseUrl.host);
@@ -115,6 +139,9 @@ async function handle(req: NextRequest, ctx: RouteCtx) {
     const lk = key.toLowerCase();
     if (STRIPPED_RESPONSE_HEADERS.has(lk)) return;
     if (lk === "set-cookie") {
+      // Der Upstream darf unser Login-Cookie nicht überschreiben.
+      const name = value.split("=")[0].trim();
+      if (APP_COOKIES.includes(name)) return;
       respHeaders.append(
         "set-cookie",
         value

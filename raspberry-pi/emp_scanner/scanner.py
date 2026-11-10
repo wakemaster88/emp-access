@@ -99,6 +99,10 @@ class ScannerInput:
     def stop(self):
         self._running = False
 
+    def is_alive(self) -> bool:
+        """True, solange der Lese-Thread läuft (für Watchdog/Health-Check)."""
+        return self._thread is not None and self._thread.is_alive()
+
     def _wait_and_evdev_loop(self):
         """Wartet auf USB-Scanner (z. B. nachträglich einstecken) und startet dann _evdev_loop."""
         wait_sec = 5
@@ -179,6 +183,8 @@ class ScannerInput:
                 if code:
                     self.on_scan(code)
             except EOFError:
+                logger.error("stdin geschlossen – Scanner-Thread endet (kein Scanner verfügbar)")
                 break
-            except Exception:
+            except Exception as e:
+                logger.error("stdin-Fehler – Scanner-Thread endet: %s", e)
                 break

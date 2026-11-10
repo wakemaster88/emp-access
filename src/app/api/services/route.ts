@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ValidityType } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 function toValidityType(v: string | null | undefined): ValidityType | null {
   return v && ["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(v) ? (v as ValidityType) : null;
@@ -47,6 +48,10 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const areasPayload: { areaId: number; defaultValidityType?: string; defaultStartDate?: string; defaultEndDate?: string; defaultSlotStart?: string; defaultSlotEnd?: string; defaultValidityDurationMinutes?: number }[] = Array.isArray(body.areas) ? body.areas : (Array.isArray(body.areaIds) ? body.areaIds.map((id: number) => ({ areaId: Number(id) })) : []);
   const annyNames: string[] = Array.isArray(body.annyNames) ? body.annyNames : [];
+  const refError = await foreignRefError(db, accountId, {
+    accessAreaIds: areasPayload.map((a) => Number(a.areaId)),
+  });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
 
   const defaultValidityType = ["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(body.defaultValidityType)
     ? body.defaultValidityType

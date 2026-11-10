@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { Prisma } from "@prisma/client";
 import { safeAuth } from "@/lib/auth";
+import { adminRoleRequired } from "@/lib/api-auth";
 import { tenantClient } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -22,6 +23,9 @@ export async function PATCH(request: NextRequest) {
   if (!session?.user?.accountId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Das Account-Token ist der Generalschluessel fuer Geraete und API.
+  const denied = adminRoleRequired(session.user.role);
+  if (denied) return denied;
 
   let body: unknown;
   try {

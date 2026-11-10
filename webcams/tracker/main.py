@@ -144,6 +144,26 @@ def app_auth_headers() -> dict[str, str]:
     return {"x-admin-token": pin} if pin else {}
 
 
+def internal_token() -> str:
+    """Shared Secret Next↔Sidecar (``internalToken`` in der config.json).
+
+    Die Next-App erzeugt es beim Start automatisch. Es weist automatische
+    Tür-Öffnungen (ALPR, Ausfahrt-Zone) als echt aus — ohne das Token
+    behandelt die Next-App den Aufruf wie einen UI-Klick, und der darf nur
+    innerhalb des Ring-Fensters öffnen.
+    """
+    return str(read_config().get("internalToken") or "")
+
+
+def app_internal_headers() -> dict[str, str]:
+    """``app_auth_headers`` plus internes Token — für Tür-/Tor-Öffnungen."""
+    headers = app_auth_headers()
+    token = internal_token()
+    if token:
+        headers["x-internal-token"] = token
+    return headers
+
+
 def _autodetect_device() -> str:
     """Wählt das beste verfügbare Inferenz-Gerät.
 
@@ -1549,7 +1569,7 @@ class TrackerManager:
         r = requests.post(
             url,
             json={"camId": cam_id},
-            headers=app_auth_headers(),
+            headers=app_internal_headers(),
             timeout=8.0,
         )
         if not r.ok:
@@ -1566,7 +1586,7 @@ class TrackerManager:
         r = requests.post(
             url,
             json={"source": "alpr", "plate": plate, "owner": owner},
-            headers=app_auth_headers(),
+            headers=app_internal_headers(),
             timeout=5.0,
         )
         if not r.ok:

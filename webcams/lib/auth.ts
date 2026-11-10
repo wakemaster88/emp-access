@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { loadConfig } from "./config";
+import { INTERNAL_TOKEN_HEADER, verifyInternalToken } from "./internal-token";
 
 /**
  * PIN-basierte Auth für Admin-UI und kritische API-Routen.
@@ -71,4 +72,18 @@ export async function requireAuth(req: Request): Promise<Response | null> {
   });
   if (ok) return null;
   return Response.json({ error: "unauthorized" }, { status: 401 });
+}
+
+/**
+ * Kommt der Aufruf nachweislich vom Tracker-Sidecar (oder einem anderen
+ * internen Dienst)? Geprüft wird der Header `x-internal-token` gegen
+ * `internalToken` aus der config.json — siehe `lib/internal-token.ts`.
+ * Alles ohne gültiges Token gilt als normaler UI-Aufruf.
+ */
+export async function isInternalRequest(req: Request): Promise<boolean> {
+  const config = await loadConfig();
+  return verifyInternalToken(
+    config.internalToken,
+    req.headers.get(INTERNAL_TOKEN_HEADER),
+  );
 }

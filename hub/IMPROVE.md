@@ -926,3 +926,29 @@ Snapshot (seit 10:21 UTC, Stand 10:56): `delivery.none` 5, `alpr.plate` 1, `alpr
 
 - BN-PL 8546 wird beim nächsten Besuch gelernt, wenn „DHL“ auf einem Bild lesbar ist (Log „als DHL gemerkt“), ab dem übernächsten gemeldet.
 - `delivery.plate` gegen `delivery.weak`/`delivery.none` beobachten.
+
+## 2026-11-09 (Härtung: Tor nur bei exaktem Kennzeichen, Dashboard-CSRF, Update mit Rollback)
+
+Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, `hub/.cache/` fehlt – Arbeit ohne Zugriff auf den Hub-Rechner, nichts davon ist am echten Tor, an den Kameras oder unter launchd geprüft.
+
+### Befunde (Audit)
+
+- Unscharfer Whitelist-Treffer (gleiche Ziffern, ≤ 2 Zeichen daneben oder Buchstaben-Teilstück, conf ≥ 0,25) wurde zum Whitelist-Kennzeichen umgeschrieben und öffnete das Tor – lokal und, ohne lokale Schaltung, über den DOORBIRD_OPEN-Task der Cloud. Auch ein exakter Treffer brauchte keine Mindest-Confidence.
+- Dashboard: Loopback ohne Token, kein Origin-/Host-Check, JSON wurde bei jedem Content-Type gelesen. Jede Webseite im Browser des Hub-Rechners konnte `{"type":"DOORBIRD_OPEN"}` an `127.0.0.1:8787/api/action` schicken.
+- Updater: `execSync("npm install")` ohne Zeitlimit blockierte den Event-Loop (Tasks, Offenhalte-Impulse); kein Rollback, Neustart auch auf kaputten Stand.
+- Keine Handler für `unhandledRejection`/`uncaughtException`: Absturzgrund nur in `emp-hub.error.log`.
+
+### Änderung
+
+- `plate-match.ts` (neu, reine Logik): Unscharfe Treffer sind nur noch Hinweis (`probable`, „vermutlich …“ in Log und Ereignis) und landen nie mehr als Kennzeichen im Ergebnis. `PlateScore` trägt `matchKind`, `matchConfidence`, `actuate`. `actuateIfAllowed` schaltet nur bei exaktem Treffer (mit Messwert zusätzlich conf ≥ `HUB_ALPR_ACTUATE_MIN_CONF`, Standard 0,5; Kennzeichen der Kamera-eigenen Erkennung ohne Messwert zählen bei exaktem Treffer); sonst `localActed=1` an die Cloud, damit sie nicht ersatzweise schaltet. Reolink-LPR (ohne Confidence) schaltet nicht mehr.
+- `dashboard-guard.ts` (neu): Für alles außer GET/HEAD Pflicht `Content-Type: application/json` (Ausnahmen: `/api/go2rtc/webrtc` mit `application/sdp`, `/api/climate/report`), Origin muss das Dashboard selbst sein, Host ohne Token nur eigene Namen/IPs (`HUB_DASHBOARD_ALLOWED_HOSTS` für weitere). Oberfläche: `/api/rooms/sync` schickt jetzt den JSON-Typ.
+- `updater.ts`: Installation async mit 5 min Zeitlimit (`npm ci`, nur bei geändertem Manifest/Lockfile), Pre-Flight (`HUB_PREFLIGHT=1 npx tsx src/index.ts`, 2 min), bei Fehler Rollback auf den vorherigen Commit und kein Neustart; abgelehnter Stand frühestens nach 30 min erneut. Optional `HUB_UPDATE_VERIFY_SIGNATURE=1` (`git verify-commit`).
+- `index.ts`: Pre-Flight-Abfrage vor allem anderen; `unhandledRejection`/`uncaughtException` loggen ins Hub-Log und beenden den Prozess (launchd startet neu, wie bisher).
+- Geprüft: `tsc -p hub` 0 Fehler; Hub-Tests grün (neu: `plate-match`, `dashboard-guard`, `updater-rules`); Dashboard lokal gestartet und mit curl durchgespielt (CSRF, Rebinding, Shelly-Webhook, LAN mit Token); Updater in einem Wegwerf-Klon gegen gute, kaputte und unsignierte Commits.
+
+### Nächster Schritt
+
+- Nach dem Ausrollen im Log prüfen: „Fahrzeug-Burst … DoorBird sofort“ bei bekannten Fahrzeugen noch da? Zeilen „Treffer zu unsicher“ und „vermutlich …“ zählen – wenn bekannte Fahrzeuge zu oft unter 0,5 bleiben, `HUB_ALPR_ACTUATE_MIN_CONF` bewusst anpassen statt den unscharfen Treffer zurückzuholen.
+- Zeilen „Dashboard: … abgelehnt (host)“: Name in `HUB_DASHBOARD_ALLOWED_HOSTS` eintragen. Offene Dashboard-Tabs einmal neu laden.
+- Erstes Update nach diesem Stand beobachten: „Neuer Stand installiert und geprüft“ bzw. „Update ABGEBROCHEN“. Bleibt ein Hub hängen: `hub/install/update.sh`.
+- Offen: Lesende Routen (GET) prüfen den Host nicht – eine per DNS umgebogene Seite im Browser des Hub-Rechners kann weiterhin Lage, Log und Standbilder lesen. `DOORBIRD_OPEN` steht weiter in `ALLOWED_ACTIONS`, obwohl die Oberfläche den Türöffner bewusst nicht anbietet.

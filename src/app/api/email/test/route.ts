@@ -10,7 +10,7 @@ import { wrapEmailHtml } from "@/lib/email-templates";
  * geloggt.
  */
 export async function POST(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 

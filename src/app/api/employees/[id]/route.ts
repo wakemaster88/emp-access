@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { employeeUpdateSchema } from "@/lib/validators";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 /**
  * Detail / Update / Delete eines Mitarbeiters (= Ticket mit source=EMP_CONTROL).
@@ -88,6 +89,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!existing) return NextResponse.json({ error: "Mitarbeiter nicht gefunden" }, { status: 404 });
 
   const data = parsed.data;
+  const refError = await foreignRefError(db, accountId, {
+    accessAreaIds: data.areaIds,
+    deviceIds: data.deviceIds,
+  });
+  if (refError) {
+    return NextResponse.json({ error: { formErrors: [refError], fieldErrors: {} } }, { status: 400 });
+  }
   const updateData: Record<string, unknown> = {};
   if (data.name !== undefined) updateData.name = data.name;
   if (data.firstName !== undefined) updateData.firstName = data.firstName;

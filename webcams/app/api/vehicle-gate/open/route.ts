@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/config";
-import { requireAuth } from "@/lib/auth";
+import { isInternalRequest, requireAuth } from "@/lib/auth";
 import { doorbirdOpenDoor } from "@/lib/doorbird";
 import { evaluateDoorOpen } from "@/lib/door-policy";
 import { getLastRingAt } from "@/lib/event-bus";
@@ -13,10 +13,25 @@ export const dynamic = "force-dynamic";
 /**
  * Sidecar-Aufruf: Fahrzeug steht in der Ausfahrt-Zone.
  * Öffnet DoorBird und/oder emp-access-Geräte laut Cam-Config.
+ *
+ * Nur für den Tracker-Sidecar: die Route öffnet ohne Ring-Fenster, also
+ * muss der Aufrufer das interne Token vorlegen (`x-internal-token`).
+ * Im UI gibt es keinen Aufrufer.
  */
 export async function POST(req: Request) {
   const denied = await requireAuth(req);
   if (denied) return denied;
+  if (!(await isInternalRequest(req))) {
+    await logEvent({
+      action: "vehicle-gate-open",
+      ok: false,
+      meta: { reason: "internal token missing or invalid" },
+    });
+    return NextResponse.json(
+      { error: "nur für den Tracker-Sidecar (internes Token fehlt)" },
+      { status: 403 },
+    );
+  }
 
   let camId = "";
   try {
@@ -53,6 +68,7 @@ export async function POST(req: Request) {
     const decision = evaluateDoorOpen({
       enforceRingWindow: config.doorbird.enforceRingWindow,
       source: "vehicle-gate",
+      internal: true,
       lastRingAt: getLastRingAt(),
       now: Date.now(),
       ringWindowSec: config.doorbird.ringWindowSec,

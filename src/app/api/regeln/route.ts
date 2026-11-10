@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getSessionOrApiToken(request);
+  const session = await getSessionOrApiToken(request, { requireAdmin: true });
   if ("error" in session) return session.error;
   if (session.accountId == null) {
     return NextResponse.json({ error: "Kein Mandant zugeordnet" }, { status: 403 });

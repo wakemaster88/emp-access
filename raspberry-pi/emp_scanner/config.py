@@ -6,6 +6,7 @@ Reads/writes config.json and supports initial setup via QR code.
 import json
 import os
 import logging
+from urllib.parse import urlparse
 
 logger = logging.getLogger("emp.config")
 
@@ -30,7 +31,20 @@ DEFAULT = {
     "task_poll_interval": 10,
     "update_check_interval": 300,
     "scanner_device": "auto",
+    # Auto-Update nur auf GPG-signierte Commits (siehe README „Signierte Updates“).
+    # Standard aus: ohne installierten Signaturschlüssel gäbe es sonst keine Updates mehr.
+    "update_verify_signature": False,
 }
+
+
+def looks_like_config_qr(code: str) -> bool:
+    """
+    True, wenn ein gescannter Code wie ein Konfigurations-QR aussieht
+    ({"url": ..., "token": ..., "id": ...}) – auch wenn er unvollständig gelesen wurde.
+    Solche Codes enthalten ein API-Token und dürfen nie als Ticket zum Server gehen.
+    """
+    text = code.strip()
+    return text.startswith("{") and '"url"' in text and '"token"' in text
 
 
 class Config:
@@ -45,6 +59,7 @@ class Config:
                     stored = json.load(f)
                 self._data.update(stored)
                 logger.info("Konfiguration geladen: %s", CONFIG_PATH)
+                self._restrict_permissions()
                 self._migrate_polling_defaults(stored)
             except Exception as e:
                 logger.error("Fehler beim Laden der Konfiguration: %s", e)
@@ -72,13 +87,25 @@ class Config:
             )
             self.save()
 
-    def save(self):
+    def save(self) -> bool:
         try:
-            with open(CONFIG_PATH, "w") as f:
+            # config.json enthält das API-Token → nur für den Besitzer lesbar (0600).
+            fd = os.open(CONFIG_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 json.dump(self._data, f, indent=2)
+            self._restrict_permissions()
             logger.info("Konfiguration gespeichert")
+            return True
         except Exception as e:
             logger.error("Fehler beim Speichern: %s", e)
+            return False
+
+    def _restrict_permissions(self) -> None:
+        """Bestehende config.json (früher 0644 angelegt) auf 0600 nachziehen."""
+        try:
+            os.chmod(CONFIG_PATH, 0o600)
+        except OSError as e:
+            logger.debug("chmod 0600 auf config.json fehlgeschlagen: %s", e)
 
     @property
     def is_configured(self) -> bool:
@@ -88,23 +115,66 @@ class Config:
         """
         Parse a QR config JSON: {"url": "...", "token": "...", "id": 123}
         Returns True if successfully applied.
+
+        Wird NUR angenommen, solange das Gerät noch nicht konfiguriert ist. Ein
+        bereits konfigurierter Scanner lässt sich nicht per QR auf einen anderen
+        Server umstellen – dafür ist ein bewusster Reset mit Shell-Zugang nötig
+        (``python -m emp_scanner.main --reset-config``, siehe README).
         """
+        if self.is_configured:
+            if looks_like_config_qr(qr_data):
+                logger.warning("Gerät ist bereits konfiguriert – Konfigurations-QR ignoriert")
+            return False
         try:
             data = json.loads(qr_data)
-            if "url" in data and "token" in data and "id" in data:
-                self._data["server_url"] = data["url"].rstrip("/")
-                self._data["api_token"] = str(data["token"])
-                self._data["device_id"] = int(data["id"])
-                self.save()
-                logger.info(
-                    "QR-Konfiguration angewendet: Server=%s, Device=%d",
-                    self._data["server_url"],
-                    self._data["device_id"],
-                )
-                return True
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
+        except ValueError as e:
             logger.debug("Kein gültiger Konfigurations-QR: %s", e)
-        return False
+            return False
+        if not isinstance(data, dict) or not ("url" in data and "token" in data and "id" in data):
+            return False
+
+        url = data["url"]
+        token = data["token"]
+        device_id = data["id"]
+        if not isinstance(url, str) or not isinstance(token, str) or not token.strip():
+            logger.warning("Konfigurations-QR abgelehnt: url/token fehlen oder haben den falschen Typ")
+            return False
+        try:
+            parsed = urlparse(url.strip())
+        except ValueError:
+            parsed = None
+        if parsed is None or parsed.scheme not in ("http", "https") or not parsed.netloc:
+            logger.warning("Konfigurations-QR abgelehnt: url ist keine http(s)-Adresse")
+            return False
+        # bool ist in Python ein int – ausdrücklich ausschließen.
+        if isinstance(device_id, bool) or not isinstance(device_id, int) or device_id <= 0:
+            logger.warning("Konfigurations-QR abgelehnt: id ist keine positive Ganzzahl")
+            return False
+
+        self._data["server_url"] = url.strip().rstrip("/")
+        self._data["api_token"] = token.strip()
+        self._data["device_id"] = device_id
+        self.save()
+        logger.info(
+            "QR-Konfiguration angewendet: Server=%s, Device=%d",
+            self._data["server_url"],
+            self._data["device_id"],
+        )
+        return True
+
+    def reset_server_config(self) -> bool:
+        """
+        Server-Zuordnung löschen (URL, Token, Geräte-ID); Pins und Intervalle bleiben.
+        Danach wartet der Scanner wieder auf einen Konfigurations-QR.
+        Returns True, wenn die geänderte config.json gespeichert werden konnte.
+        """
+        self._data["server_url"] = ""
+        self._data["api_token"] = ""
+        self._data["device_id"] = 0
+        if not self.save():
+            return False
+        logger.warning("Server-Konfiguration zurückgesetzt – Gerät wartet auf neuen Konfigurations-QR")
+        return True
 
     def __getattr__(self, name):
         if name.startswith("_"):

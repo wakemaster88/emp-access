@@ -5,6 +5,7 @@ import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import type { AnnyBooking } from "@/lib/anny-types";
 import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
 import { findPredecessorTicket } from "@/lib/ticket-predecessor";
+import { newAnnyIncomplete, orphanCleanupScope, type AnnyIncomplete } from "./anny-orphans";
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
 const SYNC_WINDOW_DAYS = 60;
@@ -411,6 +412,13 @@ export async function syncAnnyForAccount(
     throw new Error("anny.co nicht konfiguriert");
   }
 
+  // Luecken beim Abruf (siehe anny-orphans.ts): steuern, was das Aufraeumen
+  // am Ende invalidieren darf.
+  const incomplete = newAnnyIncomplete();
+  const markIncomplete = (kind: keyof AnnyIncomplete, reason: string) => {
+    incomplete[kind].push(reason);
+  };
+
   const baseUrl = config.baseUrl?.replace(/\/+$/, "") || DEFAULT_BASE_URL;
   const apiBase = `${baseUrl}/api/v1`;
 
@@ -505,6 +513,9 @@ export async function syncAnnyForAccount(
     // ANNY-Limit: page[size] <= 50 fuer /plan-subscriptions (wie /services).
     const pageSize = 50;
     const pageLimit = 50;
+    // Jede Luecke (Fehlerseite, abgeschnittene Seitenzahl) wird vermerkt:
+    // mit einer unvollstaendigen Liste darf das Aufraeumen am Ende keine
+    // Abo-Tickets auf ungueltig setzen.
     const extra = { include: "customer,plan" };
     const buildUrl = (n: number) => {
       const p = new URLSearchParams({ ...extra, "page[size]": String(pageSize), "page[number]": String(n) });
@@ -513,11 +524,14 @@ export async function syncAnnyForAccount(
 
     const firstRes = await fetch(buildUrl(1), { headers, signal: AbortSignal.timeout(15000) });
     if (!firstRes.ok) {
-      if (firstRes.status === 404) return [];
+      // 404 = der Account hat keine plan-subscriptions (Endpunkt nicht
+      // freigeschaltet); alles andere ist ein Abruffehler.
+      if (firstRes.status !== 404) markIncomplete("subscriptions", `plan-subscriptions Seite 1: HTTP ${firstRes.status}`);
       return [];
     }
     const firstJson = await firstRes.json();
     const lastPage: number = firstJson?.meta?.page?.["last-page"] ?? 1;
+    if (lastPage > pageLimit) markIncomplete("subscriptions", `plan-subscriptions: ${lastPage} Seiten, gelesen ${pageLimit}`);
 
     const allData: Record<string, unknown>[] = Array.isArray(firstJson?.data) ? firstJson.data : [];
     const allIncluded: Record<string, unknown>[] = Array.isArray(firstJson?.included) ? firstJson.included : [];
@@ -528,11 +542,16 @@ export async function syncAnnyForAccount(
       for (let n = 2; n <= cap; n++) remaining.push(n);
       const responses = await Promise.all(
         remaining.map((n) =>
-          fetch(buildUrl(n), { headers, signal: AbortSignal.timeout(15000) }).then((r) => r.ok ? r.json() : null),
+          fetch(buildUrl(n), { headers, signal: AbortSignal.timeout(15000) })
+            .then((r) => r.ok ? r.json() : null)
+            .catch(() => null),
         ),
       );
-      for (const j of responses) {
-        if (!j) continue;
+      for (const [idx, j] of responses.entries()) {
+        if (!j) {
+          markIncomplete("subscriptions", `plan-subscriptions Seite ${remaining[idx]} nicht lesbar`);
+          continue;
+        }
         if (Array.isArray(j.data)) allData.push(...j.data);
         if (Array.isArray(j.included)) allIncluded.push(...j.included);
       }
@@ -859,6 +878,7 @@ export async function syncAnnyForAccount(
   if (lastBookingPage > 1) {
     const remainingPages: number[] = [];
     const cap = Math.min(lastBookingPage, 50);
+    if (lastBookingPage > cap) markIncomplete("bookings", `bookings: ${lastBookingPage} Seiten, gelesen ${cap}`);
     for (let n = 2; n <= cap; n++) remainingPages.push(n);
     // 8er-Chunks parallel. Eine Seite dauert ~4.5s, egal ob 4 oder 8 gleichzeitig
     // laufen (gemessen: 4 parallel 4.0s, 8 parallel 5.0s, 12 parallel 5.2s) -
@@ -871,11 +891,15 @@ export async function syncAnnyForAccount(
           fetch(
             `${apiBase}/bookings?` + new URLSearchParams({ ...bookingsExtra, "page[size]": "500", "page[number]": String(n) }),
             { headers, signal: AbortSignal.timeout(20000) },
-          ).then((r) => r.ok ? r.json() : null),
+          ).then((r) => r.ok ? r.json() : null).catch(() => null),
         ),
       );
-      for (const j of responses) {
-        if (!j) continue;
+      for (const [idx, j] of responses.entries()) {
+        if (!j) {
+          // Fehlerseite (429/5xx/Timeout): die Buchungen dieser Seite fehlen.
+          markIncomplete("bookings", `bookings Seite ${chunk[idx]} nicht lesbar`);
+          continue;
+        }
         accumulate(normalizeAnnyBookingsResponse(j));
       }
     }
@@ -907,6 +931,7 @@ export async function syncAnnyForAccount(
     fetchAllPages("plans").catch(logDiscoveryError("plans")),
     fetchAllPlanSubscriptions().catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
+      markIncomplete("subscriptions", `plan-subscriptions: ${msg.slice(0, 120)}`);
       console.warn(`[anny sync] discovery plan-subscriptions failed: ${msg}`);
       return [] as PlanSubscription[];
     }),
@@ -1690,19 +1715,30 @@ export async function syncAnnyForAccount(
   // ein altes (durch frueheren Sync-Bug entstandenes) Duplikat-Ticket weiter
   // gescannt werden, obwohl ein neues gueltiges Ticket fuer dieselbe Buchung
   // existiert.
-  const orphaned = await prisma.ticket.updateMany({
-    where: {
-      accountId,
-      source: "ANNY",
-      uuid: { notIn: activeUuids },
-      status: { notIn: ["INVALID", "PAUSED", "CANCELED"] },
-      OR: [
-        { startDate: { gte: syncCutoff } },
-        { uuid: { startsWith: "anny-sub:" } },
-      ],
-    },
-    data: { status: "INVALID", barcode: null, qrCode: null },
-  });
+  //
+  // Invalidiert wird nur, was ANNY nachweislich nicht mehr fuehrt. War ein
+  // Abruf unvollstaendig (Fehlerseite, Timeout, Seitenlimit), fehlen gueltige
+  // Buchungen in `activeUuids` - dann bleibt der betroffene Teil unangetastet
+  // und der naechste Lauf holt das Aufraeumen nach. Sonst wuerde ein einzelner
+  // 429/5xx gueltige Tickets sperren, bis der naechste Sync sie zurueckholt.
+  const orphanScope = orphanCleanupScope(incomplete, syncCutoff);
+  const orphaned = orphanScope
+    ? await prisma.ticket.updateMany({
+        where: {
+          accountId,
+          source: "ANNY",
+          uuid: { notIn: activeUuids },
+          status: { notIn: ["INVALID", "PAUSED", "CANCELED"] },
+          ...orphanScope,
+        },
+        data: { status: "INVALID", barcode: null, qrCode: null },
+      })
+    : { count: 0 };
+  for (const [kind, reasons] of Object.entries(incomplete)) {
+    if (reasons.length === 0) continue;
+    console.warn(`[anny sync] ${kind} unvollstaendig, Aufraeumen ausgesetzt: ${reasons.slice(0, 3).join("; ")}`);
+    errorDetails.push(`Abruf unvollständig (${kind}): ${reasons[0]} – Aufräumen ausgesetzt`);
+  }
 
   // --- Update config ---
 

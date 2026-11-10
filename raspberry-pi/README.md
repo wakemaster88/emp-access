@@ -34,6 +34,9 @@ Python-basierter Scanner-Client für Raspberry Pi zur Zugangs&shy;kontrolle übe
 | Scan | 500 → 1500 Hz | Kurzer Bestätigungston |
 | Valid | 1000 → 1500 → 2000 Hz | Aufsteigend, Zutritt gewährt |
 | Invalid | 2000 → 1500 → 1000 Hz | Absteigend, Zutritt verweigert |
+| Offline | 880 ↔ 440 Hz (Wechselton, 3×) | Server nicht erreichbar – Ticket wurde **nicht** geprüft, kein Zutritt |
+
+Bei „Offline“ leuchtet wie bei „Invalid“ die rote LED; der Unterschied ist nur am Ton zu hören (mehr gibt die Hardware ohne zusätzliche Bauteile nicht her). Im Log steht `OFFLINE: Server nicht erreichbar`.
 
 GPIO-Pins können in `config.json` angepasst werden.
 
@@ -58,6 +61,24 @@ Das Skript installiert die System-Pakete (u. a. Python, swig, liblgpio-dev), akt
 2. Gerätedetails öffnen → QR-Code wird angezeigt
 3. Den Konfigurations-QR-Code mit dem am Pi angeschlossenen Scanner scannen
 4. Der Pi konfiguriert sich automatisch und beginnt mit dem Scannen
+
+Der Konfigurations-QR muss eine `http(s)`-Adresse, ein Token und eine ganzzahlige Geräte-ID enthalten – sonst wird er abgelehnt.
+
+### Gerät neu zuordnen (Reset)
+
+Ein Konfigurations-QR wird **nur angenommen, solange der Scanner noch nicht konfiguriert ist**. Ein bereits eingerichteter Scanner ignoriert ihn (Warnung im Log, Ablehn-Signal) und schickt ihn auch nicht an den Server – sonst könnte jeder mit einem eigenen QR-Code das Drehkreuz auf einen fremden Server umstellen.
+
+Soll ein Gerät einen anderen Server, ein neues Token oder eine andere Geräte-ID bekommen, ist ein bewusster Reset mit Shell-Zugang (SSH) nötig:
+
+```bash
+sudo systemctl stop emp-scanner
+cd /opt/emp-scanner/raspberry-pi
+sudo /opt/emp-scanner/venv/bin/python -m emp_scanner.main --reset-config
+sudo systemctl start emp-scanner
+# danach den neuen Konfigurations-QR scannen
+```
+
+`--reset-config` löscht nur `server_url`, `api_token` und `device_id`; Pins und Intervalle bleiben erhalten. Alternativ `config.json` komplett löschen (dann gelten wieder alle Standardwerte) und den Dienst neu starten.
 
 ## Konfiguration
 
@@ -90,6 +111,9 @@ Die Datei `config.json` wird beim ersten QR-Scan automatisch erstellt:
 | `heartbeat_interval` | Sekunden zwischen Heartbeats (POST mit System-Info, inkl. aktueller Task vom Server). **Standard 60** (Dashboard wertet bis ~5 Min ohne Heartbeat als online). |
 | `task_poll_interval` | Sekunden zwischen leichten GET-Abfragen nur für Task/Deaktivierung (Standard **10**, Minimum **5** – nutzt ETag/304, kostet beim Server ohne Statuswechsel nichts). |
 | `scanner_device` | `auto`, `stdin` oder `/dev/input/eventX` |
+| `update_verify_signature` | `true` = Auto-Update spielt nur GPG-signierte Commits ein (Standard `false`, siehe „Signierte Updates“) |
+
+`config.json` enthält das API-Token und wird mit Dateirechten `0600` geschrieben (bestehende Dateien werden beim nächsten Start nachgezogen).
 
 ### API-Häufigkeit (z. B. Neon / Serverless-DB)
 
@@ -108,6 +132,37 @@ Der Pi nutzt zwei Hintergrund-Schleifen:
 
 Auto-Update auf dem Pi läuft per **`git fetch` / `reset`** (siehe `emp_scanner/updater.py`), nicht über die Versionsnummer allein.
 
+### Vorab-Prüfung und Rollback
+
+Nach dem Einspielen eines neuen Stands prüft der Updater, bevor er den Dienst neu startet:
+
+1. jede `.py`-Datei in `emp_scanner/` lässt sich kompilieren,
+2. `emp_scanner.main` lässt sich in einem frischen Python-Prozess importieren.
+
+Schlägt eine der Prüfungen fehl, setzt der Updater das Repository auf den vorherigen Commit zurück und startet **nicht** neu (Log: `Update … verworfen`). Der Versuch wiederholt sich beim nächsten Lauf, bis ein lauffähiger Stand auf `origin/main` liegt. Per `pip` nachinstallierte Pakete werden dabei nicht zurückgerollt.
+
+Das gilt nur für den Scanner (`emp_scanner`); der Audio-Updater (`emp_audio/updater.py`) hat diese Prüfung nicht.
+
+### Signierte Updates (optional, Standard: aus)
+
+Ohne weitere Einstellung übernimmt der Pi jeden Commit von `origin/main`. Wer das Repository (oder den Zugang dazu) kontrolliert, kontrolliert damit die Geräte. Optional kann der Updater nur **GPG-signierte** Commits einspielen:
+
+1. Öffentlichen Signaturschlüssel in den Schlüsselbund von `root` importieren (der Dienst läuft als root):
+   ```bash
+   sudo -H gpg --import release-key.asc
+   ```
+   Werden Pull Requests über die GitHub-Oberfläche gemergt, ist der Merge-Commit mit GitHubs `web-flow`-Schlüssel signiert – dann muss auch dieser importiert werden (`https://github.com/web-flow.gpg`).
+2. Prüfung einschalten – entweder in `config.json`:
+   ```json
+   "update_verify_signature": true
+   ```
+   oder per Umgebungsvariable `EMP_UPDATE_VERIFY_SIGNATURE=1` (dann für **beide** Units setzen: `sudo systemctl edit emp-scanner` und `sudo systemctl edit emp-updater`, jeweils `[Service]` / `Environment=EMP_UPDATE_VERIFY_SIGNATURE=1`).
+3. Dienst neu starten: `sudo systemctl restart emp-scanner`.
+
+Ist die Prüfung aktiv, wird ein neuer Stand nur übernommen, wenn `git verify-commit` für den obersten Commit von `origin/main` erfolgreich ist **und** er ein Fast-Forward des installierten Stands ist (kein Zurückdrehen auf ältere Commits, kein Force-Push). Andernfalls bleibt der Pi auf dem alten Stand (Log: `Update abgelehnt`). Geprüft wird nur der oberste Commit, nicht jeder einzelne dazwischen.
+
+**Achtung:** Erst einschalten, wenn der Schlüssel auf dem Gerät installiert ist und Commits tatsächlich signiert werden – sonst erhält der Pi keine Updates mehr.
+
 ## Betrieb
 
 ```bash
@@ -123,6 +178,10 @@ sudo systemctl restart emp-scanner
 # Update-Timer Status
 sudo systemctl status emp-updater.timer
 ```
+
+**Scanner-Ausfall:** Endet der Lese-Thread (z. B. `scanner_device: "stdin"` unter systemd, wo stdin sofort geschlossen ist, oder fehlendes `evdev`), steht einmalig `Scanner-Thread läuft nicht mehr` im Log. Der Dienst läuft weiter, weil Öffnen per Dashboard, NOT-AUF und Sperren auch ohne Scanner funktionieren.
+
+**NOT-AUF:** Solange NOT-AUF aktiv ist, bleibt das Relais dauerhaft offen; ein Scan gibt nur den Bestätigungston und schließt das Relais nicht wieder.
 
 ## Scan-Ablauf
 
@@ -142,6 +201,10 @@ Server prüft:
    ↓
 Relais öffnen / LED rot + Buzzer
 ```
+
+- **Server nicht erreichbar:** kein Zutritt (fail-closed, es gibt keine Offline-Freigabe). Ein Verbindungsfehler wird einmal kurz wiederholt, ein Timeout nicht. Danach rote LED + eigener „Offline“-Ton.
+- **Reservierte Codes** (`__NAME__`, z. B. `__DASHBOARD_OPEN__`) und Konfigurations-QR-Codes werden lokal abgelehnt und nie an den Server gesendet.
+- Im Log erscheint von jedem Scan nur ein kurzer Präfix, nicht der ganze Code.
 
 ## Fehlerbehebung bei der Installation
 
@@ -218,4 +281,14 @@ pip install requests
 # Starten im stdin-Modus (GPIO wird simuliert):
 python -m emp_scanner.main
 # Codes per Tastatur eingeben + Enter
+```
+
+### Tests
+
+Die Tests laufen ohne Hardware und ohne installierte Pakete (`RPi.GPIO`, `requests`, `evdev` werden gestubbt):
+
+```bash
+# im Repository-Wurzelverzeichnis
+python3 -m unittest discover -s raspberry-pi/tests -v
+python3 -m compileall -q raspberry-pi
 ```

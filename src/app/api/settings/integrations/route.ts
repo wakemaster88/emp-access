@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
+import { adminRoleRequired } from "@/lib/api-auth";
 import { z } from "zod";
 
 const schema = z
@@ -83,6 +84,9 @@ async function prepareExtraConfig(
 export async function GET(req: NextRequest) {
   const session = await getSession(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Schnittstellen-Tokens und Webhook-Secrets: nur fuer Admins, auch lesend.
+  const denied = adminRoleRequired(session.user.role);
+  if (denied) return denied;
 
   const db = tenantClient(session.user.accountId!);
   const configs = await db.apiConfig.findMany({
@@ -96,6 +100,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Schnittstellen-Tokens und Webhook-Secrets: nur fuer Admins, auch lesend.
+  const denied = adminRoleRequired(session.user.role);
+  if (denied) return denied;
 
   const body = await req.json();
   const parsed = schema.safeParse(body);
@@ -145,6 +152,9 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const session = await getSession(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Schnittstellen-Tokens und Webhook-Secrets: nur fuer Admins, auch lesend.
+  const denied = adminRoleRequired(session.user.role);
+  if (denied) return denied;
 
   const { searchParams } = new URL(req.url);
   const provider = searchParams.get("provider");

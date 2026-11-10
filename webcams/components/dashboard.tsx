@@ -180,7 +180,10 @@ function DashboardInner({ initialConfig }: DashboardProps) {
 
   const focusedTile = focusId ? layout.tiles.find((t) => t.widget.id === focusId) : null;
 
-  const go2rtcUrl = config.settings.go2rtcUrl || "http://127.0.0.1:1984";
+  // Der Browser spricht nicht direkt mit go2rtc (dessen API lauscht nur auf
+  // Loopback und kennt die Kamera-Passwörter), sondern über die Next-App:
+  // `/api/go2rtc/webrtc` (Signalisierung) und `/api/go2rtc/frame.jpeg`.
+  const go2rtcUrl = "/api/go2rtc";
 
   return (
     <div className="relative h-full w-full">

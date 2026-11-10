@@ -66,7 +66,7 @@ export function CamControlPanel({ cam, className, onReloadStream }: CamControlPa
   );
 
   // Hold-pattern für PTZ Buttons
-  const useHold = (op: string) => ({
+  const holdProps = (op: string) => ({
     onPointerDown: (e: React.PointerEvent) => {
       e.preventDefault();
       (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -241,21 +241,21 @@ export function CamControlPanel({ cam, className, onReloadStream }: CamControlPa
       {caps.ptz && (
         <div className="grid grid-cols-3 gap-1">
           <div />
-          <Button variant="secondary" size="icon" {...useHold("Up")} aria-label="Hoch">
+          <Button variant="secondary" size="icon" {...holdProps("Up")} aria-label="Hoch">
             <ArrowUp className="size-5" />
           </Button>
           <div />
-          <Button variant="secondary" size="icon" {...useHold("Left")} aria-label="Links">
+          <Button variant="secondary" size="icon" {...holdProps("Left")} aria-label="Links">
             <ArrowLeft className="size-5" />
           </Button>
           <Button variant="ghost" size="icon" disabled aria-hidden>
             <Star className="size-4 text-foreground/30" />
           </Button>
-          <Button variant="secondary" size="icon" {...useHold("Right")} aria-label="Rechts">
+          <Button variant="secondary" size="icon" {...holdProps("Right")} aria-label="Rechts">
             <ArrowRight className="size-5" />
           </Button>
           <div />
-          <Button variant="secondary" size="icon" {...useHold("Down")} aria-label="Runter">
+          <Button variant="secondary" size="icon" {...holdProps("Down")} aria-label="Runter">
             <ArrowDown className="size-5" />
           </Button>
           <div />
@@ -264,10 +264,10 @@ export function CamControlPanel({ cam, className, onReloadStream }: CamControlPa
 
       {caps.zoom === "optical" && (
         <div className="grid grid-cols-2 gap-1">
-          <Button variant="secondary" {...useHold("ZoomDec")} aria-label="Zoom raus">
+          <Button variant="secondary" {...holdProps("ZoomDec")} aria-label="Zoom raus">
             <Minus className="size-4" /> Zoom −
           </Button>
-          <Button variant="secondary" {...useHold("ZoomInc")} aria-label="Zoom rein">
+          <Button variant="secondary" {...holdProps("ZoomInc")} aria-label="Zoom rein">
             <Plus className="size-4" /> Zoom +
           </Button>
         </div>
@@ -410,7 +410,7 @@ function SirenDialog({
           <p>
             <strong>Cooldown:</strong> Nach dem Auslösen ist die Sirene für die in den
             Einstellungen festgelegte Zeit gesperrt. Während der Wiedergabe kannst du
-            mit „Stoppen" sofort abbrechen.
+            mit „Stoppen“ sofort abbrechen.
           </p>
         </div>
       </div>

@@ -3622,7 +3622,8 @@ $("roomSync").addEventListener("click", async (ev) => {
   const btn = ev.currentTarget;
   btn.disabled = true;
   try {
-    const res = await fetch("/api/rooms/sync", { method: "POST" });
+    // Content-Type ist Pflicht fuer schreibende Anfragen (dashboard-guard.ts).
+    const res = await fetch("/api/rooms/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     const data = await res.json().catch(() => ({}));
     toast(data.ok ? "Räume aus der Cloud geladen" : `Abgleich fehlgeschlagen: ${data.error || res.status}`, data.ok ? "ok" : "err");
     state.rooms = await getJson("/api/rooms?live=1&fresh=1");
