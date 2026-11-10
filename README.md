@@ -5,6 +5,9 @@ mit Ticket-Scan, Kassen-Kiosk, Schließanlage, Kameras mit Personen- und
 Kennzeichenerkennung, Beschallung, Bewässerung, Netzwerkinventar und
 Raumregeln – als Multi-Mandanten-Cloud auf Vercel mit Neon Postgres.
 
+Projektwissen (Entscheidungen, Netzwerk, Hub-Betrieb, offene Punkte):
+[`docs/projektwissen/`](docs/projektwissen/README.md).
+
 ## Architektur
 
 Vier Laufzeitumgebungen in einem Repository:
