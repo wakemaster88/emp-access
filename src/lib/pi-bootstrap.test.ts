@@ -24,3 +24,12 @@ test("Bootstrap nutzt dieselben Pfade und Host-Schluessel wie der Pi-Updater", (
   assert.match(s, /AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl/);
   assert.match(s, /ssh:\/\/git@ssh\.github\.com:443\//);
 });
+
+test("Bootstrap holt bei bestehender Installation den aktuellen Stand ueber den erreichbaren Zugang", () => {
+  const s = piBootstrapScript("scanner");
+  // Pi mit altem Stand (HTTPS-Remote, Repo privat): erst Remote umstellen, dann holen, dann Installer.
+  const setUrl = s.indexOf('remote set-url origin "$URL"');
+  const reset = s.indexOf("reset --hard origin/main");
+  const installer = s.indexOf("exec bash");
+  assert.ok(setUrl > 0 && reset > setUrl && installer > reset);
+});
