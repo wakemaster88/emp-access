@@ -88,6 +88,8 @@ const HIGH_PRIORITY = new Set([
   "CAMERA_IR",
   "CAMERA_SIREN",
   "CAMERA_SNAPSHOT",
+  // MCP-Schnittstelle: ein KI-Assistent wartet in der Cloud auf die Antwort.
+  "AGENT_TOOL",
   // Log-Abruf ist ein reiner Dateizugriff und soll nicht hinter einem Scan warten.
   "HUB_LOG",
   "SERVICE_RESTART",

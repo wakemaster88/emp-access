@@ -410,6 +410,12 @@ Mitarbeiter-PWA und der API gemeinsam genutzt – die App zeigt also genau die
 Knöpfe, die auch die API meldet. `npx tsx scripts/device-controls-check.ts`
 prüft, dass jeder gemeldete Knopf vom Action-Endpunkt angenommen wird.
 
+## MCP-Schnittstelle für KI-Assistenten
+
+Claude und andere KI-Assistenten können EMP-Access über `POST /api/mcp` (Model Context Protocol)
+abfragen und je nach Token-Stufe Raumgeräte schalten. Tokens unter Einstellungen →
+MCP-Schnittstelle; Details in [docs/mcp.md](docs/mcp.md).
+
 ## Zwei-Faktor-Anmeldung (Admin-Login)
 
 Jeder Admin kann seine Anmeldung unter **Sicherheit** in der Seitenleiste um

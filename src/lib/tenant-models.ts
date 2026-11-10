@@ -43,6 +43,7 @@ export const TENANT_MODELS = new Set<string>([
   "ListedPerson",
   "Locker",
   "LostItem",
+  "McpToken",
   "MonitorAlert",
   "MonitorAnnouncement",
   "MonitorConfig",
