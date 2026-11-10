@@ -7,10 +7,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
-import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone } from "lucide-react";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone, Bot } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { GardenaCard } from "@/components/settings/gardena-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
+import { McpCard } from "@/components/settings/mcp-card";
+import { MCP_OFFERED_LEVELS } from "@/lib/mcp/protocol";
 import { TelegramCard } from "@/components/settings/telegram-card";
 import { PushCard } from "@/components/settings/push-card";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
@@ -34,7 +36,7 @@ export default async function SettingsPage() {
   // erst geladen - die zugehoerigen API-Routen lehnen sie ebenfalls ab.
   const isAdmin = isTenantAdminRole(session.user.role);
 
-  const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig] = await Promise.all([
+  const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig, mcpTokens] = await Promise.all([
     isAdmin ? db.apiConfig.findMany({ where: { accountId: session.user.accountId } }) : [],
     db.account.findUnique({
       where: { id: session.user.accountId },
@@ -58,6 +60,13 @@ export default async function SettingsPage() {
       where: { accountId: session.user.accountId },
       select: { id: true, chatId: true, isActive: true, dailyReport: true, dailyReportTime: true, notifyNewDevices: true, notifyOutages: true },
     }),
+    isAdmin
+      ? db.mcpToken.findMany({
+          where: { accountId: session.user.accountId, revokedAt: null },
+          select: { id: true, name: true, hint: true, level: true, createdBy: true, lastUsedAt: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        })
+      : [],
   ]);
 
   const dataRetention = parseDataRetention(account?.dataRetention);
@@ -127,6 +136,20 @@ export default async function SettingsPage() {
           <OwnApiCard
             baseUrl={baseUrl}
             apiToken={account?.apiToken ?? ""}
+          />
+        </section>
+
+        {/* MCP-Schnittstelle fuer KI-Assistenten */}
+        <section className="space-y-2">
+          <SectionHeading icon={Bot} title="MCP-Schnittstelle (KI-Assistenten)" />
+          <McpCard
+            endpoint={`${baseUrl.replace(/\/$/, "")}/api/mcp`}
+            allowedLevels={[...MCP_OFFERED_LEVELS]}
+            initialTokens={mcpTokens.map((t) => ({
+              ...t,
+              lastUsedAt: t.lastUsedAt?.toISOString() ?? null,
+              createdAt: t.createdAt.toISOString(),
+            }))}
           />
         </section>
 

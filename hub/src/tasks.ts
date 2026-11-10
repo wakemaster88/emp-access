@@ -149,9 +149,11 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       const cameraId = Number(task.payload?.cameraId);
       if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
       try {
+        // maxPx: verkleinert hochladen (z. B. fuer die MCP-Schnittstelle).
+        const maxPx = Number(task.payload?.maxPx);
         const r = isDoorbird(cameraId)
           ? await uploadDoorbirdSnapshot(cameraId)
-          : await uploadSnapshot(cameraId);
+          : await uploadSnapshot(cameraId, Number.isInteger(maxPx) && maxPx >= 320 ? { maxPx } : {});
         return { success: true, result: { cameraId, ...r } };
       } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
@@ -332,6 +334,12 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
     case "SHELLY_SWITCH":
       // Shelly (Gen1/Gen2+) direkt im LAN: Status lesen bzw. Relais schalten.
       return runShellyTask(task.type, task.payload);
+    case "AGENT_TOOL": {
+      // MCP-Schnittstelle der Cloud: freigegebenes Werkzeug des Assistenten.
+      // Dynamisch importiert, weil agent/tools.ts selbst executeTask nutzt.
+      const { runMcpBridgeTask } = await import("./agent/mcp-bridge.js");
+      return runMcpBridgeTask(task.payload);
+    }
     case "SYSTEM_CHECK": {
       // Auto-Login/Ruhezustand/Einschaltplan sofort neu lesen (z. B. nach setup-system.sh),
       // pmset dabei nachziehen, falls die sudoers-Regel inzwischen da ist.

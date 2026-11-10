@@ -197,6 +197,7 @@ model Account {
   keyHandovers         KeyHandover[]
   keyPolicyTemplates   KeyPolicyTemplate[]
   keySignatures        KeySignature[]
+  mcpTokens            McpToken[]
 }
 
 model Admin {
@@ -3268,4 +3269,26 @@ model RoomMotionEvent {
 
   @@unique([deviceId, at])
   @@index([accountId, roomId, at])
+}
+
+/// Zugang fuer KI-Assistenten (Claude & Co.) ueber die MCP-Schnittstelle
+/// /api/mcp. Gespeichert wird nur der SHA-256 des Tokens; der Klartext wird
+/// beim Anlegen genau einmal angezeigt.
+model McpToken {
+  id         Int       @id @default(autoincrement())
+  accountId  Int
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  /// Letzte Zeichen des Tokens zur Wiedererkennung in der Liste.
+  hint       String
+  /// "read" = nur lesen, "operate" = zusaetzlich Raumgeraete schalten,
+  /// "access" = zusaetzlich Tueren, Tore, Schloesser. Netzwerk nie.
+  level      String    @default("read")
+  createdBy  String?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([accountId])
 }
