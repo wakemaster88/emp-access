@@ -32,16 +32,23 @@ export async function POST(request: NextRequest) {
       ? body.system
       : undefined;
 
+  // Deploy-Key/Update-Zugang zum (privaten) Repo, fuer die Einstellungen.
+  const repoAccess =
+    body.repoAccess && typeof body.repoAccess === "object" && !Array.isArray(body.repoAccess)
+      ? body.repoAccess
+      : undefined;
+
   const existing = await db.hubAgent.findUnique({
     where: { accountId_name: { accountId: account.id, name } },
     select: { status: true },
   });
   const status =
-    parking || system
+    parking || system || repoAccess
       ? ({
           ...statusObject(existing?.status),
           ...(parking ? { parking } : {}),
           ...(system ? { system } : {}),
+          ...(repoAccess ? { repoAccess } : {}),
         } as Prisma.InputJsonValue)
       : undefined;
 

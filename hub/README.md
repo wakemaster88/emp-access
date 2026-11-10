@@ -300,6 +300,27 @@ Signaturschlüssel installiert sein – sonst kommt kein Update mehr an:
 Test vor dem Einschalten: `git fetch origin main && git verify-commit origin/main`
 im Repo muss ohne Fehler durchlaufen.
 
+### Privates Repository (Deploy-Key)
+
+Der Hub erzeugt beim ersten Update-Check einen eigenen Lese-Schlüssel
+(`~/.config/emp-access/github_deploy_ed25519`, `src/repo-access.ts`), schreibt
+ihn einmal ins Log und meldet ihn im Heartbeat. Im Dashboard unter
+**Einstellungen → Update-Zugang der Geräte** kopieren und bei GitHub unter
+*Settings → Deploy keys* eintragen (ohne Schreibzugriff). Danach stellt der Hub
+beim nächsten Update-Check selbst auf SSH um (`ssh.github.com:443`,
+`core.sshCommand` im Repo), auch `install/update.sh` nutzt dann den Schlüssel.
+Bis dahin bleibt es bei HTTPS.
+
+Neue Hub-Maschine bei privatem Repo: erst den Schlüssel erzeugen und eintragen,
+dann klonen:
+
+```bash
+mkdir -p ~/.config/emp-access && ssh-keygen -t ed25519 -N "" -C "emp-access $(hostname)" -f ~/.config/emp-access/github_deploy_ed25519
+cat ~/.config/emp-access/github_deploy_ed25519.pub   # bei GitHub als Deploy-Key eintragen
+GIT_SSH_COMMAND="ssh -i ~/.config/emp-access/github_deploy_ed25519 -o IdentitiesOnly=yes" \
+  git clone ssh://git@ssh.github.com:443/wakemaster88/emp-access.git ~/repositories/emp-access
+```
+
 Wird eine Maschine dauerhaft abgebaut, bleibt ihr `HubAgent` in der Cloud
 stehen. Einträge, die länger als sieben Tage stumm sind, blendet das Widget
 aus; sauber ist es, den Datensatz zu löschen.
