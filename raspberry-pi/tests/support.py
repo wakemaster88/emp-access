@@ -159,6 +159,15 @@ from emp_scanner import relay as relay_mod  # noqa: E402
 from emp_scanner import api_client as api_mod  # noqa: E402
 from emp_scanner import updater as updater_mod  # noqa: E402
 from emp_scanner import main as main_mod  # noqa: E402
+from emp_scanner import repo_access as repo_access_mod  # noqa: E402
+
+# Deploy-Key und Status nie nach /etc schreiben: alle Tests nutzen ein eigenes
+# Verzeichnis (der Updater ruft repo_access bei jedem Lauf auf).
+_REPO_ACCESS_DIR = tempfile.mkdtemp(prefix="emp-repo-access-")
+repo_access_mod.KEY_DIR = _REPO_ACCESS_DIR
+repo_access_mod.KEY_PATH = os.path.join(_REPO_ACCESS_DIR, "github_deploy_ed25519")
+repo_access_mod.KNOWN_HOSTS_PATH = os.path.join(_REPO_ACCESS_DIR, "github_known_hosts")
+repo_access_mod.STATUS_PATH = os.path.join(_REPO_ACCESS_DIR, "repo_access.json")
 
 assert relay_mod.HAS_GPIO, "GPIO-Stub wurde nicht geladen"
 

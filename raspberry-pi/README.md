@@ -43,15 +43,21 @@ GPIO-Pins können in `config.json` angepasst werden.
 ## Installation
 
 ```bash
-# Auf dem Raspberry Pi:
-git clone https://github.com/wakemaster88/emp-access.git
-cd emp-access/raspberry-pi
-sudo bash install.sh
+# Auf dem Raspberry Pi (Adresse der eigenen Cloud einsetzen):
+curl -sSL https://<cloud>/api/devices/pi/bootstrap | sudo bash
+# Audio-Abspieler:
+curl -sSL "https://<cloud>/api/devices/pi/bootstrap?kind=audio" | sudo bash
 ```
+
+Das Einrichtungsskript kommt von der Cloud, nicht von GitHub. Es erzeugt den
+Deploy-Key des Pis (siehe „Privates Repository“ unten), klont nach
+`/opt/emp-scanner` bzw. `/opt/emp-audio` und startet dann `install.sh` bzw.
+`install-audio.sh` aus dem Repository. Den Befehl mit der richtigen Adresse
+zeigt auch der Einrichtungsdialog im Dashboard (QR-Code am Gerät).
 
 Das Skript installiert die System-Pakete (u. a. Python, swig, liblgpio-dev), aktualisiert die Python-Pakete (python3, python3-venv, …) auf die neueste im Repo verfügbare Version und richtet den Scanner ein. Eine höhere Python-Version (z. B. 3.9+) erfordert ein neueres Raspberry Pi OS (Bullseye/Bookworm).
 
-**Update (erneut ausführen):** Einfach `sudo bash install.sh` nochmal aus dem gleichen Ordner starten – das Skript aktualisiert dann `/opt/emp-scanner`. Falls der Ordner blockiert ist, werden Scanner und Updater kurz gestoppt und der alte Stand ggf. nach `/opt/emp-scanner.old` verschoben.
+**Update (erneut ausführen):** `sudo bash /opt/emp-scanner/raspberry-pi/install.sh` – das Skript aktualisiert dann `/opt/emp-scanner`. Ist das Repository nicht erreichbar (z. B. privat und der Schlüssel noch nicht eingetragen), bricht es ab und lässt den bisherigen Stand unverändert; es löscht nichts.
 
 **Raspberry Pi OS Buster (ältere Version):** Wenn `apt-get update` oder die Paketinstallation mit 404/„Release-Datei“ fehlschlägt, zuerst die Repo-Quellen auf **legacy.raspbian.org** umstellen (siehe Abschnitt „Fehlerbehebung“ unten), dann `sudo apt-get update` und `sudo bash install.sh` erneut ausführen.
 
@@ -131,6 +137,25 @@ Der Pi nutzt zwei Hintergrund-Schleifen:
 - **API:** `GET/POST /api/devices/pi` liefert zusätzlich `latest_scanner_version` (gleicher Wert wie im Dashboard).
 
 Auto-Update auf dem Pi läuft per **`git fetch` / `reset`** (siehe `emp_scanner/updater.py`), nicht über die Versionsnummer allein.
+
+### Privates Repository (Deploy-Key)
+
+Damit ein Pi auch ein privates Repository lesen kann, hat jeder Pi einen eigenen
+Lese-Schlüssel (`emp_scanner/repo_access.py`):
+
+1. Beim ersten Update-Lauf erzeugt der Pi `/etc/emp-access/github_deploy_ed25519`
+   und meldet den öffentlichen Schlüssel im Heartbeat (`repo_access` in den Systeminfos).
+2. Im Dashboard unter **Einstellungen → Update-Zugang der Geräte** den Schlüssel
+   kopieren und bei GitHub unter *Settings → Deploy keys → Add deploy key*
+   eintragen, **ohne** Schreibzugriff.
+3. Spätestens beim nächsten Update-Lauf (5 min) prüft der Pi per `git ls-remote`
+   über SSH (`ssh.github.com:443`), ob GitHub den Schlüssel annimmt, und stellt
+   `origin` dann auf SSH um (`core.sshCommand` im Repository). Die Liste zeigt
+   danach „per Schlüssel angebunden“.
+
+Solange der Schlüssel nicht eingetragen ist, bleibt alles wie bisher (HTTPS).
+Ein Pi mit Scanner und Audio-Abspieler nutzt einen gemeinsamen Schlüssel.
+Widerrufen: Deploy-Key bei GitHub löschen.
 
 ### Vorab-Prüfung und Rollback
 
@@ -266,7 +291,7 @@ Unter Buster, wenn `liblgpio-dev` fehlt: `install.sh` baut die lg-Bibliothek aut
   sudo sed -i -e 's|/enp-scanner/|/emp-scanner/|g' -e 's|/venu/|/venv/|g' -e 's|/vesu/|/venv/|g' -e 's|-n emp_scanner|-m emp_scanner|g' -e 's|\.nain|.main|g' /etc/systemd/system/emp-scanner.service
   sudo systemctl daemon-reload && sudo systemctl restart emp-scanner
   ```
-  Oder: `cd ~/emp-access/raspberry-pi && git pull && sudo bash install.sh`
+  Oder: `sudo bash /opt/emp-scanner/raspberry-pi/install.sh`
 - **Logs ansehen:** `sudo journalctl -u emp-scanner -n 50 --no-pager` (zeigt Python-Fehler oder Traceback).
 
 ## Entwicklung (ohne Hardware)

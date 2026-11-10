@@ -30,6 +30,13 @@ def get_current_hash() -> str:
 
 def check_and_update() -> bool:
     """Returns True, wenn ein Update eingespielt wurde."""
+    # Deploy-Key fuer ein privates Repo (gleicher Schluessel wie der Scanner).
+    try:
+        from emp_scanner.repo_access import ensure_repo_access
+        ensure_repo_access(PROJECT_DIR)
+    except Exception as e:
+        logger.warning("Repo-Zugang nicht geprueft: %s", e)
+
     try:
         fetch = subprocess.run(
             ["git", "fetch", "origin"],

@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
-import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone } from "lucide-react";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone, GitBranch } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { GardenaCard } from "@/components/settings/gardena-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
@@ -17,6 +17,7 @@ import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { DataRetentionCard } from "@/components/settings/data-retention-card";
 import { parseDataRetention } from "@/lib/data-retention";
 import { isTenantAdminRole } from "@/lib/api-auth";
+import { RepoAccessCard, type RepoAccessEntry } from "@/components/settings/repo-access-card";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED"] as const;
 
@@ -34,7 +35,7 @@ export default async function SettingsPage() {
   // erst geladen - die zugehoerigen API-Routen lehnen sie ebenfalls ab.
   const isAdmin = isTenantAdminRole(session.user.role);
 
-  const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig] = await Promise.all([
+  const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig, updatingPis, hubAgents] = await Promise.all([
     isAdmin ? db.apiConfig.findMany({ where: { accountId: session.user.accountId } }) : [],
     db.account.findUnique({
       where: { id: session.user.accountId },
@@ -58,7 +59,43 @@ export default async function SettingsPage() {
       where: { accountId: session.user.accountId },
       select: { id: true, chatId: true, isActive: true, dailyReport: true, dailyReportTime: true, notifyNewDevices: true, notifyOutages: true },
     }),
+    // Geraete, die sich selbst von GitHub aktualisieren (Update-Zugang/Deploy-Keys).
+    isAdmin
+      ? db.device.findMany({
+          where: { accountId: session.user.accountId, type: { in: ["RASPBERRY_PI", "AUDIO_PLAYER"] } },
+          select: { id: true, name: true, systemInfo: true },
+          orderBy: { name: "asc" },
+        })
+      : [],
+    isAdmin
+      ? db.hubAgent.findMany({
+          where: { accountId: session.user.accountId },
+          select: { id: true, name: true, status: true },
+          orderBy: { name: "asc" },
+        })
+      : [],
   ]);
+
+  type RepoAccessRaw = { mode?: unknown; public_key?: unknown; publicKey?: unknown } | undefined;
+  const toEntry = (key: string, name: string, kind: RepoAccessEntry["kind"], raw: RepoAccessRaw): RepoAccessEntry => ({
+    key,
+    name,
+    kind,
+    mode: raw?.mode === "ssh" || raw?.mode === "https" ? raw.mode : null,
+    publicKey:
+      typeof raw?.public_key === "string" ? raw.public_key : typeof raw?.publicKey === "string" ? raw.publicKey : null,
+  });
+  // Pis ohne Systembericht (nie verbunden) gehoeren nicht in die Liste.
+  const repoAccessEntries: RepoAccessEntry[] = [
+    ...hubAgents.map((h) =>
+      toEntry(`hub-${h.id}`, h.name, "Hub", (h.status as { repoAccess?: RepoAccessRaw } | null)?.repoAccess)
+    ),
+    ...updatingPis
+      .filter((d) => d.systemInfo && typeof d.systemInfo === "object")
+      .map((d) =>
+        toEntry(`pi-${d.id}`, d.name, "Pi", (d.systemInfo as { repo_access?: RepoAccessRaw }).repo_access)
+      ),
+  ];
 
   const dataRetention = parseDataRetention(account?.dataRetention);
 
@@ -152,6 +189,12 @@ export default async function SettingsPage() {
             connections={gardenaConnections}
             existingServiceIds={existingGardenaIds}
           />
+        </section>
+
+        {/* Update-Zugang: Deploy-Keys der Geraete fuer ein privates Repository */}
+        <section className="space-y-2">
+          <SectionHeading icon={GitBranch} title="Update-Zugang der Geräte" />
+          <RepoAccessCard entries={repoAccessEntries} />
         </section>
 
         {/* Löschfristen / Datenschutz */}

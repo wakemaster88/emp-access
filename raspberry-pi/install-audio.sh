@@ -76,21 +76,34 @@ if [ -z "$REPO_URL" ]; then
 fi
 echo "  Repository: $REPO_URL"
 
+# Privates Repo: Zugang per Deploy-Key (siehe emp_scanner/repo_access.py).
+DEPLOY_KEY="/etc/emp-access/github_deploy_ed25519"
+if [ -f "$DEPLOY_KEY" ]; then
+    export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=/etc/emp-access/github_known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=15"
+fi
+
 # ─── Clone or update repo ────────────────────────────────────────────────────
 
 if [ -d "$INSTALL_DIR/.git" ]; then
     echo "→ Bestehendes Repository aktualisieren..."
     cd "$INSTALL_DIR"
-    git remote set-url origin "$REPO_URL"
+    # Bereits per Deploy-Key (SSH) angebunden: Remote nicht auf HTTPS zurueckdrehen.
+    CURRENT_URL=$(git remote get-url origin 2>/dev/null || echo "")
+    case "$CURRENT_URL" in
+        ssh://*|git@*) echo "  Bestehender SSH-Zugang bleibt: $CURRENT_URL" ;;
+        *) git remote set-url origin "$REPO_URL" ;;
+    esac
     if git fetch origin && git reset --hard origin/main; then
         : # Update OK
     else
-        echo "  Update fehlgeschlagen, versuche Neuinstallation..."
-        systemctl stop emp-audio 2>/dev/null || true
-        systemctl stop emp-audio-updater.timer 2>/dev/null || true
-        cd /
-        rm -rf "$INSTALL_DIR"
-        git clone "$REPO_URL" "$INSTALL_DIR"
+        # Nie loeschen: bei privatem Repo ohne Zugang stuende das Geraet sonst
+        # ohne Software da. Der bisherige Stand bleibt installiert.
+        echo ""
+        echo "FEHLER: Repository nicht erreichbar ($(git remote get-url origin))."
+        echo "  Ist das Repo privat, braucht das Geraet einen Deploy-Key:"
+        echo "  Einstellungen -> Update-Zugang der Geraete (Cloud), Schluessel bei GitHub eintragen."
+        echo "  Der bisherige Stand in $INSTALL_DIR bleibt unveraendert."
+        exit 1
     fi
 else
     echo "→ Repository klonen..."
@@ -98,6 +111,10 @@ else
     systemctl stop emp-audio-updater.timer 2>/dev/null || true
     rm -rf "$INSTALL_DIR" 2>/dev/null || true
     git clone "$REPO_URL" "$INSTALL_DIR"
+fi
+
+if [ -n "${GIT_SSH_COMMAND:-}" ]; then
+    git -C "$INSTALL_DIR" config core.sshCommand "$GIT_SSH_COMMAND"
 fi
 
 # ─── Python venv ──────────────────────────────────────────────────────────────

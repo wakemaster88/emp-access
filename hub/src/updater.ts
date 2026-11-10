@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { CONFIG, gitHubCodeRevision, gitVersion, log } from "./config.js";
+import { ensureRepoAccess, type RepoAccessStatus } from "./repo-access.js";
 import {
   PREFLIGHT_ENV,
   PREFLIGHT_OK,
@@ -235,7 +236,16 @@ async function rollback(resetFrom: string | null, failedRev: string, why: string
   }
 }
 
+/** Zuletzt geprueft: Deploy-Key/SSH-Zugang zum Repo, fuer den Heartbeat. */
+let repoAccess: RepoAccessStatus | null = null;
+export function repoAccessStatus(): RepoAccessStatus | null {
+  return repoAccess;
+}
+
 async function runUpdateCheck(): Promise<void> {
+  // Privates Repo: Deploy-Key sicherstellen, nach Freigabe auf SSH umstellen.
+  // Blockiert nie (Fehler landen nur im Status).
+  repoAccess = await ensureRepoAccess(CONFIG.repoDir, { log });
   await git(["fetch", "origin", "main", "--quiet"]);
   noteFetchOk();
   const head = await git(["rev-parse", "HEAD"]);
