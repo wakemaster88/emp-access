@@ -257,4 +257,13 @@ def collect_system_info() -> dict:
     if throttle:
         info["throttle"] = throttle
 
+    # Update-Zugang (Deploy-Key) fuer die Liste in den Einstellungen.
+    try:
+        from emp_scanner.repo_access import read_status
+        repo_access = read_status()
+        if repo_access:
+            info["repo_access"] = repo_access
+    except Exception:
+        pass
+
     return info

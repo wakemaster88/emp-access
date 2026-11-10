@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useOrigin } from "@/hooks/use-origin";
 import {
   Dialog,
   DialogContent,
@@ -8,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Terminal, Wifi, QrCode, CheckCircle2, Copy, Check } from "lucide-react";
+import { Terminal, QrCode, CheckCircle2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface DeviceQrProps {
@@ -50,7 +51,10 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
     return () => clearTimeout(timer);
   }, [open, value]);
 
-  const installCmd = "curl -sSL https://raw.githubusercontent.com/wakemaster88/emp-access/main/raspberry-pi/install.sh | sudo bash";
+  // Einrichtungsskript kommt von der Cloud (nicht von GitHub): Es erzeugt den
+  // Deploy-Key des Pis, damit er auch ein privates Repository lesen kann.
+  const origin = useOrigin();
+  const installCmd = `curl -sSL ${origin}/api/devices/pi/bootstrap | sudo bash`;
 
   async function copyCommand() {
     await navigator.clipboard.writeText(installCmd);
@@ -86,28 +90,25 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
               <p className="text-sm text-muted-foreground">
                 Auf dem Raspberry Pi folgenden Befehl im Terminal ausführen:
               </p>
-              <div className="relative">
+              <div className="flex items-start gap-2">
                 {/* Befehle als ruhige Glas-Kachel (in der Ebene getönt), ohne eigene Terminal-Farben.
                     Auf dem Handy brechen Befehle und Adressen um, statt seitlich zu scrollen (docs/design-regeln.md, Abschnitt 5). */}
-                <div className="glass-tile p-3 font-mono text-xs text-foreground max-sm:whitespace-pre-wrap max-sm:break-all sm:overflow-x-auto">
+                <div className="glass-tile min-w-0 flex-1 p-3 font-mono text-xs text-foreground max-sm:whitespace-pre-wrap max-sm:break-all sm:overflow-x-auto">
                   <div className="flex items-start gap-2">
                     <Terminal className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <span className="break-all select-all">sudo bash install.sh</span>
+                    <span className="break-all select-all">{installCmd}</span>
                   </div>
                 </div>
+                <Button type="button" variant="outline" size="sm" onClick={copyCommand} className="gap-1.5 text-xs shrink-0 max-sm:h-11">
+                  {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? "Kopiert" : "Kopieren"}
+                </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Alternativ das Repository manuell klonen:
+                Das Skript erzeugt einen Lese-Schlüssel für GitHub und zeigt ihn an. Ist das Repository privat,
+                den Schlüssel unter Einstellungen → Update-Zugang der Geräte bzw. bei GitHub als Deploy-Key
+                eintragen und Enter drücken; danach läuft die Installation weiter.
               </p>
-              <div className="relative group">
-                <div className="glass-tile p-3 font-mono text-xs text-foreground/90 max-sm:whitespace-pre-wrap max-sm:break-all sm:overflow-x-auto">
-                  <p className="text-muted-foreground mb-1"># Repository klonen</p>
-                  <p>git clone https://github.com/wakemaster88/emp-access.git</p>
-                  <p>cd emp-access/raspberry-pi</p>
-                  <p className="text-muted-foreground mt-1"># Installation starten</p>
-                  <p>sudo bash install.sh</p>
-                </div>
-              </div>
             </div>
 
             {/* Step 2 */}

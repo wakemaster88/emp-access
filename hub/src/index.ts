@@ -1,7 +1,7 @@
 import { writeSync } from "node:fs";
 import { CONFIG, api, log } from "./config.js";
 import { executeTask, type HubTask } from "./tasks.js";
-import { checkForUpdate } from "./updater.js";
+import { checkForUpdate, repoAccessStatus } from "./updater.js";
 import { PREFLIGHT_OK, isPreflightRun } from "./updater-rules.js";
 import { startDashboard } from "./dashboard.js";
 import { autoScan } from "./scanner.js";
@@ -154,6 +154,8 @@ async function heartbeat() {
         modules: CONFIG.modules,
         // Auto-Login/Ruhezustand/Einschaltplan des Hub-Macs fuer die Hub-Karte.
         system: STATE.system ?? undefined,
+        // Deploy-Key/Update-Zugang fuer die Liste in den Cloud-Einstellungen.
+        repoAccess: repoAccessStatus() ?? undefined,
       }),
     });
     if (!res.ok) {

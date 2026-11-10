@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useOrigin } from "@/hooks/use-origin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,11 +39,9 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 }
 
 export function AudioSetupCard({ configJson, zoneName }: AudioSetupCardProps) {
-  const installCmd = [
-    "git clone https://github.com/wakemaster88/emp-access.git",
-    "cd emp-access/raspberry-pi",
-    "sudo bash install-audio.sh",
-  ].join("\n");
+  // Einrichtungsskript von der Cloud: erzeugt den Deploy-Key des Pis (privates Repo).
+  const origin = useOrigin();
+  const installCmd = `curl -sSL "${origin}/api/devices/pi/bootstrap?kind=audio" | sudo bash`;
 
   // Nachtragen, wenn beim Installieren noch kein JSON zur Hand war.
   const setupCmd = `sudo /opt/emp-audio/venv/bin/python -m emp_audio.setup '${configJson}'`;
@@ -77,7 +76,9 @@ export function AudioSetupCard({ configJson, zoneName }: AudioSetupCardProps) {
             <CopyButton value={installCmd} label="Befehle" />
           </div>
           <p className="text-xs text-muted-foreground">
-            Installiert mpv, den Dienst <span className="font-mono">emp-audio</span> und den Update-Timer.
+            Installiert mpv, den Dienst <span className="font-mono">emp-audio</span> und den Update-Timer. Ist das
+            Repository privat, zeigt das Skript vorher einen Lese-Schlüssel an, der unter Einstellungen → Update-Zugang
+            der Geräte bzw. bei GitHub als Deploy-Key eingetragen wird.
           </p>
         </div>
 

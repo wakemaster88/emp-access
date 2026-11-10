@@ -142,6 +142,14 @@ def check_and_update() -> bool:
     Fetch latest changes and update if new commits available.
     Returns True if an update was applied.
     """
+    # Deploy-Key fuer ein privates Repo: Schluessel erzeugen, sobald GitHub
+    # ihn annimmt auf SSH umstellen (siehe repo_access.py). Blockiert nie.
+    try:
+        from emp_scanner.repo_access import ensure_repo_access
+        ensure_repo_access(PROJECT_DIR)
+    except Exception as e:
+        logger.warning("Repo-Zugang nicht geprueft: %s", e)
+
     try:
         # Fetch latest
         fetch = subprocess.run(
