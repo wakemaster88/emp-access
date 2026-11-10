@@ -4,6 +4,17 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## MCP-Schnittstelle für KI-Assistenten (PR #100, 10.11.2026)
+
+- `POST /api/mcp`: Claude und andere KI-Clients fragen EMP-Access ab und
+  schalten je nach Token-Stufe Raumgeräte. Details in `docs/mcp.md`.
+- Eigene MCP-Tokens unter Einstellungen → MCP-Schnittstelle, Stufen
+  `read`, `operate`, `access`. `access` (Türen, Tore, Schlösser,
+  Drehkreuze, Sirene) ist noch nicht freigeschaltet. Netzwerkänderungen
+  gibt es auf keiner Stufe.
+- Hub-Werkzeuge laufen als Hub-Task `AGENT_TOOL` mit eigener Freigabeliste
+  auf dem Hub; schaltende Aufrufe meldet die Cloud in Telegram.
+
 ## Vereinsportal (PR #94, #96, 08.11.2026)
 
 - Jeder Verein bekommt einen geheimen Link `/verein/<token>`, ohne Passwort.

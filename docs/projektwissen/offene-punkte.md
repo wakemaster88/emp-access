@@ -20,6 +20,8 @@ Stand 8. November 2026. Erledigtes bitte streichen.
   ohne Dialog-Semantik, `/m`-Fehlertext nie sichtbar, Fehler-Scans fehlen in
   „Letzte Scans“, „13.63 m³“ mit Punkt, Ventile offline mit aktiver Taste,
   `flash()` blendet Fehler nach 4 s aus.
+- MCP-Schnittstelle: Dürfen Türen und Tore über MCP geschaltet werden
+  (Stufe `access`, `MCP_OFFERED_LEVELS`)?
 - Vereinsportal: Soll der Zugang nur außerhalb der Betriebszeit gelten?
 
 ## Hub-Maschine
