@@ -1,7 +1,8 @@
 # EMP-Access-Hub
 
-Lokaler On-Site-Agent für EMP Access. Läuft auf einem Mac (z. B. iMac im
-Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
+Lokaler On-Site-Agent für EMP Access. Läuft auf einem Mac (seit 05.11.2026
+ein Mac Studio im Technikraum, Betrieb siehe
+[`docs/projektwissen/hub-betrieb.md`](../docs/projektwissen/hub-betrieb.md)), verbindet sich **ausschließlich outbound** mit der Cloud
 (kein Port-Forwarding nötig) und führt lokale Aufgaben aus.
 
 ## Was er kann
