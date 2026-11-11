@@ -4,6 +4,17 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Menü und Modulaufteilung (11.11.2026)
+
+- Sieben Bereiche mit je drei bis sechs Modulen: Übersicht (Dashboard,
+  Live-Monitor, Auswertung), Gäste, Angebot (inkl. Monitore), Zutritt
+  (Scanner, Scan-Historie, Schließanlage), Kameras & Sicherheit (Überwachung,
+  Kameras, Kontrollzentrum, Personen, Fahrzeuge), Gebäude & Technik,
+  Verwaltung (Mitarbeiter, E-Mail, Einstellungen).
+- Suche „Modul suchen“ oben in der Seitenleiste, Logik in
+  `src/lib/nav-search.ts` (Umlaute egal, Wortanfänge, Stichworte je Eintrag
+  in `nav-config.ts`).
+
 ## MCP-Schnittstelle für KI-Assistenten (PR #100, 10.11.2026)
 
 - `POST /api/mcp`: Claude und andere KI-Clients fragen EMP-Access ab und

@@ -222,7 +222,12 @@ beschreiben, wie die Grundsätze oben im Code umgesetzt werden.
 - **Abschnittsüberschrift** zwischen Karten: `SectionHeading` (11 px Versalien, `text-label`),
   nicht `h2` mit eigener Größe.
 - **Seitenleiste**: Glasfläche, folgt Hell/Dunkel. Aktiver Eintrag als getönte Pille in
-  Akzentfarbe (kein Balken am Rand). Auf dem Handy als Sheet von links.
+  Akzentfarbe (kein Balken am Rand). Auf dem Handy als Sheet von links. Oben die Suche
+  „Modul suchen“ (Name, Bereich, Stichworte; Enter öffnet den ersten Treffer, Strg/Cmd+K
+  springt hinein). Die Gruppe der aktuellen Seite ist immer aufgeklappt. Gruppen und
+  Stichworte stehen nur in `src/components/layout/nav-config.ts`: drei bis sechs Einträge je
+  Gruppe, ein neues Modul kommt in einen bestehenden Bereich, der Seitentitel heißt wie
+  der Menüeintrag.
 - **Tab-Leiste unten (Handy)**: schwebende Kapsel (`glass-dock`) mit Abstand zur Home-Leiste,
   aktiver Eintrag als helle Pille. Der Inhalt hat unten genug Luft (`pb` in der Hülle).
 

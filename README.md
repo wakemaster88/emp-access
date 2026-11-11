@@ -418,7 +418,7 @@ MCP-Schnittstelle; Details in [docs/mcp.md](docs/mcp.md).
 
 ## Zwei-Faktor-Anmeldung (Admin-Login)
 
-Jeder Admin kann seine Anmeldung unter **Sicherheit** in der Seitenleiste um
+Jeder Admin kann seine Anmeldung unter **Konto & Sicherheit** (Benutzerblock unten in der Seitenleiste) um
 einen Einmalcode aus einer Authenticator-App absichern (TOTP nach RFC 6238,
 sechs Stellen, 30 Sekunden – Google Authenticator, Microsoft Authenticator,
 1Password, Aegis und alle anderen gängigen Apps).

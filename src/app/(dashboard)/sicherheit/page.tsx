@@ -28,7 +28,7 @@ export default async function SecurityPage() {
 
   return (
     <>
-      <Header title="Sicherheit" accountName={session.user.accountName} />
+      <Header title="Konto & Sicherheit" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5 max-w-3xl">
         {/* Abschnittsüberschrift statt eigener Titelzeile; der Seitentitel steht im Kopfbalken. */}
         <SectionHeading

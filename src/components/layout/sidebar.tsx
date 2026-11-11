@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { SearchInput } from "@/components/ui/search-input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   accountItem,
@@ -16,6 +17,7 @@ import {
   type NavGroup,
   type NavItem,
 } from "@/components/layout/nav-config";
+import { filterNavGroups, firstNavMatch } from "@/lib/nav-search";
 
 /** Zugeklappte Gruppen, pro Browser gemerkt. Fehlt der Eintrag, ist die Gruppe offen. */
 const COLLAPSED_GROUPS_KEY = "emp-access:nav-collapsed-groups";
@@ -93,7 +95,60 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
   const collapsed = !inSheet && storedCollapsed;
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(loadCollapsedGroups);
   const pathname = usePathname();
+  const router = useRouter();
   const isSuperAdmin = role === "SUPER_ADMIN";
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const navId = useId();
+  const searching = query.trim() !== "";
+  const visibleGroups = filterNavGroups(navGroups, query);
+
+  /*
+   * Beim Laden und bei jedem Seitenwechsel die Gruppe der Seite aufklappen, damit man sieht,
+   * wo man ist. Im Render statt im Effekt (Zustand aus vorherigem Render),
+   * gespeichert wird nur, wenn sich wirklich etwas ändert.
+   */
+  const [lastPathname, setLastPathname] = useState<string | null>(null);
+  if (lastPathname !== pathname) {
+    setLastPathname(pathname);
+    const active = navGroups.find((g) => g.items.some((item) => isNavItemActive(pathname, item.href)));
+    if (active && collapsedGroups[active.key]) {
+      const next = { ...collapsedGroups, [active.key]: false };
+      setCollapsedGroups(next);
+      saveCollapsedGroups(next);
+    }
+  }
+
+  // Strg/Cmd+K springt am Desktop in die Suche (klappt eine schmale Leiste dafür auf).
+  useEffect(() => {
+    if (inSheet || isSuperAdmin) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (readCollapsed()) writeCollapsed(false);
+        requestAnimationFrame(() => searchRef.current?.focus());
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [inSheet, isSuperAdmin]);
+
+  const clearSearch = useCallback(() => setQuery(""), []);
+
+  const onSearchKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      const hit = firstNavMatch(visibleGroups, query);
+      if (!hit) return;
+      e.preventDefault();
+      setQuery("");
+      router.push(hit.href);
+      onNavigate?.();
+    } else if (e.key === "Escape" && query) {
+      e.preventDefault();
+      e.stopPropagation();
+      setQuery("");
+    }
+  };
 
   const toggleCollapsed = useCallback(() => writeCollapsed(!readCollapsed()), []);
 
@@ -111,7 +166,10 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
     const link = (
       <Link
         href={href}
-        onClick={onNavigate}
+        onClick={() => {
+          setQuery("");
+          onNavigate?.();
+        }}
         aria-current={isActive ? "page" : undefined}
         className={cn(
           "press group relative flex items-center gap-3 rounded-md text-sm font-medium outline-none",
@@ -149,7 +207,8 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
   };
 
   const NavGroupBlock = ({ group, isFirst }: { group: NavGroup; isFirst: boolean }) => {
-    const isOpen = !collapsedGroups[group.key];
+    // Beim Suchen sind alle Treffergruppen offen, ohne den gemerkten Zustand zu ändern.
+    const isOpen = searching || !collapsedGroups[group.key];
     const hasActive = group.items.some((item) => isNavItemActive(pathname, item.href));
 
     if (collapsed) {
@@ -167,6 +226,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
         <button
           type="button"
           onClick={() => toggleGroup(group.key)}
+          disabled={searching}
           aria-expanded={isOpen}
           className={cn(
             "flex w-full items-center justify-between rounded-md px-3 pb-1.5 pt-1 outline-none",
@@ -179,7 +239,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
             {/* Zugeklappte Gruppe mit aktiver Seite: Punkt zeigt, wo man gerade ist. */}
             {!isOpen && hasActive && <span className="h-1.5 w-1.5 rounded-full bg-sidebar-primary" aria-hidden />}
           </span>
-          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !isOpen && "-rotate-90")} />
+          {!searching && <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !isOpen && "-rotate-90")} />}
         </button>
         {isOpen && group.items.map((item) => <NavLink key={item.href} {...item} />)}
       </div>
@@ -230,15 +290,40 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
 
       <div className="mx-3 h-px bg-sidebar-foreground/[0.08]" />
 
-      <nav className={cn("flex-1 min-h-0 overflow-y-auto overscroll-contain py-3 scrollbar-thin", collapsed ? "px-2" : "px-3")}>
+      {/* Suche über alle Module: Name, Bereich und Stichworte. Enter öffnet den ersten Treffer. */}
+      {!isSuperAdmin && !collapsed && (
+        <div className="px-3 pt-3">
+          <SearchInput
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onClear={clearSearch}
+            onKeyDown={onSearchKeyDown}
+            placeholder="Modul suchen"
+            aria-label="Modul suchen"
+            aria-controls={navId}
+            enterKeyHint="go"
+            autoComplete="off"
+            className="h-11 md:h-9"
+          />
+        </div>
+      )}
+
+      <nav
+        id={navId}
+        aria-label="Module" className={cn("flex-1 min-h-0 overflow-y-auto overscroll-contain py-3 scrollbar-thin", collapsed ? "px-2" : "px-3")}>
         {isSuperAdmin ? (
           <div className="space-y-1">
             {adminItems.map((item) => (
               <NavLink key={item.href} {...item} />
             ))}
           </div>
+        ) : visibleGroups.length === 0 ? (
+          <p className="px-3 py-2 text-sm text-sidebar-muted" role="status">
+            Kein Modul passt zu „{query.trim()}“.
+          </p>
         ) : (
-          navGroups.map((group, idx) => (
+          visibleGroups.map((group, idx) => (
             <NavGroupBlock key={group.key} group={group} isFirst={idx === 0} />
           ))
         )}
