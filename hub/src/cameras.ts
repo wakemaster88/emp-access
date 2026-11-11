@@ -13,7 +13,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { STATE, recordHubEvent } from "./state.js";
-import { embedJpeg, embeddingHeader, scoreGallery, refreshGallery } from "./face.js";
+import { embedJpeg, embeddingHeader, scoreGallery, refreshGallery, type FaceEmbedResult } from "./face.js";
+import { bestShot, fuseEmbeddings, type FaceShot } from "./face-rules.js";
 import { detectPersons, faceViaZoom } from "./person-crop.js";
 import { CameraMotion, type CloseUp, type MotionDriver, type PersistedMove } from "./camera-motion.js";
 import { RULE_HOLD_MS, isZoneCamera, readTrackingCfg } from "./camera-motion-rules.js";
@@ -154,6 +155,14 @@ const EVENT_END_HOLD_MS = Number(process.env.HUB_EVENT_END_HOLD_MS || 6_000);
 const PERSON_SNAP_DELAY_MS = 1_000;
 const PERSON_SNAP_ATTEMPTS = 4;
 const PERSON_SNAP_RETRY_MS = 1_200;
+/**
+ * Bestes Bild statt erstem Bild: Nach dem ersten Gesicht noch so viele
+ * Bilder im Abstand von HUB_FACE_BEST_GAP_MS holen, das beste (gross,
+ * frontal, scharf) behalten und die Merkmale aller Bilder derselben Person
+ * mitteln. 0 = aus (wie bisher).
+ */
+const PERSON_BEST_EXTRA = Math.max(0, Math.min(5, Number(process.env.HUB_FACE_BEST_EXTRA ?? 2)));
+const PERSON_BEST_GAP_MS = Number(process.env.HUB_FACE_BEST_GAP_MS || 400);
 /**
  * Fahrzeuge: dichter Burst solange VEHICLE aktiv, lokal dumpen,
  * Plate-OCR wählt den besten Frame. Fallback: Vision „Fahrzeug?“.
@@ -531,6 +540,45 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
   }
 }
 
+const asShot = (f: FaceEmbedResult): FaceShot => ({
+  embedding: f.embedding,
+  detScore: f.detScore,
+  size: f.size,
+  frontal: f.frontal,
+  sharp: f.sharp,
+  upscaled: f.upscaled,
+});
+
+/**
+ * Nach dem ersten Gesicht ein paar weitere Bilder holen und das beste
+ * behalten; die Merkmale aller Bilder derselben Person werden gemittelt
+ * (stabiler als ein Einzelbild, hebt knappe Treffer ueber die Schwelle).
+ */
+async function pickBestFace(
+  cam: CameraRuntime,
+  firstBuf: Buffer,
+  firstFace: FaceEmbedResult
+): Promise<{ buf: Buffer; face: FaceEmbedResult }> {
+  const shots: Array<{ buf: Buffer; face: FaceEmbedResult }> = [{ buf: firstBuf, face: firstFace }];
+  for (let i = 0; i < PERSON_BEST_EXTRA; i++) {
+    await new Promise((r) => setTimeout(r, PERSON_BEST_GAP_MS));
+    const b = await captureSnap(cam).catch(() => null);
+    if (!b) break;
+    const f = await embedJpeg(b);
+    if (f) shots.push({ buf: b, face: f });
+  }
+  const list = shots.map((s) => asShot(s.face));
+  const i = Math.max(0, bestShot(list));
+  const fused = fuseEmbeddings(list);
+  const best = shots[i];
+  log(
+    `Personen-Snapshot ${cam.config.name}: bestes von ${shots.length} Gesichtern ist Bild ${i + 1}` +
+      (fused ? `, Merkmale aus ${fused.used} gemittelt` : "")
+  );
+  improve("face", "bestshot", { cam: cam.config.name, shots: shots.length, pick: i + 1, fused: fused?.used ?? 1 });
+  return { buf: best.buf, face: fused ? { ...best.face, embedding: fused.embedding } : best.face };
+}
+
 async function uploadPersonSnapshotBody(
   cam: CameraRuntime,
   cameraId: number
@@ -576,6 +624,12 @@ async function uploadPersonSnapshotBody(
     if (attempt < PERSON_SNAP_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, PERSON_SNAP_RETRY_MS));
     }
+  }
+
+  if (buf && face && PERSON_BEST_EXTRA > 0) {
+    const picked = await pickBestFace(cam, buf, face);
+    buf = picked.buf;
+    face = picked.face;
   }
 
   // Gesicht zu klein oder ohne Treffer: erst optisch heranzoomen (Kamera mit
@@ -632,6 +686,9 @@ async function uploadPersonSnapshotBody(
     const near = scored.nearest;
     log(
       `Personen-Snapshot ${cam.config.name}: klares Gesicht (det=${face.detScore.toFixed(2)}), kein Gallery-Match` +
+        (scored.ambiguous && scored.second
+          ? ` – zu knapp: „${scored.nearest?.name}“ ${scored.nearest?.score.toFixed(3)} gegen „${scored.second.name}“ ${scored.second.score.toFixed(3)}`
+          : "") +
         (near
           ? ` (best ${near.score.toFixed(3)} „${near.name}“, n=${scored.gallery}, ≥${scored.threshold.toFixed(2)})`
           : ` (Gallery leer)`)
@@ -649,7 +706,13 @@ async function uploadPersonSnapshotBody(
     kind: "person",
     severity: match ? "alert" : "info",
     where: cam.config.name,
-    title: match ? `Person erkannt: ${match.name}` : nearMiss ? "Person knapp unter Schwelle" : "Person unbekannt",
+    title: match
+      ? `Person erkannt: ${match.name}`
+      : scored.ambiguous
+        ? "Person unsicher (zwei Kandidaten)"
+        : nearMiss
+          ? "Person knapp unter Schwelle"
+          : "Person unbekannt",
     detail: match
       ? undefined
       : scored.nearest
@@ -658,7 +721,7 @@ async function uploadPersonSnapshotBody(
     score: match?.score ?? scored.nearest?.score,
     list: match?.listType,
   });
-  improve("face", match ? "person_match" : nearMiss ? "near_miss" : "person_nomatch", {
+  improve("face", match ? "person_match" : scored.ambiguous ? "ambiguous" : nearMiss ? "near_miss" : "person_nomatch", {
     cam: cam.config.name,
     score: match?.score ?? scored.nearest?.score,
     threshold: scored.threshold,

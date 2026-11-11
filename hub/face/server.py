@@ -32,6 +32,8 @@ ZOOM_MIN_DET = float(os.environ.get("FACE_ZOOM_MIN_DET", "0.32"))
 ZOOM_MIN_SIZE = int(os.environ.get("FACE_ZOOM_MIN_SIZE", "24"))
 # Unter dieser Größe (skalierte px) kein Embedding-Fallback – zu unbrauchbar.
 KEEP_MIN_SIZE = float(os.environ.get("FACE_KEEP_MIN_SIZE", "12"))
+# Laplace-Varianz (auf 112 px), ab der ein Gesicht als voll scharf gilt.
+SHARP_REF = float(os.environ.get("FACE_SHARP_REF", "120"))
 MAX_BODY_BYTES = int(os.environ.get("FACE_MAX_BODY", str(32 * 1024 * 1024)))
 
 _app = None
@@ -88,6 +90,43 @@ def _mapped_bbox(bbox_scaled, scale: float):
     return list(bbox_scaled)
 
 
+def face_quality(region, bbox, kps) -> tuple[float, float]:
+    """Wie frontal (0..1) und wie scharf (0..1) ist ein Gesicht?
+
+    Frontal aus den fuenf Punkten des Detektors: Bei einem frontalen Gesicht
+    liegt die Nase mittig zwischen den Augen; je weiter sie zur Seite
+    rutscht, desto mehr ist der Kopf gedreht. Schaerfe als Varianz des
+    Laplace-Filters auf dem Gesichtsausschnitt (Bewegungs- und
+    Fokusunschaerfe druecken sie stark). Beides dient nur der Auswahl des
+    besten Bildes einer Serie.
+    """
+    frontal = 1.0
+    try:
+        if kps is not None and len(kps) >= 3:
+            le, re, nose = kps[0], kps[1], kps[2]
+            eye_dx = float(re[0] - le[0])
+            if abs(eye_dx) > 1e-3:
+                mid = (float(le[0]) + float(re[0])) / 2.0
+                off = abs(float(nose[0]) - mid) / abs(eye_dx)
+                frontal = max(0.0, 1.0 - off * 2.0)
+    except Exception:
+        frontal = 1.0
+    sharp = 1.0
+    try:
+        x1, y1, x2, y2 = (int(round(v)) for v in bbox)
+        h, w = region.shape[:2]
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w, x2), min(h, y2)
+        if x2 - x1 >= 8 and y2 - y1 >= 8:
+            crop = cv2.cvtColor(region[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY)
+            crop = cv2.resize(crop, (112, 112), interpolation=cv2.INTER_AREA)
+            var = float(cv2.Laplacian(crop, cv2.CV_64F).var())
+            sharp = min(1.0, var / SHARP_REF)
+    except Exception:
+        sharp = 1.0
+    return round(frontal, 3), round(sharp, 3)
+
+
 def detect_on(
     app,
     region,
@@ -120,6 +159,7 @@ def detect_on(
         emb = f.normed_embedding
         emb_list = [float(x) for x in emb.tolist()] if emb is not None else None
         too_small = min(w, h) < min_side
+        frontal, sharp = face_quality(region, bbox, getattr(f, "kps", None))
         if det < det_need or too_small:
             rejected.append(
                 {
@@ -139,6 +179,8 @@ def detect_on(
                 "bbox": _mapped_bbox(bbox_scaled, scale),
                 "det_score": det,
                 "size": round(min(w, h) / to_orig if to_orig else min(w, h), 1),
+                "frontal": frontal,
+                "sharp": sharp,
             }
         )
     return out, rejected

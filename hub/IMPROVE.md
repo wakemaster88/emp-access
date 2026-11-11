@@ -976,3 +976,25 @@ Snapshot nicht verfügbar: Arbeit ohne Zugriff auf den Hub-Rechner, Befunde aus 
 - Tracker neu starten (Knopf „Tracker neu starten“), Face-Sidecar startet mit dem Hub neu.
 - Eine Woche lang Durchgänge ohne Scan am Drehkreuz und die Zeilen „übernimmt Seite“ zählen. Steigen ungedeckte Durchgänge, `WEBCAMS_TRACKER_HANDOVER` senken.
 - CPU des Face-Sidecars gegen die 2,8 Kerne vom 31.08. vergleichen.
+
+## 2026-11-11 (Personen: bestes Gesichtsbild, gemittelte Merkmale, Abstand zum Zweitbesten)
+
+Snapshot nicht verfügbar (Arbeit ohne Hub-Rechner). Ausgangslage aus dem Eintrag vom 06.11.: `face.none` 265, `face.skip_no_face` 29, `face.person_nomatch` 17, `face.ok` 16, offener Hinweis „Gallery-Treffer knapp unter der Schwelle“.
+
+### Befunde
+
+- `uploadPersonSnapshotBody` nahm das erste Bild mit irgendeinem Gesicht, egal wie klein, gedreht oder verwackelt. Ein einzelnes schwaches Bild landet leicht knapp unter der Schwelle.
+- `scoreGallery` verglich nur den besten Einzelwert. Liegen zwei Personen fast gleichauf, gewann die mit dem zufällig höheren Wert – Verwechslungsgefahr, auch am DoorBird.
+
+### Änderung
+
+- Face-Dienst liefert je Gesicht `frontal` (Nase zwischen den Augen, aus den 5 Punkten des Detektors) und `sharp` (Laplace-Varianz auf 112 px, `FACE_SHARP_REF` Standard 120).
+- `face-rules.ts` (neu, reine Logik): `faceQuality`, `bestShot`, `fuseEmbeddings` (gewichtetes Mittel nur über Bilder derselben Person, Cosine ≥ 0,4 zum besten), `rankGallery` (je Person bester Wert, Treffer nur mit `FACE_MATCH_MARGIN` Abstand zur zweitbesten Person, Standard 0,04).
+- `cameras.ts`: Nach dem ersten Gesicht noch `HUB_FACE_BEST_EXTRA` Bilder (Standard 2, `0` = aus) im Abstand von `HUB_FACE_BEST_GAP_MS` (400 ms); bestes Bild wird hochgeladen, die gemittelten Merkmale gehen in Abgleich und Cloud. Neues Ereignis „Person unsicher (zwei Kandidaten)“, Improve-Zähler `face.bestshot` und `face.ambiguous`.
+- Geprüft: `tsc -p hub` 0 Fehler, `npm test` 407/407 (neu: 5 für `face-rules`), `face_quality` mit synthetischen Bildern (scharf/frontal 1,0/1,0; verwischt/gedreht 0,03/0,1).
+
+### Nächster Schritt
+
+- Nach zwei Tagen: `face.person_match` und `face.near_miss` gegen den 06.11. vergleichen; `face.bestshot` zeigt, wie oft ein späteres Bild gewinnt (`pick` > 1).
+- `face.ambiguous` beobachten: Taucht es oft bei denselben zwei Personen auf, deren Profile über „Profil optimieren“ schärfen statt die Marge zu senken.
+- DoorBird bekommt die Bildserie noch nicht, nur den Abstand zum Zweitbesten.
