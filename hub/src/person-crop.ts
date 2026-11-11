@@ -90,18 +90,22 @@ export async function groupCrop(jpeg: Buffer, boxes: NormBox[]): Promise<Buffer 
  * pruefen. Liefert den besten Treffer (sonst das erste gefundene Gesicht).
  * Vergroesserte Ausschnitte gelten als „upscaled“ → strengere Schwelle.
  */
-export async function faceViaZoom(jpeg: Buffer): Promise<{ face: FaceEmbedResult; matched: boolean; persons: number } | null> {
+export async function faceViaZoom(
+  jpeg: Buffer
+): Promise<{ face: FaceEmbedResult; matched: boolean; persons: number; box: NormBox } | null> {
   const boxes = await detectPersons(jpeg);
   if (!boxes?.length) return null;
-  let best: { face: FaceEmbedResult; score: number; matched: boolean } | null = null;
-  for (const crop of await headCrops(jpeg, boxes)) {
+  let best: { face: FaceEmbedResult; score: number; matched: boolean; box: NormBox } | null = null;
+  for (const box of largestFirst(boxes, 3)) {
+    const crop = await cropJpeg(jpeg, headRect(box), 640);
+    if (!crop) continue;
     const e = await embedJpeg(crop);
     if (!e) continue;
     const face = { ...e, upscaled: true };
     const s = scoreGallery(face.embedding, { upscaled: true });
     const score = s.nearest?.score ?? 0;
-    if (!best || (!!s.match && !best.matched) || score > best.score) best = { face, score, matched: !!s.match };
+    if (!best || (!!s.match && !best.matched) || score > best.score) best = { face, score, matched: !!s.match, box };
     if (s.match) break;
   }
-  return best ? { face: best.face, matched: best.matched, persons: boxes.length } : null;
+  return best ? { face: best.face, matched: best.matched, persons: boxes.length, box: best.box } : null;
 }

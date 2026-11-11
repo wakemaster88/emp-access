@@ -44,6 +44,11 @@ export interface HubEvent {
   listed?: boolean;
   /** Personen: Liste des Gesichts-Treffers (WHITELIST | BLACKLIST). */
   list?: string;
+  /**
+   * Personen: Lage des Gesichts im Kamerabild (Mitte, normiert 0..1), damit
+   * die Zentrale den Namen an die richtige Box haengt. Nur im Speicher.
+   */
+  pos?: { x: number; y: number };
 }
 
 /** Systemzustand des Hub-Macs (Auto-Login, Ruhezustand, Einschaltplan) – system-setup.ts. */

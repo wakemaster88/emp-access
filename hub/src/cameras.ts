@@ -540,6 +540,15 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
   }
 }
 
+/** Gesichtsmitte normiert (0..1), null ohne Bildgroesse. */
+function facePosition(f: FaceEmbedResult): { x: number; y: number } | null {
+  const [x1, y1, x2, y2] = f.bbox ?? [];
+  if (!f.imageW || !f.imageH || ![x1, y1, x2, y2].every(Number.isFinite)) return null;
+  const x = (x1 + x2) / 2 / f.imageW;
+  const y = (y1 + y2) / 2 / f.imageH;
+  return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null;
+}
+
 const asShot = (f: FaceEmbedResult): FaceShot => ({
   embedding: f.embedding,
   detScore: f.detScore,
@@ -632,6 +641,10 @@ async function uploadPersonSnapshotBody(
     face = picked.face;
   }
 
+  // Lage des Gesichts im Vollbild (fuer den Namen an der richtigen Box in
+  // der Zentrale). Nach optischem Zoom unbekannt: anderer Bildausschnitt.
+  let facePos = face ? facePosition(face) : null;
+
   // Gesicht zu klein oder ohne Treffer: erst optisch heranzoomen (Kamera mit
   // Zoom-Objektiv), sonst Kopf-Ausschnitte digital vergroessern.
   let optical = false;
@@ -649,6 +662,7 @@ async function uploadPersonSnapshotBody(
           face = got;
           buf = close.jpeg;
           optical = true;
+          facePos = null;
         }
       }
       if (!optical) {
@@ -657,6 +671,7 @@ async function uploadPersonSnapshotBody(
           log(`Personen-Snapshot ${cam.config.name}: Gesicht über digitalen Zoom${z.matched ? " (Treffer)" : ""}, ${z.persons} Person(en) im Bild`);
           improve("face", z.matched ? "zoom_match" : "zoom_face", { cam: cam.config.name, persons: z.persons });
           face = z.face;
+          facePos = { x: z.box.x + z.box.w / 2, y: z.box.y + z.box.h * 0.15 };
         }
       }
     }
@@ -720,6 +735,7 @@ async function uploadPersonSnapshotBody(
         : "Gallery leer",
     score: match?.score ?? scored.nearest?.score,
     list: match?.listType,
+    pos: facePos ?? undefined,
   });
   improve("face", match ? "person_match" : scored.ambiguous ? "ambiguous" : nearMiss ? "near_miss" : "person_nomatch", {
     cam: cam.config.name,
