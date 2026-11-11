@@ -50,10 +50,11 @@ WEBCAMS_TRACKER_DEVICE=cpu uvicorn main:app --host 127.0.0.1 --port 8088
 | `WEBCAMS_CONFIG_PATH`          | `../config.json`     | Pfad zur Haupt-Config                       |
 | `WEBCAMS_TRACKER_MODEL`        | `yolov8n.pt`         | YOLO-Gewichtdatei (n/s/m/l/x)               |
 | `WEBCAMS_TRACKER_DEVICE`       | (auto)               | `mps`, `cpu`, `0`, …                        |
-| `WEBCAMS_TRACKER_FRAME_STRIDE` | `2`                  | Jede N-te Frame verarbeiten (entlastet GPU) |
-| `WEBCAMS_TRACKER_CONF`         | `0.4`                | Confidence-Schwelle für Personen            |
+| `WEBCAMS_TRACKER_FRAME_STRIDE` | `2`                  | Zonen-Worker: jede N-te Frame verarbeiten; die Zähllinie prüft jedes Bild |
+| `WEBCAMS_TRACKER_CONF`         | `0.3`                | Confidence-Schwelle für Personen            |
 | `WEBCAMS_TRACKER_RTSP_BASE`    | (aus)                | Streams von hier statt direkt von der Cam   |
 | `WEBCAMS_TRACKER_LINE_MARGIN`  | `0.08`               | Totzone um die Zähllinie (Anteil Bildhöhe)  |
+| `WEBCAMS_TRACKER_HANDOVER`     | `0.12`               | Suchradius bei Nummernwechsel (Anteil Bildhöhe, `0` = aus) |
 | `WEBCAMS_TRACKER_CROSSING_SNAPSHOTS` | `1`            | Bild je Durchgang mitschreiben (`0` = aus)  |
 | `WEBCAMS_TRACKER_SNAPSHOT_RETENTION_DAYS` | `30`      | Aufbewahrung dieser Bilder in Tagen         |
 
@@ -104,6 +105,18 @@ wenn der Fußpunkt weiter als `WEBCAMS_TRACKER_LINE_MARGIN × Bildhöhe` von ihr
 entfernt ist. Ohne das erzeugt eine einzelne wartende Person — an einem
 Drehkreuz der Normalfall — im Sekundentakt Wechsel zwischen „rein" und
 „raus". Zu große Werte verschlucken dagegen kurze Durchgänge.
+
+### Nummernwechsel an der Linie
+
+Verdeckt am Drehkreuz ein Arm oder der Nachbar eine Person kurz, vergibt
+ByteTrack danach oft eine neue Nummer. Die neue Nummer kannte bisher keine
+Seite, der Durchgang ging verloren. Jetzt übernimmt eine neue Nummer die
+Seite einer Nummer, die höchstens 1,5 s vorher verschwunden ist und deren
+letzter Fußpunkt höchstens `WEBCAMS_TRACKER_HANDOVER × Bildhöhe` entfernt
+liegt. Im Protokoll steht dann `Linie: Nummer #12 übernimmt Seite von #9`.
+
+Die Zähllinie prüft jedes Bild: YOLO und ByteTrack rechnen es ohnehin,
+ein Auslassen sparte nichts und kostete nur Genauigkeit.
 
 ### Wo die Linie aufhört
 
