@@ -30,6 +30,11 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
           side="left"
           className="w-[288px] max-w-[85vw] p-0 gap-0 rounded-r-card border-r border-glass-border bg-[color-mix(in_oklch,var(--background)_80%,transparent)] backdrop-blur-2xl backdrop-saturate-[1.8] text-sidebar-foreground [&>button]:text-sidebar-muted"
           showCloseButton={true}
+          // Nicht die Suche fokussieren: sonst klappt auf dem Handy bei jedem Öffnen die Tastatur auf.
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            (e.currentTarget as HTMLElement | null)?.focus();
+          }}
         >
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <div className="h-full pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
