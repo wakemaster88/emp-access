@@ -31,7 +31,7 @@ für die Owner-Rolle der App aber nicht – `npx tsx scripts/db-rls-check.ts`
 zeigt den Ist-Zustand.
 
 **Auth.** Dashboard per E-Mail/Passwort (bcrypt, Sperre nach zehn
-Fehlversuchen, optional TOTP), JWT-Sitzung eine Woche mit Revalidierung gegen
+Fehlversuchen, optional TOTP) oder per Passkey (WebAuthn), JWT-Sitzung eine Woche mit Revalidierung gegen
 die Datenbank alle fünf Minuten. Maschinen nutzen das Account-API-Token
 (Hub, Integrationen) oder ein Geräte-Token pro Pi (nur Geräte-Endpunkte,
 Gerätedetail → *Geräte-Token*). Öffentliche Seiten (Monitor, Kiosk, Scanner,
@@ -452,6 +452,33 @@ Stelle wird auch ein Wiederherstellungscode akzeptiert.
 
 `npx tsx scripts/two-factor-check.ts` prüft die Umsetzung gegen die Testvektoren
 aus RFC 6238 sowie Sperre, Einmaligkeit und Wiederherstellungscodes.
+
+## Passkeys (Admin-Login)
+
+Statt E-Mail und Passwort geht die Anmeldung auch per **Passkey**: Face ID,
+Fingerabdruck oder Geräte-PIN, der Schlüssel liegt im Gerät bzw. im
+Schlüsselbund (iCloud, Google, 1Password …). Ein Passkey ersetzt Passwort und
+zweiten Faktor zugleich, weil er an die Domain gebunden ist und die
+Nutzerverifikation am Gerät verlangt.
+
+**Einrichten:** *Konto & Sicherheit → Passkeys → Passkey hinzufügen*, Passwort
+bestätigen, am Gerät freigeben. Bis zu zehn Passkeys je Admin; umbenennen und
+löschen in derselben Liste.
+
+**Anmelden:** Auf der Login-Seite *Mit Passkey anmelden* – ohne E-Mail-Eingabe,
+der Browser bietet die Passkeys für diese Adresse an.
+
+**Technik:**
+
+- `@simplewebauthn/server` prüft Registrierung und Anmeldung; gespeichert wird
+  nur der öffentliche Schlüssel (Tabelle `Passkey`).
+- Jede Challenge liegt in `PasskeyChallenge`, gilt fünf Minuten und genau
+  einmal (auch über mehrere Vercel-Instanzen hinweg).
+- Ein Passkey gilt nur für die Domain, auf der er angelegt wurde. Standard ist
+  der Host der Anfrage; `WEBAUTHN_RP_ID` und `WEBAUTHN_ORIGIN` legen das bei
+  Bedarf fest (z. B. damit Passkeys auf einer Subdomain mitgelten).
+- Ein gelöschter Admin verliert seine Passkeys mit; ein deaktivierter Mandant
+  kann sich auch per Passkey nicht anmelden.
 
 ## Mobile und PWA
 

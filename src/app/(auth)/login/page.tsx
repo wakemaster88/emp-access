@@ -1,15 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
+import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
+import { ArrowLeft, Fingerprint, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { passkeyErrorMessage, passkeySupportSnapshot } from "@/lib/passkey-client";
 
 type Step = "credentials" | "code";
 
@@ -34,6 +36,9 @@ export default function LoginPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const passkeySupported = useSyncExternalStore(...passkeySupportSnapshot(browserSupportsWebAuthn, false));
+
 
   async function precheck(): Promise<PrecheckResponse | null> {
     const res = await fetch("/api/login/precheck", {
@@ -121,6 +126,26 @@ export default function LoginPage() {
     setLoading(false);
   }
 
+  async function handlePasskey() {
+    setPasskeyBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/login/passkey", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Anmeldung derzeit nicht möglich");
+      const response = await startAuthentication({ optionsJSON: data });
+      const result = await signIn("passkey", { response: JSON.stringify(response), redirect: false });
+      if (result?.error) throw new Error("Passkey nicht erkannt. Ist er für dieses Konto eingerichtet?");
+      router.push("/");
+      router.refresh();
+      return;
+    } catch (e) {
+      const message = passkeyErrorMessage(e);
+      if (message) setError(message);
+    }
+    setPasskeyBusy(false);
+  }
+
   function backToCredentials() {
     setStep("credentials");
     setCode("");
@@ -180,7 +205,7 @@ export default function LoginPage() {
               </h1>
               <p className="text-sm text-muted-foreground">
                 {step === "credentials"
-                  ? "Mit E-Mail und Passwort des Mandanten."
+                  ? "Mit E-Mail und Passwort des Mandanten oder per Passkey."
                   : "Code aus der Authenticator-App oder ein Wiederherstellungscode."}
               </p>
             </CardHeader>
@@ -225,7 +250,7 @@ export default function LoginPage() {
                   {error && (
                     <Notice tone="danger" compact title={error} />
                   )}
-                  <Button type="submit" size="lg" className="w-full" disabled={loading}>
+                  <Button type="submit" size="lg" className="w-full" disabled={loading || passkeyBusy}>
                     {loading ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" /> Anmelden …
@@ -234,6 +259,30 @@ export default function LoginPage() {
                       "Anmelden"
                     )}
                   </Button>
+                  {passkeySupported && (
+                    <>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+                        <span className="h-px flex-1 bg-border" />
+                        oder
+                        <span className="h-px flex-1 bg-border" />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="lg"
+                        className="w-full"
+                        onClick={handlePasskey}
+                        disabled={loading || passkeyBusy}
+                      >
+                        {passkeyBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Fingerprint className="h-4 w-4" />
+                        )}
+                        Mit Passkey anmelden
+                      </Button>
+                    </>
+                  )}
                 </form>
               ) : (
                 <form onSubmit={handleCode} className="space-y-4">

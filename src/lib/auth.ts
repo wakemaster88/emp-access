@@ -9,6 +9,7 @@ import {
   isLoginLocked,
   registerLoginFailure,
 } from "./login-lockout";
+import { relyingPartyFrom, verifyPasskeyLogin } from "./passkey";
 
 /** Sitzungsdauer: eine Woche statt der 30 Tage Standard. */
 const SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
@@ -63,6 +64,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           data: { lastLogin: new Date(), loginFailures: 0, loginLockedUntil: null },
         });
 
+        return {
+          id: String(admin.id),
+          email: admin.email,
+          name: admin.name,
+          role: admin.role,
+          accountId: admin.accountId,
+          accountName: admin.account?.name ?? null,
+        };
+      },
+    }),
+    // Anmeldung per Passkey (WebAuthn). Ersetzt Passwort und zweiten Faktor:
+    // der Passkey ist an die Domain gebunden und verlangt Face ID,
+    // Fingerabdruck oder Geraete-PIN. Optionen kommen von /api/login/passkey.
+    Credentials({
+      id: "passkey",
+      name: "passkey",
+      credentials: {
+        response: { label: "Passkey", type: "text" },
+      },
+      async authorize(credentials, request) {
+        if (!credentials?.response) return null;
+        const admin = await verifyPasskeyLogin(relyingPartyFrom(request.headers), credentials.response);
+        if (!admin) return null;
         return {
           id: String(admin.id),
           email: admin.email,
