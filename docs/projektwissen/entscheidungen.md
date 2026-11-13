@@ -78,8 +78,9 @@ Tab-Leiste, keine Tabelle bei 360 px). Seiten nur mit den Bausteinen aus
 Keine Kameras in Umkleiden und WCs; Belegung dort nur über Türzähler oder
 Bewegungsmelder. Wiedererkennung über Kameras hinweg merkt sich nur eine
 Kleidungsbeschreibung für 8 Stunden, kein Bild und kein Gesichtsmerkmal.
-Ob die Gesichtserkennung auch auf gezoomte Nahaufnahmen laufen soll,
-entscheidet Aaron (DSGVO), siehe [offene Punkte](offene-punkte.md).
+Gesichtserkennung läuft auch auf gezoomten Nahaufnahmen (optischer Zoom
+der Kamera und digitale Kopf-Ausschnitte), Aarons Entscheidung vom
+13.11.2026. Abgeglichen wird weiter nur gegen die gepflegte Gesichtsliste.
 
 ## Hub-Maschine: frisch aufgesetzt statt migriert (05.11.2026)
 
