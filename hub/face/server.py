@@ -50,9 +50,13 @@ def get_app():
         MODEL_ROOT.mkdir(parents=True, exist_ok=True)
         # CoreML (Apple Neural Engine) wirft bei buffalo_l Shape-Fehler
         # (inferred vs. static rank) – CPU ist langsamer, aber stabil.
+        # Nur Erkennung und Merkmale laden: buffalo_l bringt sonst noch
+        # Alter/Geschlecht und zwei Landmarken-Modelle mit, die je Gesicht
+        # mitlaufen, hier aber nie gelesen werden (spart CPU je Bild).
         app = FaceAnalysis(
             name="buffalo_l",
             root=str(MODEL_ROOT),
+            allowed_modules=["detection", "recognition"],
             providers=["CPUExecutionProvider"],
         )
         app.prepare(ctx_id=-1, det_size=(DET_SIZE, DET_SIZE))

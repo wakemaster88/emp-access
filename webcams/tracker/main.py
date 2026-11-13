@@ -101,6 +101,10 @@ RTSP_BASE = os.environ.get("WEBCAMS_TRACKER_RTSP_BASE", "").rstrip("/")
 # Siehe ``HysteresisLineCounter``: zu klein und Wartende erzeugen Zittern,
 # zu groß und ein kurzer Durchgang wird nicht mehr registriert.
 LINE_MARGIN_RATIO = float(os.environ.get("WEBCAMS_TRACKER_LINE_MARGIN", "0.08"))
+# Nummernwechsel an der Linie: Suchradius als Anteil der Bildhöhe, in dem
+# eine neue Track-Nummer die Seite einer gerade verschwundenen übernimmt.
+# 0 schaltet das ab.
+HANDOVER_RATIO = float(os.environ.get("WEBCAMS_TRACKER_HANDOVER", "0.12"))
 
 # ---------------------------------------------------------------------------
 # Config-Reader mit mtime-Cache — analog zu `lib/config.ts` der Next-App.
@@ -354,15 +358,60 @@ class HysteresisLineCounter:
         end: sv.Point,
         margin: float,
         ttl: float = 60.0,
+        handover_px: float = 0.0,
+        handover_s: float = 1.5,
     ) -> None:
         self.start = start
         self.end = end
         self.margin = margin
         self.ttl = ttl
+        # Nummernwechsel: Verliert ByteTrack eine Person am Drehkreuz kurz
+        # (Verdeckung durch Arm oder Nachbarn) und vergibt eine neue Nummer,
+        # kennt die neue Nummer keine Seite — der Durchgang ginge verloren.
+        # Taucht eine neue Nummer binnen ``handover_s`` Sekunden hoechstens
+        # ``handover_px`` Pixel neben dem letzten Fusspunkt einer
+        # verschwundenen Nummer auf, uebernimmt sie deren Seite. 0 = aus.
+        self.handover_px = handover_px
+        self.handover_s = handover_s
+        self.handovers = 0
         self.in_count = 0
         self.out_count = 0
         self._side: dict[int, int] = {}
         self._seen: dict[int, float] = {}
+        self._pos: dict[int, tuple[float, float]] = {}
+        # Verschwundene Nummern mit Seite: tid -> (Zeit, x, y, Seite)
+        self._lost: dict[int, tuple[float, float, float, int]] = {}
+
+    def _note_gone(self, present: set[int], now: float) -> None:
+        """Nummern, die in diesem Bild fehlen, als verschwunden vormerken."""
+        for tid, (x, y) in list(self._pos.items()):
+            if tid in present:
+                continue
+            side = self._side.get(tid)
+            if side is not None and tid not in self._lost:
+                self._lost[tid] = (now, x, y, side)
+            self._pos.pop(tid, None)
+        for tid, (t, _x, _y, _s) in list(self._lost.items()):
+            if now - t > self.handover_s:
+                self._lost.pop(tid, None)
+
+    def _inherit(self, tid: int, x: float, y: float, now: float) -> None:
+        """Neue Nummer: Seite einer gerade verschwundenen Nummer übernehmen."""
+        if self.handover_px <= 0 or not self._lost:
+            return
+        best: tuple[float, int] | None = None
+        for old, (t, lx, ly, _side) in self._lost.items():
+            if now - t > self.handover_s:
+                continue
+            d = math.hypot(x - lx, y - ly)
+            if d <= self.handover_px and (best is None or d < best[0]):
+                best = (d, old)
+        if best is None:
+            return
+        old = best[1]
+        self._side[tid] = self._lost.pop(old)[3]
+        self.handovers += 1
+        log.info("Linie: Nummer #%d übernimmt Seite von #%d (%.0f px)", tid, old, best[0])
 
     def _project(self, x: float, y: float) -> tuple[float, float]:
         """Abstand zur Linie (mit Vorzeichen) und Lage entlang der Linie.
@@ -389,19 +438,24 @@ class HysteresisLineCounter:
         laesst, an welcher Stelle gezaehlt wurde.
         """
         ids = detections.tracker_id
+        now = time.time()
         if ids is None or len(detections) == 0:
+            self._note_gone(set(), now)
             return []
 
-        now = time.time()
+        self._note_gone({int(t) for t in ids}, now)
         crossings: list[tuple[int, str, float]] = []
         for i, raw_id in enumerate(ids):
             tid = int(raw_id)
-            self._seen[tid] = now
-
             x1, _y1, x2, y2 = detections.xyxy[i]
             # Fußpunkt statt Boxmitte: die Füße stehen auf der Bodenebene,
             # in der auch die Linie gemeint ist.
-            dist, along = self._project((float(x1) + float(x2)) / 2.0, float(y2))
+            fx, fy = (float(x1) + float(x2)) / 2.0, float(y2)
+            if tid not in self._seen:
+                self._inherit(tid, fx, fy, now)
+            self._seen[tid] = now
+            self._pos[tid] = (fx, fy)
+            dist, along = self._project(fx, fy)
             # Neben der Linie: Seite gar nicht erst merken. Sonst zaehlt der
             # erste Schritt zurueck in den Bereich als Wechsel.
             if along < 0.0 or along > 1.0:
@@ -426,6 +480,7 @@ class HysteresisLineCounter:
             if now - last > self.ttl:
                 self._seen.pop(tid, None)
                 self._side.pop(tid, None)
+                self._pos.pop(tid, None)
 
         return crossings
 
@@ -779,7 +834,9 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
             # Totzone relativ zur Bildhöhe, damit sie bei anderen
             # Substream-Auflösungen gleich breit bleibt.
             margin_px = max(6.0, LINE_MARGIN_RATIO * h)
-            line_zone = HysteresisLineCounter(start_pt, end_pt, margin_px)
+            line_zone = HysteresisLineCounter(
+                start_pt, end_pt, margin_px, handover_px=HANDOVER_RATIO * h
+            )
 
             track_kwargs: dict[str, Any] = {
                 "source": rtsp,
@@ -809,9 +866,12 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                 if counter.stop_event.is_set():
                     break
 
+                # Kein Ueberspringen: YOLO und ByteTrack haben dieses Bild
+                # ohnehin schon gerechnet (der Generator liefert jedes Bild),
+                # ein Auslassen hier spart nichts und kostet nur
+                # Genauigkeit an der Linie. FRAME_STRIDE gilt fuer die
+                # Zonen-Worker, die ihre Bilder selbst lesen.
                 frame_idx += 1
-                if FRAME_STRIDE > 1 and frame_idx % FRAME_STRIDE != 0:
-                    continue
 
                 # Tageswechsel: Anzeige auf den neuen Tag stellen. Neu aus
                 # der Datei lesen statt hart auf 0 zu setzen — hat der Rechner
@@ -834,8 +894,10 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
 
                 # nur getrackte Personen ans LineZone — alles andere
                 # erzeugt sonst keine sinnvollen Crossings
-                if detections.tracker_id is not None and len(detections) > 0:
-                    crossed = line_zone.trigger(detections)
+                # Auch leere Bilder durchreichen: daran erkennt der Zaehler,
+                # welche Nummern verschwunden sind (Nummernwechsel).
+                crossed = line_zone.trigger(detections)
+                if crossed:
                     new_in = sum(1 for _, d, _a in crossed if d == "in")
                     new_out = len(crossed) - new_in
 

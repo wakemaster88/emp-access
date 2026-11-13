@@ -952,3 +952,27 @@ Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, 
 - Zeilen „Dashboard: … abgelehnt (host)“: Name in `HUB_DASHBOARD_ALLOWED_HOSTS` eintragen. Offene Dashboard-Tabs einmal neu laden.
 - Erstes Update nach diesem Stand beobachten: „Neuer Stand installiert und geprüft“ bzw. „Update ABGEBROCHEN“. Bleibt ein Hub hängen: `hub/install/update.sh`.
 - Offen: Lesende Routen (GET) prüfen den Host nicht – eine per DNS umgebogene Seite im Browser des Hub-Rechners kann weiterhin Lage, Log und Standbilder lesen. `DOORBIRD_OPEN` steht weiter in `ALLOWED_ACTIONS`, obwohl die Oberfläche den Türöffner bewusst nicht anbietet.
+
+## 2026-11-11 (Personen: Zählung am Drehkreuz, Face-Dienst schlanker)
+
+Snapshot nicht verfügbar: Arbeit ohne Zugriff auf den Hub-Rechner, Befunde aus dem Code und den Einträgen vom 31.08. und 06.11. Nichts davon ist an den Kameras geprüft.
+
+### Befunde
+
+- `WEBCAMS_TRACKER_FRAME_STRIDE` sparte im Linien-Worker nichts: `model.track(stream=True)` rechnet YOLO und ByteTrack für jedes Bild, übersprungen wurde erst danach, also nur die Prüfung an der Linie. Bei Stride 2 sah die Linie die Hälfte der Bilder.
+- Bekommt eine Person am Drehkreuz nach kurzer Verdeckung eine neue Track-Nummer, kannte die neue Nummer keine Seite. Ein Durchgang mit Nummernwechsel wurde gar nicht gezählt.
+- Face-Sidecar lud alle fünf Modelle von buffalo_l (inkl. Alter/Geschlecht, 2D/3D-Landmarken), gelesen werden nur Box, Score und Embedding. Offen seit 31.08. (Face ~2,8 Kerne).
+- README nannte `WEBCAMS_TRACKER_CONF` 0,4, der Code nimmt 0,3.
+
+### Änderung
+
+- `webcams/tracker/main.py`: Linie prüft jedes Bild; `FRAME_STRIDE` gilt nur noch für die Zonen-Worker (die lesen ihre Bilder selbst, dort spart es wirklich).
+- `HysteresisLineCounter`: Nummernwechsel – eine neue Nummer übernimmt die Seite einer höchstens 1,5 s zuvor verschwundenen Nummer, wenn deren letzter Fußpunkt höchstens `WEBCAMS_TRACKER_HANDOVER` × Bildhöhe (Standard 0,12, `0` = aus) entfernt liegt. Leere Bilder gehen jetzt auch durch den Zähler, damit er verschwundene Nummern bemerkt. Log: „Linie: Nummer #… übernimmt Seite von #…“.
+- `hub/face/server.py`: `allowed_modules=["detection", "recognition"]`.
+- Geprüft: `py_compile`; Zähler-Logik mit Stub-Detektionen (Durchgang mit Nummernwechsel: vorher 0, jetzt 1 gezählt; neue Nummer weit weg erbt nicht).
+
+### Nächster Schritt
+
+- Tracker neu starten (Knopf „Tracker neu starten“), Face-Sidecar startet mit dem Hub neu.
+- Eine Woche lang Durchgänge ohne Scan am Drehkreuz und die Zeilen „übernimmt Seite“ zählen. Steigen ungedeckte Durchgänge, `WEBCAMS_TRACKER_HANDOVER` senken.
+- CPU des Face-Sidecars gegen die 2,8 Kerne vom 31.08. vergleichen.
