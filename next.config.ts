@@ -37,7 +37,14 @@ const securityHeaders = [
   },
 ];
 
+/**
+ * Kennung des Builds fuer den Update-Hinweis (src/lib/app-version.ts): pro
+ * Vercel-Deployment eindeutig, auch beim erneuten Deploy desselben Commits.
+ */
+const buildId = process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || "dev";
+
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_BUILD_ID: buildId },
   serverExternalPackages: ["bcryptjs"],
   async headers() {
     return [

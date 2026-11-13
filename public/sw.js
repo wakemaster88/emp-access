@@ -9,10 +9,14 @@
  *  - Web-Push anzeigen, Klick oeffnet die passende Seite, abgelaufene Abos
  *    werden still erneuert.
  *
+ *  - Neue Version: installiert sich sofort und uebernimmt alle Fenster; der
+ *    Update-Hinweis (src/components/layout/update-prompt.tsx) laedt die Seite
+ *    danach neu. SKIP_WAITING aus der Seite greift, falls er doch wartet.
+ *
  * VERSION bei jeder Aenderung an dieser Datei hochzaehlen: alte Caches
  * werden beim Aktivieren weggeraeumt.
  */
-const VERSION = "2026-09-05-1";
+const VERSION = "2026-11-13-1";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 const OFFLINE_URL = "/offline";
 const PRECACHE = [OFFLINE_URL, "/manifest.json", "/icon-192.png", "/icon-512.png", "/apple-icon.png", "/logo.png", "/logo-dark.png"];
@@ -34,6 +38,10 @@ self.addEventListener("activate", (event) => {
       .then((keys) => Promise.all(keys.filter((k) => k.startsWith("emp-") && k !== STATIC_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 function isStaticAsset(url) {
