@@ -10,3 +10,11 @@ onlyBuiltDependencies:
 allowBuilds:
   sharp: true
   unrs-resolver: true
+
+# Sicherheits-Updates fuer transitive Pakete (pnpm audit, 13.11.2026).
+overrides:
+  "@babel/core@<=7.29.0": ">=7.29.6"
+  "browserslist@<=4.28.6": ">=4.28.7"
+  "baseline-browser-mapping@>=2.0.0 <2.11.0": ">=2.11.0"
+  "source-map-js@>=1.0.0 <1.2.2": ">=1.2.2"
+  "zod@<4.6.6": ">=4.6.6"

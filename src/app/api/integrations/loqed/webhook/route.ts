@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { loqedBoltStateLabel } from "@/lib/loqed-constants";
+import { secretsEqual } from "@/lib/cron-auth";
 
 /**
  * POST /api/integrations/loqed/webhook?secret=…
@@ -57,7 +58,8 @@ export async function POST(request: NextRequest) {
   const config = configs.find((c) => {
     if (!c.extraConfig) return false;
     try {
-      return (JSON.parse(c.extraConfig) as Record<string, unknown>).webhookSecret === secret;
+      const stored = (JSON.parse(c.extraConfig) as Record<string, unknown>).webhookSecret;
+      return typeof stored === "string" && secretsEqual(stored, secret);
     } catch {
       return false;
     }

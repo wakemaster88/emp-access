@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
+import { secretsEqual } from "@/lib/cron-auth";
 import { nukiStateLabel, nukiTriggerLabel } from "@/lib/nuki";
 
 /**
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
     if (!c.extraConfig) continue;
     try {
       const extra = JSON.parse(c.extraConfig) as Record<string, unknown>;
-      if (extra.webhookSecret === token) {
+      if (typeof extra.webhookSecret === "string" && secretsEqual(extra.webhookSecret, token)) {
         config = c;
         break;
       }

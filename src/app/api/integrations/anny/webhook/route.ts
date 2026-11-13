@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
+import { secretsEqual } from "@/lib/cron-auth";
 import { annyBarcodeForTicket, extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
 
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
   for (const c of configs) {
     try {
       const extra = c.extraConfig ? JSON.parse(c.extraConfig) : {};
-      if (extra.webhookSecret === token) {
+      if (typeof extra.webhookSecret === "string" && secretsEqual(extra.webhookSecret, token)) {
         config = c;
         break;
       }

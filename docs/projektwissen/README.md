@@ -11,6 +11,7 @@ offene Punkte. Stand: 8. November 2026.
 | [hub-betrieb.md](hub-betrieb.md) | Hub-Maschine (Mac Studio), Dienste, Logs, Streams, Kameras |
 | [funktionen.md](funktionen.md) | Funktionen, die sonst nirgends beschrieben sind |
 | [offene-punkte.md](offene-punkte.md) | Was noch aussteht oder auf eine Entscheidung wartet |
+| [sicherheit.md](sicherheit.md) | Täglicher Sicherheitscheck, Behebung, Sicherheitsregeln im Code |
 | [standort-details.md](standort-details.md) | Netzplan mit Adressen, Router-Regeln, Switches, Kameras, Hub, Cloud-IDs |
 
 Weitere Dokumente im Repo: [`README.md`](../../README.md) (Cloud),

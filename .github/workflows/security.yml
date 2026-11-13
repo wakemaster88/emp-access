@@ -1,0 +1,145 @@
+name: Sicherheitscheck
+
+# Taeglich um 8 Uhr deutscher Zeit: bekannte Luecken in Abhaengigkeiten
+# (Cloud, Hub, Webcams) und versehentlich eingecheckte Geheimnisse.
+#
+# GitHub-Cron laeuft in UTC. Damit es Sommer wie Winter 8 Uhr in Berlin ist,
+# laeuft der Plan um 6 und 7 Uhr UTC; der erste Schritt laesst den Lauf aus,
+# der gerade nicht 8 Uhr Berlin ist. Von Hand (workflow_dispatch) laeuft er
+# immer.
+#
+# Bei Befunden schlaegt der Lauf fehl (GitHub schickt eine Mail) und ein
+# Issue „Sicherheitscheck: Befunde“ wird angelegt bzw. ergaenzt.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+defaults:
+  run:
+    # Explizit bash: dann mit pipefail, sonst verschluckt `| tee` den Fehler.
+    shell: bash
+
+concurrency:
+  group: security-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Uhrzeit pruefen (8 Uhr Europe/Berlin)
+        id: when
+        run: |
+          hour=$(TZ=Europe/Berlin date +%H)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$hour" = "08" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Berlin ist es ${hour} Uhr – dieser Lauf wird ausgelassen."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.when.outputs.run == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.when.outputs.run == 'true'
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        if: steps.when.outputs.run == 'true'
+        with:
+          version: 10.28.0
+
+      - name: npm audit Cloud (Produktion, ab moderate)
+        id: audit_cloud
+        if: steps.when.outputs.run == 'true'
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=moderate 2>&1 | tee audit-cloud.txt
+
+      - name: npm audit Hub (ab moderate)
+        id: audit_hub
+        if: steps.when.outputs.run == 'true'
+        continue-on-error: true
+        working-directory: hub
+        run: npm audit --omit=dev --audit-level=moderate 2>&1 | tee ../audit-hub.txt
+
+      - name: pnpm audit Webcams (ab moderate)
+        id: audit_webcams
+        if: steps.when.outputs.run == 'true'
+        continue-on-error: true
+        working-directory: webcams
+        run: pnpm audit --prod --audit-level=moderate 2>&1 | tee ../audit-webcams.txt
+
+      - name: Geheimnisse im Code suchen
+        id: secrets
+        if: steps.when.outputs.run == 'true'
+        continue-on-error: true
+        run: |
+          # Eindeutige Muster: private Schluessel, GitHub-/AWS-/Stripe-/Slack-
+          # Tokens, Telegram-Bot-Tokens, Postgres-URLs mit Passwort (ausser der
+          # CI-Datenbank). Ausgabe nur Datei:Zeile, nie der Treffer selbst.
+          pattern='(-----BEGIN [A-Z ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|sk_live_[A-Za-z0-9]{20,}|xox[abp]-[A-Za-z0-9-]{10,}|[0-9]{8,10}:AA[A-Za-z0-9_-]{33}|postgres(ql)?://[^ "'\''<:]+:[^ "'\''<@]+@[^ "'\''<]+)'
+          hits=$(git grep -nIE "$pattern" -- . ':!package-lock.json' ':!**/package-lock.json' ':!**/pnpm-lock.yaml' \
+            | grep -v 'postgres:postgres@localhost' \
+            | grep -vE 'user:pass(word)?@|USER:PASS|<[a-z_]+>:<[a-z_]+>@' \
+            | cut -d: -f1,2 || true)
+          if [ -n "$hits" ]; then
+            echo "Moegliche Geheimnisse (Datei:Zeile):" | tee secrets.txt
+            echo "$hits" | tee -a secrets.txt
+            exit 1
+          fi
+          echo "Keine Geheimnisse gefunden." | tee secrets.txt
+
+      - name: Ergebnis
+        if: steps.when.outputs.run == 'true'
+        id: result
+        run: |
+          failed=""
+          [ "${{ steps.audit_cloud.outcome }}" = "failure" ] && failed="$failed Cloud-Pakete,"
+          [ "${{ steps.audit_hub.outcome }}" = "failure" ] && failed="$failed Hub-Pakete,"
+          [ "${{ steps.audit_webcams.outcome }}" = "failure" ] && failed="$failed Webcam-Pakete,"
+          [ "${{ steps.secrets.outcome }}" = "failure" ] && failed="$failed Geheimnisse,"
+          failed="${failed%,}"
+          {
+            echo "## Sicherheitscheck $(TZ=Europe/Berlin date '+%d.%m.%Y %H:%M')"
+            if [ -z "$failed" ]; then echo "Alles in Ordnung."; else echo "Befunde:${failed}"; fi
+            for f in audit-cloud.txt audit-hub.txt audit-webcams.txt secrets.txt; do
+              [ -f "$f" ] || continue
+              echo; echo "### $f"; echo '```'; tail -n 60 "$f"; echo '```'
+            done
+          } > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          echo "failed=${failed}" >> "$GITHUB_OUTPUT"
+
+      - name: Issue anlegen oder ergaenzen
+        if: steps.when.outputs.run == 'true' && steps.result.outputs.failed != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const body = fs.readFileSync("summary.md", "utf8") +
+              `\n\n[Lauf ansehen](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+            const title = "Sicherheitscheck: Befunde";
+            const { data: open } = await github.rest.issues.listForRepo({
+              ...context.repo, state: "open", per_page: 100,
+            });
+            const existing = open.find((i) => i.title === title && !i.pull_request);
+            if (existing) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ ...context.repo, title, body });
+            }
+
+      - name: Lauf als fehlgeschlagen melden
+        if: steps.when.outputs.run == 'true' && steps.result.outputs.failed != ''
+        run: |
+          echo "Befunde: ${{ steps.result.outputs.failed }}"
+          exit 1

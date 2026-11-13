@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
+import { secretsEqual } from "@/lib/cron-auth";
 
 /**
  * Zahlen aus einem Payload-Feld einsammeln und dabei in bekannt und unbekannt
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
   for (const c of configs) {
     try {
       const extra = c.extraConfig ? JSON.parse(c.extraConfig) : {};
-      if (extra.webhookSecret === token) {
+      if (typeof extra.webhookSecret === "string" && secretsEqual(extra.webhookSecret, token)) {
         config = c;
         break;
       }
