@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MCP_HUB_TOOL_LEVELS, MCP_TOOLS, argInt, argStr } from "./tools";
+import { MCP_HUB_TOOL_LEVELS, MCP_TOOLS, argInt, argStr, describeWeekdays } from "./tools";
 import { MCP_BRIDGE_TOOLS } from "../../../hub/src/agent/mcp-bridge-rules";
 
 test("Hub-Werkzeuge der Cloud passen zur Freigabeliste des Hubs", () => {
@@ -34,4 +34,18 @@ test("Eingaben werden begrenzt", () => {
   assert.equal(argStr({ q: "  Halle  " }, "q"), "Halle");
   assert.equal(argStr({}, "q"), undefined);
   assert.throws(() => argStr({ q: "" }, "q", { required: true }));
+});
+
+test("Backend-Werkzeuge sind reine Lese-Werkzeuge", () => {
+  const level = Object.fromEntries(MCP_TOOLS.map((t) => [t.name, t.level]));
+  for (const n of ["opening_hours", "room_rules", "rule_runs", "irrigation", "keys_issued", "lockers", "camera_events", "improve_report"]) {
+    assert.equal(level[n], "read", n);
+  }
+});
+
+test("Wochentage aus der Bitmaske", () => {
+  assert.equal(describeWeekdays(127), "täglich");
+  assert.equal(describeWeekdays(0), "nie");
+  assert.equal(describeWeekdays(0b0011111), "Mo, Di, Mi, Do, Fr");
+  assert.equal(describeWeekdays(0b1100000), "Sa, So");
 });

@@ -30,6 +30,7 @@ export const MCP_BRIDGE_TOOLS: Record<string, McpLevel> = {
   energy_plan: "read",
   mower_status: "read",
   read_log: "read",
+  improve_report: "read",
   mower_action: "operate",
   camera_control: "operate",
   open_gate: "access",
