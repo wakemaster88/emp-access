@@ -1,9 +1,12 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { safeAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Header } from "@/components/layout/header";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { TwoFactorCard } from "@/components/account/two-factor-card";
+import { PasskeyCard } from "@/components/account/passkey-card";
+import { passkeyListSelect, suggestPasskeyName } from "@/lib/passkey";
 import { isTwoFactorActive } from "@/lib/two-factor";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +25,11 @@ export default async function SecurityPage() {
           twoFactorSecret: true,
           twoFactorEnabledAt: true,
           twoFactorRecoveryCodes: true,
+          passkeys: { select: passkeyListSelect, orderBy: { createdAt: "asc" } },
         },
       });
   if (!admin) redirect("/login");
+  const userAgent = (await headers()).get("user-agent");
 
   return (
     <>
@@ -34,6 +39,15 @@ export default async function SecurityPage() {
         <SectionHeading
           title="Mein Konto"
           description={`Anmeldung von ${admin.email} absichern.`}
+        />
+
+        <PasskeyCard
+          initialPasskeys={admin.passkeys.map((p) => ({
+            ...p,
+            createdAt: p.createdAt.toISOString(),
+            lastUsedAt: p.lastUsedAt ? p.lastUsedAt.toISOString() : null,
+          }))}
+          suggestedName={suggestPasskeyName(userAgent)}
         />
 
         <TwoFactorCard

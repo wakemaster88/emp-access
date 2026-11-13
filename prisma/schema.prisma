@@ -231,8 +231,49 @@ model Admin {
   loginFailures    Int       @default(0)
   loginLockedUntil DateTime?
 
+  passkeys Passkey[]
+
   @@index([accountId])
   @@index([email])
+}
+
+/// Passkey (WebAuthn) eines Admins: Anmeldung ohne Passwort per Face ID,
+/// Fingerabdruck oder Sicherheitsschluessel. Gespeichert wird nur der
+/// oeffentliche Schluessel; der private bleibt im Geraet bzw. Schluesselbund.
+/// Haengt am Admin, nicht am Account (wie Passwort und 2FA).
+model Passkey {
+  id           Int       @id @default(autoincrement())
+  adminId      Int
+  admin        Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  /// Credential-ID, base64url.
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      Int       @default(0)
+  transports   String[]  @default([])
+  /// "singleDevice" oder "multiDevice" (synchronisiert, z. B. iCloud-Schluesselbund).
+  deviceType   String
+  backedUp     Boolean   @default(false)
+  name         String
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([adminId])
+}
+
+/// Einmal-Challenge fuer eine Passkey-Zeremonie. Liegt in der Datenbank statt
+/// im Prozessspeicher, weil auf Vercel Optionen und Antwort bei verschiedenen
+/// Instanzen landen koennen. Wird beim Pruefen geloescht (nur einmal gueltig).
+model PasskeyChallenge {
+  id        Int      @id @default(autoincrement())
+  challenge String   @unique
+  /// "login" oder "register"
+  purpose   String
+  /// Nur bei "register": wer den Passkey anlegt.
+  adminId   Int?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 model Device {
