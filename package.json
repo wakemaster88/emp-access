@@ -68,6 +68,9 @@
     "typescript": "^5"
   },
   "overrides": {
-    "nodemailer": "$nodemailer"
+    "nodemailer": "$nodemailer",
+    "@vercel/cli-config": {
+      "zod": "$zod"
+    }
   }
 }
