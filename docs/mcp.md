@@ -39,9 +39,14 @@ in Telegram gemeldet.
 Cloud: `search_tickets`, `recent_scans`, `list_devices`, `hub_alerts`, `verein_bookings`,
 `vehicle_sightings`, `lost_items`, `camera_snapshot` (Bild), `switch_device`.
 
+Backend (nur lesen, seit 13.11.2026): `opening_hours` (Betriebszeiten heute und kommende Tage),
+`room_rules` (Raumregeln mit Auslöser, Bedingung, Aktionen), `rule_runs` (Regel-Protokoll),
+`irrigation` (Bewässerungspläne und Läufe), `keys_issued` (offene Schlüsselübergaben, ohne
+Telefon/E-Mail), `lockers` (Schränke und Vermietung), `camera_events` (Kamera-Ereignisse).
+
 Hub: `hub_status`, `who_is_working`, `occupancy`, `day_preview`, `list_cameras`, `list_events`,
 `list_rooms`, `climate`, `network_overview`, `early_warnings`, `weather_forecast`, `energy_plan`,
-`mower_status`, `read_log`, `mower_action`, `camera_control`, `open_gate`.
+`mower_status`, `read_log`, `improve_report`, `mower_action`, `camera_control`, `open_gate`.
 
 Ein neues Hub-Werkzeug braucht einen Eintrag in `src/lib/mcp/tools.ts` **und** in
 `MCP_BRIDGE_TOOLS`; der Test `src/lib/mcp/tools.test.ts` prüft, dass beide Listen übereinstimmen.

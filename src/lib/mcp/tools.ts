@@ -19,6 +19,10 @@ import { availableDeviceActions, isAudioDevice } from "@/lib/device-controls";
 import { audioInputFromDeviceAction, controlAudioDevice } from "@/lib/audio-integration";
 import { runDeviceSwitchedRules } from "@/lib/room-rules";
 import { deviceSwitchLevel } from "./device-level";
+import { describeDay, isOperatingAt, openingForDay } from "@/lib/operating-hours";
+import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { ruleInclude } from "@/lib/room-rule-queries";
+import { DEFAULT_TIMEZONE, addDaysToYmd, tzYmd } from "@/lib/tz-time";
 import { McpToolError, type McpLevel, type McpTool } from "./protocol";
 
 export interface McpCtx {
@@ -640,6 +644,345 @@ const cloudTools: Tool[] = [
   },
 ];
 
+// ---------- Backend-Werkzeuge (nur lesen) ----------
+
+async function accountTz(ctx: McpCtx): Promise<string> {
+  const acc = await ctx.db.account.findUnique({ where: { id: ctx.accountId }, select: { timezone: true } });
+  return acc?.timezone || DEFAULT_TIMEZONE;
+}
+
+const WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+/** Bitmaske der Wochentage (Bit 0 = Mo) als "Mo, Di, Fr" bzw. "täglich". */
+export function describeWeekdays(mask: number): string {
+  if ((mask & 127) === 127) return "täglich";
+  const days = WEEKDAY_SHORT.filter((_, i) => mask & (1 << i));
+  return days.length ? days.join(", ") : "nie";
+}
+
+const backendTools: Tool[] = [
+  {
+    name: "opening_hours",
+    title: "Betriebszeiten",
+    description:
+      "Betriebszeiten-Profile: jetzt geöffnet ja/nein, Öffnungszeiten heute und für die nächsten Tage (Saisons und Ausnahmetage sind eingerechnet).",
+    inputSchema: obj({ days: int("Wie viele Tage ab heute, Vorgabe 7", 1, 31) }),
+    level: "read",
+    run: async (args, ctx) => {
+      const days = argInt(args, "days", 7, 1, 31);
+      const tz = await accountTz(ctx);
+      const now = new Date();
+      const today = tzYmd(now, tz);
+      const rows = await ctx.db.operatingSchedule.findMany({
+        where: { accountId: ctx.accountId },
+        include: scheduleSpecInclude,
+        orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
+      });
+      return {
+        timezone: tz,
+        today,
+        schedules: rows.map((r) => {
+          const spec = toScheduleSpec(r);
+          return {
+            id: r.id,
+            name: r.name,
+            isDefault: r.isDefault,
+            openNow: isOperatingAt(spec, now, tz),
+            days: Array.from({ length: days }, (_, i) => {
+              const ymd = addDaysToYmd(today, i);
+              const day = openingForDay(spec, ymd);
+              return { date: ymd, hours: describeDay(day), source: day.source, label: day.label };
+            }),
+          };
+        }),
+      };
+    },
+  },
+  {
+    name: "room_rules",
+    title: "Raumregeln",
+    description:
+      "Automationsregeln der Räume: Auslöser (Uhrzeit, Öffnen/Schließen, Sonne, Bewegung, Gerät, Zutritt …), Bedingungen, Aktionen, aktiv ja/nein und letzter Lauf. Nur lesen.",
+    inputSchema: obj({
+      room: str("Optional: nur Regeln dieses Raums (Name, Teilwort)"),
+      activeOnly: bool("Nur aktive Regeln, Vorgabe false"),
+    }),
+    level: "read",
+    run: async (args, ctx) => {
+      const room = argStr(args, "room", { max: 80 });
+      const rows = await ctx.db.roomRule.findMany({
+        where: {
+          accountId: ctx.accountId,
+          ...(args.activeOnly === true ? { isActive: true } : {}),
+          ...(room ? { room: { name: { contains: room, mode: "insensitive" as const } } } : {}),
+        },
+        include: ruleInclude,
+        orderBy: [{ roomId: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
+        take: 200,
+      });
+      return {
+        count: rows.length,
+        rules: rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          room: r.room?.name ?? null,
+          active: r.isActive,
+          trigger: r.trigger,
+          days: describeWeekdays(r.daysOfWeek),
+          time: r.timeOfDay,
+          offsetMinutes: r.offsetMinutes || undefined,
+          camera: r.camera?.name,
+          eventType: r.eventType ?? undefined,
+          triggerDevice: r.triggerDevice ? { name: r.triggerDevice.name, action: r.triggerAction } : undefined,
+          area: r.area?.name,
+          idleMinutes: r.idleMinutes ?? undefined,
+          condition: {
+            operating: r.operating,
+            schedule: r.operatingSchedule?.name,
+            window: r.windowStart && r.windowEnd ? `${r.windowStart}–${r.windowEnd}` : undefined,
+            onlyWhenDark: r.onlyWhenDark || undefined,
+          },
+          actions: r.actions.map((a) => ({
+            kind: a.kind,
+            device: a.device?.name,
+            action: a.deviceAction ?? undefined,
+            timerSeconds: a.timerSeconds ?? undefined,
+            audioZone: a.audioZone?.name,
+            announcement: a.audioAnnouncement?.name,
+            playlist: a.audioPlaylist?.name,
+            camera: a.targetCamera?.name,
+            channel: a.channel ?? undefined,
+          })),
+          lastRunAt: iso(r.lastRunAt),
+        })),
+      };
+    },
+  },
+  {
+    name: "rule_runs",
+    title: "Regel-Läufe",
+    description: "Protokoll der ausgeführten Raumregeln: wann, welcher Auslöser, erfolgreich oder mit welchem Fehler.",
+    inputSchema: obj({
+      hours: int("Zeitraum in Stunden, Vorgabe 24", 1, 24 * 14),
+      failedOnly: bool("Nur fehlgeschlagene Läufe"),
+      rule: str("Optional: Regelname (Teilwort)"),
+    }),
+    level: "read",
+    run: async (args, ctx) => {
+      const hours = argInt(args, "hours", 24, 1, 24 * 14);
+      const rule = argStr(args, "rule", { max: 80 });
+      const rows = await ctx.db.roomRuleRun.findMany({
+        where: {
+          accountId: ctx.accountId,
+          triggeredAt: { gte: new Date(Date.now() - hours * 3_600_000) },
+          ...(args.failedOnly === true ? { success: false } : {}),
+          ...(rule ? { ruleName: { contains: rule, mode: "insensitive" as const } } : {}),
+        },
+        select: { ruleName: true, triggeredAt: true, triggerKind: true, success: true, errorMessage: true, durationMs: true },
+        orderBy: { triggeredAt: "desc" },
+        take: 100,
+      });
+      return {
+        count: rows.length,
+        failed: rows.filter((r) => !r.success).length,
+        runs: rows.map((r) => ({ ...r, triggeredAt: iso(r.triggeredAt), errorMessage: r.errorMessage ?? undefined })),
+      };
+    },
+  },
+  {
+    name: "irrigation",
+    title: "Bewässerung",
+    description:
+      "Bewässerungspläne (Ventil, Tage, Startzeit, Dauer, Regen-Aussetzen) und die Läufe der letzten Tage mit geschätzten Litern.",
+    inputSchema: obj({ days: int("Läufe der letzten Tage, Vorgabe 7", 1, 60) }),
+    level: "read",
+    run: async (args, ctx) => {
+      const days = argInt(args, "days", 7, 1, 60);
+      const [schedules, runs] = await Promise.all([
+        ctx.db.irrigationSchedule.findMany({
+          where: { accountId: ctx.accountId },
+          select: {
+            id: true, daysOfWeek: true, startTime: true, durationMinutes: true, isActive: true,
+            skipOnRain: true, smartRain: true, moistureThresholdPct: true, lastRunAt: true,
+            device: { select: { id: true, name: true } },
+          },
+          orderBy: { startTime: "asc" },
+        }),
+        ctx.db.irrigationRun.findMany({
+          where: { accountId: ctx.accountId, startedAt: { gte: new Date(Date.now() - days * 86_400_000) } },
+          select: { startedAt: true, durationMinutes: true, source: true, litersEstimate: true, device: { select: { name: true } } },
+          orderBy: { startedAt: "desc" },
+          take: 200,
+        }),
+      ]);
+      const liters = runs.reduce((sum, r) => sum + (r.litersEstimate ?? 0), 0);
+      return {
+        schedules: schedules.map((s) => ({
+          id: s.id,
+          valve: s.device.name,
+          active: s.isActive,
+          days: describeWeekdays(s.daysOfWeek),
+          start: s.startTime,
+          minutes: s.durationMinutes,
+          skipOnRain: s.skipOnRain,
+          smartRain: s.smartRain,
+          moistureThresholdPct: s.moistureThresholdPct ?? undefined,
+          lastRunAt: iso(s.lastRunAt),
+        })),
+        runs: {
+          days,
+          count: runs.length,
+          litersEstimate: Math.round(liters),
+          items: runs.map((r) => ({
+            valve: r.device.name,
+            startedAt: iso(r.startedAt),
+            minutes: r.durationMinutes,
+            source: r.source,
+            liters: r.litersEstimate != null ? Math.round(r.litersEstimate) : null,
+          })),
+        },
+      };
+    },
+  },
+  {
+    name: "keys_issued",
+    title: "Ausgegebene Schlüssel",
+    description:
+      "Offene Schlüsselübergaben: wer (Name, Firma) hat welche Schlüssel, seit wann, bis wann, überfällig ja/nein. Ohne Telefon und E-Mail.",
+    inputSchema: obj({
+      query: str("Optional: Name, Firma oder Schlüsselnummer"),
+      overdueOnly: bool("Nur überfällige"),
+    }),
+    level: "read",
+    run: async (args, ctx) => {
+      const q = argStr(args, "query", { max: 80 });
+      const now = new Date();
+      const contains = q ? { contains: q, mode: "insensitive" as const } : undefined;
+      const rows = await ctx.db.keyHandover.findMany({
+        where: {
+          accountId: ctx.accountId,
+          items: { some: { itemStatus: "ISSUED" } },
+          ...(args.overdueOnly === true ? { dueAt: { lt: now } } : {}),
+          ...(contains
+            ? {
+                OR: [
+                  { holder: { firstName: contains } },
+                  { holder: { lastName: contains } },
+                  { holder: { company: contains } },
+                  { items: { some: { key: { keyNumber: contains } } } },
+                ],
+              }
+            : {}),
+        },
+        select: {
+          id: true, issuedAt: true, dueAt: true, deposit: true, status: true,
+          holder: { select: { firstName: true, lastName: true, company: true } },
+          items: {
+            where: { itemStatus: "ISSUED" },
+            select: { key: { select: { keyNumber: true, label: true } } },
+          },
+        },
+        orderBy: { issuedAt: "desc" },
+        take: 100,
+      });
+      return {
+        count: rows.length,
+        handovers: rows.map((h) => ({
+          id: h.id,
+          holder: [h.holder.firstName, h.holder.lastName].filter(Boolean).join(" ") || null,
+          company: h.holder.company,
+          keys: h.items.map((i) => (i.key.label ? `${i.key.keyNumber} (${i.key.label})` : i.key.keyNumber)),
+          issuedAt: iso(h.issuedAt),
+          dueAt: iso(h.dueAt),
+          overdue: h.dueAt != null && h.dueAt < now,
+          deposit: h.deposit,
+        })),
+      };
+    },
+  },
+  {
+    name: "lockers",
+    title: "Schränke und Vermietung",
+    description: "Schränke/Spinde mit Vermietung im gewählten Jahr: Mieter, Schlüssel ausgegeben/zurück, freie Schränke.",
+    inputSchema: obj({
+      year: int("Jahr, Vorgabe aktuelles Jahr", 2000, 2100),
+      freeOnly: bool("Nur freie Schränke"),
+    }),
+    level: "read",
+    run: async (args, ctx) => {
+      const year = argInt(args, "year", new Date().getFullYear(), 2000, 2100);
+      const rows = await ctx.db.locker.findMany({
+        where: { accountId: ctx.accountId },
+        select: {
+          id: true, name: true, number: true, location: true, lockType: true, keyCount: true,
+          rentals: {
+            where: { year },
+            select: { renterName: true, keysIssued: true, keysReturned: true, issuedAt: true, returnedAt: true },
+          },
+        },
+        orderBy: [{ location: "asc" }, { number: "asc" }],
+        take: 500,
+      });
+      const lockers = rows
+        .map((l) => {
+          const r = l.rentals[0];
+          return {
+            id: l.id,
+            name: l.name,
+            number: l.number,
+            location: l.location,
+            lockType: l.lockType,
+            rented: !!r,
+            renter: r?.renterName ?? null,
+            keys: r ? { issued: r.keysIssued, returned: r.keysReturned, of: l.keyCount } : undefined,
+          };
+        })
+        .filter((l) => (args.freeOnly === true ? !l.rented : true));
+      return {
+        year,
+        total: rows.length,
+        rented: rows.filter((l) => l.rentals.length > 0).length,
+        lockers,
+      };
+    },
+  },
+  {
+    name: "camera_events",
+    title: "Kamera-Ereignisse",
+    description: "Ereignisse der Kameras (Bewegung, Person, Fahrzeug …) mit Beginn und Ende, optional für eine Kamera.",
+    inputSchema: obj({
+      camera: str("Optional: Kamera-ID oder Name"),
+      type: str("Optional: Ereignistyp, z. B. motion, person, vehicle"),
+      hours: int("Zeitraum in Stunden, Vorgabe 6", 1, 72),
+    }),
+    level: "read",
+    run: async (args, ctx) => {
+      const hours = argInt(args, "hours", 6, 1, 72);
+      const ref = argStr(args, "camera", { max: 80 });
+      const type = argStr(args, "type", { max: 40 });
+      const cam = ref ? await findCamera(ctx, ref) : null;
+      const rows = await ctx.db.cameraEvent.findMany({
+        where: {
+          accountId: ctx.accountId,
+          startedAt: { gte: new Date(Date.now() - hours * 3_600_000) },
+          ...(cam ? { cameraId: cam.id } : {}),
+          ...(type ? { type: { equals: type, mode: "insensitive" as const } } : {}),
+        },
+        select: { type: true, startedAt: true, endedAt: true, camera: { select: { name: true } } },
+        orderBy: { startedAt: "desc" },
+        take: 200,
+      });
+      const byType: Record<string, number> = {};
+      for (const e of rows) byType[e.type] = (byType[e.type] ?? 0) + 1;
+      return {
+        hours,
+        count: rows.length,
+        byType,
+        events: rows.map((e) => ({ camera: e.camera.name, type: e.type, startedAt: iso(e.startedAt), endedAt: iso(e.endedAt) })),
+      };
+    },
+  },
+];
+
 // ---------- Werkzeuge des Hub-Assistenten ----------
 
 const hubTools: Tool[] = [
@@ -736,6 +1079,12 @@ const hubTools: Tool[] = [
     }),
   }),
   hubTool({
+    name: "improve_report",
+    title: "Verbesserungslog des Hubs",
+    description:
+      "Zähler und Hinweise (hints) des Hubs seit dem Start sowie die letzten Diagnose-Ereignisse. Grundlage für Verbesserungsvorschläge.",
+  }),
+  hubTool({
     name: "mower_action",
     title: "Mäher steuern",
     description:
@@ -776,7 +1125,7 @@ const hubTools: Tool[] = [
   }),
 ];
 
-export const MCP_TOOLS: Tool[] = [...cloudTools, ...hubTools];
+export const MCP_TOOLS: Tool[] = [...cloudTools, ...backendTools, ...hubTools];
 
 /** Namen der Hub-Werkzeuge mit Stufe – muss zur Freigabeliste in hub/src/agent/mcp-bridge.ts passen. */
 export const MCP_HUB_TOOL_LEVELS: Record<string, McpLevel> = Object.fromEntries(
@@ -787,6 +1136,7 @@ export const MCP_INSTRUCTIONS = [
   "EMP-Access: Zutritts- und Anlagensteuerung (Tickets, Drehkreuze, Räume, Kameras, Hub vor Ort).",
   "Antworte auf Deutsch. Zeiten sind UTC (ISO); dem Nutzer in Europe/Berlin nennen.",
   "Für einen Lageüberblick zuerst hub_status und hub_alerts. Werkzeuge mit Hub-Bezug brauchen einige Sekunden.",
+  "Backend lesen: opening_hours, room_rules, rule_runs, irrigation, keys_issued, lockers, camera_events.",
   "Vor dem Schalten (switch_device, camera_control, mower_action, open_gate) das Gerät eindeutig bestimmen und nur auf ausdrücklichen Wunsch handeln.",
   "Netzwerkänderungen (Router, Switches, VLANs, WLAN, Firewall) sind hier nicht möglich und werden nur vorgeschlagen.",
 ].join("\n");
