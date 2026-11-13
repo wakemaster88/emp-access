@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { CONFIG, api, log } from "./config.js";
 import { improve } from "./improve-log.js";
 import { STATE } from "./state.js";
+import { rankGallery } from "./face-rules.js";
 
 const FACE_URL = process.env.FACE_URL || "http://127.0.0.1:8790";
 const FACE_PORT = Number(process.env.FACE_PORT || 8790);
@@ -15,6 +16,11 @@ const FACE_PORT = Number(process.env.FACE_PORT || 8790);
 export const FACE_MATCH_THRESHOLD = Number(process.env.FACE_MATCH_THRESHOLD || 0.45);
 /** Hochskalierte Mini-Gesichter: strenger, weniger Fehlzuordnungen. */
 export const FACE_UPSCALED_THRESHOLD = Number(process.env.FACE_UPSCALED_THRESHOLD || 0.55);
+/**
+ * Mindestabstand zur zweitbesten Person. Liegen zwei Personen fast
+ * gleichauf, gilt der Treffer als unsicher statt die falsche zu nennen.
+ */
+export const FACE_MATCH_MARGIN = Number(process.env.FACE_MATCH_MARGIN || 0.04);
 // 5 min: Gallery aendert sich selten; bei FACE_ENROLL wird sie invalidiert.
 const GALLERY_TTL_MS = 300_000;
 
@@ -24,6 +30,10 @@ export interface FaceEmbedResult {
   bbox: number[];
   model: string;
   upscaled: boolean;
+  /** Kantenlaenge in Originalpixeln, Frontal-/Schaerfewert 0..1 (neuer Face-Dienst). */
+  size?: number;
+  frontal?: number;
+  sharp?: number;
 }
 
 interface GalleryEntry {
@@ -38,21 +48,6 @@ let gallery: GalleryEntry[] = [];
 let galleryLoadedAt = 0;
 let sidecarProc: ChildProcess | null = null;
 let sidecarStarting: Promise<void> | null = null;
-
-function cosine(a: number[], b: number[]): number {
-  const n = Math.min(a.length, b.length);
-  if (n === 0) return 0;
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < n; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  if (na <= 0 || nb <= 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
-}
 
 async function healthOk(): Promise<boolean> {
   try {
@@ -143,7 +138,7 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
     const data = (await res.json()) as {
       ok?: boolean;
       model?: string;
-      faces?: { embedding: number[]; det_score: number; bbox: number[]; size?: number }[];
+      faces?: { embedding: number[]; det_score: number; bbox: number[]; size?: number; frontal?: number; sharp?: number }[];
       rejected?: { det_score: number; size: number; need: number }[];
       image?: { w?: number; h?: number; min_side?: number };
       upscaled?: boolean;
@@ -188,6 +183,9 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
       bbox: best.bbox,
       model: data.model ?? "buffalo_l",
       upscaled: Boolean(data.upscaled),
+      size: typeof best.size === "number" ? best.size : undefined,
+      frontal: typeof best.frontal === "number" ? best.frontal : undefined,
+      sharp: typeof best.sharp === "number" ? best.sharp : undefined,
     };
   } catch (e) {
     log(`Face-Embed fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
@@ -221,19 +219,16 @@ export function scoreGallery(
 ): {
   match: { listedPersonId: number; name: string; score: number; listType: string } | null;
   nearest: { listedPersonId: number; name: string; score: number; listType: string } | null;
+  /** Zweitbeste Person (nicht nur zweitbestes Merkmal). */
+  second: { listedPersonId: number; name: string; score: number; listType: string } | null;
+  /** Ueber der Schwelle, aber zu knapp vor der zweitbesten Person. */
+  ambiguous: boolean;
   threshold: number;
   gallery: number;
 } {
   const threshold = opts?.upscaled ? FACE_UPSCALED_THRESHOLD : FACE_MATCH_THRESHOLD;
-  let nearest: { listedPersonId: number; name: string; score: number; listType: string } | null = null;
-  for (const g of gallery) {
-    const score = cosine(embedding, g.embedding);
-    if (!nearest || score > nearest.score) {
-      nearest = { listedPersonId: g.listedPersonId, name: g.name, score, listType: g.listType };
-    }
-  }
-  const match = nearest && nearest.score >= threshold ? nearest : null;
-  return { match, nearest, threshold, gallery: gallery.length };
+  const r = rankGallery(embedding, gallery, threshold, FACE_MATCH_MARGIN);
+  return { ...r, threshold, gallery: gallery.length };
 }
 
 export function matchEmbedding(
