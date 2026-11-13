@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeSeen, personLabel, type SeenSource } from "./live-people-rules.js";
+import { assignBoxLabels, mergeSeen, personLabel, type SeenSource } from "./live-people-rules.js";
 
 const src = (p: Partial<SeenSource>): SeenSource => ({ camera: "Halle", at: 1000, title: "", list: null, origin: "face", ...p });
 
@@ -39,4 +39,44 @@ test("mergeSeen: aktive Kamera ohne Quelle ist unbekannte Person, aktive zuerst"
     ["Shop", "Person", "unknown", true],
     ["Halle", "Jakob", "face", false],
   ]);
+});
+
+test("Gesichts-Treffer benennt die Box, in deren Kopfbereich er liegt", () => {
+  const now = 100_000;
+  const boxes = [
+    { conf: 0.9, x: 0.1, y: 0.2, w: 0.1, h: 0.4 }, // groesser, links
+    { conf: 0.9, x: 0.6, y: 0.3, w: 0.08, h: 0.3 }, // rechts
+  ];
+  const jakob = { text: "Jakob", kind: "face" as const };
+  const out = assignBoxLabels(boxes, [{ at: now - 2000, x: 0.64, y: 0.34, label: jakob }], null, jakob, now);
+  assert.equal(out[0], null);
+  assert.deepEqual(out[1], jakob);
+});
+
+test("Name wandert mit der Person, ohne Lage bei mehreren Personen kein geratener Name", () => {
+  const now = 200_000;
+  const jakob = { text: "Jakob", kind: "face" as const };
+  const prev = {
+    at: now - 1000,
+    boxes: [
+      { conf: 0.9, x: 0.1, y: 0.2, w: 0.1, h: 0.4, label: null },
+      { conf: 0.9, x: 0.6, y: 0.3, w: 0.08, h: 0.3, label: jakob },
+    ],
+  };
+  const moved = [
+    { conf: 0.9, x: 0.12, y: 0.2, w: 0.1, h: 0.4 },
+    { conf: 0.9, x: 0.65, y: 0.31, w: 0.08, h: 0.3 },
+  ];
+  const out = assignBoxLabels(moved, [], prev, jakob, now);
+  assert.equal(out[0], null);
+  assert.deepEqual(out[1], jakob);
+
+  // Alte Abfrage, kein frischer Treffer, zwei Personen: niemand wird benannt.
+  const stale = assignBoxLabels(moved, [], { ...prev, at: now - 60_000 }, jakob, now);
+  assert.deepEqual(stale, [null, null]);
+
+  // Eine Person: Kamera-Name wie bisher.
+  assert.deepEqual(assignBoxLabels([moved[1]], [], null, jakob, now), [jakob]);
+  // Zu weit gesprungen: kein Weitertragen.
+  assert.deepEqual(assignBoxLabels([{ conf: 0.9, x: 0.1, y: 0.7, w: 0.05, h: 0.2 }, moved[0]], [], prev, null, now), [null, null]);
 });

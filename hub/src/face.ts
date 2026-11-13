@@ -34,6 +34,9 @@ export interface FaceEmbedResult {
   size?: number;
   frontal?: number;
   sharp?: number;
+  /** Groesse des eingebetteten Bildes (Bezug fuer `bbox`). */
+  imageW?: number;
+  imageH?: number;
 }
 
 interface GalleryEntry {
@@ -186,6 +189,8 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
       size: typeof best.size === "number" ? best.size : undefined,
       frontal: typeof best.frontal === "number" ? best.frontal : undefined,
       sharp: typeof best.sharp === "number" ? best.sharp : undefined,
+      imageW: typeof data.image?.w === "number" ? data.image.w : undefined,
+      imageH: typeof data.image?.h === "number" ? data.image.h : undefined,
     };
   } catch (e) {
     log(`Face-Embed fehlgeschlagen: ${e instanceof Error ? e.message : e}`);

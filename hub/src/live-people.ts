@@ -20,7 +20,16 @@ import { hubEventsSince } from "./state.js";
 import { trackerBaseUrl } from "./vision.js";
 import { restartService } from "./services.js";
 import { activeCleared } from "./agent/people.js";
-import { personLabel, mergeSeen, type SeenKind, type SeenPerson, type SeenSource } from "./live-people-rules.js";
+import {
+  assignBoxLabels,
+  mergeSeen,
+  personLabel,
+  type FaceHint,
+  type LabeledFrame,
+  type SeenKind,
+  type SeenPerson,
+  type SeenSource,
+} from "./live-people-rules.js";
 
 export type { SeenPerson };
 
@@ -30,6 +39,8 @@ export interface PersonBox {
   y: number;
   w: number;
   h: number;
+  /** Wer genau diese Person vermutlich ist; null = unbekannt. */
+  label?: { text: string; kind: SeenKind } | null;
 }
 
 export interface LiveBoxes {
@@ -47,6 +58,21 @@ export interface LiveBoxes {
 
 const MIN_INTERVAL_MS = 800;
 const cache = new Map<number, { at: number; value: Promise<LiveBoxes> }>();
+/** Letzte benannte Boxen je Kamera, nur im Speicher. */
+const lastFrame = new Map<number, LabeledFrame>();
+
+/** Gesichts-Treffer mit Lage an dieser Kamera (Hub-Ereignisse mit `pos`). */
+function faceHints(cameraName: string, since: number): FaceHint[] {
+  const out: FaceHint[] = [];
+  for (const ev of hubEventsSince(0, { kind: "person", where: cameraName })) {
+    const at = Date.parse(ev.ts);
+    if (!ev.pos || !(at >= since)) continue;
+    const m = /^Person erkannt:\s*(.+)$/.exec(ev.title);
+    if (!m) continue;
+    out.push({ at, x: ev.pos.x, y: ev.pos.y, label: { text: m[1].trim(), kind: ev.list === "BLACKLIST" ? "suspicious" : "face" } });
+  }
+  return out;
+}
 let trackerRestartTried = false;
 
 async function classify(jpeg: Buffer): Promise<{ persons: PersonBox[] | null; people: number } | null> {
@@ -108,10 +134,17 @@ export function personBoxes(go2rtcUrl: string, cameraId: number, cameraName: str
     const label = personLabel(recent.filter((s) => s.camera === cameraName));
     if (!got) return { cameraId, at, persons: null, people: 0, label, stale: true };
     const r = await classify(got.frame.buf);
+    let persons: PersonBox[] | null = r?.persons ?? null;
+    if (persons) {
+      const now = Date.now();
+      const labels = assignBoxLabels(persons, faceHints(cameraName, now - 60_000), lastFrame.get(cameraId) ?? null, label, now);
+      persons = persons.map((p, i) => ({ ...p, label: labels[i] }));
+      lastFrame.set(cameraId, { at: now, boxes: persons.map((p) => ({ ...p, label: p.label ?? null })) });
+    }
     return {
       cameraId,
       at,
-      persons: r?.persons ?? null,
+      persons,
       people: r?.people ?? 0,
       label,
       stale: got.cached || Date.now() - got.frame.at > 3000,

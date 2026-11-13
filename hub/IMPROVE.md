@@ -998,3 +998,23 @@ Snapshot nicht verfügbar (Arbeit ohne Hub-Rechner). Ausgangslage aus dem Eintra
 - Nach zwei Tagen: `face.person_match` und `face.near_miss` gegen den 06.11. vergleichen; `face.bestshot` zeigt, wie oft ein späteres Bild gewinnt (`pick` > 1).
 - `face.ambiguous` beobachten: Taucht es oft bei denselben zwei Personen auf, deren Profile über „Profil optimieren“ schärfen statt die Marge zu senken.
 - DoorBird bekommt die Bildserie noch nicht, nur den Abstand zum Zweitbesten.
+
+## 2026-11-11 (Personen: Name an der richtigen Box in der Zentrale)
+
+Snapshot nicht verfügbar (Arbeit ohne Hub-Rechner).
+
+### Befund
+
+- Die Großansicht der Zentrale hängte den Namen eines Gesichts-Treffers immer an die größte Box. Bei zwei Personen im Bild stand der Name oft bei der falschen Person.
+
+### Änderung
+
+- Person-Ereignis merkt sich (nur im Speicher) die Gesichtsmitte im Vollbild (`pos`): aus der Gesichtsbox, nach digitalem Zoom aus der Personenbox; nach optischem Zoom keine Lage (anderer Bildausschnitt).
+- `faceViaZoom` liefert die Personenbox, zu der das Gesicht gehört.
+- `assignBoxLabels` (reine Logik, `live-people-rules.ts`): frischer Treffer (≤ 15 s) benennt die Box, in deren Kopfbereich er liegt; Namen wandern bei der nächsten Abfrage (≤ 5 s) zur nächstgelegenen Box, wenn sie sich höchstens etwa eine Boxgröße bewegt hat; ohne Lage gilt der Kamera-Name nur bei genau einer Person.
+- `/api/live/boxes` liefert `label` je Box, die Oberfläche zeigt ihn (älterer Hub ohne Feld: wie bisher).
+- Geprüft: `tsc -p hub` und Cloud 0 Fehler, `npm test` 409/409 (neu: 2), ESLint 0 Fehler.
+
+### Nächster Schritt
+
+- Live ansehen: Zwei Personen vor einer Kamera, eine bekannt – Name muss bei ihr stehen und beim Gehen mitwandern. Springt er bei schnellen Bewegungen ab, Reichweite (0,8 × Boxgröße) anpassen.

@@ -494,11 +494,13 @@ function renderBoxes() {
   layoutBoxes();
   const persons = (r && Array.isArray(r.persons) ? r.persons : []).slice().sort((a, b) => b.w * b.h - a.w * a.h);
   const kind = r && r.label ? r.label.kind : "unknown";
+  // Neuer Hub: Name je Box (dort, wo das Gesicht erkannt wurde). Aelterer
+  // Hub ohne Feld: Name an der groessten Box, die anderen heissen „Person“.
+  const perBox = persons.some((p) => "label" in p);
   layer.innerHTML = persons
     .map((p, n) => {
-      // Der Name gehoert zur groessten Box, die anderen heissen „Person“.
-      const text = n === 0 && r.label ? r.label.text : "Person";
-      const k = n === 0 ? kind : "unknown";
+      const text = perBox ? (p.label ? p.label.text : "Person") : n === 0 && r.label ? r.label.text : "Person";
+      const k = perBox ? (p.label ? p.label.kind : "unknown") : n === 0 ? kind : "unknown";
       return `<div class="cam-box k-${esc(k)}" style="left:${p.x * 100}%;top:${p.y * 100}%;width:${p.w * 100}%;height:${p.h * 100}%"><span class="cam-box-tag">${esc(text)} · ${Math.round(p.conf * 100)} %</span></div>`;
     })
     .join("");
