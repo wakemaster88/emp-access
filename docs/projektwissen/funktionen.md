@@ -15,6 +15,14 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
   `src/lib/nav-search.ts` (Umlaute egal, Wortanfänge, Stichworte je Eintrag
   in `nav-config.ts`).
 
+## Update-Hinweis nach Deployments (13.11.2026)
+
+- Jeder Build bekommt eine Kennung (`NEXT_PUBLIC_BUILD_ID` = Vercel-Deployment-ID, sonst Commit; `next.config.ts`). `/api/version` liefert die des laufenden Deployments, öffentlich und ungecacht.
+- `src/components/layout/update-prompt.tsx` (Root-Layout) vergleicht beim Zurückholen in den Vordergrund, bei Fokus, nach Wiederverbinden und alle 5 Min. Weicht die Kennung ab: Dialog „Neue Version verfügbar“ mit „Jetzt aktualisieren“ / „Später“ (30 Min Pause), nie über einer schon offenen Ebene.
+- Kiosk-Seiten (`/monitor/`, `/resource-monitor/`, `/scanner/`, `/checkin/`) fragen nicht, sondern laden neu, sobald 1 Min niemand getippt hat.
+- Aktualisieren holt den neuen Service Worker (`SKIP_WAITING`) und lädt neu. Das hilft vor allem der installierten PWA auf iOS, die sonst beim Zurückholen den alten Stand weiterzeigt. Ein Schleifenschutz verhindert erneutes Laden für dieselbe Version innerhalb von 10 Min.
+- Lokal und in der CI ist die Kennung `dev`, dort erscheint der Hinweis nie.
+
 ## MCP-Schnittstelle für KI-Assistenten (PR #100, 10.11.2026)
 
 - `POST /api/mcp`: Claude und andere KI-Clients fragen EMP-Access ab und

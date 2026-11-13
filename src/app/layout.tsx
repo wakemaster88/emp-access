@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SwRegister } from "@/components/layout/sw-register";
+import { UpdatePrompt } from "@/components/layout/update-prompt";
 import { appleStartupImages } from "@/lib/pwa-splash";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -58,6 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <TooltipProvider delayDuration={0}>
             {children}
           </TooltipProvider>
+          <UpdatePrompt />
         </ThemeProvider>
         <SwRegister />
       </body>
