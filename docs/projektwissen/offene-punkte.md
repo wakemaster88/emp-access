@@ -6,7 +6,6 @@ Stand 8. November 2026. Erledigtes bitte streichen.
 
 - Lieferdienst-Erkennung an der Einfahrt von „Melden“ auf „Tor öffnen“
   umstellen (nach Durchsicht der Treffer).
-- Gesichtserkennung auch auf gezoomte Nahaufnahmen anwenden (DSGVO).
 - NTP an den Kameras einschalten; alle Substreams von 10 auf 15 fps;
   Hauptstreams der RLC-811A von H.265 auf H.264.
 - Netzwerk-Audit vom 03.11.: Traffic-Regel Verwaltung → Management sperren,
