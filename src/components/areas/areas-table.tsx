@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,7 @@ import { buildAreaTree, filterAreaTree, formatScanLock } from "@/lib/area-tree";
 import { AreaDialog, type AreaData, type AreaDevice, type AreaDialogTab } from "./area-dialog";
 import {
   Cpu,
+  Eye,
   Layers,
   LogIn,
   LogOut,
@@ -131,10 +133,11 @@ function mobileSummary(area: AreaRow): string {
  * Hauptressourcen stehen mit ihren Unterressourcen direkt darunter (eingerückt
  * mit Baumlinie), statt nach `parentId` sortiert am Ende der Liste. Geräte
  * stehen in einer Spalte (Einlass/Auslass als Symbol), die Regeln als Pillen.
- * Antippen der Zeile öffnet den Dialog; Seltenes (Unterressource anlegen,
+ * Antippen der Zeile öffnet die Detailseite `/areas/[id]`; Seltenes (Unterressource anlegen,
  * Geräte zuordnen, Löschen) liegt im Mehr-Menü.
  */
 export function AreasCard({ areas, devices = [], readonly, annyResources, annyServices, annyMappings }: AreasCardProps) {
+  const router = useRouter();
   const [dialog, setDialog] = useState<DialogState>({ open: false });
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -260,7 +263,7 @@ export function AreasCard({ areas, devices = [], readonly, annyResources, annySe
                       !readonly && "cursor-pointer",
                       depth === 0 && childCount > 0 && "bg-glass-tile/60",
                     )}
-                    onClick={() => !readonly && openEdit(area)}
+                    onClick={() => !readonly && router.push(`/areas/${area.id}`)}
                   >
                     {/* Name mit Einrückung je Ebene; Handy: Kurzfassung als Nebenzeile. Lange Namen brechen um. */}
                     <TableCell className="max-w-0 w-full whitespace-normal py-2 md:w-auto md:max-w-none md:min-w-48">
@@ -275,7 +278,12 @@ export function AreasCard({ areas, devices = [], readonly, annyResources, annySe
                         />
                         <div className="min-w-0">
                           <p className={cn("text-pretty font-medium", context ? "text-muted-foreground" : "text-foreground")}>
-                            {area.name}
+                            {readonly ? area.name : (
+                              // Echter Link für Tastatur, Mittelklick und Screenreader; die ganze Zeile führt ebenfalls hin.
+                              <Link href={`/areas/${area.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline focus-visible:underline">
+                                {area.name}
+                              </Link>
+                            )}
                           </p>
                           {childCount > 0 && (
                             <p className="text-[11px] text-muted-foreground max-sm:hidden">
@@ -329,9 +337,15 @@ export function AreasCard({ areas, devices = [], readonly, annyResources, annySe
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="min-w-56">
+                            <DropdownMenuItem asChild>
+                              <Link href={`/areas/${area.id}`}>
+                                <Eye />
+                                Details öffnen
+                              </Link>
+                            </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => openEdit(area)}>
                               <Pencil />
-                              Bearbeiten
+                              Schnell bearbeiten
                             </DropdownMenuItem>
                             {devices.length > 0 && (
                               <DropdownMenuItem onSelect={() => openEdit(area, "devices")}>
