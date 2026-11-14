@@ -491,7 +491,7 @@ function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowPr
               actions.primary.large ? "h-14 text-base" : "h-11",
               // Erfolg: Fläche und Glow in Grün (der Glow der Primärtaste wäre Indigo).
               primaryFb?.type === "ok" &&
-                "bg-success text-success-foreground shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_8px_20px_-10px_var(--success)] hover:bg-success/90",
+                "bg-success text-success-foreground shadow-[0_1px_2px_oklch(0_0_0/12%)] hover:bg-success/90",
               // Fehler im Dunkeln: Rot ist dort hell und trägt dunkle Schrift
               // (wie die Zustandspille), Weiß darauf hätte nur 4:1.
               primaryFb?.type === "err" && "dark:bg-destructive dark:text-background",

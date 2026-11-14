@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 export type SegmentedSize = "sm" | "md";
 
 /**
- * Glas-Kapsel. Passt sie nicht in eine Zeile, bricht sie um und die Segmente
+ * Segmentleiste (graue Mulde). Passt sie nicht in eine Zeile, bricht sie um und die Segmente
  * füllen jede Zeile – nie seitlich scrollen (docs/design-regeln.md, Abschnitt 6).
  */
 export function segmentedStripClass(stretch: boolean, className?: string) {
@@ -21,13 +21,13 @@ export function segmentedStripClass(stretch: boolean, className?: string) {
 }
 
 /**
- * Ein Segment; aktiv hebt es die helle Pille hervor. Die Schriftstärke bleibt
+ * Ein Segment; aktiv hebt es die weiße Fläche hervor. Die Schriftstärke bleibt
  * gleich (fetter wäre breiter, die Kapsel spränge beim Wechseln), auf dem Handy
  * stehen die Segmente enger (10 px Innenabstand), damit mehr in eine Zeile passen.
  */
 export function segmentedItemClass(size: SegmentedSize, stretch: boolean, active: boolean) {
   return cn(
-    "press inline-flex shrink-0 grow items-center justify-center gap-1.5 rounded-full whitespace-nowrap font-medium outline-none",
+    "press inline-flex shrink-0 grow items-center justify-center gap-1.5 rounded-[calc(var(--radius-control)-1px)] whitespace-nowrap font-medium outline-none",
     "text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
     size === "sm" ? "h-7 px-3 text-xs max-sm:px-2.5" : "h-[34px] px-3.5 text-[13px] max-sm:px-2.5",
     stretch && "flex-1",

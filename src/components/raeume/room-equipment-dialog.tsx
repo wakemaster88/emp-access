@@ -155,7 +155,7 @@ export function RoomEquipmentDialog({
                   className={cn(
                     "flex aspect-square items-center justify-center rounded-xl border transition",
                     icon === key
-                      ? "border-transparent bg-gradient-to-br from-primary to-violet-500 text-white shadow-md"
+                      ? "border-transparent bg-primary-fill text-white"
                       : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground",
                   )}
                 >

@@ -635,8 +635,8 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
         "gap-3",
         // Über dem Limit bzw. ab 80 % Auslastung: Karte in der Zustandsfarbe getönt.
         overLimit
-          ? "border-destructive/40 bg-gradient-to-b from-destructive/10 to-transparent"
-          : utilTone === "amber" && "border-warning/45 bg-gradient-to-b from-warning/10 to-transparent",
+          ? "border-destructive/40 bg-destructive/[0.05]"
+          : utilTone === "amber" && "border-warning/45 bg-warning/[0.05]",
         area.id === null && "border-dashed",
       )}>
       <CardHeader>

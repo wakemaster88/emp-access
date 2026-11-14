@@ -100,20 +100,20 @@ const TONE: Record<MowerTone, { text: string; dot: string; ping?: boolean; card:
     text: "text-emerald-700 dark:text-emerald-400",
     dot: "bg-emerald-500",
     ping: true,
-    card: "border-emerald-400/35 bg-gradient-to-b from-emerald-500/10 to-transparent",
+    card: "border-emerald-400/35 bg-emerald-500/[0.05]",
     marker: "#10b981",
   },
   paused: {
     text: "text-amber-700 dark:text-amber-400",
     dot: "bg-amber-500",
-    card: "border-amber-400/35 bg-gradient-to-b from-amber-500/10 to-transparent",
+    card: "border-amber-400/35 bg-amber-500/[0.05]",
     marker: "#f59e0b",
   },
   returning: {
     text: "text-sky-700 dark:text-sky-400",
     dot: "bg-sky-500",
     ping: true,
-    card: "border-sky-400/35 bg-gradient-to-b from-sky-500/10 to-transparent",
+    card: "border-sky-400/35 bg-sky-500/[0.05]",
     marker: "#0ea5e9",
   },
   charging: {

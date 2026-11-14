@@ -289,9 +289,9 @@ function RunningCard({
   const step = p.current != null ? run.steps[p.current] : null;
   const factor = schedule.smartRain && irrigation.recommendation ? irrigation.recommendation.factor : 1;
   return (
-    <div className="rounded-tile border border-sky-400/35 bg-gradient-to-b from-sky-500/12 to-transparent p-3">
+    <div className="rounded-tile border border-sky-400/35 bg-sky-500/[0.05] p-3">
       <div className="flex items-start gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white shadow-[0_6px_14px_-6px_rgba(14,165,233,0.8)]">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white">
           <Droplets className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">

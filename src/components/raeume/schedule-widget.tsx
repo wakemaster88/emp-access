@@ -115,7 +115,7 @@ export function ScheduleWidget({
     <div
       className={cn(
         "overflow-hidden rounded-tile border p-3.5",
-        state.inside ? "border-emerald-400/35 bg-gradient-to-b from-emerald-500/10 to-transparent" : "glass-tile",
+        state.inside ? "border-emerald-400/35 bg-emerald-500/[0.05]" : "glass-tile",
       )}
     >
       <div className="flex items-start gap-3">
@@ -157,7 +157,7 @@ export function ScheduleWidget({
             className={cn(
               "flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium tabular-nums",
               heatState.inside
-                ? "bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-sm shadow-orange-500/30"
+                ? "bg-orange-500 text-white"
                 : "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
             )}
             title={`Heizfenster: ${pre} Min. vor Öffnung bis ${post} Min. nach Schluss`}
@@ -187,14 +187,14 @@ export function ScheduleWidget({
         {heat.map((b, i) => (
           <div
             key={`h${i}`}
-            className="absolute top-1.5 h-6 rounded-full bg-gradient-to-r from-orange-300/50 via-orange-400/40 to-rose-300/50 ring-1 ring-orange-300/60 dark:from-orange-500/25 dark:to-rose-500/25"
+            className="absolute top-1.5 h-6 rounded-full bg-orange-400/35 ring-1 ring-orange-300/60 dark:bg-orange-500/25"
             style={{ left: pct(b.from), width: width(b) }}
           />
         ))}
         {open.map((b, i) => (
           <div
             key={`o${i}`}
-            className="absolute top-3 h-3 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 shadow-sm shadow-emerald-500/40"
+            className="absolute top-3 h-3 rounded-full bg-emerald-500"
             style={{ left: pct(b.from), width: width(b) }}
           />
         ))}
@@ -217,7 +217,7 @@ export function ScheduleWidget({
         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
           {open.length > 0 && (
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-3 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500" />
+              <span className="h-2 w-3 rounded-full bg-emerald-500" />
               Betrieb {open.map((b) => `${fmtMin(b.from)}–${fmtMin(b.to)}`).join(", ")}
             </span>
           )}

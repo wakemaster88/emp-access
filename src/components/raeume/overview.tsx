@@ -171,9 +171,9 @@ function MiniToggle({
 }
 
 const TINT: Record<string, string> = {
-  alert: "border-destructive/40 bg-gradient-to-b from-destructive/10 to-transparent",
-  present: "border-violet-400/40 bg-gradient-to-b from-violet-500/12 to-transparent",
-  open: "border-emerald-400/35 bg-gradient-to-b from-emerald-500/10 to-transparent",
+  alert: "border-destructive/40 bg-destructive/[0.05]",
+  present: "border-violet-400/40 bg-violet-500/[0.05]",
+  open: "border-emerald-400/35 bg-emerald-500/[0.05]",
   closed: "",
 };
 
@@ -272,8 +272,8 @@ function RoomTile({
       <div className="flex items-start gap-3">
         <span
           className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_6px_16px_-6px_var(--primary)]",
-            state === "alert" ? "bg-gradient-to-br from-destructive to-rose-400" : "bg-gradient-to-br from-primary to-violet-500",
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white",
+            state === "alert" ? "bg-destructive-fill" : "bg-primary-fill",
           )}
         >
           <RoomIcon room={s.room} className="h-5 w-5" />

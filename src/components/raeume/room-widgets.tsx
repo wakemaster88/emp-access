@@ -183,18 +183,18 @@ function toneFor(device: RoomDevice): Tone {
 
 const TONE_ON: Record<Tone, string> = {
   light:
-    "border-amber-300/60 bg-gradient-to-br from-amber-100 via-amber-50 to-white shadow-[0_8px_24px_-8px_rgba(245,158,11,0.55)] dark:border-amber-400/30 dark:from-amber-500/25 dark:via-amber-500/10 dark:to-transparent",
+    "border-amber-300/60 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-500/15",
   heat:
-    "border-orange-300/60 bg-gradient-to-br from-orange-100 via-rose-50 to-white shadow-[0_8px_24px_-8px_rgba(249,115,22,0.55)] dark:border-orange-400/30 dark:from-orange-500/25 dark:via-rose-500/10 dark:to-transparent",
+    "border-orange-300/60 bg-orange-50 dark:border-orange-400/30 dark:bg-orange-500/15",
   air:
-    "border-sky-300/60 bg-gradient-to-br from-sky-100 via-cyan-50 to-white shadow-[0_8px_24px_-8px_rgba(14,165,233,0.5)] dark:border-sky-400/30 dark:from-sky-500/25 dark:via-cyan-500/10 dark:to-transparent",
+    "border-sky-300/60 bg-sky-50 dark:border-sky-400/30 dark:bg-sky-500/15",
   default:
-    "border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent shadow-[0_8px_24px_-10px_var(--primary)]",
+    "border-primary/30 bg-primary/[0.07]",
 };
 const TONE_ICON_ON: Record<Tone, string> = {
-  light: "bg-amber-400 text-white shadow-[0_0_16px_rgba(251,191,36,0.8)]",
-  heat: "bg-orange-500 text-white shadow-[0_0_16px_rgba(249,115,22,0.7)]",
-  air: "bg-sky-500 text-white shadow-[0_0_16px_rgba(14,165,233,0.6)]",
+  light: "bg-amber-400 text-white",
+  heat: "bg-orange-500 text-white",
+  air: "bg-sky-500 text-white",
   default: "bg-primary-fill text-primary-foreground",
 };
 
@@ -426,7 +426,7 @@ export function ZoneCard({
       className={cn(
         "relative overflow-hidden rounded-tile border p-3 transition-colors",
         playing
-          ? "border-violet-400/40 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-indigo-600 text-white shadow-[0_10px_30px_-10px_rgba(139,92,246,0.7)]"
+          ? "border-violet-400/40 bg-violet-600 text-white"
           : "glass-tile",
       )}
     >
@@ -652,7 +652,7 @@ export function ActivityChart({
               <span
                 className={cn(
                   "flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white",
-                  p.listType === "BLACKLIST" ? "bg-destructive" : "bg-gradient-to-br from-indigo-500 to-violet-500",
+                  p.listType === "BLACKLIST" ? "bg-destructive" : "bg-primary-fill",
                 )}
               >
                 {initials(p.name)}

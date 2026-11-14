@@ -20,7 +20,7 @@ const ADMIN_TABS = [
 ] as const;
 
 const ITEM =
-  "press relative flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-full text-[10.5px] font-medium select-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  "press relative flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-[14px] text-[10.5px] font-medium select-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 /**
  * Untere Tab-Leiste fuer Handys (unter md) im Stil von iOS 26: eine
@@ -50,7 +50,7 @@ export function MobileTabBar({ role }: { role?: string }) {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   ITEM,
-                  active ? "glass-pill-active text-primary" : "text-muted-foreground active:text-foreground",
+                  active ? "bg-primary/[0.08] text-primary dark:bg-primary/15" : "text-muted-foreground active:text-foreground",
                 )}
               >
                 <tab.icon className="h-5 w-5" strokeWidth={active ? 2.4 : 2} />
@@ -66,7 +66,7 @@ export function MobileTabBar({ role }: { role?: string }) {
             aria-expanded={menu?.open}
             className={cn(
               ITEM,
-              menu?.open ? "glass-pill-active text-primary" : "text-muted-foreground active:text-foreground",
+              menu?.open ? "bg-primary/[0.08] text-primary dark:bg-primary/15" : "text-muted-foreground active:text-foreground",
             )}
           >
             <Menu className="h-5 w-5" />

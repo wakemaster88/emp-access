@@ -121,7 +121,7 @@ function ZoneTile({
         "glass-tile press flex min-h-11 items-center gap-2.5 p-2.5 text-left hover:bg-glass-strong",
         // Musik läuft = Violett (Zustandsvokabular): aktive Kachel mit Verlauf.
         status.isPlaying &&
-          "border-violet-400/45 bg-gradient-to-br from-violet-400/25 to-violet-400/5"
+          "border-violet-400/45 bg-violet-400/15"
       )}
     >
       {pending ? (

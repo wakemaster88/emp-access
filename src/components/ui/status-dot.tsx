@@ -32,21 +32,6 @@ const TONE_CLASSES: Record<StatusTone, string> = {
   live: "bg-emerald-500 dark:bg-emerald-400",
 };
 
-/** Im Dunkeln leuchten aktive Punkte leicht (wie in den Raum-Mockups). */
-const GLOW_CLASSES: Record<StatusTone, string> = {
-  success: "dark:shadow-[0_0_8px_var(--success)]",
-  warning: "dark:shadow-[0_0_8px_var(--warning)]",
-  danger: "dark:shadow-[0_0_8px_var(--destructive)]",
-  info: "dark:shadow-[0_0_8px_var(--info)]",
-  neutral: "",
-  primary: "dark:shadow-[0_0_8px_var(--primary)]",
-  light: "dark:shadow-[0_0_8px_var(--color-amber-400)]",
-  music: "dark:shadow-[0_0_8px_var(--color-violet-400)]",
-  heat: "dark:shadow-[0_0_8px_var(--color-orange-400)]",
-  water: "dark:shadow-[0_0_8px_var(--color-sky-400)]",
-  live: "dark:shadow-[0_0_8px_var(--color-emerald-400)]",
-};
-
 interface StatusDotProps {
   tone?: StatusTone;
   /** Pulsierender Ring – für „lebt gerade“ (online, spielt, läuft). */
@@ -72,7 +57,7 @@ export function StatusDot({ tone = "neutral", pulse = false, size = "sm", classN
           className={cn("absolute inset-0 rounded-full opacity-60 animate-ping motion-reduce:animate-none", TONE_CLASSES[tone])}
         />
       )}
-      <span className={cn("relative inline-flex h-full w-full rounded-full", TONE_CLASSES[tone], GLOW_CLASSES[tone])} />
+      <span className={cn("relative inline-flex h-full w-full rounded-full", TONE_CLASSES[tone])} />
       {label && <span className="sr-only">{label}</span>}
     </span>
   );

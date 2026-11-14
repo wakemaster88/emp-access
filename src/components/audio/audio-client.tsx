@@ -1394,8 +1394,8 @@ function ZoneCard({
           className={cn(
             "glass-tile flex items-center gap-3 p-2.5 transition-colors",
             state.tone === "music" &&
-              "border-violet-400/45 bg-gradient-to-br from-violet-400/25 to-violet-400/5",
-            state.tone === "info" && "border-info/40 bg-gradient-to-br from-info/14 to-info/[0.03]"
+              "border-violet-400/45 bg-violet-400/15",
+            state.tone === "info" && "border-info/40 bg-info/[0.06]"
           )}
         >
           <IconChip

@@ -6,25 +6,25 @@ export type NoticeTone = "info" | "success" | "warning" | "danger" | "neutral";
 
 const TONE: Record<NoticeTone, { box: string; chip: string; text: string; icon: LucideIcon }> = {
   info: {
-    box: "border-info/40 bg-gradient-to-br from-info/14 to-info/[0.03]",
+    box: "border-info/25 bg-info/[0.06]",
     chip: "bg-info text-info-foreground",
     text: "text-info",
     icon: Info,
   },
   success: {
-    box: "border-success/40 bg-gradient-to-br from-success/14 to-success/[0.03]",
+    box: "border-success/25 bg-success/[0.06]",
     chip: "bg-success text-success-foreground",
     text: "text-success",
     icon: CheckCircle2,
   },
   warning: {
-    box: "border-warning/45 bg-gradient-to-br from-warning/16 to-warning/[0.03]",
+    box: "border-warning/30 bg-warning/[0.07]",
     chip: "bg-warning text-warning-foreground",
     text: "text-warning",
     icon: AlertTriangle,
   },
   danger: {
-    box: "border-destructive/45 bg-gradient-to-br from-destructive/14 to-destructive/[0.03]",
+    box: "border-destructive/25 bg-destructive/[0.06]",
     chip: "bg-destructive-fill text-white",
     text: "text-destructive",
     icon: OctagonAlert,

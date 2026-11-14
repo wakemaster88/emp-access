@@ -75,7 +75,7 @@ export function NetworkWidget({ items, nowMs }: { items: NetworkItem[]; nowMs: n
         <span className="font-semibold tabular-nums text-foreground">{online}</span> von {items.length} online
         <span className="ml-auto flex h-1.5 w-24 overflow-hidden rounded-full bg-muted">
           <span
-            className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-500"
+            className="h-full rounded-full bg-emerald-500"
             style={{ width: `${items.length ? (online / items.length) * 100 : 0}%` }}
           />
         </span>
@@ -91,7 +91,7 @@ export function NetworkWidget({ items, nowMs }: { items: NetworkItem[]; nowMs: n
                 key={item.key}
                 className={cn(
                   "relative overflow-hidden rounded-tile border p-3",
-                  s === "online" ? "border-emerald-400/35 bg-gradient-to-b from-emerald-500/10 to-transparent" : "glass-tile",
+                  s === "online" ? "border-emerald-400/35 bg-emerald-500/[0.05]" : "glass-tile",
                 )}
                 title={item.inferred ? "Über Standort zugeordnet" : undefined}
               >
@@ -100,7 +100,7 @@ export function NetworkWidget({ items, nowMs }: { items: NetworkItem[]; nowMs: n
                     className={cn(
                       "flex h-8 w-8 items-center justify-center rounded-full",
                       s === "online"
-                        ? "bg-emerald-500 text-white shadow-[0_0_14px_rgba(16,185,129,0.5)]"
+                        ? "bg-emerald-500 text-white"
                         : "bg-muted text-muted-foreground",
                     )}
                   >
