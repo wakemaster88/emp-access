@@ -76,6 +76,7 @@ export async function GET() {
           musicTimes: true,
           musicOpenOffset: true,
           musicCloseOffset: true,
+          musicOverrideUntil: true,
           externalSender: true,
           device: { select: { lastUpdate: true } },
           account: { select: { timezone: true } },

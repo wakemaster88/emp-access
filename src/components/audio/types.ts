@@ -48,6 +48,8 @@ export interface ZoneRow {
   /** Versatz in Minuten gegenüber Betriebsbeginn/-ende (nur OPERATING). */
   musicOpenOffset: number;
   musicCloseOffset: number;
+  /** Manuelles Play außerhalb des Fensters gilt bis hierhin (ISO), sonst null. */
+  musicOverrideUntil: string | null;
   /** Empfänger, über die ein Sender die Zone übernehmen darf. */
   airplayEnabled: boolean;
   bluetoothEnabled: boolean;

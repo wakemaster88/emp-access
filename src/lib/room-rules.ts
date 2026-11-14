@@ -331,6 +331,7 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
       musicTimes: true,
       musicOpenOffset: true,
       musicCloseOffset: true,
+      musicOverrideUntil: true,
       keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
     },
   });

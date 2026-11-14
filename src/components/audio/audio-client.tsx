@@ -1167,31 +1167,38 @@ function ZoneCard({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {/* Start und Stopp teilen sich am Telefon die Breite, der Regler
-              bekommt darunter eine eigene Zeile – gequetscht daneben war er
-              nicht zu bedienen. */}
+          {/* Immer nur ein Knopf: Stopp, solange die Zone spielt, sonst Start.
+              Am Telefon volle Breite, der Regler bekommt darunter eine eigene
+              Zeile – gequetscht daneben war er nicht zu bedienen. */}
           <div className="flex w-full gap-2 sm:w-auto">
-            <Button
-              onClick={onPlay}
-              disabled={busy}
-              className="h-11 flex-1 gap-1.5 sm:h-8 sm:flex-none"
-            >
-              {busy ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-              Start
-            </Button>
-            <Button
-              variant="outline"
-              onClick={onStop}
-              disabled={busy}
-              className="h-11 flex-1 gap-1.5 sm:h-8 sm:flex-none"
-            >
-              <Square className="h-3.5 w-3.5" />
-              Stopp
-            </Button>
+            {isPlaying ? (
+              <Button
+                variant="outline"
+                onClick={onStop}
+                disabled={busy}
+                className="h-11 flex-1 gap-1.5 sm:h-8 sm:flex-none"
+              >
+                {busy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Square className="h-3.5 w-3.5" />
+                )}
+                Stopp
+              </Button>
+            ) : (
+              <Button
+                onClick={onPlay}
+                disabled={busy}
+                className="h-11 flex-1 gap-1.5 sm:h-8 sm:flex-none"
+              >
+                {busy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Play className="h-3.5 w-3.5" />
+                )}
+                Start
+              </Button>
+            )}
           </div>
 
           <div className="flex w-full items-center gap-2 sm:w-auto sm:min-w-[180px] sm:flex-1">
