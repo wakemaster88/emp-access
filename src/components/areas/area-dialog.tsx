@@ -59,6 +59,8 @@ interface AreaDialogProps {
   annyMappings?: Record<string, number>;
   open: boolean;
   onClose: () => void;
+  /** Nach dem Löschen (Detailseite: zurück zur Liste). Standard: Seite neu laden. */
+  onDeleted?: () => void;
 }
 
 const EMPTY = {
@@ -176,7 +178,7 @@ function DeviceChecklist({
 export function AreaDialog({
   area, presetParentId = null, initialTab = "settings", askDelete = false, allAreas, devices = [],
   annyResources = [], annyServices = [], annyMappings = {},
-  open, onClose,
+  open, onClose, onDeleted,
 }: AreaDialogProps) {
   const router = useRouter();
   const isNew = !area;
@@ -335,7 +337,8 @@ export function AreaDialog({
       throw new Error(data.error ?? "Löschen hat nicht geklappt.");
     }
     onClose();
-    router.refresh();
+    if (onDeleted) onDeleted();
+    else router.refresh();
   }
 
   // Kein Ring: die Ressource selbst und ihre Unterressourcen scheiden als Elternteil aus.
