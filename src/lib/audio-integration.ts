@@ -10,7 +10,8 @@
  */
 import type { Prisma } from "@prisma/client";
 import type { TenantDb } from "@/lib/prisma";
-import { clampVolume, playlistPayload, queueZoneCommand } from "@/lib/audio";
+import { clampVolume, manualMusicOverrideUntil, playlistPayload, queueZoneCommand } from "@/lib/audio";
+import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { isAudioDevice, withDeviceControlInfo, type ControllableDevice } from "@/lib/device-controls";
 
 type Db = TenantDb;
@@ -78,7 +79,45 @@ export type AudioControlInput = {
    * gewählten Webradio bleibt. Freie URLs bleiben einmalig, wenn false.
    */
   persistStreamUrl?: boolean;
+  /**
+   * Kommt der Befehl aus einem Audio-Zeitplan? Dann ist es Automatik und kein
+   * manueller Eingriff – das Musikfenster wird nicht übersteuert.
+   */
+  fromSchedule?: boolean;
 };
+
+/**
+ * Manuell geht vor Automatik: Ein manuelles Play außerhalb des Musikfensters
+ * erlaubt der Zone Musik bis zum nächsten Fensterbeginn (längstens
+ * Mitternacht), ein manueller Stopp hebt das wieder auf. Ohne diesen Vorrang
+ * verwirft der Abspieler das Play stillschweigend.
+ */
+async function setManualMusicOverride(db: Db, zoneId: number, play: boolean): Promise<void> {
+  if (!play) {
+    await db.audioZone.update({ where: { id: zoneId }, data: { musicOverrideUntil: null } });
+    return;
+  }
+  const zone = await db.audioZone.findFirst({
+    where: { id: zoneId },
+    select: {
+      musicMode: true,
+      musicTimes: true,
+      musicOpenOffset: true,
+      musicCloseOffset: true,
+      account: { select: { timezone: true } },
+      keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
+    },
+  });
+  if (!zone) return;
+  const operating = zone.keyRoom?.operatingSchedule;
+  const until = manualMusicOverrideUntil(
+    zone,
+    operating ? toScheduleSpec(operating) : null,
+    new Date(),
+    zone.account.timezone,
+  );
+  await db.audioZone.update({ where: { id: zoneId }, data: { musicOverrideUntil: until } });
+}
 
 export type AudioControlResult =
   | { ok: true; volume?: number }
@@ -223,6 +262,7 @@ export async function controlAudioZone(
       where: { id: zone.id },
       data: { sourceKind: "SILENCE" },
     });
+    if (!input.fromSchedule) await setManualMusicOverride(db, zone.id, false);
     return { ok: true };
   }
 
@@ -235,7 +275,9 @@ export async function controlAudioZone(
 
   const trackId = input.trackId != null ? Number(input.trackId) : null;
   if (trackId != null && Number.isInteger(trackId) && trackId > 0) {
-    return playTrack(db, accountId, zone, trackId);
+    const result = await playTrack(db, accountId, zone, trackId);
+    if (result.ok && !input.fromSchedule) await setManualMusicOverride(db, zone.id, true);
+    return result;
   }
 
   const playlistGiven = input.playlistId != null && input.playlistId !== "";
@@ -284,6 +326,7 @@ export async function controlAudioZone(
           : {}),
       },
     });
+    if (!input.fromSchedule) await setManualMusicOverride(db, zone.id, true);
     return { ok: true };
   }
 
@@ -313,6 +356,7 @@ export async function controlAudioZone(
     where: { id: zone.id },
     data: { sourceKind: "PLAYLIST", playlistId },
   });
+  if (!input.fromSchedule) await setManualMusicOverride(db, zone.id, true);
   return { ok: true };
 }
 

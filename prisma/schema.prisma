@@ -2274,6 +2274,10 @@ model AudioZone {
   /// Raum mit Betriebszeit wirkt die Kopplung nicht.
   musicOpenOffset    Int                @default(0)
   musicCloseOffset   Int                @default(0)
+  /// Manuelles Play ausserhalb des Musikfensters: Bis hierhin gilt die Zone
+  /// als "Musik erlaubt" (naechster Fensterbeginn, laengstens Tagesende).
+  /// Ein manueller Stopp loescht den Wert. Manuell geht vor Automatik.
+  musicOverrideUntil DateTime?
   /// AirPlay-Empfaenger aktiv: ein Sender im WLAN darf die Zone uebernehmen.
   airplayEnabled     Boolean            @default(false)
   /// Bluetooth-Empfaenger (A2DP-Sink) aktiv.

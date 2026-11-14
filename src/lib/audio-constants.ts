@@ -9,6 +9,7 @@ import {
   type ScheduleSpec,
   type SpanOffsets,
 } from "./operating-hours";
+import { addDaysToYmd, tzInstant, tzYmd } from "./tz-time";
 
 /** Ansagen, die zu lang sind, blockieren die Zone unnötig lange. */
 export const MAX_ANNOUNCEMENT_CHARS = 600;
@@ -411,6 +412,11 @@ export interface MusicWindowSettings {
   musicTimes: unknown;
   musicOpenOffset: number;
   musicCloseOffset: number;
+  /**
+   * Manuelles Play außerhalb des Fensters: bis dahin gilt Musik als erlaubt.
+   * Manuell geht vor Automatik, siehe `manualMusicOverrideUntil`.
+   */
+  musicOverrideUntil?: Date | string | null;
 }
 
 export interface MusicWindowState {
@@ -418,6 +424,15 @@ export interface MusicWindowState {
   allowed: boolean;
   /** Wann der Zustand kippt; null = bis auf Weiteres. */
   until: Date | null;
+  /** Erlaubt nur, weil jemand manuell gestartet hat. */
+  manual?: boolean;
+}
+
+/** Zeitpunkt aus DB oder JSON; null, wenn leer oder ungültig. */
+function toDate(value: Date | string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /**
@@ -453,7 +468,35 @@ export function musicWindowState(
   const source = musicWindowSource(zone, roomSchedule);
   if (!source) return { allowed: true, until: null };
   const state = operatingSpanState(source.spec, now, timeZone, source.offsets);
+  if (!state.inside) {
+    const override = toDate(zone.musicOverrideUntil);
+    if (override && override.getTime() > now.getTime()) {
+      return { allowed: true, until: override, manual: true };
+    }
+  }
   return { allowed: state.inside, until: state.until };
+}
+
+/**
+ * Manuelles Play geht vor der Automatik: Liegt die Zone gerade außerhalb
+ * ihres Musikfensters, darf sie bis zum nächsten Fensterbeginn spielen,
+ * längstens bis Mitternacht (damit Musik nicht versehentlich die ganze Nacht
+ * läuft). Im Fenster braucht es keinen Vorrang – dann null.
+ */
+export function manualMusicOverrideUntil(
+  zone: MusicWindowSettings,
+  roomSchedule: ScheduleSpec | null | undefined,
+  now: Date,
+  timeZone: string | null | undefined
+): Date | null {
+  const source = musicWindowSource(zone, roomSchedule);
+  if (!source) return null;
+  const state = operatingSpanState(source.spec, now, timeZone, source.offsets);
+  if (state.inside) return null;
+  const midnight = tzInstant(addDaysToYmd(tzYmd(now, timeZone), 1), "00:00", timeZone);
+  const candidates = [state.until, midnight].filter((d): d is Date => d !== null);
+  if (candidates.length === 0) return null;
+  return new Date(Math.min(...candidates.map((d) => d.getTime())));
 }
 
 /** Wochentage als "Di–Fr", "Sa, So" oder "täglich". */
@@ -525,6 +568,9 @@ export function describeMusicState(
       : null;
   }
   const state = musicWindowState(zone, roomSchedule, now, timeZone);
+  if (state.manual && state.until) {
+    return { text: `Musik manuell an bis ${describeInstant(state.until, now, timeZone)}`, warn: false };
+  }
   if (state.allowed) {
     return {
       text: state.until ? `Musik an bis ${describeInstant(state.until, now, timeZone)}` : "Musik an",

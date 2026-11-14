@@ -229,7 +229,7 @@ export async function runAudioScheduleTick(now = new Date()): Promise<AudioTickR
             select: { id: true, volume: true, defaultSource: true, streamId: true, streamUrl: true, playlistId: true },
           });
           for (const zone of zones) {
-            await controlAudioZone(db, account.id, zone, { action: "PLAY", persistStreamUrl: false });
+            await controlAudioZone(db, account.id, zone, { action: "PLAY", persistStreamUrl: false, fromSchedule: true });
           }
         } else if (schedule.action === "STOP") {
           await queueZoneCommand(db, account.id, due, "STOP", null, triggerKind);

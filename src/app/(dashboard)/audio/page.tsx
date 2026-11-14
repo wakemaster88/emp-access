@@ -151,6 +151,7 @@ export default async function AudioPage() {
             musicTimes: parseMusicTimes(z.musicTimes),
             musicOpenOffset: z.musicOpenOffset,
             musicCloseOffset: z.musicCloseOffset,
+            musicOverrideUntil: z.musicOverrideUntil?.toISOString() ?? null,
             airplayEnabled: z.airplayEnabled,
             bluetoothEnabled: z.bluetoothEnabled,
             externalName: z.externalName,

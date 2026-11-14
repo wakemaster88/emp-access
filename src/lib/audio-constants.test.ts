@@ -4,6 +4,7 @@ import {
   describeMusicState,
   describeMusicWindow,
   formatMusicTimes,
+  manualMusicOverrideUntil,
   musicWindowState,
   parseMusicTimes,
   parseOffsetMinutes,
@@ -150,4 +151,36 @@ test("Zustand als Text, mit Warnung bei Betriebszeit ohne Saison", () => {
   });
   assert.equal(describeMusicState({ ...operating(), musicMode: "MANUAL" }, daily(), now, TZ), null);
   assert.equal(describeMusicState(operating(), null, now, TZ)?.warn, true);
+});
+
+test("manuelles Play nach Feierabend gilt bis Mitternacht, nicht die ganze Nacht", () => {
+  // Sa 14.11.2026, 16:20 Berlin (UTC+1) – Park hat um 20 Uhr zu, hier 21:00.
+  const now = new Date("2026-11-14T20:00:00Z");
+  const until = manualMusicOverrideUntil(operating(), daily(), now, TZ);
+  assert.equal(until?.toISOString(), "2026-11-14T23:00:00.000Z");
+
+  const zone = { ...operating(), musicOverrideUntil: until };
+  const state = musicWindowState(zone, daily(), now, TZ);
+  assert.deepEqual(state, { allowed: true, until, manual: true });
+  assert.equal(describeMusicState(zone, daily(), now, TZ)?.text, "Musik manuell an bis morgen 00:00");
+
+  // Nach Ablauf greift die Automatik wieder.
+  const later = new Date("2026-11-14T23:30:00Z");
+  assert.equal(musicWindowState(zone, daily(), later, TZ).allowed, false);
+});
+
+test("manuelles Play vor Betriebsbeginn gilt bis zum Fensterbeginn", () => {
+  // 08:00 Berlin, Fenster öffnet um 10:00.
+  const now = new Date("2026-11-14T07:00:00Z");
+  const until = manualMusicOverrideUntil(operating(), daily(), now, TZ);
+  assert.equal(until?.toISOString(), "2026-11-14T09:00:00.000Z");
+});
+
+test("im Musikfenster oder ohne Automatik braucht manuelles Play keinen Vorrang", () => {
+  const inside = new Date("2026-11-14T12:00:00Z");
+  assert.equal(manualMusicOverrideUntil(operating(), daily(), inside, TZ), null);
+  assert.equal(manualMusicOverrideUntil({ ...operating(), musicMode: "MANUAL" }, daily(), inside, TZ), null);
+  // Ein alter Vorrang ändert im Fenster nichts.
+  const zone = { ...operating(), musicOverrideUntil: "2026-11-14T23:00:00.000Z" };
+  assert.equal(musicWindowState(zone, daily(), inside, TZ).manual, undefined);
 });
