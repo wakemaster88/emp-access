@@ -1018,3 +1018,24 @@ Snapshot nicht verfügbar (Arbeit ohne Hub-Rechner).
 ### Nächster Schritt
 
 - Live ansehen: Zwei Personen vor einer Kamera, eine bekannt – Name muss bei ihr stehen und beim Gehen mitwandern. Springt er bei schnellen Bewegungen ab, Reichweite (0,8 × Boxgröße) anpassen.
+
+## 2026-11-14 (Kennzeichen nachts: Weißlicht beim Fahrzeug-Burst)
+
+Snapshot über Log-Abruf (HUB_LOG): `alpr.upload_noplate` 61, `alpr.plate` 8 seit 13.11. abends.
+
+### Befund
+
+- Aaron stand um kurz nach 18 Uhr innen am Tor, das Tor ging nicht auf. Kamera Eingang (RLC-811A) hat zwischen 18:00 und 18:08 fünf Fahrzeug-Bursts aufgenommen, die OCR las pro Bild etwas anderes („K-W 433“, „N-L 064“, „F-L 364“ …) mit Sicherheit 0,5–0,7. Kein exakter Treffer, also kein Öffnen (richtig so).
+- Seit Sonnenuntergang (ca. 16:35) 0 gelesene Kennzeichen bei 16 Fahrzeugen. In 30 Tagen zwischen 16 und 6 Uhr kein einziger Whitelist-Treffer. Tagsüber klappt es (DO-HM 338E um 10:45 und 11:07 erkannt, DoorBird offen).
+- Nachtbild der Kamera: große, helle, unscharfe Streifen direkt vor der Linse (Gitter/Zweige/Spinnennetz werfen das IR zurück). Vermutlich Hauptursache, muss vor Ort angesehen werden.
+
+### Änderung
+
+- `vehicle-light-rules.ts` (neu, rein): `isDark` (Sonnenauf-/-untergang aus `weather.ts`, 30 Min Puffer, ohne Wetter 17–8 Uhr) und `spotlightWanted` (nur Kameras mit Weißlicht und Name Eingang/Einfahrt/Tor/Zufahrt; `HUB_VEHICLE_SPOTLIGHT=0` aus, `=9,3` feste IDs).
+- `cameras.ts`: Vor dem Fahrzeug-Burst nachts Weißlicht an (`SetWhiteLed`), `HUB_VEHICLE_SPOTLIGHT_SETTLE_MS` (800 ms) warten, nach dem Burst wieder aus; spätestens nach 60 s aus. War das Licht schon manuell an, bleibt es unberührt. Improve-Zähler `alpr.spotlight`.
+- Geprüft: `tsc -p hub` 0 Fehler, Tests für die Regeln (7 neu).
+
+### Nächster Schritt
+
+- Vor Ort prüfen, was vor der Linse der Kamera Eingang hängt.
+- Nach ein paar Abenden `alpr.spotlight` gegen `alpr.plate` nach Sonnenuntergang vergleichen. Liest sie trotz Licht nichts, Belichtung/Shutter der Kamera nachts anpassen (nur mit Aarons OK).
