@@ -1,16 +1,17 @@
 import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { AreasTable, CreateAreaButton } from "@/components/areas/areas-table";
+import { AreasCard } from "@/components/areas/areas-table";
 
 interface AnnyExtra {
   mappings?: Record<string, number>;
   services?: string[];
   resources?: string[];
 }
+
+/** Gerätefunktionen mit Einlass/Auslass (wie im Gerätedialog). */
+const ACCESS_CATEGORIES = new Set(["DREHKREUZ", "TUER"]);
 
 export default async function AreasPage() {
   const session = await safeAuth();
@@ -23,15 +24,13 @@ export default async function AreasPage() {
   const [areas, devices, annyConfig, annyLinks] = await Promise.all([
     db.accessArea.findMany({
       where: accountFilter,
-      include: {
-        parent: true,
-        _count: { select: { tickets: true, children: true } },
-      },
-      orderBy: [{ parentId: "asc" }, { name: "asc" }],
+      include: { _count: { select: { tickets: true } } },
+      orderBy: { name: "asc" },
     }),
     db.device.findMany({
       where: accountFilter,
-      select: { id: true, name: true, accessIn: true, accessOut: true },
+      select: { id: true, name: true, type: true, category: true, isActive: true, accessIn: true, accessOut: true },
+      orderBy: { name: "asc" },
     }),
     db.apiConfig.findFirst({
       where: { ...accountFilter, provider: "ANNY" },
@@ -43,12 +42,23 @@ export default async function AreasPage() {
     }).catch(() => [] as { annyName: string; accessAreaId: number }[]),
   ]);
 
-  // Map devices to areas
-  const areaRows = areas.map((area) => ({
+  const areaRows = areas.map(({ _count, ...area }) => ({
     ...area,
+    ticketCount: _count.tickets,
     devicesIn: devices.filter((d) => d.accessIn === area.id).map((d) => ({ id: d.id, name: d.name })),
     devicesOut: devices.filter((d) => d.accessOut === area.id).map((d) => ({ id: d.id, name: d.name })),
   }));
+
+  // Für den Reiter „Geräte“: Scanner (Pi), Drehkreuze und Türen – und alles,
+  // was schon an einer Ressource hängt, damit es sich dort auch lösen lässt.
+  const accessDevices = devices
+    .filter((d) =>
+      d.type === "RASPBERRY_PI"
+      || (d.category != null && ACCESS_CATEGORIES.has(d.category))
+      || d.accessIn != null
+      || d.accessOut != null,
+    )
+    .map((d) => ({ id: d.id, name: d.name, isActive: d.isActive, accessIn: d.accessIn, accessOut: d.accessOut }));
 
   let annyResourceNames: string[] = [];
   let annyServiceNames: string[] = [];
@@ -70,35 +80,14 @@ export default async function AreasPage() {
     <>
       <Header title="Ressourcen" accountName={session.user.accountName} />
       <div className="page-content">
-        {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-        <Card flush>
-          <CardHeader>
-            <CardTitle>Alle Ressourcen ({areas.length})</CardTitle>
-            <CardDescription>
-              Resourcen definieren Zugangsbereiche. <Link href="/services" className="text-primary hover:underline">Services</Link> und <Link href="/subscriptions" className="text-primary hover:underline">Abos</Link> verknüpfen Resourcen mit <Link href="/tickets" className="text-primary hover:underline">Tickets</Link>.
-            </CardDescription>
-            {/* Primärhandlung oben rechts im Kartenkopf (docs/design-regeln.md, Abschnitt 13). */}
-            {!isSuperAdmin && (
-              <CardAction>
-                <CreateAreaButton
-                  areas={areaRows as never}
-                  annyResources={annyResourceNames}
-                  annyServices={annyServiceNames}
-                  annyMappings={annyMappings}
-                />
-              </CardAction>
-            )}
-          </CardHeader>
-          <CardContent>
-            <AreasTable
-              areas={areaRows as never}
-              readonly={isSuperAdmin}
-              annyResources={isSuperAdmin ? undefined : annyResourceNames}
-              annyServices={isSuperAdmin ? undefined : annyServiceNames}
-              annyMappings={isSuperAdmin ? undefined : annyMappings}
-            />
-          </CardContent>
-        </Card>
+        <AreasCard
+          areas={areaRows}
+          devices={isSuperAdmin ? [] : accessDevices}
+          readonly={isSuperAdmin}
+          annyResources={isSuperAdmin ? undefined : annyResourceNames}
+          annyServices={isSuperAdmin ? undefined : annyServiceNames}
+          annyMappings={isSuperAdmin ? undefined : annyMappings}
+        />
       </div>
     </>
   );
