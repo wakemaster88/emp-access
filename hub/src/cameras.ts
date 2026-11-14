@@ -28,6 +28,8 @@ import { findIpByMac, macForIp, normalizeMac } from "./netmap.js";
 import { lastScanResult } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
 import { improve } from "./improve-log.js";
+import { getForecast } from "./weather.js";
+import { isDark, spotlightWanted } from "./vehicle-light-rules.js";
 import { debounceEvents, newDebounceState, type DebounceState } from "./event-debounce.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 
@@ -784,7 +786,12 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
   }
   cam.snapshotInFlight = true;
   try {
-    return await uploadVehicleSnapshotBody(cam, cameraId);
+    const lightOff = await vehicleLightOn(cam, cameraId);
+    try {
+      return await uploadVehicleSnapshotBody(cam, cameraId);
+    } finally {
+      if (lightOff) await lightOff();
+    }
   } finally {
     cam.snapshotInFlight = false;
     // Kam während des Bursts eine neue VEHICLE-Flanke (zweiter Wagen direkt
@@ -797,6 +804,54 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
         log(`Fahrzeug-Snapshot ${cam.config.name} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
       );
     }
+  }
+}
+
+/** Wartezeit nach dem Einschalten, bis die Belichtung nachgezogen hat. */
+const VEHICLE_LIGHT_SETTLE_MS = Number(process.env.HUB_VEHICLE_SPOTLIGHT_SETTLE_MS || 800);
+/** Sicherheitsnetz: Licht spätestens nach dieser Zeit wieder aus. */
+const VEHICLE_LIGHT_MAX_MS = 60_000;
+
+/**
+ * Nachts an der Zufahrt: Weißlicht der Kamera für die Dauer des Bursts
+ * einschalten, damit das Kennzeichen lesbar wird (Aaron, 14.11.2026).
+ * War das Licht schon an (manuell), bleibt es unberührt. Liefert die
+ * Ausschalt-Funktion oder null, wenn nichts geschaltet wurde. Fehler
+ * blockieren den Burst nie.
+ */
+async function vehicleLightOn(cam: CameraRuntime, cameraId: number): Promise<(() => Promise<void>) | null> {
+  try {
+    if (process.env.HUB_VEHICLE_SPOTLIGHT?.trim() === "0") return null;
+    const forecast = await getForecast().catch(() => null);
+    if (!isDark(new Date(), forecast?.days ?? [])) return null;
+    const caps = capsCache.get(cameraId)?.caps ?? (await getCameraCaps(cameraId).catch(() => null));
+    if (!spotlightWanted({ id: cameraId, name: cam.config.name }, !!caps?.spotlight, process.env.HUB_VEHICLE_SPOTLIGHT)) {
+      return null;
+    }
+    await ensureLogin(cam);
+    const cur = (await cgi(cam, "GetWhiteLed", { channel: cam.config.channel }).catch(() => ({}))) as {
+      WhiteLed?: { state?: number };
+    };
+    if (cur.WhiteLed?.state === 1) return null;
+    await setSpotlight(cameraId, { on: true, brightness: 100 });
+    log(`Fahrzeug-Burst ${cam.config.name}: dunkel – Weißlicht an`);
+    improve("alpr", "spotlight", { cam: cam.config.name });
+    let done = false;
+    const off = async (): Promise<void> => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      await setSpotlight(cameraId, { on: false }).catch((e) =>
+        log(`Fahrzeug-Burst ${cam.config.name}: Weißlicht aus fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
+      );
+      log(`Fahrzeug-Burst ${cam.config.name}: Weißlicht aus`);
+    };
+    const timer = setTimeout(() => void off(), VEHICLE_LIGHT_MAX_MS);
+    await new Promise((r) => setTimeout(r, VEHICLE_LIGHT_SETTLE_MS));
+    return off;
+  } catch (e) {
+    log(`Fahrzeug-Burst ${cam.config.name}: Weißlicht nicht schaltbar: ${e instanceof Error ? e.message : e}`);
+    return null;
   }
 }
 
