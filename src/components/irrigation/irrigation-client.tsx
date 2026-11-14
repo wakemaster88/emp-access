@@ -1152,7 +1152,7 @@ function PumpGroup({
     // (docs/design-regeln.md, Abschnitte 2 und 3).
     <section className={cn(
       "glass-card overflow-hidden",
-      running && "border-sky-400/45 bg-gradient-to-b from-sky-500/12 to-transparent",
+      running && "border-sky-400/45 bg-sky-500/[0.05]",
     )}>
       {/* Pumpen-Kopf */}
       <div className="p-4 sm:p-[18px] space-y-4 border-b border-border">
@@ -1375,7 +1375,7 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
     // (aktive Kachel, docs/design-regeln.md, Abschnitt 15).
     <div className={cn(
       "glass-tile p-3 sm:p-4",
-      watering && "border-sky-400/45 bg-gradient-to-br from-sky-400/25 to-sky-400/5",
+      watering && "border-sky-400/45 bg-sky-400/15",
     )}>
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-2">

@@ -1039,3 +1039,19 @@ Snapshot über Log-Abruf (HUB_LOG): `alpr.upload_noplate` 61, `alpr.plate` 8 sei
 
 - Vor Ort prüfen, was vor der Linse der Kamera Eingang hängt.
 - Nach ein paar Abenden `alpr.spotlight` gegen `alpr.plate` nach Sonnenuntergang vergleichen. Liest sie trotz Licht nichts, Belichtung/Shutter der Kamera nachts anpassen (nur mit Aarons OK).
+
+## 2026-11-14 (Dashboard-Optik schlicht wie die Cloud)
+
+Nur Oberfläche, keine Logik. `/api/improve` war aus der Cloud-Sitzung nicht erreichbar, offene Hinweise darum nicht abgearbeitet.
+
+### Befund
+
+- Aaron wünscht das ganze Design „schlichter, clean, modern“ mit hellem Grund und gleichwertigem Hell/Dunkel. Das Hub-Dashboard spiegelt die Cloud-Tokens (design-regeln.md §21).
+
+### Änderung
+
+- `dashboard.css`: Glas-Tokens auf deckende Flächen gestellt (Karte weiß bzw. eine Stufe heller als der dunkle Grund, Haarlinien, kaum Schatten), Weichzeichner 0, Farbflecken des Grunds aus, Radien 16/12/10 px, neutraleres Grau. Klassen und Aufbau unverändert.
+
+### Nächster Schritt
+
+- Am Hub-Dashboard (Handy und Desktop, hell und dunkel) kurz ansehen, ob eine Fläche ohne Glas zu flach wirkt.

@@ -19,16 +19,16 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
 
   return (
     <>
-      {/* Desktop: feste Seitenleiste als Glasfläche (Breite bestimmt die Sidebar selbst). */}
+      {/* Desktop: feste Seitenleiste (Breite bestimmt die Sidebar selbst). */}
       <div className="hidden md:flex h-[100dvh] max-h-[100dvh] shrink-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
         <Sidebar userName={userName} role={role} onSignOut={onSignOut} />
       </div>
 
-      {/* Handy: Seitenleiste als Sheet von links, deckender als am Desktop. */}
+      {/* Handy: Seitenleiste als Sheet von links. */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetContent
           side="left"
-          className="w-[288px] max-w-[85vw] p-0 gap-0 rounded-r-card border-r border-glass-border bg-[color-mix(in_oklch,var(--background)_80%,transparent)] backdrop-blur-2xl backdrop-saturate-[1.8] text-sidebar-foreground [&>button]:text-sidebar-muted"
+          className="w-[288px] max-w-[85vw] p-0 gap-0 rounded-r-card border-r border-sidebar-border bg-sidebar text-sidebar-foreground [&>button]:text-sidebar-muted"
           showCloseButton={true}
           // Nicht die Suche fokussieren: sonst klappt auf dem Handy bei jedem Öffnen die Tastatur auf.
           onOpenAutoFocus={(e) => {
@@ -43,7 +43,7 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
         </SheetContent>
       </Sheet>
 
-      {/* Inhalt: transparent, der Farbgrund der Hülle scheint durch das Glas. */}
+      {/* Inhalt: liegt direkt auf dem ruhigen Grund der Hülle. */}
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scrollbar-thin pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-0">
         {children}
       </main>
@@ -54,8 +54,8 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
 }
 
 /**
- * Rahmen aller angemeldeten Seiten (Mandant und Superadmin): Farbgrund
- * (`page-ambient`), Seitenleiste aus Glas, scrollender Inhalt, schwebende
+ * Rahmen aller angemeldeten Seiten (Mandant und Superadmin): ruhiger Grund
+ * (`page-ambient`), feste Seitenleiste, scrollender Inhalt, schwebende
  * Tab-Leiste auf dem Handy.
  */
 export function DashboardShellInner(props: DashboardShellInnerProps) {

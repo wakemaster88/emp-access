@@ -37,7 +37,7 @@ export function LiveBroadcastCard({ live }: { live: LiveBroadcast }) {
 
   return (
     // Live ist Smaragd im Zustandsvokabular; Rot bleibt Störungen vorbehalten.
-    <Card className="border-success/40 bg-gradient-to-br from-success/14 to-success/[0.03]">
+    <Card className="border-success/40 bg-success/[0.06]">
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">

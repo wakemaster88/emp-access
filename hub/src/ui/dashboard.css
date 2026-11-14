@@ -1,7 +1,8 @@
 /*
- * Hub-Dashboard im Liquid-Glass-Stil der Cloud (docs/design-regeln.md §21).
- * Tokens wie src/app/globals.css: Glas-Karten mit Blur, Kacheln darin ohne Blur,
- * Indigo als Akzent, feste Toene fuer Zustaende. Keine Abhaengigkeiten.
+ * Hub-Dashboard im schlichten Stil der Cloud (docs/design-regeln.md §21).
+ * Tokens wie src/app/globals.css: deckende Karten mit Haarlinie auf ruhigem
+ * Grund, kein Weichzeichner, keine Farbflecken (die Namen --glass-* und --amb-*
+ * sind historisch), Indigo als Akzent, feste Toene fuer Zustaende.
  * Mobile-first; ab 900px wird aus dem schwebenden Dock eine Sidebar.
  * Dunkel ist der Leitstand-Look, hell bleibt voll unterstuetzt.
  */
@@ -9,16 +10,16 @@
 :root {
   color-scheme: light dark;
 
-  /* Radien: Karte 24, Kachel 18, Bedienelement 14, Pillen rund. */
-  --radius-card: 1.5rem;
-  --radius-tile: 1.125rem;
-  --radius-control: 0.875rem;
+  /* Radien: Karte 16, Kachel 12, Bedienelement 10, Pillen rund. */
+  --radius-card: 1rem;
+  --radius-tile: 0.75rem;
+  --radius-control: 0.625rem;
   --radius: var(--radius-control);
   --radius-lg: var(--radius-card);
   --radius-sm: 0.625rem;
 
   /* ---- Hell: Grundwerte wie in der Cloud ---- */
-  --bg: oklch(0.978 0.004 255);
+  --bg: oklch(0.984 0.0015 265);
   --text: oklch(0.2 0.03 262);
   --muted: oklch(0.5 0.03 258);
   --muted-on-tile: oklch(0.45 0.03 258);
@@ -66,18 +67,18 @@
   --count-bg: oklch(0.2 0.03 262 / 7%);
 
   /* Glas */
-  --glass-bg: oklch(1 0 0 / 58%);
-  --glass-bg-strong: oklch(1 0 0 / 78%);
-  --glass-tile: oklch(1 0 0 / 55%);
-  --glass-border: oklch(1 0 0 / 85%);
-  --glass-highlight: oklch(1 0 0 / 95%);
-  --glass-pill: oklch(1 0 0 / 92%);
-  --glass-shadow: 0 20px 50px -28px oklch(0.25 0.04 262 / 45%);
-  --glass-blur: 28px;
-  --strip-shadow: 0 8px 24px -16px oklch(0.25 0.04 262 / 35%);
+  --glass-bg: oklch(1 0 0);
+  --glass-bg-strong: oklch(0.21 0.008 265 / 5.5%);
+  --glass-tile: oklch(0.21 0.008 265 / 2.5%);
+  --glass-border: oklch(0.21 0.008 265 / 9%);
+  --glass-highlight: transparent;
+  --glass-pill: oklch(1 0 0);
+  --glass-shadow: 0 1px 2px 0 oklch(0.21 0.008 265 / 4%);
+  --glass-blur: 0px;
+  --strip-shadow: 0 0 #0000;
 
   /* Kacheln und Zeilen in Karten (ohne Blur) */
-  --tile-bg: oklch(1 0 0 / 72%);
+  --tile-bg: oklch(0.21 0.008 265 / 2.5%);
   --tile-border: oklch(0.2 0.03 262 / 7%);
   --tile-shadow: 0 1px 2px oklch(0.2 0.03 262 / 5%);
 
@@ -86,23 +87,23 @@
   --layer-glass-bg-strong: oklch(0.2 0.03 262 / 7%);
   --layer-glass-tile: oklch(0.2 0.03 262 / 4.5%);
   --layer-glass-border: oklch(0.2 0.03 262 / 10%);
-  --layer-glass-highlight: oklch(1 0 0 / 70%);
+  --layer-glass-highlight: transparent;
   --layer-glass-pill: oklch(1 0 0);
 
-  --sidebar: oklch(1 0 0 / 42%);
+  --sidebar: oklch(1 0 0);
   --sidebar-solid: oklch(0.975 0.006 262);
   --sidebar-fg: oklch(0.27 0.03 262);
   --sidebar-muted: oklch(0.48 0.03 258);
   --sidebar-primary: oklch(0.53 0.24 276);
   --sidebar-accent: oklch(0.2 0.03 262 / 6%);
   --sidebar-accent-fg: oklch(0.2 0.03 262);
-  --sidebar-border: oklch(1 0 0 / 80%);
+  --sidebar-border: oklch(0.21 0.008 265 / 8%);
 
   /* Seiten-Ambiente: vier weiche Farbflecken hinter dem Glas */
-  --amb-1: oklch(0.6 0.2 276 / 22%);
-  --amb-2: oklch(0.72 0.14 232 / 18%);
-  --amb-3: oklch(0.75 0.14 300 / 16%);
-  --amb-4: oklch(0.78 0.15 163 / 14%);
+  --amb-1: transparent;
+  --amb-2: transparent;
+  --amb-3: transparent;
+  --amb-4: transparent;
 
   --btn-shadow: 0 1px 2px oklch(0.2 0.03 262 / 6%);
 
@@ -164,7 +165,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: oklch(0.145 0.025 262);
+    --bg: oklch(0.155 0.004 265);
     --text: oklch(0.955 0.008 255);
     --muted: oklch(0.72 0.025 258);
     --muted-on-tile: oklch(0.79 0.02 258);
@@ -206,35 +207,35 @@
     --bar-border: oklch(1 0 0 / 8%);
     --badge-outline: oklch(1 0 0 / 16%);
     --count-bg: oklch(1 0 0 / 10%);
-    --glass-bg: oklch(1 0 0 / 5.5%);
-    --glass-bg-strong: oklch(1 0 0 / 9%);
-    --glass-tile: oklch(1 0 0 / 8%);
-    --glass-border: oklch(1 0 0 / 16%);
-    --glass-highlight: oklch(1 0 0 / 22%);
-    --glass-pill: oklch(1 0 0 / 16%);
-    --glass-shadow: 0 24px 60px -30px oklch(0 0 0 / 75%);
-    --strip-shadow: 0 10px 30px -18px oklch(0 0 0 / 60%);
-    --tile-bg: oklch(1 0 0 / 6.5%);
+    --glass-bg: oklch(0.195 0.005 265);
+    --glass-bg-strong: oklch(1 0 0 / 7%);
+    --glass-tile: oklch(1 0 0 / 3%);
+    --glass-border: oklch(1 0 0 / 8%);
+    --glass-highlight: transparent;
+    --glass-pill: oklch(1 0 0 / 11%);
+    --glass-shadow: 0 1px 2px 0 oklch(0 0 0 / 30%);
+    --strip-shadow: 0 0 #0000;
+    --tile-bg: oklch(1 0 0 / 3%);
     --tile-border: oklch(1 0 0 / 10%);
     --tile-shadow: 0 0 #0000;
     --layer-glass-bg: oklch(1 0 0 / 5.5%);
     --layer-glass-bg-strong: oklch(1 0 0 / 9%);
     --layer-glass-tile: oklch(1 0 0 / 8%);
     --layer-glass-border: oklch(1 0 0 / 16%);
-    --layer-glass-highlight: oklch(1 0 0 / 22%);
+    --layer-glass-highlight: transparent;
     --layer-glass-pill: oklch(1 0 0 / 16%);
-    --sidebar: oklch(1 0 0 / 3.5%);
+    --sidebar: oklch(0.175 0.0045 265);
     --sidebar-solid: oklch(0.17 0.028 262);
     --sidebar-fg: oklch(0.9 0.012 255);
     --sidebar-muted: oklch(0.7 0.025 258);
     --sidebar-primary: oklch(0.74 0.134 276);
     --sidebar-accent: oklch(1 0 0 / 7%);
     --sidebar-accent-fg: oklch(0.98 0 0);
-    --sidebar-border: oklch(1 0 0 / 12%);
-    --amb-1: oklch(0.55 0.22 276 / 42%);
-    --amb-2: oklch(0.7 0.142 232 / 26%);
-    --amb-3: oklch(0.8 0.118 300 / 22%);
-    --amb-4: oklch(0.75 0.16 163 / 16%);
+    --sidebar-border: oklch(1 0 0 / 7%);
+    --amb-1: transparent;
+    --amb-2: transparent;
+    --amb-3: transparent;
+    --amb-4: transparent;
     --btn-shadow: 0 0 #0000;
     --on-base: oklch(1 0 0 / 0);
     --on-from: 25%;
@@ -261,7 +262,7 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: oklch(0.145 0.025 262);
+  --bg: oklch(0.155 0.004 265);
   --text: oklch(0.955 0.008 255);
   --muted: oklch(0.72 0.025 258);
   --muted-on-tile: oklch(0.79 0.02 258);
@@ -303,35 +304,35 @@
   --bar-border: oklch(1 0 0 / 8%);
   --badge-outline: oklch(1 0 0 / 16%);
   --count-bg: oklch(1 0 0 / 10%);
-  --glass-bg: oklch(1 0 0 / 5.5%);
-  --glass-bg-strong: oklch(1 0 0 / 9%);
-  --glass-tile: oklch(1 0 0 / 8%);
-  --glass-border: oklch(1 0 0 / 16%);
-  --glass-highlight: oklch(1 0 0 / 22%);
-  --glass-pill: oklch(1 0 0 / 16%);
-  --glass-shadow: 0 24px 60px -30px oklch(0 0 0 / 75%);
-  --strip-shadow: 0 10px 30px -18px oklch(0 0 0 / 60%);
-  --tile-bg: oklch(1 0 0 / 6.5%);
+  --glass-bg: oklch(0.195 0.005 265);
+  --glass-bg-strong: oklch(1 0 0 / 7%);
+  --glass-tile: oklch(1 0 0 / 3%);
+  --glass-border: oklch(1 0 0 / 8%);
+  --glass-highlight: transparent;
+  --glass-pill: oklch(1 0 0 / 11%);
+  --glass-shadow: 0 1px 2px 0 oklch(0 0 0 / 30%);
+  --strip-shadow: 0 0 #0000;
+  --tile-bg: oklch(1 0 0 / 3%);
   --tile-border: oklch(1 0 0 / 10%);
   --tile-shadow: 0 0 #0000;
   --layer-glass-bg: oklch(1 0 0 / 5.5%);
   --layer-glass-bg-strong: oklch(1 0 0 / 9%);
   --layer-glass-tile: oklch(1 0 0 / 8%);
   --layer-glass-border: oklch(1 0 0 / 16%);
-  --layer-glass-highlight: oklch(1 0 0 / 22%);
+  --layer-glass-highlight: transparent;
   --layer-glass-pill: oklch(1 0 0 / 16%);
-  --sidebar: oklch(1 0 0 / 3.5%);
+  --sidebar: oklch(0.175 0.0045 265);
   --sidebar-solid: oklch(0.17 0.028 262);
   --sidebar-fg: oklch(0.9 0.012 255);
   --sidebar-muted: oklch(0.7 0.025 258);
   --sidebar-primary: oklch(0.74 0.134 276);
   --sidebar-accent: oklch(1 0 0 / 7%);
   --sidebar-accent-fg: oklch(0.98 0 0);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --amb-1: oklch(0.55 0.22 276 / 42%);
-  --amb-2: oklch(0.7 0.142 232 / 26%);
-  --amb-3: oklch(0.8 0.118 300 / 22%);
-  --amb-4: oklch(0.75 0.16 163 / 16%);
+  --sidebar-border: oklch(1 0 0 / 7%);
+  --amb-1: transparent;
+  --amb-2: transparent;
+  --amb-3: transparent;
+  --amb-4: transparent;
   --btn-shadow: 0 0 #0000;
   --on-base: oklch(1 0 0 / 0);
   --on-from: 25%;

@@ -175,9 +175,9 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
           "press group relative flex items-center gap-3 rounded-md text-sm font-medium outline-none",
           "focus-visible:ring-2 focus-visible:ring-sidebar-ring/60",
           collapsed ? "h-10 w-10 justify-center mx-auto" : "px-3 py-2",
-          // Aktiv: getönte Glas-Pille in Akzentfarbe mit Lichtkante, wie im Mockup.
+          // Aktiv: ruhige graue Fläche, Symbol in Akzentfarbe.
           isActive
-            ? "bg-sidebar-primary/[0.16] font-semibold text-sidebar-accent-foreground shadow-[inset_0_1px_0_var(--glass-highlight)]"
+            ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
             : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground",
         )}
       >
@@ -252,8 +252,8 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
     <aside
       className={cn(
         "flex h-full min-h-0 shrink-0 flex-col text-sidebar-foreground",
-        // Am Desktop eine Glasfläche über dem Farbgrund; im Handy-Menü trägt das Sheet das Glas.
-        !inSheet && "bg-sidebar backdrop-blur-2xl backdrop-saturate-[1.7] border-r border-sidebar-border transition-[width] duration-300",
+        // Am Desktop eine feste Fläche mit Haarlinie; im Handy-Menü trägt das Sheet die Fläche.
+        !inSheet && "bg-sidebar border-r border-sidebar-border transition-[width] duration-300",
         inSheet ? "w-full" : collapsed ? "w-16" : "w-64",
       )}
     >
@@ -362,10 +362,10 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
                 className={cn(
                   "flex items-center gap-3 rounded-md min-w-0 transition-colors outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring/60",
                   collapsed ? "p-1" : "flex-1 px-2 py-1.5",
-                  accountActive && "bg-sidebar-primary/[0.16] shadow-[inset_0_1px_0_var(--glass-highlight)]",
+                  accountActive && "bg-sidebar-accent",
                 )}
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-chart-5 text-sm font-semibold text-white shadow-[inset_0_1px_0_oklch(1_0_0/30%)] ring-2 ring-white/40 dark:ring-white/10">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-fill text-sm font-semibold text-white">
                   {userName.charAt(0).toUpperCase()}
                 </div>
                 {!collapsed && (

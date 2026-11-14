@@ -1,8 +1,10 @@
 # Design-Regeln EMP Access
 
-Stand: 5. November 2026. Abgeleitet aus dem Räume-Konzept (Canvas „Raumübersicht Konzept“) und
-Aarons Vorgabe „cleaner, Richtung iOS 26/27 Liquid Glass“. Diese Datei ist die eine Quelle für
-alle Seiten; neue Abschnitte kommen hier hinein, nicht in eine zweite Datei.
+Stand: 14. November 2026. Abgeleitet aus dem Räume-Konzept (Canvas „Raumübersicht Konzept“) und
+Aarons Vorgabe vom 14.11.2026: „das ganze Design überarbeiten und schlichter gestalten. Heller
+Hintergrund und Dark-, Light-Mode. Clean, modern und sexy.“ Das löst den Liquid-Glass-Stil vom
+5. November ab. Diese Datei ist die eine Quelle für alle Seiten; neue Abschnitte kommen hier
+hinein, nicht in eine zweite Datei.
 
 ## 1. Grundsätze
 
@@ -17,24 +19,30 @@ alle Seiten; neue Abschnitte kommen hier hinein, nicht in eine zweite Datei.
 5. **Ruhe bei Normalbetrieb.** Ist nichts los, ist die Seite leise: keine leeren Rahmen,
    keine Hinweise, die nichts fordern. Auffälliges fällt auf, weil der Rest still ist.
 
-## 2. Flächen: Liquid Glass
+## 2. Flächen: schlicht
 
-- **Grund** (`page-ambient`): dunkler oder heller Grund mit vier weichen Farbflecken
-  (Indigo, Himmelblau, Violett, Smaragd). Er scheint durch das Glas und gibt Tiefe.
-- **Karte** (`glass-card`): durchscheinende Fläche, Weichzeichner 28 px, Sättigung 170 %,
-  Rand 1 px, Lichtkante oben (inset 0 1px 0), weicher Schatten nach unten. Radius 24 px.
-- **Kachel** (`glass-tile`): Fläche in einer Karte, etwas heller als die Karte. Radius 18 px.
-  Aktive Kacheln bekommen einen Farbverlauf im Farbton des Zustands und einen Glow.
-- **Leiste** (`glass-strip`): Tab-Leisten und Segmentwahlen sind eine schwebende Kapsel
-  (Radius 999 px). Der aktive Eintrag ist eine helle Glas-Pille (`glass-pill-active`),
-  keine Unterstreichung.
-- **Bedienelemente**: Tasten und Eingaben Radius 14 px, Pillen und Chips 999 px.
-- Kein Element liegt flach und deckend auf dem Grund. Volle Deckung nur für Dialoge und
-  Primärtasten.
+- **Grund** (`page-ambient`): ruhig und einfarbig, hell ein fast weißes Grau (`--background`),
+  dunkel ein fast schwarzes. Keine Farbflecken, keine Verläufe. **Hell ist der Standard**
+  (`defaultTheme="light"`), Dunkel und System wählt man oben rechts.
+- **Karte** (`glass-card`): deckend – hell weiß, dunkel eine Stufe heller als der Grund –, Rand
+  1 px als Haarlinie, kaum sichtbarer Schatten (`--glass-shadow`). Radius 16 px.
+- **Kachel** (`glass-tile`): Fläche in einer Karte, ein Hauch Grau (2,5 bis 3 %) mit Haarlinie.
+  Radius 12 px. Aktive Kacheln bekommen eine flache Tönung im Farbton des Zustands
+  (z. B. `bg-amber-50 dark:bg-amber-500/15`) und einen farbigen Rand – keinen Verlauf, keinen Glow.
+- **Leiste** (`glass-strip`): Tab-Leisten und Segmentwahlen sind eine graue Mulde (`--strip-bg`,
+  Radius 12 px). Der aktive Eintrag ist eine weiße Fläche mit feinem Schatten
+  (`glass-pill-active`, Radius 9 px), keine Unterstreichung.
+- **Bedienelemente**: Tasten und Eingaben Radius 10 px, Pillen und Chips 999 px.
+- Kein Weichzeichner außer im klebenden Kopfbalken (`glass-bar`, 12 px). Keine Lichtkanten,
+  keine Farbverläufe, kein Glow. Schatten nur fein (Karte) oder für schwebende Ebenen
+  (`--float-shadow`: Menüs, Dialoge, Tab-Leiste unten).
 
 Tokens in `src/app/globals.css`: `--glass-bg`, `--glass-bg-strong`, `--glass-tile`,
-`--glass-border`, `--glass-tile-border`, `--glass-highlight`, `--glass-shadow`, `--glass-blur`,
-`--glass-pill` sowie die Radien `rounded-card` (24 px), `rounded-tile` (18 px), `rounded-control` (14 px).
+`--glass-border`, `--glass-tile-border`, `--glass-shadow`, `--glass-pill`, `--strip-bg`,
+`--pill-shadow`, `--float-shadow` sowie die Radien `rounded-card` (16 px), `rounded-tile` (12 px),
+`rounded-control` (10 px). Die Namen `glass-…` sind aus dem alten Stil geblieben, damit alle Seiten
+ohne Umbenennung mitziehen; sie bedeuten heute „Fläche“. `--glass-highlight` ist leer
+(`transparent`), `--glass-blur` 0.
 
 ## 3. Farbe
 
@@ -59,12 +67,12 @@ Ein Zustand hat genau eine Farbe, eine Farbe genau eine Bedeutung. Keine Farbe a
 (`text-primary`, `ring-primary/40`, `bg-primary/12`). Deckende Flächen mit Schrift oder Symbol
 darauf nehmen `primary-fill` bzw. `destructive-fill`: Primärtaste, Badge `default`/`destructive`,
 angehaktes Kästchen, aktiver `IconChip`, Avatar-Punkt. Weiß darauf erreicht hell 5,6:1 bzw.
-5,7:1, dunkel 4,9:1 bzw. 5,0:1 (vorher im Dunkeln 4,1:1 und 4,0:1). Hover `bg-primary-fill/90`.
+5,7:1, dunkel 4,9:1 bzw. 5,0:1. Hover `bg-primary-fill/90`.
 Glow und Schatten dürfen `var(--primary)` behalten.
 
 **Zustandsfarben hell.** `success`, `warning`, `destructive` und `info` sind im Hellen so dunkel,
-dass Badge-Text auf seiner Tönung (12 bis 14 %) auf Glaskarte und Popover mindestens 4,5:1
-erreicht (gemessen 4,6 bis 4,8:1, vorher 4,1 bis 4,5:1); Weiß auf der vollen Fläche 5,5 bis 5,7:1.
+dass Badge-Text auf seiner Tönung (12 bis 14 %) auf weißer Karte und Popover mindestens 4,5:1
+erreicht (gemessen 4,6 bis 4,8:1); Weiß auf der vollen Fläche 5,5 bis 5,7:1.
 Im Dunkeln bleiben die Werte.
 
 ## 4. Typografie
@@ -125,19 +133,20 @@ Im Dunkeln bleiben die Werte.
 
 ## 10. Hell und Dunkel
 
-Beide Modi sind gleichwertig. Glas-Tokens haben je einen Wert in `:root, .light` und `.dark`.
+Beide Modi sind gleichwertig, Hell ist der Standard. Flächen-Tokens haben je einen Wert in
+`:root, .light` und `.dark`. Grautöne sind neutral mit einem Hauch Blau (Farbton 265, Sättigung
+höchstens 0,012), Akzent ist Indigo.
 Zustandsfarben hell: Text im 700er-Ton (auf einer Tönung Bernstein und Orange 800), Flächen,
 Punkte und Symbole 100er bis 600er. Dunkel: Text im 300er-Ton, Flächen im 400er-Ton mit 15 bis
 25 % Deckung. Kontrast Text zu Fläche mindestens 4,5:1, Nebentext 3:1.
 
-`--glass-tile-border` ist der Rand von Glas auf Glas: `glass-tile`, `Button` `outline` und
-`secondary`, `ToggleChip` in Ruhe – hell eine dunkle Haarlinie (7 %), dunkel die helle
-Lichtkante, in Dialogen der Ebenen-Rand. Badges (`secondary`, `outline`, `mono`) nehmen
-`border-border dark:border-glass-border` bzw. den passenden Ring. `IconChip`, die Symbole in
-`StatCard` und `EmptyState` und `Notice neutral` haben auf Karten noch den weißen Rand
-(`glass-border`), der im Hellen verschwindet; in Dialogen greift dort der Ebenen-Rand.
+`--glass-border` ist die Haarlinie von Karten, `IconChip`, `StatCard`-Symbol, `EmptyState` und
+`Notice neutral`; `--glass-tile-border` die von Kacheln, `Button outline` und `ToggleChip` in Ruhe.
+Beide sind hell eine dunkle Linie (8 bis 9 %), dunkel eine helle (8 %). In Dialogen greift der
+Ebenen-Rand (`--layer-glass-border`).
 
-Gemessen (WCAG; Glaskarte hell = 58 % Weiß über dem Grund, Popover deckend; Werte Karte/Popover):
+Gemessen (WCAG; Karte und Popover hell weiß; Werte Karte/Popover; Stand Liquid Glass, auf der
+deckenden weißen Karte liegen die hellen Werte gleich oder höher):
 
 | Paar | Hell | Dunkel |
 |---|---|---|
@@ -148,9 +157,6 @@ Gemessen (WCAG; Glaskarte hell = 58 % Weiß über dem Grund, Popover deckend; We
 | Rahmen der aktiven `StatCard` in `light` … `live` (hell 600/700, dunkel 400) gegen Karte und Grund | 3,4–5,5 | 6,3–10,4 |
 | Badge `light`, `music`, `heat`, `water`, `live` (hell 700/800 auf 500/12, dunkel 300 auf 400/15) | 4,7–6,5 | 7,6–9,1 |
 | Zahl im aktiven `Segmented`-Segment | 4,6 | 6,7 (vorher 2,0) |
-
-Direkt über dem Indigo-Fleck des Grunds liegt der helle Badge-Kontrast 0,4 bis 0,6 tiefer
-(Zustands-Badges dort etwa 4,2:1).
 
 Eine Fläche mit eigenem Schema (Wandmonitor mit eigener Hell/Dunkel-Taste, Kiosk, Ressourcen-Monitor)
 setzt `dark scheme-dark` bzw. `light scheme-light` an ihre Wurzel: Der nächste Vorfahr mit `light`
@@ -193,9 +199,9 @@ beschreiben, wie die Grundsätze oben im Code umgesetzt werden.
 
 ## 13. Seitenaufbau
 
-- **Hülle**: Der Rahmen (`DashboardShellInner`) trägt den Farbgrund (`page-ambient`). Seiten setzen
-  keinen eigenen Hintergrund (`bg-background`, `bg-slate-…`), sonst verschwindet das Glas.
-- **Kopfbalken** (`Header`): eine Glasleiste (`glass-bar`), klebt oben. Links Seitentitel
+- **Hülle**: Der Rahmen (`DashboardShellInner`) trägt den Grund (`page-ambient`). Seiten setzen
+  keinen eigenen Hintergrund (`bg-background`, `bg-slate-…`).
+- **Kopfbalken** (`Header`): eine Leiste mit Haarlinie unten (`glass-bar`), klebt oben. Links Seitentitel
   (20 px / 600, auf dem Handy 18 px), daneben höchstens ein Zustand (`badge`, z. B. Live-Punkt)
   und der Mandant als Kapsel. Rechts die Aktionen der Seite (`children`), Uhrzeit, Farbschema.
   Höchstens eine Primärtaste im Kopf; alles Weitere als `outline` oder `ghost`.
@@ -221,15 +227,16 @@ beschreiben, wie die Grundsätze oben im Code umgesetzt werden.
   `w-[180px]` gelten erst ab `sm`.
 - **Abschnittsüberschrift** zwischen Karten: `SectionHeading` (11 px Versalien, `text-label`),
   nicht `h2` mit eigener Größe.
-- **Seitenleiste**: Glasfläche, folgt Hell/Dunkel. Aktiver Eintrag als getönte Pille in
+- **Seitenleiste**: deckende Fläche (hell weiß, dunkel eine Stufe heller als der Grund) mit
+  Haarlinie zum Inhalt, folgt Hell/Dunkel. Aktiver Eintrag als ruhige graue Fläche, Symbol in
   Akzentfarbe (kein Balken am Rand). Auf dem Handy als Sheet von links. Oben die Suche
   „Modul suchen“ (Name, Bereich, Stichworte; Enter öffnet den ersten Treffer, Strg/Cmd+K
   springt hinein). Die Gruppe der aktuellen Seite ist immer aufgeklappt. Gruppen und
   Stichworte stehen nur in `src/components/layout/nav-config.ts`: drei bis sechs Einträge je
   Gruppe, ein neues Modul kommt in einen bestehenden Bereich, der Seitentitel heißt wie
   der Menüeintrag.
-- **Tab-Leiste unten (Handy)**: schwebende Kapsel (`glass-dock`) mit Abstand zur Home-Leiste,
-  aktiver Eintrag als helle Pille. Der Inhalt hat unten genug Luft (`pb` in der Hülle).
+- **Tab-Leiste unten (Handy)**: schwebende Leiste (`glass-dock`, Radius 20 px) mit Abstand zur
+  Home-Leiste, aktiver Eintrag in Akzentfarbe auf leichter Akzent-Tönung. Der Inhalt hat unten genug Luft (`pb` in der Hülle).
 
 ## 14. Bausteine
 
@@ -238,25 +245,25 @@ Jede Seite baut aus diesen Teilen. Ein Muster, das hier fehlt, kommt als Baustei
 
 | Baustein | Datei | Wofür |
 |---|---|---|
-| `Card` (+ Header, Title, Description, Content, Footer, Action) | `ui/card.tsx` | Jede Fläche auf dem Grund. Glas, Radius 24 px, innen 16/18 px. `flush`: Tabelle oder Zeilenliste bis an den unteren Rand (`flush="y"` auch oben, ohne Abstand zwischen den Zeilen). |
-| `glass-tile` (Klasse) | `globals.css` | Fläche in einer Karte: Zeile, Kachel, Gruppe. Radius 18 px, Rand `--glass-tile-border`. |
+| `Card` (+ Header, Title, Description, Content, Footer, Action) | `ui/card.tsx` | Jede Fläche auf dem Grund. Deckend mit Haarlinie, Radius 16 px, innen 16/18 px. `flush`: Tabelle oder Zeilenliste bis an den unteren Rand (`flush="y"` auch oben, ohne Abstand zwischen den Zeilen). |
+| `glass-tile` (Klasse) | `globals.css` | Fläche in einer Karte: Zeile, Kachel, Gruppe. Radius 12 px, Rand `--glass-tile-border`. |
 | `StatCard` | `ui/stat-card.tsx` | Kennzahl: Symbol-Chip, Zahl 24 px / 700, Bezug (`suffix`), Balken (`progress`), als Filter mit `onClick`/`active`. Töne wie `IconChip` (auch `light`, `music`, `heat`, `water`, `live`); `variant="tile"` in einer Karte (kein doppelter Weichzeichner); ein Trend blendet den Hinweis aus, `hintWithTrend` zeigt beide; `valueClassName` (z. B. `font-mono`); `children` unten; mit `href`/`onClick` sitzt `className` am Link bzw. an der Taste (Rasterspalten). |
-| `Notice` | `ui/notice.tsx` | Hinweis, Warnung, Störung, Erfolg als getönte Kachel mit Chip, Titel, Erklärung, Handlung. `actionAlign="start"` für aufklappbare Hinweise (die Taste springt nicht). |
-| `IconChip` | `ui/icon-chip.tsx` | Symbol im Glas-Quadrat vor Zeilen; `active` füllt in der Zustandsfarbe. |
-| `Tabs` | `ui/tabs.tsx` | Umschalten zwischen Inhaltsbereichen. Kapsel mit heller Pille. |
+| `Notice` | `ui/notice.tsx` | Hinweis, Warnung, Störung, Erfolg als flach getönte Kachel (6 bis 7 %, Rand 25 bis 30 %) mit Chip, Titel, Erklärung, Handlung. `actionAlign="start"` für aufklappbare Hinweise (die Taste springt nicht). |
+| `IconChip` | `ui/icon-chip.tsx` | Symbol im Quadrat vor Zeilen; `active` füllt in der Zustandsfarbe. |
+| `Tabs` | `ui/tabs.tsx` | Umschalten zwischen Inhaltsbereichen. Graue Mulde, aktives Segment weiß. |
 | `Segmented` | `ui/segmented.tsx` | Filter, Zeitraum, Ansicht (ohne eigenen Inhaltsbereich). Gleiche Optik wie Tabs. `title` je Option als Tooltip. |
 | `SegmentedLinks` | `ui/segmented-links.tsx` | Segmentwahl für Filter in der URL: Links statt Tasten, `<nav>` mit `aria-current="page"`, läuft in Server-Komponenten. Gleiche Optik wie `Segmented`. |
-| `Button` | `ui/button.tsx` | `default` Primär (eine je Bereich), `secondary` Glas, `outline` Glas mit Rand, `ghost`, `destructive`, `link`. Symbole bekommen `size-4` (bei `xs` `size-3`), außer sie tragen eine `size-*`-Klasse; `h-*`/`w-*` am Symbol werden überstimmt. |
+| `Button` | `ui/button.tsx` | `default` Primär (flach, eine je Bereich), `secondary` graue Fläche, `outline` Kartenfläche mit Haarlinie, `ghost`, `destructive`, `link`. Symbole bekommen `size-4` (bei `xs` `size-3`), außer sie tragen eine `size-*`-Klasse; `h-*`/`w-*` am Symbol werden überstimmt. |
 | `Badge` | `ui/badge.tsx` | Pille für Zustand und Anzahl: `success`, `warning`, `danger`, `info`, `neutral`, `secondary`, `outline`, `mono`; `accent` (weiche Akzent-Tönung für Zähler und Auswahl), Zustandsvokabular `light`, `music`, `heat`, `water`, `live`; `media` über Kamerabildern und Videos. Als Link (`asChild`) unterstreichen getönte Badges beim Darüberfahren. |
-| `Input`, `Textarea`, `Select`, `Switch`, `Checkbox`, `Label` | `ui/…` | Formulare. Felder sind `glass-field` (getönt, Radius 14 px). Schalter an = grün (Ja/Nein), Kästchen für Auswahl und Bestätigung (Abschnitt 16). |
+| `Input`, `Textarea`, `Select`, `Switch`, `Checkbox`, `Label` | `ui/…` | Formulare. Felder sind `glass-field` (hell weiß, dunkel leicht getönt, Rand, Radius 10 px). Schalter an = grün (Ja/Nein), Kästchen für Auswahl und Bestätigung (Abschnitt 16). |
 | `NativeSelect` | `ui/native-select.tsx` | Natives Auswahlfeld im Feld-Look: lange oder gruppierte Listen, leere Werte, Server-Formulare. Breite, `flex-*` und Rasterspalte an `containerClassName` (dort sitzt der Pfeil), `className` gestaltet nur das Feld. |
 | `SearchInput` | `ui/search-input.tsx` | Suchfeld mit Lupe; mit `onClear` eine Taste „Suche leeren“ (danach Fokus im Feld). Breite, `flex-*` und Rasterspalte an `containerClassName`, `className` gestaltet nur das Feld. |
 | `FilterBar`, `FilterGroup` | `ui/filter-bar.tsx` | Ab drei Filtern: ab `sm` eine umbrechende Zeile, auf dem Handy Taste „Filter“ (Zahl aktiver Filter) mit Sheet von unten, dort alles untereinander in 44 px. `resetHref`/`onReset` für „Zurücksetzen“. Kinder ohne feste `id` (werden zweimal gerendert). |
 | `ToggleChip`, `ToggleChipGroup` | `ui/toggle-chip.tsx` | Mehrfachauswahl als Chips (Wochentage, Filter), `aria-pressed`, gedrückt weich getönt mit Akzent-Rand und halbfetter Schrift. Genau eine Wahl: `Segmented`. |
 | `Checklist`, `ChecklistItem` | `ui/checklist.tsx` | Auswahlliste in Dialogen: Kachel mit Haarlinien, die ganze Zeile schaltet das Kästchen. |
 | `ConfirmDialog`, `ConfirmStep` | `ui/confirm-dialog.tsx` | Rückfrage vor Löschen und Sperren: eigene Ebene von einer Seite aus, Schritt innerhalb eines Dialogs (Abschnitt 18). |
-| `Dialog`, `AlertDialog`, `Sheet` | `ui/…` | Ebene über der Seite: deckend, Radius 24 px, auf dem Handy von unten. `DialogFooter start` stellt z. B. „Löschen“ ab sm links, auf dem Handy nach unten. |
-| `DropdownMenu`, `Select`-Liste, `Tooltip` | `ui/…` | Schwebende Ebenen aus dichtem Glas (`glass-surface`). |
+| `Dialog`, `AlertDialog`, `Sheet` | `ui/…` | Ebene über der Seite: deckend, Radius 16 px, auf dem Handy von unten. `DialogFooter start` stellt z. B. „Löschen“ ab sm links, auf dem Handy nach unten. |
+| `DropdownMenu`, `Select`-Liste, `Tooltip` | `ui/…` | Schwebende Ebenen: deckend mit Haarlinie und Schatten (`glass-surface`). |
 | `Table` | `ui/table.tsx` | Tabellen in einer Karte, Haarlinien, Kopf 11 px Versalien. `edge` für Tabellen bis an den Kartenrand (mit `Card flush`), `TableEmpty` für die leere Tabelle (kompakter `EmptyState`); Kürzen in einer Zelle: Zelle `max-w-0 w-full`, Text `truncate`. |
 | `EmptyState` | `ui/empty-state.tsx` | Leerer Zustand: ein Satz, kleines Symbol, nächster Schritt. `title`/`description` dürfen Hervorhebungen enthalten; `compact` für Tabellenzellen (`TableEmpty`) und kleine Karten, `size="sm"` für Kacheln und Picker. |
 | `StatusDot` | `ui/status-dot.tsx` | Zustandspunkt; `pulse` nur für „lebt gerade“. Töne wie `IconChip` (auch `light`, `music`, `heat`, `water`, `live`). |
@@ -265,7 +272,7 @@ Jede Seite baut aus diesen Teilen. Ein Muster, das hier fehlt, kommt als Baustei
 Hilfsklassen aus `globals.css`: `glass-card`, `glass-tile`, `glass-strip`, `glass-pill-active`,
 `glass-bar` (klebende Leisten), `glass-surface` (Menüs, Popover), `glass-dock` (Tab-Leiste
 unten), `glass-field` (eigene Eingaben), `press` (Antippen 97 %), `page-ambient`, `text-label`.
-Als Tailwind-Farben stehen `bg-glass`, `bg-glass-strong`, `bg-glass-tile`, `border-glass-border`,
+Die Klassennamen sind historisch (siehe Abschnitt 2). Als Tailwind-Farben stehen `bg-glass`, `bg-glass-strong`, `bg-glass-tile`, `border-glass-border`,
 `border-glass-tile-border` (auch `ring-…`), `bg-field`, `bg-primary-fill` und `bg-destructive-fill`
 bereit.
 
@@ -283,7 +290,7 @@ bereit.
   `bg-amber-500/15`, aktive Kachel `bg-gradient-to-br from-amber-400/25 to-amber-400/5` mit Rand
   `border-amber-400/45`. Auf einer Tönung brauchen Bernstein und Orange im Hellen den 800er-Ton.
   500 und 600 nur für Symbole, Punkte und Flächen: als Text erreichen sie schon auf heller
-  Glaskarte keine 4,5:1 (Bernstein, Orange, Smaragd, Himmelblau 600: 3,1 bis 3,9:1). Als Pille
+  weißer Karte keine 4,5:1 (Bernstein, Orange, Smaragd, Himmelblau 600: 3,1 bis 3,9:1). Als Pille
   fertig: `Badge variant="light"` usw.
 - Diagramme (Recharts): `var(--chart-1)` … `var(--chart-5)` bzw. die Zustandsfarben, Gitter in
   `var(--border)`, Achsentext `var(--muted-foreground)`.
@@ -315,7 +322,7 @@ bereit.
 - Lange Listen und Daten mit Spalten: `Table edge` in einer `Card flush` (Tabelle bis an den Rand;
   Zeilenliste ohne Kopf: `flush="y"`). Leere Tabelle: `TableEmpty` als einzige Zeile.
   Trennlinien in Karten und Tabellen sind `border-border` (im Hellen dunkle Haarlinie), nicht
-  `border-glass-border` – das ist die helle Lichtkante der Glasfläche selbst.
+  `border-glass-border` (der Rand der Fläche selbst).
   Zeilenhöhe mindestens 44 px auf dem Handy. Gruppenzeilen als `text-label` auf `bg-glass-tile`.
 - Tabellen passen auf dem Handy (360 px) ohne seitliches Scrollen: Nebenspalten `max-sm:hidden`,
   ihr Inhalt als Nebenzeile in der ersten Spalte; lange Texte brechen um (`whitespace-normal`,
@@ -335,17 +342,18 @@ bereit.
 
 - Höchstens eine Ebene über der Seite. Ein Dialog öffnet keinen zweiten Dialog; dafür gibt es
   Schritte im selben Dialog oder eine eigene Seite.
-- Dialoge sind deckend (`bg-popover`), Radius 24 px, Schließen-Taste als runde Glas-Taste. Sie
+- Dialoge sind deckend (`bg-popover`), Radius 16 px, Schließen-Taste als runde graue Taste.
+  Der Hintergrund dahinter wird abgedunkelt (`bg-black/40`), nicht weichgezeichnet. Sie
   bekommt beim Öffnen nie den ersten Fokus (kein Fokusring auf dem X).
   Auf dem Handy kommen sie als Blatt von unten mit Griff.
-- Glas in Dialog, AlertDialog und Sheet ist im Hellen leicht getönt statt weiß (`--layer-glass-…`),
-  wie gruppierte Zellen in iOS-Sheets. Das passiert automatisch; Kacheln, Kapseln und Glas-Tasten
+- Flächen in Dialog, AlertDialog und Sheet nehmen die Ebenen-Werte (`--layer-glass-…`): Kacheln
+  ein Hauch Grau, Haarlinien wie auf der Karte. Das passiert automatisch; Kacheln, Leisten und Tasten
   brauchen dort keine eigenen Klassen. Felder und Tasten sind darin auf dem Handy 44 px hoch.
 - Löschen und Sperren immer mit Rückfrage und `destructive`-Taste: von einer Seite oder Liste aus
   `ConfirmDialog` (Spinner während der Handlung, ein Fehler bleibt als Hinweis im Dialog stehen),
   innerhalb eines Dialogs `ConfirmStep` – roter Hinweis mit der Frage anstelle der Fußzeile, kein
   zweiter Dialog.
-- Menüs und Auswahllisten sind dichtes Glas (`glass-surface`), Einträge 36 px, aktiv
+- Menüs und Auswahllisten sind deckend (`glass-surface`), Einträge 36 px, aktiv
   `bg-primary/12`.
 
 ## 19. Laden, Leere, Fehler
@@ -358,34 +366,34 @@ bereit.
 
 ## 20. Öffentliche Flächen (Monitor, Kiosk, Scanner, Mitarbeiter-App)
 
-- Gleiche Tokens und Bausteine, gleicher Farbgrund (`page-ambient`). Wandmonitore und Kiosk
+- Gleiche Tokens und Bausteine, gleicher ruhiger Grund (`page-ambient`). Wandmonitore und Kiosk
   laufen dunkel (`dark`), Schrift größer (Zahlen 48 bis 96 px), Touch-Ziele mindestens 56 px.
 - Ergebnis eines Scans als volle Fläche in der Zustandsfarbe (grün erlaubt, rot abgelehnt),
-  sonst ruhige Glasflächen.
+  sonst ruhige Flächen.
 
 ## 21. Hub-Dashboard
 
 - Das Hub-Dashboard (`hub/src/ui/`) hat kein Tailwind, spiegelt aber dieselben Werte in
-  `dashboard.css` (`--glass-*`, Radien 24/18/14 px, Akzent Indigo, Zustandsfarben).
+  `dashboard.css` (`--glass-*` als deckende Flächen, kein Weichzeichner, Radien 16/12/10 px,
+  Akzent Indigo, Zustandsfarben).
   Karten, Leisten und Tab-Leiste sehen aus wie in der Cloud.
 
 ## 22. Leistung
 
-- Weichzeichner nur auf Flächen, die direkt auf dem Grund liegen (Karten, Leisten, Menüs).
-  Kacheln in einer Karte (`glass-tile`) zeichnen nicht weich.
-- Keine Glaskarte je Listeneintrag bei langen Listen (mehr als etwa 30): eine Karte mit Zeilen.
-- „Transparenz reduzieren“ des Systems macht alle Glasflächen deckend (`prefers-reduced-transparency`).
-- Eigene Glas-Utilities schreiben `-webkit-backdrop-filter` **vor** `backdrop-filter`. In der
-  umgekehrten Reihenfolge behält der CSS-Compiler nur die Safari-Fassung, und Chrome, Edge
-  und Android zeigen gar keinen Weichzeichner.
+- Kein Weichzeichner auf Karten, Kacheln und Menüs – nur der klebende Kopfbalken zeichnet leicht
+  weich (12 px). Neue Flächen bekommen keinen `backdrop-filter`.
+- Bei langen Listen (mehr als etwa 30 Einträge) eine Karte mit Zeilen statt einer Karte je Eintrag.
+- Wo doch ein Weichzeichner nötig ist: `-webkit-backdrop-filter` **vor** `backdrop-filter`
+  schreiben. In der umgekehrten Reihenfolge behält der CSS-Compiler nur die Safari-Fassung.
 
 ## 23. Prüfliste für eine Seite
 
 1. Kopfbalken mit Titel, höchstens eine Primärtaste.
-2. Alle Flächen sind `Card` oder `glass-tile`; kein eigener Hintergrund, kein `shadow-…`.
+2. Alle Flächen sind `Card` oder `glass-tile`; kein eigener Hintergrund, kein `shadow-…`,
+   kein Farbverlauf, kein Glow.
 3. Keine Grautöne oder Dekorfarben aus der Palette; Zustände in ihrer festen Farbe.
 4. Kennzahlen als `StatCard`, Hinweise als `Notice`, Umschalter als `Tabs` oder `Segmented`.
 5. Leer-, Lade- und Fehlerzustand vorhanden und je ein Satz.
 6. Handy (390 und 360 px): eine Spalte, nichts scrollt seitlich (Seite, Kapseln, Tabellen),
    Tasten 44 px, Primärhandlung oben rechts im Kartenkopf, Filter nach Abschnitt 13.
-7. Hell und Dunkel geprüft, Kontrast Text mindestens 4,5:1.
+7. Hell (Standard) und Dunkel geprüft, Kontrast Text mindestens 4,5:1.

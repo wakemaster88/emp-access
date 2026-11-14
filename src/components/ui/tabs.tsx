@@ -72,7 +72,7 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "press relative inline-flex h-[34px] flex-1 shrink-0 items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap text-muted-foreground outline-none max-sm:px-2.5",
+        "press relative inline-flex h-[34px] flex-1 shrink-0 items-center justify-center gap-1.5 rounded-[calc(var(--radius-control)-1px)] px-3.5 text-[13px] font-medium whitespace-nowrap text-muted-foreground outline-none max-sm:px-2.5",
         "hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
         // Der aktive Reiter behält die Schriftstärke: fetter wäre er breiter, und eine
         // umbrochene Leiste spränge beim Wechseln in andere Zeilen.

@@ -177,7 +177,7 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                     "p-3",
                     // Überfällig: Kachel in Störungsfarbe statt Glas (wie Notice tone="danger").
                     overdue
-                      ? "rounded-tile border border-destructive/45 bg-gradient-to-br from-destructive/14 to-destructive/[0.03]"
+                      ? "rounded-tile border border-destructive/45 bg-destructive/[0.06]"
                       : "glass-tile",
                   )}
                 >

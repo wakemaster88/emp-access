@@ -1118,7 +1118,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                       `backdrop-filter` begrenzt die Unschärfe auf den Balken selbst – unter dem
                       Menü schien die Seite ungefiltert durch. */}
                   {openMenuOpen && (
-                    <div className="absolute inset-x-4 top-full z-50 mt-2 max-h-[70vh] overflow-y-auto rounded-tile border border-glass-border bg-popover p-2 text-popover-foreground shadow-[inset_0_1px_0_var(--glass-highlight),0_24px_60px_-24px_oklch(0_0_0/50%)] sm:inset-x-auto sm:left-0 sm:w-80">
+                    <div className="absolute inset-x-4 top-full z-50 mt-2 max-h-[70vh] overflow-y-auto rounded-tile border border-glass-border bg-popover p-2 text-popover-foreground shadow-[var(--float-shadow)] sm:inset-x-auto sm:left-0 sm:w-80">
                       <div className="px-2 pt-1 pb-2 text-label">
                         Tür öffnen
                       </div>

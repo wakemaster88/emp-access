@@ -65,9 +65,13 @@ eigener Datenbank. Die Cloud liest nur deren Live-Monitor
 fragt die Cloud über `/api/hub/staff`. **Keinen** direkten Datenbankzugriff
 vom Hub auf emp-control einbauen, sondern `/api/hub/staff` erweitern.
 
-## Ein Design-Regelwerk, Liquid-Glass-Optik (04./05.11.2026)
+## Ein Design-Regelwerk, schlichte Optik (04./05.11.2026, neu 14.11.2026)
 
-Aaron möchte die Oberfläche „cleaner, Richtung iOS 26/27 Liquid Glass“.
+Aaron wollte die Oberfläche zuerst „cleaner, Richtung iOS 26/27 Liquid Glass“.
+Am 14.11.2026 hat er das abgelöst: „das ganze Design überarbeiten und schlichter
+gestalten. Heller Hintergrund und Dark-, Light-Mode. Clean, modern und sexy.“
+Seitdem: deckende Flächen mit Haarlinie statt Glas, kein Weichzeichner, keine
+Farbverläufe, Hell als Standard, Dunkel gleichwertig.
 Einziges Regelwerk ist [`docs/design-regeln.md`](../design-regeln.md); kein
 zweites anlegen. Auf dem Handy scrollt nichts seitlich (keine Seite, keine
 Tab-Leiste, keine Tabelle bei 360 px). Seiten nur mit den Bausteinen aus

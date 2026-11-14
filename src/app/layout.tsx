@@ -20,8 +20,8 @@ export const viewport: Viewport = {
   // Android/Chrome: Tastatur verkleinert den Viewport statt ihn zu ueberdecken.
   interactiveWidget: "resizes-content",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f7f8fa" },
-    { media: "(prefers-color-scheme: dark)", color: "#12141c" },
+    { media: "(prefers-color-scheme: light)", color: "#f9f9fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#111215" },
   ],
 };
 

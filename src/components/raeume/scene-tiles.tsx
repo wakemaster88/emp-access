@@ -86,7 +86,7 @@ export function SceneTiles({
                 "group flex min-h-[84px] flex-col justify-between rounded-tile border p-3 text-left transition-all duration-300",
                 "disabled:cursor-default enabled:hover:-translate-y-0.5 enabled:active:scale-[0.97]",
                 s?.kind === "ok"
-                  ? "border-emerald-400/40 bg-gradient-to-br from-emerald-500/15 to-transparent"
+                  ? "border-emerald-400/40 bg-emerald-500/[0.07]"
                   : s?.kind === "err"
                     ? "border-destructive/40 bg-destructive/5"
                     : "glass-tile enabled:hover:bg-foreground/5",

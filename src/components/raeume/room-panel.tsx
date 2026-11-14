@@ -322,7 +322,7 @@ export function RoomPanel({
         <div className={cn(wide && "lg:flex lg:items-start lg:gap-5")}>
         <div className="min-w-0 flex-1 space-y-3">
         <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-500 text-white shadow-[0_6px_16px_-6px_var(--primary)]">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-fill text-white">
             <RoomIcon room={room} className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
@@ -524,9 +524,9 @@ export function RoomPanel({
                     room.climate?.lastError
                       ? "border-destructive/40 bg-destructive/5"
                       : room.climate?.heating
-                        ? "border-orange-400/35 bg-gradient-to-b from-orange-500/12 to-transparent"
+                        ? "border-orange-400/35 bg-orange-500/[0.05]"
                         : room.climate?.fanOn
-                          ? "border-sky-400/35 bg-gradient-to-b from-sky-500/12 to-transparent"
+                          ? "border-sky-400/35 bg-sky-500/[0.05]"
                           : "glass-tile",
                   )}
                 >
@@ -765,11 +765,11 @@ export type RoomPanelTab = TabKey;
 type QuickTone = "light" | "music" | "heat" | "air" | "live" | "danger";
 
 const QUICK_ON: Record<QuickTone, string> = {
-  light: "border-amber-300/60 bg-gradient-to-br from-amber-100 to-yellow-50 dark:border-amber-400/30 dark:from-amber-500/20 dark:to-transparent",
-  music: "border-violet-300/60 bg-gradient-to-br from-violet-100 to-fuchsia-50 dark:border-violet-400/30 dark:from-violet-500/20 dark:to-transparent",
-  heat: "border-orange-300/60 bg-gradient-to-br from-orange-100 to-rose-50 dark:border-orange-400/30 dark:from-orange-500/20 dark:to-transparent",
-  air: "border-sky-300/60 bg-gradient-to-br from-sky-100 to-cyan-50 dark:border-sky-400/30 dark:from-sky-500/20 dark:to-transparent",
-  live: "border-emerald-300/60 bg-gradient-to-br from-emerald-100 to-teal-50 dark:border-emerald-400/30 dark:from-emerald-500/20 dark:to-transparent",
+  light: "border-amber-300/60 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-500/15",
+  music: "border-violet-300/60 bg-violet-50 dark:border-violet-400/30 dark:bg-violet-500/15",
+  heat: "border-orange-300/60 bg-orange-50 dark:border-orange-400/30 dark:bg-orange-500/15",
+  air: "border-sky-300/60 bg-sky-50 dark:border-sky-400/30 dark:bg-sky-500/15",
+  live: "border-emerald-300/60 bg-emerald-50 dark:border-emerald-400/30 dark:bg-emerald-500/15",
   danger: "border-destructive/40 bg-destructive/5",
 };
 const QUICK_ICON_ON: Record<QuickTone, string> = {

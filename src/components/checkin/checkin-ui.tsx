@@ -31,7 +31,7 @@ export const overlayScrimClass = "bg-background/70 backdrop-blur-sm";
 /** Tage im Tagesstreifen: 44 px auf dem Handy, 56 px am Kiosk (Abschnitt 20). */
 const daySegmentClass = "[&>button]:h-11 sm:[&>button]:h-14";
 export const overlaySheetClass =
-  "animate-slide-up border border-glass-border bg-popover text-popover-foreground shadow-[inset_0_1px_0_var(--glass-highlight),0_30px_80px_-24px_oklch(0_0_0/55%)] rounded-t-card sm:rounded-card";
+  "animate-slide-up border border-glass-border bg-popover text-popover-foreground shadow-[var(--float-shadow)] rounded-t-card sm:rounded-card";
 
 /** Griff oben am Blatt – nur auf dem Handy, wie im Dialog-Baustein. */
 export function OverlayGrip({ className }: { className?: string }) {

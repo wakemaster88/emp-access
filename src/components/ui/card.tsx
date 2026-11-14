@@ -3,8 +3,8 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * Karte: die Grundfläche des Dashboards, eine Glasfläche (`glass-card`) über
- * dem Farbgrund – Radius 24 px, Lichtkante oben, weicher Schatten. Innen
+ * Karte: die Grundfläche des Dashboards (`glass-card`) – weiß bzw. eine Stufe
+ * heller als der Grund, Haarlinie, kaum sichtbarer Schatten, Radius 16 px. Innen
  * 16 px Abstand oben/unten, 18 px seitlich (docs/design-regeln.md, Abschnitt 5).
  * Am Einsatzort keine eigenen Rahmen-, Schatten- oder Hintergrundfarben.
  *
