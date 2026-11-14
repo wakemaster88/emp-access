@@ -274,10 +274,14 @@ export async function controlAudioZone(
   }
 
   const trackId = input.trackId != null ? Number(input.trackId) : null;
+  // Manuell geht vor Automatik. Der Vorrang muss stehen, bevor der Befehl in
+  // der Warteschlange liegt: holt der Abspieler beides in derselben Runde ab,
+  // sähe er sonst noch das geschlossene Fenster. `manual` im Befehl lässt ihn
+  // auch dann starten, wenn sein Zonenstand noch älter ist.
+  const manual = !input.fromSchedule;
+
   if (trackId != null && Number.isInteger(trackId) && trackId > 0) {
-    const result = await playTrack(db, accountId, zone, trackId);
-    if (result.ok && !input.fromSchedule) await setManualMusicOverride(db, zone.id, true);
-    return result;
+    return playTrack(db, accountId, zone, trackId, manual);
   }
 
   const playlistGiven = input.playlistId != null && input.playlistId !== "";
@@ -299,12 +303,13 @@ export async function controlAudioZone(
       : await resolveZoneStreamUrl(db, zone);
     if ("error" in parsed) return { ok: false, error: parsed.error, status: 400 };
 
+    if (manual) await setManualMusicOverride(db, zone.id, true);
     await queueZoneCommand(
       db,
       accountId,
       [zone],
       "PLAY",
-      { kind: "STREAM", url: parsed.url, volume: zone.volume },
+      { kind: "STREAM", url: parsed.url, volume: zone.volume, manual },
       "MANUAL",
     );
 
@@ -326,7 +331,6 @@ export async function controlAudioZone(
           : {}),
       },
     });
-    if (!input.fromSchedule) await setManualMusicOverride(db, zone.id, true);
     return { ok: true };
   }
 
@@ -344,19 +348,19 @@ export async function controlAudioZone(
   const payload = await playlistPayload(db, playlistId);
   if (!payload) return { ok: false, error: "Playlist nicht gefunden", status: 404 };
 
+  if (manual) await setManualMusicOverride(db, zone.id, true);
   await queueZoneCommand(
     db,
     accountId,
     [zone],
     "PLAY",
-    { kind: "PLAYLIST", volume: zone.volume, ...(payload as object) },
+    { kind: "PLAYLIST", volume: zone.volume, ...(payload as object), manual },
     "MANUAL",
   );
   await db.audioZone.update({
     where: { id: zone.id },
     data: { sourceKind: "PLAYLIST", playlistId },
   });
-  if (!input.fromSchedule) await setManualMusicOverride(db, zone.id, true);
   return { ok: true };
 }
 
@@ -365,6 +369,7 @@ async function playTrack(
   accountId: number,
   zone: ZoneForControl,
   trackId: number,
+  manual: boolean,
 ): Promise<AudioControlResult> {
   const track = await db.audioTrack.findFirst({
     where: { id: trackId, accountId, kind: { in: ["MUSIC", "JINGLE"] } },
@@ -378,7 +383,9 @@ async function playTrack(
     name: track.title,
     shuffle: false,
     tracks: [{ id: track.id, title: track.title, url: track.url }],
+    manual,
   };
+  if (manual) await setManualMusicOverride(db, zone.id, true);
   await queueZoneCommand(db, accountId, [zone], "PLAY", payload, "MANUAL");
   await db.audioZone.update({
     where: { id: zone.id },

@@ -383,6 +383,13 @@ class EmpAudio:
             except Exception as e:
                 logger.error("Job #%s fehlgeschlagen: %s", job_id, e)
                 self._report(job_id, "FAILED", str(e))
+            # Start und Stopp sofort melden: sonst stünde die Zone im Dashboard
+            # bis zum nächsten Heartbeat (60 s) noch im alten Zustand.
+            if job.get("kind") in ("PLAY", "STOP"):
+                try:
+                    self._send_heartbeat(system_info=False)
+                except Exception as e:
+                    logger.debug("Zustandsmeldung nach Job: %s", e)
 
     def _report(self, job_id, status: str, error: Optional[str] = None):
         if not self.api or job_id is None:
@@ -477,10 +484,16 @@ class EmpAudio:
         if isinstance(volume, int):
             self.music.set_volume(volume)
 
-        if _music_blocked(zone):
-            logger.info("Außerhalb der Betriebszeit – Musik wird nicht gestartet")
+        # Ein manuelles Play aus dem Dashboard geht vor der Musik-Automatik
+        # (`manual` setzt die Cloud). Der Zonenstand kann dafür eine Runde zu
+        # alt sein – der Befehl selbst sagt, dass er gelten soll.
+        if _music_blocked(zone) and not payload.get("manual"):
+            logger.info("Außerhalb der Musikzeit – Musik wird nicht gestartet")
             self._off_hours = True
-            return
+            # Nicht still verwerfen: als Fehler gemeldet steht der Grund im
+            # Verlauf und an der Zone, statt dass der Start einfach nichts tut.
+            raise RuntimeError("Außerhalb der Musikzeit – nicht gestartet")
+        self._off_hours = False
 
         if payload.get("kind") == "STREAM":
             url = payload.get("url")
