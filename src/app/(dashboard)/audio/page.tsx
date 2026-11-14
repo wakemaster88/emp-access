@@ -16,7 +16,12 @@ import { hubOnline, serializeSoundwebDevice, soundwebDeviceInclude } from "@/lib
 
 export const dynamic = "force-dynamic";
 
-export default async function AudioPage() {
+export default async function AudioPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; bereich?: string }>;
+}) {
+  const { tab, bereich } = await searchParams;
   const session = await safeAuth();
   if (!session?.user) redirect("/login");
   if (!session.user.accountId) redirect("/");
@@ -126,6 +131,8 @@ export default async function AudioPage() {
       <Header title="Audio" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         <AudioClient
+          initialTab={tab}
+          initialContentTab={bereich}
           zones={zones.map((z) => ({
             id: z.id,
             name: z.name,
@@ -222,6 +229,7 @@ export default async function AudioPage() {
           }))}
           jobs={jobs.map((j) => ({
             id: j.id,
+            zoneId: j.zoneId,
             zoneName: j.zone.name,
             kind: j.kind,
             status: j.status,

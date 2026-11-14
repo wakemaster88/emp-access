@@ -135,6 +135,7 @@ export interface ScheduleRow {
 
 export interface JobRow {
   id: number;
+  zoneId: number;
   zoneName: string;
   kind: AudioJobKind;
   status: AudioJobStatus;
@@ -157,6 +158,8 @@ export interface ZoneStatus {
   pairableFor: number;
   deviceOnline: boolean;
   lastStateAt: string | null;
+  /** Manueller Vorrang vor der Musik-Automatik bis hierhin (ISO), sonst null. */
+  musicOverrideUntil: string | null;
   /** Befehle, die der Abspieler noch nicht bestätigt hat. */
   pendingJobs: number;
 }

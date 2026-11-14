@@ -9,16 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState as EmptyStateBlock } from "@/components/ui/empty-state";
 import { Segmented } from "@/components/ui/segmented";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Switch } from "@/components/ui/switch";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Airplay,
   AlertTriangle,
@@ -27,11 +27,13 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock,
+  FolderOpen,
   Headphones,
   History,
   ListMusic,
   Loader2,
   Megaphone,
+  MoreHorizontal,
   Music,
   Pencil,
   Play,
@@ -42,6 +44,8 @@ import {
   Square,
   Trash2,
   Volume2,
+  VolumeX,
+  WifiOff,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -80,6 +84,7 @@ import { StreamDialog } from "./stream-dialog";
 import { ScheduleDialog, ACTION_LABELS } from "./schedule-dialog";
 import { useAudioStatus } from "./use-audio-status";
 import { useZoneMonitor, zoneSource } from "./use-zone-monitor";
+import { useZoneCommands, type ZoneCommandState } from "./use-zone-commands";
 import { ZoneDialog } from "./zone-dialog";
 import { ZoneStatusBar } from "./zone-status-bar";
 import type {
@@ -117,6 +122,52 @@ interface Props {
   soundwebDevices: SoundwebDeviceRow[];
   /** Meldet sich der lokale Hub? Er hält die Soundweb-Verbindungen. */
   hubOnline: boolean;
+  /** Reiter aus der Adresse (`?tab=zonen`), sonst „Durchsage“. */
+  initialTab?: string;
+  /** Bereich unter „Inhalte“ aus der Adresse (`?bereich=playlists`). */
+  initialContentTab?: string;
+}
+
+type AudioTab = "announce" | "zones" | "schedules" | "content" | "soundweb" | "history";
+type ContentTab = "library" | "playlists" | "streams" | "templates";
+
+/** Deutsche Namen in der Adresse – so sind geteilte Links lesbar. */
+const TAB_SLUGS: Record<AudioTab, string> = {
+  announce: "durchsage",
+  zones: "zonen",
+  schedules: "zeitplaene",
+  content: "inhalte",
+  soundweb: "soundweb",
+  history: "verlauf",
+};
+
+const CONTENT_SLUGS: Record<ContentTab, string> = {
+  library: "mediathek",
+  playlists: "playlists",
+  streams: "webradio",
+  templates: "vorlagen",
+};
+
+/**
+ * Reiter aus der Adresse. Alte Reiter (Mediathek, Playlists …) waren früher
+ * eigene Reiter – ein Link darauf landet jetzt im passenden Bereich der Inhalte.
+ */
+function parseTab(tab: string | undefined, bereich: string | undefined): { tab: AudioTab; content: ContentTab } {
+  const content =
+    (Object.entries(CONTENT_SLUGS).find(([, slug]) => slug === bereich || slug === tab)?.[0] as
+      | ContentTab
+      | undefined) ?? "library";
+  const main = Object.entries(TAB_SLUGS).find(([, slug]) => slug === tab)?.[0] as AudioTab | undefined;
+  if (main) return { tab: main, content };
+  if (tab && Object.values(CONTENT_SLUGS).includes(tab)) return { tab: "content", content };
+  return { tab: "announce", content };
+}
+
+/** Rückmeldung an einer Zonenkarte zu Lautstärke, Abgleich, Kopplung oder Mithören. */
+interface ZoneNotice {
+  zoneId: number;
+  tone: "success" | "danger";
+  message: string;
 }
 
 /**
@@ -166,13 +217,38 @@ export function AudioClient({
   timeZone,
   soundwebDevices,
   hubOnline,
+  initialTab,
+  initialContentTab,
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [tab, setTab] = useState("announce");
+  const [initial] = useState(() => parseTab(initialTab, initialContentTab));
+  const [tab, setTabState] = useState<AudioTab>(initial.tab);
+  const [contentTab, setContentTab] = useState<ContentTab>(initial.content);
   const [highlightZone, setHighlightZone] = useState<number | null>(null);
 
+  /**
+   * Reiter in der Adresse halten (`?tab=zonen`): Neu laden, Zurück und ein
+   * geteilter Link landen dort, wo man war – vorher begann die Seite immer
+   * bei „Durchsage“. `replaceState` statt Router: kein Neuladen der Seite.
+   */
+  function setTab(next: string, sub?: ContentTab) {
+    const value = (TAB_SLUGS[next as AudioTab] ? next : "announce") as AudioTab;
+    setTabState(value);
+    if (sub) setContentTab(sub);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", TAB_SLUGS[value]);
+    if (value === "content") url.searchParams.set("bereich", CONTENT_SLUGS[sub ?? contentTab]);
+    else url.searchParams.delete("bereich");
+    window.history.replaceState(window.history.state, "", url);
+  }
+
+  function showContent(next: string) {
+    setTab("content", next as ContentTab);
+  }
+
   const { zones: liveZones, jobs: liveJobs, refresh: refreshStatus } = useAudioStatus(true);
+  const commands = useZoneCommands({ liveZones, liveJobs, refreshStatus });
   const monitor = useZoneMonitor({ tracks, playlists });
   const live = useLiveBroadcast();
 
@@ -208,14 +284,20 @@ export function AudioClient({
   }>({ open: false, schedule: null });
 
   const [busyZone, setBusyZone] = useState<number | null>(null);
-  const [controlError, setControlError] = useState<{ zoneId: number; message: string } | null>(
-    null
-  );
+  const [zoneNotice, setZoneNotice] = useState<ZoneNotice | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     kind: "zone" | "playlist" | "stream" | "announcement" | "schedule";
     id: number;
     name: string;
   } | null>(null);
+
+  // Eine Erfolgsmeldung ist nach ein paar Sekunden erledigt, ein Fehler bleibt
+  // stehen, bis die nächste Handlung an der Zone ihn ersetzt.
+  useEffect(() => {
+    if (zoneNotice?.tone !== "success") return;
+    const timer = setTimeout(() => setZoneNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [zoneNotice]);
 
   // Die Hervorhebung dient nur dem Wiederfinden nach dem Sprung aus der
   // Statusleiste und verschwindet danach wieder.
@@ -255,9 +337,17 @@ export function AudioClient({
     setHighlightZone(zoneId);
   }
 
-  async function control(zoneId: number, body: object) {
+  /**
+   * Lautstärke und Abgleich. Start und Stopp laufen über `commands`, weil sie
+   * bis zur Bestätigung durch den Abspieler sichtbar offen bleiben.
+   */
+  async function control(
+    zoneId: number,
+    body: { action: "VOLUME"; volume: number } | { action: "SYNC_LIBRARY" },
+    success?: string
+  ) {
     setBusyZone(zoneId);
-    setControlError(null);
+    if (zoneNotice?.zoneId === zoneId) setZoneNotice(null);
     try {
       const res = await fetch(`/api/audio/zones/${zoneId}/control`, {
         method: "POST",
@@ -267,15 +357,31 @@ export function AudioClient({
       // Ein abgelehnter Befehl blieb sonst unsichtbar – die Zone tat einfach nichts.
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setControlError({
+        setZoneNotice({
           zoneId,
+          tone: "danger",
           message: typeof data.error === "string" ? data.error : "Befehl fehlgeschlagen",
         });
+      } else if (success) {
+        setZoneNotice({ zoneId, tone: "success", message: success });
       }
       refresh();
+    } catch {
+      setZoneNotice({
+        zoneId,
+        tone: "danger",
+        message: "Keine Verbindung zum Server · Netz prüfen und erneut versuchen",
+      });
     } finally {
       setBusyZone(null);
     }
+  }
+
+  async function startStop(zoneId: number, action: "PLAY" | "STOP") {
+    if (zoneNotice?.zoneId === zoneId) setZoneNotice(null);
+    await commands.send(zoneId, action);
+    // Seite nachladen, damit „Musik manuell an bis …“ und die Quelle stimmen.
+    startTransition(() => router.refresh());
   }
 
   /**
@@ -285,15 +391,16 @@ export function AudioClient({
    */
   async function togglePairing(zoneId: number, open: boolean) {
     setBusyZone(zoneId);
-    setControlError(null);
+    if (zoneNotice?.zoneId === zoneId) setZoneNotice(null);
     try {
       const res = await fetch(`/api/audio/zones/${zoneId}/pairing`, {
         method: open ? "POST" : "DELETE",
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setControlError({
+        setZoneNotice({
           zoneId,
+          tone: "danger",
           message: typeof data.error === "string" ? data.error : "Kopplung fehlgeschlagen",
         });
       }
@@ -303,12 +410,49 @@ export function AudioClient({
     }
   }
 
-  async function toggleSchedule(schedule: ScheduleRow) {
-    await fetch(`/api/audio/schedules/${schedule.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: !schedule.isActive }),
-    });
+  /**
+   * Zeitplan an- oder abschalten. Der Schalter folgt sofort (wie iOS); kommt
+   * die Änderung nicht an, springt er zurück und der Grund steht darunter.
+   */
+  const [scheduleOverride, setScheduleOverride] = useState<Map<number, boolean>>(new Map());
+  const [scheduleError, setScheduleError] = useState<{ id: number; message: string } | null>(null);
+
+  // Hat die Seite den neuen Stand geladen, gilt wieder der Serverwert.
+  for (const [id, value] of scheduleOverride) {
+    if (schedules.find((s) => s.id === id)?.isActive === value) {
+      const next = new Map(scheduleOverride);
+      next.delete(id);
+      setScheduleOverride(next);
+      break;
+    }
+  }
+
+  async function toggleSchedule(schedule: ScheduleRow, isActive: boolean) {
+    setScheduleError(null);
+    setScheduleOverride((prev) => new Map(prev).set(schedule.id, isActive));
+    let message: string | null = null;
+    try {
+      const res = await fetch(`/api/audio/schedules/${schedule.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        message = typeof data.error === "string" ? data.error : "Änderung nicht gespeichert";
+      }
+    } catch {
+      message = "Keine Verbindung zum Server · erneut versuchen";
+    }
+    if (message) {
+      setScheduleOverride((prev) => {
+        const next = new Map(prev);
+        next.delete(schedule.id);
+        return next;
+      });
+      setScheduleError({ id: schedule.id, message });
+      return;
+    }
     refresh();
   }
 
@@ -321,34 +465,47 @@ export function AudioClient({
       announcement: "announcements",
       schedule: "schedules",
     } as const;
-    await fetch(`/api/audio/${paths[deleteConfirm.kind]}/${deleteConfirm.id}`, {
+    const res = await fetch(`/api/audio/${paths[deleteConfirm.kind]}/${deleteConfirm.id}`, {
       method: "DELETE",
     });
+    // Ein Fehler bleibt im Dialog stehen (ConfirmDialog), statt dass der
+    // Eintrag einfach weiter in der Liste auftaucht.
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(typeof data.error === "string" ? data.error : "Löschen fehlgeschlagen");
+    }
     // Eine gelöschte Zone soll nicht weiter im Ohr bleiben.
     if (deleteConfirm.kind === "zone" && monitor.zoneId === deleteConfirm.id) monitor.stop();
-    setDeleteConfirm(null);
     refresh();
   }
+
+  // Probleme im Verlauf (Fehler, Hänger) als Zahl am Reiter – Abschnitt 6
+  // erlaubt dort genau eine Zahl für Störungen.
+  const problemCount = useMemo(
+    () => historyJobs.filter((job) => job.status === "FAILED" || isJobStuck(job)).length,
+    [historyJobs]
+  );
 
   return (
     <div className="max-w-6xl space-y-4 sm:space-y-5">
       {live.phase !== "idle" && tab !== "announce" && (
         <LiveBroadcastBanner live={live} onShow={() => setTab("announce")} />
       )}
-      <ZoneStatusBar zones={zones} status={liveZones} onSelect={showZone} />
+      {/* Auf „Zonen“ stehen dieselben Angaben ausführlich in den Karten
+          (Abschnitt 1: jede Information genau einmal). */}
+      {tab !== "zones" && (
+        <ZoneStatusBar zones={zones} status={liveZones} commands={commands.commands} onSelect={showZone} />
+      )}
 
       <Tabs value={tab} onValueChange={setTab} className="gap-4">
         {/*
-          Keine Anzahl in den Reitern (Abschnitt 6: höchstens Zustand und
-          Störungen): mit Zählern brauchte die Leiste 1250 px und schnitt
-          „Zeitpläne“ und „Verlauf“ auch am breiten Bildschirm ab.
-          Die Leiste bricht um. Auf dem Handy füllen die Reiter jede Zeile, mit
-          10 px Innenabstand drei Zeilen zu je drei bei 360 bis 430 px statt vier
-          ungleicher bei 360 px. Ab `sm` behalten sie ihre Breite (`sm:flex-none`),
-          sonst zöge sich ein einzelner Reiter in der letzten Zeile über die ganze
-          Breite (Tablet hochkant: 4 + 4 + 1). Innenabstand 12 px statt 14 px: so
-          passen die neun Reiter bei 1280 px mit offener Seitenleiste (976 px
-          Inhalt) noch in eine Zeile, statt „Verlauf“ allein in eine zweite zu schieben.
+          Sechs Reiter statt neun: Mediathek, Playlists, Webradio und Vorlagen
+          sind alle „Inhalte“, die man einmal anlegt und dann in Zonen,
+          Durchsagen und Zeitplänen auswählt – sie liegen jetzt gemeinsam einen
+          Tipp tiefer. Im Betrieb braucht man vorn nur Durchsage, Zonen und den
+          Verlauf. Die Leiste bricht um (Abschnitt 6); auf dem Handy füllen die
+          Reiter jede Zeile (zwei Zeilen zu je drei bei 360 px), ab `sm` behalten
+          sie ihre Breite. Einzige Zahl: Probleme im Verlauf.
         */}
         <TabsList className="w-full sm:w-fit">
           <TabsTrigger value="announce" className="gap-1.5 px-3 sm:flex-none">
@@ -359,33 +516,30 @@ export function AudioClient({
             <Speaker className="h-4 w-4" />
             Zonen
           </TabsTrigger>
-          <TabsTrigger value="soundweb" className="gap-1.5 px-3 sm:flex-none">
-            <SlidersHorizontal className="h-4 w-4" />
-            Soundweb
-          </TabsTrigger>
-          <TabsTrigger value="library" className="gap-1.5 px-3 sm:flex-none">
-            <Music className="h-4 w-4" />
-            Mediathek
-          </TabsTrigger>
-          <TabsTrigger value="playlists" className="gap-1.5 px-3 sm:flex-none">
-            <ListMusic className="h-4 w-4" />
-            Playlists
-          </TabsTrigger>
-          <TabsTrigger value="streams" className="gap-1.5 px-3 sm:flex-none">
-            <Radio className="h-4 w-4" />
-            Webradio
-          </TabsTrigger>
-          <TabsTrigger value="templates" className="gap-1.5 px-3 sm:flex-none">
-            <Megaphone className="h-4 w-4" />
-            Vorlagen
-          </TabsTrigger>
           <TabsTrigger value="schedules" className="gap-1.5 px-3 sm:flex-none">
             <CalendarClock className="h-4 w-4" />
             Zeitpläne
           </TabsTrigger>
-          <TabsTrigger value="history" className="gap-1.5 px-3 sm:flex-none">
+          <TabsTrigger value="content" className="gap-1.5 px-3 sm:flex-none">
+            <FolderOpen className="h-4 w-4" />
+            Inhalte
+          </TabsTrigger>
+          <TabsTrigger value="soundweb" className="gap-1.5 px-3 sm:flex-none">
+            <SlidersHorizontal className="h-4 w-4" />
+            Soundweb
+          </TabsTrigger>
+          <TabsTrigger
+            value="history"
+            className="gap-1.5 px-3 sm:flex-none"
+            aria-label={problemCount > 0 ? `Verlauf, ${problemCount} Probleme` : undefined}
+          >
             <History className="h-4 w-4" />
             Verlauf
+            {problemCount > 0 && (
+              <Badge variant="danger" className="h-4 min-w-4 px-1 text-[10px] tabular-nums">
+                {problemCount}
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
 
@@ -418,7 +572,8 @@ export function AudioClient({
           ) : (
             // `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte macht ein langer
             // Titel beim Mithören (`truncate`) die Spalte und damit die Seite breiter.
-            <div className="grid grid-cols-1 gap-4">
+            // Ab `lg` zwei Spalten: über die volle Breite lag der Regler 1000 px lang.
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
               {zones.map((zone) => (
                 <ZoneCard
                   key={zone.id}
@@ -428,11 +583,13 @@ export function AudioClient({
                   live={liveZones.get(zone.id)}
                   highlight={highlightZone === zone.id}
                   busy={busyZone === zone.id}
-                  error={
-                    controlError?.zoneId === zone.id
-                      ? controlError.message
+                  command={commands.commands.get(zone.id)}
+                  now={commands.now}
+                  notice={
+                    zoneNotice?.zoneId === zone.id
+                      ? zoneNotice
                       : monitor.error?.zoneId === zone.id
-                        ? monitor.error.message
+                        ? { zoneId: zone.id, tone: "danger", message: monitor.error.message }
                         : null
                   }
                   monitor={{
@@ -448,10 +605,17 @@ export function AudioClient({
                       ),
                     setVolume: monitor.setVolume,
                   }}
-                  onPlay={() => control(zone.id, { action: "PLAY" })}
-                  onStop={() => control(zone.id, { action: "STOP" })}
+                  onPlay={() => startStop(zone.id, "PLAY")}
+                  onStop={() => startStop(zone.id, "STOP")}
                   onVolume={(volume) => control(zone.id, { action: "VOLUME", volume })}
-                  onSync={() => control(zone.id, { action: "SYNC_LIBRARY" })}
+                  onSync={() =>
+                    control(
+                      zone.id,
+                      { action: "SYNC_LIBRARY" },
+                      "Abgleich gesendet · der Abspieler lädt fehlende Titel im Hintergrund"
+                    )
+                  }
+                  onDismiss={() => commands.dismiss(zone.id)}
                   onPairing={(open) => togglePairing(zone.id, open)}
                   onEdit={() => setZoneDialog({ open: true, zone })}
                   onDelete={() =>
@@ -472,6 +636,30 @@ export function AudioClient({
             onChanged={refresh}
           />
         </TabsContent>
+
+        {/* ── INHALTE ──────────────────────────────────────────────────────── */}
+        <TabsContent value="content">
+        <Tabs value={contentTab} onValueChange={showContent} className="gap-4">
+          {/* Einmal anlegen, dann überall auswählen. Vier Bereiche, gleiche
+              Kapsel wie oben; auf dem Handy zwei Zeilen zu je zwei. */}
+          <TabsList className="w-full sm:w-fit" aria-label="Inhalte">
+            <TabsTrigger value="library" className="gap-1.5 px-3 max-sm:basis-[calc(50%-2px)] sm:flex-none">
+              <Music className="h-4 w-4" />
+              Mediathek
+            </TabsTrigger>
+            <TabsTrigger value="playlists" className="gap-1.5 px-3 max-sm:basis-[calc(50%-2px)] sm:flex-none">
+              <ListMusic className="h-4 w-4" />
+              Playlists
+            </TabsTrigger>
+            <TabsTrigger value="streams" className="gap-1.5 px-3 max-sm:basis-[calc(50%-2px)] sm:flex-none">
+              <Radio className="h-4 w-4" />
+              Webradio
+            </TabsTrigger>
+            <TabsTrigger value="templates" className="gap-1.5 px-3 max-sm:basis-[calc(50%-2px)] sm:flex-none">
+              <Megaphone className="h-4 w-4" />
+              Vorlagen
+            </TabsTrigger>
+          </TabsList>
 
         {/* ── MEDIATHEK ────────────────────────────────────────────────────── */}
         <TabsContent value="library">
@@ -680,6 +868,8 @@ export function AudioClient({
             </Card>
           )}
         </TabsContent>
+        </Tabs>
+        </TabsContent>
 
         {/* ── ZEITPLÄNE ────────────────────────────────────────────────────── */}
         <TabsContent value="schedules" className="space-y-4">
@@ -703,16 +893,9 @@ export function AudioClient({
                   {/* Handy: Tasten neben Titel und Badges, die Angaben darunter über die volle Breite */}
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <h3
-                          className={cn(
-                            "text-sm font-semibold",
-                            schedule.isActive
-                              ? "text-foreground"
-                              : "text-muted-foreground line-through"
-                          )}
-                        >
-                          {schedule.name}
-                        </h3>
+                        {/* Abgeschaltet: Text bleibt lesbar, den Zustand sagt das Badge (Abschnitt 17). */}
+                        <h3 className="text-sm font-semibold text-foreground">{schedule.name}</h3>
+                        {!schedule.isActive && <Badge variant="neutral">Abgeschaltet</Badge>}
                         <Badge variant="secondary" className="text-xs">
                           {describeScheduleTiming(schedule)}
                         </Badge>
@@ -725,17 +908,20 @@ export function AudioClient({
                           </Badge>
                         )}
                     </div>
-                    <div className="flex shrink-0 gap-1 sm:row-span-2">
-                      <IconAction
-                        icon={schedule.isActive ? CheckCircle2 : XCircle}
-                        iconClassName={
-                          schedule.isActive ? "text-success" : "text-muted-foreground/70"
-                        }
-                        label={`Zeitplan ${schedule.name} ${schedule.isActive ? "deaktivieren" : "aktivieren"}`}
-                        title={schedule.isActive ? "Deaktivieren" : "Aktivieren"}
-                        pressed={schedule.isActive}
-                        onClick={() => toggleSchedule(schedule)}
-                      />
+                    <div className="flex shrink-0 items-center gap-1 sm:row-span-2">
+                      {/* Ja/Nein mit sofortiger Wirkung: Schalter (Abschnitt 16). */}
+                      <span className="flex h-11 w-12 items-center justify-center sm:h-8 sm:w-11">
+                        <Switch
+                          checked={scheduleOverride.get(schedule.id) ?? schedule.isActive}
+                          onCheckedChange={(checked) => toggleSchedule(schedule, checked)}
+                          aria-label={`Zeitplan ${schedule.name} aktiv`}
+                          title={
+                            (scheduleOverride.get(schedule.id) ?? schedule.isActive)
+                              ? "Aktiv – zum Abschalten tippen"
+                              : "Abgeschaltet – zum Einschalten tippen"
+                          }
+                        />
+                      </span>
                       <IconAction
                         icon={Pencil}
                         label={`Zeitplan ${schedule.name} bearbeiten`}
@@ -797,6 +983,15 @@ export function AudioClient({
                             </p>
                           )
                         )}
+                      {scheduleError?.id === schedule.id && (
+                        <Notice
+                          tone="danger"
+                          compact
+                          role="alert"
+                          title={scheduleError.message}
+                          className="mt-2"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -893,25 +1088,17 @@ export function AudioClient({
         />
       )}
 
-      <AlertDialog
+      <ConfirmDialog
         open={deleteConfirm !== null}
         onOpenChange={(open) => !open && setDeleteConfirm(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>„{deleteConfirm?.name}&ldquo; löschen?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Das lässt sich nicht rückgängig machen.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={confirmDelete}>
-              Löschen
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={`„${deleteConfirm?.name ?? ""}“ löschen?`}
+        description={
+          deleteConfirm?.kind === "zone"
+            ? "Die Zone verschwindet aus Durchsagen und Zeitplänen. Der Abspieler bleibt als Gerät erhalten."
+            : "Das lässt sich nicht rückgängig machen."
+        }
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }
@@ -971,7 +1158,9 @@ function ZoneCard({
   live,
   highlight,
   busy,
-  error,
+  command,
+  now,
+  notice,
   monitor,
   onPlay,
   onStop,
@@ -980,6 +1169,7 @@ function ZoneCard({
   onPairing,
   onEdit,
   onDelete,
+  onDismiss,
 }: {
   zone: ZoneRow;
   /** Betriebszeit des Raums – für die Musik-Automatik „Betriebszeit des Raums“. */
@@ -987,8 +1177,13 @@ function ZoneCard({
   timeZone: string;
   live: ZoneStatus | undefined;
   highlight: boolean;
+  /** Lautstärke, Abgleich oder Kopplung werden gerade gesendet. */
   busy: boolean;
-  error: string | null;
+  /** Offener oder gescheiterter Start/Stopp. */
+  command: ZoneCommandState | undefined;
+  now: number;
+  /** Rückmeldung zu Lautstärke, Abgleich, Kopplung oder Mithören. */
+  notice: ZoneNotice | null;
   monitor: {
     active: boolean;
     available: boolean;
@@ -1004,17 +1199,20 @@ function ZoneCard({
   onPairing: (open: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
+  onDismiss: () => void;
 }) {
   const serverVolume = live?.volume ?? zone.volume;
   const isPlaying = live?.isPlaying ?? zone.isPlaying;
   const deviceOnline = live?.deviceOnline ?? zone.deviceOnline;
   const currentTitle = live?.currentTitle ?? zone.currentTitle;
   const pendingJobs = live?.pendingJobs ?? 0;
+  const isActive = live?.isActive ?? zone.isActive;
   // Der Livewert ist auch dann maßgeblich, wenn er null ist: eine gerade
   // beendete Übernahme darf nicht als laufend stehen bleiben.
   const externalActive = live ? live.externalActive : zone.externalActive;
   const externalSender = live ? live.externalSender : zone.externalSender;
   const pairableFor = live?.pairableFor ?? zone.pairableFor;
+  const musicOverrideUntil = live ? live.musicOverrideUntil : zone.musicOverrideUntil;
 
   const cardRef = useRef<HTMLDivElement>(null);
   const volume = useCommittedVolume(serverVolume, onVolume);
@@ -1033,7 +1231,68 @@ function ZoneCard({
 
   const lastSeen = formatRelativeTime(live?.lastStateAt ?? zone.lastStateAt);
   const musicWindow = describeMusicWindow(zone);
-  const musicState = describeMusicState(zone, roomSchedule, new Date(), timeZone);
+  const musicState = describeMusicState(
+    { ...zone, musicOverrideUntil },
+    roomSchedule,
+    new Date(now),
+    timeZone
+  );
+
+  const pending = command && command.phase !== "failed" ? command : null;
+  const waitedSec = pending ? Math.max(0, Math.round((now - pending.since) / 1000)) : 0;
+  // Was die Taste tut, folgt dem gemeldeten Zustand – solange ein Befehl offen
+  // ist, dem gewünschten, damit sie nicht zwischendurch zurückspringt.
+  const showStop = pending ? pending.action === "PLAY" : isPlaying;
+
+  // Warum Start gerade nichts bewirken kann – statt die Taste stumm zu sperren.
+  const blockedReason = !zone.deviceId
+    ? "Kein Abspieler zugeordnet · in den Einstellungen der Zone wählen"
+    : !isActive
+      ? "Zone ist deaktiviert · in den Einstellungen einschalten"
+      : zone.defaultSource === "SILENCE"
+        ? "Keine Quelle eingestellt · Playlist oder Webradio in den Einstellungen wählen"
+        : null;
+
+  const sourceName =
+    zone.defaultSource === "STREAM"
+      ? (zone.streamName ?? "Webradio")
+      : zone.defaultSource === "PLAYLIST"
+        ? (zone.playlistName ?? "Playlist")
+        : null;
+
+  const state: { label: string; detail: string; tone: "music" | "neutral" | "danger" | "info" } =
+    pending
+      ? {
+          label: pending.action === "PLAY" ? "Startet …" : "Stoppt …",
+          detail:
+            pending.phase === "sending"
+              ? "Befehl wird gesendet"
+              : `Wartet auf den Abspieler · ${waitedSec} s`,
+          tone: "neutral",
+        }
+      : externalActive
+        ? {
+            label: `${EXTERNAL_LABELS[externalActive]} spielt`,
+            detail: externalSender ?? "Ein Gerät sendet in die Zone",
+            tone: "info",
+          }
+        : isPlaying
+          ? {
+              label: "Läuft",
+              detail: currentTitle ?? sourceName ?? "Wiedergabe",
+              tone: "music",
+            }
+          : zone.deviceId && !deviceOnline
+            ? {
+                label: "Offline",
+                detail: lastSeen ? `zuletzt gemeldet ${lastSeen}` : "Abspieler hat sich nie gemeldet",
+                tone: "danger",
+              }
+            : {
+                label: "Aus",
+                detail: sourceName ? `Start spielt ${sourceName}` : "Keine Quelle eingestellt",
+                tone: "neutral",
+              };
 
   return (
     <Card
@@ -1042,86 +1301,37 @@ function ZoneCard({
         // Umriss statt Ring: ein Ring ersetzt den Glasschatten der Karte.
         highlight && "outline-2 outline-primary"
       )}>
-      <CardContent>
-        {/*
-          Am Telefon stehen die Knöpfe unter dem Namen: nebeneinander blieben
-          für den Zonennamen neben vier Knöpfen nur wenige Zeichen.
-        */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-semibold text-foreground">{zone.name}</h3>
-              {/* Inaktiv: Text bleibt lesbar, den Zustand sagt das Badge (docs/design-regeln.md, Abschnitt 17). */}
-              {!zone.isActive && <Badge variant="neutral">Deaktiviert</Badge>}
-              {zone.deviceId ? (
-                <Badge variant={deviceOnline ? "success" : "danger"} className="text-xs">
-                  {deviceOnline ? "Online" : "Offline"}
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-xs">
-                  Kein Abspieler
-                </Badge>
-              )}
-              {zone.roomName && (
-                <Badge variant="outline" className="text-xs" title="Raum – über ihn erbt die Zone die Betriebszeit">
-                  {zone.roomName}
-                </Badge>
-              )}
-              {zone.syncGroup && (
-                <Badge variant="outline" className="text-xs">
-                  Sync: {zone.syncGroup}
-                </Badge>
-              )}
-              {isPlaying && (
-                <Badge variant="music" className="gap-1 text-xs">
-                  <Volume2 className="h-3 w-3" /> läuft
-                </Badge>
-              )}
-              {externalActive && (
-                <Badge variant="info" className="gap-1 text-xs">
-                  {externalActive === "AIRPLAY" ? (
-                    <Airplay className="h-3 w-3" />
-                  ) : (
-                    <Bluetooth className="h-3 w-3" />
-                  )}
-                  {EXTERNAL_LABELS[externalActive]}
-                  {externalSender && ` · ${externalSender}`}
-                </Badge>
-              )}
-              {pendingJobs > 0 && (
-                <Badge variant="warning" className="gap-1 text-xs tabular-nums">
-                  <Clock className="h-3 w-3" />
-                  {pendingJobs} wartet
-                </Badge>
-              )}
-            </div>
-
-            <p className="text-xs text-muted-foreground mt-1">
-              {currentTitle ??
-                (zone.sourceKind === "PLAYLIST"
-                  ? (zone.playlistName ?? "Playlist")
-                  : zone.sourceKind === "STREAM"
-                    ? (zone.streamName ?? "Webradio")
-                    : "Keine Wiedergabe")}
-              {lastSeen && ` · gemeldet ${lastSeen}`}
-            </p>
-            {musicState && (
-              <p
-                className={cn(
-                  "mt-0.5 flex items-start gap-1 text-xs",
-                  musicState.warn ? "text-warning" : "text-muted-foreground"
-                )}
-              >
-                <Clock className="mt-0.5 h-3 w-3 shrink-0" />
-                <span>
-                  {musicState.text}
-                  {musicWindow && ` · ${musicWindow}`}
-                </span>
-              </p>
+      <CardContent className="space-y-3">
+        {/* Kopf: Name und nur das, was vom Normalbetrieb abweicht. */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 pt-1.5 sm:pt-0.5">
+            <h3 className="text-sm font-semibold text-foreground">{zone.name}</h3>
+            {/* Inaktiv: Text bleibt lesbar, den Zustand sagt das Badge (docs/design-regeln.md, Abschnitt 17). */}
+            {!isActive && <Badge variant="neutral">Deaktiviert</Badge>}
+            {!zone.deviceId && (
+              <Badge variant="outline" className="text-xs">
+                Kein Abspieler
+              </Badge>
+            )}
+            {zone.roomName && (
+              <Badge variant="outline" className="text-xs" title="Raum – über ihn erbt die Zone die Betriebszeit">
+                {zone.roomName}
+              </Badge>
+            )}
+            {zone.syncGroup && (
+              <Badge variant="outline" className="text-xs">
+                Sync: {zone.syncGroup}
+              </Badge>
+            )}
+            {!pending && pendingJobs > 0 && (
+              <Badge variant="warning" className="gap-1 text-xs tabular-nums" title="Befehle, die der Abspieler noch nicht bestätigt hat">
+                <Clock className="h-3 w-3" />
+                {pendingJobs} wartet
+              </Badge>
             )}
           </div>
 
-          <div className="-mr-1 flex shrink-0 justify-end gap-1 sm:mr-0">
+          <div className="-mr-1 -mt-1 flex shrink-0 gap-0.5 sm:mt-0">
             <IconAction
               icon={Headphones}
               label={
@@ -1139,16 +1349,7 @@ function ZoneCard({
               disabled={!monitor.available}
               pressed={monitor.active}
               onClick={monitor.toggle}
-              className={cn(
-                monitor.active &&
-                  "text-primary bg-primary/10 hover:bg-primary/10 "
-              )}
-            />
-            <IconAction
-              icon={RefreshCw}
-              label={`Dateicache von ${zone.name} abgleichen`}
-              title="Dateicache abgleichen"
-              onClick={onSync}
+              className={cn(monitor.active && "text-primary bg-primary/10 hover:bg-primary/10")}
             />
             <IconAction
               icon={Pencil}
@@ -1156,89 +1357,165 @@ function ZoneCard({
               title="Bearbeiten"
               onClick={onEdit}
             />
-            <IconAction
-              icon={Trash2}
-              label={`Zone ${zone.name} löschen`}
-              title="Löschen"
-              tone="danger"
-              onClick={onDelete}
-            />
+            {/* Seltenes liegt einen Tipp tiefer (Abschnitt 1, Grundsatz 4). */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Weitere Aktionen für ${zone.name}`}
+                  title="Mehr"
+                  className="h-11 w-11 sm:h-8 sm:w-8"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-52">
+                <DropdownMenuItem onSelect={onSync} disabled={!zone.deviceId}>
+                  <RefreshCw />
+                  Titel auf Abspieler laden
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+                  <Trash2 />
+                  Zone löschen
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {/* Immer nur ein Knopf: Stopp, solange die Zone spielt, sonst Start.
-              Am Telefon volle Breite, der Regler bekommt darunter eine eigene
-              Zeile – gequetscht daneben war er nicht zu bedienen. */}
-          <div className="flex w-full gap-2 sm:w-auto">
-            {isPlaying ? (
-              <Button
-                variant="outline"
-                onClick={onStop}
-                disabled={busy}
-                className="h-11 flex-1 gap-1.5 sm:h-8 sm:flex-none"
-              >
-                {busy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Square className="h-3.5 w-3.5" />
-                )}
-                Stopp
+        {/*
+          Zustand und Taste in einer Kachel: erst sehen, dann tippen. Die Kachel
+          leuchtet violett, solange Musik läuft (Zustandsvokabular, Abschnitt 3).
+          Immer nur eine Taste – Stopp, solange die Zone spielt, sonst Start.
+        */}
+        <div
+          className={cn(
+            "glass-tile flex items-center gap-3 p-2.5 transition-colors",
+            state.tone === "music" &&
+              "border-violet-400/45 bg-gradient-to-br from-violet-400/25 to-violet-400/5",
+            state.tone === "info" && "border-info/40 bg-gradient-to-br from-info/14 to-info/[0.03]"
+          )}
+        >
+          <IconChip
+            icon={
+              pending
+                ? Loader2
+                : externalActive === "AIRPLAY"
+                  ? Airplay
+                  : externalActive
+                    ? Bluetooth
+                    : state.tone === "danger"
+                      ? WifiOff
+                      : isPlaying
+                        ? Volume2
+                        : VolumeX
+            }
+            tone={state.tone}
+            active={state.tone === "music" || state.tone === "info"}
+            size="lg"
+            className={cn(pending && "[&_svg]:animate-spin")}
+          />
+          <div className="min-w-0 flex-1" aria-live="polite">
+            <p className="text-sm font-semibold text-foreground">{state.label}</p>
+            <p className="line-clamp-2 text-xs break-words text-muted-foreground tabular-nums">{state.detail}</p>
+          </div>
+          {showStop ? (
+            <Button
+              variant="outline"
+              onClick={onStop}
+              disabled={!!pending}
+              aria-label={`${zone.name} stoppen`}
+              className="h-11 shrink-0 gap-1.5 px-4 sm:h-9"
+            >
+              {pending?.action === "STOP" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Square className="h-3.5 w-3.5" />
+              )}
+              Stopp
+            </Button>
+          ) : (
+            <Button
+              onClick={onPlay}
+              disabled={!!pending || blockedReason !== null}
+              aria-label={`${zone.name} starten`}
+              title={blockedReason ?? undefined}
+              className="h-11 shrink-0 gap-1.5 px-4 sm:h-9"
+            >
+              {pending?.action === "PLAY" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="h-3.5 w-3.5" />
+              )}
+              Start
+            </Button>
+          )}
+        </div>
+
+        {blockedReason && !showStop && (
+          <p className="-mt-1 text-xs text-muted-foreground">{blockedReason}</p>
+        )}
+
+        {command?.phase === "failed" && (
+          <Notice
+            tone="danger"
+            compact
+            role="alert"
+            title={command.message}
+            action={
+              <Button variant="ghost" size="sm" onClick={onDismiss} className="max-sm:h-11">
+                Schließen
               </Button>
-            ) : (
-              <Button
-                onClick={onPlay}
-                disabled={busy}
-                className="h-11 flex-1 gap-1.5 sm:h-8 sm:flex-none"
-              >
-                {busy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Play className="h-3.5 w-3.5" />
-                )}
-                Start
-              </Button>
+            }
+          />
+        )}
+
+        <div className="flex items-center gap-2">
+          <Volume2 className="h-4 w-4 shrink-0 text-muted-foreground/70" aria-hidden />
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={volume.value}
+            onChange={(e) => volume.change(Number(e.target.value))}
+            aria-label={`Lautstärke ${zone.name}`}
+            aria-valuetext={`${volume.value} Prozent`}
+            style={sliderFill(volume.value)}
+            className="touch-slider flex-1"
+          />
+          <span className="w-9 text-right text-xs tabular-nums text-muted-foreground">
+            {volume.value}%
+          </span>
+        </div>
+
+        {musicState && (
+          <p
+            className={cn(
+              "flex items-start gap-1.5 text-xs",
+              musicState.warn ? "text-warning" : "text-muted-foreground"
             )}
-          </div>
-
-          <div className="flex w-full items-center gap-2 sm:w-auto sm:min-w-[180px] sm:flex-1">
-            <Volume2 className="h-4 w-4 shrink-0 text-muted-foreground/70" />
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={volume.value}
-              onChange={(e) => volume.change(Number(e.target.value))}
-              aria-label={`Lautstärke ${zone.name}`}
-              aria-valuetext={`${volume.value} Prozent`}
-              style={sliderFill(volume.value)}
-              className="touch-slider flex-1"
-            />
-            <span className="w-9 text-right text-xs tabular-nums text-muted-foreground">
-              {volume.value}%
+          >
+            <CalendarClock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>
+              {musicState.text}
+              {musicWindow && ` · ${musicWindow}`}
             </span>
-          </div>
-        </div>
+          </p>
+        )}
 
         {externalActive && (
-          <Notice
-            tone="info"
-            compact
-            icon={externalActive === "AIRPLAY" ? Airplay : Bluetooth}
-            className="mt-2"
-          >
+          <Notice tone="info" compact icon={externalActive === "AIRPLAY" ? Airplay : Bluetooth}>
             <span>
-              {externalSender
-                ? `„${externalSender}“ sendet per ${EXTERNAL_LABELS[externalActive]}`
-                : `Ein Gerät sendet per ${EXTERNAL_LABELS[externalActive]}`}
-              . Die eigene Quelle läuft weiter, sobald die Verbindung endet – Durchsagen
-              kommen auch währenddessen durch.
+              Die eigene Quelle läuft weiter, sobald die Verbindung endet – Durchsagen kommen auch
+              währenddessen durch.
             </span>
           </Notice>
         )}
 
         {zone.bluetoothEnabled && (
-          <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
             <Button
               variant="outline"
               onClick={() => onPairing(pairable === 0)}
@@ -1259,7 +1536,7 @@ function ZoneCard({
         )}
 
         {monitor.active && (
-          <div className="mt-2 flex flex-col gap-1 rounded-tile border border-primary/30 bg-primary/10 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+          <div className="flex flex-col gap-1 rounded-tile border border-primary/30 bg-primary/10 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
             <span className="flex items-center gap-1.5 text-xs font-medium text-primary">
               <Headphones className="h-3.5 w-3.5" />
               Mithören
@@ -1291,8 +1568,13 @@ function ZoneCard({
           </div>
         )}
 
-        {error && (
-          <Notice tone="danger" compact role="alert" icon={AlertTriangle} title={error} className="mt-2" />
+        {notice && (
+          <Notice
+            tone={notice.tone}
+            compact
+            role={notice.tone === "danger" ? "alert" : "status"}
+            title={notice.message}
+          />
         )}
       </CardContent>
     </Card>
