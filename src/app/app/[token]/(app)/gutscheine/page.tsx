@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { loadRiderCached, riderAppPath } from "@/lib/rider-app";
+import { riderAppPath } from "@/lib/rider-app";
+import { requireRider } from "@/lib/rider-auth";
 import { fmtDay, validityText } from "@/lib/rider-format";
 
 export const dynamic = "force-dynamic";
@@ -8,8 +8,7 @@ export const dynamic = "force-dynamic";
 /** Alle Gutscheine des Fahrers: offene zuerst, dann eingelöste und abgelaufene. */
 export default async function RiderVouchers({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const rider = await loadRiderCached(token);
-  if (!rider) notFound();
+  const rider = await requireRider(token);
   const base = riderAppPath(token);
 
   return (

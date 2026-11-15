@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { loadRiderCached, riderAppPath } from "@/lib/rider-app";
+import { riderAppPath } from "@/lib/rider-app";
+import { requireRider } from "@/lib/rider-auth";
 import { fmtDay } from "@/lib/rider-format";
 
 export const dynamic = "force-dynamic";
@@ -9,8 +10,7 @@ export const dynamic = "force-dynamic";
 /** Ein Gutschein mit QR-Code zum Vorzeigen an der Kasse. */
 export default async function RiderVoucher({ params }: { params: Promise<{ token: string; id: string }> }) {
   const { token, id } = await params;
-  const rider = await loadRiderCached(token);
-  if (!rider) notFound();
+  const rider = await requireRider(token);
   const voucher = rider.vouchers.find((v) => v.id === Number(id));
   if (!voucher) notFound();
   const open = voucher.state === "open";

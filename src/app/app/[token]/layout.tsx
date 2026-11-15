@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { loadRiderCached, riderAppPath } from "@/lib/rider-app";
 import { appleStartupImages } from "@/lib/pwa-splash";
-import { RiderNav } from "@/components/rider/rider-nav";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -26,14 +24,7 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
   };
 }
 
-export default async function RiderLayout({ children, params }: LayoutProps) {
-  const { token } = await params;
-  const rider = await loadRiderCached(token);
-  if (!rider) notFound();
-  return (
-    <>
-      <main className="rd-main">{children}</main>
-      <RiderNav base={riderAppPath(token)} />
-    </>
-  );
+/** Rahmen je Fahrer: nur Metadaten. Die Navigation hängt am geschützten Teil `(app)`. */
+export default function RiderLayout({ children }: LayoutProps) {
+  return children;
 }

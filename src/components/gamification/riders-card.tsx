@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Copy, Loader2, QrCode, Search } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, QrCode, Search } from "lucide-react";
 import { useOrigin } from "@/hooks/use-origin";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,9 @@ export function RidersCard({ riders, year }: { riders: RiderRow[]; year: number 
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [link, setLink] = useState<{ name: string; url: string; qr: string } | null>(null);
+  const [link, setLink] = useState<{ ticketId: number; name: string; url: string; qr: string; reset: boolean } | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const shown = useMemo(() => {
@@ -40,23 +42,41 @@ export function RidersCard({ riders, year }: { riders: RiderRow[]; year: number 
     return q ? riders.filter((r) => r.name.toLowerCase().includes(q)) : riders;
   }, [riders, query]);
 
+  async function loadLink(ticketId: number, name: string, action: "link" | "reset") {
+    const res = await fetch(`/api/gamification/riders/${ticketId}/${action}`, { method: "POST" });
+    const data = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
+    if (!res.ok || !data.path) throw new Error(data.error ?? "Link konnte nicht erzeugt werden");
+    const url = `${origin || window.location.origin}${data.path}`;
+    const qrcode = (await import("qrcode")).default;
+    const qr = await qrcode.toDataURL(url, { width: 480, margin: 2 });
+    setCopied(false);
+    setConfirmReset(false);
+      setLink({ ticketId, name, url, qr, reset: action === "reset" });
+  }
+
   async function showLink(r: RiderRow) {
     if (busy != null) return;
     setBusy(r.ticketId);
     setError(null);
     try {
-      const res = await fetch(`/api/gamification/riders/${r.ticketId}/link`, { method: "POST" });
-      const data = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
-      if (!res.ok || !data.path) throw new Error(data.error ?? "Link konnte nicht erzeugt werden");
-      const url = `${origin || window.location.origin}${data.path}`;
-      const qrcode = (await import("qrcode")).default;
-      const qr = await qrcode.toDataURL(url, { width: 480, margin: 2 });
-      setCopied(false);
-      setLink({ name: r.name, url, qr });
+      await loadLink(r.ticketId, r.name, "link");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Link konnte nicht erzeugt werden");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function reset() {
+    if (!link || resetting) return;
+    setResetting(true);
+    setError(null);
+    try {
+      await loadLink(link.ticketId, link.name, "reset");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Zurücksetzen fehlgeschlagen");
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -147,7 +167,7 @@ export function RidersCard({ riders, year }: { riders: RiderRow[]; year: number 
           <DialogHeader>
             <DialogTitle>App-Link für {link?.name}</DialogTitle>
             <DialogDescription>
-              Mit dem Handy scannen und die Seite zum Startbildschirm hinzufügen. Der Link gilt nur für diesen Fahrer.
+              Mit dem Handy scannen. Beim ersten Öffnen richtet der Fahrer Passkey oder Passwort ein, danach öffnet der Link allein die App nicht mehr.
             </DialogDescription>
           </DialogHeader>
           {link && (
@@ -162,6 +182,25 @@ export function RidersCard({ riders, year }: { riders: RiderRow[]; year: number 
                 {copied ? <Check /> : <Copy />}
                 {copied ? "Kopiert" : "Link kopieren"}
               </Button>
+              {link.reset && <Notice tone="success" compact title="Zugang zurückgesetzt. Das ist der neue Link, der alte gilt nicht mehr." />}
+              {confirmReset ? (
+                <Notice
+                  tone="danger"
+                  compact
+                  title="Passwort und Passkeys löschen und einen neuen Link ausgeben? Statistik und Gutscheine bleiben."
+                  action={
+                    <Button type="button" variant="destructive" size="sm" onClick={reset} disabled={resetting} className="max-sm:h-11">
+                      {resetting ? <Loader2 className="animate-spin" /> : <KeyRound />}
+                      Zurücksetzen
+                    </Button>
+                  }
+                />
+              ) : (
+                <Button variant="ghost" className="w-full text-muted-foreground max-sm:h-11" onClick={() => setConfirmReset(true)}>
+                  <KeyRound />
+                  Zugang zurücksetzen
+                </Button>
+              )}
             </div>
           )}
         </DialogContent>

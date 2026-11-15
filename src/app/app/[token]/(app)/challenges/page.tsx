@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { loadRiderCached, riderAppPath } from "@/lib/rider-app";
+import { riderAppPath } from "@/lib/rider-app";
+import { requireRider } from "@/lib/rider-auth";
 import { loadRiderChallengesCached, type RiderChallenge } from "@/lib/rider-challenges";
 import { METRIC_LABEL } from "@/lib/gamification";
 import { daysUntil, fmtDay } from "@/lib/rider-format";
@@ -71,8 +71,7 @@ function ChallengeCard({ c }: { c: RiderChallenge }) {
 /** Challenges: laufende zuerst, dann kommende und kürzlich beendete. */
 export default async function RiderChallenges({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const rider = await loadRiderCached(token);
-  if (!rider) notFound();
+  const rider = await requireRider(token);
   const challenges = await loadRiderChallengesCached(rider);
   const running = challenges.filter((c) => c.phase === "running");
   const upcoming = challenges.filter((c) => c.phase === "upcoming");
