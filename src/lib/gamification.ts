@@ -428,3 +428,53 @@ export function renewalHint(endDate: Date | null, now: Date): RenewalHint | null
   const days = Math.ceil(ms / 86_400_000);
   return days <= RENEWAL_HINT_DAYS ? { kind: "soon", days } : null;
 }
+
+/** Preisliste aus der Einstellung lesen: {"<id>": Cent}. Ungültiges fällt weg. */
+export function parsePriceMap(value: unknown): Map<number, number> {
+  const out = new Map<number, number>();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+  for (const [key, cents] of Object.entries(value as Record<string, unknown>)) {
+    const id = Number(key);
+    if (Number.isInteger(id) && id > 0 && typeof cents === "number" && Number.isInteger(cents) && cents > 0) {
+      out.set(id, cents);
+    }
+  }
+  return out;
+}
+
+/** Ab so vielen Besuchen zeigt die App Tagesgästen den Abo-Rechner. */
+export const ABO_CALCULATOR_MIN_VISITS = 3;
+
+export interface AboCalculation {
+  tickets: number;
+  spentCents: number;
+  /** Das günstigste Abo mit hinterlegtem Preis. */
+  aboName: string;
+  aboCents: number;
+}
+
+/**
+ * Abo-Rechner für Tagesgäste: Was haben die Tickets dieser Saison gekostet,
+ * was kostet das Abo? Gibt nur dann etwas zurück, wenn jede Zahl echt ist:
+ * ab drei Besuchen, jeder Ticketpreis hinterlegt und mindestens ein Abo-Preis.
+ */
+export function aboCalculation(
+  visitDays: number,
+  ticketCents: Array<number | null | undefined>,
+  abos: Array<{ name: string; cents: number }>,
+): AboCalculation | null {
+  if (visitDays < ABO_CALCULATOR_MIN_VISITS || ticketCents.length === 0 || abos.length === 0) return null;
+  let spentCents = 0;
+  for (const c of ticketCents) {
+    if (c == null || c <= 0) return null;
+    spentCents += c;
+  }
+  const abo = [...abos].sort((a, b) => a.cents - b.cents)[0];
+  return { tickets: ticketCents.length, spentCents, aboName: abo.name, aboCents: abo.cents };
+}
+
+/** "25 €" oder "24,50 €". */
+export function formatEuro(cents: number): string {
+  const whole = cents % 100 === 0;
+  return `${(cents / 100).toLocaleString("de-DE", { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 })} €`;
+}

@@ -13,12 +13,15 @@ import {
   computeMetrics,
   currentWeekStreak,
   dbDateToYmd,
+  aboCalculation,
   aheadOfPercent,
+  parsePriceMap,
   mergeDayStats,
   seasonRecap,
   milestoneProgress,
   seasonLevel,
   ymdToDbDate,
+  type AboCalculation,
   type BenefitVoucherState,
   type GamiMetric,
   type GamiPeriod,
@@ -55,6 +58,10 @@ export interface RiderView {
   enabled: boolean;
   startCapPerDay: number;
   abo: { name: string; endDate: Date | null; active: boolean; areas: string[] } | null;
+  /** Tagesgast ohne Abo: darf weitere Tickets hinzufügen und sieht den Abo-Rechner. */
+  dayGuest: boolean;
+  /** Abo-Rechner; null, solange nicht jede Zahl dafür hinterlegt ist. */
+  calculator: AboCalculation | null;
   year: number;
   visitDays: number;
   starts: number;
@@ -82,6 +89,8 @@ export async function loadRider(token: string, now: Date = new Date()): Promise<
           status: true,
           startDate: true,
           endDate: true,
+          createdAt: true,
+          serviceId: true,
           subscription: { select: { name: true, areas: { select: { name: true }, orderBy: { name: "asc" } } } },
         },
       },
@@ -146,13 +155,37 @@ export async function loadRider(token: string, now: Date = new Date()): Promise<
   )[0];
   const usable = newest && (newest.status === "VALID" || newest.status === "REDEEMED");
 
+  // Abo-Rechner: nur für Gäste ohne Abo, aus den Tagestickets dieser Saison.
+  const dayGuest = withSub.length === 0;
+  let calculator: AboCalculation | null = null;
+  if (dayGuest && config) {
+    const servicePrices = parsePriceMap(config.servicePrices);
+    const aboPrices = parsePriceMap(config.subscriptionPrices);
+    const seasonTickets = profile.tickets.filter(
+      (t) => t.serviceId != null && config.dayServiceIds.includes(t.serviceId) && berlinYmd(t.startDate ?? t.createdAt).startsWith(String(year)),
+    );
+    const abos = aboPrices.size
+      ? await prisma.subscription.findMany({
+          where: { accountId, id: { in: [...aboPrices.keys()].filter((id) => config.subscriptionIds.includes(id)) } },
+          select: { id: true, name: true },
+        })
+      : [];
+    calculator = aboCalculation(
+      metrics.visitDays,
+      seasonTickets.map((t) => servicePrices.get(t.serviceId!)),
+      abos.map((a) => ({ name: a.name, cents: aboPrices.get(a.id)! })),
+    );
+  }
+
+  const first = newest ?? profile.tickets[0];
   const order: Record<BenefitVoucherState, number> = { open: 0, redeemed: 1, expired: 2, disabled: 3 };
   return {
     profileId: profile.id,
     accountId,
     accountName: profile.account.name,
     ticketIds,
-    firstName: (newest ?? profile.tickets[0]).firstName?.trim() || (newest ?? profile.tickets[0]).name,
+    // Tagestickets tragen keinen Namen: dann grüßt die App mit dem Spitznamen oder ohne Namen.
+    firstName: first.firstName?.trim() || (dayGuest ? profile.nickname ?? "" : first.name),
     nickname: profile.nickname,
     showInRanking: profile.showInRanking,
     enabled: config?.enabled ?? false,
@@ -164,6 +197,8 @@ export async function loadRider(token: string, now: Date = new Date()): Promise<
           areas: newest.subscription.areas.map((a) => a.name),
         }
       : null,
+    dayGuest,
+    calculator,
     startCapPerDay: cap,
     year,
     visitDays: metrics.visitDays,

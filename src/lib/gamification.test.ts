@@ -248,3 +248,21 @@ test("renewalHint: 30 Tage vorher, nach Ablauf, sonst nichts", async () => {
   assert.equal(renewalHint(new Date("2027-10-01T10:00:01Z"), now), null);
   assert.deepEqual(renewalHint(new Date("2027-09-01T09:59:00Z"), now), { kind: "expired" });
 });
+
+test("parsePriceMap und aboCalculation: nur echte Zahlen", async () => {
+  const { parsePriceMap, aboCalculation, formatEuro } = await import("./gamification");
+  const prices = parsePriceMap({ "3": 2500, "4": 0, x: 100, "5": "12", "6": 19.5 });
+  assert.deepEqual([...prices.entries()], [[3, 2500]]);
+  assert.equal(parsePriceMap(null).size, 0);
+  assert.equal(parsePriceMap([1, 2]).size, 0);
+
+  const abos = [{ name: "Ride + Gear", cents: 59000 }, { name: "Ride", cents: 39000 }];
+  assert.equal(aboCalculation(2, [2500, 2500], abos), null);
+  assert.equal(aboCalculation(3, [2500, null, 2500], abos), null);
+  assert.equal(aboCalculation(3, [2500, 2500, 2500], []), null);
+  assert.deepEqual(aboCalculation(3, [2500, 3500, 2500], abos), {
+    tickets: 3, spentCents: 8500, aboName: "Ride", aboCents: 39000,
+  });
+  assert.equal(formatEuro(39000).replace(/\s/g, " "), "390 €");
+  assert.equal(formatEuro(2450).replace(/\s/g, " "), "24,50 €");
+});

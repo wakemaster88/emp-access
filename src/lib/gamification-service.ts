@@ -14,6 +14,7 @@ import {
   awardKey,
   benefitVoucherState,
   dbDateToYmd,
+  mergeDayStats,
   reachedMilestones,
   ymdToDbDate,
   BENEFIT_STATE_MESSAGE,
@@ -22,10 +23,12 @@ import {
 export interface GamiConfig {
   enabled: boolean;
   subscriptionIds: number[];
+  /** Tagestickets (Service-IDs), deren Gäste die App nutzen dürfen. */
+  dayServiceIds: number[];
   startCapPerDay: number;
 }
 
-const DEFAULT_CONFIG: GamiConfig = { enabled: false, subscriptionIds: [], startCapPerDay: 10 };
+const DEFAULT_CONFIG: GamiConfig = { enabled: false, subscriptionIds: [], dayServiceIds: [], startCapPerDay: 10 };
 
 // Das Drehkreuz fragt bei jedem Scan: Einstellung kurz im Speicher halten.
 const CONFIG_TTL_MS = 60_000;
@@ -40,7 +43,12 @@ export async function loadGamiConfig(db: TenantDb, accountId: number): Promise<G
   if (hit && hit.expiresAt > Date.now()) return hit.config;
   const row = await db.gamificationConfig.findUnique({ where: { accountId } });
   const config: GamiConfig = row
-    ? { enabled: row.enabled, subscriptionIds: row.subscriptionIds, startCapPerDay: row.startCapPerDay }
+    ? {
+        enabled: row.enabled,
+        subscriptionIds: row.subscriptionIds,
+        dayServiceIds: row.dayServiceIds,
+        startCapPerDay: row.startCapPerDay,
+      }
     : DEFAULT_CONFIG;
   configCache.set(accountId, { config, expiresAt: Date.now() + CONFIG_TTL_MS });
   return config;
@@ -81,15 +89,31 @@ export async function recordStart(input: {
   accountId: number;
   ticketId: number;
   subscriptionId: number | null;
+  /** Tagesticket: zählt nur, wenn der Gast es in der App angemeldet hat. */
+  serviceId?: number | null;
+  riderProfileId?: number | null;
   /** Fahrer ist ausgestiegen (`Ticket.gamificationOptOut`): nichts zählen. */
   optOut?: boolean;
   at: Date;
 }): Promise<void> {
   const { accountId, ticketId, subscriptionId, at } = input;
-  if (subscriptionId == null || input.optOut) return;
+  if (input.optOut) return;
+  const dayGuest = subscriptionId == null && input.serviceId != null && input.riderProfileId != null;
+  if (subscriptionId == null && !dayGuest) return;
   const db = tenantClient(accountId);
   const config = await loadGamiConfig(db, accountId);
-  if (!config.enabled || !config.subscriptionIds.includes(subscriptionId)) return;
+  if (!config.enabled) return;
+
+  if (dayGuest) {
+    if (!config.dayServiceIds.includes(input.serviceId!)) return;
+    // Tagestickets werden aus ihren Scans neu gezählt (siehe day-guest.ts).
+    const ymd = berlinYmd(at);
+    await syncDayTicketStat(db, accountId, ticketId);
+    await awardMilestones(db, accountId, ticketId, ymd, config.startCapPerDay);
+    await runChallenges(db, accountId, ticketId, ymd, config.startCapPerDay);
+    return;
+  }
+  if (!config.subscriptionIds.includes(subscriptionId!)) return;
 
   const ymd = berlinYmd(at);
   const day = ymdToDbDate(ymd);
@@ -122,24 +146,30 @@ export async function awardMilestones(
   const milestones = await db.milestone.findMany({ where: { accountId, active: true } });
   if (milestones.length === 0) return 0;
 
+  // Meilensteine gelten je Person: alle Tickets desselben Profils zählen zusammen.
+  const owner = await db.ticket.findFirst({ where: { id: ticketId, accountId }, select: { riderProfileId: true } });
+  const ticketIds = owner?.riderProfileId
+    ? (await db.ticket.findMany({ where: { accountId, riderProfileId: owner.riderProfileId }, select: { id: true } })).map((t) => t.id)
+    : [ticketId];
+
   const year = refYmd.slice(0, 4);
   const [stats, awards] = await Promise.all([
     db.riderDayStat.findMany({
       where: {
         accountId,
-        ticketId,
+        ticketId: { in: ticketIds },
         day: { gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) },
       },
       select: { day: true, starts: true },
     }),
     db.milestoneAward.findMany({
-      where: { accountId, ticketId, periodKey: { startsWith: year } },
+      where: { accountId, ticketId: { in: ticketIds }, periodKey: { startsWith: year } },
       select: { milestoneId: true, periodKey: true },
     }),
   ]);
 
   const awarded = new Set(awards.map((a) => awardKey(a.milestoneId, a.periodKey)));
-  const days = stats.map((s) => ({ day: dbDateToYmd(s.day), starts: s.starts }));
+  const days = mergeDayStats(stats.map((s) => ({ day: dbDateToYmd(s.day), starts: s.starts })));
   const reached = reachedMilestones(milestones, days, refYmd, capPerDay, awarded);
 
   let created = 0;
@@ -264,4 +294,40 @@ export async function backfillYear(
   ]);
 
   return { scans: scans.length, days: rows.length, tickets: new Set(rows.map((r) => r.ticketId)).size };
+}
+
+/**
+ * Tagessummen eines Tagestickets aus seinen Scans neu aufbauen. Ein Ticket
+ * ohne Scan am Start-Gerät zählt trotzdem als ein Besuchstag mit einem Start:
+ * nicht jede Bahn hat ein Drehkreuz.
+ */
+export async function syncDayTicketStat(db: TenantDb, accountId: number, ticketId: number): Promise<void> {
+  const ticket = await db.ticket.findFirst({
+    where: { id: ticketId, accountId },
+    select: { id: true, startDate: true, createdAt: true },
+  });
+  if (!ticket) return;
+  const scans = await db.scan.findMany({
+    where: { accountId, ticketId, result: "GRANTED", device: { countsAsStart: true } },
+    select: { scanTime: true },
+    take: 2000,
+  });
+  const at = ticket.startDate ?? ticket.createdAt;
+  const rows =
+    scans.length > 0
+      ? aggregateScans(scans.map((s) => ({ ticketId, scanTime: s.scanTime })))
+      : [{ ticketId, day: berlinYmd(at), starts: 1, firstStartAt: at, lastStartAt: at }];
+  await db.$transaction([
+    db.riderDayStat.deleteMany({ where: { accountId, ticketId } }),
+    db.riderDayStat.createMany({
+      data: rows.map((r) => ({
+        ticketId,
+        day: ymdToDbDate(r.day),
+        starts: r.starts,
+        firstStartAt: r.firstStartAt,
+        lastStartAt: r.lastStartAt,
+        accountId,
+      })),
+    }),
+  ]);
 }
