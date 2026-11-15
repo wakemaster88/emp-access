@@ -26,7 +26,7 @@ export function ScanOverlay({
   setScanInput: (v: string) => void;
   onScan: (code: string) => void;
   scanLoading: boolean;
-  scanResult: { found: boolean; ticket?: CheckinTicket; message?: string } | null;
+  scanResult: { found: boolean; ticket?: CheckinTicket; message?: string; benefitRedeemed?: boolean } | null;
   onClose: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
@@ -78,7 +78,14 @@ export function ScanOverlay({
         </div>
 
         {/* Ergebnis als Fläche in der Zustandsfarbe: grün gefunden, rot abgelehnt. */}
-        {scanResult && !scanResult.found && (
+        {scanResult && !scanResult.found && scanResult.benefitRedeemed && (
+          <div role="status" className="rounded-tile border border-success/60 bg-success/20 p-4 flex items-center gap-3">
+            <CheckCircle2 className="h-6 w-6 text-success shrink-0" />
+            <p className="text-sm font-medium text-foreground">{scanResult.message}</p>
+          </div>
+        )}
+
+        {scanResult && !scanResult.found && !scanResult.benefitRedeemed && (
           <div role="alert" className="rounded-tile border border-destructive/60 bg-destructive/20 p-4 flex items-center gap-3">
             <XCircle className="h-6 w-6 text-destructive shrink-0" />
             <p className="text-sm font-medium text-foreground">{scanResult.message ?? "Nicht gefunden"}</p>

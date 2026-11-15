@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { berlinOffset } from "@/lib/anny-availability";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
+import { redeemBenefitVoucher } from "@/lib/gamification-service";
 
 export async function POST(
   request: NextRequest,
@@ -72,6 +73,16 @@ export async function POST(
         OR: codesToTry.map((c) => ({ code: c })),
       },
     });
+    if (voucher?.kind === "BENEFIT") {
+      // Leistungs-Gutschein (Gamification): an der Kasse scannen = entwerten.
+      // Es entsteht kein Ticket.
+      const result = await redeemBenefitVoucher(prisma, monitor.accountId, voucher, "CHECKIN");
+      return NextResponse.json({
+        found: false,
+        benefitRedeemed: result.ok,
+        message: result.ok ? `Gutschein entwertet: ${result.label}` : result.message,
+      });
+    }
     if (voucher) {
       if (voucher.disabledAt) {
         return NextResponse.json({

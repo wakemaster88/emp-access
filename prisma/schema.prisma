@@ -63,6 +63,24 @@ enum ValidityType {
   DURATION
 }
 
+enum VoucherKind {
+  ACCESS
+  BENEFIT
+}
+
+/// Gamification: was ein Meilenstein zaehlt.
+enum GamiMetric {
+  VISIT_DAYS
+  STARTS
+  STREAK_WEEKS
+}
+
+/// Gamification: Zeitraum, in dem gezaehlt wird (Saison = Kalenderjahr).
+enum GamiPeriod {
+  SEASON
+  MONTH
+}
+
 enum ScanResult {
   GRANTED
   DENIED
@@ -162,6 +180,10 @@ model Account {
   hubAgents            HubAgent[]
   hubAlerts            HubAlert[]
   hubTasks             HubTask[]
+  gamificationConfig   GamificationConfig?
+  riderDayStats        RiderDayStat[]
+  milestones           Milestone[]
+  milestoneAwards      MilestoneAward[]
   discoveredDevices    DiscoveredDevice[]
   knownNetworkDevices  KnownNetworkDevice[]
   blockedNetworkDevices BlockedNetworkDevice[]
@@ -357,6 +379,9 @@ model Device {
   /// Andere Tickets bleiben frei. NULL/0 = keine Sperre.
   /// Austritte und Dashboard-Oeffnungen sind ausgenommen.
   scanLockSeconds      Int?
+  /// Gamification: ein GRANTED-Scan eines Abo-Tickets an diesem Geraet zaehlt
+  /// als Start (z. B. Drehkreuz an der Seilbahn). Siehe src/lib/gamification.ts.
+  countsAsStart        Boolean              @default(false)
   /// Optionale Kamera-Zuordnung: Kamera, die diesen Zugang im Blick hat
   /// (z. B. Drehkreuz "Eingang A" → Kamera Eingang). Scans dieses Geraets
   /// werden in der UI mit der Kamera verknuepft (Live-Bild/Schnappschuss).
@@ -515,6 +540,8 @@ model Ticket {
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
 
+  riderDayStats           RiderDayStat[]
+  milestoneAwards         MilestoneAward[]
   @@index([accountId])
   @@index([rfidCode])
   @@index([qrCode])
@@ -1212,14 +1239,27 @@ model Voucher {
   /// ungueltig erklaert). Beim Scan wird er wie "bereits eingeloest"
   /// behandelt und erlaubt keine Ticket-Erstellung mehr.
   disabledAt              DateTime?
+  /// ACCESS: Scan am Drehkreuz/Check-in erzeugt ein Ticket (bisheriges Verhalten).
+  /// BENEFIT: Leistungs-Gutschein (z. B. Freigetraenk) – wird nur entwertet,
+  /// es entsteht kein Ticket und kein Zutritt.
+  kind                    VoucherKind  @default(ACCESS)
+  /// BENEFIT: was der Gast bekommt, z. B. "Freigetränk".
+  label                   String?
+  /// BENEFIT: Abo-Ticket, dem der Gutschein gehoert (Gamification).
+  ownerTicketId           Int?
+  /// BENEFIT: wo entwertet wurde ("ADMIN" oder "CHECKIN").
+  redeemedVia             String?
   accountId               Int
   account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   emailSends              EmailSend[]
+  milestoneAwards         MilestoneAward[]
   createdAt               DateTime     @default(now())
 
   @@index([accountId])
   @@index([code])
   @@index([accountId, expiresAt])
+  @@index([accountId, kind])
+  @@index([ownerTicketId])
 }
 
 model ApiConfig {
@@ -3336,4 +3376,78 @@ model McpToken {
   createdAt  DateTime  @default(now())
 
   @@index([accountId])
+}
+
+/// Gamification je Mandant. Ohne Zeile oder mit enabled=false wird nichts gezaehlt.
+model GamificationConfig {
+  id              Int      @id @default(autoincrement())
+  enabled         Boolean  @default(false)
+  /// Abos, deren Tickets mitzaehlen (IDs aus Subscription).
+  subscriptionIds Int[]    @default([])
+  /// Obergrenze: so viele Starts pro Tag zaehlen hoechstens fuer Meilensteine.
+  startCapPerDay  Int      @default(10)
+  accountId       Int      @unique
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Tagessumme je Abo-Ticket: ein Besuchstag mit seinen Starts. Bewusst keine
+/// Einzelzeiten – die Scans selbst unterliegen den Loeschfristen.
+model RiderDayStat {
+  id           Int      @id @default(autoincrement())
+  ticketId     Int
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  /// Kalendertag in Europe/Berlin.
+  day          DateTime @db.Date
+  starts       Int      @default(0)
+  firstStartAt DateTime
+  lastStartAt  DateTime
+  accountId    Int
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, day])
+  @@index([accountId, day])
+}
+
+/// Meilenstein (Award), im Admin einstellbar. Optional mit Leistungs-Gutschein.
+model Milestone {
+  id               Int              @id @default(autoincrement())
+  name             String
+  metric           GamiMetric
+  threshold        Int
+  period           GamiPeriod       @default(SEASON)
+  /// Leistung auf dem Gutschein; NULL = Meilenstein ohne Gutschein.
+  voucherLabel     String?
+  /// Gueltigkeit des Gutscheins in Tagen; NULL = unbegrenzt.
+  voucherValidDays Int?
+  active           Boolean          @default(true)
+  sortOrder        Int              @default(0)
+  accountId        Int
+  account          Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  awards           MilestoneAward[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([accountId])
+}
+
+/// Erreichter Meilenstein eines Tickets in einem Zeitraum ("2027" oder "2027-06").
+model MilestoneAward {
+  id          Int       @id @default(autoincrement())
+  milestoneId Int
+  milestone   Milestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  ticketId    Int
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  periodKey   String
+  voucherId   Int?
+  voucher     Voucher?  @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  accountId   Int
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  awardedAt   DateTime  @default(now())
+
+  @@unique([milestoneId, ticketId, periodKey])
+  @@index([accountId])
+  @@index([ticketId])
+  @@index([voucherId])
 }

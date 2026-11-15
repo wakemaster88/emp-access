@@ -1,0 +1,245 @@
+import { redirect } from "next/navigation";
+import { Award, BarChart3, CalendarCheck, Gift, Play, Settings, Trophy, Users } from "lucide-react";
+import { safeAuth } from "@/lib/auth";
+import { tenantClient } from "@/lib/prisma";
+import { isTenantAdminRole } from "@/lib/api-auth";
+import { berlinYmd } from "@/lib/berlin-day";
+import { benefitVoucherState, ymdToDbDate, type GamiMetric, type GamiPeriod } from "@/lib/gamification";
+import { Header } from "@/components/layout/header";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
+import { SegmentedLinks } from "@/components/ui/segmented-links";
+import { StatCard } from "@/components/ui/stat-card";
+import {
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { MilestonesCard, type MilestoneRow } from "@/components/gamification/milestones-card";
+import { BenefitVouchersCard, type BenefitVoucherRow } from "@/components/gamification/benefit-vouchers-card";
+import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
+
+type Tab = "auswertung" | "meilensteine" | "gutscheine" | "einstellungen";
+const TABS: Tab[] = ["auswertung", "meilensteine", "gutscheine", "einstellungen"];
+
+function ticketLabel(t: { name: string; firstName: string | null; lastName: string | null }): string {
+  const full = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
+  return full || t.name;
+}
+
+export default async function GamificationPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const session = await safeAuth();
+  if (!session?.user) redirect("/login");
+  const accountId = session.user.accountId;
+  // Einstellungen gelten je Mandant und sind Sache der Verwaltung.
+  if (!accountId || !isTenantAdminRole(session.user.role)) redirect("/");
+
+  const { tab: rawTab } = await searchParams;
+  const tab: Tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "auswertung";
+  const db = tenantClient(accountId);
+  const year = Number(berlinYmd(new Date()).slice(0, 4));
+  const yearRange = { gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) };
+
+  const config = await db.gamificationConfig.findUnique({ where: { accountId } });
+
+  const tabs = (
+    <SegmentedLinks
+      aria-label="Gamification"
+      className="max-sm:[&_svg]:hidden"
+      value={tab}
+      options={[
+        { value: "auswertung", label: "Auswertung", icon: BarChart3, href: "/gamification" },
+        { value: "meilensteine", label: "Meilensteine", icon: Award, href: "/gamification?tab=meilensteine" },
+        { value: "gutscheine", label: "Gutscheine", icon: Gift, href: "/gamification?tab=gutscheine" },
+        { value: "einstellungen", label: "Einstellungen", icon: Settings, href: "/gamification?tab=einstellungen" },
+      ]}
+    />
+  );
+
+  let content: React.ReactNode = null;
+
+  if (tab === "auswertung") {
+    const [perTicket, awards, openVouchers, redeemedVouchers] = await Promise.all([
+      db.riderDayStat.groupBy({
+        by: ["ticketId"],
+        where: { accountId, day: yearRange },
+        _count: { _all: true },
+        _sum: { starts: true },
+      }),
+      db.milestoneAward.count({ where: { accountId, periodKey: { startsWith: String(year) } } }),
+      db.voucher.count({
+        where: {
+          accountId, kind: "BENEFIT", redeemedAt: null, disabledAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }],
+        },
+      }),
+      db.voucher.count({ where: { accountId, kind: "BENEFIT", redeemedAt: { not: null } } }),
+    ]);
+
+    const riders = perTicket
+      .map((r) => ({ ticketId: r.ticketId, visitDays: r._count._all, starts: r._sum.starts ?? 0 }))
+      .sort((a, b) => b.visitDays - a.visitDays || b.starts - a.starts);
+    const totalDays = riders.reduce((s, r) => s + r.visitDays, 0);
+    const totalStarts = riders.reduce((s, r) => s + r.starts, 0);
+    const buckets = [
+      { label: "1 bis 4 Besuchstage", count: riders.filter((r) => r.visitDays <= 4).length },
+      { label: "5 bis 9 Besuchstage", count: riders.filter((r) => r.visitDays >= 5 && r.visitDays <= 9).length },
+      { label: "10 bis 19 Besuchstage", count: riders.filter((r) => r.visitDays >= 10 && r.visitDays <= 19).length },
+      { label: "20 und mehr Besuchstage", count: riders.filter((r) => r.visitDays >= 20).length },
+    ];
+    const top = riders.slice(0, 10);
+    const tickets = top.length
+      ? await db.ticket.findMany({
+          where: { accountId, id: { in: top.map((r) => r.ticketId) } },
+          select: { id: true, name: true, firstName: true, lastName: true },
+        })
+      : [];
+    const nameById = new Map(tickets.map((t) => [t.id, ticketLabel(t)]));
+
+    content = (
+      <>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard label="Aktive Fahrer" value={riders.length} icon={Users} hint={`Saison ${year}`} />
+          <StatCard label="Besuchstage" value={totalDays} icon={CalendarCheck} tone="info" hint="alle Fahrer zusammen" />
+          <StatCard label="Starts" value={totalStarts} icon={Play} tone="success" hint="an den Start-Geräten" />
+          <StatCard label="Meilensteine vergeben" value={awards} icon={Trophy} tone="violet" hint={`${openVouchers} Gutscheine offen, ${redeemedVouchers} eingelöst`} />
+        </div>
+        <div className="grid gap-4 sm:gap-5 lg:grid-cols-2">
+          <Card flush>
+            <CardHeader>
+              <CardTitle>Wie oft die Fahrer kommen</CardTitle>
+              <CardDescription>Fahrer nach Besuchstagen in der Saison {year}.</CardDescription>
+            </CardHeader>
+            <Table edge>
+              <TableBody>
+                {buckets.map((b) => (
+                  <TableRow key={b.label}>
+                    <TableCell>{b.label}</TableCell>
+                    <TableCell className="text-right tabular-nums">{b.count}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+          <Card flush>
+            <CardHeader>
+              <CardTitle>Meiste Besuchstage</CardTitle>
+              <CardDescription>Nur hier in der Verwaltung sichtbar.</CardDescription>
+            </CardHeader>
+            <Table edge>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fahrer</TableHead>
+                  <TableHead className="text-right">Tage</TableHead>
+                  <TableHead className="text-right">Starts</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {top.length === 0 && <TableEmpty colSpan={3} title="Noch keine Besuchstage gezählt." />}
+                {top.map((r) => (
+                  <TableRow key={r.ticketId}>
+                    <TableCell className="max-sm:whitespace-normal">{nameById.get(r.ticketId) ?? `Ticket ${r.ticketId}`}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.visitDays}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.starts}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </div>
+      </>
+    );
+  }
+
+  if (tab === "meilensteine") {
+    const [milestones, awardCounts, redeemedAwards] = await Promise.all([
+      db.milestone.findMany({ where: { accountId }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      db.milestoneAward.groupBy({ by: ["milestoneId"], where: { accountId }, _count: { _all: true } }),
+      db.milestoneAward.groupBy({
+        by: ["milestoneId"],
+        where: { accountId, voucher: { redeemedAt: { not: null } } },
+        _count: { _all: true },
+      }),
+    ]);
+    const awarded = new Map(awardCounts.map((a) => [a.milestoneId, a._count._all]));
+    const redeemed = new Map(redeemedAwards.map((a) => [a.milestoneId, a._count._all]));
+    const rows: MilestoneRow[] = milestones.map((m) => ({
+      id: m.id,
+      name: m.name,
+      metric: m.metric as GamiMetric,
+      threshold: m.threshold,
+      period: m.period as GamiPeriod,
+      voucherLabel: m.voucherLabel,
+      voucherValidDays: m.voucherValidDays,
+      active: m.active,
+      awarded: awarded.get(m.id) ?? 0,
+      redeemed: redeemed.get(m.id) ?? 0,
+    }));
+    content = <MilestonesCard milestones={rows} />;
+  }
+
+  if (tab === "gutscheine") {
+    const vouchers = await db.voucher.findMany({
+      where: { accountId, kind: "BENEFIT" },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    const ownerIds = [...new Set(vouchers.map((v) => v.ownerTicketId).filter((id): id is number => id != null))];
+    const owners = ownerIds.length
+      ? await db.ticket.findMany({
+          where: { accountId, id: { in: ownerIds } },
+          select: { id: true, name: true, firstName: true, lastName: true },
+        })
+      : [];
+    const ownerById = new Map(owners.map((t) => [t.id, ticketLabel(t)]));
+    const now = new Date();
+    const rows: BenefitVoucherRow[] = vouchers.map((v) => ({
+      id: v.id,
+      code: v.code,
+      label: v.label ?? "Gutschein",
+      owner: v.ownerTicketId != null ? ownerById.get(v.ownerTicketId) ?? null : null,
+      source: v.notes,
+      state: benefitVoucherState(v, now),
+      createdAt: v.createdAt.toISOString(),
+      expiresAt: v.expiresAt ? v.expiresAt.toISOString() : null,
+      redeemedAt: v.redeemedAt ? v.redeemedAt.toISOString() : null,
+      redeemedVia: v.redeemedVia,
+    }));
+    content = <BenefitVouchersCard vouchers={rows} />;
+  }
+
+  if (tab === "einstellungen") {
+    const [subscriptions, devices] = await Promise.all([
+      db.subscription.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      db.device.findMany({
+        where: { accountId, type: "RASPBERRY_PI" },
+        select: { id: true, name: true, countsAsStart: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
+    content = (
+      <GamiSettingsCard
+        initial={{
+          enabled: config?.enabled ?? false,
+          subscriptionIds: config?.subscriptionIds ?? [],
+          startCapPerDay: config?.startCapPerDay ?? 10,
+          startDeviceIds: devices.filter((d) => d.countsAsStart).map((d) => d.id),
+        }}
+        subscriptions={subscriptions}
+        devices={devices.map((d) => ({ id: d.id, name: d.name }))}
+        year={year}
+      />
+    );
+  }
+
+  return (
+    <>
+      <Header title="Gamification" accountName={session.user.accountName} />
+      <div className="page-content space-y-4 sm:space-y-5">
+        {tabs}
+        {!config?.enabled && tab !== "einstellungen" && (
+          <Notice tone="info" compact title="Die Gamification ist noch aus. Unter Einstellungen wählst du Abos und Start-Geräte und schaltest sie ein." />
+        )}
+        {content}
+      </div>
+    </>
+  );
+}
