@@ -283,3 +283,74 @@ export function cleanNickname(raw: string | null | undefined): string | null {
   const s = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 20);
   return s.length > 0 ? s : null;
 }
+
+export type ChallengeKind = "TASK" | "TOP_X";
+
+export const CHALLENGE_KIND_LABEL: Record<ChallengeKind, string> = {
+  TASK: "Aufgabe erfüllt",
+  TOP_X: "Top X",
+};
+
+export type ChallengePhase = "upcoming" | "running" | "ended";
+
+/** Phase einer Challenge am Tag `todayYmd`; Start- und Endtag zählen mit. */
+export function challengePhase(c: { startYmd: string; endYmd: string }, todayYmd: string): ChallengePhase {
+  if (todayYmd < c.startYmd) return "upcoming";
+  if (todayYmd > c.endYmd) return "ended";
+  return "running";
+}
+
+/** Wert einer Kennzahl im Zeitraum einer Challenge (beide Tage einschließlich). */
+export function challengeValue(
+  days: DayStat[],
+  c: { metric: GamiMetric; startYmd: string; endYmd: string },
+  capPerDay: number,
+): number {
+  const inRange = days.filter((d) => d.day >= c.startYmd && d.day <= c.endYmd);
+  return metricValue(computeMetrics(inRange, capPerDay), c.metric);
+}
+
+export interface Standing<K> {
+  key: K;
+  value: number;
+  /** Platz; bei Gleichstand teilen sich mehrere denselben Platz (1, 2, 2, 4). */
+  rank: number;
+  winner: boolean;
+}
+
+/**
+ * Rangliste einer Top-X-Challenge. Gewinner ist, wer auf Platz 1 bis
+ * `topCount` steht und mindestens 1 erreicht hat – bei Gleichstand auf dem
+ * letzten Gewinnerplatz gewinnen alle Gleichauf-Liegenden.
+ */
+export function rankStandings<K>(entries: Array<{ key: K; value: number }>, topCount: number): Standing<K>[] {
+  const sorted = entries.filter((e) => e.value > 0).sort((a, b) => b.value - a.value);
+  let rank = 0;
+  return sorted.map((e, i) => {
+    if (i === 0 || e.value !== sorted[i - 1].value) rank = i + 1;
+    return { key: e.key, value: e.value, rank, winner: rank <= topCount };
+  });
+}
+
+/** Bedingung einer Challenge in Worten. */
+export function challengeConditionText(c: {
+  kind: ChallengeKind;
+  metric: GamiMetric;
+  threshold: number | null;
+  topCount: number | null;
+}): string {
+  return c.kind === "TASK"
+    ? `${c.threshold ?? 0} ${METRIC_LABEL[c.metric]}`
+    : `Top ${c.topCount ?? 0} nach ${METRIC_LABEL[c.metric]}`;
+}
+
+/** Ist ein Angebot am Tag `todayYmd` sichtbar? */
+export function offerVisible(
+  o: { active: boolean; fromYmd: string | null; toYmd: string | null },
+  todayYmd: string,
+): boolean {
+  if (!o.active) return false;
+  if (o.fromYmd && todayYmd < o.fromYmd) return false;
+  if (o.toYmd && todayYmd > o.toYmd) return false;
+  return true;
+}

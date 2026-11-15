@@ -50,6 +50,7 @@ export interface RiderView {
   nickname: string | null;
   showInRanking: boolean;
   enabled: boolean;
+  startCapPerDay: number;
   abo: { name: string; endDate: Date | null; active: boolean; areas: string[] } | null;
   year: number;
   visitDays: number;
@@ -160,6 +161,7 @@ export async function loadRider(token: string, now: Date = new Date()): Promise<
           areas: newest.subscription.areas.map((a) => a.name),
         }
       : null,
+    startCapPerDay: cap,
     year,
     visitDays: metrics.visitDays,
     starts: metrics.starts,
@@ -249,6 +251,7 @@ export async function deleteRiderData(profileId: number, accountId: number): Pro
     prisma.riderDayStat.deleteMany({ where: { accountId, ticketId: { in: ticketIds } } }),
     // Awards mit Gutschein bleiben: sonst gäbe es nach erneuter Anmeldung denselben Gutschein noch einmal.
     prisma.milestoneAward.deleteMany({ where: { accountId, ticketId: { in: ticketIds }, voucherId: null } }),
+    prisma.challengeAward.deleteMany({ where: { accountId, ticketId: { in: ticketIds }, voucherId: null } }),
     prisma.ticket.updateMany({
       where: { accountId, id: { in: ticketIds } },
       data: { gamificationOptOut: true, riderProfileId: null },

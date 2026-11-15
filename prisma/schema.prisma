@@ -185,6 +185,9 @@ model Account {
   riderDayStats        RiderDayStat[]
   milestones           Milestone[]
   milestoneAwards      MilestoneAward[]
+  challenges           Challenge[]
+  challengeAwards      ChallengeAward[]
+  riderOffers          RiderOffer[]
   discoveredDevices    DiscoveredDevice[]
   knownNetworkDevices  KnownNetworkDevice[]
   blockedNetworkDevices BlockedNetworkDevice[]
@@ -548,6 +551,7 @@ model Ticket {
   gamificationOptOut      Boolean              @default(false)
   riderDayStats           RiderDayStat[]
   milestoneAwards         MilestoneAward[]
+  challengeAwards         ChallengeAward[]
   @@index([riderProfileId])
   @@index([accountId])
   @@index([rfidCode])
@@ -1260,6 +1264,7 @@ model Voucher {
   account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   emailSends              EmailSend[]
   milestoneAwards         MilestoneAward[]
+  challengeAwards         ChallengeAward[]
   createdAt               DateTime     @default(now())
 
   @@index([accountId])
@@ -3457,6 +3462,79 @@ model MilestoneAward {
   @@index([accountId])
   @@index([ticketId])
   @@index([voucherId])
+}
+
+enum ChallengeKind {
+  /// Aufgabe erfuellt: jeder, der die Schwelle im Zeitraum erreicht, gewinnt.
+  TASK
+  /// Top X: nach dem Ende gewinnen die Besten.
+  TOP_X
+}
+
+/// Challenge mit festem Zeitraum. TASK vergibt sofort beim Erreichen der
+/// Schwelle, TOP_X nach dem Ende an die besten `topCount` Fahrer.
+model Challenge {
+  id               Int              @id @default(autoincrement())
+  name             String
+  description      String?
+  kind             ChallengeKind
+  metric           GamiMetric
+  /// TASK: Schwelle, die erreicht werden muss.
+  threshold        Int?
+  /// TOP_X: Anzahl der Gewinner.
+  topCount         Int?
+  startDate        DateTime         @db.Date
+  endDate          DateTime         @db.Date
+  voucherLabel     String?
+  voucherValidDays Int?
+  active           Boolean          @default(true)
+  /// TOP_X: Zeitpunkt der Auswertung; NULL = noch nicht ausgewertet.
+  settledAt        DateTime?
+  accountId        Int
+  account          Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  awards           ChallengeAward[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([accountId])
+}
+
+/// Gewinn einer Challenge. `rank` ist nur bei TOP_X gesetzt.
+model ChallengeAward {
+  id          Int       @id @default(autoincrement())
+  challengeId Int
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  ticketId    Int
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  rank        Int?
+  voucherId   Int?
+  voucher     Voucher?  @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  accountId   Int
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  awardedAt   DateTime  @default(now())
+
+  @@unique([challengeId, ticketId])
+  @@index([accountId])
+  @@index([ticketId])
+  @@index([voucherId])
+}
+
+/// Angebot auf dem Dashboard der Kunden-App.
+model RiderOffer {
+  id        Int       @id @default(autoincrement())
+  title     String
+  text      String?
+  /// Sichtbar ab/bis (Kalendertag, einschliesslich); NULL = offen.
+  validFrom DateTime? @db.Date
+  validTo   DateTime? @db.Date
+  active    Boolean   @default(true)
+  sortOrder Int       @default(0)
+  accountId Int
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([accountId])
 }
 
 /// Kunden-App (Gamification): ein Profil je Person. Der Token im Link

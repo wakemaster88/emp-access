@@ -50,7 +50,29 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
   `Ticket.gamificationOptOut` (danach wird nichts mehr gezählt) und entfernt
   das Profil. Verdiente Gutscheine bleiben gültig. Eine neue Anmeldung hebt
   den Ausstieg wieder auf.
-- Datenbank-Seite in `src/lib/rider-app.ts`. Challenges und Angebote folgen.
+- Datenbank-Seite in `src/lib/rider-app.ts`.
+
+## Challenges und Angebote, Etappe 3 (15.11.2026)
+
+- **Challenges** (Gäste › Gamification › Challenges) haben einen festen
+  Zeitraum, eine Kennzahl (Besuchstage, Starts, Wochen in Serie) und optional
+  einen Gutschein. Zwei Arten:
+  - **Aufgabe erfüllt** (`TASK`): wer die Schwelle im Zeitraum erreicht,
+    gewinnt sofort (beim Start am Drehkreuz oder beim Öffnen der App).
+  - **Top X** (`TOP_X`): nach dem Endtag gewinnen die Besten. Bei Gleichstand
+    auf dem letzten Gewinnerplatz gewinnen alle Gleichauf-Liegenden. Die
+    Auswertung läuft genau einmal (`Challenge.settledAt`), ausgelöst vom
+    nächsten Start, vom Reiter Challenges oder von der Kunden-App. Danach
+    sind Bedingung und Zeitraum gesperrt.
+- Gezählt wird je Person: Tickets mit gemeinsamem App-Profil bilden eine
+  Einheit, der Gewinn (`ChallengeAward`) hängt am jüngsten Ticket.
+- In der Kunden-App: Reiter Challenges mit eigenem Fortschritt und Rangliste.
+  Mit Namen erscheint nur, wer einen Spitznamen gesetzt und der Rangliste
+  zugestimmt hat. Alle anderen stehen als „Anonym“ in der Liste.
+- **Angebote** (`RiderOffer`, Reiter Angebote): Titel, Text und optionaler
+  Zeitraum. Höchstens drei erscheinen oben auf der Startseite der App.
+- Logik in `src/lib/challenge-service.ts` und `src/lib/rider-challenges.ts`,
+  Rechenregeln mit Tests in `src/lib/gamification.ts`.
 
 ## Menü und Modulaufteilung (11.11.2026)
 

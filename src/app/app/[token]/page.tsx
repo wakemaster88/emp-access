@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadRiderCached, riderAppPath } from "@/lib/rider-app";
 import { METRIC_LABEL } from "@/lib/gamification";
+import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
 import { fmtDay, validityText } from "@/lib/rider-format";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,11 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const rider = await loadRiderCached(token);
   if (!rider) notFound();
   const base = riderAppPath(token);
+  const [offers, challenges] = await Promise.all([
+    loadRiderOffers(rider.accountId),
+    loadRiderChallengesCached(rider),
+  ]);
+  const challenge = challenges.find((c) => c.phase === "running" && !c.won) ?? null;
   const open = rider.vouchers.filter((v) => v.state === "open");
   const { current, next } = rider.level;
   const others = rider.progress.filter((p) => !p.reached && p.id !== next?.id).slice(0, 3);
@@ -39,6 +45,42 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           <h1 className="rd-display" style={{ fontSize: 48, fontWeight: 800 }}>Hi {rider.firstName}</h1>
         </div>
       </div>
+
+      {offers.length > 0 && (
+        <>
+          <div className="rd-label" style={{ marginTop: 4 }}>Angebote</div>
+          {offers.slice(0, 3).map((o) => (
+            <div key={o.id} className="rd-card rd-offer" style={{ gap: 4 }}>
+              <b>{o.title}</b>
+              {o.text && <span className="rd-soft">{o.text}</span>}
+              {o.validTo && <span className="rd-muted">bis {fmtDay(o.validTo)}</span>}
+            </div>
+          ))}
+        </>
+      )}
+
+      {challenge && (
+        <>
+          <div className="rd-between" style={{ marginTop: 4 }}>
+            <div className="rd-label">Challenge</div>
+            <Link href={`${base}/challenges`} style={{ fontSize: 12, textDecoration: "none" }}>alle ansehen</Link>
+          </div>
+          <Link href={`${base}/challenges`} className="rd-card" style={{ textDecoration: "none", color: "inherit" }}>
+            <div className="rd-between">
+              <div className="rd-display rd-h2">{challenge.name}</div>
+              <span className="rd-muted">
+                {challenge.kind === "TASK" && challenge.threshold != null
+                  ? `${Math.min(challenge.value, challenge.threshold)} von ${challenge.threshold}`
+                  : challenge.rank != null ? `Platz ${challenge.rank}` : "noch offen"}
+              </span>
+            </div>
+            {challenge.kind === "TASK" && challenge.threshold != null && (
+              <div className="rd-bar"><i style={{ width: `${Math.min(100, Math.round((challenge.value / challenge.threshold) * 100))}%` }} /></div>
+            )}
+            {challenge.voucherLabel && <span className="rd-muted">Gewinn: {challenge.voucherLabel}</span>}
+          </Link>
+        </>
+      )}
 
       <div className="rd-between" style={{ marginTop: 4 }}>
         <div className="rd-label">Gutscheine</div>
@@ -83,7 +125,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       <div className="rd-stats">
         <div className="rd-stat"><div className="rd-display">{rider.visitDays}</div><div className="rd-muted">Besuchstage</div></div>
         <div className="rd-stat"><div className="rd-display">{rider.starts}</div><div className="rd-muted">Starts</div></div>
-        <div className="rd-stat"><div className="rd-display">{rider.streakWeeks}</div><div className="rd-muted">Wochen Serie</div></div>
+        <div className="rd-stat"><div className="rd-display">{rider.streakWeeks}</div><div className="rd-muted">Wochen in Serie</div></div>
       </div>
 
       {others.length > 0 && (

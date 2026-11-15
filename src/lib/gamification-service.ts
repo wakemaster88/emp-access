@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { tenantClient, type TenantDb } from "./prisma";
 import { berlinYmd } from "./berlin-day";
+import { runChallenges } from "./challenge-service";
 import {
   aggregateScans,
   awardKey,
@@ -44,12 +45,30 @@ export async function loadGamiConfig(db: TenantDb, accountId: number): Promise<G
   return config;
 }
 
-function isUniqueViolation(e: unknown): boolean {
+export function isUniqueViolation(e: unknown): boolean {
   return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 }
 
 function newVoucherCode(): string {
   return `GS-${randomBytes(4).toString("hex").toUpperCase()}`;
+}
+
+/** Leistungs-Gutschein für ein Ticket anlegen (Meilenstein oder Challenge). */
+export function createBenefitVoucher(
+  db: TenantDb,
+  input: { accountId: number; ticketId: number; label: string; notes: string; validDays: number | null },
+) {
+  return db.voucher.create({
+    data: {
+      code: newVoucherCode(),
+      kind: "BENEFIT",
+      label: input.label,
+      ownerTicketId: input.ticketId,
+      notes: input.notes,
+      expiresAt: input.validDays ? new Date(Date.now() + input.validDays * 86_400_000) : null,
+      accountId: input.accountId,
+    },
+  });
 }
 
 /**
@@ -88,6 +107,7 @@ export async function recordStart(input: {
   }
 
   await awardMilestones(db, accountId, ticketId, ymd, config.startCapPerDay);
+  await runChallenges(db, accountId, ticketId, ymd, config.startCapPerDay);
 }
 
 /** Neu erreichte Meilensteine eines Tickets vergeben; gibt die Anzahl zurück. */
@@ -133,18 +153,12 @@ export async function awardMilestones(
       });
       created += 1;
       if (milestone.voucherLabel) {
-        const voucher = await db.voucher.create({
-          data: {
-            code: newVoucherCode(),
-            kind: "BENEFIT",
-            label: milestone.voucherLabel,
-            ownerTicketId: ticketId,
-            notes: `Meilenstein ${milestone.name} (${r.periodKey})`,
-            expiresAt: milestone.voucherValidDays
-              ? new Date(Date.now() + milestone.voucherValidDays * 86_400_000)
-              : null,
-            accountId,
-          },
+        const voucher = await createBenefitVoucher(db, {
+          accountId,
+          ticketId,
+          label: milestone.voucherLabel,
+          notes: `Meilenstein ${milestone.name} (${r.periodKey})`,
+          validDays: milestone.voucherValidDays,
         });
         await db.milestoneAward.update({ where: { id: award.id }, data: { voucherId: voucher.id } });
       }

@@ -1,10 +1,14 @@
 import { redirect } from "next/navigation";
-import { Award, BarChart3, CalendarCheck, Gift, Play, Settings, Trophy, Users } from "lucide-react";
+import { Award, BarChart3, CalendarCheck, Gift, Megaphone, Play, Settings, Swords, Trophy, Users } from "lucide-react";
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { isTenantAdminRole } from "@/lib/api-auth";
 import { berlinYmd } from "@/lib/berlin-day";
-import { benefitVoucherState, ymdToDbDate, type GamiMetric, type GamiPeriod } from "@/lib/gamification";
+import {
+  benefitVoucherState, challengePhase, dbDateToYmd, offerVisible, ymdToDbDate,
+  type GamiMetric, type GamiPeriod,
+} from "@/lib/gamification";
+import { challengeUnits, settleDueChallenges, type ChallengeRow } from "@/lib/challenge-service";
 import { Header } from "@/components/layout/header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
@@ -16,10 +20,12 @@ import {
 import { MilestonesCard, type MilestoneRow } from "@/components/gamification/milestones-card";
 import { BenefitVouchersCard, type BenefitVoucherRow } from "@/components/gamification/benefit-vouchers-card";
 import { RidersCard, type RiderRow } from "@/components/gamification/riders-card";
+import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamification/challenges-card";
+import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 
-type Tab = "auswertung" | "fahrer" | "meilensteine" | "gutscheine" | "einstellungen";
-const TABS: Tab[] = ["auswertung", "fahrer", "meilensteine", "gutscheine", "einstellungen"];
+type Tab = "auswertung" | "fahrer" | "meilensteine" | "challenges" | "angebote" | "gutscheine" | "einstellungen";
+const TABS: Tab[] = ["auswertung", "fahrer", "meilensteine", "challenges", "angebote", "gutscheine", "einstellungen"];
 
 function ticketLabel(t: { name: string; firstName: string | null; lastName: string | null }): string {
   const full = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
@@ -50,6 +56,8 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         { value: "auswertung", label: "Auswertung", icon: BarChart3, href: "/gamification" },
         { value: "fahrer", label: "Fahrer", icon: Users, href: "/gamification?tab=fahrer" },
         { value: "meilensteine", label: "Meilensteine", icon: Award, href: "/gamification?tab=meilensteine" },
+        { value: "challenges", label: "Challenges", icon: Swords, href: "/gamification?tab=challenges" },
+        { value: "angebote", label: "Angebote", icon: Megaphone, href: "/gamification?tab=angebote" },
         { value: "gutscheine", label: "Gutscheine", icon: Gift, href: "/gamification?tab=gutscheine" },
         { value: "einstellungen", label: "Einstellungen", icon: Settings, href: "/gamification?tab=einstellungen" },
       ]}
@@ -214,6 +222,67 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       redeemed: redeemed.get(m.id) ?? 0,
     }));
     content = <MilestonesCard milestones={rows} />;
+  }
+
+  if (tab === "challenges") {
+    const today = berlinYmd(new Date());
+    const cap = config?.startCapPerDay ?? 10;
+    // Beendete Top-X-Challenges auswerten, auch wenn seit dem Ende niemand gestartet ist.
+    if (config?.enabled) await settleDueChallenges(db, accountId, today, cap);
+    const [challenges, winners] = await Promise.all([
+      db.challenge.findMany({ where: { accountId }, orderBy: [{ endDate: "desc" }, { id: "desc" }], take: 100 }),
+      db.challengeAward.groupBy({ by: ["challengeId"], where: { accountId }, _count: { _all: true } }),
+    ]);
+    const winnersById = new Map(winners.map((w) => [w.challengeId, w._count._all]));
+    const rows: ChallengeAdminRow[] = [];
+    for (const c of challenges) {
+      const startDate = dbDateToYmd(c.startDate);
+      const endDate = dbDateToYmd(c.endDate);
+      const phase = challengePhase({ startYmd: startDate, endYmd: endDate }, today);
+      const units = phase === "upcoming" ? [] : await challengeUnits(db, accountId, c as ChallengeRow, cap);
+      rows.push({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        kind: c.kind,
+        metric: c.metric as GamiMetric,
+        threshold: c.threshold,
+        topCount: c.topCount,
+        startDate,
+        endDate,
+        voucherLabel: c.voucherLabel,
+        voucherValidDays: c.voucherValidDays,
+        active: c.active,
+        settled: c.settledAt != null,
+        phase,
+        participants: units.filter((u) => u.value > 0).length,
+        winners: winnersById.get(c.id) ?? 0,
+      });
+    }
+    content = <ChallengesCard challenges={rows} today={today} />;
+  }
+
+  if (tab === "angebote") {
+    const today = berlinYmd(new Date());
+    const offers = await db.riderOffer.findMany({
+      where: { accountId },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      take: 200,
+    });
+    const rows: OfferAdminRow[] = offers.map((o) => {
+      const validFrom = o.validFrom ? dbDateToYmd(o.validFrom) : null;
+      const validTo = o.validTo ? dbDateToYmd(o.validTo) : null;
+      return {
+        id: o.id,
+        title: o.title,
+        text: o.text,
+        validFrom,
+        validTo,
+        active: o.active,
+        visible: offerVisible({ active: o.active, fromYmd: validFrom, toYmd: validTo }, today),
+      };
+    });
+    content = <OffersCard offers={rows} />;
   }
 
   if (tab === "gutscheine") {
