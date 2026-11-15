@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { runMotionRules } from "@/lib/room-rules";
+import { sendDoorbellPush } from "@/lib/doorbell-push";
 
 const VALID_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "DOORBELL", "OTHER"];
 const MAX_EVENTS_PER_REQUEST = 100;
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
   let created = 0;
   let closed = 0;
   let rulesTriggered = 0;
+  let pushed = 0;
 
   for (const e of events) {
     const cameraId = Number(e?.cameraId);
@@ -48,7 +50,7 @@ export async function POST(request: NextRequest) {
 
     const camera = await db.camera.findFirst({
       where: { id: cameraId, accountId: account.id },
-      select: { id: true, name: true },
+      select: { id: true, name: true, kind: true },
     });
     if (!camera) continue;
 
@@ -57,6 +59,11 @@ export async function POST(request: NextRequest) {
         data: { cameraId, type, startedAt: at, accountId: account.id },
       });
       created++;
+      // Klingel an der DoorBird: sofort Push an die PWA (vor allem anderen,
+      // der Schnappschuss kommt separat ueber /snapshot).
+      if (type === "DOORBELL" && camera.kind === "DOORBIRD") {
+        pushed += await sendDoorbellPush(account.id, camera, at);
+      }
       // Raumregeln mit Bewegungs-Trigger: abwarten (serverless beendet
       // offene Promises nach der Antwort), Fehler blockieren den Ingest nicht.
       // Der Hub holt danach sofort seine Tasks ab (z. B. Kamera steuern).
@@ -84,5 +91,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, created, closed, rulesTriggered });
+  return NextResponse.json({ ok: true, created, closed, rulesTriggered, pushed });
 }

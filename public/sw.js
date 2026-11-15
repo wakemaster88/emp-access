@@ -16,7 +16,7 @@
  * VERSION bei jeder Aenderung an dieser Datei hochzaehlen: alte Caches
  * werden beim Aktivieren weggeraeumt.
  */
-const VERSION = "2026-11-13-1";
+const VERSION = "2026-11-15-1";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 const OFFLINE_URL = "/offline";
 const PRECACHE = [OFFLINE_URL, "/manifest.json", "/icon-192.png", "/icon-512.png", "/apple-icon.png", "/logo.png", "/logo-dark.png"];
@@ -107,7 +107,9 @@ self.addEventListener("push", (event) => {
     badge: "/favicon-32.png",
     tag: payload.tag || undefined,
     renotify: !!payload.tag,
-    vibrate: [100, 50, 100],
+    requireInteraction: !!payload.requireInteraction,
+    // Klingel: laengeres Muster, damit man es in der Tasche merkt.
+    vibrate: payload.requireInteraction ? [300, 150, 300, 150, 300] : [100, 50, 100],
     data: { url: payload.url || "/" },
   };
 
