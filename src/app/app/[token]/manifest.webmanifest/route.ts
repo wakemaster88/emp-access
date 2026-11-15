@@ -10,8 +10,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   return NextResponse.json(
     {
       id: path,
-      name: `Deine Saison · ${rider.accountName}`,
-      short_name: "Saison",
+      name: `Ride in · ${rider.accountName}`,
+      short_name: "Ride in",
       description: "Abo, Gutscheine und Statistik",
       start_url: path,
       scope: path,
@@ -22,10 +22,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       theme_color: "#060d1a",
       lang: "de",
       icons: [
-        { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-        { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-        { src: "/icon-192-maskable.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
-        { src: "/icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        // Eigenes Icon der Kunden-App („Ride in“, CI Tuttenbrocksee), nicht das EMP-Access-Icon der Verwaltung.
+        { src: "/app-icons/ride-in-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: "/app-icons/ride-in-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+        { src: "/app-icons/ride-in-maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+        { src: "/app-icons/ride-in-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
       ],
     },
     { headers: { "Content-Type": "application/manifest+json; charset=utf-8", "Cache-Control": "private, max-age=300" } },
