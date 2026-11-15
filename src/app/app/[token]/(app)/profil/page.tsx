@@ -3,7 +3,8 @@ import { daysUntil, fmtDay } from "@/lib/rider-format";
 import { RiderProfileForm } from "@/components/rider/rider-profile-form";
 import { RiderSecurity } from "@/components/rider/rider-auth";
 import { RiderPush } from "@/components/rider/rider-push";
-import { findRiderAuthProfile } from "@/lib/rider-auth";
+import { findRiderAuthProfile, riderFamilyView } from "@/lib/rider-auth";
+import { RiderFamily } from "@/components/rider/rider-family";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +14,17 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
   const rider = await requireRider(token);
   const abo = rider.abo;
   const auth = await findRiderAuthProfile(token);
+  const family = await riderFamilyView(token);
+  const relation = family?.relation ?? "self";
+  const self = relation === "self";
+  const member = family?.members.find((m) => m.token === token);
 
   return (
     <>
       <h1 className="rd-display rd-h1">Profil</h1>
       {abo && (
         <div className="rd-card">
-          <div className="rd-label">Dein Abo</div>
+          <div className="rd-label">{self ? "Dein Abo" : `Abo von ${member?.name ?? "Mitglied"}`}</div>
           <div className="rd-between">
             <b style={{ fontSize: 16 }}>{abo.name}</b>
             <span className={`rd-pill ${abo.active ? "rd-pill-open" : "rd-pill-off"}`}>{abo.active ? "aktiv" : "nicht aktiv"}</span>
@@ -44,9 +49,27 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
           )}
         </div>
       )}
-      {auth && <RiderSecurity token={token} hasPassword={auth.passwordHash != null} passkeys={auth.passkeyCount} />}
-      <RiderPush token={token} />
-      <RiderProfileForm token={token} nickname={rider.nickname} showInRanking={rider.showInRanking} />
+      {self ? (
+        <>
+          {auth && <RiderSecurity token={token} hasPassword={auth.passwordHash != null} passkeys={auth.passkeyCount} />}
+          <RiderPush token={token} />
+          {auth && family && (
+            <RiderFamily token={token} selfId={auth.id} members={family.members} childOfFamily={family.childOfFamily} />
+          )}
+          <RiderProfileForm token={token} nickname={rider.nickname} showInRanking={rider.showInRanking} />
+        </>
+      ) : relation === "manage" ? (
+        <>
+          <div className="rd-msg rd-msg-ok">
+            Du verwaltest dieses Profil für {member?.name ?? "dein Kind"}. Entfernen kannst du es in deinem eigenen Profil unter Familie.
+          </div>
+          <RiderProfileForm token={token} nickname={rider.nickname} showInRanking={rider.showInRanking} managed />
+        </>
+      ) : (
+        <div className="rd-msg rd-msg-ok">
+          Du siehst das Profil von {member?.name ?? "deinem Partner"}. Einstellungen und Zugang ändert jeder selbst.
+        </div>
+      )}
     </>
   );
 }

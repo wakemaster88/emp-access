@@ -23,6 +23,7 @@ import { prisma } from "./prisma";
 import { CHALLENGE_TTL_MS } from "./passkey";
 import type { RelyingParty } from "./passkey-utils";
 import { loadRider, newRiderToken, riderAppPath, type RiderView } from "./rider-app";
+import { familyRelation, loadFamilyMembers, type FamilyMember, type FamilyPerson, type FamilyRelation } from "./rider-family";
 import { RIDER_COOKIE, RIDER_SESSION_DAYS, signRiderSession, verifyRiderSession } from "./rider-session";
 
 const MAX_FAILURES = 5;
@@ -43,6 +44,8 @@ export interface RiderAuthProfile {
   loginFailures: number;
   loginLockedUntil: Date | null;
   passkeyCount: number;
+  familyId: number | null;
+  familyAdult: boolean;
 }
 
 export async function findRiderAuthProfile(token: string): Promise<RiderAuthProfile | null> {
@@ -57,6 +60,8 @@ export async function findRiderAuthProfile(token: string): Promise<RiderAuthProf
       sessionVersion: true,
       loginFailures: true,
       loginLockedUntil: true,
+      familyId: true,
+      familyAdult: true,
       account: { select: { isActive: true } },
       _count: { select: { passkeys: true, tickets: true } },
     },
@@ -71,6 +76,8 @@ export async function findRiderAuthProfile(token: string): Promise<RiderAuthProf
     loginFailures: p.loginFailures,
     loginLockedUntil: p.loginLockedUntil,
     passkeyCount: p._count.passkeys,
+    familyId: p.familyId,
+    familyAdult: p.familyAdult,
   };
 }
 
@@ -84,13 +91,72 @@ async function hasSession(p: RiderAuthProfile): Promise<boolean> {
   return !!s && s.profileId === p.id && s.version === p.sessionVersion;
 }
 
+/**
+ * Wer auf diesem Gerät angemeldet ist, unabhängig vom Link in der Adresse.
+ * Je Request nur einmal. Null ohne gültige Sitzung.
+ */
+export const sessionRider = cache(async (): Promise<(FamilyPerson & { token: string }) | null> => {
+  const jar = await cookies();
+  const s = verifyRiderSession(jar.get(RIDER_COOKIE)?.value, secret());
+  if (!s) return null;
+  const p = await prisma.riderProfile.findUnique({
+    where: { id: s.profileId },
+    select: {
+      id: true, accountId: true, token: true, sessionVersion: true, familyId: true, familyAdult: true, passwordHash: true,
+      account: { select: { isActive: true } },
+      _count: { select: { passkeys: true, tickets: true } },
+    },
+  });
+  if (!p || !p.account.isActive || p.sessionVersion !== s.version || p._count.tickets === 0) return null;
+  if (p.passwordHash == null && p._count.passkeys === 0) return null;
+  return { id: p.id, accountId: p.accountId, token: p.token, familyId: p.familyId, familyAdult: p.familyAdult };
+});
+
+/**
+ * Verhältnis der angemeldeten Person zu diesem Profil: sie selbst, ein Kind
+ * ihrer Familie (verwalten), der Partner (ansehen) oder nichts.
+ */
+export async function riderRelation(p: RiderAuthProfile): Promise<FamilyRelation> {
+  if (hasCredential(p) && (await hasSession(p))) return "self";
+  const rel = familyRelation(await sessionRider(), p);
+  return rel === "self" ? null : rel;
+}
+
 export type RiderAccess = "setup" | "login" | "ok";
 
 /** Was der Besucher dieses Links darf: einrichten, anmelden oder hinein. */
 export async function riderAccess(p: RiderAuthProfile): Promise<RiderAccess> {
-  if (!hasCredential(p)) return "setup";
-  return (await hasSession(p)) ? "ok" : "login";
+  if ((await riderRelation(p)) != null) return "ok";
+  return hasCredential(p) ? "login" : "setup";
 }
+
+export interface RiderFamilyView {
+  /** "self": eigenes Profil; "manage": Kind der Familie; "view": Partner. */
+  relation: "self" | "manage" | "view";
+  /** Link der angemeldeten Person (zurück zu „Ich“). */
+  viewerToken: string;
+  /** Mitglieder, wenn die angemeldete Person Erwachsene einer Familie ist; sonst leer. */
+  members: FamilyMember[];
+  /** Die angemeldete Person gehört als Kind zu einer Familie. */
+  childOfFamily: boolean;
+}
+
+/** Familien-Sicht für Layout und Profil; setzt eine erlaubte Sitzung voraus. */
+export const riderFamilyView = cache(async (token: string): Promise<RiderFamilyView | null> => {
+  const profile = await findRiderAuthProfile(token);
+  if (!profile) return null;
+  const relation = await riderRelation(profile);
+  if (!relation) return null;
+  const viewer = relation === "self" ? { ...profile } : await sessionRider();
+  if (!viewer) return null;
+  const members = viewer.familyId != null && viewer.familyAdult ? await loadFamilyMembers(viewer.familyId, viewer.accountId) : [];
+  return {
+    relation,
+    viewerToken: viewer.token,
+    members,
+    childOfFamily: viewer.familyId != null && !viewer.familyAdult,
+  };
+});
 
 /**
  * Für jede Seite der App: liefert den Fahrer oder leitet zum Einrichten bzw.
@@ -106,6 +172,22 @@ export const requireRider = cache(async (token: string): Promise<RiderView> => {
   if (!rider) notFound();
   return rider;
 });
+
+/**
+ * Für Schnittstellen, die auch Eltern für ihr Kind aufrufen dürfen: Profil mit
+ * dem Verhältnis "self" oder "manage", sonst eine Fehlerantwort.
+ */
+export async function riderApiManage(
+  token: string,
+): Promise<{ profile: RiderAuthProfile; relation: "self" | "manage" } | { error: NextResponse }> {
+  const profile = await findRiderAuthProfile(token);
+  if (!profile) return { error: NextResponse.json({ error: "Nicht gefunden" }, { status: 404 }) };
+  const relation = await riderRelation(profile);
+  if (relation !== "self" && relation !== "manage") {
+    return { error: NextResponse.json({ error: "Bitte melde dich neu an." }, { status: 401 }) };
+  }
+  return { profile, relation };
+}
 
 /** Für Schnittstellen: Profil mit gültiger Sitzung oder eine Fehlerantwort. */
 export async function riderApiSession(

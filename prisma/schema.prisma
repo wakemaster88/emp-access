@@ -182,6 +182,7 @@ model Account {
   hubTasks             HubTask[]
   gamificationConfig   GamificationConfig?
   riderProfiles        RiderProfile[]
+  riderFamilies        RiderFamily[]
   riderPasskeys        RiderPasskey[]
   riderPushSubscriptions RiderPushSubscription[]
   riderDayStats        RiderDayStat[]
@@ -3565,11 +3566,28 @@ model RiderProfile {
   loginLockedUntil DateTime?
   passkeys         RiderPasskey[]
   pushSubscriptions RiderPushSubscription[]
+  /// Familie: Erwachsene (eigener Login) sehen alle Mitglieder, Kinder haben
+  /// keinen eigenen Zugang und werden von den Erwachsenen mitverwaltet.
+  familyId      Int?
+  family        RiderFamily? @relation(fields: [familyId], references: [id], onDelete: SetNull)
+  familyAdult   Boolean   @default(false)
   accountId     Int
   account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tickets       Ticket[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([familyId])
+}
+
+/// Familie in der Kunden-App: buendelt Profile, gezaehlt wird weiter je Person.
+model RiderFamily {
+  id        Int            @id @default(autoincrement())
+  members   RiderProfile[]
+  accountId Int
+  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
 
   @@index([accountId])
 }

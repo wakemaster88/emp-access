@@ -6,10 +6,12 @@ interface Props {
   token: string;
   nickname: string | null;
   showInRanking: boolean;
+  /** Eltern bearbeiten das Profil ihres Kindes: ohne den Ausstieg. */
+  managed?: boolean;
 }
 
 /** Spitzname, Einwilligung für Ranglisten und der Ausstieg. */
-export function RiderProfileForm({ token, nickname, showInRanking }: Props) {
+export function RiderProfileForm({ token, nickname, showInRanking, managed = false }: Props) {
   const [nick, setNick] = useState(nickname ?? "");
   const [ranking, setRanking] = useState(showInRanking);
   const [busy, setBusy] = useState(false);
@@ -62,7 +64,7 @@ export function RiderProfileForm({ token, nickname, showInRanking }: Props) {
         <div className="rd-field">
           <label htmlFor="rd-nick">Spitzname</label>
           <input id="rd-nick" className="rd-input" value={nick} maxLength={20} onChange={(e) => setNick(e.target.value)} autoComplete="off" />
-          <span className="rd-muted">Für andere sichtbar, nie dein Name oder Foto.</span>
+          <span className="rd-muted">{managed ? "Für andere sichtbar, nie der Name oder ein Foto." : "Für andere sichtbar, nie dein Name oder Foto."}</span>
         </div>
         <label className="rd-check">
           <span className="rd-grow">
@@ -76,7 +78,7 @@ export function RiderProfileForm({ token, nickname, showInRanking }: Props) {
         <button type="submit" className="rd-btn rd-btn-wide" disabled={busy}><span>Speichern</span></button>
       </form>
 
-      <div className="rd-card" style={{ gap: 10 }}>
+      {!managed && <div className="rd-card" style={{ gap: 10 }}>
         <b>Statistik löschen und aussteigen</b>
         <span className="rd-muted">
           Löscht deine Besuchstage, Starts und Meilensteine. Danach wird nichts mehr gezählt. Offene Gutscheine bleiben gültig, du findest sie dann an der Kasse über deinen Namen.
@@ -89,7 +91,7 @@ export function RiderProfileForm({ token, nickname, showInRanking }: Props) {
         ) : (
           <button type="button" className="rd-btn rd-btn-danger rd-btn-wide" onClick={() => setConfirmDelete(true)}><span>Aussteigen</span></button>
         )}
-      </div>
+      </div>}
     </>
   );
 }
