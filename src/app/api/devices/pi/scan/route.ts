@@ -926,6 +926,7 @@ export async function POST(request: NextRequest) {
       accountId,
       ticketId: ticket.id,
       subscriptionId: ticket.subscriptionId,
+      optOut: ticket.gamificationOptOut,
       at: now,
     }).catch((err) => {
       console.error("[scan] gamification failed:", err);

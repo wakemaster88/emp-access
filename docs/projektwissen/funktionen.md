@@ -26,7 +26,31 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
   Scans neu auf und vergibt dabei nichts. Verlässliche Starts gibt es erst seit
   dem Drehkreuz (21.08.2026).
 - Rechenlogik mit Tests in `src/lib/gamification.ts`, Datenbank-Seite in
-  `src/lib/gamification-service.ts`. Kunden-App und Challenges folgen.
+  `src/lib/gamification-service.ts`.
+
+## Kunden-App für Abo-Fahrer, Etappe 2 (15.11.2026)
+
+- Eigene Oberfläche unter `/app` (dunkles Wassersport-Design in
+  `src/app/app/rider.css`, bewusst ohne die ui-Bausteine der Verwaltung).
+  Als PWA installierbar: Manifest je Fahrer, der globale Service Worker
+  (`public/sw.js`) liefert Offline-Seite und Cache.
+- **Anmeldung** auf `/app`: Kartennummer des Abos plus Geburtsdatum
+  (`api/rider/login`, begrenzt auf 10 Versuche je 10 Minuten, gleiche Antwort
+  für unbekannte Karte und falsches Datum). Ergebnis ist der persönliche Link
+  `/app/<token>`; der Token ist der Schlüssel, es gibt kein Passwort.
+- Fahrer ohne Geburtsdatum oder Kartennummer bekommen den Link an der Kasse:
+  Gäste › Gamification › Fahrer › App-Link (QR-Code und Link zum Kopieren).
+- `RiderProfile` bündelt die Abo-Tickets einer Person (Vorname, Nachname und
+  Geburtsdatum gleich) und trägt Spitzname und Ranglisten-Einwilligung
+  (`showInRanking`, ab Werk aus).
+- Seiten: Start (Abo mit Gültigkeit, offene Gutscheine, Stufe, Besuchstage,
+  Starts, Serie, weitere Ziele), Gutscheine (QR-Code zum Entwerten an der
+  Kasse), Profil (Abo und enthaltene Bereiche, Spitzname, Aussteigen).
+- **Aussteigen** löscht Tagessummen und Meilensteine der Person, setzt
+  `Ticket.gamificationOptOut` (danach wird nichts mehr gezählt) und entfernt
+  das Profil. Verdiente Gutscheine bleiben gültig. Eine neue Anmeldung hebt
+  den Ausstieg wieder auf.
+- Datenbank-Seite in `src/lib/rider-app.ts`. Challenges und Angebote folgen.
 
 ## Menü und Modulaufteilung (11.11.2026)
 

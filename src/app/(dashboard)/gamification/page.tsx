@@ -15,10 +15,11 @@ import {
 } from "@/components/ui/table";
 import { MilestonesCard, type MilestoneRow } from "@/components/gamification/milestones-card";
 import { BenefitVouchersCard, type BenefitVoucherRow } from "@/components/gamification/benefit-vouchers-card";
+import { RidersCard, type RiderRow } from "@/components/gamification/riders-card";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 
-type Tab = "auswertung" | "meilensteine" | "gutscheine" | "einstellungen";
-const TABS: Tab[] = ["auswertung", "meilensteine", "gutscheine", "einstellungen"];
+type Tab = "auswertung" | "fahrer" | "meilensteine" | "gutscheine" | "einstellungen";
+const TABS: Tab[] = ["auswertung", "fahrer", "meilensteine", "gutscheine", "einstellungen"];
 
 function ticketLabel(t: { name: string; firstName: string | null; lastName: string | null }): string {
   const full = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
@@ -47,6 +48,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       value={tab}
       options={[
         { value: "auswertung", label: "Auswertung", icon: BarChart3, href: "/gamification" },
+        { value: "fahrer", label: "Fahrer", icon: Users, href: "/gamification?tab=fahrer" },
         { value: "meilensteine", label: "Meilensteine", icon: Award, href: "/gamification?tab=meilensteine" },
         { value: "gutscheine", label: "Gutscheine", icon: Gift, href: "/gamification?tab=gutscheine" },
         { value: "einstellungen", label: "Einstellungen", icon: Settings, href: "/gamification?tab=einstellungen" },
@@ -147,6 +149,44 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         </div>
       </>
     );
+  }
+
+  if (tab === "fahrer") {
+    const subscriptionIds = config?.subscriptionIds ?? [];
+    const [tickets, perTicket, subscriptions] = await Promise.all([
+      subscriptionIds.length
+        ? db.ticket.findMany({
+            where: { accountId, subscriptionId: { in: subscriptionIds }, status: "VALID" },
+            select: {
+              id: true, name: true, firstName: true, lastName: true, subscriptionId: true,
+              rfidCode: true, birthDate: true, gamificationOptOut: true,
+              riderProfile: { select: { lastSeenAt: true } },
+            },
+            orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { id: "asc" }],
+            take: 2000,
+          })
+        : Promise.resolve([]),
+      db.riderDayStat.groupBy({
+        by: ["ticketId"],
+        where: { accountId, day: yearRange },
+        _count: { _all: true },
+        _sum: { starts: true },
+      }),
+      db.subscription.findMany({ where: { accountId }, select: { id: true, name: true } }),
+    ]);
+    const statById = new Map(perTicket.map((r) => [r.ticketId, r]));
+    const subName = new Map(subscriptions.map((s) => [s.id, s.name]));
+    const rows: RiderRow[] = tickets.map((t) => ({
+      ticketId: t.id,
+      name: ticketLabel(t),
+      subscription: t.subscriptionId != null ? subName.get(t.subscriptionId) ?? "Abo" : "Abo",
+      visitDays: statById.get(t.id)?._count._all ?? 0,
+      starts: statById.get(t.id)?._sum.starts ?? 0,
+      appUsed: t.riderProfile?.lastSeenAt != null,
+      optOut: t.gamificationOptOut,
+      canSelfLogin: Boolean(t.rfidCode && t.birthDate),
+    }));
+    content = <RidersCard riders={rows} year={year} />;
   }
 
   if (tab === "meilensteine") {
