@@ -42,9 +42,11 @@ const securityHeaders = [
  * Vercel-Deployment eindeutig, auch beim erneuten Deploy desselben Commits.
  */
 const buildId = process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || "dev";
+/** Zeitpunkt des Builds: ab hier zählen gemergte PRs als „Neuerungen“ für diesen Stand. */
+const buildTime = new Date().toISOString();
 
 const nextConfig: NextConfig = {
-  env: { NEXT_PUBLIC_BUILD_ID: buildId },
+  env: { NEXT_PUBLIC_BUILD_ID: buildId, NEXT_PUBLIC_BUILD_TIME: buildTime },
   serverExternalPackages: ["bcryptjs"],
   async headers() {
     return [

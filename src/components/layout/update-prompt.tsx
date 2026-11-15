@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Sparkles } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { BUILD_ID, isKioskPath, isNewerBuild } from "@/lib/app-version";
+import { BUILD_ID, BUILD_TIME, MAX_RELEASE_NOTES, isKioskPath, isNewerBuild, showsReleaseNotes } from "@/lib/app-version";
 
 /** Wie oft im Vordergrund nach einer neuen Version gefragt wird. */
 const CHECK_EVERY_MS = 5 * 60_000;
@@ -22,6 +23,19 @@ async function servedBuildId(): Promise<string | null> {
     return typeof data.buildId === "string" ? data.buildId : null;
   } catch {
     return null;
+  }
+}
+
+/** Neuerungen seit dem eigenen Build (Titel der gemergten PRs), sonst leer. */
+async function releaseNotes(): Promise<string[]> {
+  if (!BUILD_TIME || !showsReleaseNotes(window.location.pathname)) return [];
+  try {
+    const res = await fetch(`/api/version?seit=${encodeURIComponent(BUILD_TIME)}`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { notes?: unknown };
+    return Array.isArray(data.notes) ? data.notes.filter((n): n is string => typeof n === "string") : [];
+  } catch {
+    return [];
   }
 }
 
@@ -66,8 +80,28 @@ async function applyUpdate(target: string | null) {
   window.location.reload();
 }
 
+/** Liste der Neuerungen im Dialog: höchstens acht, der Rest als Zahl. */
+function ReleaseNotes({ notes }: { notes: string[] }) {
+  const shown = notes.slice(0, MAX_RELEASE_NOTES);
+  const more = notes.length - shown.length;
+  return (
+    <div className="glass-tile max-h-[45dvh] overflow-y-auto px-3.5 py-3">
+      <ul className="flex flex-col gap-2 text-sm">
+        {shown.map((note) => (
+          <li key={note} className="flex gap-2.5">
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+            <span className="min-w-0 break-words">{note}</span>
+          </li>
+        ))}
+      </ul>
+      {more > 0 && <p className="mt-2 text-xs text-muted-foreground">und {more} weitere Änderungen</p>}
+    </div>
+  );
+}
+
 /**
- * Hinweis „Neue Version verfügbar“ nach einem Deployment.
+ * Hinweis „Neue Version verfügbar“ nach einem Deployment, mit den Neuerungen
+ * seit dem eigenen Stand (Titel der gemergten PRs, nur auf Seiten fürs Team).
  *
  * Vergleicht beim Zurückkehren in den Vordergrund, bei Fokus, nach dem
  * Wiederverbinden und alle 5 Minuten die eigene Build-ID mit `/api/version`.
@@ -77,14 +111,20 @@ async function applyUpdate(target: string | null) {
  */
 export function UpdatePrompt() {
   const [target, setTarget] = useState<string | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
+  const targetRef = useRef<string | null>(null);
   const snoozedUntil = useRef(0);
   const lastInput = useRef(0);
 
   const check = useCallback(async () => {
     if (document.visibilityState !== "visible") return;
     const served = await servedBuildId();
-    if (served && isNewerBuild(BUILD_ID, served)) setTarget(served);
+    if (served && isNewerBuild(BUILD_ID, served) && targetRef.current !== served) {
+      targetRef.current = served;
+      setNotes(await releaseNotes());
+      setTarget(served);
+    }
   }, []);
 
   // Wann nachgefragt wird.
@@ -155,11 +195,17 @@ export function UpdatePrompt() {
         setOpen(next);
       }}
       title="Neue Version verfügbar"
-      description="EMP Access wurde aktualisiert. Lade die App neu, um die neue Version zu nutzen. Nicht gespeicherte Eingaben auf dieser Seite gehen dabei verloren."
-      confirmLabel="Jetzt aktualisieren"
+      description={
+        notes.length > 0
+          ? "Das ist neu. Nicht gespeicherte Eingaben auf dieser Seite gehen beim Aktualisieren verloren."
+          : "EMP Access wurde aktualisiert. Lade die App neu, um die neue Version zu nutzen. Nicht gespeicherte Eingaben auf dieser Seite gehen dabei verloren."
+      }
+      confirmLabel="Aktualisieren"
       cancelLabel="Später"
       destructive={false}
       onConfirm={() => applyUpdate(target).then(() => new Promise<void>(() => {}))}
-    />
+    >
+      {notes.length > 0 && <ReleaseNotes notes={notes} />}
+    </ConfirmDialog>
   );
 }
