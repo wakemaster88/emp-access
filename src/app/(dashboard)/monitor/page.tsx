@@ -18,7 +18,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusDot } from "@/components/ui/status-dot";
-import { Check, ChevronDown, DoorOpen, Loader2, MapPin, Maximize, Minimize, Pause, Play, ScanLine, ShieldAlert, Ticket, Users, Volume2, VolumeX, Wifi, X } from "lucide-react";
+import { Check, ChevronDown, MapPin, Maximize, Minimize, Pause, Play, ScanLine, ShieldAlert, Ticket, Users, Volume2, VolumeX, Wifi, X } from "lucide-react";
 import { fmtTime } from "@/lib/utils";
 import { berlinYmd, isSameBerlinDay } from "@/lib/berlin-day";
 import { parseScanDisplayNote, scanDenyReasonLabel } from "@/lib/scan-deny-reason";
@@ -60,8 +60,6 @@ interface DeviceStatus {
   task: number;
 }
 
-const OPENABLE_CATEGORIES = new Set(["DREHKREUZ", "TUER"]);
-
 /** Poll-Takt des Leitstands. */
 const MONITOR_POLL_MS = 5000;
 
@@ -77,8 +75,6 @@ export default function MonitorPage() {
   useWakeLock(true);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [dayKey, setDayKey] = useState(() => berlinYmd(new Date()));
-  const [openingId, setOpeningId] = useState<number | null>(null);
-  const [openedIds, setOpenedIds] = useState<Set<number>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -100,29 +96,6 @@ export default function MonitorPage() {
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.45);
     } catch {}
-  }, []);
-
-  const handleQuickOpen = useCallback(async (deviceId: number) => {
-    setOpeningId(deviceId);
-    try {
-      const res = await fetch(`/api/devices/${deviceId}/action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "open" }),
-      });
-      if (res.ok) {
-        setOpenedIds((prev) => new Set(prev).add(deviceId));
-        setTimeout(() => {
-          setOpenedIds((prev) => {
-            const next = new Set(prev);
-            next.delete(deviceId);
-            return next;
-          });
-        }, 2000);
-      }
-    } finally {
-      setOpeningId(null);
-    }
   }, []);
 
   const toggleFullscreen = useCallback(() => {
@@ -329,55 +302,6 @@ export default function MonitorPage() {
             ))}
           </div>
         )}
-
-        {(() => {
-          const openable = devices.filter((d) => d.category && OPENABLE_CATEGORIES.has(d.category));
-          if (openable.length === 0) return null;
-          return (
-            <Card>
-              <CardHeader>
-                <CardTitle>Schnell-Öffnen</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {openable.map((d) => {
-                    const isLoading = openingId === d.id;
-                    const wasOpened = openedIds.has(d.id);
-                    const online = d.lastUpdate && d.lastUpdate > fiveMinAgo;
-                    return (
-                      // max-w-full und truncate: Lange Gerätenamen kürzen in der Karte, statt die Seite auf
-                      // dem Handy seitlich zu verbreitern (docs/design-regeln.md, Abschnitt 5).
-                      <Button
-                        key={d.id}
-                        size="sm"
-                        variant="outline"
-                        disabled={openingId !== null}
-                        onClick={() => handleQuickOpen(d.id)}
-                        className={`gap-1.5 max-w-full max-sm:h-11 ${
-                          wasOpened
-                            ? "bg-success hover:bg-success/90 text-success-foreground border-success"
-                            : "hover:bg-success/10 "
-                        }`}
-                      >
-                        {isLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : wasOpened ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <DoorOpen className="h-4 w-4" />
-                        )}
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <StatusDot size="xs" tone={online ? "success" : "neutral"} />
-                          <span className="truncate">{d.name}</span>
-                        </span>
-                      </Button>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })()}
 
         <Card>
           <CardHeader>
