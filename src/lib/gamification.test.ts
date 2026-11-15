@@ -109,3 +109,52 @@ test("benefitVoucherState", () => {
   assert.equal(benefitVoucherState({ ...base, disabledAt: now }, now), "disabled");
   assert.equal(benefitVoucherState({ ...base, redeemedAt: now, disabledAt: now }, now), "redeemed");
 });
+
+import { cleanNickname, mergeDayStats, milestoneProgress, sameBirthDate, seasonLevel } from "./gamification";
+
+test("mergeDayStats: derselbe Tag aus zwei Tickets zählt einmal", () => {
+  assert.deepEqual(
+    mergeDayStats([
+      { day: "2027-06-02", starts: 3 },
+      { day: "2027-06-01", starts: 2 },
+      { day: "2027-06-02", starts: 4 },
+    ]),
+    [
+      { day: "2027-06-01", starts: 2 },
+      { day: "2027-06-02", starts: 7 },
+    ],
+  );
+});
+
+test("milestoneProgress und seasonLevel", () => {
+  const ms = [
+    { id: 1, name: "Dabei", metric: "VISIT_DAYS" as const, threshold: 2, period: "SEASON" as const, voucherLabel: null },
+    { id: 2, name: "Stammfahrer", metric: "VISIT_DAYS" as const, threshold: 10, period: "SEASON" as const, voucherLabel: "Freigetränk" },
+    { id: 3, name: "Hundert", metric: "STARTS" as const, threshold: 100, period: "SEASON" as const, voucherLabel: null },
+  ];
+  const days = [
+    { day: "2027-05-01", starts: 5 },
+    { day: "2027-05-02", starts: 5 },
+    { day: "2027-05-09", starts: 5 },
+  ];
+  const progress = milestoneProgress(ms, days, "2027-05-09", 10);
+  assert.deepEqual(progress.map((p) => [p.value, p.reached]), [[2, true], [3, false], [15, false]]);
+  const level = seasonLevel(progress);
+  assert.equal(level.current?.name, "Dabei");
+  assert.equal(level.next?.name, "Stammfahrer");
+  assert.equal(seasonLevel([]).current, null);
+});
+
+test("sameBirthDate verträgt UTC- und Berlin-Mitternacht", () => {
+  assert.equal(sameBirthDate(new Date("1990-05-17T00:00:00Z"), "1990-05-17"), true);
+  assert.equal(sameBirthDate(new Date("1990-05-16T22:00:00Z"), "1990-05-17"), true);
+  assert.equal(sameBirthDate(new Date("1990-05-17T00:00:00Z"), "1990-05-18"), false);
+  assert.equal(sameBirthDate(null, "1990-05-17"), false);
+  assert.equal(sameBirthDate(new Date("1990-05-17T00:00:00Z"), "17.05.1990"), false);
+});
+
+test("cleanNickname", () => {
+  assert.equal(cleanNickname("  Wake   Fuchs "), "Wake Fuchs");
+  assert.equal(cleanNickname("   "), null);
+  assert.equal(cleanNickname("x".repeat(40))?.length, 20);
+});

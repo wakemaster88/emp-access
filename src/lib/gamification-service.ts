@@ -61,10 +61,12 @@ export async function recordStart(input: {
   accountId: number;
   ticketId: number;
   subscriptionId: number | null;
+  /** Fahrer ist ausgestiegen (`Ticket.gamificationOptOut`): nichts zählen. */
+  optOut?: boolean;
   at: Date;
 }): Promise<void> {
   const { accountId, ticketId, subscriptionId, at } = input;
-  if (subscriptionId == null) return;
+  if (subscriptionId == null || input.optOut) return;
   const db = tenantClient(accountId);
   const config = await loadGamiConfig(db, accountId);
   if (!config.enabled || !config.subscriptionIds.includes(subscriptionId)) return;

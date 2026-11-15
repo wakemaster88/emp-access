@@ -181,6 +181,7 @@ model Account {
   hubAlerts            HubAlert[]
   hubTasks             HubTask[]
   gamificationConfig   GamificationConfig?
+  riderProfiles        RiderProfile[]
   riderDayStats        RiderDayStat[]
   milestones           Milestone[]
   milestoneAwards      MilestoneAward[]
@@ -540,8 +541,14 @@ model Ticket {
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
 
+  /// Kunden-App: Profil, das mehrere Abo-Tickets derselben Person buendelt.
+  riderProfileId          Int?
+  riderProfile            RiderProfile?        @relation(fields: [riderProfileId], references: [id], onDelete: SetNull)
+  /// Fahrer ist aus der Gamification ausgestiegen: es wird nichts gezaehlt.
+  gamificationOptOut      Boolean              @default(false)
   riderDayStats           RiderDayStat[]
   milestoneAwards         MilestoneAward[]
+  @@index([riderProfileId])
   @@index([accountId])
   @@index([rfidCode])
   @@index([qrCode])
@@ -3450,4 +3457,23 @@ model MilestoneAward {
   @@index([accountId])
   @@index([ticketId])
   @@index([voucherId])
+}
+
+/// Kunden-App (Gamification): ein Profil je Person. Der Token im Link
+/// `/app/<token>` ist die Berechtigung, wie bei der Mitarbeiter-App `/m/<token>`.
+model RiderProfile {
+  id            Int       @id @default(autoincrement())
+  token         String    @unique
+  /// Fuer andere sichtbar (Rangliste), nie der echte Name.
+  nickname      String?
+  /// Einwilligung: mit Spitznamen in Ranglisten erscheinen.
+  showInRanking Boolean   @default(false)
+  lastSeenAt    DateTime?
+  accountId     Int
+  account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tickets       Ticket[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([accountId])
 }

@@ -205,3 +205,81 @@ export const BENEFIT_STATE_MESSAGE: Record<Exclude<BenefitVoucherState, "open">,
   expired: "Gutschein abgelaufen",
   disabled: "Gutschein wurde deaktiviert",
 };
+
+/**
+ * Tagessummen mehrerer Tickets derselben Person zusammenlegen (Kunden-App):
+ * derselbe Kalendertag zählt einmal, die Starts werden addiert.
+ */
+export function mergeDayStats(days: DayStat[]): DayStat[] {
+  const byDay = new Map<string, number>();
+  for (const d of days) byDay.set(d.day, (byDay.get(d.day) ?? 0) + d.starts);
+  return [...byDay.entries()]
+    .map(([day, starts]) => ({ day, starts }))
+    .sort((a, b) => a.day.localeCompare(b.day));
+}
+
+export interface MilestoneProgress {
+  id: number;
+  name: string;
+  metric: GamiMetric;
+  period: GamiPeriod;
+  threshold: number;
+  value: number;
+  reached: boolean;
+  voucherLabel: string | null;
+}
+
+/** Fortschritt je Meilenstein zum Stichtag, in der Reihenfolge der Eingabe. */
+export function milestoneProgress(
+  milestones: Array<MilestoneRule & { name: string; voucherLabel: string | null }>,
+  days: DayStat[],
+  refYmd: string,
+  capPerDay: number,
+): MilestoneProgress[] {
+  return milestones.map((m) => {
+    const key = periodKey(m.period, refYmd);
+    const metrics = computeMetrics(days.filter((d) => d.day.startsWith(key)), capPerDay);
+    const value = metricValue(metrics, m.metric);
+    return {
+      id: m.id,
+      name: m.name,
+      metric: m.metric,
+      period: m.period,
+      threshold: m.threshold,
+      value: Math.min(value, m.threshold),
+      reached: value >= m.threshold,
+      voucherLabel: m.voucherLabel,
+    };
+  });
+}
+
+/**
+ * Stufe in der Saison: höchster erreichter Besuchstage-Meilenstein und der
+ * nächste darüber. Grundlage für „Stammfahrer · noch 8 bis Local“.
+ */
+export function seasonLevel(progress: MilestoneProgress[]): {
+  current: MilestoneProgress | null;
+  next: MilestoneProgress | null;
+} {
+  const ladder = progress
+    .filter((p) => p.metric === "VISIT_DAYS" && p.period === "SEASON")
+    .sort((a, b) => a.threshold - b.threshold);
+  const reached = ladder.filter((p) => p.reached);
+  return {
+    current: reached.length ? reached[reached.length - 1] : null,
+    next: ladder.find((p) => !p.reached) ?? null,
+  };
+}
+
+/** Geburtsdatum aus dem Formular ("YYYY-MM-DD") gegen das am Ticket gespeicherte prüfen. */
+export function sameBirthDate(stored: Date | null, input: string): boolean {
+  if (!stored || !/^\d{4}-\d{2}-\d{2}$/.test(input)) return false;
+  // Am Ticket liegt Mitternacht, je nach Erfassung in UTC oder Berliner Zeit.
+  return stored.toISOString().slice(0, 10) === input || berlinYmd(stored) === input;
+}
+
+/** Spitzname säubern: Leerraum kürzen, höchstens 20 Zeichen, leer wird null. */
+export function cleanNickname(raw: string | null | undefined): string | null {
+  const s = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 20);
+  return s.length > 0 ? s : null;
+}

@@ -1,0 +1,50 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { publicRateLimit } from "@/lib/rate-limit";
+import { cleanNickname } from "@/lib/gamification";
+import { deleteRiderData } from "@/lib/rider-app";
+
+const schema = z.object({
+  nickname: z.string().max(60).nullable(),
+  showInRanking: z.boolean(),
+});
+
+async function resolve(params: Promise<{ token: string }>) {
+  const { token } = await params;
+  const limited = publicRateLimit(token, "rider-profile", { limit: 30, windowMs: 60_000 });
+  if (limited) return { error: limited };
+  const profile = token.length >= 16
+    ? await prisma.riderProfile.findUnique({ where: { token }, select: { id: true, accountId: true } })
+    : null;
+  if (!profile) return { error: NextResponse.json({ error: "Nicht gefunden" }, { status: 404 }) };
+  return { profile };
+}
+
+/** PATCH: Spitzname und Einwilligung für Ranglisten speichern. */
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const ctx = await resolve(params);
+  if ("error" in ctx) return ctx.error;
+
+  const parsed = schema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Ungültige Eingabe" }, { status: 400 });
+
+  const nickname = cleanNickname(parsed.data.nickname);
+  // In Ranglisten steht nur der Spitzname, also braucht es einen.
+  if (parsed.data.showInRanking && !nickname) {
+    return NextResponse.json({ error: "Für die Rangliste brauchst du einen Spitznamen." }, { status: 400 });
+  }
+  await prisma.riderProfile.update({
+    where: { id: ctx.profile.id },
+    data: { nickname, showInRanking: parsed.data.showInRanking },
+  });
+  return NextResponse.json({ ok: true, nickname });
+}
+
+/** DELETE: Statistik löschen und aussteigen. */
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const ctx = await resolve(params);
+  if ("error" in ctx) return ctx.error;
+  await deleteRiderData(ctx.profile.id, ctx.profile.accountId);
+  return NextResponse.json({ ok: true });
+}
