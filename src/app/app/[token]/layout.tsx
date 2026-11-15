@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
     appleWebApp: {
       capable: true,
       statusBarStyle: "black-translucent",
-      title: "Ride in",
+      title: "Ride Pass",
       startupImage: appleStartupImages(),
     },
     robots: { index: false, follow: false },
