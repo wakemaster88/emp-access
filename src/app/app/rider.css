@@ -293,3 +293,50 @@
 .rd-recap-grid .rd-stat { display: flex; flex-direction: column; gap: 2px; }
 .rd-recap-grid .rd-muted { font-size: 12px; }
 .rd-stat .rd-recap-word { font-size: 26px; line-height: 1.15; color: var(--rd-text); overflow-wrap: anywhere; }
+
+/* Hinweis „als App installieren“ im Browser: schwebt über der Navigation. */
+.rd-install {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(max(12px, env(safe-area-inset-bottom) - 4px) + 72px);
+  z-index: 31;
+  display: flex;
+  justify-content: center;
+  padding: 0 14px;
+  pointer-events: none;
+}
+.rd-install-card {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 452px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 6px 12px 14px;
+  background: var(--rd-card);
+  border: 1px solid var(--rd-line-strong);
+  border-left: 4px solid var(--rd-accent);
+  border-radius: 10px;
+  box-shadow: 0 14px 36px -10px rgb(0 0 0 / 0.7);
+}
+.rd-install-card b { font-size: 15px; }
+.rd-install-card p { margin: 4px 0 0; color: var(--rd-soft); line-height: 1.45; }
+.rd-install-card p svg { display: inline; vertical-align: -2px; color: var(--rd-text); }
+.rd-install-card strong { color: var(--rd-text); font-weight: 600; }
+.rd-install-card .rd-btn { margin-top: 10px; }
+.rd-install-close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: -8px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--rd-muted);
+  cursor: pointer;
+}
