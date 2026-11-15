@@ -10,7 +10,7 @@ const display = Barlow_Condensed({
   display: "swap",
 });
 
-export const viewport: Viewport = { themeColor: "#060d1a" };
+export const viewport: Viewport = { themeColor: "#0b1214" };
 
 export const metadata: Metadata = {
   title: "Deine Saison",

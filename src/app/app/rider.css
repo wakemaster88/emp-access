@@ -1,22 +1,31 @@
 /*
  * Kunden-App (/app): eigenes Design, bewusst getrennt von docs/design-regeln.md
- * (die gelten für Verwaltung, Monitore und Mails). Dunkles Wasserblau, Cyan als
- * Akzent, Orange für Angebote, kursive Versalschrift, schräge Kanten.
+ * (die gelten für Verwaltung, Monitore und Mails). Farben aus der CI von
+ * tuttenbrocksee.com: Petrol (#1a6d73, dunkel #155a60) für Kopf und Tasten,
+ * Gelb (#fbbf24) als Akzent, dunkler Grund (#121a1c), Schrift Inter. Dazu der
+ * sportliche Teil der App: kursive Versalschrift und schräge Kanten.
  * Alle Klassen beginnen mit `rd-` und wirken nur unterhalb von `.rd-root`.
  */
 .rd-root {
-  --rd-bg: #060d1a;
-  --rd-card: #0f1a2e;
-  --rd-line: #232d47;
-  --rd-line-strong: #33405f;
-  --rd-text: #f4f6fb;
-  --rd-soft: #c3cbdb;
-  --rd-muted: #a3aec4;
-  --rd-accent: #1fe0ff;
-  --rd-accent-soft: #8beeff;
-  --rd-accent-bg: #0c2c3a;
-  --rd-on-accent: #031a22;
-  --rd-offer: #ff5a2b;
+  --rd-bg: #0b1214;
+  --rd-card: #121a1c;
+  --rd-line: #24373a;
+  --rd-line-strong: #36555a;
+  --rd-text: #f3f7f7;
+  --rd-soft: #c5d2d3;
+  --rd-muted: #a0b3b5;
+  /* Petrol der Marke: Kopf, Tasten, Angebote. */
+  --rd-brand: #1a6d73;
+  --rd-brand-dark: #155a60;
+  --rd-on-brand: #ffffff;
+  /* Helles Petrol für Links und Hinweise auf dunklem Grund. */
+  --rd-link: #7fd6db;
+  --rd-accent-soft: #a9e6ea;
+  --rd-accent-bg: #12383b;
+  /* Gelb der Marke: Zahlen, Fortschritt, aktiver Eintrag. */
+  --rd-accent: #fbbf24;
+  --rd-on-accent: #1f1503;
+  --rd-offer: #2a8f96;
   --rd-danger: #ff8a7a;
   margin: calc(env(safe-area-inset-top) * -1) calc(env(safe-area-inset-right) * -1)
     calc(env(safe-area-inset-bottom) * -1) calc(env(safe-area-inset-left) * -1);
@@ -47,7 +56,7 @@
 }
 /* Unten Platz für die schwebende Navigation (62 px + Abstand + Home-Leiste). */
 .rd-main:has(+ .rd-nav-wrap) { padding-bottom: calc(env(safe-area-inset-bottom) + 96px); }
-.rd-root a { color: var(--rd-accent); }
+.rd-root a { color: var(--rd-link); }
 .rd-root :focus-visible { outline: 2px solid var(--rd-accent-soft); outline-offset: 2px; }
 
 .rd-display {
@@ -80,14 +89,14 @@
   position: relative;
   margin: calc((env(safe-area-inset-top) + 20px) * -1) -16px 0;
   padding: calc(env(safe-area-inset-top) + 20px) 16px 34px;
-  background: #0b2540;
+  background: linear-gradient(135deg, var(--rd-brand) 0%, var(--rd-brand-dark) 100%);
   clip-path: polygon(0 0, 100% 0, 100% 78%, 0 100%);
   overflow: hidden;
 }
-.rd-hero svg { position: absolute; left: 0; bottom: 0; width: 100%; height: 120px; }
+.rd-hero svg { position: absolute; left: 0; bottom: 0; width: 100%; height: 120px; color: rgb(255 255 255 / 0.28); }
 .rd-hero-body { position: relative; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.rd-hero-line { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--rd-accent-soft); }
-.rd-hero-line::before { content: ""; width: 28px; height: 6px; background: var(--rd-offer); transform: skewX(-20deg); }
+.rd-hero-line { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(255 255 255 / 0.86); }
+.rd-hero-line::before { content: ""; width: 28px; height: 6px; background: var(--rd-accent); transform: skewX(-20deg); }
 
 .rd-card {
   background: var(--rd-card);
@@ -113,8 +122,8 @@
   border: 0;
   border-radius: 4px;
   transform: skewX(-10deg);
-  background: var(--rd-accent);
-  color: var(--rd-on-accent) !important;
+  background: var(--rd-brand);
+  color: var(--rd-on-brand) !important;
   font: inherit;
   font-weight: 700;
   text-decoration: none;
@@ -166,8 +175,8 @@
 
 /*
  * Untere Navigation: schwebende Glas-Kapsel wie in iOS 26/27, im Wassersport-
- * Look. Dunkles Wasserblau, durchscheinend mit Weichzeichner, Lichtkante oben.
- * Der aktive Eintrag sitzt auf einer schrägen Cyan-Linse (wie die Tasten), die federnd gleitet.
+ * Look. Dunkler Grund, durchscheinend mit Weichzeichner, Lichtkante oben.
+ * Der aktive Eintrag sitzt auf einer schrägen gelben Linse (wie die Tasten), die federnd gleitet.
  * `data-compact` (beim Runterscrollen) blendet die Beschriftung aus.
  */
 .rd-nav-wrap {
@@ -193,8 +202,8 @@
   padding: 4px;
   box-sizing: border-box;
   border-radius: 999px;
-  border: 0.5px solid rgb(139 238 255 / 0.16);
-  background: rgb(10 22 40 / 0.8);
+  border: 0.5px solid rgb(169 230 234 / 0.16);
+  background: rgb(18 26 28 / 0.8);
   box-shadow: 0 14px 36px -10px rgb(0 0 0 / 0.7), 0 1px 3px 0 rgb(0 0 0 / 0.4),
     inset 0 1px 0 0 rgb(255 255 255 / 0.14), inset 0 -1px 0 0 rgb(0 0 0 / 0.3);
   -webkit-backdrop-filter: blur(22px) saturate(180%);
@@ -205,10 +214,10 @@
   transition: height 0.5s var(--rd-spring);
 }
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .rd-nav { background: #0c1a2e; }
+  .rd-nav { background: #16252a; }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .rd-nav { background: #0c1a2e; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .rd-nav { background: #16252a; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 .rd-nav-lens {
   position: absolute;
@@ -224,8 +233,8 @@
   inset: 2px 8px;
   border-radius: 12px;
   transform: skewX(-12deg);
-  background: rgb(31 224 255 / 0.16);
-  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(31 224 255 / 0.35);
+  background: rgb(251 191 36 / 0.14);
+  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(251 191 36 / 0.4);
 }
 .rd-nav a {
   position: relative;
@@ -266,8 +275,8 @@
 .rd-offer::before { content: ""; position: absolute; left: -6px; top: 0; bottom: 0; width: 14px; background: var(--rd-offer); transform: skewX(-10deg); }
 .rd-offer > * { padding-left: 10px; }
 .rd-offer b { font-size: 15px; }
-.rd-pill-win { color: #031a22; background: var(--rd-accent); }
-.rd-pill-offer { color: #1f0a03; background: var(--rd-offer); }
+.rd-pill-win { color: var(--rd-on-accent); background: var(--rd-accent); }
+.rd-pill-offer { color: var(--rd-on-brand); background: var(--rd-brand); }
 .rd-rank { display: flex; flex-direction: column; }
 .rd-rank > div { display: flex; align-items: center; gap: 10px; min-height: 36px; }
 .rd-rank > div + div { border-top: 1px solid var(--rd-line); }

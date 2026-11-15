@@ -55,8 +55,8 @@ function useCompactOnScroll(pathname: string) {
 
 /**
  * Untere Navigation der Kunden-App: eine schwebende Glas-Kapsel (dunkles
- * Wasserblau, durchscheinend, Weichzeichner) im Stil von iOS 26/27. Der aktive
- * Eintrag sitzt auf einer schrägen Cyan-Linse, die zum angetippten Eintrag
+ * Grund, durchscheinend, Weichzeichner) im Stil von iOS 26/27. Der aktive
+ * Eintrag sitzt auf einer schrägen gelben Linse, die zum angetippten Eintrag
  * gleitet. Beim Scrollen nach unten schrumpft die Leiste auf die Symbole.
  */
 export function RiderNav({ base }: { base: string }) {
