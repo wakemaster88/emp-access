@@ -1,18 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import {
-  AlertTriangle,
-  Car,
+  Cctv,
   Droplets,
+  ScanLine,
   Server,
   ServerOff,
   Volume2,
   VolumeX,
   WifiOff,
 } from "lucide-react";
-import { Notice } from "@/components/ui/notice";
 import { StatCard } from "@/components/ui/stat-card";
+import type { DashboardLive } from "@/components/dashboard/live-section";
 
 export interface DashboardOps {
   audio: {
@@ -106,12 +105,18 @@ function zoneSubline(z: DashboardOps["audio"]["zones"][number]): string {
   return "Stumm";
 }
 
-export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
+export function OpsStrip({
+  ops,
+  status,
+}: {
+  ops: DashboardOps | null;
+  /** Leser und Kameras aus der Live-Lage (`/api/dashboard/live`). */
+  status?: DashboardLive["status"] | null;
+}) {
   if (!ops) return null;
 
   const playing = ops.audio.zones.filter((z) => z.isPlaying).length;
   const audioOffline = ops.audio.zones.filter((z) => !z.deviceOnline).length;
-  const latestAlert = ops.alerts.latest[0];
   const watering = ops.irrigation.watering[0];
   const hubsMissing = ops.hubs.total === 0 || ops.hubs.online < ops.hubs.total;
   const hubsOutdated = ops.hubs.agents.some((h) => h.outdated);
@@ -135,8 +140,70 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
       ? `als nächstes ${ops.irrigation.next.name}`
       : "Kein Lauf heute";
 
+  const readers = status?.readers;
+  const cameras = status?.cameras;
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+      {readers && (
+        <StatCard
+          href="/devices"
+          label="Leser"
+          icon={readers.offline.length > 0 ? WifiOff : ScanLine}
+          tone={readers.offline.length > 0 ? "warning" : readers.total > 0 ? "success" : "neutral"}
+          value={`${readers.online}/${readers.total}`}
+          suffix="online"
+          hint={
+            readers.offline.length > 0
+              ? `offline: ${readers.offline.join(" · ")}`
+              : readers.total > 0
+                ? "alle melden sich"
+                : "Kein Leser eingerichtet"
+          }
+          progress={readers.total > 0 ? readers.online / readers.total : undefined}
+        />
+      )}
+
+      {cameras && (
+        <StatCard
+          href="/cameras"
+          label="Kameras"
+          icon={Cctv}
+          tone={
+            cameras.total === 0
+              ? "neutral"
+              : !cameras.hubOnline
+                ? "danger"
+                : cameras.offline.length > 0
+                  ? "warning"
+                  : "success"
+          }
+          value={`${cameras.online}/${cameras.total}`}
+          suffix="erreichbar"
+          hint={
+            cameras.total === 0
+              ? "Keine Kamera eingerichtet"
+              : !cameras.hubOnline
+                ? "Hub offline, Stand unbekannt"
+                : cameras.offline.length > 0
+                  ? `fehlt: ${cameras.offline.join(" · ")}`
+                  : "alle erreichbar"
+          }
+          progress={cameras.total > 0 ? cameras.online / cameras.total : undefined}
+        />
+      )}
+
+      <StatCard
+        href="/network"
+        label="Hub"
+        icon={hubsMissing ? ServerOff : Server}
+        tone={hubsMissing ? "danger" : hubsOutdated ? "warning" : "success"}
+        value={`${ops.hubs.online}/${ops.hubs.total}`}
+        suffix="verbunden"
+        hint={hubSubline(ops.hubs)}
+        progress={ops.hubs.total > 0 ? ops.hubs.online / ops.hubs.total : undefined}
+      />
+
       <StatCard
         href="/audio"
         label="Audio"
@@ -148,6 +215,8 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
         progress={ops.audio.zones.length > 0 ? playing / ops.audio.zones.length : undefined}
       />
 
+      {/* Rasterspalte direkt am Link der Kachel (StatCard mit href): die letzte
+          Kachel füllt auf dem Handy die Zeile, wenn fünf Kacheln stehen. */}
       <StatCard
         href="/bewaesserung"
         label="Bewässerung"
@@ -156,74 +225,8 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
         value={watering ? ops.irrigation.watering.length : ops.irrigation.next ? ops.irrigation.next.startTime : "—"}
         suffix={watering ? "aktiv" : undefined}
         hint={wateringHint}
+        className={readers && cameras ? "col-span-2 lg:col-span-1" : undefined}
       />
-
-      <StatCard
-        href="/webcams"
-        label="Drehkreuz"
-        icon={AlertTriangle}
-        tone={ops.alerts.open > 0 ? "danger" : "neutral"}
-        value={ops.alerts.open}
-        suffix="offen"
-        hint={
-          latestAlert
-            ? latestAlert.source
-              ? `${latestAlert.source}: ${latestAlert.message}`
-              : latestAlert.message
-            : "Keine Warnung"
-        }
-      />
-
-      <StatCard
-        href="/fahrzeuge"
-        label="Fahrzeuge"
-        icon={Car}
-        tone={ops.vehicles.unmatchedToday > 0 ? "warning" : "neutral"}
-        value={ops.vehicles.unmatchedToday}
-        suffix="offen"
-        hint={
-          ops.vehicles.latest[0]?.plate
-            ? `zuletzt ${ops.vehicles.latest[0].plate}`
-            : "Alle zugeordnet"
-        }
-      />
-
-      {/* Rasterspalte direkt am Link der Kachel (StatCard mit href). */}
-      <StatCard
-        href="/network"
-        label="Hub"
-        icon={hubsMissing ? ServerOff : Server}
-        tone={hubsMissing ? "danger" : hubsOutdated ? "warning" : "success"}
-        value={`${ops.hubs.online}/${ops.hubs.total}`}
-        suffix="verbunden"
-        hint={hubSubline(ops.hubs)}
-        progress={ops.hubs.total > 0 ? ops.hubs.online / ops.hubs.total : undefined}
-        className="col-span-2 lg:col-span-1"
-      />
-
-      {ops.devices.offline.length > 0 && (
-        <Link
-          href="/devices"
-          className="block min-w-0 col-span-2 lg:col-span-5 rounded-tile outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          <Notice
-            tone="warning"
-            compact
-            icon={WifiOff}
-            title={`${ops.devices.offline.length} Abspieler/Pi offline`}
-            action={
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {ops.devices.heartbeatOnline}/{ops.devices.heartbeatTotal} online
-              </span>
-            }
-            className="transition-colors hover:border-warning/70"
-          >
-            <span className="block truncate">
-              {ops.devices.offline.map((d) => d.name).join(" · ")}
-            </span>
-          </Notice>
-        </Link>
-      )}
     </div>
   );
 }

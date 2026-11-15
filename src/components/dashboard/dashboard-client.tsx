@@ -24,7 +24,6 @@ import {
   CreditCard,
   CheckCircle2,
   XCircle,
-  Wifi,
   TrendingUp,
   Ticket,
   RefreshCw,
@@ -32,6 +31,7 @@ import {
   PieChart as PieChartIcon,
   BarChart3,
   Smartphone,
+  Radar,
 } from "lucide-react";
 import {
   BarChart,
@@ -50,7 +50,10 @@ import {
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { OpsStrip, type DashboardOps } from "@/components/dashboard/ops-strip";
+import { LiveSection, type DashboardLive, fmtHm } from "@/components/dashboard/live-section";
+import { TrackingSection } from "@/components/dashboard/tracking-section";
 import { TurnstileCard } from "@/components/dashboard/turnstile-card";
 
 interface TicketEntry {
@@ -779,6 +782,10 @@ export function DashboardClient() {
   const [date, setDate] = useState(toLocaleDateStr(new Date()));
   const [data, setData] = useState<DashboardData | null>(null);
   const [ops, setOps] = useState<DashboardOps | null>(null);
+  const [live, setLive] = useState<DashboardLive | null>(null);
+  const [liveNow, setLiveNow] = useState(0);
+  const [liveFailed, setLiveFailed] = useState(false);
+  const [dayView, setDayView] = useState<"stats" | "bookings">("stats");
   const [loading, setLoading] = useState(true);
   const [areas, setAreas] = useState<AreaOption[]>([]);
   const [subs, setSubs] = useState<{ id: number; name: string }[]>([]);
@@ -819,6 +826,35 @@ export function DashboardClient() {
     loadOps();
     const t = setInterval(loadOps, 30_000);
     return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
+  // Live-Lage: alle 20 s, pausiert solange der Tab im Hintergrund ist.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadLive() {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const res = await fetch("/api/dashboard/live");
+        if (cancelled) return;
+        if (res.ok) {
+          setLive(await res.json());
+          setLiveNow(Date.now());
+          setLiveFailed(false);
+        } else {
+          setLiveFailed(true);
+        }
+      } catch {
+        if (!cancelled) setLiveFailed(true);
+      }
+    }
+    loadLive();
+    const t = setInterval(loadLive, 20_000);
+    document.addEventListener("visibilitychange", loadLive);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", loadLive);
+    };
   }, []);
 
   useEffect(() => {
@@ -911,388 +947,448 @@ export function DashboardClient() {
     } catch { return ""; }
   }
 
+  const bookingCount = totalTickets + (data ? data.subscriptions.length + data.services.length : 0);
+
   return (
-    <div className="space-y-4 sm:space-y-5">
-      {/* Date navigation */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" aria-label="Vorherige Woche" onClick={() => shiftDate(-7)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            {/* Der gewählte Tag steht in der Segmentwahl darunter; Primärfarbe bleibt Handlungen vorbehalten. */}
-            <Button
-              variant="outline"
-              aria-pressed={isToday(date)}
-              onClick={() => setDate(toLocaleDateStr(new Date()))}
-            >
-              Heute
-            </Button>
-            <Button variant="outline" size="icon" aria-label="Nächste Woche" onClick={() => shiftDate(7)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-          <span className="text-sm font-semibold text-foreground/80">
-            {fmtDisplayDate(date)}
-          </span>
-          <div className="ml-auto flex items-center gap-2">
-            {(loading || ticketLoading) && (
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Lädt …
+    <div className="space-y-6 sm:space-y-8">
+      {/* 1. Was ist gerade los: immer „jetzt“, unabhängig vom Tag der Statistik. */}
+      <section className="space-y-3 sm:space-y-4" aria-label="Jetzt">
+        <SectionHeading
+          title="Jetzt"
+          icon={Activity}
+          aside={
+            live ? (
+              <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
+                <StatusDot tone="live" pulse size="xs" />
+                Stand {fmtHm(live.at)} Uhr
               </span>
-            )}
-          </div>
-        </div>
-
-        {/* Wochentage als Segmentwahl; zweizeilig, daher 44 px hoch */}
-        <Segmented
-          value={date}
-          onValueChange={setDate}
-          aria-label="Tag"
-          stretch
-          className="[&>button]:h-11 [&>button]:px-1"
-          options={weekDays.map((wd) => ({
-            value: wd.date,
-            label: (
-              <span
-                className={cn(
-                  "flex flex-col items-center gap-0.5 leading-none",
-                  wd.isToday && !wd.isSelected && "text-primary",
-                )}
-              >
-                <span className="text-[10px] font-medium uppercase">{wd.dayName}</span>
-                <span className="text-[15px] font-bold tabular-nums">{wd.dayNum}</span>
-              </span>
-            ),
-          }))}
+            ) : undefined
+          }
         />
-      </div>
-
-      <OpsStrip ops={ops} />
-      {data && (() => {
-        const noShowCount = Math.max(0, totalTickets - data.checkedInCount);
-        const checkInRate = totalTickets > 0 ? Math.round((data.checkedInCount / totalTickets) * 100) : 0;
-        return (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            <StatCard
-              label="Tickets"
-              icon={Ticket}
-              tone="primary"
-              value={totalTickets}
-              hint={
-                totalTickets > 0
-                  ? noShowCount > 0
-                    ? <><span className="font-medium text-destructive">{noShowCount}</span> No-Show</>
-                    : "Alle eingecheckt"
-                  : undefined
-              }
-            />
-            <StatCard
-              label="Scans"
-              icon={ScanLine}
-              tone="info"
-              value={data.scansToday}
-              hint={
-                data.scansToday > 0
-                  ? <><span className="font-medium text-success">{data.grantRate}%</span> Erfolgsrate</>
-                  : "Keine Scans"
-              }
-            />
-            <StatCard
-              label="Eingecheckt"
-              icon={CheckCircle2}
-              tone="success"
-              value={data.checkedInCount}
-              hint={
-                totalTickets > 0
-                  ? `${checkInRate}% der Tickets`
-                  : data.peakHour
-                    ? `Spitze ${data.peakHour.hour}`
-                    : "—"
-              }
-              progress={totalTickets > 0 ? data.checkedInCount / totalTickets : undefined}
-            />
-            <StatCard
-              label="Geräte"
-              icon={Wifi}
-              tone="neutral"
-              value={data.activeDevices}
-              hint={data.peakHour ? `Spitze ${data.peakHour.hour} (${data.peakHour.count})` : "online"}
-            />
-          </div>
-        );
-      })()}
-
-      {/* Drehkreuz-Auswertung (Fahrten/Gäste je Bereich, Standard: Seilbahn A) */}
-      <TurnstileCard date={date} />
-
-      {/* ANNY Sync Status */}
-      {data?.annySyncStatus && (() => {
-        const s = data.annySyncStatus!;
-        const syncAge = s.lastSync ? Date.now() - new Date(s.lastSync).getTime() : Infinity;
-        const isStale = syncAge > 2 * 60 * 60_000;
-        const hasErrors = (s.errors ?? 0) > 0;
-        const details = s.errorDetails ?? [];
-        return (
-          <Notice
-            tone={hasErrors ? "danger" : isStale ? "warning" : "success"}
-            icon={RefreshCw}
-            role="status"
-            compact
-            title={
-              <>
-                ANNY Sync
-                <span className="font-normal text-muted-foreground ml-2">
-                  {fmtSyncAgo(s.lastSync)}
-                  {s.lastSync && (
-                    <span className="hidden sm:inline"> ({new Date(s.lastSync).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" })} Uhr)</span>
-                  )}
-                </span>
-              </>
-            }
-          >
-            <div className="flex flex-wrap items-center gap-1.5">
-              {s.total != null && (
-                <span className="mr-0.5">{s.total} Buchungen</span>
-              )}
-              {(s.created ?? 0) > 0 && (
-                <Badge variant="success">
-                  +{s.created} neu
-                </Badge>
-              )}
-              {(s.updated ?? 0) > 0 && (
-                <Badge variant="info">
-                  {s.updated} aktualisiert
-                </Badge>
-              )}
-              {hasErrors && (
-                <Badge variant="danger">
-                  {s.errors} Fehler
-                </Badge>
-              )}
-              {!s.lastSync && (
-                <Badge variant="warning">
-                  Kein Sync
-                </Badge>
-              )}
-              {/* Fehlerliste per Taste aufklappen (Tastatur und Screenreader erreichen sie).
-                  Steht in der Zeile der Fehlerzahl statt im action-Platz der Notice: dort
-                  sitzt sie mittig und springt beim Aufklappen nach unten. */}
-              {hasErrors && details.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="-my-2 h-9"
-                  aria-expanded={syncErrorsOpen}
-                  onClick={() => setSyncErrorsOpen((v) => !v)}
-                >
-                  Details
-                  <ChevronDown className={cn("transition-transform", syncErrorsOpen && "rotate-180")} />
-                </Button>
-              )}
-            </div>
-            {syncErrorsOpen && details.length > 0 && (
-              <div className="mt-2 space-y-1 border-t border-destructive/30 pt-2">
-                {details.map((d, i) => (
-                  <p key={i} className="text-xs text-destructive font-mono break-words">{d}</p>
-                ))}
-              </div>
-            )}
+        {live ? (
+          <LiveSection live={live} now={liveNow} onOpenTicket={openTicket} />
+        ) : liveFailed ? (
+          <Notice tone="warning" compact title="Live-Lage nicht erreichbar">
+            Die Seite versucht es alle 20 Sekunden erneut.
           </Notice>
-        );
-      })()}
+        ) : (
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Lädt …
+          </div>
+        )}
+        <OpsStrip ops={ops} status={live?.status} />
+      </section>
 
-      {/* Area cards: aktive zuerst, ruhige Bereiche kompakt darunter */}
-      {data && allAreas.length === 0 && (
-        <Card>
-          <EmptyState
-            icon={MapPin}
-            title="Keine Resourcen für dieses Datum"
-            description="Anderes Datum oben wählen."
+      {/* 2. Tracking: Personen, Fahrzeuge, Bewegungen. */}
+      {live && (
+        <section className="space-y-3 sm:space-y-4" aria-label="Tracking">
+          <SectionHeading title="Tracking" icon={Radar} />
+          <TrackingSection live={live} now={liveNow} />
+        </section>
+      )}
+
+      {/* 3. Statistik und Buchungen des gewählten Tages. */}
+      <section className="space-y-4" aria-label="Statistik">
+        <SectionHeading title="Statistik" icon={BarChart3} />
+
+        {/* Tag wählen */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="icon" aria-label="Vorherige Woche" onClick={() => shiftDate(-7)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              {/* Der gewählte Tag steht in der Segmentwahl darunter; Primärfarbe bleibt Handlungen vorbehalten. */}
+              <Button
+                variant="outline"
+                aria-pressed={isToday(date)}
+                onClick={() => setDate(toLocaleDateStr(new Date()))}
+              >
+                Heute
+              </Button>
+              <Button variant="outline" size="icon" aria-label="Nächste Woche" onClick={() => shiftDate(7)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <span className="text-sm font-semibold text-foreground/80">
+              {fmtDisplayDate(date)}
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              {(loading || ticketLoading) && (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Lädt …
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Wochentage als Segmentwahl; zweizeilig, daher 44 px hoch */}
+          <Segmented
+            value={date}
+            onValueChange={setDate}
+            aria-label="Tag"
+            stretch
+            className="[&>button]:h-11 [&>button]:px-1"
+            options={weekDays.map((wd) => ({
+              value: wd.date,
+              label: (
+                <span
+                  className={cn(
+                    "flex flex-col items-center gap-0.5 leading-none",
+                    wd.isToday && !wd.isSelected && "text-primary",
+                  )}
+                >
+                  <span className="text-[10px] font-medium uppercase">{wd.dayName}</span>
+                  <span className="text-[15px] font-bold tabular-nums">{wd.dayNum}</span>
+                </span>
+              ),
+            }))}
           />
-        </Card>
-      )}
-
-      {loading && !data && (
-        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Lädt …
         </div>
-      )}
 
-      {data && allAreas.length > 0 && (() => {
-        const activeAreas = allAreas.filter((a) => a._count.tickets > 0);
-        const quietAreas = allAreas.filter((a) => a._count.tickets === 0 && a.occupancyRelevant !== false);
-        if (activeAreas.length === 0 && quietAreas.length === 0) return null;
-        return (
+        <Segmented
+          value={dayView}
+          onValueChange={setDayView}
+          aria-label="Ansicht des Tages"
+          options={[
+            { value: "stats", label: "Auswertung" },
+            { value: "bookings", label: "Buchungen", count: data ? bookingCount : undefined },
+          ]}
+        />
+
+        {loading && !data && (
+          <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Lädt …
+          </div>
+        )}
+
+        {dayView === "stats" && (
           <div className="space-y-4">
-            {activeAreas.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {activeAreas.map((area) => (
-                  <AreaCard key={area.id ?? "unassigned"} area={area} openTicket={openTicket} />
-                ))}
-              </div>
-            )}
-            <QuietAreasCard areas={quietAreas} />
-          </div>
-        );
-      })()}
-
-      {/* Charts: Stundenverlauf + Scan-Ergebnisse */}
-      {data && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2">
-            <HourlyChart data={data.hourly} peakHour={data.peakHour} />
-          </div>
-          <ScanResultDonut results={data.scanResults} />
-        </div>
-      )}
-
-      {/* 7-Tage-Trend + Top-Geräte */}
-      {data && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2">
-            <WeekTrendChart data={data.weekTrend} selectedDate={data.date} />
-          </div>
-          <TopDevicesCard devices={data.topDevices} />
-        </div>
-      )}
-
-      {/* Abos & Services: separate Bereiche, unabhängig von Tages-Areas */}
-      {data && (data.subscriptions.length > 0 || data.services.length > 0) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {data.subscriptions.length > 0 && (
-            <MembershipsCard
-              title="Abos"
-              icon={<CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-              tickets={data.subscriptions}
-              openTicket={openTicket}
-              fallbackGroupName="Abo"
-            />
-          )}
-          {data.services.length > 0 && (
-            <MembershipsCard
-              title="Services"
-              icon={<Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-              tickets={data.services}
-              openTicket={openTicket}
-              fallbackGroupName="Service"
-            />
-          )}
-        </div>
-      )}
-
-      {/* Live feeds: Recent scans + New bookings (immer sichtbar; Inhalt für gewähltes Datum) */}
-      {data && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="gap-3">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-1.5">
-                <ScanLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                Letzte Scans
-              </CardTitle>
-              <CardAction>
-                <Badge variant="secondary" className="tabular-nums">
-                  {data.scansToday}
-                </Badge>
-              </CardAction>
-            </CardHeader>
-            <div className="px-2 sm:px-2.5 divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto scrollbar-thin">
-              {data.recentScans.length === 0 ? (
-                <EmptyState
-                  compact
-                  icon={ScanLine}
-                  title="Keine Scans an diesem Tag"
-                  description="Anderes Datum oben wählen oder die vollständige Historie öffnen."
-                />
-              ) : (
-                data.recentScans.map((scan) => (
-                  <div key={scan.id} className="flex items-center gap-2.5 px-2 py-2 hover:bg-glass-tile transition-colors">
-                    {scan.profileImage ? (
-                      <img src={scan.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <IconChip
-                        icon={scan.result === "GRANTED" ? CheckCircle2 : XCircle}
-                        tone={scan.result === "GRANTED" ? "success" : "danger"}
-                        size="sm"
-                        className="rounded-full"
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-foreground/90 truncate">{scan.ticketName}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {scan.ticketTypeName && <>{scan.ticketTypeName} · </>}
-                        {scan.deviceName || "Unbekannt"}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-[11px] tabular-nums text-muted-foreground">{fmtScanTime(scan.scanTime)}</span>
-                      <StatusDot
-                        size="xs"
-                        className="flex ml-auto mt-0.5"
-                        tone={scan.result === "GRANTED" ? "success" : scan.result === "DENIED" ? "danger" : "warning"}
-                      />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-
-          <Card className="gap-3">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-1.5">
-                <TrendingUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                Neueste Tickets
-              </CardTitle>
-              <CardAction>
-                <Badge variant="secondary" className="tabular-nums">
-                  {data.newTicketsCount}
-                </Badge>
-              </CardAction>
-            </CardHeader>
-            <div className="px-2 sm:px-2.5 divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto scrollbar-thin">
-              {data.newTickets.length === 0 ? (
-                <EmptyState
-                  compact
+          {data && (() => {
+            const noShowCount = Math.max(0, totalTickets - data.checkedInCount);
+            const checkInRate = totalTickets > 0 ? Math.round((data.checkedInCount / totalTickets) * 100) : 0;
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                <StatCard
+                  label="Tickets"
                   icon={Ticket}
-                  title="Keine neuen Tickets an diesem Tag"
-                  description="Hier erscheinen Tickets, sobald sie für diesen Tag angelegt wurden."
+                  tone="primary"
+                  value={totalTickets}
+                  hint={
+                    totalTickets > 0
+                      ? noShowCount > 0
+                        ? <><span className="font-medium text-destructive">{noShowCount}</span> No-Show</>
+                        : "Alle eingecheckt"
+                      : undefined
+                  }
                 />
-              ) : (
-                data.newTickets.map((ticket) => (
-                  <div
-                    key={ticket.id}
-                    className="flex items-center gap-2.5 px-2 py-2 cursor-pointer hover:bg-glass-tile transition-colors"
-                    onClick={() => openTicket(ticket.id)}
-                  >
-                    {ticket.profileImage ? (
-                      <img src={ticket.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
-                    ) : (
-                      // Neutral wie die Personenzeilen der Bereichskarten: Akzent-Initiale auf
-                      // Akzent-Tönung erreicht im Dunkeln nur 3,7:1.
-                      <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-                        <span className="text-[10px] font-bold text-muted-foreground">
-                          {(ticket.name[0] || "?").toUpperCase()}
-                        </span>
+                <StatCard
+                  label="Scans"
+                  icon={ScanLine}
+                  tone="info"
+                  value={data.scansToday}
+                  hint={
+                    data.scansToday > 0
+                      ? <><span className="font-medium text-success">{data.grantRate}%</span> Erfolgsrate</>
+                      : "Keine Scans"
+                  }
+                />
+                <StatCard
+                  label="Eingecheckt"
+                  icon={CheckCircle2}
+                  tone="success"
+                  value={data.checkedInCount}
+                  hint={
+                    totalTickets > 0
+                      ? `${checkInRate}% der Tickets`
+                      : "—"
+                  }
+                  progress={totalTickets > 0 ? data.checkedInCount / totalTickets : undefined}
+                />
+                <StatCard
+                  label="Spitze"
+                  icon={TrendingUp}
+                  tone="neutral"
+                  value={data.peakHour ? data.peakHour.hour : "—"}
+                  suffix={data.peakHour ? "Uhr" : undefined}
+                  hint={data.peakHour ? `${data.peakHour.count} Scans in der Stunde` : "Noch keine Scans"}
+                />
+              </div>
+            );
+          })()}
+
+          {/* Drehkreuz-Auswertung (Fahrten/Gäste je Bereich, Standard: Seilbahn A) */}
+          <TurnstileCard date={date} />
+
+          {/* Charts: Stundenverlauf + Scan-Ergebnisse */}
+          {data && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2">
+                <HourlyChart data={data.hourly} peakHour={data.peakHour} />
+              </div>
+              <ScanResultDonut results={data.scanResults} />
+            </div>
+          )}
+
+          {/* 7-Tage-Trend + Top-Geräte */}
+          {data && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2">
+                <WeekTrendChart data={data.weekTrend} selectedDate={data.date} />
+              </div>
+              <TopDevicesCard devices={data.topDevices} />
+            </div>
+          )}
+
+            {/* Scans eines vergangenen Tages; für heute stehen sie oben unter „Jetzt“. */}
+            {data && !isToday(date) && (
+              <Card className="gap-3">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-1.5">
+                    <ScanLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    Letzte Scans
+                  </CardTitle>
+                  <CardAction>
+                    <Badge variant="secondary" className="tabular-nums">
+                      {data.scansToday}
+                    </Badge>
+                  </CardAction>
+                </CardHeader>
+                <div className="px-2 sm:px-2.5 divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto scrollbar-thin">
+                  {data.recentScans.length === 0 ? (
+                    <EmptyState
+                      compact
+                      icon={ScanLine}
+                      title="Keine Scans an diesem Tag"
+                      description="Anderes Datum oben wählen oder die vollständige Historie öffnen."
+                    />
+                  ) : (
+                    data.recentScans.map((scan) => (
+                      <div key={scan.id} className="flex items-center gap-2.5 px-2 py-2 hover:bg-glass-tile transition-colors">
+                        {scan.profileImage ? (
+                          <img src={scan.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                        ) : (
+                          <IconChip
+                            icon={scan.result === "GRANTED" ? CheckCircle2 : XCircle}
+                            tone={scan.result === "GRANTED" ? "success" : "danger"}
+                            size="sm"
+                            className="rounded-full"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-foreground/90 truncate">{scan.ticketName}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {scan.ticketTypeName && <>{scan.ticketTypeName} · </>}
+                            {scan.deviceName || "Unbekannt"}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-[11px] tabular-nums text-muted-foreground">{fmtScanTime(scan.scanTime)}</span>
+                          <StatusDot
+                            size="xs"
+                            className="flex ml-auto mt-0.5"
+                            tone={scan.result === "GRANTED" ? "success" : scan.result === "DENIED" ? "danger" : "warning"}
+                          />
+                        </div>
                       </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-foreground/90 truncate">{ticket.name}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {ticket.typeName || "Ticket"}
-                        {ticket.source && <> · {ticket.source === "ANNY" ? "anny.co" : ticket.source === "EMP_CONTROL" ? "Mitarbeiter" : ticket.source}</>}
-                      </p>
-                    </div>
-                    <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
+                    ))
+                  )}
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {dayView === "bookings" && (
+          <div className="space-y-4">
+          {/* ANNY Sync Status */}
+          {data?.annySyncStatus && (() => {
+            const s = data.annySyncStatus!;
+            const syncAge = s.lastSync ? Date.now() - new Date(s.lastSync).getTime() : Infinity;
+            const isStale = syncAge > 2 * 60 * 60_000;
+            const hasErrors = (s.errors ?? 0) > 0;
+            const details = s.errorDetails ?? [];
+            return (
+              <Notice
+                tone={hasErrors ? "danger" : isStale ? "warning" : "success"}
+                icon={RefreshCw}
+                role="status"
+                compact
+                title={
+                  <>
+                    ANNY Sync
+                    <span className="font-normal text-muted-foreground ml-2">
+                      {fmtSyncAgo(s.lastSync)}
+                      {s.lastSync && (
+                        <span className="hidden sm:inline"> ({new Date(s.lastSync).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" })} Uhr)</span>
+                      )}
+                    </span>
+                  </>
+                }
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {s.total != null && (
+                    <span className="mr-0.5">{s.total} Buchungen</span>
+                  )}
+                  {(s.created ?? 0) > 0 && (
+                    <Badge variant="success">
+                      +{s.created} neu
+                    </Badge>
+                  )}
+                  {(s.updated ?? 0) > 0 && (
+                    <Badge variant="info">
+                      {s.updated} aktualisiert
+                    </Badge>
+                  )}
+                  {hasErrors && (
+                    <Badge variant="danger">
+                      {s.errors} Fehler
+                    </Badge>
+                  )}
+                  {!s.lastSync && (
+                    <Badge variant="warning">
+                      Kein Sync
+                    </Badge>
+                  )}
+                  {/* Fehlerliste per Taste aufklappen (Tastatur und Screenreader erreichen sie).
+                      Steht in der Zeile der Fehlerzahl statt im action-Platz der Notice: dort
+                      sitzt sie mittig und springt beim Aufklappen nach unten. */}
+                  {hasErrors && details.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="-my-2 h-9"
+                      aria-expanded={syncErrorsOpen}
+                      onClick={() => setSyncErrorsOpen((v) => !v)}
+                    >
+                      Details
+                      <ChevronDown className={cn("transition-transform", syncErrorsOpen && "rotate-180")} />
+                    </Button>
+                  )}
+                </div>
+                {syncErrorsOpen && details.length > 0 && (
+                  <div className="mt-2 space-y-1 border-t border-destructive/30 pt-2">
+                    {details.map((d, i) => (
+                      <p key={i} className="text-xs text-destructive font-mono break-words">{d}</p>
+                    ))}
                   </div>
-                ))
+                )}
+              </Notice>
+            );
+          })()}
+
+          {/* Area cards: aktive zuerst, ruhige Bereiche kompakt darunter */}
+          {data && allAreas.length === 0 && (
+            <Card>
+              <EmptyState
+                icon={MapPin}
+                title="Keine Resourcen für dieses Datum"
+                description="Anderes Datum oben wählen."
+              />
+            </Card>
+          )}
+
+          {data && allAreas.length > 0 && (() => {
+            const activeAreas = allAreas.filter((a) => a._count.tickets > 0);
+            const quietAreas = allAreas.filter((a) => a._count.tickets === 0 && a.occupancyRelevant !== false);
+            if (activeAreas.length === 0 && quietAreas.length === 0) return null;
+            return (
+              <div className="space-y-4">
+                {activeAreas.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {activeAreas.map((area) => (
+                      <AreaCard key={area.id ?? "unassigned"} area={area} openTicket={openTicket} />
+                    ))}
+                  </div>
+                )}
+                <QuietAreasCard areas={quietAreas} />
+              </div>
+            );
+          })()}
+
+          {/* Abos & Services: separate Bereiche, unabhängig von Tages-Areas */}
+          {data && (data.subscriptions.length > 0 || data.services.length > 0) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {data.subscriptions.length > 0 && (
+                <MembershipsCard
+                  title="Abos"
+                  icon={<CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                  tickets={data.subscriptions}
+                  openTicket={openTicket}
+                  fallbackGroupName="Abo"
+                />
+              )}
+              {data.services.length > 0 && (
+                <MembershipsCard
+                  title="Services"
+                  icon={<Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                  tickets={data.services}
+                  openTicket={openTicket}
+                  fallbackGroupName="Service"
+                />
               )}
             </div>
-          </Card>
-        </div>
-      )}
+          )}
+
+            {data && (
+              <Card className="gap-3">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-1.5">
+                    <TrendingUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    Neueste Tickets
+                  </CardTitle>
+                  <CardAction>
+                    <Badge variant="secondary" className="tabular-nums">
+                      {data.newTicketsCount}
+                    </Badge>
+                  </CardAction>
+                </CardHeader>
+                <div className="px-2 sm:px-2.5 divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto scrollbar-thin">
+                  {data.newTickets.length === 0 ? (
+                    <EmptyState
+                      compact
+                      icon={Ticket}
+                      title="Keine neuen Tickets an diesem Tag"
+                      description="Hier erscheinen Tickets, sobald sie für diesen Tag angelegt wurden."
+                    />
+                  ) : (
+                    data.newTickets.map((ticket) => (
+                      <div
+                        key={ticket.id}
+                        className="flex items-center gap-2.5 px-2 py-2 cursor-pointer hover:bg-glass-tile transition-colors"
+                        onClick={() => openTicket(ticket.id)}
+                      >
+                        {ticket.profileImage ? (
+                          <img src={ticket.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                        ) : (
+                          // Neutral wie die Personenzeilen der Bereichskarten: Akzent-Initiale auf
+                          // Akzent-Tönung erreicht im Dunkeln nur 3,7:1.
+                          <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0">
+                            <span className="text-[10px] font-bold text-muted-foreground">
+                              {(ticket.name[0] || "?").toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-foreground/90 truncate">{ticket.name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {ticket.typeName || "Ticket"}
+                            {ticket.source && <> · {ticket.source === "ANNY" ? "anny.co" : ticket.source === "EMP_CONTROL" ? "Mitarbeiter" : ticket.source}</>}
+                          </p>
+                        </div>
+                        <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
+      </section>
 
       <EditTicketDialog
         ticket={selectedTicket}
