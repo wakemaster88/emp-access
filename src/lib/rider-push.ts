@@ -1,7 +1,8 @@
 /**
  * Push-Benachrichtigungen der Kunden-App. Jedes Abo gehört zu einem Profil
  * und entsteht nur, wenn der Fahrer es auf seinem Gerät selbst einschaltet.
- * Gesendet wird ausschließlich an die Person, die es betrifft.
+ * Gesendet wird an die Person, die es betrifft, und bei einem Kind an die
+ * Erwachsenen seiner Familie.
  */
 import { z } from "zod";
 import { prisma } from "./prisma";
@@ -74,15 +75,31 @@ export function notifyVoucher(accountId: number, ticketId: number, label: string
   void (async () => {
     const ticket = await prisma.ticket.findFirst({
       where: { id: ticketId, accountId, riderProfileId: { not: null } },
-      select: { riderProfile: { select: { id: true, token: true } } },
+      select: { firstName: true, riderProfile: { select: { id: true, token: true, familyId: true, familyAdult: true } } },
     });
     const profile = ticket?.riderProfile;
     if (!profile) return;
+    const url = `${riderAppPath(profile.token)}/gutscheine`;
     await sendPushToRider(profile.id, accountId, {
       title: "Neuer Gutschein",
       body: `${label} wartet in deiner App auf dich.`,
-      url: `${riderAppPath(profile.token)}/gutscheine`,
+      url,
       tag: "rider-voucher",
     });
+    // Kinder haben oft kein eigenes Gerät: die Erwachsenen der Familie erfahren es auch.
+    if (profile.familyId == null || profile.familyAdult) return;
+    const adults = await prisma.riderProfile.findMany({
+      where: { accountId, familyId: profile.familyId, familyAdult: true },
+      select: { id: true },
+    });
+    const who = ticket?.firstName?.trim() || "dein Kind";
+    for (const adult of adults) {
+      await sendPushToRider(adult.id, accountId, {
+        title: "Neuer Gutschein",
+        body: `${label} für ${who} wartet in der App.`,
+        url,
+        tag: `rider-voucher-${profile.id}`,
+      });
+    }
   })().catch((e) => console.error("[rider-push] Gutschein-Meldung fehlgeschlagen:", e));
 }

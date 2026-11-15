@@ -184,6 +184,34 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
   günstigsten Abo.
 - Noch offen: Tagesgäste erscheinen nicht in der Auswertung der Verwaltung.
 
+## Familie in der Kunden-App, Etappe 8 (15.11.2026)
+
+- Wunsch von Aaron: Die App muss auch als Familie gehen, Kinder ohne eigenen
+  Login, Ehepartner geteilt.
+- Eine Familie (`RiderFamily`) bündelt Profile eines Kontos
+  (`RiderProfile.familyId`, `familyAdult`). Gezählt wird weiter **je Person**:
+  Statistik, Meilensteine, Challenges und Gutscheine gehören dem Mitglied.
+  Regeln in `src/lib/rider-family.ts`, höchstens 10 Mitglieder.
+- **Erwachsene** haben einen eigenen Zugang, sehen alle Mitglieder und
+  wechseln oben auf jeder Seite zwischen ihnen. Beim Partner sehen sie Abo,
+  Statistik und Gutscheine; Einstellungen und Zugang ändert jeder nur selbst.
+- **Kinder** brauchen keinen eigenen Zugang. Erwachsene ändern Spitznamen und
+  Ranglisten-Einwilligung des Kindes, sonst nichts. Bekommt ein Kind einen
+  Gutschein, erfahren es auch die Erwachsenen per Push.
+- Kind hinzufügen (Profil › Familie): mit Kartennummer und Geburtsdatum des
+  Kindes, oder die Eltern öffnen angemeldet den persönlichen Link des Kindes
+  von der Kasse und wählen „Zu meiner Familie hinzufügen“. Geht nur bei
+  Profilen ohne eigenen Zugang; wer einen hat, braucht die Einladung.
+- Partner einladen: Link `/app/familie/<schlüssel>` (HMAC, 7 Tage). Der
+  Partner meldet sich mit seinem eigenen Zugang an und tritt bei.
+- Jeder kann die Familie im Profil verlassen, Erwachsene können Kinder
+  entfernen. Ohne Erwachsene oder mit nur einem Mitglied löst sich die
+  Familie auf (`tidyFamily`).
+- Zugriff: `riderRelation` in `src/lib/rider-auth.ts` ("self", "manage",
+  "view"). Seiten erlauben alle drei, `riderApiManage` Eltern und die Person
+  selbst, `riderApiSession` nur die Person selbst (Zugang, Push, Löschen).
+- Noch offen: Die Verwaltung zeigt Familien nicht an.
+
 ## Menü und Modulaufteilung (11.11.2026)
 
 - Sieben Bereiche mit je drei bis sechs Modulen: Übersicht (Dashboard,
