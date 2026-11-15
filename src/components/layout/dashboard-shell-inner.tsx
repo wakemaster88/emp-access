@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { MobileMenuProvider, useMobileMenu } from "@/components/layout/mobile-menu-context";
 import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
 import { ThemeColorSync } from "@/components/layout/theme-color-sync";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 
 interface DashboardShellInnerProps {
   userName: string;
@@ -54,6 +55,8 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
       </main>
 
       <MobileTabBar role={role} />
+      {/* Handy im Browser: Hinweis „als App installieren“, über der Tab-Leiste. */}
+      <InstallPrompt variant="banner" aboveTabBar />
       <ThemeColorSync />
     </>
   );

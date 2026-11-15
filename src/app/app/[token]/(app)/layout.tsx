@@ -1,6 +1,7 @@
 import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { RiderNav } from "@/components/rider/rider-nav";
+import { RiderInstallHint } from "@/components/rider/rider-install-hint";
 
 /** Geschützter Teil der Kunden-App: ohne Anmeldung geht es zum Einrichten oder Anmelden. */
 export default async function RiderAppLayout({
@@ -16,6 +17,7 @@ export default async function RiderAppLayout({
     <>
       <main className="rd-main">{children}</main>
       <RiderNav base={riderAppPath(token)} />
+      <RiderInstallHint />
     </>
   );
 }

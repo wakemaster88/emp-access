@@ -17,8 +17,8 @@ import { IconChip } from "@/components/ui/icon-chip";
  *  - Bereits installiert (standalone): Banner verschwindet, die Karte zeigt
  *    den Haken.
  *
- * `banner` klebt unten (Safe-Area beachtet) und laesst sich 14 Tage lang
- * wegklicken; `card` passt auf die Einstellungsseite; `inline` ist nur der
+ * `banner` klebt unten (Safe-Area beachtet, mit `aboveTabBar` ueber der
+ * Tab-Leiste des Dashboards) und laesst sich 14 Tage lang wegklicken; `card` passt auf die Einstellungsseite; `inline` ist nur der
  * Text, z. B. unter der Push-Karte.
  */
 type Variant = "banner" | "card" | "inline";
@@ -31,7 +31,7 @@ interface BeforeInstallPromptEvent extends Event {
 const DISMISS_KEY = "emp-install-dismissed-at";
 const DISMISS_MS = 14 * 24 * 60 * 60_000;
 
-function detect() {
+function detect(dismissKey: string) {
   const standalone =
     window.matchMedia("(display-mode: standalone)").matches ||
     window.matchMedia("(display-mode: fullscreen)").matches ||
@@ -41,7 +41,7 @@ function detect() {
   const safari = ios && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
   let dismissed = false;
   try {
-    dismissed = Date.now() - Number(localStorage.getItem(DISMISS_KEY) || 0) < DISMISS_MS;
+    dismissed = Date.now() - Number(localStorage.getItem(dismissKey) || 0) < DISMISS_MS;
   } catch {
     /* Speicher gesperrt (Privatmodus) – Hinweis einfach zeigen */
   }
@@ -50,9 +50,14 @@ function detect() {
 
 const subscribeNoop = () => () => {};
 
-export function InstallPrompt({ variant = "card", appName = "EMP Access" }: { variant?: Variant; appName?: string }) {
+/**
+ * Zustand des Installationshinweises, auch für eigene Darstellungen (Kunden-App):
+ * Plattform, ob schon installiert, ob Chrome einen echten Installieren-Dialog
+ * anbietet, und Wegklicken für 14 Tage unter `dismissKey`.
+ */
+export function useInstallState(dismissKey: string = DISMISS_KEY) {
   const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
-  const info = useMemo(() => (isClient ? detect() : null), [isClient]);
+  const info = useMemo(() => (isClient ? detect(dismissKey) : null), [isClient, dismissKey]);
   const promptRef = useRef<BeforeInstallPromptEvent | null>(null);
   const [canPrompt, setCanPrompt] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -85,24 +90,48 @@ export function InstallPrompt({ variant = "card", appName = "EMP Access" }: { va
 
   const dismiss = useCallback(() => {
     try {
-      localStorage.setItem(DISMISS_KEY, String(Date.now()));
+      localStorage.setItem(dismissKey, String(Date.now()));
     } catch {
       /* ignore */
     }
     setHidden(true);
-  }, []);
+  }, [dismissKey]);
+
+  const standalone = !!info && (info.standalone || installed);
+  /** Banner zeigen: nicht installiert, nicht weggeklickt, und es gibt einen Weg (iOS-Anleitung oder Chrome-Dialog). */
+  const showBanner = !!info && !standalone && !hidden && !info.dismissed && (info.ios || canPrompt);
+  return { info, canPrompt, install, dismiss, standalone, showBanner };
+}
+
+export function InstallPrompt({
+  variant = "card",
+  appName = "EMP Access",
+  aboveTabBar = false,
+}: {
+  variant?: Variant;
+  appName?: string;
+  /** Banner über der schwebenden Tab-Leiste der Dashboard-Hülle (nur Handy). */
+  aboveTabBar?: boolean;
+}) {
+  const { info, canPrompt, install, dismiss, standalone, showBanner } = useInstallState();
 
   if (!info) return null;
-  const isStandalone = info.standalone || installed;
+  const isStandalone = standalone;
 
   if (variant === "banner") {
-    if (isStandalone || hidden || info.dismissed) return null;
-    if (!info.ios && !canPrompt) return null;
+    if (!showBanner) return null;
     // Schwebende Ebene über dem Inhalt: dichtes Glas (glass-surface), damit
     // der Text darunter nicht durchscheint. `data-install-banner` lässt die
     // Seite davor unten Platz machen, solange der Hinweis zu sehen ist.
     return (
-      <div data-install-banner className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pointer-events-none">
+      <div
+        data-install-banner
+        className={
+          aboveTabBar
+            ? "md:hidden fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(max(0.75rem,env(safe-area-inset-bottom)-0.25rem)+4.5rem)] pointer-events-none"
+            : "fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pointer-events-none"
+        }
+      >
         <div className="glass-surface mx-auto max-w-md rounded-card p-3.5 pointer-events-auto text-foreground">
           <div className="flex items-start gap-3">
             <IconChip icon={Smartphone} tone="primary" active size="lg" />
