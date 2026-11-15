@@ -33,7 +33,8 @@ hinein, nicht in eine zweite Datei.
   Radius 12 px). Der aktive Eintrag ist eine weiße Fläche mit feinem Schatten
   (`glass-pill-active`, Radius 9 px), keine Unterstreichung.
 - **Bedienelemente**: Tasten und Eingaben Radius 10 px, Pillen und Chips 999 px.
-- Kein Weichzeichner außer im klebenden Kopfbalken (`glass-bar`, 12 px). Keine Lichtkanten,
+- Kein Weichzeichner außer im klebenden Kopfbalken (`glass-bar`, 12 px) und in der Tab-Leiste
+  unten auf dem Handy (`glass-dock`, Liquid Glass, siehe Abschnitt 13). Keine Lichtkanten,
   keine Farbverläufe, kein Glow. Schatten nur fein (Karte) oder für schwebende Ebenen
   (`--float-shadow`: Menüs, Dialoge, Tab-Leiste unten).
 
@@ -235,8 +236,17 @@ beschreiben, wie die Grundsätze oben im Code umgesetzt werden.
   Stichworte stehen nur in `src/components/layout/nav-config.ts`: drei bis sechs Einträge je
   Gruppe, ein neues Modul kommt in einen bestehenden Bereich, der Seitentitel heißt wie
   der Menüeintrag.
-- **Tab-Leiste unten (Handy)**: schwebende Leiste (`glass-dock`, Radius 20 px) mit Abstand zur
-  Home-Leiste, aktiver Eintrag in Akzentfarbe auf leichter Akzent-Tönung. Der Inhalt hat unten genug Luft (`pb` in der Hülle).
+- **Tab-Leiste unten (Handy)**: Liquid Glass im Stil von iOS 26/27 (Aaron, 15.11.2026) – die
+  einzige Glasfläche der App. Eine schwebende, durchscheinende Kapsel (`glass-dock`: Radius 999 px,
+  Weichzeichner 22 px mit Sättigung, Lichtkante oben, Haarlinie) mit vier Zielen, daneben ein
+  runder Glasknopf „Mehr“ für das Seitenmenü. Der aktive Eintrag sitzt auf einer Linse
+  (`glass-lens`), die federnd zum angetippten Tab gleitet; Symbol und Beschriftung in
+  Akzentfarbe, die übrigen in `foreground/75`. Scrollt der Inhalt nach unten, schrumpft die
+  Leiste auf die Symbole (60 → 48 px), beim Zurückscrollen wird sie wieder voll. Ohne
+  `backdrop-filter` oder mit „Transparenz reduzieren“ ist sie deckend, mit „Bewegung
+  reduzieren“ springt sie ohne Animation. Abstand zur Home-Leiste über die Safe-Area, der
+  Inhalt hat unten genug Luft (`pb` in der Hülle). Werte: `--dock-*` in `globals.css`.
+  Die Kunden-App (`/app/…`) hat eine eigene Navigation und nutzt diese Leiste nicht.
 
 ## 14. Bausteine
 
@@ -380,8 +390,9 @@ bereit.
 
 ## 22. Leistung
 
-- Kein Weichzeichner auf Karten, Kacheln und Menüs – nur der klebende Kopfbalken zeichnet leicht
-  weich (12 px). Neue Flächen bekommen keinen `backdrop-filter`.
+- Kein Weichzeichner auf Karten, Kacheln und Menüs – nur der klebende Kopfbalken (12 px) und die
+  Tab-Leiste unten auf dem Handy (22 px) zeichnen weich. Neue Flächen bekommen keinen
+  `backdrop-filter`.
 - Bei langen Listen (mehr als etwa 30 Einträge) eine Karte mit Zeilen statt einer Karte je Eintrag.
 - Wo doch ein Weichzeichner nötig ist: `-webkit-backdrop-filter` **vor** `backdrop-filter`
   schreiben. In der umgekehrten Reihenfolge behält der CSS-Compiler nur die Safari-Fassung.
