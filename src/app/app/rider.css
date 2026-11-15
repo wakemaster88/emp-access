@@ -45,6 +45,8 @@
   gap: 12px;
   padding: calc(env(safe-area-inset-top) + 20px) 16px 16px;
 }
+/* Unten Platz für die schwebende Navigation (62 px + Abstand + Home-Leiste). */
+.rd-main:has(+ .rd-nav-wrap) { padding-bottom: calc(env(safe-area-inset-bottom) + 96px); }
 .rd-root a { color: var(--rd-accent); }
 .rd-root :focus-visible { outline: 2px solid var(--rd-accent-soft); outline-offset: 2px; }
 
@@ -162,30 +164,102 @@
 .rd-msg-ok { background: var(--rd-accent-bg); color: var(--rd-accent-soft); }
 .rd-msg-err { background: #3a1410; color: #ffb4a8; }
 
+/*
+ * Untere Navigation: schwebende Glas-Kapsel wie in iOS 26/27, im Wassersport-
+ * Look. Dunkles Wasserblau, durchscheinend mit Weichzeichner, Lichtkante oben.
+ * Der aktive Eintrag sitzt auf einer schrägen Cyan-Linse (wie die Tasten), die federnd gleitet.
+ * `data-compact` (beim Runterscrollen) blendet die Beschriftung aus.
+ */
+.rd-nav-wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: max(12px, calc(env(safe-area-inset-bottom) - 4px));
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  padding: 0 max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
+  pointer-events: none;
+}
 .rd-nav {
-  position: sticky;
-  bottom: 0;
-  background: #0a1424;
-  border-top: 1px solid var(--rd-line);
+  --rd-spring: cubic-bezier(0.32, 1.4, 0.56, 1);
+  pointer-events: auto;
+  position: relative;
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  padding: 8px 8px calc(env(safe-area-inset-bottom) + 10px);
+  grid-template-columns: repeat(var(--rd-nav-count, 4), minmax(0, 1fr));
+  width: 100%;
+  max-width: 452px;
+  height: 62px;
+  padding: 4px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 0.5px solid rgb(139 238 255 / 0.16);
+  background: rgb(10 22 40 / 0.8);
+  box-shadow: 0 14px 36px -10px rgb(0 0 0 / 0.7), 0 1px 3px 0 rgb(0 0 0 / 0.4),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.14), inset 0 -1px 0 0 rgb(0 0 0 / 0.3);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
   font-size: 11px;
   line-height: 14px;
   text-align: center;
+  transition: height 0.5s var(--rd-spring);
+}
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .rd-nav { background: #0c1a2e; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .rd-nav { background: #0c1a2e; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+.rd-nav-lens {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / var(--rd-nav-count, 4));
+  transition: transform 0.5s var(--rd-spring);
+}
+.rd-nav-lens::before {
+  content: "";
+  position: absolute;
+  inset: 2px 8px;
+  border-radius: 12px;
+  transform: skewX(-12deg);
+  background: rgb(31 224 255 / 0.16);
+  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(31 224 255 / 0.35);
 }
 .rd-nav a {
+  position: relative;
   min-height: 44px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
+  border-radius: 999px;
   text-decoration: none;
-  color: var(--rd-muted);
+  color: var(--rd-soft);
+  -webkit-user-select: none;
+  user-select: none;
+  transition: transform 0.2s ease, color 0.2s ease;
 }
-.rd-nav a[aria-current="page"] { color: var(--rd-accent); font-weight: 600; }
+.rd-nav a:active { transform: scale(0.95); }
+.rd-nav a > svg { flex: none; }
+.rd-nav a > span {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  max-height: 14px;
+  opacity: 1;
+  transition: max-height 0.5s var(--rd-spring), opacity 0.3s ease;
+}
+.rd-nav a[aria-current="page"] { color: var(--rd-accent); font-weight: 700; }
+.rd-nav-wrap[data-compact] .rd-nav { height: 50px; }
+.rd-nav-wrap[data-compact] .rd-nav a > span { max-height: 0; opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .rd-nav, .rd-nav-lens, .rd-nav a, .rd-nav a > span { transition: none; }
+}
 
 /* Angebote und Challenges */
 .rd-offer { border-color: var(--rd-offer); position: relative; overflow: hidden; }
