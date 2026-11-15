@@ -42,20 +42,22 @@ function ensureVapid(): boolean {
   return true;
 }
 
-/**
- * Sendet eine Push-Nachricht an alle Subscriptions eines Accounts.
- * Abgelaufene Endpoints (404/410) werden automatisch aus der DB entfernt.
- */
-export async function sendPushToAccount(
-  accountId: number,
-  payload: PushPayload,
-): Promise<{ sent: number; failed: number; removed: number }> {
-  if (!ensureVapid()) return { sent: 0, failed: 0, removed: 0 };
+export interface PushTarget {
+  id: number;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
 
-  const subscriptions = await prisma.pushSubscription.findMany({
-    where: { accountId },
-  });
-  if (subscriptions.length === 0) return { sent: 0, failed: 0, removed: 0 };
+/**
+ * Schickt eine Nachricht an die übergebenen Abos. `staleIds` sind Abos, die
+ * der Push-Dienst als abgelaufen meldet (404/410): der Aufrufer löscht sie.
+ */
+export async function deliverPush(
+  targets: PushTarget[],
+  payload: PushPayload,
+): Promise<{ sent: number; failed: number; staleIds: number[] }> {
+  if (targets.length === 0 || !ensureVapid()) return { sent: 0, failed: 0, staleIds: [] };
 
   const body = JSON.stringify(payload);
   let sent = 0;
@@ -63,13 +65,10 @@ export async function sendPushToAccount(
   const staleIds: number[] = [];
 
   await Promise.all(
-    subscriptions.map(async (sub) => {
+    targets.map(async (sub) => {
       try {
         await webpush.sendNotification(
-          {
-            endpoint: sub.endpoint,
-            keys: { p256dh: sub.p256dh, auth: sub.auth },
-          },
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           body,
           { TTL: 60 * 60 },
         );
@@ -85,6 +84,24 @@ export async function sendPushToAccount(
       }
     }),
   );
+
+  return { sent, failed, staleIds };
+}
+
+/**
+ * Sendet eine Push-Nachricht an alle Subscriptions eines Accounts.
+ * Abgelaufene Endpoints (404/410) werden automatisch aus der DB entfernt.
+ */
+export async function sendPushToAccount(
+  accountId: number,
+  payload: PushPayload,
+): Promise<{ sent: number; failed: number; removed: number }> {
+  if (!isWebPushConfigured()) return { sent: 0, failed: 0, removed: 0 };
+
+  const subscriptions = await prisma.pushSubscription.findMany({
+    where: { accountId },
+  });
+  const { sent, failed, staleIds } = await deliverPush(subscriptions, payload);
 
   if (staleIds.length > 0) {
     await prisma.pushSubscription.deleteMany({ where: { id: { in: staleIds } } });

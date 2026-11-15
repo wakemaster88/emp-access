@@ -237,3 +237,14 @@ test("seasonRecap ohne Besuche und aheadOfPercent", () => {
   assert.equal(aheadOfPercent(5, [1, 2, 3]), null);
   assert.equal(aheadOfPercent(5, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), 40);
 });
+
+test("renewalHint: 30 Tage vorher, nach Ablauf, sonst nichts", async () => {
+  const { renewalHint } = await import("./gamification");
+  const now = new Date("2027-09-01T10:00:00Z");
+  assert.equal(renewalHint(null, now), null);
+  assert.equal(renewalHint(new Date("2027-12-31T22:59:00Z"), now), null);
+  assert.deepEqual(renewalHint(new Date("2027-09-13T10:00:00Z"), now), { kind: "soon", days: 12 });
+  assert.deepEqual(renewalHint(new Date("2027-10-01T10:00:00Z"), now), { kind: "soon", days: 30 });
+  assert.equal(renewalHint(new Date("2027-10-01T10:00:01Z"), now), null);
+  assert.deepEqual(renewalHint(new Date("2027-09-01T09:59:00Z"), now), { kind: "expired" });
+});

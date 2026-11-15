@@ -183,6 +183,7 @@ model Account {
   gamificationConfig   GamificationConfig?
   riderProfiles        RiderProfile[]
   riderPasskeys        RiderPasskey[]
+  riderPushSubscriptions RiderPushSubscription[]
   riderDayStats        RiderDayStat[]
   milestones           Milestone[]
   milestoneAwards      MilestoneAward[]
@@ -3557,6 +3558,7 @@ model RiderProfile {
   loginFailures    Int       @default(0)
   loginLockedUntil DateTime?
   passkeys         RiderPasskey[]
+  pushSubscriptions RiderPushSubscription[]
   accountId     Int
   account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tickets       Ticket[]
@@ -3583,6 +3585,24 @@ model RiderPasskey {
   accountId    Int
   account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt    DateTime     @default(now())
+
+  @@index([profileId])
+  @@index([accountId])
+}
+
+/// Web-Push-Abo eines Fahrers (Kunden-App). Bewusst getrennt von
+/// PushSubscription: dort landen die Betriebsmeldungen fuer Mitarbeiter.
+model RiderPushSubscription {
+  id        Int          @id @default(autoincrement())
+  endpoint  String       @unique
+  p256dh    String
+  auth      String
+  profileId Int
+  profile   RiderProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  accountId Int
+  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   @@index([profileId])
   @@index([accountId])

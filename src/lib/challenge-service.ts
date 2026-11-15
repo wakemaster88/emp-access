@@ -16,6 +16,7 @@ import {
   type Standing,
 } from "./gamification";
 import { createBenefitVoucher, isUniqueViolation } from "./gamification-service";
+import { notifyVoucher } from "./rider-push";
 
 export interface ChallengeRow {
   id: number;
@@ -110,6 +111,7 @@ async function award(
         validDays: c.voucherValidDays,
       });
       await db.challengeAward.update({ where: { id: created.id }, data: { voucherId: voucher.id } });
+      notifyVoucher(accountId, ticketId, c.voucherLabel);
     }
     return true;
   } catch (e) {

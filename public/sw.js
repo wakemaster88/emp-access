@@ -18,7 +18,7 @@
  * VERSION bei jeder Aenderung an dieser Datei hochzaehlen: alte Caches
  * werden beim Aktivieren weggeraeumt.
  */
-const VERSION = "2026-11-15-2";
+const VERSION = "2026-11-15-3";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 const OFFLINE_URL = "/offline";
 const PRECACHE = [OFFLINE_URL, "/manifest.json", "/icon-192.png", "/icon-512.png", "/apple-icon.png", "/logo.png", "/logo-dark.png"];
@@ -150,13 +150,16 @@ self.addEventListener("pushsubscriptionchange", (event) => {
   event.waitUntil(
     self.registration.pushManager
       .subscribe({ userVisibleOnly: true, applicationServerKey: key })
-      .then((sub) =>
-        fetch("/api/push", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON() }),
-        }),
-      )
+      .then((sub) => {
+        const post = (url, body) =>
+          fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
+        // Das Abo gehoert entweder zum Dashboard oder zur Kunden-App; die
+        // jeweils andere Stelle lehnt ab bzw. kennt die alte Adresse nicht.
+        return Promise.all([
+          post("/api/push", { action: "subscribe", subscription: sub.toJSON() }),
+          post("/api/rider/push/renew", { oldEndpoint: old.endpoint, subscription: sub.toJSON() }),
+        ]);
+      })
       .catch(() => {}),
   );
 });

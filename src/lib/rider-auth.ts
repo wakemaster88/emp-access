@@ -326,5 +326,8 @@ export async function resetRiderAccess(profileId: number, accountId: number): Pr
       },
     }),
   ]);
-  return updated.count === 1 ? token : null;
+  if (updated.count !== 1) return null;
+  // Die bisherigen Geräte gehören womöglich nicht mehr dem Fahrer.
+  await prisma.riderPushSubscription.deleteMany({ where: { profileId, accountId } });
+  return token;
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
-import { METRIC_LABEL } from "@/lib/gamification";
+import { METRIC_LABEL, renewalHint } from "@/lib/gamification";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
 import { fmtDay, validityText } from "@/lib/rider-format";
 
@@ -25,6 +25,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const challenge = challenges.find((c) => c.phase === "running" && !c.won) ?? null;
   const open = rider.vouchers.filter((v) => v.state === "open");
   const { current, next } = rider.level;
+  const renewal = rider.abo ? renewalHint(rider.abo.endDate, new Date()) : null;
   const others = rider.progress.filter((p) => !p.reached && p.id !== next?.id).slice(0, 3);
 
   return (
@@ -44,6 +45,21 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           <h1 className="rd-display" style={{ fontSize: 48, fontWeight: 800 }}>Hi {rider.firstName}</h1>
         </div>
       </div>
+
+      {renewal && rider.abo && (
+        <div className="rd-card rd-offer" style={{ gap: 4 }}>
+          <b>
+            {renewal.kind === "expired"
+              ? "Dein Abo ist abgelaufen"
+              : renewal.days <= 1 ? "Dein Abo läuft heute ab" : `Dein Abo läuft in ${renewal.days} Tagen ab`}
+          </b>
+          <span className="rd-soft">
+            {renewal.kind === "expired"
+              ? `${rider.abo.name} galt bis ${fmtDay(rider.abo.endDate)}. Sprich uns an der Kasse an, dann bist du wieder dabei.`
+              : `${rider.abo.name} gilt bis ${fmtDay(rider.abo.endDate)}. Sprich uns an der Kasse an, dann verlängern wir es.`}
+          </span>
+        </div>
+      )}
 
       {offers.length > 0 && (
         <>
