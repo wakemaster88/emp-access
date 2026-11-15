@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dayTicketEmailChanged } from "@/lib/day-guest";
 import type { PrismaClient } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
@@ -149,6 +150,17 @@ export async function PUT(
       version: { increment: 1 },
     },
   });
+
+  // Tagesgäste: das Ticket folgt seiner Adresse ins passende App-Profil.
+  if (data.email !== undefined) {
+    await dayTicketEmailChanged(
+      accountId!,
+      [{ id: existing.id, email: existing.email }],
+      ticket.email?.trim().toLowerCase() || null,
+    ).catch((err) => {
+      console.error("[tickets] day ticket email failed:", err);
+    });
+  }
 
   // Siehe POST /api/tickets: Abo ohne Karte ist nicht scanbar - der Scan
   // trifft dann weiter das alte Ticket der Person.

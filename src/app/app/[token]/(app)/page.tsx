@@ -2,7 +2,6 @@ import Link from "next/link";
 import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { METRIC_LABEL, formatEuro, renewalHint } from "@/lib/gamification";
-import { RiderTicketClaim } from "@/components/rider/rider-ticket-claim";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
 import { fmtDay, validityText } from "@/lib/rider-format";
 
@@ -66,7 +65,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         <div className="rd-card rd-offer" style={{ gap: 4 }}>
           <b>Lohnt sich ein Abo für dich?</b>
           <span className="rd-soft">
-            Deine {rider.calculator.tickets} Tickets dieser Saison in der App haben {formatEuro(rider.calculator.spentCents)} gekostet.
+            Deine {rider.calculator.tickets} Besuche dieser Saison haben {formatEuro(rider.calculator.spentCents)} gekostet.
             Das Abo {rider.calculator.aboName} kostet {formatEuro(rider.calculator.aboCents)}. Sprich uns an der Kasse an.
           </span>
         </div>
@@ -161,11 +160,9 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       )}
 
       {rider.dayGuest && (
-        <>
-          <div className="rd-label" style={{ marginTop: 4 }}>Wieder da?</div>
-          <p className="rd-muted" style={{ margin: 0 }}>Melde jedes neue Tagesticket hier an, dann zählt der Besuch für deine Ziele.</p>
-          <RiderTicketClaim label="Ticket hinzufügen" />
-        </>
+        <p className="rd-muted" style={{ margin: 0 }}>
+          Neue Tickets zählen von selbst mit, wenn sie auf deine E-Mail-Adresse gebucht sind. An der Kasse trägt man sie dir auch gern ein.
+        </p>
       )}
 
       {others.length > 0 && (

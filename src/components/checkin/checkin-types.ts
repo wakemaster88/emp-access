@@ -25,6 +25,7 @@ export interface CheckinTicket {
   firstName: string | null;
   lastName: string | null;
   birthDate: string | null;
+  email?: string | null;
   ticketTypeName: string | null;
   status: string;
   validityType: string;

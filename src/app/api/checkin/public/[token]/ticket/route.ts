@@ -299,6 +299,7 @@ export async function POST(
     barcode: data.barcode,
     firstName: data.firstName,
     lastName: data.lastName,
+    email: data.email?.trim().toLowerCase() || undefined,
     ticketTypeName: data.ticketTypeName,
     validityType: data.validityType ?? "DATE_RANGE",
     slotStart: data.slotStart,

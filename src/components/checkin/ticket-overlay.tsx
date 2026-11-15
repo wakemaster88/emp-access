@@ -11,7 +11,7 @@ import { IconChip } from "@/components/ui/icon-chip";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Textarea } from "@/components/ui/textarea";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Camera, Loader2, X, Package, Fingerprint, Pencil, Printer, TicketX, Plus, StickyNote, Pause, Play, ClipboardList } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Camera, Loader2, X, Package, Fingerprint, Pencil, Printer, TicketX, Plus, StickyNote, Pause, Play, ClipboardList, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PackageSearch, Layers } from "lucide-react";
 import { printTicket } from "./checkin-print";
@@ -56,7 +56,7 @@ export function TicketOverlay({
   editMode: "photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | "guestInfo" | null;
   setEditMode: (m: "photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | "guestInfo" | null) => void;
   onSaveDates: (startDate: string | null, endDate: string | null) => void;
-  onSavePerson: (person: { firstName: string | null; lastName: string | null; birthDate: string | null }) => void;
+  onSavePerson: (person: { firstName: string | null; lastName: string | null; birthDate: string | null; email: string | null }) => void;
   onSaveSlot: (slotStart: string | null, slotEnd: string | null) => void;
   availableSlots: SlotOverviewSlot[];
   rfidInput: string;
@@ -98,6 +98,8 @@ export function TicketOverlay({
   const [editFirstName, setEditFirstName] = useState(ticket.firstName ?? "");
   const [editLastName, setEditLastName] = useState(ticket.lastName ?? "");
   const [editBirthDate, setEditBirthDate] = useState(toDateValue(ticket.birthDate));
+  const [editEmail, setEditEmail] = useState(ticket.email ?? "");
+  const [emailError, setEmailError] = useState(false);
 
   // Notiz- und Pause-Eingabe: initial mit dem aktuellen Ticket-Stand
   // befuellt. Beim Oeffnen des Editors (Button-Klick) wird der State
@@ -145,8 +147,10 @@ export function TicketOverlay({
       setEditFirstName(ticket.firstName ?? "");
       setEditLastName(ticket.lastName ?? "");
       setEditBirthDate(toDateValue(ticket.birthDate));
+      setEditEmail(ticket.email ?? "");
+      setEmailError(false);
     }
-  }, [ticket.firstName, ticket.lastName, ticket.birthDate, editMode]);
+  }, [ticket.firstName, ticket.lastName, ticket.birthDate, ticket.email, editMode]);
   useEffect(() => {
     if (birthDateRef.current && document.activeElement !== birthDateRef.current) {
       birthDateRef.current.value = editBirthDate;
@@ -174,7 +178,7 @@ export function TicketOverlay({
               type="button"
               onClick={() => setEditMode(editMode === "person" ? null : "person")}
               className="group relative flex items-center gap-1.5 text-left max-w-full after:absolute after:inset-x-0 after:-inset-y-2 sm:after:-inset-y-3.5"
-              title="Name & Geburtstag bearbeiten"
+              title="Name, Geburtstag und E-Mail bearbeiten"
             >
               <h2 className="text-xl font-semibold text-foreground truncate">{personName(ticket)}</h2>
               <Pencil className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
@@ -186,6 +190,14 @@ export function TicketOverlay({
                 return a != null ? <span className="ml-1 text-muted-foreground tabular-nums">· {a} J.</span> : null;
               })()}
             </p>
+            <button
+              type="button"
+              onClick={() => setEditMode(editMode === "person" ? null : "person")}
+              className="relative mt-0.5 flex max-w-full items-center gap-1.5 text-left text-sm text-muted-foreground hover:text-foreground after:absolute after:inset-x-0 after:-inset-y-1.5"
+            >
+              <Mail className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{ticket.email || "E-Mail hinzufügen"}</span>
+            </button>
             {(() => {
               const label = formatTicketTimeLabel(ticket);
               return label ? (
@@ -260,6 +272,26 @@ export function TicketOverlay({
                 ) : null;
               })()}
             </div>
+            <div className="space-y-1">
+              <label htmlFor="ticket-email" className="text-[13px] font-medium text-muted-foreground">E-Mail</label>
+              <Input
+                id="ticket-email"
+                type="email"
+                inputMode="email"
+                autoComplete="off"
+                value={editEmail}
+                onChange={(e) => { setEditEmail(e.target.value); setEmailError(false); }}
+                aria-invalid={emailError}
+                className="h-11"
+                placeholder="gast@beispiel.de"
+                maxLength={180}
+              />
+              {emailError ? (
+                <p className="text-xs text-destructive" role="alert">Bitte eine gültige E-Mail-Adresse eingeben.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Mit dieser Adresse kommt der Gast in die Kunden-App.</p>
+              )}
+            </div>
             {/* Tasten wie in allen Formularen (Abschnitt 16): Primärhandlung rechts,
                 auf dem Handy volle Breite und oben. */}
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
@@ -267,6 +299,7 @@ export function TicketOverlay({
                 type="button"
                 variant="outline"
                 onClick={() => {
+                  setEditEmail(ticket.email ?? "");
                   setEditFirstName(ticket.firstName ?? "");
                   setEditLastName(ticket.lastName ?? "");
                   setEditBirthDate(toDateValue(ticket.birthDate));
@@ -279,12 +312,18 @@ export function TicketOverlay({
               <Button
                 type="button"
                 onClick={() => {
+                  const mail = editEmail.trim();
+                  if (mail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) {
+                    setEmailError(true);
+                    return;
+                  }
                   onSavePerson({
                     firstName: editFirstName.trim() || null,
                     lastName: editLastName.trim() || null,
                     birthDate: editBirthDate
                       ? new Date(editBirthDate).toISOString()
                       : null,
+                    email: editEmail.trim() || null,
                   });
                 }}
                 disabled={updatingTicket}

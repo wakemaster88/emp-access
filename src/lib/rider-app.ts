@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { cache } from "react";
 import { prisma } from "./prisma";
 import { berlinYmd } from "./berlin-day";
+import { adoptDayTickets } from "./day-guest";
 import {
   benefitVoucherState,
   computeMetrics,
@@ -58,7 +59,7 @@ export interface RiderView {
   enabled: boolean;
   startCapPerDay: number;
   abo: { name: string; endDate: Date | null; active: boolean; areas: string[] } | null;
-  /** Tagesgast ohne Abo: darf weitere Tickets hinzufügen und sieht den Abo-Rechner. */
+  /** Tagesgast ohne Abo: sieht den Abo-Rechner. */
   dayGuest: boolean;
   /** Abo-Rechner; null, solange nicht jede Zahl dafür hinterlegt ist. */
   calculator: AboCalculation | null;
@@ -75,7 +76,7 @@ export interface RiderView {
  * Alles, was die Kunden-App zeigt. Liefert null, wenn der Token unbekannt ist
  * oder am Profil kein Ticket mehr hängt.
  */
-export async function loadRider(token: string, now: Date = new Date()): Promise<RiderView | null> {
+export async function loadRider(token: string, now: Date = new Date(), adopted = false): Promise<RiderView | null> {
   if (!token || token.length < 16) return null;
   const profile = await prisma.riderProfile.findUnique({
     where: { token },
@@ -91,12 +92,21 @@ export async function loadRider(token: string, now: Date = new Date()): Promise<
           endDate: true,
           createdAt: true,
           serviceId: true,
+          email: true,
           subscription: { select: { name: true, areas: { select: { name: true }, orderBy: { name: "asc" } } } },
         },
       },
     },
   });
   if (!profile || !profile.account.isActive || profile.tickets.length === 0) return null;
+
+  // Neue Tagestickets mit derselben E-Mail-Adresse gehören zum selben Gast.
+  if (!adopted) {
+    const emails = [...new Set(profile.tickets.map((t) => t.email?.trim().toLowerCase()).filter((e): e is string => !!e))].slice(0, 5);
+    let added = 0;
+    for (const e of emails) added += await adoptDayTickets(profile.accountId, e, now).catch(() => 0);
+    if (added > 0) return loadRider(token, now, true);
+  }
 
   // Nutzung merken (für „App aktiv“ in der Verwaltung), höchstens einmal je Stunde.
   if (!profile.lastSeenAt || now.getTime() - profile.lastSeenAt.getTime() > 3_600_000) {
@@ -170,9 +180,17 @@ export async function loadRider(token: string, now: Date = new Date()): Promise<
           select: { id: true, name: true },
         })
       : [];
+    // Eine Buchung gilt oft für mehrere Personen: je Tag zählt nur das teuerste Ticket.
+    const perDay = new Map<string, number | null>();
+    for (const t of seasonTickets) {
+      const day = berlinYmd(t.startDate ?? t.createdAt);
+      const price = servicePrices.get(t.serviceId!) ?? null;
+      const known = perDay.get(day);
+      perDay.set(day, !perDay.has(day) ? price : known == null || price == null ? null : Math.max(known, price));
+    }
     calculator = aboCalculation(
       metrics.visitDays,
-      seasonTickets.map((t) => servicePrices.get(t.serviceId!)),
+      [...perDay.values()],
       abos.map((a) => ({ name: a.name, cents: aboPrices.get(a.id)! })),
     );
   }
