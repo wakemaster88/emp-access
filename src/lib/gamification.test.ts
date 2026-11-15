@@ -208,3 +208,32 @@ test("offerVisible beachtet Schalter und Zeitraum", () => {
   assert.equal(offerVisible({ active: true, fromYmd: null, toYmd: "2027-06-01" }, "2027-06-01"), true);
   assert.equal(offerVisible({ active: true, fromYmd: null, toYmd: "2027-05-31" }, "2027-06-01"), false);
 });
+
+import { aheadOfPercent, seasonRecap } from "./gamification";
+
+test("seasonRecap: stärkster Monat, Lieblingstag, Serie und bester Tag", () => {
+  const recap = seasonRecap([
+    { day: "2026-08-22", starts: 4 }, // Samstag
+    { day: "2026-09-05", starts: 9 }, // Samstag
+    { day: "2026-09-12", starts: 3 }, // Samstag
+    { day: "2026-09-16", starts: 2 }, // Mittwoch
+    { day: "2026-09-20", starts: 0 },
+  ]);
+  assert.equal(recap.visitDays, 4);
+  assert.equal(recap.starts, 18);
+  assert.deepEqual(recap.bestMonth, { name: "September", visitDays: 3 });
+  assert.deepEqual(recap.bestWeekday, { name: "Samstag", visitDays: 3 });
+  assert.deepEqual(recap.bestDay, { day: "2026-09-05", starts: 9 });
+  assert.equal(recap.streakWeeks, 3);
+  assert.equal(recap.firstDay, "2026-08-22");
+  assert.equal(recap.lastDay, "2026-09-16");
+});
+
+test("seasonRecap ohne Besuche und aheadOfPercent", () => {
+  const empty = seasonRecap([]);
+  assert.equal(empty.visitDays, 0);
+  assert.equal(empty.bestMonth, null);
+  assert.equal(empty.bestDay, null);
+  assert.equal(aheadOfPercent(5, [1, 2, 3]), null);
+  assert.equal(aheadOfPercent(5, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), 40);
+});

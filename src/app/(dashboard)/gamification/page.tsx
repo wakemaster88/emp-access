@@ -22,6 +22,7 @@ import { BenefitVouchersCard, type BenefitVoucherRow } from "@/components/gamifi
 import { RidersCard, type RiderRow } from "@/components/gamification/riders-card";
 import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamification/challenges-card";
 import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
+import { RankingDisplayCard } from "@/components/gamification/ranking-display-card";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 
 type Tab = "auswertung" | "fahrer" | "meilensteine" | "challenges" | "angebote" | "gutscheine" | "einstellungen";
@@ -325,6 +326,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       }),
     ]);
     content = (
+      <>
       <GamiSettingsCard
         initial={{
           enabled: config?.enabled ?? false,
@@ -336,6 +338,8 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         devices={devices.map((d) => ({ id: d.id, name: d.name }))}
         year={year}
       />
+      <RankingDisplayCard path={config?.displayToken ? `/rangliste/${config.displayToken}` : null} />
+      </>
     );
   }
 
