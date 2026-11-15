@@ -624,6 +624,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       firstName?: string | null;
       lastName?: string | null;
       birthDate?: string | null;
+      email?: string | null;
       slotStart?: string | null;
       slotEnd?: string | null;
       notes?: string | null;
@@ -664,6 +665,15 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         return;
       }
 
+      // Ungültige E-Mail-Adresse: Meldung zeigen, Formular offen lassen.
+      if (!res.ok && update.email !== undefined && json?.error) {
+        if (typeof window !== "undefined") {
+          alert(json.error);
+        }
+        setUpdatingTicket(null);
+        return;
+      }
+
       setRfidConflict(null);
       refreshRef.current?.();
       if (selectedTicket?.id === ticketId) {
@@ -675,6 +685,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         if (update.firstName !== undefined) patch.firstName = json.ticket?.firstName ?? update.firstName;
         if (update.lastName !== undefined) patch.lastName = json.ticket?.lastName ?? update.lastName;
         if (update.birthDate !== undefined) patch.birthDate = json.ticket?.birthDate ?? update.birthDate;
+        if (update.email !== undefined) patch.email = json.ticket?.email ?? update.email;
         if (update.slotStart !== undefined) patch.slotStart = json.ticket?.slotStart ?? update.slotStart;
         if (update.slotEnd !== undefined) patch.slotEnd = json.ticket?.slotEnd ?? update.slotEnd;
         if (update.notes !== undefined) patch.notes = json.ticket?.notes ?? update.notes;

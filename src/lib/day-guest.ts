@@ -1,7 +1,9 @@
 /**
- * Tagesgäste in der Kunden-App. Ein Tagesticket hat keinen Namen und keine
- * Adresse; der Gast meldet es selbst an (Ticket scannen) oder bekommt an der
- * Kasse einen QR-Code dazu. Erst dann wird für ihn gezählt.
+ * Tagesgäste in der Kunden-App. Der Weg in die App ist die E-Mail-Adresse am
+ * Ticket: sie kommt aus der Online-Buchung oder wird an der Kasse (Shop-Monitor)
+ * bzw. im Backend eingetragen. Der Gast fordert auf `/app` einen Link an, die
+ * Mail geht an genau diese Adresse. Erst wenn er den Link öffnet, werden seine
+ * Tagestickets zu einem Profil gebündelt und gezählt.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma, tenantClient } from "./prisma";
@@ -10,119 +12,293 @@ import { buildScanCodeVariants } from "./scan-code-variants";
 import { awardMilestones, loadGamiConfig, syncDayTicketStat } from "./gamification-service";
 import { runChallenges } from "./challenge-service";
 import { newRiderToken } from "./rider-app";
+import { sendEmail } from "./email-sender";
+import { escapeHtml, wrapEmailHtml } from "./email-templates";
+
+const USABLE = ["VALID", "REDEEMED"] as const;
+const MAX_TICKETS = 200;
+
+/** Der Link in der Mail gilt so lange. */
+export const MAIL_LINK_HOURS = 48;
+/** So oft geht die Mail höchstens an dieselbe Adresse. */
+export const MAIL_PAUSE_MINUTES = 10;
+export const MAIL_MAX_PER_DAY = 5;
+export const DAY_GUEST_MAIL_SUBJECT = "Dein Link zur App";
+
+const EMAIL_RE = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]{2,}$/;
+
+/** Adresse säubern (klein, ohne Leerraum); null, wenn sie keine gültige Adresse ist. */
+export function normalizeEmail(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim().toLowerCase();
+  return v.length <= 180 && EMAIL_RE.test(v) ? v : null;
+}
 
 function secret(): string {
   return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "";
 }
 
-function sign(ticketId: number): string {
-  return createHmac("sha256", secret()).update(`day-ticket:${ticketId}`).digest("base64url").slice(0, 32);
+function sign(payload: string): string {
+  return createHmac("sha256", secret()).update(`day-guest-mail:${payload}`).digest("base64url");
 }
 
-/** Schlüssel im Kassen-Link `/app/ticket/<schlüssel>`; lässt sich nicht erraten. */
-export function ticketClaimKey(ticketId: number): string {
-  return `${ticketId}.${sign(ticketId)}`;
+/** Schlüssel im Mail-Link `/app/mail/<schlüssel>`: Konto, Adresse und Ablauf, signiert. */
+export function mailLinkKey(accountId: number, email: string, now: Date = new Date()): string {
+  const payload = Buffer.from(
+    JSON.stringify({ a: accountId, e: email, x: now.getTime() + MAIL_LINK_HOURS * 3_600_000 }),
+  ).toString("base64url");
+  return `${payload}.${sign(payload)}`;
 }
 
-export function verifyTicketClaimKey(value: string): number | null {
-  const m = /^(\d{1,12})\.([A-Za-z0-9_-]{32})$/.exec(value);
+export function verifyMailLinkKey(value: string, now: Date = new Date()): { accountId: number; email: string } | null {
+  const m = /^([A-Za-z0-9_-]{1,600})\.([A-Za-z0-9_-]{43})$/.exec(value);
   if (!m || !secret()) return null;
-  const id = Number(m[1]);
   const a = Buffer.from(m[2]);
-  const b = Buffer.from(sign(id));
-  return a.length === b.length && timingSafeEqual(a, b) ? id : null;
+  const b = Buffer.from(sign(m[1]));
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(m[1], "base64url").toString("utf8")) as { a?: unknown; e?: unknown; x?: unknown };
+    const email = normalizeEmail(data.e);
+    if (typeof data.a !== "number" || typeof data.x !== "number" || !email || data.x < now.getTime()) return null;
+    return { accountId: data.a, email };
+  } catch {
+    return null;
+  }
 }
 
-export interface DayTicket {
+interface Candidate {
   id: number;
-  accountId: number;
   riderProfileId: number | null;
+  gamificationOptOut: boolean;
 }
 
-const USABLE = ["VALID", "REDEEMED"] as const;
+/** Tagestickets dieser Saison mit dieser Adresse, die in der App mitmachen dürfen. */
+async function dayTicketsByEmail(accountId: number, email: string, now: Date): Promise<Candidate[]> {
+  const config = await loadGamiConfig(tenantClient(accountId), accountId);
+  if (!config.enabled || config.dayServiceIds.length === 0) return [];
+  const year = berlinYmd(now).slice(0, 4);
+  const rows = await prisma.ticket.findMany({
+    where: {
+      accountId,
+      subscriptionId: null,
+      serviceId: { in: config.dayServiceIds },
+      status: { in: [...USABLE] },
+      email: { equals: email, mode: "insensitive" },
+    },
+    select: { id: true, riderProfileId: true, gamificationOptOut: true, startDate: true, createdAt: true },
+    orderBy: { id: "desc" },
+    take: MAX_TICKETS,
+  });
+  return rows.filter((t) => berlinYmd(t.startDate ?? t.createdAt).startsWith(year));
+}
+
+/** Zugeordnete Tickets zählen: Tagessumme anlegen, Meilensteine und Challenges prüfen. */
+async function countLinked(accountId: number, ticketIds: number[]): Promise<void> {
+  if (ticketIds.length === 0) return;
+  const db = tenantClient(accountId);
+  const config = await loadGamiConfig(db, accountId);
+  const today = berlinYmd(new Date());
+  for (const id of ticketIds) await syncDayTicketStat(db, accountId, id);
+  // Meilensteine zählen je Profil, ein Ticket genügt als Anker.
+  await awardMilestones(db, accountId, ticketIds[0], today, config.startCapPerDay);
+  for (const id of ticketIds) await runChallenges(db, accountId, id, today, config.startCapPerDay);
+}
 
 /**
- * Tagesticket zu einem gescannten oder getippten Code finden. Armbänder und
- * Karten werden wieder ausgegeben, deshalb zählt bei ihnen nur das Ticket von
- * heute; ein QR-Code gilt die ganze Saison. `accountId` grenzt an der Kasse
- * auf das eigene Konto ein.
+ * Der Gast hat den Link aus der Mail geöffnet: alle Tagestickets der Adresse
+ * kommen in ein Profil. Gibt es zu der Adresse schon ein Profil (auch von einem
+ * Abo), wird dieses genutzt. Hebt einen früheren Ausstieg auf. Gibt den Token
+ * des Profils zurück oder null, wenn kein passendes Ticket da ist.
  */
-export async function findDayTicketByCode(code: string, accountId?: number, now: Date = new Date()): Promise<DayTicket | null> {
+export async function openDayGuestProfile(accountId: number, email: string, now: Date = new Date()): Promise<string | null> {
+  const tickets = await dayTicketsByEmail(accountId, email, now);
+  if (tickets.length === 0) return null;
+  let profileId = tickets.find((t) => t.riderProfileId != null)?.riderProfileId ?? null;
+  if (profileId == null) {
+    const other = await prisma.ticket.findFirst({
+      where: { accountId, riderProfileId: { not: null }, email: { equals: email, mode: "insensitive" } },
+      select: { riderProfileId: true },
+      orderBy: { id: "desc" },
+    });
+    profileId = other?.riderProfileId
+      ?? (await prisma.riderProfile.create({ data: { token: newRiderToken(), accountId }, select: { id: true } })).id;
+  }
+  const open = tickets.filter((t) => t.riderProfileId == null).map((t) => t.id);
+  if (open.length > 0) {
+    await prisma.ticket.updateMany({
+      where: { accountId, id: { in: open }, riderProfileId: null },
+      data: { riderProfileId: profileId, gamificationOptOut: false },
+    });
+    await countLinked(accountId, open);
+  }
+  const profile = await prisma.riderProfile.findFirst({ where: { id: profileId, accountId }, select: { token: true } });
+  return profile?.token ?? null;
+}
+
+/**
+ * Neue Tagestickets einer Adresse still zum vorhandenen Profil legen: nach dem
+ * Scan am Drehkreuz, wenn die Kasse die Adresse einträgt und beim Öffnen der
+ * App. Legt nie ein Profil an und fasst ausgestiegene Tickets nicht an.
+ */
+export async function adoptDayTickets(accountId: number, email: string | null | undefined, now: Date = new Date()): Promise<number> {
+  const clean = normalizeEmail(email);
+  if (!clean) return 0;
+  const tickets = await dayTicketsByEmail(accountId, clean, now);
+  const open = tickets.filter((t) => t.riderProfileId == null && !t.gamificationOptOut).map((t) => t.id);
+  if (open.length === 0) return 0;
+  const owner = tickets.find((t) => t.riderProfileId != null)
+    ?? (await prisma.ticket.findFirst({
+      where: { accountId, riderProfileId: { not: null }, email: { equals: clean, mode: "insensitive" } },
+      select: { riderProfileId: true },
+      orderBy: { id: "desc" },
+    }));
+  if (!owner?.riderProfileId) return 0;
+  const linked = await prisma.ticket.updateMany({
+    where: { accountId, id: { in: open }, riderProfileId: null, gamificationOptOut: false },
+    data: { riderProfileId: owner.riderProfileId },
+  });
+  if (linked.count > 0) await countLinked(accountId, open);
+  return linked.count;
+}
+
+/**
+ * Die Adresse an Tagestickets wurde geändert (Shop-Monitor oder Backend).
+ * `before` sind die Tickets mit ihrer alten Adresse. Ein Ticket, das über die
+ * alte Adresse in einem Profil gelandet ist, verlässt es wieder (z. B. nach
+ * einem Tippfehler). Gibt es zur neuen Adresse schon ein Profil, zählt es dort.
+ */
+export async function dayTicketEmailChanged(
+  accountId: number,
+  before: Array<{ id: number; email: string | null }>,
+  newEmail: string | null,
+): Promise<void> {
+  const moved = before.filter((t) => t.email?.trim() && t.email.trim().toLowerCase() !== newEmail).map((t) => t.id);
+  if (moved.length > 0) {
+    const linked = await prisma.ticket.findMany({
+      where: { accountId, id: { in: moved }, subscriptionId: null, riderProfileId: { not: null } },
+      select: { id: true },
+    });
+    const ids = linked.map((t) => t.id);
+    if (ids.length > 0) {
+      await prisma.$transaction([
+        prisma.riderDayStat.deleteMany({ where: { accountId, ticketId: { in: ids } } }),
+        prisma.ticket.updateMany({ where: { accountId, id: { in: ids } }, data: { riderProfileId: null } }),
+      ]);
+    }
+  }
+  if (newEmail) await adoptDayTickets(accountId, newEmail);
+}
+
+/**
+ * Link zur App anfordern. Schickt je Konto, in dem die Adresse an einem
+ * Tagesticket dieser Saison steht, eine Mail an genau diese Adresse. Verrät dem
+ * Aufrufer nicht, ob es die Adresse gibt. Gibt die Zahl der Mails zurück.
+ */
+export async function requestDayGuestLink(rawEmail: unknown, origin: string, now: Date = new Date()): Promise<number> {
+  const email = normalizeEmail(rawEmail);
+  if (!email) return 0;
+  const configs = await prisma.gamificationConfig.findMany({
+    where: { enabled: true, dayServiceIds: { isEmpty: false } },
+    select: { accountId: true, account: { select: { name: true, isActive: true } } },
+    take: 50,
+  });
+  let sent = 0;
+  for (const c of configs) {
+    if (!c.account.isActive) continue;
+    const tickets = await dayTicketsByEmail(c.accountId, email, now);
+    if (tickets.length === 0) continue;
+    const mail = await prisma.emailConfig.findUnique({ where: { accountId: c.accountId } });
+    if (!mail || !mail.isActive || !mail.apiKey) continue;
+    const recent = await prisma.emailSend.findMany({
+      where: {
+        accountId: c.accountId,
+        subject: DAY_GUEST_MAIL_SUBJECT,
+        to: { equals: email, mode: "insensitive" },
+        sentAt: { gte: new Date(now.getTime() - 86_400_000) },
+      },
+      select: { sentAt: true },
+    });
+    const pauseFrom = now.getTime() - MAIL_PAUSE_MINUTES * 60_000;
+    if (recent.length >= MAIL_MAX_PER_DAY || recent.some((r) => r.sentAt.getTime() > pauseFrom)) continue;
+
+    const url = `${origin}/app/mail/${mailLinkKey(c.accountId, email, now)}`;
+    const name = c.account.name;
+    const innerHtml = [
+      `<p style="margin:0 0 16px;">Hallo,</p>`,
+      `<p style="margin:0 0 16px;">du hast den Link zur App von ${escapeHtml(name)} angefordert. Dort siehst du deine Besuche, Ziele und Gutscheine.</p>`,
+      `<p style="margin:0 0 20px;"><a href="${escapeHtml(url)}" style="display:inline-block;background:${escapeHtml(mail.brandColor || "#236770")};color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:10px;">App öffnen</a></p>`,
+      `<p style="margin:0 0 16px;">Der Link gilt ${MAIL_LINK_HOURS} Stunden. Beim ersten Öffnen richtest du einen Passkey oder ein Passwort ein, danach meldest du dich damit an.</p>`,
+      `<p style="margin:0;color:#6b6862;font-size:13.5px;">Du hast nichts angefordert? Dann musst du nichts tun, ohne Klick passiert nichts.</p>`,
+    ].join("\n");
+    const text = [
+      "Hallo,",
+      "",
+      `du hast den Link zur App von ${name} angefordert. Dort siehst du deine Besuche, Ziele und Gutscheine.`,
+      "",
+      url,
+      "",
+      `Der Link gilt ${MAIL_LINK_HOURS} Stunden. Beim ersten Öffnen richtest du einen Passkey oder ein Passwort ein, danach meldest du dich damit an.`,
+      "",
+      "Du hast nichts angefordert? Dann musst du nichts tun, ohne Klick passiert nichts.",
+    ].join("\n");
+    const result = await sendEmail({
+      config: mail,
+      to: email,
+      subject: DAY_GUEST_MAIL_SUBJECT,
+      html: wrapEmailHtml({
+        innerHtml,
+        brandColor: mail.brandColor,
+        logoUrl: mail.logoUrl,
+        websiteUrl: mail.websiteUrl,
+        accountName: name,
+        preheader: "Dein persönlicher Link zur App",
+      }),
+      text,
+    });
+    await prisma.emailSend
+      .create({
+        data: {
+          accountId: c.accountId,
+          ticketId: tickets[0].id,
+          to: email,
+          subject: DAY_GUEST_MAIL_SUBJECT,
+          status: result.ok ? "SENT" : "FAILED",
+          errorMessage: result.ok ? null : (result.error ?? "Unbekannter Fehler").slice(0, 500),
+        },
+      })
+      .catch(() => null);
+    if (result.ok) sent += 1;
+  }
+  return sent;
+}
+
+/**
+ * Tagesticket dieser Saison zu einem gescannten oder getippten Code finden
+ * (Backend: Adresse zu einem Ticket eintragen). Armbänder und Karten werden
+ * wieder ausgegeben, deshalb zählt bei ihnen nur das Ticket von heute.
+ */
+export async function findDayTicketByCode(code: string, accountId: number, now: Date = new Date()): Promise<{ id: number } | null> {
   const variants = buildScanCodeVariants(code);
   if (variants.length === 0) return null;
+  const config = await loadGamiConfig(tenantClient(accountId), accountId);
+  if (config.dayServiceIds.length === 0) return null;
   const today = berlinYmd(now);
   const candidates = await prisma.ticket.findMany({
     where: {
-      ...(accountId != null ? { accountId } : {}),
+      accountId,
       subscriptionId: null,
-      serviceId: { not: null },
+      serviceId: { in: config.dayServiceIds },
       status: { in: [...USABLE] },
       OR: variants.flatMap((c) => [{ qrCode: c }, { barcode: c }, { rfidCode: c }]),
     },
-    select: {
-      id: true, accountId: true, serviceId: true, riderProfileId: true,
-      qrCode: true, barcode: true, startDate: true, createdAt: true,
-    },
+    select: { id: true, qrCode: true, barcode: true, startDate: true, createdAt: true },
     orderBy: { id: "desc" },
     take: 50,
   });
   for (const t of candidates) {
     const day = berlinYmd(t.startDate ?? t.createdAt);
     const unique = variants.some((c) => c === t.qrCode || c === t.barcode);
-    if (unique ? day.slice(0, 4) !== today.slice(0, 4) : day !== today) continue;
-    const config = await loadGamiConfig(tenantClient(t.accountId), t.accountId);
-    if (config.enabled && config.dayServiceIds.includes(t.serviceId!)) {
-      return { id: t.id, accountId: t.accountId, riderProfileId: t.riderProfileId };
-    }
+    if (unique ? day.slice(0, 4) === today.slice(0, 4) : day === today) return { id: t.id };
   }
   return null;
-}
-
-/** Tagesticket per ID laden, wenn es teilnehmen darf (für den Kassen-Link). */
-export async function findDayTicketById(ticketId: number): Promise<DayTicket | null> {
-  const t = await prisma.ticket.findFirst({
-    where: { id: ticketId, subscriptionId: null, serviceId: { not: null }, status: { in: [...USABLE] } },
-    select: { id: true, accountId: true, serviceId: true, riderProfileId: true },
-  });
-  if (!t) return null;
-  const config = await loadGamiConfig(tenantClient(t.accountId), t.accountId);
-  if (!config.enabled || !config.dayServiceIds.includes(t.serviceId!)) return null;
-  return { id: t.id, accountId: t.accountId, riderProfileId: t.riderProfileId };
-}
-
-/**
- * Tagesticket einem Profil zuordnen und zählen. Gehört es schon zu einem
- * Profil, bleibt es dort. Sonst kommt es zum angemeldeten Gast
- * (`sessionProfileId`) oder bekommt ein neues Profil. Gibt den Token des
- * Profils zurück, zu dem das Ticket jetzt gehört.
- */
-export async function claimDayTicket(ticket: DayTicket, sessionProfileId: number | null): Promise<string | null> {
-  const { accountId } = ticket;
-  let profileId = ticket.riderProfileId;
-  if (profileId == null) {
-    const own = sessionProfileId != null
-      ? await prisma.riderProfile.findFirst({ where: { id: sessionProfileId, accountId }, select: { id: true } })
-      : null;
-    profileId = own?.id ?? (await prisma.riderProfile.create({ data: { token: newRiderToken(), accountId }, select: { id: true } })).id;
-    // Nur zuordnen, wenn inzwischen niemand schneller war.
-    const linked = await prisma.ticket.updateMany({
-      where: { id: ticket.id, accountId, riderProfileId: null },
-      data: { riderProfileId: profileId, gamificationOptOut: false },
-    });
-    if (linked.count === 0) {
-      if (!own) await prisma.riderProfile.delete({ where: { id: profileId } }).catch(() => null);
-      const now = await prisma.ticket.findFirst({ where: { id: ticket.id, accountId }, select: { riderProfileId: true } });
-      profileId = now?.riderProfileId ?? null;
-      if (profileId == null) return null;
-    } else {
-      const db = tenantClient(accountId);
-      const config = await loadGamiConfig(db, accountId);
-      const today = berlinYmd(new Date());
-      await syncDayTicketStat(db, accountId, ticket.id);
-      await awardMilestones(db, accountId, ticket.id, today, config.startCapPerDay);
-      await runChallenges(db, accountId, ticket.id, today, config.startCapPerDay);
-    }
-  }
-  const profile = await prisma.riderProfile.findFirst({ where: { id: profileId, accountId }, select: { token: true } });
-  return profile?.token ?? null;
 }

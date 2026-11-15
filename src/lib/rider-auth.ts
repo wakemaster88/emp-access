@@ -84,18 +84,6 @@ async function hasSession(p: RiderAuthProfile): Promise<boolean> {
   return !!s && s.profileId === p.id && s.version === p.sessionVersion;
 }
 
-/**
- * Profil der Sitzung auf diesem Gerät, unabhängig von einem Link. Für den
- * Fall, dass ein angemeldeter Gast ein weiteres Ticket hinzufügt.
- */
-export async function currentRiderProfileId(): Promise<number | null> {
-  const jar = await cookies();
-  const s = verifyRiderSession(jar.get(RIDER_COOKIE)?.value, secret());
-  if (!s) return null;
-  const p = await prisma.riderProfile.findUnique({ where: { id: s.profileId }, select: { id: true, sessionVersion: true } });
-  return p && p.sessionVersion === s.version ? p.id : null;
-}
-
 export type RiderAccess = "setup" | "login" | "ok";
 
 /** Was der Besucher dieses Links darf: einrichten, anmelden oder hinein. */

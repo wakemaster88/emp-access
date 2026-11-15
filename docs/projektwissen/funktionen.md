@@ -135,36 +135,54 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 ## Tagesgäste in der Kunden-App und Abo-Rechner, Etappe 7 (15.11.2026)
 
 - Ausgangslage 2026: 3.643 Wakeboard-Tagestickets, davon 3.066 ohne Namen an
-  der Kasse verkauft und 2.541 auf Armband oder Karte. Eine E-Mail-Adresse
-  gibt es nur bei rund 165 Gästen. Tagesgäste melden deshalb ihr **Ticket**
-  an, nicht eine Adresse.
+  der Kasse verkauft. Eine E-Mail-Adresse gibt es nur bei rund 165 Gästen aus
+  der Online-Buchung.
+- Entscheidung von Aaron (15.11.2026): Tagesgäste kommen **nur über die
+  E-Mail-Adresse am Ticket** in die App. Die zuerst gebauten Wege „Ticket
+  selbst scannen“ und „QR-Code an der Kasse“ sind wieder entfernt.
 - Einstellungen (Gäste › Gamification › Einstellungen): „Tagestickets in der
   App“ wählt die Ticket-Typen, optional mit Preis; dazu der Preis je Abo
   (`GamificationConfig.dayServiceIds`, `servicePrices`, `subscriptionPrices`).
   Ab Werk ist nichts gewählt.
-- Zwei Wege in die App (`src/lib/day-guest.ts`):
-  - **Selbst scannen**: `/app` und das Dashboard haben „Ticket scannen“
-    (Kamera) oder Code tippen, Schnittstelle `/api/rider/claim`. Ein QR-Code
-    gilt die ganze Saison. Armband und Karte werden wieder ausgegeben, dort
-    zählt nur das Ticket von heute.
-  - **Kasse**: Reiter Fahrer, Karte „Tagesgast in die App holen“. Code
-    scannen, der Gast scannt den gezeigten QR-Code `/app/ticket/<schlüssel>`
-    (Ticket-ID mit HMAC-Signatur, nicht erratbar).
-  - Wer auf dem Gerät schon angemeldet ist, bekommt das Ticket in sein
-    Profil. Sonst entsteht ein neues Profil und es geht wie beim Abo zum
-    Einrichten von Passkey oder Passwort.
-- Gezählt wird erst ab der Anmeldung des Tickets. Jedes angemeldete
+- Woher die Adresse kommt (`Ticket.email`):
+  - aus der Online-Buchung,
+  - am **Shop-Monitor**: im Ticket unter dem Namen („E-Mail hinzufügen“,
+    Bereich Person) und beim Verkauf als freiwilliges Feld,
+  - im **Backend**: Ticket bearbeiten, oder Gamification › Fahrer, Karte
+    „Tagesgäste“ (Code scannen und Adresse eintragen, Liste aller Adressen der
+    Saison mit Ändern und Entfernen, Schnittstelle
+    `/api/gamification/day-guests`).
+- Weg in die App (`src/lib/day-guest.ts`):
+  - Der Gast gibt auf `/app` seine Adresse ein (`/api/rider/mail-link`). Die
+    Antwort ist immer dieselbe, damit niemand Adressen abfragen kann.
+  - Steht die Adresse an einem Tagesticket dieser Saison, geht eine Mail mit
+    Link `/app/mail/<schlüssel>` an genau diese Adresse (Konto, Adresse und
+    Ablauf mit HMAC signiert, 48 Stunden gültig). Höchstens eine Mail in
+    10 Minuten und fünf am Tag je Adresse; jede steht im Mail-Protokoll
+    (`EmailSend`). Voraussetzung ist der eingerichtete E-Mail-Versand.
+  - Erst beim Öffnen des Links kommen alle Tagestickets der Adresse in ein
+    Profil, dann geht es wie beim Abo zum Einrichten von Passkey oder
+    Passwort. Gibt es zu der Adresse schon ein Profil (auch eines Abos), wird
+    dieses genutzt.
+  - Spätere Tickets mit derselben Adresse zählen von selbst mit: beim Scan am
+    Start-Gerät, wenn die Kasse die Adresse einträgt und beim Öffnen der App
+    (`adoptDayTickets`). Wer ausgestiegen ist, wird dabei nicht wieder
+    aufgenommen; das geht nur über einen neuen Link.
+  - Ändert die Kasse die Adresse eines Tickets, verlässt es das Profil der
+    alten Adresse (`dayTicketEmailChanged`), etwa nach einem Tippfehler.
+- Gezählt wird erst, wenn der Gast den Link geöffnet hat. Jeder Tag mit
   Tagesticket ist ein Besuchstag; Starts kommen aus den Scans am Start-Gerät,
   ohne Scan zählt ein Start (`syncDayTicketStat`), weil nicht jede Bahn ein
-  Drehkreuz hat.
-- Meilensteine gelten jetzt je Person: alle Tickets eines Profils zählen
-  zusammen (`awardMilestones`). Das betrifft auch Abo-Fahrer mit zwei Tickets.
-- **Abo-Rechner**: Gäste ohne Abo sehen ab dem dritten Besuch „Deine Tickets
+  Drehkreuz hat. Eine Buchung für mehrere Personen zählt als ein Besuchstag,
+  die Starts aller Tickets werden addiert.
+- Meilensteine gelten je Person: alle Tickets eines Profils zählen zusammen
+  (`awardMilestones`). Das betrifft auch Abo-Fahrer mit zwei Tickets.
+- **Abo-Rechner**: Gäste ohne Abo sehen ab dem dritten Besuch „Deine Besuche
   dieser Saison haben … gekostet, das Abo … kostet …“ (`aboCalculation`).
-  Er erscheint nur, wenn für jedes Ticket und mindestens ein Abo ein Preis
-  hinterlegt ist. Verglichen wird mit dem günstigsten Abo.
-- Noch offen: Tagesgäste erscheinen nicht in Auswertung und Fahrerliste der
-  Verwaltung, und der QR-Code steht noch nicht auf dem gedruckten Ticket.
+  Je Tag zählt das teuerste Ticket. Er erscheint nur, wenn für jedes Ticket
+  und mindestens ein Abo ein Preis hinterlegt ist. Verglichen wird mit dem
+  günstigsten Abo.
+- Noch offen: Tagesgäste erscheinen nicht in der Auswertung der Verwaltung.
 
 ## Menü und Modulaufteilung (11.11.2026)
 

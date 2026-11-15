@@ -143,6 +143,7 @@ export function AddTicketOverlay({
   const voucher = prefill?.voucher;
   const [firstName, setFirstName] = useState(prefill?.firstName ?? "");
   const [lastName, setLastName] = useState(prefill?.lastName ?? "");
+  const [email, setEmail] = useState("");
   const [code, setCode] = useState(prefill?.rfidCode ?? "");
   // Service-Vorauswahl: erst voucher (alter Gutschein-Flow), dann
   // prefill.serviceId (neuer Slot-Auslastungs-Flow), sonst "none".
@@ -332,6 +333,11 @@ export function AddTicketOverlay({
       return;
     }
 
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+      setError("Bitte eine gültige E-Mail-Adresse eingeben.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     setPendingConflict(null);
@@ -351,6 +357,7 @@ export function AddTicketOverlay({
     };
     if (firstName) payload.firstName = firstName;
     if (lastName) payload.lastName = lastName;
+    if (email.trim()) payload.email = email.trim();
 
     if (serviceId !== "none") {
       payload.serviceId = Number(serviceId);
@@ -991,6 +998,23 @@ export function AddTicketOverlay({
                 className="h-11"
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="new-ticket-email" className="text-[13px] font-medium text-muted-foreground">
+              E-Mail <span className="text-muted-foreground/80 font-normal">(optional, für die Kunden-App)</span>
+            </label>
+            <Input
+              id="new-ticket-email"
+              type="email"
+              inputMode="email"
+              autoComplete="off"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="gast@beispiel.de"
+              className="h-11"
+              maxLength={180}
+            />
           </div>
 
           <div className="space-y-1.5">

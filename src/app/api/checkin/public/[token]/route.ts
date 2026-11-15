@@ -33,6 +33,7 @@ export async function GET(
     firstName: true,
     lastName: true,
     birthDate: true,
+    email: true,
     ticketTypeName: true,
     status: true,
     validityType: true,

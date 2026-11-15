@@ -12,6 +12,7 @@ import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } fro
 import { runScanRules } from "@/lib/room-rules";
 import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
 import { recordStart } from "@/lib/gamification-service";
+import { adoptDayTickets } from "@/lib/day-guest";
 
 /**
  * Meldung des Raspberry Pi, dass das Relais per Dashboard-Button geoeffnet
@@ -932,6 +933,11 @@ export async function POST(request: NextRequest) {
       at: now,
     }).catch((err) => {
       console.error("[scan] gamification failed:", err);
+    });
+  } else if (device.countsAsStart && !isExitScan && ticket.subscriptionId == null && ticket.serviceId != null && ticket.email && !ticket.gamificationOptOut) {
+    // Tagesticket mit E-Mail: gibt es zu der Adresse schon ein App-Profil, zählt es ab jetzt mit.
+    void adoptDayTickets(accountId, ticket.email, now).catch((err) => {
+      console.error("[scan] adopt day ticket failed:", err);
     });
   }
 

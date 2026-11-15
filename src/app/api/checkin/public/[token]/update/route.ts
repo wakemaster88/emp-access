@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rescheduleAnnyBooking } from "@/lib/anny-availability";
+import { dayTicketEmailChanged, normalizeEmail } from "@/lib/day-guest";
 
 export async function PUT(
   request: NextRequest,
@@ -200,6 +201,16 @@ export async function PUT(
     updateData.birthDate = body.birthDate ? new Date(body.birthDate) : null;
   }
 
+  // E-Mail-Adresse des Gastes (Weg in die Kunden-App). Leer entfernt sie.
+  if (body.email !== undefined) {
+    const raw = typeof body.email === "string" ? body.email.trim() : "";
+    const email = raw ? normalizeEmail(raw) : null;
+    if (raw && !email) {
+      return NextResponse.json({ error: "Bitte eine gültige E-Mail-Adresse eingeben." }, { status: 400 });
+    }
+    updateData.email = email;
+  }
+
   // Freitext-Notiz - leerer String wird zu null (entfernt die Notiz).
   if (body.notes !== undefined) {
     const v = typeof body.notes === "string" ? body.notes.trim() : "";
@@ -254,6 +265,13 @@ export async function PUT(
     data: updateData,
   });
 
+  // Tagesgäste: das Ticket folgt seiner Adresse ins passende App-Profil.
+  if (updateData.email !== undefined) {
+    await dayTicketEmailChanged(monitor.accountId, [{ id: ticket.id, email: ticket.email }], updated.email).catch((err) => {
+      console.error("[checkin] day ticket email failed:", err);
+    });
+  }
+
   return NextResponse.json({
     success: true,
     annySynced: annySyncedSlot,
@@ -263,6 +281,7 @@ export async function PUT(
       firstName: updated.firstName,
       lastName: updated.lastName,
       birthDate: updated.birthDate,
+      email: updated.email,
       profileImage: updated.profileImage,
       rfidCode: updated.rfidCode,
       startDate: updated.startDate,

@@ -20,7 +20,7 @@ import {
 import { MilestonesCard, type MilestoneRow } from "@/components/gamification/milestones-card";
 import { BenefitVouchersCard, type BenefitVoucherRow } from "@/components/gamification/benefit-vouchers-card";
 import { RidersCard, type RiderRow } from "@/components/gamification/riders-card";
-import { DayGuestCard } from "@/components/gamification/day-guest-card";
+import { DayGuestMailsCard, type DayGuestMailRow } from "@/components/gamification/day-guest-mails-card";
 import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamification/challenges-card";
 import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
 import { RankingDisplayCard } from "@/components/gamification/ranking-display-card";
@@ -196,9 +196,48 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       optOut: t.gamificationOptOut,
       canSelfLogin: Boolean(t.rfidCode && t.birthDate),
     }));
+    // Tagesgäste: Adressen der Tagestickets dieser Saison, je Adresse eine Zeile.
+    const dayServiceIds = config?.dayServiceIds ?? [];
+    // Großzügig laden (Zeitzone), unten zählt der Berliner Kalendertag.
+    const seasonSpan = { gte: new Date(Date.UTC(year - 1, 11, 31)), lt: new Date(Date.UTC(year + 1, 0, 2)) };
+    let dayGuests: { rows: DayGuestMailRow[]; withoutEmail: number; mailReady: boolean } | null = null;
+    if (dayServiceIds.length > 0) {
+      const [dayTickets, mail] = await Promise.all([
+        db.ticket.findMany({
+          where: {
+            accountId, subscriptionId: null, serviceId: { in: dayServiceIds }, status: { in: ["VALID", "REDEEMED"] },
+            OR: [{ startDate: seasonSpan }, { startDate: null, createdAt: seasonSpan }],
+          },
+          select: { email: true, startDate: true, createdAt: true, riderProfileId: true },
+          take: 20000,
+        }),
+        db.emailConfig.findUnique({ where: { accountId }, select: { isActive: true, apiKey: true } }),
+      ]);
+      const byMail = new Map<string, DayGuestMailRow>();
+      let withoutEmail = 0;
+      for (const t of dayTickets) {
+        const day = berlinYmd(t.startDate ?? t.createdAt);
+        if (!day.startsWith(String(year))) continue;
+        const email = t.email?.trim().toLowerCase();
+        if (!email) {
+          withoutEmail += 1;
+          continue;
+        }
+        const row = byMail.get(email) ?? { email, tickets: 0, lastDay: day, inApp: false };
+        row.tickets += 1;
+        if (day > row.lastDay) row.lastDay = day;
+        if (t.riderProfileId != null) row.inApp = true;
+        byMail.set(email, row);
+      }
+      dayGuests = {
+        rows: [...byMail.values()].sort((a, b) => b.lastDay.localeCompare(a.lastDay) || a.email.localeCompare(b.email)),
+        withoutEmail,
+        mailReady: Boolean(mail?.isActive && mail.apiKey),
+      };
+    }
     content = (
       <div className="space-y-4 sm:space-y-5">
-        {(config?.dayServiceIds.length ?? 0) > 0 && <DayGuestCard />}
+        {dayGuests && <DayGuestMailsCard rows={dayGuests.rows} year={year} withoutEmail={dayGuests.withoutEmail} mailReady={dayGuests.mailReady} />}
         <RidersCard riders={rows} year={year} />
       </div>
     );

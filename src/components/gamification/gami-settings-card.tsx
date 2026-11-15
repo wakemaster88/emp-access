@@ -184,8 +184,8 @@ export function GamiSettingsCard({ initial, subscriptions, services, devices, ye
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Tagestickets in der App</legend>
             <p className="text-xs text-muted-foreground">
-              Gäste mit diesen Tickets können die App nutzen: Sie scannen ihr Ticket selbst oder bekommen im Reiter Fahrer einen QR-Code.
-              Jedes angemeldete Ticket zählt als Besuchstag. Mit Preis rechnet die App ab dem dritten Besuch vor, ob sich ein Abo lohnt.
+              Gäste mit diesen Tickets können die App nutzen: Sie fordern dort ihren Link an und bekommen ihn an die E-Mail-Adresse am Ticket.
+              Die Adresse kommt aus der Online-Buchung oder wird am Shop-Monitor und im Reiter Fahrer eingetragen. Jeder Tag mit Ticket zählt als Besuchstag. Mit Preis rechnet die App ab dem dritten Besuch vor, ob sich ein Abo lohnt.
             </p>
             {services.length === 0 && <p className="text-sm text-muted-foreground">Keine Ticket-Typen angelegt.</p>}
             <div className="grid gap-2 sm:grid-cols-2">
