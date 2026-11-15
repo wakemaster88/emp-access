@@ -8,6 +8,7 @@ import { Prisma } from "@prisma/client";
 import { tenantClient, type TenantDb } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { runChallenges } from "./challenge-service";
+import { notifyVoucher } from "./rider-push";
 import {
   aggregateScans,
   awardKey,
@@ -161,6 +162,7 @@ export async function awardMilestones(
           validDays: milestone.voucherValidDays,
         });
         await db.milestoneAward.update({ where: { id: award.id }, data: { voucherId: voucher.id } });
+        notifyVoucher(accountId, ticketId, milestone.voucherLabel);
       }
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;

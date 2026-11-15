@@ -108,6 +108,29 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
   und Passkeys, beendet alle Sitzungen (`sessionVersion`) und gibt einen
   neuen Link aus; der alte gilt nicht mehr. Statistik und Gutscheine bleiben.
 
+
+## Push und Verlängerungs-Hinweis in der Kunden-App, Etappe 6 (15.11.2026)
+
+- Im Profil der App schaltet der Fahrer **Benachrichtigungen** je Gerät selbst
+  ein (Karte `src/components/rider/rider-push.tsx`). Die Karte erscheint nur,
+  wenn Web-Push eingerichtet ist (dieselben VAPID-Schlüssel wie für das
+  Dashboard). iPhone und iPad brauchen dafür die App auf dem Home-Bildschirm.
+- Abos liegen in `RiderPushSubscription`, getrennt von `PushSubscription`:
+  Betriebsmeldungen für Mitarbeiter gehen nie an Fahrer. Höchstens 10 Geräte
+  je Profil; als Adresse sind nur die Push-Dienste der Browser erlaubt
+  (`isPushServiceUrl` in `src/lib/rider-push.ts`).
+- Gesendet wird nur an die betroffene Person und nur bei einem **neuen
+  Gutschein** (Meilenstein oder Challenge, `notifyVoucher`). Der Versand läuft
+  neben dem Scan her und hält ihn nicht auf. „Statistik neu berechnen“ vergibt
+  keine Gutscheine und meldet deshalb auch nichts.
+- Schnittstellen: `/api/rider/<token>/push` (GET, POST, DELETE, nur mit
+  Sitzung) und `/api/rider/push/renew` für den Service Worker, wenn der
+  Push-Dienst ein Abo austauscht. „Zugang zurücksetzen“ löscht auch die
+  Push-Abos des Fahrers.
+- **Verlängerungs-Hinweis**: Das Dashboard der App zeigt in den letzten 30
+  Tagen der Laufzeit und nach dem Ablauf eine Karte mit dem Enddatum
+  (`renewalHint` in `src/lib/gamification.ts`). Es geht keine Nachricht raus.
+
 ## Menü und Modulaufteilung (11.11.2026)
 
 - Sieben Bereiche mit je drei bis sechs Modulen: Übersicht (Dashboard,

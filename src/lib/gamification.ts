@@ -411,3 +411,20 @@ export function aheadOfPercent(own: number, others: number[], minOthers = 10): n
   if (others.length < minOthers) return null;
   return Math.floor((others.filter((v) => v < own).length / others.length) * 100);
 }
+
+/** So viele Tage vor dem Ablauf erinnert die Kunden-App an die Verlängerung. */
+export const RENEWAL_HINT_DAYS = 30;
+
+export type RenewalHint = { kind: "soon"; days: number } | { kind: "expired" };
+
+/**
+ * Hinweis zur Verlängerung: in den letzten 30 Tagen der Laufzeit und nach dem
+ * Ablauf. Ohne Enddatum oder mit längerer Restlaufzeit gibt es keinen.
+ */
+export function renewalHint(endDate: Date | null, now: Date): RenewalHint | null {
+  if (!endDate) return null;
+  const ms = endDate.getTime() - now.getTime();
+  if (ms < 0) return { kind: "expired" };
+  const days = Math.ceil(ms / 86_400_000);
+  return days <= RENEWAL_HINT_DAYS ? { kind: "soon", days } : null;
+}

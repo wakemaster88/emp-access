@@ -2,6 +2,7 @@ import { requireRider } from "@/lib/rider-auth";
 import { daysUntil, fmtDay } from "@/lib/rider-format";
 import { RiderProfileForm } from "@/components/rider/rider-profile-form";
 import { RiderSecurity } from "@/components/rider/rider-auth";
+import { RiderPush } from "@/components/rider/rider-push";
 import { findRiderAuthProfile } from "@/lib/rider-auth";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
         </div>
       )}
       {auth && <RiderSecurity token={token} hasPassword={auth.passwordHash != null} passkeys={auth.passkeyCount} />}
+      <RiderPush token={token} />
       <RiderProfileForm token={token} nickname={rider.nickname} showInRanking={rider.showInRanking} />
     </>
   );
