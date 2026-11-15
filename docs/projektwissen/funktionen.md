@@ -74,6 +74,20 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 - Logik in `src/lib/challenge-service.ts` und `src/lib/rider-challenges.ts`,
   Rechenregeln mit Tests in `src/lib/gamification.ts`.
 
+## Saisonrückblick und Rangliste für Bildschirme, Etappe 4 (15.11.2026)
+
+- **Saisonrückblick** in der Kunden-App (`/app/<token>/rueckblick`, mit
+  `?jahr=` auch für das Vorjahr): Besuchstage, Starts mit Rekordtag, längste
+  Serie, stärkster Monat, Lieblings-Wochentag, erreichte Stufe und der
+  Vergleich „öfter da als x % der Abo-Fahrer“ (nur ab 10 Vergleichswerten
+  und ab 50 %). Rechenregel `seasonRecap` in `src/lib/gamification.ts`.
+- **Rangliste für einen Bildschirm** (`/rangliste/<token>`): Saison nach
+  Besuchstagen und bis zu zwei laufende Top-X-Challenges, lädt alle fünf
+  Minuten neu. Ein- und Ausschalten unter Gamification › Einstellungen
+  (`GamificationConfig.displayToken`); nach dem Abschalten gilt der Link
+  nicht mehr. Gezeigt wird nur, wer Spitzname und Zustimmung gesetzt hat.
+  Alle anderen zählen für die Plätze mit, erscheinen aber nicht.
+
 ## Menü und Modulaufteilung (11.11.2026)
 
 - Sieben Bereiche mit je drei bis sechs Modulen: Übersicht (Dashboard,

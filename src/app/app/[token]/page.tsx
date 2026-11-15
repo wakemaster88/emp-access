@@ -128,6 +128,12 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         <div className="rd-stat"><div className="rd-display">{rider.streakWeeks}</div><div className="rd-muted">Wochen in Serie</div></div>
       </div>
 
+      {rider.visitDays > 0 && (
+        <Link href={`${base}/rueckblick`} className="rd-btn rd-btn-ghost rd-btn-wide">
+          <span>Dein Saisonrückblick {rider.year}</span>
+        </Link>
+      )}
+
       {others.length > 0 && (
         <>
           <div className="rd-label" style={{ marginTop: 4 }}>Weitere Ziele</div>

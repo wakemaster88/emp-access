@@ -354,3 +354,60 @@ export function offerVisible(
   if (o.toYmd && todayYmd > o.toYmd) return false;
   return true;
 }
+
+const MONTH_NAMES = [
+  "Januar", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember",
+];
+// Index wie Date.getUTCDay(): 0 = Sonntag.
+const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+
+export interface SeasonRecap {
+  visitDays: number;
+  starts: number;
+  /** Längste Serie an Wochen in Folge. */
+  streakWeeks: number;
+  bestMonth: { name: string; visitDays: number } | null;
+  bestWeekday: { name: string; visitDays: number } | null;
+  /** Tag mit den meisten Starts. */
+  bestDay: { day: string; starts: number } | null;
+  firstDay: string | null;
+  lastDay: string | null;
+}
+
+/** Saisonrückblick aus den Tagessummen eines Jahres. Bei Gleichstand gewinnt der frühere Monat bzw. Wochentag ab Montag. */
+export function seasonRecap(days: DayStat[]): SeasonRecap {
+  const visited = days.filter((d) => d.starts > 0).sort((a, b) => a.day.localeCompare(b.day));
+  const months = new Array<number>(12).fill(0);
+  const weekdays = new Array<number>(7).fill(0);
+  let bestDay: SeasonRecap["bestDay"] = null;
+  for (const d of visited) {
+    const [y, m, dd] = d.day.split("-").map(Number);
+    months[m - 1] += 1;
+    weekdays[new Date(Date.UTC(y, m - 1, dd)).getUTCDay()] += 1;
+    if (!bestDay || d.starts > bestDay.starts) bestDay = { day: d.day, starts: d.starts };
+  }
+  const topMonth = months.indexOf(Math.max(...months));
+  // Ab Montag suchen, damit bei Gleichstand nicht der Sonntag vorne liegt.
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const topWeekday = order.reduce((best, i) => (weekdays[i] > weekdays[best] ? i : best), order[0]);
+  return {
+    visitDays: visited.length,
+    starts: visited.reduce((sum, d) => sum + d.starts, 0),
+    streakWeeks: longestWeekStreak(visited.map((d) => d.day)),
+    bestMonth: visited.length ? { name: MONTH_NAMES[topMonth], visitDays: months[topMonth] } : null,
+    bestWeekday: visited.length ? { name: WEEKDAY_NAMES[topWeekday], visitDays: weekdays[topWeekday] } : null,
+    bestDay,
+    firstDay: visited[0]?.day ?? null,
+    lastDay: visited[visited.length - 1]?.day ?? null,
+  };
+}
+
+/**
+ * Anteil der anderen Fahrer (in Prozent, abgerundet), die seltener da waren.
+ * Null, wenn es zu wenige Vergleichswerte gibt.
+ */
+export function aheadOfPercent(own: number, others: number[], minOthers = 10): number | null {
+  if (others.length < minOthers) return null;
+  return Math.floor((others.filter((v) => v < own).length / others.length) * 100);
+}

@@ -13,7 +13,9 @@ import {
   computeMetrics,
   currentWeekStreak,
   dbDateToYmd,
+  aheadOfPercent,
   mergeDayStats,
+  seasonRecap,
   milestoneProgress,
   seasonLevel,
   ymdToDbDate,
@@ -21,6 +23,7 @@ import {
   type GamiMetric,
   type GamiPeriod,
   type MilestoneProgress,
+  type SeasonRecap,
 } from "./gamification";
 
 export function newRiderToken(): string {
@@ -258,4 +261,37 @@ export async function deleteRiderData(profileId: number, accountId: number): Pro
     }),
     prisma.riderProfile.delete({ where: { id: profileId } }),
   ]);
+}
+
+export interface RiderRecap {
+  year: number;
+  recap: SeasonRecap;
+  /** Anteil der anderen Abo-Fahrer, die seltener da waren; null bei zu wenig Vergleich. */
+  aheadOf: number | null;
+}
+
+/**
+ * Saisonrückblick eines Fahrers für das laufende oder das vergangene Jahr.
+ * Verglichen wird je Ticket mit den Besuchstagen aller anderen Abo-Fahrer.
+ */
+export async function loadRiderRecap(rider: RiderView, year: number): Promise<RiderRecap | null> {
+  if (year !== rider.year && year !== rider.year - 1) return null;
+  const range = { gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) };
+  const [own, others] = await Promise.all([
+    prisma.riderDayStat.findMany({
+      where: { accountId: rider.accountId, ticketId: { in: rider.ticketIds }, day: range },
+      select: { day: true, starts: true },
+    }),
+    prisma.riderDayStat.groupBy({
+      by: ["ticketId"],
+      where: { accountId: rider.accountId, ticketId: { notIn: rider.ticketIds }, day: range },
+      _count: { _all: true },
+    }),
+  ]);
+  const recap = seasonRecap(mergeDayStats(own.map((s) => ({ day: dbDateToYmd(s.day), starts: s.starts }))));
+  return {
+    year,
+    recap,
+    aheadOf: recap.visitDays > 0 ? aheadOfPercent(recap.visitDays, others.map((o) => o._count._all)) : null,
+  };
 }
