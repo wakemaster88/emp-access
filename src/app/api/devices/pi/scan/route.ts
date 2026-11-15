@@ -11,6 +11,7 @@ import { DEBOUNCE_WINDOW_MS, resolveDebounce } from "@/lib/scan-debounce";
 import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } from "@/lib/duration-ticket";
 import { runScanRules } from "@/lib/room-rules";
 import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
+import { recordStart } from "@/lib/gamification-service";
 
 /**
  * Meldung des Raspberry Pi, dass das Relais per Dashboard-Button geoeffnet
@@ -330,6 +331,14 @@ export async function POST(request: NextRequest) {
     // Gutschein-Einlösung: Code beginnt mit "GS-"
     if (code.startsWith("GS-")) {
       const voucher = await db.voucher.findUnique({ where: { code, accountId } });
+      if (voucher?.kind === "BENEFIT") {
+        // Leistungs-Gutschein (z. B. Freigetränk): gibt keinen Zutritt und wird
+        // hier auch nicht entwertet – das passiert an der Kasse.
+        await db.scan.create({
+          data: { code, deviceId, result: "DENIED", note: "voucher_benefit_only", accountId },
+        });
+        return NextResponse.json({ granted: false, message: "Gutschein gilt nur an der Kasse" });
+      }
       if (voucher && !voucher.redeemedAt) {
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0);
@@ -910,6 +919,18 @@ export async function POST(request: NextRequest) {
   void runScanRules(accountId, scanAreaIds, isExitScan ? "OUT" : "IN", now).catch((err) => {
     console.error("[scan] room rules failed:", err);
   });
+
+  // Gamification: Start am Start-Gerät verbuchen, ebenfalls ohne zu warten.
+  if (device.countsAsStart && !isExitScan && ticket.subscriptionId != null) {
+    void recordStart({
+      accountId,
+      ticketId: ticket.id,
+      subscriptionId: ticket.subscriptionId,
+      at: now,
+    }).catch((err) => {
+      console.error("[scan] gamification failed:", err);
+    });
+  }
 
   return NextResponse.json({
     granted: true,

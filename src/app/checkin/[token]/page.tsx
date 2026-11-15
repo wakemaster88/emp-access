@@ -68,7 +68,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [selectedTicket, setSelectedTicket] = useState<CheckinTicket | null>(null);
   const [scanMode, setScanMode] = useState(false);
   const [scanInput, setScanInput] = useState("");
-  const [scanResult, setScanResult] = useState<{ found: boolean; ticket?: CheckinTicket; message?: string } | null>(null);
+  const [scanResult, setScanResult] = useState<{ found: boolean; ticket?: CheckinTicket; message?: string; benefitRedeemed?: boolean } | null>(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scanBubble, setScanBubble] = useState("");
   const [checkingIn, setCheckingIn] = useState<number | null>(null);

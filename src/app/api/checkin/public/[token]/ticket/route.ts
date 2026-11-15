@@ -357,6 +357,10 @@ export async function POST(
         if (!voucher || voucher.accountId !== monitor.accountId) {
           throw new Error("VOUCHER_NOT_FOUND");
         }
+        if (voucher.kind === "BENEFIT") {
+          // Leistungs-Gutscheine werden nur entwertet, nie zu einem Ticket.
+          throw new Error("VOUCHER_NOT_FOUND");
+        }
         if (voucher.disabledAt) {
           throw new Error("VOUCHER_DISABLED");
         }

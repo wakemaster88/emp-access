@@ -4,6 +4,30 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Gamification für Abo-Fahrer, Etappe 1 (15.11.2026)
+
+- Seite Gäste › Gamification (`/gamification`, nur Admins) mit den Reitern
+  Auswertung, Meilensteine, Gutscheine und Einstellungen. Ab Werk aus: ohne
+  `GamificationConfig.enabled` wird nichts gezählt und nichts ausgegeben.
+- Ein **Start** ist ein GRANTED-Scan eines Abo-Tickets an einem Gerät mit
+  `Device.countsAsStart` (z. B. Drehkreuz Seilbahn A), ein **Besuchstag** ein
+  Berliner Kalendertag mit mindestens einem Start. Der Scan-Endpunkt
+  (`api/devices/pi/scan`) ruft `recordStart` auf, ohne zu warten. Gespeichert
+  werden nur Tagessummen je Ticket (`RiderDayStat`), keine Einzelzeiten.
+- **Meilensteine** (`Milestone`): Besuchstage, Starts oder Wochen in Serie, je
+  Saison (Kalenderjahr) oder Monat, optional mit Gutschein. Vergabe einmal je
+  Ticket und Zeitraum (`MilestoneAward`, eindeutig). Starts zählen für
+  Meilensteine nur bis zur Tagesobergrenze (Standard 10).
+- **Leistungs-Gutscheine**: `Voucher.kind = BENEFIT` mit `label`. Sie geben
+  keinen Zutritt und erzeugen kein Ticket (Drehkreuz lehnt ab), sondern werden
+  nur entwertet: Scan am Check-in-Monitor oder Code/Klick unter Gutscheine.
+  Die bisherigen Gutscheine sind `ACCESS` und verhalten sich wie zuvor.
+- „Statistik neu berechnen“ baut die Tagessummen des laufenden Jahres aus den
+  Scans neu auf und vergibt dabei nichts. Verlässliche Starts gibt es erst seit
+  dem Drehkreuz (21.08.2026).
+- Rechenlogik mit Tests in `src/lib/gamification.ts`, Datenbank-Seite in
+  `src/lib/gamification-service.ts`. Kunden-App und Challenges folgen.
+
 ## Menü und Modulaufteilung (11.11.2026)
 
 - Sieben Bereiche mit je drei bis sechs Modulen: Übersicht (Dashboard,
