@@ -95,6 +95,8 @@ export async function GET() {
         id: true,
         name: true,
         kind: true,
+        host: true,
+        snapshotAt: true,
         lastSeenAt: true,
         doorHoldUntil: true,
         doorHoldError: true,
@@ -235,6 +237,8 @@ export async function GET() {
     .map((c) => ({
       id: c.id,
       name: c.name,
+      host: c.host,
+      snapshotAt: c.snapshotAt,
       online: anyHubOnline && !!c.lastSeenAt && c.lastSeenAt.getTime() >= cameraCutoff,
       holdUntil: c.doorHoldUntil && c.doorHoldUntil.getTime() > now.getTime() ? c.doorHoldUntil : null,
       holdError: c.doorHoldError,
@@ -355,6 +359,8 @@ export async function GET() {
       gates: gates.map((g) => ({
         id: g.id,
         name: g.name,
+        host: g.host,
+        snapshotAt: g.snapshotAt?.toISOString() ?? null,
         online: g.online,
         holdUntil: g.holdUntil?.toISOString() ?? null,
         holdError: g.holdUntil ? g.holdError : null,
