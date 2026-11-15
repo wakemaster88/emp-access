@@ -18,6 +18,8 @@ export interface PushPayload {
   url?: string;
   /** Gleicher Tag ersetzt eine noch sichtbare Benachrichtigung (kein Spam). */
   tag?: string;
+  /** Meldung bleibt sichtbar, bis jemand reagiert (Android/Desktop; iOS ignoriert es). */
+  requireInteraction?: boolean;
 }
 
 let vapidConfigured = false;

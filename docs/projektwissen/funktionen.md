@@ -114,3 +114,14 @@ Erkennung von DHL, UPS, GLS, DPD, Hermes und Amazon an der Aufschrift der
 Transporter an der Einfahrt. Pro Kamera Modus Aus / Melden / Tor öffnen,
 Zeitfenster standardmäßig Mo–Sa 07–20 Uhr. Regelaktion „Kamera steuern“
 (Preset, Tracking, Rückkehr), Auslöser auch „Klingel (DoorBird)“.
+
+## Klingel-Push (DoorBird)
+
+Klingelt jemand an einer DoorBird, geht sofort ein Web-Push an alle
+PWA-Geräte des Accounts („🔔 Es hat geklingelt“). Auslöser ist die
+DOORBELL-Meldung des Hubs an `/api/hub/camera-events` (Hub liest die
+DoorBird per `monitor.cgi`), an der DoorBird selbst ist nichts
+einzurichten. Antippen öffnet `/?doorbird=<cameraId>`, die Tor-Ansicht im
+Dashboard mit Livebild und Öffnen-Knopf. Meldungen älter als 2 Minuten
+werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
+öffnen“ (`/api/hub/doorbird-gate`). Code: `src/lib/doorbell-push.ts`.
