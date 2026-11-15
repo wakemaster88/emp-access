@@ -16,6 +16,15 @@ export const metadata: Metadata = {
   title: "Deine Saison",
   description: "Abo, Gutscheine und Statistik auf einen Blick.",
   robots: { index: false, follow: false },
+  // Eigenes Icon „Ride Pass“ für Tab, Lesezeichen und Home-Bildschirm (ersetzt das Verwaltungs-Icon).
+  icons: {
+    icon: [
+      { url: "/app-icons/ride-pass-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/app-icons/ride-pass-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/app-icons/ride-pass.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/app-icons/ride-pass-apple-180.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 /** Rahmen der Kunden-App: eigenes Design (rider.css), unabhängig vom Hell/Dunkel der Verwaltung. */
