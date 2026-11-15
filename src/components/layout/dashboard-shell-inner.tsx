@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { MobileMenuProvider, useMobileMenu } from "@/components/layout/mobile-menu-context";
 import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
+import { ThemeColorSync } from "@/components/layout/theme-color-sync";
 
 interface DashboardShellInnerProps {
   userName: string;
@@ -43,12 +44,17 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
         </SheetContent>
       </Sheet>
 
-      {/* Inhalt: liegt direkt auf dem ruhigen Grund der Hülle. */}
-      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scrollbar-thin pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-0">
+      {/* Inhalt: liegt direkt auf dem ruhigen Grund der Hülle und scrollt unter
+          der gläsernen Tab-Leiste durch (die Leiste liest `data-shell-main`). */}
+      <main
+        data-shell-main
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain scrollbar-thin pb-[calc(5.75rem+env(safe-area-inset-bottom))] md:pb-0"
+      >
         {children}
       </main>
 
       <MobileTabBar role={role} />
+      <ThemeColorSync />
     </>
   );
 }

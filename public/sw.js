@@ -2,7 +2,9 @@
  * Service Worker von EMP Access.
  *
  *  - Offline-Fallback: Seitenaufrufe gehen immer ans Netz; ohne Verbindung
- *    erscheint /offline statt der Browser-Fehlerseite.
+ *    erscheint /offline statt der Browser-Fehlerseite. Navigation Preload
+ *    startet die Anfrage schon, waehrend der Service Worker noch aufwacht
+ *    (spuerbar schnellerer Start der installierten App).
  *  - Statische Dateien (/_next/static, Icons, Manifest, Splash) kommen aus
  *    dem Cache und werden im Hintergrund aufgefrischt.
  *  - /api wird nie gecacht: alles dort ist personen- oder zeitbezogen.
@@ -16,7 +18,7 @@
  * VERSION bei jeder Aenderung an dieser Datei hochzaehlen: alte Caches
  * werden beim Aktivieren weggeraeumt.
  */
-const VERSION = "2026-11-15-1";
+const VERSION = "2026-11-15-2";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 const OFFLINE_URL = "/offline";
 const PRECACHE = [OFFLINE_URL, "/manifest.json", "/icon-192.png", "/icon-512.png", "/apple-icon.png", "/logo.png", "/logo-dark.png"];
@@ -36,6 +38,7 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) => Promise.all(keys.filter((k) => k.startsWith("emp-") && k !== STATIC_CACHE).map((k) => caches.delete(k))))
+      .then(() => (self.registration.navigationPreload ? self.registration.navigationPreload.enable().catch(() => {}) : null))
       .then(() => self.clients.claim()),
   );
 });
@@ -63,7 +66,10 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(async () => {
+      (async () => {
+        const preloaded = await Promise.resolve(event.preloadResponse).catch(() => null);
+        return preloaded || fetch(request);
+      })().catch(async () => {
         const offline = await caches.match(OFFLINE_URL);
         return offline || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
       }),
