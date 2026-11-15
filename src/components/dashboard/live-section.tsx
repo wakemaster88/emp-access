@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GateDialog } from "@/components/dashboard/gate-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
@@ -50,7 +52,16 @@ export interface DashboardLive {
   status: {
     readers: { online: number; total: number; offline: string[] };
     cameras: { online: number; total: number; offline: string[]; hubOnline: boolean };
-    gates: { id: number; name: string; online: boolean; holdUntil: string | null; holdError: string | null }[];
+    gates: {
+      id: number;
+      name: string;
+      /** IP der Sprechstelle – darüber findet der Browser den Live-Stream in go2rtc. */
+      host: string;
+      snapshotAt: string | null;
+      online: boolean;
+      holdUntil: string | null;
+      holdError: string | null;
+    }[];
     lastOpening: { at: string; label: string | null } | null;
   };
   tracking: {
@@ -217,9 +228,37 @@ export function LiveSection({
   const devicesTotal = s.readers.total + s.cameras.total;
   const devicesOnline = s.readers.online + s.cameras.online;
   const devicesOffline = [...s.readers.offline, ...s.cameras.offline];
+  const [gateId, setGateId] = useState<number | null>(null);
+  const openGate = s.gates.find((g) => g.id === gateId) ?? null;
+
+  // Einsprung von außen (z. B. Push bei Klingeln): `/?doorbird=<Kamera-ID>`
+  // öffnet die Tor-Ansicht direkt. Der Parameter wird danach entfernt, damit
+  // ein Neuladen sie nicht erneut öffnet.
+  const gateIds = s.gates.map((g) => g.id).join(",");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("doorbird") || !gateIds) return;
+    const ids = gateIds.split(",").map(Number);
+    const wanted = Number(params.get("doorbird"));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setGateId(ids.includes(wanted) ? wanted : ids[0]);
+    params.delete("doorbird");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, [gateIds]);
 
   return (
     <div className="space-y-3 sm:space-y-4">
+      {openGate && (
+        <GateDialog
+          gate={openGate}
+          hubOnline={s.cameras.hubOnline}
+          open
+          onOpenChange={(o) => {
+            if (!o) setGateId(null);
+          }}
+        />
+      )}
       <Warnings warnings={live.warnings} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
@@ -260,7 +299,7 @@ export function LiveSection({
         />
         {gate ? (
           <StatCard
-            href="/webcams"
+            onClick={() => setGateId(gate.id)}
             label={gate.name}
             icon={DoorOpen}
             tone={gate.holdError ? "danger" : gate.holdUntil ? "warning" : gate.online ? "success" : "neutral"}

@@ -312,7 +312,7 @@ interface Go2rtcInfo {
   byHost: Record<string, string>;
 }
 
-function useGo2rtc(): [Go2rtcInfo, (url: string) => void] {
+export function useGo2rtc(): [Go2rtcInfo, (url: string) => void] {
   const [url, setUrl] = useState("");
   const [reachable, setReachable] = useState<boolean | null>(null);
   const [byHost, setByHost] = useState<Record<string, string>>({});
