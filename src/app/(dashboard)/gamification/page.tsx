@@ -5,7 +5,7 @@ import { tenantClient } from "@/lib/prisma";
 import { isTenantAdminRole } from "@/lib/api-auth";
 import { berlinYmd } from "@/lib/berlin-day";
 import {
-  benefitVoucherState, challengePhase, dbDateToYmd, offerVisible, ymdToDbDate,
+  benefitVoucherState, challengePhase, dbDateToYmd, offerVisible, parsePriceMap, ymdToDbDate,
   type GamiMetric, type GamiPeriod,
 } from "@/lib/gamification";
 import { challengeUnits, settleDueChallenges, type ChallengeRow } from "@/lib/challenge-service";
@@ -20,6 +20,7 @@ import {
 import { MilestonesCard, type MilestoneRow } from "@/components/gamification/milestones-card";
 import { BenefitVouchersCard, type BenefitVoucherRow } from "@/components/gamification/benefit-vouchers-card";
 import { RidersCard, type RiderRow } from "@/components/gamification/riders-card";
+import { DayGuestCard } from "@/components/gamification/day-guest-card";
 import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamification/challenges-card";
 import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
 import { RankingDisplayCard } from "@/components/gamification/ranking-display-card";
@@ -195,7 +196,12 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       optOut: t.gamificationOptOut,
       canSelfLogin: Boolean(t.rfidCode && t.birthDate),
     }));
-    content = <RidersCard riders={rows} year={year} />;
+    content = (
+      <div className="space-y-4 sm:space-y-5">
+        {(config?.dayServiceIds.length ?? 0) > 0 && <DayGuestCard />}
+        <RidersCard riders={rows} year={year} />
+      </div>
+    );
   }
 
   if (tab === "meilensteine") {
@@ -317,8 +323,9 @@ export default async function GamificationPage({ searchParams }: { searchParams:
   }
 
   if (tab === "einstellungen") {
-    const [subscriptions, devices] = await Promise.all([
+    const [subscriptions, services, devices] = await Promise.all([
       db.subscription.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      db.service.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.device.findMany({
         where: { accountId, type: "RASPBERRY_PI" },
         select: { id: true, name: true, countsAsStart: true },
@@ -333,8 +340,12 @@ export default async function GamificationPage({ searchParams }: { searchParams:
           subscriptionIds: config?.subscriptionIds ?? [],
           startCapPerDay: config?.startCapPerDay ?? 10,
           startDeviceIds: devices.filter((d) => d.countsAsStart).map((d) => d.id),
+          dayServiceIds: config?.dayServiceIds ?? [],
+          servicePrices: Object.fromEntries([...parsePriceMap(config?.servicePrices)].map(([id, c]) => [String(id), c])),
+          subscriptionPrices: Object.fromEntries([...parsePriceMap(config?.subscriptionPrices)].map(([id, c]) => [String(id), c])),
         }}
         subscriptions={subscriptions}
+        services={services}
         devices={devices.map((d) => ({ id: d.id, name: d.name }))}
         year={year}
       />

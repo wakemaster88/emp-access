@@ -921,11 +921,13 @@ export async function POST(request: NextRequest) {
   });
 
   // Gamification: Start am Start-Gerät verbuchen, ebenfalls ohne zu warten.
-  if (device.countsAsStart && !isExitScan && ticket.subscriptionId != null) {
+  if (device.countsAsStart && !isExitScan && (ticket.subscriptionId != null || ticket.riderProfileId != null)) {
     void recordStart({
       accountId,
       ticketId: ticket.id,
       subscriptionId: ticket.subscriptionId,
+      serviceId: ticket.serviceId,
+      riderProfileId: ticket.riderProfileId,
       optOut: ticket.gamificationOptOut,
       at: now,
     }).catch((err) => {

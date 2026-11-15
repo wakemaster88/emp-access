@@ -3402,6 +3402,12 @@ model GamificationConfig {
   startCapPerDay  Int      @default(10)
   /// Schluessel der oeffentlichen Rangliste `/rangliste/<token>`; NULL = aus.
   displayToken    String?  @unique
+  /// Tagestickets (IDs aus Service), deren Gaeste die App nutzen duerfen.
+  dayServiceIds   Int[]    @default([])
+  /// Preise fuer den Abo-Rechner in Cent: {"<serviceId>": 2500}.
+  servicePrices   Json?
+  /// Abo-Preise fuer den Abo-Rechner in Cent: {"<subscriptionId>": 39000}.
+  subscriptionPrices Json?
   accountId       Int      @unique
   account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())

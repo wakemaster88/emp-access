@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
-import { METRIC_LABEL, renewalHint } from "@/lib/gamification";
+import { METRIC_LABEL, formatEuro, renewalHint } from "@/lib/gamification";
+import { RiderTicketClaim } from "@/components/rider/rider-ticket-claim";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
 import { fmtDay, validityText } from "@/lib/rider-format";
 
@@ -42,7 +43,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
               ? `${rider.abo.name}${rider.abo.endDate ? ` · ${rider.abo.active ? "gültig bis" : "abgelaufen am"} ${fmtDay(rider.abo.endDate)}` : ""}`
               : rider.accountName}
           </div>
-          <h1 className="rd-display" style={{ fontSize: 48, fontWeight: 800 }}>Hi {rider.firstName}</h1>
+          <h1 className="rd-display" style={{ fontSize: 48, fontWeight: 800 }}>{rider.firstName ? `Hi ${rider.firstName}` : "Hi"}</h1>
         </div>
       </div>
 
@@ -57,6 +58,16 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             {renewal.kind === "expired"
               ? `${rider.abo.name} galt bis ${fmtDay(rider.abo.endDate)}. Sprich uns an der Kasse an, dann bist du wieder dabei.`
               : `${rider.abo.name} gilt bis ${fmtDay(rider.abo.endDate)}. Sprich uns an der Kasse an, dann verlängern wir es.`}
+          </span>
+        </div>
+      )}
+
+      {rider.calculator && (
+        <div className="rd-card rd-offer" style={{ gap: 4 }}>
+          <b>Lohnt sich ein Abo für dich?</b>
+          <span className="rd-soft">
+            Deine {rider.calculator.tickets} Tickets dieser Saison in der App haben {formatEuro(rider.calculator.spentCents)} gekostet.
+            Das Abo {rider.calculator.aboName} kostet {formatEuro(rider.calculator.aboCents)}. Sprich uns an der Kasse an.
           </span>
         </div>
       )}
@@ -147,6 +158,14 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         <Link href={`${base}/rueckblick`} className="rd-btn rd-btn-ghost rd-btn-wide">
           <span>Dein Saisonrückblick {rider.year}</span>
         </Link>
+      )}
+
+      {rider.dayGuest && (
+        <>
+          <div className="rd-label" style={{ marginTop: 4 }}>Wieder da?</div>
+          <p className="rd-muted" style={{ margin: 0 }}>Melde jedes neue Tagesticket hier an, dann zählt der Besuch für deine Ziele.</p>
+          <RiderTicketClaim label="Ticket hinzufügen" />
+        </>
       )}
 
       {others.length > 0 && (

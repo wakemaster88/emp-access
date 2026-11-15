@@ -131,6 +131,41 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
   Tagen der Laufzeit und nach dem Ablauf eine Karte mit dem Enddatum
   (`renewalHint` in `src/lib/gamification.ts`). Es geht keine Nachricht raus.
 
+
+## Tagesgäste in der Kunden-App und Abo-Rechner, Etappe 7 (15.11.2026)
+
+- Ausgangslage 2026: 3.643 Wakeboard-Tagestickets, davon 3.066 ohne Namen an
+  der Kasse verkauft und 2.541 auf Armband oder Karte. Eine E-Mail-Adresse
+  gibt es nur bei rund 165 Gästen. Tagesgäste melden deshalb ihr **Ticket**
+  an, nicht eine Adresse.
+- Einstellungen (Gäste › Gamification › Einstellungen): „Tagestickets in der
+  App“ wählt die Ticket-Typen, optional mit Preis; dazu der Preis je Abo
+  (`GamificationConfig.dayServiceIds`, `servicePrices`, `subscriptionPrices`).
+  Ab Werk ist nichts gewählt.
+- Zwei Wege in die App (`src/lib/day-guest.ts`):
+  - **Selbst scannen**: `/app` und das Dashboard haben „Ticket scannen“
+    (Kamera) oder Code tippen, Schnittstelle `/api/rider/claim`. Ein QR-Code
+    gilt die ganze Saison. Armband und Karte werden wieder ausgegeben, dort
+    zählt nur das Ticket von heute.
+  - **Kasse**: Reiter Fahrer, Karte „Tagesgast in die App holen“. Code
+    scannen, der Gast scannt den gezeigten QR-Code `/app/ticket/<schlüssel>`
+    (Ticket-ID mit HMAC-Signatur, nicht erratbar).
+  - Wer auf dem Gerät schon angemeldet ist, bekommt das Ticket in sein
+    Profil. Sonst entsteht ein neues Profil und es geht wie beim Abo zum
+    Einrichten von Passkey oder Passwort.
+- Gezählt wird erst ab der Anmeldung des Tickets. Jedes angemeldete
+  Tagesticket ist ein Besuchstag; Starts kommen aus den Scans am Start-Gerät,
+  ohne Scan zählt ein Start (`syncDayTicketStat`), weil nicht jede Bahn ein
+  Drehkreuz hat.
+- Meilensteine gelten jetzt je Person: alle Tickets eines Profils zählen
+  zusammen (`awardMilestones`). Das betrifft auch Abo-Fahrer mit zwei Tickets.
+- **Abo-Rechner**: Gäste ohne Abo sehen ab dem dritten Besuch „Deine Tickets
+  dieser Saison haben … gekostet, das Abo … kostet …“ (`aboCalculation`).
+  Er erscheint nur, wenn für jedes Ticket und mindestens ein Abo ein Preis
+  hinterlegt ist. Verglichen wird mit dem günstigsten Abo.
+- Noch offen: Tagesgäste erscheinen nicht in Auswertung und Fahrerliste der
+  Verwaltung, und der QR-Code steht noch nicht auf dem gedruckten Ticket.
+
 ## Menü und Modulaufteilung (11.11.2026)
 
 - Sieben Bereiche mit je drei bis sechs Modulen: Übersicht (Dashboard,

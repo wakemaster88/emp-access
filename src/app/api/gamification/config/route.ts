@@ -9,7 +9,16 @@ const schema = z.object({
   subscriptionIds: z.array(z.number().int()).max(100),
   startCapPerDay: z.number().int().min(1).max(100),
   startDeviceIds: z.array(z.number().int()).max(100),
+  dayServiceIds: z.array(z.number().int()).max(200).default([]),
+  /** Preise in Cent für den Abo-Rechner, Schlüssel ist die ID als Text. */
+  servicePrices: z.record(z.string().regex(/^\d+$/), z.number().int().min(1).max(10_000_00)).default({}),
+  subscriptionPrices: z.record(z.string().regex(/^\d+$/), z.number().int().min(1).max(10_000_00)).default({}),
 });
+
+/** Nur Preise zu IDs behalten, die zum Konto gehören und gewählt sind. */
+function pickPrices(prices: Record<string, number>, ids: number[]): Record<string, number> {
+  return Object.fromEntries(Object.entries(prices).filter(([id]) => ids.includes(Number(id))));
+}
 
 /** PUT: Gamification-Einstellungen und Start-Geräte speichern. */
 export async function PUT(request: NextRequest) {
@@ -24,13 +33,18 @@ export async function PUT(request: NextRequest) {
   const subscriptionIds = cleanIds(parsed.data.subscriptionIds);
   const startDeviceIds = cleanIds(parsed.data.startDeviceIds);
 
-  const refError = await foreignRefError(db, accountId, { subscriptionIds, deviceIds: startDeviceIds });
+  const dayServiceIds = cleanIds(parsed.data.dayServiceIds);
+
+  const refError = await foreignRefError(db, accountId, { subscriptionIds, deviceIds: startDeviceIds, serviceIds: dayServiceIds });
   if (refError) return NextResponse.json({ error: refError }, { status: 400 });
 
   const data = {
     enabled: parsed.data.enabled,
     subscriptionIds,
     startCapPerDay: parsed.data.startCapPerDay,
+    dayServiceIds,
+    servicePrices: pickPrices(parsed.data.servicePrices, dayServiceIds),
+    subscriptionPrices: pickPrices(parsed.data.subscriptionPrices, subscriptionIds),
   };
   await db.$transaction([
     db.gamificationConfig.upsert({
