@@ -63,6 +63,7 @@ export const TENANT_MODELS = new Set<string>([
   "PushSubscription",
   "RiderDayStat",
   "RiderOffer",
+  "RiderPasskey",
   "RiderProfile",
   "RoomClimate",
   "RoomMotionEvent",

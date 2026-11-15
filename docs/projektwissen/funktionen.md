@@ -88,6 +88,26 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
   nicht mehr. Gezeigt wird nur, wer Spitzname und Zustimmung gesetzt hat.
   Alle anderen zählen für die Plätze mit, erscheinen aber nicht.
 
+## Anmeldung an der Kunden-App, Etappe 5 (15.11.2026)
+
+- Der Link `/app/<token>` ist nur noch die **Einladung**. Beim ersten Öffnen
+  richtet der Fahrer unter `/app/<token>/einrichten` einen Passkey oder ein
+  Passwort (mindestens 8 Zeichen) ein. Danach öffnet der Link allein die App
+  nicht mehr, sondern führt zu `/app/<token>/anmelden`.
+- Sitzung: signiertes Cookie `rider_session` (HMAC mit `AUTH_SECRET`, 180
+  Tage, `src/lib/rider-session.ts`). Alle Seiten unter `[token]/(app)` und
+  die Profil-Schnittstelle verlangen sie (`requireRider`, `riderApiSession`
+  in `src/lib/rider-auth.ts`). Eine Anmeldung hinterlegen darf beim ersten
+  Mal jeder mit dem Link, danach nur die angemeldete Person.
+- Passkeys liegen in `RiderPasskey` und nutzen dieselben Bausteine wie die
+  Admin-Passkeys (`@simplewebauthn`, Einmal-Challenges in `PasskeyChallenge`).
+- Schutz: fünf falsche Passwörter sperren die Anmeldung für 15 Minuten, dazu
+  die Anfragebremse je IP und je Link.
+- **Zugang zurücksetzen** (Passwort vergessen, Handy weg): Gäste ›
+  Gamification › Fahrer › App-Link › Zugang zurücksetzen. Löscht Passwort
+  und Passkeys, beendet alle Sitzungen (`sessionVersion`) und gibt einen
+  neuen Link aus; der alte gilt nicht mehr. Statistik und Gutscheine bleiben.
+
 ## Menü und Modulaufteilung (11.11.2026)
 
 - Sieben Bereiche mit je drei bis sechs Modulen: Übersicht (Dashboard,

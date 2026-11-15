@@ -1,16 +1,17 @@
-import { notFound } from "next/navigation";
-import { loadRiderCached } from "@/lib/rider-app";
+import { requireRider } from "@/lib/rider-auth";
 import { daysUntil, fmtDay } from "@/lib/rider-format";
 import { RiderProfileForm } from "@/components/rider/rider-profile-form";
+import { RiderSecurity } from "@/components/rider/rider-auth";
+import { findRiderAuthProfile } from "@/lib/rider-auth";
 
 export const dynamic = "force-dynamic";
 
 /** Profil: Abo mit Laufzeit und enthaltenen Bereichen, Spitzname, Einwilligung, Ausstieg. */
 export default async function RiderProfilePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const rider = await loadRiderCached(token);
-  if (!rider) notFound();
+  const rider = await requireRider(token);
   const abo = rider.abo;
+  const auth = await findRiderAuthProfile(token);
 
   return (
     <>
@@ -42,6 +43,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
           )}
         </div>
       )}
+      {auth && <RiderSecurity token={token} hasPassword={auth.passwordHash != null} passkeys={auth.passkeyCount} />}
       <RiderProfileForm token={token} nickname={rider.nickname} showInRanking={rider.showInRanking} />
     </>
   );

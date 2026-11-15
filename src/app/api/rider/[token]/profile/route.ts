@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { cleanNickname } from "@/lib/gamification";
 import { deleteRiderData } from "@/lib/rider-app";
+import { clearRiderCookie, riderApiSession } from "@/lib/rider-auth";
 
 const schema = z.object({
   nickname: z.string().max(60).nullable(),
@@ -14,11 +15,8 @@ async function resolve(params: Promise<{ token: string }>) {
   const { token } = await params;
   const limited = publicRateLimit(token, "rider-profile", { limit: 30, windowMs: 60_000 });
   if (limited) return { error: limited };
-  const profile = token.length >= 16
-    ? await prisma.riderProfile.findUnique({ where: { token }, select: { id: true, accountId: true } })
-    : null;
-  if (!profile) return { error: NextResponse.json({ error: "Nicht gefunden" }, { status: 404 }) };
-  return { profile };
+  // Nur die angemeldete Person darf ihr Profil ändern oder löschen.
+  return riderApiSession(token);
 }
 
 /** PATCH: Spitzname und Einwilligung für Ranglisten speichern. */
@@ -46,5 +44,5 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   const ctx = await resolve(params);
   if ("error" in ctx) return ctx.error;
   await deleteRiderData(ctx.profile.id, ctx.profile.accountId);
-  return NextResponse.json({ ok: true });
+  return clearRiderCookie(NextResponse.json({ ok: true }));
 }

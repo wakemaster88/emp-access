@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { loadRiderCached, riderAppPath } from "@/lib/rider-app";
+import { riderAppPath } from "@/lib/rider-app";
+import { requireRider } from "@/lib/rider-auth";
 import { METRIC_LABEL } from "@/lib/gamification";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
 import { fmtDay, validityText } from "@/lib/rider-format";
@@ -16,8 +16,7 @@ const QR_ICON = (
 /** Dashboard: Abo, offene Gutscheine und die aktuelle Statistik. */
 export default async function RiderDashboard({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const rider = await loadRiderCached(token);
-  if (!rider) notFound();
+  const rider = await requireRider(token);
   const base = riderAppPath(token);
   const [offers, challenges] = await Promise.all([
     loadRiderOffers(rider.accountId),

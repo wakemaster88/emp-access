@@ -182,6 +182,7 @@ model Account {
   hubTasks             HubTask[]
   gamificationConfig   GamificationConfig?
   riderProfiles        RiderProfile[]
+  riderPasskeys        RiderPasskey[]
   riderDayStats        RiderDayStat[]
   milestones           Milestone[]
   milestoneAwards      MilestoneAward[]
@@ -3549,11 +3550,40 @@ model RiderProfile {
   /// Einwilligung: mit Spitznamen in Ranglisten erscheinen.
   showInRanking Boolean   @default(false)
   lastSeenAt    DateTime?
+  /// bcrypt-Hash; NULL = kein Passwort gesetzt.
+  passwordHash     String?
+  /// Wird beim Zuruecksetzen erhoeht: alle bisherigen Sitzungen enden.
+  sessionVersion   Int       @default(0)
+  loginFailures    Int       @default(0)
+  loginLockedUntil DateTime?
+  passkeys         RiderPasskey[]
   accountId     Int
   account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tickets       Ticket[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  @@index([accountId])
+}
+
+/// Passkey (WebAuthn) eines Fahrers fuer die Kunden-App.
+model RiderPasskey {
+  id           Int          @id @default(autoincrement())
+  profileId    Int
+  profile      RiderProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// Credential-ID, base64url.
+  credentialId String       @unique
+  publicKey    Bytes
+  counter      Int          @default(0)
+  transports   String[]     @default([])
+  deviceType   String
+  backedUp     Boolean      @default(false)
+  name         String
+  lastUsedAt   DateTime?
+  accountId    Int
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+
+  @@index([profileId])
   @@index([accountId])
 }
