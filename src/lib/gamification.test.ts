@@ -158,3 +158,53 @@ test("cleanNickname", () => {
   assert.equal(cleanNickname("   "), null);
   assert.equal(cleanNickname("x".repeat(40))?.length, 20);
 });
+
+import { challengePhase, challengeValue, offerVisible, rankStandings } from "./gamification";
+
+test("challengePhase: Start- und Endtag zählen mit", () => {
+  const c = { startYmd: "2027-06-01", endYmd: "2027-06-30" };
+  assert.equal(challengePhase(c, "2027-05-31"), "upcoming");
+  assert.equal(challengePhase(c, "2027-06-01"), "running");
+  assert.equal(challengePhase(c, "2027-06-30"), "running");
+  assert.equal(challengePhase(c, "2027-07-01"), "ended");
+});
+
+test("challengeValue zählt nur den Zeitraum und deckelt Starts", () => {
+  const days = [
+    { day: "2027-05-31", starts: 9 },
+    { day: "2027-06-01", starts: 20 },
+    { day: "2027-06-15", starts: 3 },
+    { day: "2027-07-01", starts: 9 },
+  ];
+  const range = { startYmd: "2027-06-01", endYmd: "2027-06-30" };
+  assert.equal(challengeValue(days, { metric: "VISIT_DAYS", ...range }, 10), 2);
+  assert.equal(challengeValue(days, { metric: "STARTS", ...range }, 10), 13);
+});
+
+test("rankStandings: Gleichstand teilt den Platz, null Punkte gewinnen nie", () => {
+  const r = rankStandings(
+    [
+      { key: "a", value: 5 },
+      { key: "b", value: 8 },
+      { key: "c", value: 5 },
+      { key: "d", value: 2 },
+      { key: "e", value: 0 },
+    ],
+    2,
+  );
+  assert.deepEqual(r.map((s) => [s.key, s.rank, s.winner]), [
+    ["b", 1, true],
+    ["a", 2, true],
+    ["c", 2, true],
+    ["d", 4, false],
+  ]);
+  assert.deepEqual(rankStandings([{ key: "x", value: 0 }], 3), []);
+});
+
+test("offerVisible beachtet Schalter und Zeitraum", () => {
+  assert.equal(offerVisible({ active: true, fromYmd: null, toYmd: null }, "2027-06-01"), true);
+  assert.equal(offerVisible({ active: false, fromYmd: null, toYmd: null }, "2027-06-01"), false);
+  assert.equal(offerVisible({ active: true, fromYmd: "2027-06-02", toYmd: null }, "2027-06-01"), false);
+  assert.equal(offerVisible({ active: true, fromYmd: null, toYmd: "2027-06-01" }, "2027-06-01"), true);
+  assert.equal(offerVisible({ active: true, fromYmd: null, toYmd: "2027-05-31" }, "2027-06-01"), false);
+});

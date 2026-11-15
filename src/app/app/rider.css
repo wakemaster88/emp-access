@@ -186,3 +186,17 @@
   color: var(--rd-muted);
 }
 .rd-nav a[aria-current="page"] { color: var(--rd-accent); font-weight: 600; }
+
+/* Angebote und Challenges */
+.rd-offer { border-color: var(--rd-offer); position: relative; overflow: hidden; }
+.rd-offer::before { content: ""; position: absolute; left: -6px; top: 0; bottom: 0; width: 14px; background: var(--rd-offer); transform: skewX(-10deg); }
+.rd-offer > * { padding-left: 10px; }
+.rd-offer b { font-size: 15px; }
+.rd-pill-win { color: #031a22; background: var(--rd-accent); }
+.rd-pill-offer { color: #1f0a03; background: var(--rd-offer); }
+.rd-rank { display: flex; flex-direction: column; }
+.rd-rank > div { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.rd-rank > div + div { border-top: 1px solid var(--rd-line); }
+.rd-rank .rd-pos { width: 26px; font-family: var(--font-barlow-condensed), inherit; font-style: italic; font-weight: 800; font-size: 20px; color: var(--rd-muted); }
+.rd-rank .rd-me { color: var(--rd-accent); font-weight: 700; }
+.rd-rank .rd-me .rd-pos { color: var(--rd-accent); }
