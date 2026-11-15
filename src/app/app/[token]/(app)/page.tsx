@@ -8,7 +8,7 @@ import { fmtDay, validityText } from "@/lib/rider-format";
 export const dynamic = "force-dynamic";
 
 const QR_ICON = (
-  <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#1fe0ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3h-3zM20 14v7M14 20h3" />
   </svg>
 );
@@ -31,7 +31,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   return (
     <>
       <div className="rd-hero">
-        <svg aria-hidden="true" viewBox="0 0 390 120" preserveAspectRatio="none" fill="none" stroke="#1fe0ff" strokeWidth="3" strokeLinecap="round">
+        <svg aria-hidden="true" viewBox="0 0 390 120" preserveAspectRatio="none" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
           <path d="M-10 52 C 60 20, 120 84, 195 52 S 330 20, 400 52" opacity="0.55" />
           <path d="M-10 74 C 60 42, 120 106, 195 74 S 330 42, 400 74" opacity="0.3" />
           <path d="M-10 96 C 60 64, 120 128, 195 96 S 330 64, 400 96" opacity="0.15" />

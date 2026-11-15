@@ -15,7 +15,7 @@ const display = Barlow_Condensed({
 });
 
 export const dynamic = "force-dynamic";
-export const viewport: Viewport = { themeColor: "#060d1a" };
+export const viewport: Viewport = { themeColor: "#0b1214" };
 export const metadata: Metadata = { title: "Rangliste", robots: { index: false, follow: false } };
 
 /** Rangliste für einen Bildschirm am See: Saison und laufende Top-X-Challenges. */
