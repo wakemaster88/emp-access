@@ -212,6 +212,25 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
   selbst, `riderApiSession` nur die Person selbst (Zugang, Push, Löschen).
 - Noch offen: Die Verwaltung zeigt Familien nicht an.
 
+
+## Kunden-App lokal und schnell (16.11.2026)
+
+- Seiten angemeldeter Fahrer liegen im Service-Worker-Cache
+  `emp-rider-<Version>` (`public/sw.js`): die App öffnet sofort mit dem
+  letzten Stand, auch ohne Netz (Gutschein-QR an der Kasse). Der Server
+  bleibt führend: der Service Worker erneuert die Seite im Hintergrund,
+  `RiderSync` (`src/components/rider/rider-sync.tsx`) holt frische Daten,
+  wenn die Seite älter als 15 s ist, nach 60 s im Hintergrund und wenn das
+  Netz zurückkommt.
+- Datenschutz: höchstens 40 Seiten, höchstens 14 Tage alt. Abmelden,
+  Anmelden und Familienänderungen löschen den Cache
+  (`src/lib/rider-local.ts`); leitet der Server zur Anmeldung um, fliegen
+  die Seiten dieses Fahrers raus. Neue Service-Worker-Version leert ihn.
+- Tabs und Gutscheine werden samt Daten vorab geladen; sonst zeigt
+  `loading.tsx` sofort einen Platzhalter.
+- Logo-Animation „RIDE PASS“ beim Start (`rider-intro.tsx`), gut 1 s,
+  einmal je Sitzung, entfällt bei „Bewegung reduzieren“.
+
 ## Menü und Modulaufteilung (11.11.2026)
 
 - Sieben Bereiche mit je drei bis sechs Modulen: Übersicht (Dashboard,

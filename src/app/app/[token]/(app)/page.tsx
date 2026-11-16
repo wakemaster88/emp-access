@@ -120,7 +120,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       ) : (
         <div className="rd-card rd-list">
           {open.slice(0, 3).map((v) => (
-            <Link key={v.id} href={`${base}/gutscheine/${v.id}`}>
+            <Link key={v.id} href={`${base}/gutscheine/${v.id}`} prefetch>
               {QR_ICON}
               <span className="rd-grow">
                 <b>{v.label}</b>

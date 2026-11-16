@@ -58,6 +58,7 @@ function useCompactOnScroll(pathname: string) {
  * Grund, durchscheinend, Weichzeichner) im Stil von iOS 26/27. Der aktive
  * Eintrag sitzt auf einer schrägen gelben Linse, die zum angetippten Eintrag
  * gleitet. Beim Scrollen nach unten schrumpft die Leiste auf die Symbole.
+ * Alle Tabs werden samt Daten vorab geladen, damit der Wechsel sofort geht.
  */
 export function RiderNav({ base }: { base: string }) {
   const pathname = usePathname();
@@ -76,7 +77,7 @@ export function RiderNav({ base }: { base: string }) {
           <span aria-hidden="true" className="rd-nav-lens" style={{ transform: `translateX(${activeIndex * 100}%)` }} />
         )}
         {items.map((it) => (
-          <Link key={it.key} href={it.href} aria-current={it.active ? "page" : undefined} aria-label={it.label}>
+          <Link key={it.key} href={it.href} prefetch aria-current={it.active ? "page" : undefined} aria-label={it.label}>
             <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               {ICONS[it.key]}
             </svg>

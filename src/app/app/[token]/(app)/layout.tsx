@@ -3,6 +3,9 @@ import { riderAppPath } from "@/lib/rider-app";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { RiderNav } from "@/components/rider/rider-nav";
 import { RiderInstallHint } from "@/components/rider/rider-install-hint";
+import { RiderSync } from "@/components/rider/rider-sync";
+import { RiderIntro } from "@/components/rider/rider-intro";
+import { riderRenderStamp } from "@/lib/rider-local";
 
 /** Geschützter Teil der Kunden-App: ohne Anmeldung geht es zum Einrichten oder Anmelden. */
 export default async function RiderAppLayout({
@@ -14,6 +17,8 @@ export default async function RiderAppLayout({
 }) {
   const { token } = await params;
   await requireRider(token);
+  // Zeitpunkt dieses Renderns: kommt die Seite später aus dem lokalen Cache, erkennt RiderSync das Alter.
+  const renderedAt = riderRenderStamp();
   const family = await riderFamilyView(token);
   // Die angemeldete Person steht vorn, danach Partner und Kinder.
   const members =
@@ -26,7 +31,7 @@ export default async function RiderAppLayout({
         {members.length > 0 && (
           <nav className="rd-family" aria-label="Familie">
             {members.map((m) => (
-              <Link key={m.profileId} href={riderAppPath(m.token)} aria-current={m.token === token ? "true" : undefined}>
+              <Link key={m.profileId} href={riderAppPath(m.token)} prefetch aria-current={m.token === token ? "true" : undefined}>
                 {m.token === family?.viewerToken ? "Ich" : m.name}
               </Link>
             ))}
@@ -36,6 +41,8 @@ export default async function RiderAppLayout({
       </main>
       <RiderNav base={riderAppPath(token)} />
       <RiderInstallHint />
+      <RiderSync renderedAt={renderedAt} />
+      <RiderIntro />
     </>
   );
 }
