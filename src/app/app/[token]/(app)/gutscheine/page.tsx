@@ -22,7 +22,7 @@ export default async function RiderVouchers({ params }: { params: Promise<{ toke
         <div className="rd-card rd-list">
           {rider.vouchers.map((v) =>
             v.state === "open" ? (
-              <Link key={v.id} href={`${base}/gutscheine/${v.id}`}>
+              <Link key={v.id} href={`${base}/gutscheine/${v.id}`} prefetch>
                 <span className="rd-grow">
                   <b>{v.label}</b>
                   <br />

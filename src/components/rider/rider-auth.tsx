@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { passkeyErrorMessage, passkeySupportSnapshot } from "@/lib/passkey-client";
+import { clearRiderLocalData } from "@/lib/rider-local";
 
 async function post<T>(url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -51,6 +52,8 @@ export function RiderSetup({ token }: { token: string }) {
     setError("");
     try {
       await action();
+      // Neue Anmeldung: Seiten einer früheren Sitzung auf diesem Gerät verwerfen.
+      await clearRiderLocalData();
       window.location.assign(home);
       return;
     } catch (e) {
@@ -117,6 +120,8 @@ export function RiderSignIn({ token, hasPassword, hasPasskey }: { token: string;
     setError("");
     try {
       await action();
+      // Neue Anmeldung: Seiten einer früheren Sitzung auf diesem Gerät verwerfen.
+      await clearRiderLocalData();
       window.location.assign(home);
       return;
     } catch (e) {
@@ -207,6 +212,8 @@ export function RiderSecurity({ token, hasPassword, passkeys }: { token: string;
   async function logout() {
     setBusy(true);
     await post(`${api}/logout`).catch(() => null);
+    // Lokal gespeicherte Seiten (Abo, Gutscheine, Familie) gehören nicht aufs Gerät, wenn niemand angemeldet ist.
+    await clearRiderLocalData();
     window.location.assign(`/app/${encodeURIComponent(token)}`);
   }
 

@@ -8,6 +8,13 @@
  *  - Statische Dateien (/_next/static, Icons, Manifest, Splash) kommen aus
  *    dem Cache und werden im Hintergrund aufgefrischt.
  *  - /api wird nie gecacht: alles dort ist personen- oder zeitbezogen.
+ *  - Kunden-App (/app/<token>/…): Seiten kommen sofort aus einem lokalen
+ *    Cache und werden dabei im Hintergrund vom Server erneuert (der Server
+ *    bleibt fuehrend, die Seite selbst holt danach frische Daten, siehe
+ *    src/components/rider/rider-sync.tsx). Nur angemeldete Seiten mit 200,
+ *    hoechstens RIDER_MAX_ENTRIES Stueck und RIDER_MAX_AGE_MS alt. Leitet
+ *    der Server zur Anmeldung um, fliegen die Seiten dieses Fahrers raus;
+ *    beim Abmelden loescht die App den ganzen Cache.
  *  - Web-Push anzeigen, Klick oeffnet die passende Seite, abgelaufene Abos
  *    werden still erneuert.
  *
@@ -18,8 +25,15 @@
  * VERSION bei jeder Aenderung an dieser Datei hochzaehlen: alte Caches
  * werden beim Aktivieren weggeraeumt.
  */
-const VERSION = "2026-11-15-3";
+const VERSION = "2026-11-16-1";
 const STATIC_CACHE = `emp-static-${VERSION}`;
+// Name muss zu RIDER_CACHE_PREFIX in src/lib/rider-local.ts passen (Abmelden loescht danach).
+const RIDER_CACHE = `emp-rider-${VERSION}`;
+const RIDER_MAX_ENTRIES = 40;
+const RIDER_MAX_AGE_MS = 14 * 86_400_000;
+/** Wird dieselbe Seite so kurz nach einer Cache-Antwort erneut geladen, geht es ans Netz (Neuladen, neuer Build). */
+const RIDER_RELOAD_MS = 10_000;
+const CACHED_AT = "x-emp-cached-at";
 const OFFLINE_URL = "/offline";
 const PRECACHE = [OFFLINE_URL, "/manifest.json", "/icon-192.png", "/icon-512.png", "/apple-icon.png", "/logo.png", "/logo-dark.png"];
 
@@ -37,7 +51,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("emp-") && k !== STATIC_CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("emp-") && k !== STATIC_CACHE && k !== RIDER_CACHE).map((k) => caches.delete(k))))
       .then(() => (self.registration.navigationPreload ? self.registration.navigationPreload.enable().catch(() => {}) : null))
       .then(() => self.clients.claim()),
   );
@@ -56,6 +70,88 @@ function isStaticAsset(url) {
   );
 }
 
+/**
+ * Token der Kunden-App, wenn der Pfad eine angemeldete Seite ist, die lokal
+ * vorgehalten werden darf; sonst null. Anmelden/Einrichten, Manifest,
+ * Mail- und Familien-Links bleiben aussen vor.
+ */
+function riderCacheToken(pathname) {
+  const m = /^\/app\/([^/]+)(\/.*)?$/.exec(pathname);
+  if (!m) return null;
+  const token = m[1];
+  if (token === "familie" || token === "mail" || decodeURIComponent(token).length < 16) return null;
+  const rest = m[2] || "";
+  if (/^\/(anmelden|einrichten)(\/|$)/.test(rest) || /\.[a-z]+$/i.test(rest)) return null;
+  return token;
+}
+
+/** Leitet der Server von einer Fahrer-Seite weg (Anmeldung, Einrichten), ist die Sitzung dort vorbei. */
+function isSignedOut(res) {
+  if (!res) return false;
+  if (res.redirected) return true;
+  return res.type === "opaqueredirect" || res.status === 401 || res.status === 403;
+}
+
+const riderServedAt = new Map();
+
+async function purgeRiderToken(token) {
+  const cache = await caches.open(RIDER_CACHE);
+  const prefix = `${self.location.origin}/app/${token}`;
+  const keys = await cache.keys();
+  await Promise.all(keys.filter((r) => r.url === prefix || r.url.startsWith(`${prefix}/`) || r.url.startsWith(`${prefix}?`)).map((r) => cache.delete(r)));
+}
+
+async function storeRider(cacheKey, res) {
+  const type = res.headers.get("content-type") || "";
+  if (!res.ok || res.redirected || res.status !== 200 || !type.includes("text/html")) return;
+  const headers = new Headers(res.headers);
+  headers.set(CACHED_AT, String(Date.now()));
+  const body = await res.clone().blob();
+  const cache = await caches.open(RIDER_CACHE);
+  await cache.put(cacheKey, new Response(body, { status: 200, statusText: res.statusText, headers }));
+  const keys = await cache.keys();
+  // cache.keys() liefert in Einfuegereihenfolge: aelteste zuerst entfernen.
+  const extra = keys.length - RIDER_MAX_ENTRIES;
+  if (extra > 0) await Promise.all(keys.slice(0, extra).map((r) => cache.delete(r)));
+}
+
+function riderNavigation(event, token) {
+  const { request } = event;
+  const url = new URL(request.url);
+  url.hash = "";
+  const cacheKey = url.toString();
+
+  const network = (async () => {
+    const preloaded = await Promise.resolve(event.preloadResponse).catch(() => null);
+    const res = preloaded || (await fetch(request));
+    if (isSignedOut(res)) await purgeRiderToken(token).catch(() => {});
+    else if (res.status === 404) await caches.open(RIDER_CACHE).then((c) => c.delete(cacheKey)).catch(() => {});
+    else await storeRider(cacheKey, res).catch(() => {});
+    return res;
+  })();
+
+  return (async () => {
+    const cache = await caches.open(RIDER_CACHE);
+    const cached = await cache.match(cacheKey);
+    const age = cached ? Date.now() - Number(cached.headers.get(CACHED_AT) || 0) : Infinity;
+    const servedAt = riderServedAt.get(cacheKey) || 0;
+    const fresh = cached && age < RIDER_MAX_AGE_MS && Date.now() - servedAt > RIDER_RELOAD_MS;
+    if (cached && !fresh && age >= RIDER_MAX_AGE_MS) await cache.delete(cacheKey);
+    if (fresh) {
+      riderServedAt.set(cacheKey, Date.now());
+      event.waitUntil(network.catch(() => null));
+      return cached;
+    }
+    try {
+      return await network;
+    } catch {
+      // Ohne Netz lieber den letzten Stand zeigen als die Offline-Seite.
+      if (cached && age < RIDER_MAX_AGE_MS) return cached;
+      throw new Error("offline");
+    }
+  })();
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -65,6 +161,16 @@ self.addEventListener("fetch", (event) => {
   if (request.headers.has("range")) return;
 
   if (request.mode === "navigate") {
+    const riderToken = riderCacheToken(url.pathname);
+    if (riderToken) {
+      event.respondWith(
+        riderNavigation(event, riderToken).catch(async () => {
+          const offline = await caches.match(OFFLINE_URL);
+          return offline || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+        }),
+      );
+      return;
+    }
     event.respondWith(
       (async () => {
         const preloaded = await Promise.resolve(event.preloadResponse).catch(() => null);

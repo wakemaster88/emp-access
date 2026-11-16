@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { clearRiderLocalData } from "@/lib/rider-local";
 
 export interface FamilyMemberItem {
   profileId: number;
@@ -234,6 +235,8 @@ function FamilyAction({ url, body, label, fallback }: { url: string; body: Recor
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (res.ok) {
+        // Familie hat sich geändert: lokal gespeicherte Seiten der Mitglieder verwerfen.
+        await clearRiderLocalData();
         window.location.assign(typeof json.url === "string" ? json.url : fallback ?? "/app");
         return;
       }

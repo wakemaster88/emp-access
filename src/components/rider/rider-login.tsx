@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { clearRiderLocalData } from "@/lib/rider-local";
 
 /** Anmeldung: Kartennummer des Abos und Geburtsdatum führen zum persönlichen Link. */
 export function RiderLogin() {
@@ -22,6 +23,7 @@ export function RiderLogin() {
       });
       const json = await res.json().catch(() => ({}));
       if (res.ok && typeof json.url === "string") {
+        await clearRiderLocalData();
         window.location.assign(json.url);
         return;
       }
