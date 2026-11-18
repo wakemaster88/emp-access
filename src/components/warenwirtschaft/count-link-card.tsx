@@ -8,9 +8,9 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 
-function countUrl(token: string): string {
-  if (typeof window === "undefined") return `/zaehlen/${token}`;
-  return `${window.location.origin}/zaehlen/${token}`;
+function countUrl(path: string, token: string): string {
+  if (typeof window === "undefined") return `${path}${token}`;
+  return `${window.location.origin}${path}${token}`;
 }
 
 function LinkQr({ url }: { url: string }) {
@@ -23,12 +23,46 @@ function LinkQr({ url }: { url: string }) {
   return <canvas ref={ref} className="size-[180px] shrink-0 rounded-md border border-border bg-white p-1" aria-label="QR-Code zum Zähl-Link" role="img" />;
 }
 
+/** Zähl-Link einer Inventur (wird beim Anlegen erzeugt). */
+export function StocktakeLinkCard({ stocktakeId, token, expiresAt }: { stocktakeId: number; token: string | null; expiresAt: string | null }) {
+  return (
+    <CountLinkCard
+      token={token}
+      expiresAt={expiresAt}
+      path="/zaehlen/"
+      createUrl={`/api/warenwirtschaft/stocktakes/${stocktakeId}/link`}
+      revokeUrl={`/api/warenwirtschaft/stocktakes/${stocktakeId}/link`}
+      description="Mitarbeiter scannen den Code oder öffnen den Link und zählen ohne Anmeldung. Sie sehen nur diese Inventur, keine Preise und keinen Soll-Bestand, und können fehlende Artikel und Fotos ergänzen."
+      validity="oder bis zum Festschreiben"
+    />
+  );
+}
+
 /**
- * Zähl-Link fürs Handy: QR-Code und Link für Mitarbeiter ohne Login. Wird
- * beim Anlegen der Inventur erzeugt; hier lässt er sich teilen, erneuern
- * (der alte wird ungültig) oder sperren.
+ * Zähl-Link fürs Handy: QR-Code und Link für Mitarbeiter ohne Login. Lässt
+ * sich teilen, erneuern (der alte wird ungültig) oder sperren.
  */
-export function StocktakeLinkCard({ stocktakeId, token: initialToken, expiresAt: initialExpires }: { stocktakeId: number; token: string | null; expiresAt: string | null }) {
+export function CountLinkCard({
+  token: initialToken,
+  expiresAt: initialExpires,
+  path,
+  createUrl,
+  createBody = {},
+  revokeUrl,
+  description,
+  validity,
+  title = "Zählen am Handy",
+}: {
+  token: string | null;
+  expiresAt: string | null;
+  path: string;
+  createUrl: string;
+  createBody?: Record<string, unknown>;
+  revokeUrl: string;
+  description: string;
+  validity?: string;
+  title?: string;
+}) {
   const [token, setToken] = useState(initialToken);
   const [expiresAt, setExpiresAt] = useState(initialExpires);
   const [busy, setBusy] = useState(false);
@@ -38,13 +72,13 @@ export function StocktakeLinkCard({ stocktakeId, token: initialToken, expiresAt:
   const [confirmRevoke, setConfirmRevoke] = useState(false);
 
   const expired = expiresAt != null && new Date(expiresAt) < new Date();
-  const url = token ? countUrl(token) : "";
+  const url = token ? countUrl(path, token) : "";
 
   async function create() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/warenwirtschaft/stocktakes/${stocktakeId}/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const res = await fetch(createUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(createBody) });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(typeof body?.error === "string" ? body.error : "Link konnte nicht erzeugt werden");
       setToken(body.token);
@@ -58,7 +92,7 @@ export function StocktakeLinkCard({ stocktakeId, token: initialToken, expiresAt:
   }
 
   async function revoke() {
-    const res = await fetch(`/api/warenwirtschaft/stocktakes/${stocktakeId}/link`, { method: "DELETE" });
+    const res = await fetch(revokeUrl, { method: "DELETE" });
     if (!res.ok) throw new Error("Sperren fehlgeschlagen");
     setToken(null);
     setExpiresAt(null);
@@ -85,11 +119,9 @@ export function StocktakeLinkCard({ stocktakeId, token: initialToken, expiresAt:
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Smartphone className="h-4 w-4 text-muted-foreground" />
-          Zählen am Handy
+          {title}
         </CardTitle>
-        <CardDescription>
-          Mitarbeiter scannen den Code oder öffnen den Link und zählen ohne Anmeldung. Sie sehen nur diese Inventur, keine Preise und keinen Soll-Bestand.
-        </CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {error && <Notice tone="danger" compact role="alert" title={error} />}
@@ -116,7 +148,7 @@ export function StocktakeLinkCard({ stocktakeId, token: initialToken, expiresAt:
                   Sperren
                 </Button>
               </div>
-              {expiresAt && <p className="text-xs text-muted-foreground">Gültig bis {new Date(expiresAt).toLocaleDateString("de-DE")} oder bis zum Festschreiben.</p>}
+              {expiresAt && <p className="text-xs text-muted-foreground">Gültig bis {new Date(expiresAt).toLocaleDateString("de-DE")}{validity ? ` ${validity}` : ""}.</p>}
             </div>
           </div>
         ) : (

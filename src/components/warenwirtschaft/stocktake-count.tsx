@@ -14,7 +14,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArticleThumb } from "./article-visual";
 import { QtyInput, type Field } from "./qty-input";
-import { StocktakeLinkCard } from "./stocktake-link-card";
+import { StocktakeLinkCard } from "./count-link-card";
 import { formatEuro, formatQty, parseGermanNumber, stocktakeTotals, totalsByCategory, valueCents } from "@/lib/warenwirtschaft";
 import { AlertTriangle, CheckCircle2, ClipboardList, Download, Euro, Lock, Trash2 } from "lucide-react";
 

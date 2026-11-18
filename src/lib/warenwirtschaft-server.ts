@@ -124,3 +124,42 @@ export const publicArticleSchema = z.object({
 
 /** Höchstens so viele Artikel dürfen je Inventur über den Zähl-Link dazukommen. */
 export const MAX_PUBLIC_ARTICLES = 100;
+
+/** Foto vom Handy: verkleinerte JPEG/PNG/WebP-Data-URL, höchstens ~300 KB. */
+export const publicImageSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  id: z.number().int(),
+  image: z
+    .string()
+    .max(400_000, "Foto ist zu groß")
+    .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/, "Kein gültiges Foto"),
+});
+
+/** Zählungen eines Inventar-Blatts über den Zähl-Link. */
+export const publicAssetCountSchema = z.object({
+  name: z.string().trim().min(1, "Bitte deinen Namen eingeben").max(60),
+  counts: z.array(z.object({ assetId: z.number().int(), quantity: qty.nullable() })).min(1).max(200),
+});
+
+/** Neuer Inventar-Posten vom Handy. */
+export const publicAssetSchema = z.object({
+  name: z.string().trim().min(1, "Bitte deinen Namen eingeben").max(60),
+  asset: z.object({
+    name: z.string().trim().min(1, "Bezeichnung fehlt").max(200),
+    location: optText(80),
+    quantity: qty.nullable().optional(),
+  }),
+});
+
+export const inventoryLinkSchema = z.object({
+  group: z.string().trim().min(1).max(60),
+  year: z.number().int().min(2000).max(2100).optional(),
+});
+
+/** Bilder für die Handy-Seiten: Web-Adressen und kleine eigene Fotos, keine großen Data-URLs. */
+export function publicImage(image: string | null | undefined): string | null {
+  if (!image) return null;
+  if (image.startsWith("https://")) return image;
+  if (image.startsWith("data:image/") && image.length <= 400_000) return image;
+  return null;
+}

@@ -4,17 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ClipboardList,
-  Loader2,
   Plus,
   ShieldAlert,
   UserRound,
-  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { IconChip, type ChipTone } from "@/components/ui/icon-chip";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SearchInput } from "@/components/ui/search-input";
@@ -24,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { ArticleThumb } from "./article-visual";
 import { QtyInput, type Field } from "./qty-input";
 import { AddArticleDialog } from "./public-add-article";
+import { LoadingCard, NameGate, PhotoButton, Shell, StateCard, readCounterName, uploadPhoto } from "./public-count-shared";
 import { parseGermanNumber } from "@/lib/warenwirtschaft";
 
 export interface Line {
@@ -49,24 +45,7 @@ interface Payload {
 
 type View = "open" | "counted" | "all";
 
-const NAME_KEY = "wawi-count-name";
 const REFRESH_MS = 30_000;
-
-function readName(): string {
-  try {
-    return localStorage.getItem(NAME_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function saveName(name: string) {
-  try {
-    localStorage.setItem(NAME_KEY, name);
-  } catch {
-    /* privates Fenster: Name gilt nur für diese Sitzung */
-  }
-}
 
 /**
  * Zählseite fürs Handy (`/zaehlen/<token>`), ohne Login. Mitarbeiter geben
@@ -78,10 +57,7 @@ export function PublicCountClient({ token }: { token: string }) {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [gone, setGone] = useState<string | null>(null);
-  const [name, setName] = useState(() =>
-    typeof window === "undefined" ? "" : readName(),
-  );
-  const [nameDraft, setNameDraft] = useState(name);
+  const [name, setName] = useState(readCounterName);
   const [view, setView] = useState<View>("open");
   const [showBroken, setShowBroken] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -213,6 +189,15 @@ export function PublicCountClient({ token }: { token: string }) {
     [name, token],
   );
 
+  async function savePhoto(line: Line, image: string) {
+    const err = await uploadPhoto(`/api/zaehlen/${token}/image`, { name, id: line.id, image });
+    if (err) {
+      setError(err);
+      return;
+    }
+    setData((d) => d && { ...d, lines: d.lines.map((l) => (l.id === line.id ? { ...l, image } : l)) });
+  }
+
   if (gone) {
     return (
       <Shell accountName={data?.accountName}>
@@ -229,10 +214,7 @@ export function PublicCountClient({ token }: { token: string }) {
   if (loading || !data) {
     return (
       <Shell>
-        <Card className="flex-row items-center justify-center gap-2 py-16 text-sm text-muted-foreground sm:py-16">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Lädt …
-        </Card>
+        <LoadingCard />
       </Shell>
     );
   }
@@ -244,55 +226,13 @@ export function PublicCountClient({ token }: { token: string }) {
   if (!name) {
     return (
       <Shell accountName={data.accountName}>
-        <Card>
-          <CardContent className="space-y-4 py-2">
-            <div className="flex items-center gap-3">
-              <IconChip icon={ClipboardList} tone="primary" size="lg" />
-              <div className="min-w-0">
-                <p className="font-semibold text-foreground [overflow-wrap:anywhere]">
-                  {data.title}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {data.kind === "CUTOFF" ? "Stichtag" : "Zähltag"} {dateLabel}{" "}
-                  · {data.lines.length} Artikel
-                </p>
-              </div>
-            </div>
-            <form
-              className="space-y-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const n = nameDraft.trim().slice(0, 60);
-                if (!n) return;
-                saveName(n);
-                setName(n);
-              }}
-            >
-              <div className="space-y-1.5">
-                <Label htmlFor="count-name">Dein Name</Label>
-                <Input
-                  id="count-name"
-                  value={nameDraft}
-                  onChange={(e) => setNameDraft(e.target.value)}
-                  autoComplete="name"
-                  autoFocus
-                  className="h-11"
-                  maxLength={60}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Damit sieht das Büro, wer was gezählt hat.
-                </p>
-              </div>
-              <Button
-                type="submit"
-                className="h-11 w-full"
-                disabled={!nameDraft.trim()}
-              >
-                Zählen starten
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        <NameGate
+          icon={ClipboardList}
+          title={data.title}
+          subtitle={`${data.kind === "CUTOFF" ? "Stichtag" : "Zähltag"} ${dateLabel} · ${data.lines.length} Artikel`}
+          initial=""
+          onName={setName}
+        />
       </Shell>
     );
   }
@@ -431,13 +371,10 @@ export function PublicCountClient({ token }: { token: string }) {
                   key={l.id}
                   className="flex min-h-14 items-center gap-2.5 px-3 py-1.5"
                 >
-                  {l.image && (
-                    <ArticleThumb
-                      image={l.image}
-                      name={l.name}
-                      category={l.category}
-                      className="size-9"
-                    />
+                  {l.image ? (
+                    <ArticleThumb image={l.image} name={l.name} category={l.category} className="size-11" />
+                  ) : (
+                    <PhotoButton label={`Foto aufnehmen: ${l.name}`} onError={setError} onPhoto={(img) => savePhoto(l, img)} />
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground [overflow-wrap:anywhere]">
@@ -526,47 +463,5 @@ export function PublicCountClient({ token }: { token: string }) {
         </p>
       </div>
     </Shell>
-  );
-}
-
-function Shell({
-  children,
-  accountName,
-}: {
-  children: React.ReactNode;
-  accountName?: string;
-}) {
-  return (
-    <main className="page-ambient min-h-dvh px-4 py-6">
-      <div className="mx-auto w-full max-w-xl">
-        {accountName && <p className="text-label mb-3">{accountName}</p>}
-        {children}
-      </div>
-    </main>
-  );
-}
-
-function StateCard({
-  icon,
-  tone,
-  title,
-  text,
-}: {
-  icon: LucideIcon;
-  tone: ChipTone;
-  title: string;
-  text: string;
-}) {
-  return (
-    <Card className="items-center gap-3 px-6 py-10 text-center sm:py-10">
-      <IconChip
-        icon={icon}
-        tone={tone}
-        size="lg"
-        className="size-14 rounded-tile [&_svg]:size-7"
-      />
-      <p className="text-base font-semibold text-foreground">{title}</p>
-      <p className="max-w-sm text-sm text-muted-foreground">{text}</p>
-    </Card>
   );
 }

@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableR
 import { assetYears, formatQty, parseGermanNumber } from "@/lib/warenwirtschaft";
 import { Archive, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ArticleThumb } from "./article-visual";
 
 export interface AssetData {
   id: number;
@@ -24,6 +25,7 @@ export interface AssetData {
   deviceNumber: string | null;
   lastInspection: string | null;
   note: string | null;
+  image?: string | null;
   counts: Record<number, number>;
 }
 
@@ -315,12 +317,17 @@ export function AssetsView({
             {filtered.map((a) => (
               <TableRow key={a.id} className="cursor-pointer" onClick={() => setSelected(a)}>
                 <TableCell className="max-w-0 w-full whitespace-normal">
-                  <p className="font-medium text-foreground [overflow-wrap:anywhere]">{a.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    <span className="md:hidden">{a.location ?? "–"}</span>
-                    {a.deviceNumber && <span> · Nr. {a.deviceNumber}</span>}
-                    {prev != null && <span className="sm:hidden"> · {prev}: {formatQty(a.counts[prev])}</span>}
-                  </p>
+                  <div className="flex items-center gap-2.5">
+                    {a.image && <ArticleThumb image={a.image} name={a.name} category="" className="size-9" />}
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground [overflow-wrap:anywhere]">{a.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="md:hidden">{a.location ?? "–"}</span>
+                        {a.deviceNumber && <span> · Nr. {a.deviceNumber}</span>}
+                        {prev != null && <span className="sm:hidden"> · {prev}: {formatQty(a.counts[prev])}</span>}
+                      </p>
+                    </div>
+                  </div>
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground md:table-cell">{a.location ?? "–"}</TableCell>
                 <TableCell className="hidden tabular-nums text-muted-foreground lg:table-cell">{fmtDate(a.lastInspection)}</TableCell>

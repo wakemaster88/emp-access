@@ -35,6 +35,7 @@ export const TENANT_MODELS = new Set<string>([
   "InfoRequest",
   "InventoryAsset",
   "InventoryAssetCount",
+  "InventoryCountLink",
   "IrrigationRun",
   "IrrigationSchedule",
   "KeyDoor",
