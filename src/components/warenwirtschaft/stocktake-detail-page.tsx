@@ -50,6 +50,8 @@ export async function StocktakeDetailPage({
             status: st.status,
             closedAt: st.closedAt?.toISOString() ?? null,
             closedBy: st.closedBy,
+            countToken: st.countToken,
+            countTokenExpiresAt: st.countTokenExpiresAt?.toISOString() ?? null,
           }}
           initialLines={st.lines.map((l) => ({
             id: l.id,
@@ -61,6 +63,7 @@ export async function StocktakeDetailPage({
             expected: l.expected,
             counted: l.counted,
             broken: l.broken,
+            countedBy: l.countedBy,
             image: l.article?.image ?? null,
           }))}
         />

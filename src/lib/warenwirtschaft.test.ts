@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   candidatesFromOff,
+  countLinkState,
+  isPlausibleCountToken,
   defaultCutoffDate,
   matchScore,
   parseEuroToCents,
@@ -67,4 +69,22 @@ test("candidatesFromOff sortiert nach Treffer und verlangt https-Bilder", () => 
   ]);
   assert.deepEqual(c.map((x) => x.code), ["2", "1"]);
   assert.equal(c[0].productUrl, "https://world.openfoodfacts.org/product/2");
+});
+
+test("countLinkState: nur offene Inventur mit gültigem Link", () => {
+  const now = new Date("2026-11-18T10:00:00Z");
+  const later = new Date("2026-11-20T10:00:00Z");
+  const earlier = new Date("2026-11-17T10:00:00Z");
+  assert.equal(countLinkState({ status: "OPEN", countToken: "x", countTokenExpiresAt: later }, now), "OK");
+  assert.equal(countLinkState({ status: "OPEN", countToken: "x", countTokenExpiresAt: null }, now), "OK");
+  assert.equal(countLinkState({ status: "OPEN", countToken: "x", countTokenExpiresAt: earlier }, now), "EXPIRED");
+  assert.equal(countLinkState({ status: "OPEN", countToken: null, countTokenExpiresAt: later }, now), "NONE");
+  assert.equal(countLinkState({ status: "CLOSED", countToken: "x", countTokenExpiresAt: later }, now), "CLOSED");
+});
+
+test("isPlausibleCountToken prüft Länge und Zeichen", () => {
+  assert.equal(isPlausibleCountToken("a".repeat(43)), true);
+  assert.equal(isPlausibleCountToken("kurz"), false);
+  assert.equal(isPlausibleCountToken("a".repeat(42) + "/"), false);
+  assert.equal(isPlausibleCountToken(undefined), false);
 });

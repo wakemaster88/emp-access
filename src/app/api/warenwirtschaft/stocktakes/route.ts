@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { badRequest, dateOnly, stocktakeCreateSchema, wawiSession } from "@/lib/warenwirtschaft-server";
+import { badRequest, countTokenExpiry, dateOnly, newCountToken, stocktakeCreateSchema, wawiSession } from "@/lib/warenwirtschaft-server";
 
 /**
  * POST /api/warenwirtschaft/stocktakes – Inventur anlegen.
  * Legt für jeden aktiven Artikel (laufende Inventur: nur die gewählten
- * Kategorien) eine Zeile mit dem aktuellen Bestand als Soll an.
+ * Kategorien) eine Zeile mit dem aktuellen Bestand als Soll an und erzeugt
+ * gleich den Zähl-Link fürs Handy (`/zaehlen/<token>`).
  */
 export async function POST(request: NextRequest) {
   const s = await wawiSession();
@@ -43,6 +44,8 @@ export async function POST(request: NextRequest) {
       title: title.slice(0, 160),
       date: d,
       note,
+      countToken: newCountToken(),
+      countTokenExpiresAt: countTokenExpiry(),
       lines: {
         create: articles.map((a) => ({
           accountId: s.accountId,
