@@ -110,3 +110,17 @@ export const publicCountSchema = z.object({
   name: z.string().trim().min(1, "Bitte deinen Namen eingeben").max(60),
   lines: stocktakeLinesSchema.shape.lines.max(200),
 });
+
+/** Neuer Artikel, den ein Mitarbeiter beim Zählen am Handy anlegt (ohne Preis). */
+export const publicArticleSchema = z.object({
+  name: z.string().trim().min(1, "Bitte deinen Namen eingeben").max(60),
+  article: z.object({
+    name: z.string().trim().min(1, "Bezeichnung fehlt").max(200),
+    unit: optText(40),
+    category: z.string().trim().min(1).max(60),
+    counted: qty.nullable().optional(),
+  }),
+});
+
+/** Höchstens so viele Artikel dürfen je Inventur über den Zähl-Link dazukommen. */
+export const MAX_PUBLIC_ARTICLES = 100;

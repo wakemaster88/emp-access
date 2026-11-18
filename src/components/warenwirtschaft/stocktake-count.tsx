@@ -246,9 +246,12 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
                       <TableCell className="max-w-0 w-full whitespace-normal">
                         <p className="font-medium text-foreground [overflow-wrap:anywhere]">{l.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {[l.unit, formatEuro(l.purchasePriceCents), l.countedBy ? `gezählt von ${l.countedBy}` : null].filter(Boolean).join(" · ")}
+                          {[l.unit, l.purchasePriceCents != null ? formatEuro(l.purchasePriceCents) : null, l.countedBy ? `gezählt von ${l.countedBy}` : null].filter(Boolean).join(" · ")}
                           <span className="md:hidden"> · Soll {formatQty(l.expected)}</span>
                         </p>
+                        {l.purchasePriceCents == null && !closed && (
+                          <Badge variant="warning" className="mr-1 mt-1">EK fehlt</Badge>
+                        )}
                         {diff && (
                           <Badge variant={l.counted! < l.expected ? "danger" : "info"} className="mt-1">
                             {l.counted! > l.expected ? "+" : ""}{formatQty(l.counted! - l.expected)}

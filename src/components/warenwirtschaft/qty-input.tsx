@@ -17,6 +17,7 @@ export function QtyInput({
   label,
   field,
   invalid,
+  placeholder,
   className,
 }: {
   field: Field;
@@ -24,6 +25,7 @@ export function QtyInput({
   onCommit: (raw: string) => void;
   label: string;
   invalid?: boolean;
+  placeholder?: string;
   className?: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -32,6 +34,7 @@ export function QtyInput({
       inputMode="decimal"
       enterKeyHint="next"
       aria-label={label}
+      placeholder={placeholder}
       aria-invalid={invalid || undefined}
       value={draft ?? toInput(value)}
       onFocus={(e) => e.currentTarget.select()}
