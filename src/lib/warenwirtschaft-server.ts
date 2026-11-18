@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { COUNT_LINK_DAYS } from "@/lib/warenwirtschaft";
 import { getSessionWithDb } from "@/lib/api-auth";
 import type { TenantDb } from "@/lib/prisma";
 
@@ -88,4 +90,23 @@ export const assetSchema = z.object({
 export const assetCountSchema = z.object({
   year: z.number().int().min(2000).max(2100),
   quantity: qty.nullable(),
+});
+
+/** Neues Geheimnis für den Zähl-Link (32 Byte, base64url). */
+export function newCountToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+export function countTokenExpiry(days = COUNT_LINK_DAYS, now = new Date()): Date {
+  return new Date(now.getTime() + days * 86_400_000);
+}
+
+export const countLinkCreateSchema = z.object({
+  days: z.number().int().min(1).max(90).optional(),
+});
+
+/** Eingaben über den Zähl-Link: Name der zählenden Person plus Mengen. */
+export const publicCountSchema = z.object({
+  name: z.string().trim().min(1, "Bitte deinen Namen eingeben").max(60),
+  lines: stocktakeLinesSchema.shape.lines.max(200),
 });

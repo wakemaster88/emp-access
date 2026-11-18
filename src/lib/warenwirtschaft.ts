@@ -216,3 +216,24 @@ export function candidatesFromOff(articleName: string, products: OffProduct[]): 
 export function offSearchTerms(articleName: string): string {
   return nameTokens(articleName).join(" ");
 }
+
+/** So lange gilt ein Zähl-Link fürs Handy, wenn er erzeugt oder erneuert wird. */
+export const COUNT_LINK_DAYS = 14;
+
+export type CountLinkState = "OK" | "NONE" | "EXPIRED" | "CLOSED";
+
+/** Darf über den Zähl-Link gezählt werden? Nur offene Inventur mit gültigem Link. */
+export function countLinkState(
+  st: { status: "OPEN" | "CLOSED"; countToken: string | null; countTokenExpiresAt: Date | null },
+  now = new Date(),
+): CountLinkState {
+  if (st.status !== "OPEN") return "CLOSED";
+  if (!st.countToken) return "NONE";
+  if (st.countTokenExpiresAt && st.countTokenExpiresAt.getTime() <= now.getTime()) return "EXPIRED";
+  return "OK";
+}
+
+/** Grobe Formprüfung, bevor die Datenbank gefragt wird (base64url, 32 Byte = 43 Zeichen). */
+export function isPlausibleCountToken(token: string | null | undefined): token is string {
+  return typeof token === "string" && /^[A-Za-z0-9_-]{32,64}$/.test(token);
+}

@@ -32,7 +32,7 @@ export function isKioskPath(pathname: string): boolean {
  * Update-Hinweis keine Neuerungen, denn die Liste stammt aus den PR-Titeln
  * und richtet sich an das Team.
  */
-const PUBLIC_PREFIXES = ["/app/", "/m/", "/info/", "/verein/", "/schluessel/", "/checkin/", "/monitor/", "/resource-monitor/", "/scanner/"];
+const PUBLIC_PREFIXES = ["/app/", "/zaehlen/", "/m/", "/info/", "/verein/", "/schluessel/", "/checkin/", "/monitor/", "/resource-monitor/", "/scanner/"];
 
 export function showsReleaseNotes(pathname: string): boolean {
   return !PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));

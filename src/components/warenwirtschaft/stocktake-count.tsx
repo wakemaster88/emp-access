@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { StatCard } from "@/components/ui/stat-card";
 import { Segmented } from "@/components/ui/segmented";
@@ -14,9 +13,10 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArticleThumb } from "./article-visual";
+import { QtyInput, type Field } from "./qty-input";
+import { StocktakeLinkCard } from "./stocktake-link-card";
 import { formatEuro, formatQty, parseGermanNumber, stocktakeTotals, totalsByCategory, valueCents } from "@/lib/warenwirtschaft";
 import { AlertTriangle, CheckCircle2, ClipboardList, Download, Euro, Lock, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 export interface CountLine {
   id: number;
@@ -28,6 +28,7 @@ export interface CountLine {
   expected: number;
   counted: number | null;
   broken: number | null;
+  countedBy: string | null;
   image: string | null;
 }
 
@@ -39,61 +40,11 @@ export interface StocktakeInfo {
   status: "OPEN" | "CLOSED";
   closedAt: string | null;
   closedBy: string | null;
+  countToken: string | null;
+  countTokenExpiresAt: string | null;
 }
 
 type View = "all" | "open" | "counted" | "diff";
-type Field = "counted" | "broken";
-
-function toInput(v: number | null): string {
-  return v == null ? "" : v.toLocaleString("de-DE", { maximumFractionDigits: 3, useGrouping: false });
-}
-
-/** Zahlenfeld einer Zählzeile: übernimmt beim Verlassen, Enter springt weiter. */
-function QtyInput({
-  value,
-  onCommit,
-  label,
-  field,
-  invalid,
-  className,
-}: {
-  field: Field;
-  value: number | null;
-  onCommit: (raw: string) => void;
-  label: string;
-  invalid?: boolean;
-  className?: string;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  return (
-    <Input
-      inputMode="decimal"
-      enterKeyHint="next"
-      aria-label={label}
-      aria-invalid={invalid || undefined}
-      value={draft ?? toInput(value)}
-      onFocus={(e) => e.currentTarget.select()}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (draft !== null) onCommit(draft);
-        setDraft(null);
-      }}
-      onKeyDown={(e) => {
-        if (e.key !== "Enter") return;
-        e.preventDefault();
-        // Weiter zum gleichen Feld der nächsten sichtbaren Zeile (Ist → Ist, Bruch → Bruch).
-        const field = e.currentTarget.dataset.countInput;
-        const inputs = [...document.querySelectorAll<HTMLInputElement>(`input[data-count-input="${field}"]`)].filter((el) => el.offsetParent !== null);
-        const next = inputs[inputs.indexOf(e.currentTarget) + 1];
-        if (next) next.focus();
-        else e.currentTarget.blur();
-      }}
-      data-count-input={field}
-      className={cn("h-11 px-2 text-right tabular-nums sm:h-9", className)}
-    />
-  );
-}
-
 export function StocktakeCount({ info, initialLines, listPath }: { info: StocktakeInfo; initialLines: CountLine[]; listPath: string }) {
   const router = useRouter();
   const cutoff = info.kind === "CUTOFF";
@@ -108,6 +59,25 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const queue = useRef<Promise<void>>(Promise.resolve());
+
+  // Laufende Speichervorgänge, für die Effekte unten (State wäre dort veraltet).
+  const savingRef = useRef(0);
+
+  // Neuer Serverstand (z. B. Zählungen vom Handy) übernehmen, außer während gespeichert wird.
+  useEffect(() => {
+    if (savingRef.current === 0) setLines(initialLines);
+  }, [initialLines]);
+
+  // Offene Inventur: alle 30 Sekunden abgleichen, damit Zählungen vom Handy hier erscheinen.
+  useEffect(() => {
+    if (closed) return;
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible" || savingRef.current > 0) return;
+      if (document.activeElement?.matches("input[data-count-input]")) return;
+      router.refresh();
+    }, 30_000);
+    return () => clearInterval(t);
+  }, [closed, router]);
 
   const categories = useMemo(() => [...new Set(initialLines.map((l) => l.category))], [initialLines]);
   const totals = stocktakeTotals(lines);
@@ -141,6 +111,7 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
       });
       if (parsed === line[field]) return;
       setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, [field]: parsed } : l)));
+      savingRef.current += 1;
       setSaving((n) => n + 1);
       setError("");
       // Nacheinander speichern, damit eine spätere Eingabe nicht überholt wird.
@@ -155,6 +126,7 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
         } catch {
           setError("Speichern fehlgeschlagen. Prüfe die Verbindung und gib den Wert erneut ein.");
         } finally {
+          savingRef.current -= 1;
           setSaving((n) => n - 1);
         }
       });
@@ -193,6 +165,8 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
           hint="nur gezählte Artikel"
         />
       </div>
+
+      {!closed && <StocktakeLinkCard stocktakeId={info.id} token={info.countToken} expiresAt={info.countTokenExpiresAt} />}
 
       {closed && (
         <Notice tone="neutral" icon={Lock} title={`Festgeschrieben${info.closedAt ? ` am ${new Date(info.closedAt).toLocaleDateString("de-DE")}` : ""}${info.closedBy ? ` von ${info.closedBy}` : ""}`}>
@@ -272,7 +246,7 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
                       <TableCell className="max-w-0 w-full whitespace-normal">
                         <p className="font-medium text-foreground [overflow-wrap:anywhere]">{l.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {[l.unit, formatEuro(l.purchasePriceCents)].filter(Boolean).join(" · ")}
+                          {[l.unit, formatEuro(l.purchasePriceCents), l.countedBy ? `gezählt von ${l.countedBy}` : null].filter(Boolean).join(" · ")}
                           <span className="md:hidden"> · Soll {formatQty(l.expected)}</span>
                         </p>
                         {diff && (

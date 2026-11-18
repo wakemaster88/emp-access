@@ -3696,6 +3696,10 @@ model Stocktake {
   note      String?
   closedAt  DateTime?
   closedBy  String?
+  /// Geheimnis des Zähl-Links `/zaehlen/<token>` fürs Handy (ohne Login).
+  /// null = kein Link oder gesperrt. Gilt nur, solange die Inventur offen ist.
+  countToken          String?   @unique
+  countTokenExpiresAt DateTime?
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
   lines     StocktakeLine[]
@@ -3722,6 +3726,8 @@ model StocktakeLine {
   counted            Float?
   /// Bruch / Schwund, wird zusätzlich bewertet.
   broken             Float?
+  /// Wer zuletzt über den Zähl-Link gezählt hat (Name, den die Person eingibt).
+  countedBy          String?
   updatedAt          DateTime  @updatedAt
 
   @@unique([stocktakeId, articleId])

@@ -26,7 +26,8 @@ export async function POST(_request: NextRequest, { params }: Ctx) {
   }
   await s.db.stocktake.updateMany({
     where: { id, accountId: s.accountId, status: "OPEN" },
-    data: { status: "CLOSED", closedAt: new Date(), closedBy: s.userName.slice(0, 120) },
+    // Zähl-Link verfällt mit dem Festschreiben.
+    data: { status: "CLOSED", closedAt: new Date(), closedBy: s.userName.slice(0, 120), countToken: null, countTokenExpiresAt: null },
   });
   return NextResponse.json({ ok: true, updated: counted.length });
 }
