@@ -3,6 +3,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { SegmentedLinks } from "@/components/ui/segmented-links";
 import { AssetsView, CreateAssetButton, type AssetData } from "@/components/warenwirtschaft/assets-view";
 import { ASSET_GROUPS, assetYears, defaultAssetYear } from "@/lib/warenwirtschaft";
+import { WawiImportButton } from "@/components/warenwirtschaft/import-button";
 import { wawiPageSession } from "../wawi-page";
 
 export default async function InventarPage({ searchParams }: { searchParams: Promise<{ blatt?: string }> }) {
@@ -49,6 +50,9 @@ export default async function InventarPage({ searchParams }: { searchParams: Pro
             </CardAction>
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
+            <div className="px-4 pb-4 sm:px-[18px]">
+              <WawiImportButton hint="Inventarliste mit Blättern je Bereich und Spalten „Gerätenummer“, „Bereich“, „Menge 2025“." />
+            </div>
             <AssetsView key={group} assets={assets} group={group} groups={groups} defaultYear={year} />
           </CardContent>
         </Card>

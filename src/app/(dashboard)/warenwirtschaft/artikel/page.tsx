@@ -2,6 +2,7 @@ import { Header } from "@/components/layout/header";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Notice } from "@/components/ui/notice";
+import { WawiImportButton } from "@/components/warenwirtschaft/import-button";
 import { ArticlesView, CreateArticleButton } from "@/components/warenwirtschaft/articles-view";
 import { formatEuro, valueCents } from "@/lib/warenwirtschaft";
 import { Boxes, Euro, ImageOff } from "lucide-react";
@@ -41,13 +42,14 @@ export default async function ArtikelPage() {
             </CardAction>
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
-            {pendingSearch > 0 && (
-              <div className="px-4 pb-4 sm:px-[18px]">
+            <div className="space-y-3 px-4 pb-4 sm:px-[18px]">
+              <WawiImportButton hint="Inventurliste mit Bezeichnung, Einheit und EK netto. Ein Datum im Kopf wird als Stichtagsinventur übernommen." />
+              {pendingSearch > 0 && (
                 <Notice tone="info" compact title={`Für ${pendingSearch} Artikel wird im Hintergrund ein Produktfoto gesucht.`}>
                   Etwa 70 Artikel pro Stunde, Quelle Open Food Facts (CC BY-SA). Ohne eindeutigen Treffer bleibt das Symbol; im Artikel kannst du unter „Bild suchen“ selbst wählen oder ein Foto hochladen.
                 </Notice>
-              </div>
-            )}
+              )}
+            </div>
             <ArticlesView articles={articles} categories={categories} />
           </CardContent>
         </Card>

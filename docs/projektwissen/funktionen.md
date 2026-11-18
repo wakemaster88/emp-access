@@ -17,7 +17,7 @@ Neue Menügruppe „Warenwirtschaft“ mit vier Seiten:
 
 Produktfotos: der Cron `tick-5min` (Job `articleImages`) sucht für Artikel ohne Bild bei Open Food Facts (höchstens 6 je Lauf wegen des Suchlimits von etwa 10 pro Minute) und übernimmt ein Foto nur, wenn alle wesentlichen Wörter des Namens passen. Bildnachweis steht in `Article.imageSource` („Open Food Facts, CC BY-SA 3.0 · Link“) und wird im Artikel angezeigt. Im Artikel-Dialog: „Bild suchen“ (Kandidaten wählen) oder eigenes Foto.
 
-Die Daten der Excel-Dateien (Inventur Gastro per 31.12.2025, Inventarliste) liegen nur in der Datenbank, nicht im Repo (Preise und Bestände).
+Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf Artikel und Inventar): eigener kleiner .xlsx-Leser ohne Fremdpaket (`src/lib/xlsx-read.ts`), Blatterkennung in `src/lib/warenwirtschaft-import.ts`. Vorhandene Einträge bleiben unverändert, eine Datei darf mehrfach geladen werden. Ein Datum im Kopf der Inventurliste („Inventur zum 31.12.2025“) wird als festgeschriebene Stichtagsinventur übernommen. Die Excel-Daten selbst (Preise, Bestände) liegen nicht im öffentlichen Repo.
 
 ## Gamification für Abo-Fahrer, Etappe 1 (15.11.2026)
 

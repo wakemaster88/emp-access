@@ -35,6 +35,10 @@
       "maxDuration": 30,
       "memory": 1024
     },
+    "src/app/api/warenwirtschaft/import/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
     "src/app/api/cron/**/*.ts": {
       "maxDuration": 60,
       "memory": 1024
