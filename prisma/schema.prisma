@@ -167,6 +167,11 @@ model Account {
   monitorAlerts        MonitorAlert[]
   slotBlocks           SlotBlock[]
   lostItems            LostItem[]
+  articles             Article[]
+  stocktakes           Stocktake[]
+  stocktakeLines       StocktakeLine[]
+  inventoryAssets      InventoryAsset[]
+  inventoryAssetCounts InventoryAssetCount[]
   irrigationSchedules  IrrigationSchedule[]
   irrigationRuns       IrrigationRun[]
   pushSubscriptions    PushSubscription[]
@@ -3630,4 +3635,129 @@ model RiderPushSubscription {
 
   @@index([profileId])
   @@index([accountId])
+}
+
+// ─── Warenwirtschaft ────────────────────────────────────────────────────────
+
+/// Artikel der Warenwirtschaft (Getränke, Speisen, Shop-Ware). `stock` ist der
+/// aktuelle Bestand; eine abgeschlossene Inventur schreibt ihn auf den
+/// gezählten Wert. Preise in Cent (netto, Einkauf).
+model Article {
+  id                 Int             @id @default(autoincrement())
+  accountId          Int
+  account            Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name               String
+  sku                String?
+  category           String          @default("Sonstiges")
+  unit               String?
+  supplier           String?
+  purchasePriceCents Int?
+  stock              Float           @default(0)
+  /// Data-URL (eigenes Foto) oder https-Adresse (Open Food Facts).
+  image              String?         @db.Text
+  /// Bildnachweis, z. B. „Open Food Facts, CC BY-SA 3.0“.
+  imageSource        String?
+  /// Bildsuche ohne passenden Treffer: nicht bei jedem Lauf erneut fragen.
+  imageSearchedAt    DateTime?
+  active             Boolean         @default(true)
+  note               String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  stocktakeLines     StocktakeLine[]
+
+  @@index([accountId, category])
+  @@index([accountId, active])
+}
+
+enum StocktakeKind {
+  /// Laufende Inventur: Teilzählung jederzeit, z. B. ein Lager oder eine Kategorie.
+  ROLLING
+  /// Stichtagsinventur: alle Artikel zu einem Datum, wird festgeschrieben.
+  CUTOFF
+}
+
+enum StocktakeStatus {
+  OPEN
+  CLOSED
+}
+
+/// Eine Inventur (Zählung). Zeilen halten eine Momentaufnahme der Artikel-
+/// daten, damit eine festgeschriebene Inventur später gleich bleibt, auch
+/// wenn sich Preis oder Name des Artikels ändern.
+model Stocktake {
+  id        Int             @id @default(autoincrement())
+  accountId Int
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  kind      StocktakeKind
+  status    StocktakeStatus @default(OPEN)
+  title     String
+  /// Stichtag bzw. Zähltag (Datum, 00:00 UTC).
+  date      DateTime
+  note      String?
+  closedAt  DateTime?
+  closedBy  String?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  lines     StocktakeLine[]
+
+  @@index([accountId, kind, date])
+}
+
+model StocktakeLine {
+  id                 Int       @id @default(autoincrement())
+  accountId          Int
+  account            Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  stocktakeId        Int
+  stocktake          Stocktake @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  articleId          Int?
+  article            Article?  @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  name               String
+  sku                String?
+  category           String
+  unit               String?
+  purchasePriceCents Int?
+  /// Bestand laut System beim Anlegen der Inventur.
+  expected           Float     @default(0)
+  /// Gezählter Bestand; null = noch nicht gezählt.
+  counted            Float?
+  /// Bruch / Schwund, wird zusätzlich bewertet.
+  broken             Float?
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([stocktakeId, articleId])
+  @@index([accountId])
+}
+
+/// Inventarverzeichnis (Anlagen, Geräte, Ausstattung), gegliedert wie die
+/// Excel-Vorlage in Blätter (`group`, z. B. Gastronomie, Wasserski) und
+/// Bereiche (`location`). Mengen je Inventurjahr in InventoryAssetCount.
+model InventoryAsset {
+  id             Int                   @id @default(autoincrement())
+  accountId      Int
+  account        Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name           String
+  group          String
+  location       String?
+  deviceNumber   String?
+  lastInspection DateTime?
+  note           String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  counts         InventoryAssetCount[]
+
+  @@index([accountId, group])
+}
+
+model InventoryAssetCount {
+  id        Int            @id @default(autoincrement())
+  accountId Int
+  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  assetId   Int
+  asset     InventoryAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  year      Int
+  quantity  Float
+  updatedAt DateTime       @updatedAt
+
+  @@unique([assetId, year])
+  @@index([accountId, year])
 }

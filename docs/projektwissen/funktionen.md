@@ -4,6 +4,21 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Warenwirtschaft (18.11.2026)
+
+Neue Menügruppe „Warenwirtschaft“ mit vier Seiten:
+
+- **Artikel** (`/warenwirtschaft/artikel`): Bezeichnung, Kategorie, Einheit, EK netto (Cent), Bestand, Artikel-Nr., Lieferant, Bild. Lagerwert = Bestand × EK.
+- **Inventur** (`/warenwirtschaft/inventur`): laufende Zählung jederzeit, optional nur einzelne Kategorien. Soll = Bestand beim Anlegen, Abweichung wird bewertet.
+- **Stichtagsinventur** (`/warenwirtschaft/stichtag`): alle aktiven Artikel zu einem Datum (Vorschlag 31.12.), Bruch wird extra bewertet, Zusammenfassung je Kategorie wie das Excel-Blatt, CSV-Export. Pro Datum gibt es nur eine Stichtagsinventur.
+- **Inventar** (`/warenwirtschaft/inventar`): Inventarverzeichnis wie die Excel-Vorlage, Blätter Gastronomie, Strandbad, Wasserski, Events, Büro & Shop, Übernachtung; Menge je Jahr (`InventoryAssetCount`), Zählung direkt in der Tabelle.
+
+„Festschreiben“ übernimmt gezählte Mengen als Artikelbestand und sperrt die Inventur. Zeilen (`StocktakeLine`) halten Name, Einheit und Preis als Momentaufnahme, damit alte Inventuren gleich bleiben.
+
+Produktfotos: der Cron `tick-5min` (Job `articleImages`) sucht für Artikel ohne Bild bei Open Food Facts (höchstens 6 je Lauf wegen des Suchlimits von etwa 10 pro Minute) und übernimmt ein Foto nur, wenn alle wesentlichen Wörter des Namens passen. Bildnachweis steht in `Article.imageSource` („Open Food Facts, CC BY-SA 3.0 · Link“) und wird im Artikel angezeigt. Im Artikel-Dialog: „Bild suchen“ (Kandidaten wählen) oder eigenes Foto.
+
+Die Daten der Excel-Dateien (Inventur Gastro per 31.12.2025, Inventarliste) liegen nur in der Datenbank, nicht im Repo (Preise und Bestände).
+
 ## Gamification für Abo-Fahrer, Etappe 1 (15.11.2026)
 
 - Seite Gäste › Gamification (`/gamification`, nur Admins) mit den Reitern
