@@ -5,6 +5,7 @@ import { AssetsView, CreateAssetButton, type AssetData } from "@/components/ware
 import { ASSET_GROUPS, assetYears, defaultAssetYear } from "@/lib/warenwirtschaft";
 import { WawiImportButton } from "@/components/warenwirtschaft/import-button";
 import { wawiPageSession } from "../wawi-page";
+import { CountLinkCard } from "@/components/warenwirtschaft/count-link-card";
 
 export default async function InventarPage({ searchParams }: { searchParams: Promise<{ blatt?: string }> }) {
   const { session, accountId, db } = await wawiPageSession();
@@ -27,9 +28,11 @@ export default async function InventarPage({ searchParams }: { searchParams: Pro
     deviceNumber: a.deviceNumber,
     lastInspection: a.lastInspection?.toISOString() ?? null,
     note: a.note,
+    image: a.image,
     counts: Object.fromEntries(a.counts.map((c) => [c.year, c.quantity])),
   }));
   const year = defaultAssetYear();
+  const link = await db.inventoryCountLink.findFirst({ where: { accountId, group }, select: { token: true, expiresAt: true, year: true } });
   const locations = [...new Set(assets.map((a) => a.location).filter((l): l is string => !!l))];
 
   return (
@@ -40,6 +43,17 @@ export default async function InventarPage({ searchParams }: { searchParams: Pro
           aria-label="Blatt"
           value={group}
           options={groups.map((g) => ({ value: g, label: g, count: counts.get(g) ?? 0, href: `/warenwirtschaft/inventar?blatt=${encodeURIComponent(g)}` }))}
+        />
+        <CountLinkCard
+          key={`link-${group}`}
+          title={`Zählen am Handy · ${group}`}
+          token={link?.token ?? null}
+          expiresAt={link?.expiresAt.toISOString() ?? null}
+          path="/zaehlen/inventar/"
+          createUrl="/api/warenwirtschaft/inventory-links"
+          createBody={{ group, year }}
+          revokeUrl={`/api/warenwirtschaft/inventory-links?group=${encodeURIComponent(group)}`}
+          description={`Eigener Link für das Blatt ${group}: Mitarbeiter zählen ohne Anmeldung die Mengen für ${link?.year ?? year}, sehen das Vorjahr und können fehlende Posten und Fotos ergänzen.`}
         />
         <Card flush>
           <CardHeader>

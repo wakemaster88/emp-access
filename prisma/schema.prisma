@@ -172,6 +172,7 @@ model Account {
   stocktakeLines       StocktakeLine[]
   inventoryAssets      InventoryAsset[]
   inventoryAssetCounts InventoryAssetCount[]
+  inventoryCountLinks  InventoryCountLink[]
   irrigationSchedules  IrrigationSchedule[]
   irrigationRuns       IrrigationRun[]
   pushSubscriptions    PushSubscription[]
@@ -3747,6 +3748,8 @@ model InventoryAsset {
   deviceNumber   String?
   lastInspection DateTime?
   note           String?
+  /// Foto als verkleinerte Data-URL (z. B. am Handy beim Zählen aufgenommen).
+  image          String?               @db.Text
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   counts         InventoryAssetCount[]
@@ -3762,8 +3765,26 @@ model InventoryAssetCount {
   asset     InventoryAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
   year      Int
   quantity  Float
+  /// Wer über den Zähl-Link gezählt hat (Name, den die Person eingibt).
+  countedBy String?
   updatedAt DateTime       @updatedAt
 
   @@unique([assetId, year])
   @@index([accountId, year])
+}
+
+/// Zähl-Link fürs Handy je Inventar-Blatt (`/zaehlen/inventar/<token>`):
+/// Mitarbeiter zählen ohne Login die Mengen eines Jahres. Ein Link je Blatt.
+model InventoryCountLink {
+  id        Int      @id @default(autoincrement())
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  group     String
+  year      Int
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([accountId, group])
 }

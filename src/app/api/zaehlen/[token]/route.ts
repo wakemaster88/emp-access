@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { countLinkState, isPlausibleCountToken } from "@/lib/warenwirtschaft";
-import { publicCountSchema } from "@/lib/warenwirtschaft-server";
+import { publicCountSchema, publicImage } from "@/lib/warenwirtschaft-server";
 
 /**
  * Öffentlicher Zähl-Link einer Inventur (`/zaehlen/<token>`), damit
@@ -71,9 +71,7 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
       expiresAt: st.countTokenExpiresAt?.toISOString() ?? null,
       lines: lines.map(({ article, ...l }) => ({
         ...l,
-        // Eigene Fotos liegen als große Data-URL in der Datenbank; am Handy
-        // reicht dann das Kategorie-Symbol.
-        image: article?.image?.startsWith("https://") ? article.image : null,
+        image: publicImage(article?.image),
       })),
     },
     { headers: { "Cache-Control": "no-store" } },
