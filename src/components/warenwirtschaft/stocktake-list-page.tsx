@@ -2,11 +2,12 @@ import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CreateStocktakeButton } from "./stocktake-create";
 import { formatEuro, stocktakeTotals } from "@/lib/warenwirtschaft";
 import type { TenantDb } from "@/lib/prisma";
-import { CalendarCheck, ChevronRight, ClipboardList, Lock } from "lucide-react";
+import { ChevronRight, Lock } from "lucide-react";
+import { StocktakeEmpty } from "./stocktake-empty";
 
 /**
  * Liste der Inventuren einer Art. Wird von „Inventur“ (laufend) und
@@ -66,12 +67,7 @@ export async function StocktakeListPage({
                 </TableHeader>
                 <TableBody>
                   {stocktakes.length === 0 && (
-                    <TableEmpty
-                      colSpan={4}
-                      icon={cutoff ? CalendarCheck : ClipboardList}
-                      title={cutoff ? "Noch keine Stichtagsinventur" : "Noch keine Zählung"}
-                      compact={false}
-                    />
+                    <StocktakeEmpty cutoff={cutoff} colSpan={4} />
                   )}
                   {stocktakes.map((st) => {
                     const t = stocktakeTotals(st.lines);
