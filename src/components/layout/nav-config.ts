@@ -1,10 +1,14 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Archive,
   BarChart3,
+  Boxes,
   Building,
   Building2,
+  CalendarCheck,
   CalendarClock,
   Car,
+  ClipboardList,
   Cctv,
   CreditCard,
   Droplets,
@@ -67,6 +71,9 @@ export interface NavGroup {
  *  - Angebot:               Was verkaufen wir, wo gilt es, wann ist geöffnet,
  *                           was zeigen die Anzeigen dazu?
  *                           (künftig: Preise, Kurse, Verleih, Veranstaltungen)
+ *  - Warenwirtschaft:       Was haben wir auf Lager, was ist es wert, was
+ *                           steht im Inventar?
+ *                           (künftig: Bestellungen, Lieferanten)
  *  - Zutritt:               Wer darf durch Drehkreuz und Tür, wer war drin?
  *                           (künftig: Besucherzählung)
  *  - Kameras & Sicherheit:  Was sehen die Kameras, wen erkennen sie, wann
@@ -113,6 +120,16 @@ export const navGroups: NavGroup[] = [
       { href: "/areas", label: "Ressourcen", icon: MapPin, keywords: ["bereiche", "anlagen"] },
       { href: "/betriebszeiten", label: "Betriebszeiten", icon: CalendarClock, keywords: ["öffnungszeiten", "kalender"] },
       { href: "/monitors", label: "Monitore", icon: MonitorCog, keywords: ["anzeigen", "bildschirm", "display"] },
+    ],
+  },
+  {
+    key: "warenwirtschaft",
+    label: "Warenwirtschaft",
+    items: [
+      { href: "/warenwirtschaft/artikel", label: "Artikel", icon: Boxes, keywords: ["lager", "bestand", "getränke", "speisen", "produkte"] },
+      { href: "/warenwirtschaft/inventur", label: "Inventur", icon: ClipboardList, keywords: ["zählung", "zählen", "bestand"] },
+      { href: "/warenwirtschaft/stichtag", label: "Stichtagsinventur", icon: CalendarCheck, keywords: ["jahresabschluss", "31.12.", "bewertung"] },
+      { href: "/warenwirtschaft/inventar", label: "Inventar", icon: Archive, keywords: ["anlagen", "geräte", "ausstattung", "verzeichnis"] },
     ],
   },
   {
