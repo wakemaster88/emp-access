@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ClipboardList, Loader2, ShieldAlert, UserRound, type LucideIcon } from "lucide-react";
+import {
+  CheckCircle2,
+  ClipboardList,
+  Loader2,
+  Plus,
+  ShieldAlert,
+  UserRound,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { IconChip, type ChipTone } from "@/components/ui/icon-chip";
@@ -11,11 +19,14 @@ import { Notice } from "@/components/ui/notice";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SearchInput } from "@/components/ui/search-input";
 import { Segmented } from "@/components/ui/segmented";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import { ArticleThumb } from "./article-visual";
 import { QtyInput, type Field } from "./qty-input";
+import { AddArticleDialog } from "./public-add-article";
 import { parseGermanNumber } from "@/lib/warenwirtschaft";
 
-interface Line {
+export interface Line {
   id: number;
   name: string;
   sku: string | null;
@@ -67,9 +78,13 @@ export function PublicCountClient({ token }: { token: string }) {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [gone, setGone] = useState<string | null>(null);
-  const [name, setName] = useState(() => (typeof window === "undefined" ? "" : readName()));
+  const [name, setName] = useState(() =>
+    typeof window === "undefined" ? "" : readName(),
+  );
   const [nameDraft, setNameDraft] = useState(name);
   const [view, setView] = useState<View>("open");
+  const [showBroken, setShowBroken] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [saving, setSaving] = useState(0);
@@ -77,6 +92,7 @@ export function PublicCountClient({ token }: { token: string }) {
   const [invalid, setInvalid] = useState<Set<string>>(new Set());
   const queue = useRef<Promise<void>>(Promise.resolve());
   const pending = useRef(0);
+  const loaded = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -87,7 +103,12 @@ export function PublicCountClient({ token }: { token: string }) {
         return;
       }
       // Während gespeichert wird, nicht mit dem älteren Serverstand überschreiben.
-      if (pending.current === 0) setData(body as Payload);
+      if (pending.current === 0) {
+        setData(body as Payload);
+        // Stichtagsinventur: Bruch gleich mit anbieten.
+        if (!loaded.current) setShowBroken((body as Payload).kind === "CUTOFF");
+        loaded.current = true;
+      }
     } catch {
       /* offline: beim nächsten Abgleich wieder versuchen */
     } finally {
@@ -98,9 +119,14 @@ export function PublicCountClient({ token }: { token: string }) {
   useEffect(() => {
     void load();
     const t = setInterval(() => {
-      if (document.visibilityState === "visible" && !document.activeElement?.matches("input[data-count-input]")) void load();
+      if (
+        document.visibilityState === "visible" &&
+        !document.activeElement?.matches("input[data-count-input]")
+      )
+        void load();
     }, REFRESH_MS);
-    const onVisible = () => document.visibilityState === "visible" && void load();
+    const onVisible = () =>
+      document.visibilityState === "visible" && void load();
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(t);
@@ -109,14 +135,22 @@ export function PublicCountClient({ token }: { token: string }) {
   }, [load]);
 
   const lines = useMemo(() => data?.lines ?? [], [data]);
-  const categories = useMemo(() => [...new Set(lines.map((l) => l.category))], [lines]);
+  const categories = useMemo(
+    () => [...new Set(lines.map((l) => l.category))],
+    [lines],
+  );
   const countedCount = lines.filter((l) => l.counted != null).length;
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return lines.filter((l) => {
       if (category && l.category !== category) return false;
-      if (needle && !l.name.toLowerCase().includes(needle) && !l.sku?.toLowerCase().includes(needle)) return false;
+      if (
+        needle &&
+        !l.name.toLowerCase().includes(needle) &&
+        !l.sku?.toLowerCase().includes(needle)
+      )
+        return false;
       if (view === "open") return l.counted == null;
       if (view === "counted") return l.counted != null;
       return true;
@@ -138,7 +172,15 @@ export function PublicCountClient({ token }: { token: string }) {
         return n;
       });
       if (parsed === line[field]) return;
-      setData((d) => d && { ...d, lines: d.lines.map((l) => (l.id === line.id ? { ...l, [field]: parsed, countedBy: name } : l)) });
+      setData(
+        (d) =>
+          d && {
+            ...d,
+            lines: d.lines.map((l) =>
+              l.id === line.id ? { ...l, [field]: parsed, countedBy: name } : l,
+            ),
+          },
+      );
       pending.current += 1;
       setSaving((n) => n + 1);
       setError("");
@@ -147,7 +189,10 @@ export function PublicCountClient({ token }: { token: string }) {
           const res = await fetch(`/api/zaehlen/${token}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, lines: [{ id: line.id, [field]: parsed }] }),
+            body: JSON.stringify({
+              name,
+              lines: [{ id: line.id, [field]: parsed }],
+            }),
           });
           if (res.status === 404 || res.status === 410) {
             const body = await res.json().catch(() => null);
@@ -156,7 +201,9 @@ export function PublicCountClient({ token }: { token: string }) {
           }
           if (!res.ok) throw new Error();
         } catch {
-          setError("Speichern fehlgeschlagen. Prüfe die Verbindung und gib den Wert erneut ein.");
+          setError(
+            "Speichern fehlgeschlagen. Prüfe die Verbindung und gib den Wert erneut ein.",
+          );
         } finally {
           pending.current -= 1;
           setSaving((n) => n - 1);
@@ -169,7 +216,12 @@ export function PublicCountClient({ token }: { token: string }) {
   if (gone) {
     return (
       <Shell accountName={data?.accountName}>
-        <StateCard icon={ShieldAlert} tone="neutral" title="Zählen nicht möglich" text={gone} />
+        <StateCard
+          icon={ShieldAlert}
+          tone="neutral"
+          title="Zählen nicht möglich"
+          text={gone}
+        />
       </Shell>
     );
   }
@@ -185,7 +237,9 @@ export function PublicCountClient({ token }: { token: string }) {
     );
   }
 
-  const dateLabel = new Date(data.date).toLocaleDateString("de-DE", { timeZone: "UTC" });
+  const dateLabel = new Date(data.date).toLocaleDateString("de-DE", {
+    timeZone: "UTC",
+  });
 
   if (!name) {
     return (
@@ -195,9 +249,12 @@ export function PublicCountClient({ token }: { token: string }) {
             <div className="flex items-center gap-3">
               <IconChip icon={ClipboardList} tone="primary" size="lg" />
               <div className="min-w-0">
-                <p className="font-semibold text-foreground [overflow-wrap:anywhere]">{data.title}</p>
+                <p className="font-semibold text-foreground [overflow-wrap:anywhere]">
+                  {data.title}
+                </p>
                 <p className="text-sm text-muted-foreground">
-                  {data.kind === "CUTOFF" ? "Stichtag" : "Zähltag"} {dateLabel} · {data.lines.length} Artikel
+                  {data.kind === "CUTOFF" ? "Stichtag" : "Zähltag"} {dateLabel}{" "}
+                  · {data.lines.length} Artikel
                 </p>
               </div>
             </div>
@@ -213,10 +270,24 @@ export function PublicCountClient({ token }: { token: string }) {
             >
               <div className="space-y-1.5">
                 <Label htmlFor="count-name">Dein Name</Label>
-                <Input id="count-name" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} autoComplete="name" autoFocus className="h-11" maxLength={60} />
-                <p className="text-xs text-muted-foreground">Damit sieht das Büro, wer was gezählt hat.</p>
+                <Input
+                  id="count-name"
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  autoComplete="name"
+                  autoFocus
+                  className="h-11"
+                  maxLength={60}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Damit sieht das Büro, wer was gezählt hat.
+                </p>
               </div>
-              <Button type="submit" className="h-11 w-full" disabled={!nameDraft.trim()}>
+              <Button
+                type="submit"
+                className="h-11 w-full"
+                disabled={!nameDraft.trim()}
+              >
                 Zählen starten
               </Button>
             </form>
@@ -233,7 +304,9 @@ export function PublicCountClient({ token }: { token: string }) {
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-foreground [overflow-wrap:anywhere]">{data.title}</h1>
+            <h1 className="text-lg font-semibold text-foreground [overflow-wrap:anywhere]">
+              {data.title}
+            </h1>
             <p className="text-sm text-muted-foreground tabular-nums">
               {countedCount} von {data.lines.length} gezählt
               {saving > 0 && " · speichert …"}
@@ -252,78 +325,217 @@ export function PublicCountClient({ token }: { token: string }) {
           </Button>
         </div>
 
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
-          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${data.lines.length ? (countedCount / data.lines.length) * 100 : 0}%` }} />
+        <div
+          className="h-1.5 overflow-hidden rounded-full bg-muted"
+          aria-hidden
+        >
+          <div
+            className="h-full rounded-full bg-primary transition-[width]"
+            style={{
+              width: `${data.lines.length ? (countedCount / data.lines.length) * 100 : 0}%`,
+            }}
+          />
         </div>
 
-        <div className="sticky top-0 z-10 -mx-4 space-y-2 bg-background/95 px-4 py-2 backdrop-blur">
-          <SearchInput value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ("")} placeholder="Artikel suchen" aria-label="Artikel suchen" className="h-11" />
-          {categories.length > 1 && (
-            <NativeSelect value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Kategorie" className="h-11">
-              <option value="">Alle Kategorien</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </NativeSelect>
-          )}
-          <Segmented
-            aria-label="Ansicht"
-            stretch
-            value={view}
-            onValueChange={setView}
-            options={[
-              { value: "open", label: "Offen", count: data.lines.length - countedCount },
-              { value: "counted", label: "Gezählt", count: countedCount },
-              { value: "all", label: "Alle" },
-            ]}
-          />
+        <div className="sticky top-0 z-10 -mx-4 space-y-2 border-b border-border bg-background px-4 pb-2 pt-2 shadow-[0_6px_12px_-10px_oklch(0_0_0/25%)]">
+          <div className="flex gap-2">
+            <SearchInput
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onClear={() => setQ("")}
+              placeholder="Suchen"
+              aria-label="Artikel suchen"
+              className="h-11"
+              containerClassName="min-w-0 flex-1"
+            />
+            {categories.length > 1 && (
+              <NativeSelect
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                aria-label="Kategorie"
+                className="h-11"
+                containerClassName="w-32 shrink-0"
+              >
+                <option value="">Alle</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </NativeSelect>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <Segmented
+              aria-label="Ansicht"
+              size="sm"
+              stretch
+              className="min-w-0 flex-1"
+              value={view}
+              onValueChange={setView}
+              options={[
+                {
+                  value: "open",
+                  label: "Offen",
+                  count: data.lines.length - countedCount,
+                },
+                { value: "counted", label: "Gezählt", count: countedCount },
+                { value: "all", label: "Alle" },
+              ]}
+            />
+            <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+              Bruch
+              <Switch
+                size="sm"
+                checked={showBroken}
+                onCheckedChange={setShowBroken}
+                aria-label="Bruch erfassen"
+              />
+            </label>
+          </div>
         </div>
 
         {error && <Notice tone="danger" compact role="alert" title={error} />}
 
         {filtered.length === 0 ? (
           done && view === "open" && !q && !category ? (
-            <StateCard icon={CheckCircle2} tone="success" title="Alles gezählt" text="Danke! Alle Artikel haben eine Menge. Das Büro schreibt die Inventur fest." />
+            <StateCard
+              icon={CheckCircle2}
+              tone="success"
+              title="Alles gezählt"
+              text="Danke! Alle Artikel haben eine Menge. Das Büro schreibt die Inventur fest."
+            />
           ) : (
-            <Card className="py-10 text-center text-sm text-muted-foreground sm:py-10">Keine Artikel in dieser Ansicht</Card>
+            <Card className="items-center gap-3 py-8 text-center text-sm text-muted-foreground sm:py-8">
+              {q.trim()
+                ? `„${q.trim()}“ ist in dieser Ansicht nicht dabei.`
+                : "Keine Artikel in dieser Ansicht"}
+              {q.trim() && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11"
+                  onClick={() => setAdding(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                  Als neuen Artikel hinzufügen
+                </Button>
+              )}
+            </Card>
           )
         ) : (
           <Card flush>
             <ul className="divide-y divide-border">
               {filtered.map((l) => (
-                <li key={l.id} className="flex items-center gap-3 px-3 py-2.5">
-                  <ArticleThumb image={l.image} name={l.name} category={l.category} />
+                <li
+                  key={l.id}
+                  className="flex min-h-14 items-center gap-2.5 px-3 py-1.5"
+                >
+                  {l.image && (
+                    <ArticleThumb
+                      image={l.image}
+                      name={l.name}
+                      category={l.category}
+                      className="size-9"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground [overflow-wrap:anywhere]">{l.name}</p>
-                    <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                      {[l.unit, l.counted != null && l.countedBy ? `gezählt von ${l.countedBy}` : null].filter(Boolean).join(" · ")}
+                    <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground [overflow-wrap:anywhere]">
+                      {l.name}
                     </p>
-                    <div className="mt-1 flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Bruch</span>
-                      <QtyInput value={l.broken} field="broken" onCommit={(raw) => commit(l, "broken", raw)} label={`Bruch ${l.name}`} invalid={invalid.has(`${l.id}-broken`)} className="h-9 w-16" />
-                    </div>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[
+                        l.unit,
+                        l.counted != null && l.countedBy ? l.countedBy : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="text-xs text-muted-foreground">Ist</span>
-                    <QtyInput value={l.counted} field="counted" onCommit={(raw) => commit(l, "counted", raw)} label={`Ist ${l.name}`} invalid={invalid.has(`${l.id}-counted`)} className="w-20" />
-                  </div>
+                  {showBroken && (
+                    <QtyInput
+                      value={l.broken}
+                      field="broken"
+                      onCommit={(raw) => commit(l, "broken", raw)}
+                      label={`Bruch ${l.name}`}
+                      placeholder="Bruch"
+                      invalid={invalid.has(`${l.id}-broken`)}
+                      className="w-14 shrink-0 text-sm placeholder:text-xs"
+                    />
+                  )}
+                  <QtyInput
+                    value={l.counted}
+                    field="counted"
+                    onCommit={(raw) => commit(l, "counted", raw)}
+                    label={`Ist ${l.name}`}
+                    placeholder="Ist"
+                    invalid={invalid.has(`${l.id}-counted`)}
+                    className={cn(
+                      "w-[72px] shrink-0 text-base font-medium",
+                      l.counted != null && "border-success/50 bg-success/5",
+                    )}
+                  />
                 </li>
               ))}
             </ul>
           </Card>
         )}
+
+        {!(filtered.length === 0 && q.trim()) && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 w-full"
+            onClick={() => setAdding(true)}
+          >
+            <Plus className="h-4 w-4" />
+            Artikel fehlt? Hinzufügen
+          </Button>
+        )}
+
+        {adding && (
+          <AddArticleDialog
+            open
+            onOpenChange={setAdding}
+            token={token}
+            counter={name}
+            initialName={q.trim()}
+            categories={categories}
+            onAdded={(line) => {
+              setData((d) => d && { ...d, lines: [...d.lines, line] });
+              setQ(line.name);
+              setCategory("");
+              setView("all");
+            }}
+            onExisting={(id) => {
+              const line = lines.find((l) => l.id === id);
+              if (line) {
+                setQ(line.name);
+                setCategory("");
+                setView("all");
+              }
+            }}
+          />
+        )}
+
         <p className="pb-4 text-center text-xs text-muted-foreground">
-          Eingaben werden sofort gespeichert. Enter springt zum nächsten Artikel.
-          {data.expiresAt && ` Link gültig bis ${new Date(data.expiresAt).toLocaleDateString("de-DE")}.`}
+          Eingaben werden sofort gespeichert. Enter springt zum nächsten
+          Artikel.
+          {data.expiresAt &&
+            ` Link gültig bis ${new Date(data.expiresAt).toLocaleDateString("de-DE")}.`}
         </p>
       </div>
     </Shell>
   );
 }
 
-function Shell({ children, accountName }: { children: React.ReactNode; accountName?: string }) {
+function Shell({
+  children,
+  accountName,
+}: {
+  children: React.ReactNode;
+  accountName?: string;
+}) {
   return (
     <main className="page-ambient min-h-dvh px-4 py-6">
       <div className="mx-auto w-full max-w-xl">
@@ -334,10 +546,25 @@ function Shell({ children, accountName }: { children: React.ReactNode; accountNa
   );
 }
 
-function StateCard({ icon, tone, title, text }: { icon: LucideIcon; tone: ChipTone; title: string; text: string }) {
+function StateCard({
+  icon,
+  tone,
+  title,
+  text,
+}: {
+  icon: LucideIcon;
+  tone: ChipTone;
+  title: string;
+  text: string;
+}) {
   return (
     <Card className="items-center gap-3 px-6 py-10 text-center sm:py-10">
-      <IconChip icon={icon} tone={tone} size="lg" className="size-14 rounded-tile [&_svg]:size-7" />
+      <IconChip
+        icon={icon}
+        tone={tone}
+        size="lg"
+        className="size-14 rounded-tile [&_svg]:size-7"
+      />
       <p className="text-base font-semibold text-foreground">{title}</p>
       <p className="max-w-sm text-sm text-muted-foreground">{text}</p>
     </Card>
