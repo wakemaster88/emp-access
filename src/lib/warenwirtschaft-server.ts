@@ -146,6 +146,8 @@ export const publicAssetSchema = z.object({
   name: z.string().trim().min(1, "Bitte deinen Namen eingeben").max(60),
   asset: z.object({
     name: z.string().trim().min(1, "Bezeichnung fehlt").max(200),
+    /** Nur beim Link für alle Blätter: das Blatt des neuen Postens. */
+    group: z.string().trim().min(1).max(60).optional(),
     location: optText(80),
     quantity: qty.nullable().optional(),
   }),
