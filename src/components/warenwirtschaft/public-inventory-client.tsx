@@ -20,6 +20,7 @@ import { LoadingCard, NameGate, PhotoButton, Shell, StateCard, readCounterName, 
 interface AssetRow {
   id: number;
   name: string;
+  group: string;
   location: string | null;
   deviceNumber: string | null;
   image: string | null;
@@ -29,7 +30,9 @@ interface AssetRow {
 }
 
 interface Payload {
+  /** Blatt des Links, "*" = alle Blätter. */
   group: string;
+  groups: string[];
   year: number;
   accountName: string;
   expiresAt: string;
@@ -40,8 +43,8 @@ type View = "open" | "counted" | "all";
 const REFRESH_MS = 30_000;
 
 /**
- * Inventar zählen am Handy (`/zaehlen/inventar/<token>`), ohne Login: ein
- * Blatt (z. B. Gastronomie), Mengen für das Zähljahr, Vorjahr als Hilfe.
+ * Inventar zählen am Handy (`/zaehlen/inventar/<token>`), ohne Login: alle
+ * Blätter (Auswahl oben) oder ein einzelnes, Mengen fürs Zähljahr, Vorjahr als Hilfe.
  * Fehlende Posten und Fotos lassen sich ergänzen.
  */
 export function PublicInventoryClient({ token }: { token: string }) {
@@ -53,6 +56,7 @@ export function PublicInventoryClient({ token }: { token: string }) {
   const [view, setView] = useState<View>("open");
   const [q, setQ] = useState("");
   const [location, setLocation] = useState("");
+  const [sheet, setSheet] = useState("");
   const [saving, setSaving] = useState(0);
   const [error, setError] = useState("");
   const [invalid, setInvalid] = useState<Set<number>>(new Set());
@@ -89,7 +93,21 @@ export function PublicInventoryClient({ token }: { token: string }) {
     };
   }, [load]);
 
-  const assets = useMemo(() => data?.assets ?? [], [data]);
+  const groups = useMemo(() => data?.groups ?? [], [data]);
+  const currentSheet = sheet && groups.includes(sheet) ? sheet : (groups[0] ?? "");
+  const allAssets = useMemo(() => data?.assets ?? [], [data]);
+  // Zählung und Filter immer je Blatt, wie die Reiter im Büro.
+  const assets = useMemo(() => allAssets.filter((a) => a.group === currentSheet), [allAssets, currentSheet]);
+  const sheetCounts = useMemo(() => {
+    const m = new Map<string, { total: number; done: number }>();
+    for (const a of allAssets) {
+      const c = m.get(a.group) ?? { total: 0, done: 0 };
+      c.total += 1;
+      if (a.quantity != null) c.done += 1;
+      m.set(a.group, c);
+    }
+    return m;
+  }, [allAssets]);
   const locations = useMemo(() => [...new Set(assets.map((a) => a.location).filter((l): l is string => !!l))].sort(), [assets]);
   const countedCount = assets.filter((a) => a.quantity != null).length;
 
@@ -171,16 +189,17 @@ export function PublicInventoryClient({ token }: { token: string }) {
     );
   }
 
-  const title = `Inventar ${data.group}`;
+  const multi = data.groups.length > 1;
+  const title = multi ? "Inventar" : `Inventar ${data.group}`;
   if (!name) {
     return (
       <Shell accountName={data.accountName}>
-        <NameGate icon={Boxes} title={title} subtitle={`Zählung ${data.year} · ${data.assets.length} Posten`} initial="" onName={setName} />
+        <NameGate icon={Boxes} title={title} subtitle={`Zählung ${data.year} · ${multi ? `${data.groups.length} Kategorien · ` : ""}${data.assets.length} Posten`} initial="" onName={setName} />
       </Shell>
     );
   }
 
-  const done = countedCount === data.assets.length && data.assets.length > 0;
+  const done = countedCount === assets.length && assets.length > 0;
 
   return (
     <Shell accountName={data.accountName}>
@@ -191,7 +210,8 @@ export function PublicInventoryClient({ token }: { token: string }) {
               {title} · {data.year}
             </h1>
             <p className="text-sm text-muted-foreground tabular-nums">
-              {countedCount} von {data.assets.length} gezählt
+              {multi && `${currentSheet}: `}
+              {countedCount} von {assets.length} gezählt
               {saving > 0 && " · speichert …"}
             </p>
           </div>
@@ -202,10 +222,31 @@ export function PublicInventoryClient({ token }: { token: string }) {
         </div>
 
         <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
-          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${data.assets.length ? (countedCount / data.assets.length) * 100 : 0}%` }} />
+          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${assets.length ? (countedCount / assets.length) * 100 : 0}%` }} />
         </div>
 
         <div className="sticky top-0 z-10 -mx-4 space-y-2 border-b border-border bg-background px-4 pb-2 pt-2 shadow-[0_6px_12px_-10px_oklch(0_0_0/25%)]">
+          {multi && (
+            <NativeSelect
+              value={currentSheet}
+              onChange={(e) => {
+                setSheet(e.target.value);
+                setLocation("");
+                setQ("");
+              }}
+              aria-label="Blatt"
+              className="h-11 font-medium"
+            >
+              {data.groups.map((g) => {
+                const c = sheetCounts.get(g);
+                return (
+                  <option key={g} value={g}>
+                    {g} ({c?.done ?? 0}/{c?.total ?? 0})
+                  </option>
+                );
+              })}
+            </NativeSelect>
+          )}
           <div className="flex gap-2">
             <SearchInput value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ("")} placeholder="Suchen" aria-label="Posten suchen" className="h-11" containerClassName="min-w-0 flex-1" />
             {locations.length > 1 && (
@@ -226,7 +267,7 @@ export function PublicInventoryClient({ token }: { token: string }) {
             value={view}
             onValueChange={setView}
             options={[
-              { value: "open", label: "Offen", count: data.assets.length - countedCount },
+              { value: "open", label: "Offen", count: assets.length - countedCount },
               { value: "counted", label: "Gezählt", count: countedCount },
               { value: "all", label: "Alle" },
             ]}
@@ -237,7 +278,7 @@ export function PublicInventoryClient({ token }: { token: string }) {
 
         {filtered.length === 0 ? (
           done && view === "open" && !q && !location ? (
-            <StateCard icon={CheckCircle2} tone="success" title="Alles gezählt" text={`Danke! Alle Posten haben eine Menge für ${data.year}.`} />
+            <StateCard icon={CheckCircle2} tone="success" title="Alles gezählt" text={`Danke! Alle Posten${multi ? ` in ${currentSheet}` : ""} haben eine Menge für ${data.year}.`} />
           ) : (
             <Card className="items-center gap-3 py-8 text-center text-sm text-muted-foreground sm:py-8">
               {q.trim() ? `„${q.trim()}“ ist in dieser Ansicht nicht dabei.` : "Keine Posten in dieser Ansicht"}
@@ -299,7 +340,7 @@ export function PublicInventoryClient({ token }: { token: string }) {
             api={api}
             counter={name}
             year={data.year}
-            group={data.group}
+            group={currentSheet}
             initialName={q.trim()}
             initialLocation={location}
             locations={locations}
@@ -371,7 +412,7 @@ function AddAssetDialog({
       const res = await fetch(`${api}/assets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: counter, asset: { name: assetName, location: loc || null, quantity } }),
+        body: JSON.stringify({ name: counter, asset: { name: assetName, group, location: loc || null, quantity } }),
       });
       const body = await res.json().catch(() => null);
       if (res.status === 409 && typeof body?.id === "number") {

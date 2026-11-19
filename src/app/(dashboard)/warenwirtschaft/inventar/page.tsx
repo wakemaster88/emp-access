@@ -6,6 +6,7 @@ import { ASSET_GROUPS, assetYears, defaultAssetYear } from "@/lib/warenwirtschaf
 import { WawiImportButton } from "@/components/warenwirtschaft/import-button";
 import { wawiPageSession } from "../wawi-page";
 import { CountLinkCard } from "@/components/warenwirtschaft/count-link-card";
+import { ALL_GROUPS } from "@/lib/inventory-count-link";
 
 export default async function InventarPage({ searchParams }: { searchParams: Promise<{ blatt?: string }> }) {
   const { session, accountId, db } = await wawiPageSession();
@@ -32,28 +33,28 @@ export default async function InventarPage({ searchParams }: { searchParams: Pro
     counts: Object.fromEntries(a.counts.map((c) => [c.year, c.quantity])),
   }));
   const year = defaultAssetYear();
-  const link = await db.inventoryCountLink.findFirst({ where: { accountId, group }, select: { token: true, expiresAt: true, year: true } });
+  // Ein Zähl-Link fürs ganze Inventar; am Handy wechselt man zwischen den Blättern.
+  const link = await db.inventoryCountLink.findFirst({ where: { accountId, group: ALL_GROUPS }, select: { token: true, expiresAt: true, year: true } });
   const locations = [...new Set(assets.map((a) => a.location).filter((l): l is string => !!l))];
 
   return (
     <>
       <Header title="Inventar" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
-        <SegmentedLinks
-          aria-label="Blatt"
-          value={group}
-          options={groups.map((g) => ({ value: g, label: g, count: counts.get(g) ?? 0, href: `/warenwirtschaft/inventar?blatt=${encodeURIComponent(g)}` }))}
-        />
         <CountLinkCard
-          key={`link-${group}`}
-          title={`Zählen am Handy · ${group}`}
+          title="Zählen am Handy · Inventar"
           token={link?.token ?? null}
           expiresAt={link?.expiresAt.toISOString() ?? null}
           path="/zaehlen/inventar/"
           createUrl="/api/warenwirtschaft/inventory-links"
-          createBody={{ group, year }}
-          revokeUrl={`/api/warenwirtschaft/inventory-links?group=${encodeURIComponent(group)}`}
-          description={`Eigener Link für das Blatt ${group}: Mitarbeiter zählen ohne Anmeldung die Mengen für ${link?.year ?? year}, sehen das Vorjahr und können fehlende Posten und Fotos ergänzen.`}
+          createBody={{ group: ALL_GROUPS, year }}
+          revokeUrl={`/api/warenwirtschaft/inventory-links?group=${encodeURIComponent(ALL_GROUPS)}`}
+          description={`Ein Link für alle Kategorien: Mitarbeiter wählen am Handy das Blatt, zählen ohne Anmeldung die Mengen für ${link?.year ?? year}, sehen das Vorjahr und können fehlende Posten und Fotos ergänzen.`}
+        />
+        <SegmentedLinks
+          aria-label="Blatt"
+          value={group}
+          options={groups.map((g) => ({ value: g, label: g, count: counts.get(g) ?? 0, href: `/warenwirtschaft/inventar?blatt=${encodeURIComponent(g)}` }))}
         />
         <Card flush>
           <CardHeader>

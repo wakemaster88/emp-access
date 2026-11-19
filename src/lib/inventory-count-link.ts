@@ -20,3 +20,11 @@ export const LINK_GONE = {
   NONE: "Dieser Link ist nicht mehr gültig.",
   EXPIRED: "Dieser Link ist abgelaufen. Bitte einen neuen Link anfordern.",
 } as const;
+
+/** Gruppe eines Links, der für alle Blätter des Inventars gilt. */
+export const ALL_GROUPS = "*";
+
+/** Prisma-Filter auf das Blatt des Links (alle Blätter bei `ALL_GROUPS`). */
+export function groupFilter(group: string): { group?: string } {
+  return group === ALL_GROUPS ? {} : { group };
+}
