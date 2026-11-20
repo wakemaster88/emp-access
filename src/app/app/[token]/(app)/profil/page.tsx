@@ -8,13 +8,15 @@ import { RiderPerson } from "@/components/rider/rider-person";
 import { findRiderAuthProfile, riderFamilyView } from "@/lib/rider-auth";
 import { loadRiderPerson } from "@/lib/rider-person";
 import { RiderFamily } from "@/components/rider/rider-family";
+import { RiderKasseCode } from "@/components/rider/rider-kasse-code";
 import "./profil.css";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Profil: oben Bild, Name und persönliche Daten (änderbar), dann Abo,
- * Spitzname, Familie, Anmeldung und Benachrichtigungen; unten Abmelden.
+ * „Abo fehlt?“ (Code für die Kasse), Spitzname, Familie, Anmeldung und
+ * Benachrichtigungen; unten Abmelden.
  * Statistik löschen gibt es nicht (Aaron, 20.11.2026).
  */
 export default async function RiderProfilePage({ params }: { params: Promise<{ token: string }> }) {
@@ -75,6 +77,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
 
       {self ? (
         <>
+          {auth && !(auth.familyId != null && !auth.familyAdult) && <RiderKasseCode token={token} />}
           <h2 className="rd-label rd-sec">Spitzname und Rangliste</h2>
           <RiderProfileForm token={token} nickname={rider.nickname} showInRanking={rider.showInRanking} />
           {auth && family && (

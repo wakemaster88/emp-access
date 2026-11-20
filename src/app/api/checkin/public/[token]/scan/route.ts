@@ -6,6 +6,7 @@ import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { redeemBenefitVoucher } from "@/lib/gamification-service";
 import { riderView } from "@/lib/customer-person";
+import { appLinkInfo, readAppCode } from "@/lib/rider-kasse-link";
 
 export async function POST(
   request: NextRequest,
@@ -23,6 +24,18 @@ export async function POST(
   const rawCode = String(body.code ?? "").trim();
   if (!rawCode) {
     return NextResponse.json({ found: false, message: "Kein Code" });
+  }
+
+  // App-Code aus der Kunden-App (Profil › „Abo fehlt?“): Abo mit der App
+  // verknüpfen, siehe lib/rider-kasse-link und POST …/app-link.
+  const app = readAppCode(rawCode);
+  if (app) {
+    if ("invalid" in app) {
+      return NextResponse.json({ found: false, appCodeInvalid: true, message: "App-Code abgelaufen oder ungültig. Bitte in der App neu anzeigen lassen." });
+    }
+    const info = await appLinkInfo(monitor.accountId, app.profileId);
+    if (!info) return NextResponse.json({ found: false, appCodeInvalid: true, message: "Diese App kennen wir nicht." });
+    return NextResponse.json({ found: false, appLink: { code: rawCode, ...info } });
   }
 
   // Robust gegen DE/US-Tastaturlayout des Scanners (z.B. "GS-1234"
