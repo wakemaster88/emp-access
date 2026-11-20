@@ -414,6 +414,8 @@ werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
 - `RiderProfile.email` hält die bestätigte Adresse. Ein Profil mit Adresse
   gilt auch ohne Ticket (`loadRider`, `findRiderAuthProfile`, `sessionRider`);
   die App zeigt dann „Du hast noch kein Abo“ mit dem Abo-Shop.
+- Die Mail (`src/lib/rider-mail-template.ts`) hat seit 20.11.2026 den Look der
+  App (dunkel, Petrol, Gelb, kursive Versalien), Aaron: „im gleichen look sexy“.
 - Der alte Weg mit Kartennummer und Geburtsdatum (`api/rider/login`) ist
   entfernt. Der persönliche Link von der Kasse bleibt.
 - Offen: Profile ohne Ticket erscheinen nicht in der Liste Kunden App ›
