@@ -115,9 +115,9 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   `/app/<token>`; beim ersten Öffnen werden Passkey oder Passwort eingerichtet.
 - Fahrer ohne Geburtsdatum oder Kartennummer bekommen den Link an der Kasse:
   Gäste › Kunden App › Fahrer › App-Link (QR-Code und Link zum Kopieren).
-- Für neue Kunden steht oben unter Gäste › Kunden App › Fahrer ein fester
-  QR-Code auf `/app` mit A4-Aushang zum Drucken (`src/lib/app-poster.ts`,
-  seit 20.11.2026).
+- Für neue Kunden gibt es einen festen QR-Code auf `/app` mit A4-Aushang zum
+  Drucken (`src/lib/app-poster.ts`, seit 20.11.2026), seit 21.11.2026 unter
+  Gäste › Kunden App › Einstellungen › Aushang und Bildschirm.
 - `RiderProfile` bündelt die Abo-Tickets einer Person (Vorname, Nachname und
   Geburtsdatum gleich) und trägt Spitzname und Ranglisten-Einwilligung
   (`showInRanking`, ab Werk aus).
@@ -131,7 +131,8 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 
 ## Challenges und Angebote, Etappe 3 (15.11.2026)
 
-- **Challenges** (Gäste › Kunden App › Challenges) haben einen festen
+- **Challenges** (Gäste › Kunden App › Aktionen; seit 21.11.2026 stehen
+  Challenges und Angebote in einem Reiter) haben einen festen
   Zeitraum, eine Kennzahl (Besuchstage, Starts, Wochen in Serie) und optional
   einen Gutschein. Zwei Arten:
   - **Aufgabe erfüllt** (`TASK`): wer die Schwelle im Zeitraum erreicht,
@@ -139,14 +140,14 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   - **Top X** (`TOP_X`): nach dem Endtag gewinnen die Besten. Bei Gleichstand
     auf dem letzten Gewinnerplatz gewinnen alle Gleichauf-Liegenden. Die
     Auswertung läuft genau einmal (`Challenge.settledAt`), ausgelöst vom
-    nächsten Start, vom Reiter Challenges oder von der Kunden-App. Danach
+    nächsten Start, vom Reiter Aktionen oder von der Kunden-App. Danach
     sind Bedingung und Zeitraum gesperrt.
 - Gezählt wird je Person: Tickets mit gemeinsamem App-Profil bilden eine
   Einheit, der Gewinn (`ChallengeAward`) hängt am jüngsten Ticket.
 - In der Kunden-App: Reiter Challenges mit eigenem Fortschritt und Rangliste.
   Mit Namen erscheint nur, wer einen Spitznamen gesetzt und der Rangliste
   zugestimmt hat. Alle anderen stehen als „Anonym“ in der Liste.
-- **Angebote** (`RiderOffer`, Reiter Angebote): Titel, Text und optionaler
+- **Angebote** (`RiderOffer`, Reiter Aktionen): Titel, Text und optionaler
   Zeitraum. Höchstens drei erscheinen oben auf der Startseite der App.
 - Logik in `src/lib/challenge-service.ts` und `src/lib/rider-challenges.ts`,
   Rechenregeln mit Tests in `src/lib/gamification.ts`.
@@ -160,8 +161,8 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   und ab 50 %). Rechenregel `seasonRecap` in `src/lib/gamification.ts`.
 - **Rangliste für einen Bildschirm** (`/rangliste/<token>`): Saison nach
   Besuchstagen und bis zu zwei laufende Top-X-Challenges, lädt alle fünf
-  Minuten neu. Ein- und Ausschalten unter Kunden App › Einstellungen
-  (`GamificationConfig.displayToken`); nach dem Abschalten gilt der Link
+  Minuten neu. Ein- und Ausschalten unter Kunden App › Einstellungen › Aushang
+  und Bildschirm (`GamificationConfig.displayToken`); nach dem Abschalten gilt der Link
   nicht mehr. Gezeigt wird nur, wer Spitzname und Zustimmung gesetzt hat.
   Alle anderen zählen für die Plätze mit, erscheinen aber nicht.
 

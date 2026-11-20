@@ -208,7 +208,7 @@ export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow
             Awards ({milestones.length})
           </CardTitle>
           <CardDescription>
-            Wer das Ziel im Zeitraum erreicht, bekommt den Award einmal – und den Gutschein, wenn einer hinterlegt ist. Die Kunden-App zeigt alle aktiven Awards als Abzeichen.
+            Ziel erreicht: Award einmal, dazu der Gutschein. Aktive Awards zeigt die App als Abzeichen.
           </CardDescription>
           <CardAction>
             <Button onClick={() => open(EMPTY)} className="max-sm:h-11" aria-label="Award anlegen">

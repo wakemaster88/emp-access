@@ -204,7 +204,7 @@ export function ChallengesCard({
             Challenges ({challenges.length})
           </CardTitle>
           <CardDescription>
-            Aufgabe erfüllt: jeder, der die Schwelle im Zeitraum schafft, gewinnt sofort. Top X: nach dem Ende gewinnen die Besten.
+            Aufgabe: jeder, der das Ziel schafft, gewinnt. Top X: die Besten nach dem Ende.
           </CardDescription>
           <CardAction>
             <Button onClick={() => open(empty)} className="max-sm:h-11" aria-label="Challenge anlegen">
