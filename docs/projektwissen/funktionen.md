@@ -623,6 +623,34 @@ Bestandsdaten.
   `memberName`), damit Kinder nicht mit dem Namen der Eltern grüßen.
 - Adressen ohne Konto (Tagesgäste, Abo noch nicht verknüpft) wie bisher mit
   Abo-Auswahl.
-- Noch offen (Etappe 4b): Ablauf-Mails je Konto mit dem Namen der Person,
-  Bestätigungslink für Kinder mit eigener Adresse. Die Datenbankregel „kein
-  Abo ohne Konto“ kommt erst, wenn die Liste „Abos ohne E-Mail“ leer ist.
+- Weiter in Etappe 4b (unten).
+
+## Mails je Konto und Kinder mit eigener Adresse, Etappe 4b (20.11.2026)
+
+- Automatische Mails (`src/lib/email-automation.ts`, Einstellungen › E-Mail ›
+  Regeln): Empfänger ist die Adresse des Kundenkontos (`mailRecipient`),
+  sonst die am Ticket. Abos mit Konto, aber ohne Adresse am Ticket, bekommen
+  jetzt auch ihre Mail. `{{firstName}}`, `{{lastName}}` und `{{fullName}}`
+  sind die der Person, die mit dem Abo fährt (`riderView`); am anny-Kids-Abo
+  stand vorher der Name der Eltern. Der Regel-Dialog sagt das unter den
+  Variablen.
+- Ablauf-Mails („läuft ab“, „ist abgelaufen“) entfallen, wenn dieselbe Person
+  schon ein Folge-Abo derselben Art hat, das länger läuft (`hasFollowUpAbo`
+  in `src/lib/customer-person.ts`, Art nach `aboCategory`). Zählt im Lauf als
+  übersprungen. Abos ohne Person werden nicht geprüft.
+- Kind mit eigener Adresse (eigenes Kundenkonto) in die Familie holen: In der
+  App unter Profil › Familie › Kind hinzufügen „Mit seiner E-Mail-Adresse“.
+  Die App antwortet immer gleich; eine Mail „Familie in der App bestätigen“
+  geht nur raus, wenn zur Adresse ein anderes Konto mit Personen unter 18
+  (oder ohne Geburtsdatum) ohne Familie gehört, höchstens alle 10 Minuten und
+  3-mal am Tag je Adresse. Der Link `/app/familie/kind/<schlüssel>` gilt 7
+  Tage und braucht keine Anmeldung: wer ihn öffnet, wählt die Personen und
+  bestätigt; sie kommen als verwaltete Mitglieder in die Familie
+  (`src/lib/rider-family-link.ts`, `POST /api/rider/family/confirm`).
+  Erwachsene treten weiter über den Einladungslink für Partner bei. Die
+  Erwachsene kann solche Kinder wieder entfernen, sie gehören nicht zu ihrem
+  Konto.
+- Wer per Kartennummer ein Kind mit eigenem Zugang hinzufügen will, bekommt
+  den Hinweis auf den Weg über die E-Mail-Adresse.
+- Noch offen: Die Datenbankregel „kein Abo ohne Konto“ kommt erst, wenn die
+  Liste „Abos ohne E-Mail“ leer ist.

@@ -2152,6 +2152,9 @@ function RuleDialog({
                 </button>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground">
+              Name und Vorname sind die der Person, die mit dem Abo fährt. Die Mail geht an die Adresse des Kundenkontos.
+            </p>
           </div>
 
           <div className="glass-tile flex items-center justify-between gap-3 px-3 py-2.5">

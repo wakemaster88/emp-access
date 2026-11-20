@@ -84,6 +84,24 @@ export function aboCategory(subscriptionId: number | null, name: string | null |
   return /\bride\b|\bkids?\b|kinder|wake|wasserski/i.test(name ?? "") ? "ride" : `abo-${subscriptionId ?? 0}`;
 }
 
+export interface FollowUpAbo {
+  id: number;
+  /** `aboCategory` */
+  category: string;
+  endDate: Date | null;
+}
+
+/**
+ * Hat die Person nach `abo` schon ein weiteres Abo derselben Art, das länger
+ * läuft (verlängert oder neu gebucht)? Dann braucht es keine Ablauf-Mail.
+ * `others` sind die laufenden Abos derselben Person.
+ */
+export function hasFollowUpAbo(abo: FollowUpAbo, others: FollowUpAbo[]): boolean {
+  if (!abo.endDate) return false;
+  const end = abo.endDate.getTime();
+  return others.some((o) => o.id !== abo.id && o.category === abo.category && (o.endDate == null || o.endDate.getTime() > end));
+}
+
 /** Ein gekündigtes oder vorzeitig ungültiges Abo hat seine Laufzeit nicht genutzt. */
 function usedPeriod(t: PlanTicket, now: Date): boolean {
   if (t.status !== "CANCELED" && t.status !== "INVALID") return true;
