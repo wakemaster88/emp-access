@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarOff, DoorClosed, DoorOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, CalendarOff, DoorClosed, DoorOpen, LayoutGrid, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,9 +26,11 @@ import {
 } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest } from "@/components/raeume/shared";
 import { useNow } from "@/components/raeume/status";
 import { ScheduleDialog } from "@/components/betriebszeiten/schedule-dialog";
+import { OperatingCalendar } from "@/components/betriebszeiten/operating-calendar";
 import type { BetriebszeitenData, ScheduleRow } from "@/components/betriebszeiten/types";
 import {
   boundariesForDay,
@@ -268,21 +270,40 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
           />
         </Card>
       ) : (
-        // `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte macht ein langer Profilname
-        // (`truncate`) die Spalte breiter als das Handy, dann scrollt die Seite seitlich.
-        <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
-          {data.schedules.map((schedule) => (
-            <ScheduleCard
-              key={schedule.id}
-              schedule={schedule}
-              timezone={data.timezone}
-              nowMs={nowMs}
-              readonly={data.readonly}
-              onEdit={() => setEditing(schedule)}
-              onDelete={() => askRemove(schedule)}
-            />
-          ))}
-        </div>
+        // Zwei Ansichten: Profile zum Pflegen, Kalender für alle Bereiche auf einen Blick.
+        <Tabs defaultValue="profile" className="gap-4 sm:gap-5">
+          {/* Handy: volle Breite, damit die Leiste gleichmäßig umbricht (docs/design-regeln.md, Abschnitt 6). */}
+          <TabsList className="w-full sm:w-fit">
+            <TabsTrigger value="profile" className="gap-1.5">
+              <LayoutGrid className="h-3.5 w-3.5" />
+              Profile ({data.schedules.length})
+            </TabsTrigger>
+            <TabsTrigger value="kalender" className="gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Kalender
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="profile">
+            {/* `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte macht ein langer Profilname
+                (`truncate`) die Spalte breiter als das Handy, dann scrollt die Seite seitlich. */}
+            <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
+              {data.schedules.map((schedule) => (
+                <ScheduleCard
+                  key={schedule.id}
+                  schedule={schedule}
+                  timezone={data.timezone}
+                  nowMs={nowMs}
+                  readonly={data.readonly}
+                  onEdit={() => setEditing(schedule)}
+                  onDelete={() => askRemove(schedule)}
+                />
+              ))}
+            </div>
+          </TabsContent>
+          <TabsContent value="kalender">
+            <OperatingCalendar schedules={data.schedules} timezone={data.timezone} nowMs={nowMs} />
+          </TabsContent>
+        </Tabs>
       )}
 
       {/* Löschen immer mit AlertDialog und destructive-Taste (docs/design-regeln.md, Abschnitt 18). */}

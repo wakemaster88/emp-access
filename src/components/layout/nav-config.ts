@@ -27,6 +27,7 @@ import {
   Network,
   Package,
   PackageSearch,
+  PartyPopper,
   QrCode,
   ScanLine,
   Settings,
@@ -70,7 +71,7 @@ export interface NavGroup {
  *                           (künftig: Kundenkartei, Newsletter, Bewertungen)
  *  - Angebot:               Was verkaufen wir, wo gilt es, wann ist geöffnet,
  *                           was zeigen die Anzeigen dazu?
- *                           (künftig: Preise, Kurse, Verleih, Veranstaltungen)
+ *                           (künftig: Preise, Kurse, Verleih)
  *  - Warenwirtschaft:       Was haben wir auf Lager, was ist es wert, was
  *                           steht im Inventar?
  *                           (künftig: Bestellungen, Lieferanten)
@@ -118,6 +119,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { href: "/services", label: "Services", icon: Package, keywords: ["leistungen", "produkte"] },
       { href: "/areas", label: "Ressourcen", icon: MapPin, keywords: ["bereiche", "anlagen"] },
+      { href: "/veranstaltungen", label: "Veranstaltungen", icon: PartyPopper, keywords: ["rooftop", "lounge", "events", "feier", "partner", "belegung"] },
       { href: "/betriebszeiten", label: "Betriebszeiten", icon: CalendarClock, keywords: ["öffnungszeiten", "kalender"] },
       { href: "/monitors", label: "Monitore", icon: MonitorCog, keywords: ["anzeigen", "bildschirm", "display"] },
     ],

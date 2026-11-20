@@ -236,6 +236,10 @@ model Account {
   keyPolicyTemplates   KeyPolicyTemplate[]
   keySignatures        KeySignature[]
   mcpTokens            McpToken[]
+  eventPartners        EventPartner[]
+  venueExtras          VenueExtra[]
+  venueEvents          VenueEvent[]
+  venueEventDocuments  VenueEventDocument[]
 }
 
 model Admin {
@@ -665,6 +669,15 @@ model AccessArea {
   scanLockSeconds Int?
   showOnDashboard Boolean            @default(true)
   openingHours    String?
+  /// Veranstaltungsraum (z. B. Rooftop Lounge): Belegung ueber
+  /// /veranstaltungen, Partner tragen Termine ueber ihren Link ein.
+  eventVenue         Boolean         @default(false)
+  /// Puffer in Minuten zwischen zwei Veranstaltungen (Auf- und Abbau).
+  eventBufferMinutes Int             @default(60)
+  /// Hoechstens so viele Gaeste je Veranstaltung. NULL = ohne Grenze.
+  eventCapacity      Int?
+  venueEvents        VenueEvent[]
+  venueExtras        VenueExtra[]
   accountId       Int
   account         Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
   parent          AccessArea?        @relation("AreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
@@ -3897,4 +3910,193 @@ model InventoryCountLink {
   updatedAt DateTime @updatedAt
 
   @@unique([accountId, group])
+}
+
+// ─── Veranstaltungen (Rooftop Lounge) ──────────────────────────────────────
+
+/// Externer Veranstaltungspartner (z. B. Caterer), der ueber einen geheimen
+/// Link `/partner/<portalToken>` eigene Termine in seinen Raeumen eintraegt,
+/// Personenzahl meldet und Zusatzleistungen waehlt. Er sieht nur eigene
+/// Termine und Dokumente; fremde Termine nur als „belegt“.
+model EventPartner {
+  id            Int          @id @default(autoincrement())
+  accountId     Int
+  account       Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name          String
+  /// Ansprechpartner beim Partner (Freitext, fuer uns).
+  contactName   String?
+  /// Logo des Partners (https-Bild-URL) fuer den Kopf seines Zugangs.
+  logoUrl       String?
+  /// Mails an den Partner (neues Dokument, Bestaetigung, Absage).
+  contactEmail  String?
+  /// Mails an uns (Termin eingetragen, geaendert, abgesagt). Push geht immer.
+  notifyEmail   String?
+  portalToken   String?      @unique
+  portalEnabled Boolean      @default(false)
+  /// Raeume (AccessArea.id mit eventVenue), in denen der Partner buchen darf.
+  areaIds       Int[]        @default([])
+  /// Bis so viele Stunden vor Beginn darf der Partner selbst aendern und
+  /// absagen; danach nur noch wir. Die tatsaechliche Personenzahl darf er
+  /// bis zur Schlussrechnung melden.
+  editLockHours Int          @default(48)
+  /// So viele Tage im Voraus darf der Partner eintragen.
+  horizonDays   Int          @default(365)
+  events        VenueEvent[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([accountId, name])
+  @@index([accountId])
+}
+
+enum VenueExtraUnit {
+  /// Einmal je Veranstaltung.
+  FLAT
+  /// Je Gast (tatsaechliche Personenzahl, sonst geplante).
+  PER_PERSON
+  /// Stueckzahl waehlt der Partner.
+  PER_PIECE
+}
+
+/// Zusatzleistung, die ein Partner zu einer Veranstaltung anklicken kann und
+/// die wir weiterberechnen (z. B. Technik, Reinigung, Security).
+model VenueExtra {
+  id          Int               @id @default(autoincrement())
+  accountId   Int
+  account     Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  areaId      Int
+  area        AccessArea        @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  /// Netto-Preis je Einheit in Cent.
+  priceCents  Int               @default(0)
+  unit        VenueExtraUnit    @default(FLAT)
+  /// Aus = fuer neue Auswahl nicht mehr sichtbar, gebuchte bleiben.
+  active      Boolean           @default(true)
+  sortOrder   Int               @default(0)
+  bookings    VenueEventExtra[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([accountId, areaId])
+}
+
+enum VenueEventStatus {
+  /// Vom Partner (oder uns) eingetragen, Raum ist geblockt.
+  RESERVED
+  /// Von uns bestaetigt (spaetestens mit der Auftragsbestaetigung).
+  CONFIRMED
+  CANCELED
+}
+
+/// Belegung eines Veranstaltungsraums. Zwei nicht abgesagte Termine im
+/// selben Raum duerfen sich samt Puffer nicht ueberschneiden.
+model VenueEvent {
+  id            Int                  @id @default(autoincrement())
+  accountId     Int
+  account       Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  areaId        Int
+  area          AccessArea           @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  /// NULL = eigener Termin bzw. Sperre von uns.
+  partnerId     Int?
+  partner       EventPartner?        @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  title         String
+  /// Veranstalter/Kunde des Partners (z. B. Firma), nur so viel wie noetig.
+  hostName      String?
+  /// Tag in Berlin-Zeit (YYYY-MM-DD) und Zeiten HH:mm. Ende vor Beginn =
+  /// endet am Folgetag.
+  date          String
+  startTime     String
+  endTime       String
+  startDate     DateTime
+  endDate       DateTime
+  /// Geplante Personenzahl.
+  guestCount    Int
+  /// Tatsaechliche Personenzahl, vom Partner nach der Veranstaltung gemeldet.
+  actualGuests  Int?
+  status        VenueEventStatus     @default(RESERVED)
+  /// Fuer Partner und uns sichtbar.
+  note          String?
+  /// Nur fuer uns.
+  internalNote  String?
+  /// "PARTNER" oder "ADMIN" plus Name der Person.
+  createdBy     String               @default("ADMIN")
+  createdByName String?
+  canceledAt    DateTime?
+  canceledBy    String?
+  confirmedAt   DateTime?
+  /// Abgerechnet (Schlussrechnung gestellt). Danach aendert der Partner nichts mehr.
+  billedAt      DateTime?
+  extras        VenueEventExtra[]
+  documents     VenueEventDocument[]
+  changes       VenueEventChange[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([accountId, areaId, startDate])
+  @@index([partnerId, startDate])
+}
+
+/// Gewaehlte Zusatzleistung mit Preis-Schnappschuss.
+model VenueEventExtra {
+  id             Int            @id @default(autoincrement())
+  eventId        Int
+  event          VenueEvent     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  extraId        Int?
+  extra          VenueExtra?    @relation(fields: [extraId], references: [id], onDelete: SetNull)
+  name           String
+  unit           VenueExtraUnit
+  unitPriceCents Int
+  /// Bei PER_PIECE die Stueckzahl; bei FLAT 1; bei PER_PERSON ungenutzt (1).
+  quantity       Int            @default(1)
+
+  @@unique([eventId, extraId])
+  @@index([eventId])
+}
+
+enum VenueDocumentKind {
+  ORDER_CONFIRMATION
+  DEPOSIT_INVOICE
+  FINAL_INVOICE
+  OTHER
+}
+
+/// PDF aus DATEV (Auftragsbestaetigung, Anzahlungs-, Schlussrechnung), das
+/// wir hochladen und das der Partner seines Termins sieht.
+model VenueEventDocument {
+  id          Int               @id @default(autoincrement())
+  accountId   Int
+  account     Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  eventId     Int
+  event       VenueEvent        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  kind        VenueDocumentKind
+  fileName    String
+  size        Int
+  /// Blob-Pfad (Praefix event-docs); ohne Blob-Speicher die Bytes in `pdf`.
+  pdfBlob     String?
+  pdf         Bytes?
+  /// Rechnungsnummer o. ae. (frei).
+  reference   String?
+  /// Betrag brutto in Cent (optional, fuer die Uebersicht).
+  amountCents Int?
+  uploadedBy  String?
+  /// Zuletzt vom Partner geoeffnet.
+  viewedAt    DateTime?
+  createdAt   DateTime          @default(now())
+
+  @@index([accountId, eventId])
+}
+
+/// Verlauf eines Termins: wer hat wann was geaendert (fuer Rueckfragen).
+model VenueEventChange {
+  id      Int        @id @default(autoincrement())
+  eventId Int
+  event   VenueEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  at      DateTime   @default(now())
+  /// "PARTNER" oder "ADMIN".
+  by      String
+  byName  String?
+  summary String
+
+  @@index([eventId, at])
 }

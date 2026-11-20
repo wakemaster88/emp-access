@@ -1,0 +1,90 @@
+/*
+ * Partnerzugang (/partner/<token>): öffentliche Seite im Look von
+ * tuttenbrocksee.com (Petrol #1a6d73, Gelb #fbbf24, Inter, rund, hell).
+ * Wie die Kunden-App bewusst mit eigenem Kopf; Karten, Felder und Dialoge
+ * bleiben die ui-Bausteine, nur der Akzent wird Petrol. Die Variablen
+ * hängen an <html>, damit auch Dialoge (im Portal unter <body>) sie erben.
+ */
+html:has(.pp-root) {
+  --primary: oklch(0.47 0.075 200);
+  --primary-fill: oklch(0.47 0.075 200);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.55 0.08 200);
+  --pp-brand: #1a6d73;
+  --pp-brand-dark: #0e3f44;
+  --pp-accent: #fbbf24;
+  --pp-on-accent: #1f1503;
+}
+html.dark:has(.pp-root) {
+  --primary: oklch(0.74 0.09 195);
+  --primary-fill: oklch(0.5 0.08 200);
+  --ring: oklch(0.7 0.09 195);
+}
+
+.pp-hero {
+  position: relative;
+  overflow: hidden;
+  color: #ffffff;
+  background: var(--pp-brand);
+  padding: calc(env(safe-area-inset-top) + 16px) 0 72px;
+}
+html.dark .pp-hero { background: var(--pp-brand-dark); }
+/* Skyline mit Dachterrasse als feine Linie, rechts unten. */
+.pp-hero-art {
+  position: absolute;
+  right: -8px;
+  bottom: 0;
+  width: min(560px, 90%);
+  height: auto;
+  color: rgb(255 255 255 / 0.16);
+  pointer-events: none;
+}
+.pp-wrap { position: relative; margin-inline: auto; width: 100%; max-width: 960px; padding-inline: 16px; }
+@media (min-width: 640px) { .pp-wrap { padding-inline: 24px; } }
+
+.pp-brandbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.pp-logos { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pp-logo {
+  display: flex; align-items: center; justify-content: center;
+  height: 44px; min-width: 44px; max-width: 160px; padding: 6px 10px;
+  border-radius: 12px; background: #ffffff; overflow: hidden;
+}
+.pp-logo img { max-height: 32px; width: auto; object-fit: contain; }
+.pp-wordmark { font-weight: 800; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1; white-space: nowrap; }
+.pp-wordmark small { display: block; margin-top: 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.16em; color: rgb(255 255 255 / 0.75); }
+.pp-x { color: rgb(255 255 255 / 0.6); font-size: 14px; }
+.pp-monogram {
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: 999px;
+  background: var(--pp-accent); color: var(--pp-on-accent);
+  font-weight: 800; font-size: 18px; flex: none;
+}
+.pp-kicker {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 28px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(255 255 255 / 0.9);
+}
+.pp-kicker::before { content: ""; width: 24px; height: 4px; border-radius: 4px; background: var(--pp-accent); }
+.pp-title { margin: 8px 0 0; font-size: 34px; line-height: 1.1; font-weight: 700; letter-spacing: -0.01em; }
+@media (min-width: 640px) { .pp-title { font-size: 44px; } }
+.pp-sub { margin-top: 8px; max-width: 34rem; font-size: 15px; line-height: 1.5; color: rgb(255 255 255 / 0.85); }
+.pp-cta {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 20px;
+  min-height: 48px; padding: 0 22px; border-radius: 999px;
+  background: var(--pp-accent); color: var(--pp-on-accent); font-weight: 700; font-size: 15px;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.pp-cta:hover { filter: brightness(1.05); }
+.pp-cta:active { transform: scale(0.98); }
+.pp-cta:focus-visible { outline: 3px solid #ffffff; outline-offset: 2px; }
+.pp-cta svg { width: 18px; height: 18px; }
+
+/* Kennzahlen ragen in den Kopf hinein. */
+.pp-stats { position: relative; margin-top: -48px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 640px) { .pp-stats { gap: 12px; } }
+.pp-stat { padding: 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--border); min-width: 0; }
+@media (min-width: 640px) { .pp-stat { padding: 16px; } }
+.pp-stat-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); }
+.pp-stat-value { margin-top: 4px; font-size: 22px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.pp-stat-hint { margin-top: 2px; font-size: 12px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pp-footer { margin-top: auto; padding: 24px 16px calc(env(safe-area-inset-bottom) + 24px); text-align: center; font-size: 12px; color: var(--muted-foreground); }

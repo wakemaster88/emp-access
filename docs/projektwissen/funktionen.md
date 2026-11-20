@@ -4,6 +4,57 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Kalender der Betriebszeiten (20.11.2026)
+
+- Seite `/betriebszeiten` hat zwei Tabs: „Profile“ (Karten wie bisher) und
+  „Kalender“ über alle Bereiche (`src/components/betriebszeiten/operating-calendar.tsx`).
+- Monat: je Tag eine Zeile pro Bereich mit Uhrzeit (Handy: nur farbige Balken),
+  geschlossene Bereiche bleiben leer, Ausnahmetage gelb mit Punkt. Ein Tipp auf
+  einen Tag zeigt darunter alle Bereiche mit Zeit und Saison bzw. Ausnahme.
+- Woche: Zeitleiste je Tag und Bereich, Stundenbereich passt sich an die Woche an;
+  Spannen über Mitternacht laufen am Folgetag ab 0 Uhr weiter.
+- Farbe je Bereich aus `--chart-1` … `--chart-5` in Profil-Reihenfolge; Bereiche
+  lassen sich über die Chips aus- und einblenden.
+- Rechenlogik in `src/lib/operating-calendar.ts` (Monatsraster, KW, Tagesspannen),
+  Öffnung je Tag weiter über `openingForDay` aus `src/lib/operating-hours.ts`.
+
+## Veranstaltungen und Partnerzugang (20.11.2026)
+
+Für die Rooftop Lounge und andere Räume, die für Feiern belegt werden.
+
+- Eine Ressource wird unter Veranstaltungen · Einstellungen zum
+  Veranstaltungsraum (`AccessArea.eventVenue`), mit Puffer für Auf- und Abbau
+  (Standard 60 Min.) und höchster Personenzahl.
+- Belegung unter `/veranstaltungen`: Termine (`VenueEvent`) nach Monat, mit
+  Status Eingetragen, Bestätigt, Abgesagt und Abgerechnet. Zwei Termine im
+  selben Raum dürfen sich samt Puffer nicht überschneiden; die Prüfung läuft
+  serverseitig unter einer Sperre je Raum (`pg_advisory_xact_lock`). Termine
+  über Mitternacht: Ende vor Beginn heißt Folgetag.
+- Externe Partner (`EventPartner`) bekommen wie Vereine einen geheimen Link
+  `/partner/<token>` (abschaltbar, neu erzeugbar, Anfragebremse, nicht
+  indexiert). Sie sehen nur eigene Termine und deren Dokumente; fremde
+  Termine nur als Zeitraum „belegt“, ohne Titel oder Veranstalter. Sie
+  tragen ein, ändern und sagen ab bis `editLockHours` vor Beginn (Standard
+  48 Std.) und melden die tatsächliche Personenzahl bis zur Schlussrechnung.
+- Zusatzleistungen (`VenueExtra`) je Raum, pauschal, je Person oder je
+  Stück, Preise netto. Gebuchte Leistungen speichern Name und Preis als
+  Schnappschuss (`VenueEventExtra`); Preisänderungen gelten nur für neue
+  Auswahl. Je Person zählt die tatsächliche Zahl, sonst die geplante.
+- Dokumente aus DATEV (Auftragsbestätigung, Anzahlungs-, Schlussrechnung,
+  Sonstiges) laden Admins als PDF bis 4 MB hoch (`VenueEventDocument`, privat
+  im Blob-Speicher unter `event-docs/`, sonst in der DB). Keine
+  DATEV-Schnittstelle. Eine Auftragsbestätigung bestätigt den Termin, eine
+  Schlussrechnung markiert ihn als abgerechnet.
+- Benachrichtigungen: Partner trägt ein, ändert, sagt ab oder meldet
+  Personen → Push an alle Team-Geräte und Mail an „E-Mail an uns“. Wir
+  bestätigen, sagen ab oder laden ein Dokument hoch → Mail an den Partner,
+  ohne Anhang, nur mit Link. Verlauf je Termin (`VenueEventChange`).
+- Rechte: Termine sehen und pflegen darf jedes Team-Konto; Räume, Preise,
+  Partner-Links und Dokumente nur Admins.
+- Datenschutz: Beim Termin nur Titel, optional Veranstalter (Firma) und
+  Personenzahl, keine Gästelisten. Die PDFs sind Kopien; die Originale für
+  die Aufbewahrung liegen in DATEV.
+
 ## Warenwirtschaft (18.11.2026)
 
 Neue Menügruppe „Warenwirtschaft“ mit vier Seiten:
