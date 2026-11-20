@@ -24,6 +24,7 @@ import { prisma } from "./prisma";
 import { cleanEmail } from "./abo-email";
 import { aboCategory, aboNamesRider, isKidsSubscriptionName, personDataKey, pickHolder, planPersons } from "./customer-person";
 import { newRiderToken } from "./rider-app";
+import { FAMILY_MAX_MEMBERS } from "./rider-family";
 
 /** Namensraum für pg_advisory_xact_lock(int, int): ein Lauf je Konto zugleich. */
 const LOCK_NS = 7301;
@@ -122,7 +123,7 @@ export interface PersonSyncResult {
 
 /** Personen eines Kontos nachziehen. Ein Lauf je Konto zugleich (Sperre). */
 export async function syncCustomerPersons(accountId: number, customerId: number, now: Date = new Date()): Promise<PersonSyncResult> {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS}::int, ${customerId}::int)`;
 
     const customer = await tx.customer.findFirst({ where: { id: customerId, accountId }, select: { id: true, email: true } });
@@ -203,6 +204,9 @@ export async function syncCustomerPersons(accountId: number, customerId: number,
 
     return { created: plan.create.length, assigned, open: plan.open.length };
   }, { timeout: 20_000 });
+  // Personen des Kontos kommen in die Familie dessen, der sich mit dem Konto angemeldet hat.
+  await syncKontoFamily(accountId, customerId);
+  return result;
 }
 
 /** Abo-Ticket nach dem Speichern seinem Konto zuordnen und die Personen nachziehen. */
@@ -278,11 +282,29 @@ export async function runCustomerTick(now: Date = new Date()): Promise<CustomerT
   return result;
 }
 
-/** Person, die sich mit der Adresse des Kontos anmeldet (siehe `pickHolder`). */
-export async function holderPersonForEmail(
-  accountId: number,
-  email: string,
-): Promise<{ id: number; token: string; email: string | null } | null> {
+export interface LoginPerson {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  birthDate: Date | null;
+  /** Laufende Abos der Person, z. B. „Ride Abo“. */
+  abos: string[];
+}
+
+export interface KontoLogin {
+  customerId: number;
+  /** Personen ohne eigenen Zugang: eine davon ist vielleicht, wer sich anmeldet. */
+  persons: LoginPerson[];
+  /** Vorschlag, wer sich anmeldet (siehe `pickHolder`); null = „fahre selbst nicht“. */
+  guess: number | null;
+}
+
+/**
+ * Anmeldung mit der Adresse eines Kontos: Wer bist du? Zur Wahl stehen die
+ * Personen des Kontos ohne eigenen Zugang. Null, wenn es zur Adresse kein
+ * Konto gibt.
+ */
+export async function kontoLogin(accountId: number, email: string, now: Date = new Date()): Promise<KontoLogin | null> {
   const customerId = await customerIdForEmail(accountId, email);
   if (customerId == null) return null;
   const customer = await prisma.customer.findUnique({
@@ -290,29 +312,84 @@ export async function holderPersonForEmail(
     select: {
       name: true,
       persons: {
+        where: { email: null, passwordHash: null, passkeys: { none: {} } },
         select: {
-          id: true, token: true, email: true, firstName: true, lastName: true,
-          tickets: { where: { subscriptionId: { not: null } }, select: { subscription: { select: { name: true } } }, take: 20 },
+          id: true, firstName: true, lastName: true, birthDate: true,
+          tickets: {
+            where: { subscriptionId: { not: null } },
+            select: { status: true, endDate: true, subscription: { select: { name: true } } },
+            take: 20,
+          },
         },
         orderBy: { id: "asc" },
         take: 20,
       },
     },
   });
-  if (!customer || customer.persons.length === 0) return null;
-  const id = pickHolder(
-    customer.persons.map((p) => ({
-      id: p.id,
-      email: p.email,
-      firstName: p.firstName,
-      lastName: p.lastName,
-      adultAbo: p.tickets.some((t) => !isKidsSubscriptionName(t.subscription?.name)),
-    })),
-    email,
-    customer.name,
-  );
-  const p = customer.persons.find((x) => x.id === id);
-  return p ? { id: p.id, token: p.token, email: p.email } : null;
+  if (!customer) return null;
+  const running = (t: { status: string; endDate: Date | null }) =>
+    ["VALID", "REDEEMED", "PAUSED"].includes(t.status) && (t.endDate == null || t.endDate.getTime() > now.getTime());
+  const persons = customer.persons.map((p) => ({
+    id: p.id,
+    firstName: p.firstName,
+    lastName: p.lastName,
+    birthDate: p.birthDate,
+    abos: [...new Set(p.tickets.filter(running).map((t) => t.subscription?.name ?? "Abo"))],
+    adultAbo: p.tickets.some((t) => !isKidsSubscriptionName(t.subscription?.name)),
+  }));
+  const guess = pickHolder(persons.map((p) => ({ ...p, email: null })), email, customer.name);
+  return {
+    customerId,
+    persons: persons.map((p) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName, birthDate: p.birthDate, abos: p.abos })),
+    guess,
+  };
+}
+
+/**
+ * Familie aus dem Konto (Kunden-App): Wer sich mit der Adresse des Kontos
+ * angemeldet hat, bekommt die übrigen Personen des Kontos ohne eigenen Zugang
+ * als Mitglieder, die er verwaltet. Personen mit eigenem Zugang kommen wie
+ * bisher nur per Einladung dazu; wer schon in einer Familie ist, bleibt dort.
+ */
+export async function syncKontoFamily(accountId: number, customerId: number): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS}::int, ${customerId}::int)`;
+    const customer = await tx.customer.findFirst({
+      where: { id: customerId, accountId },
+      select: { email: true, aliasEmails: true },
+    });
+    if (!customer) return 0;
+    const emails = [customer.email, ...customer.aliasEmails];
+    const persons = await tx.riderProfile.findMany({
+      where: { accountId, customerId },
+      select: {
+        id: true, email: true, passwordHash: true, familyId: true, familyAdult: true,
+        _count: { select: { passkeys: true, tickets: true } },
+      },
+      orderBy: { id: "asc" },
+    });
+    const me = persons.find((p) => p.email != null && emails.includes(p.email));
+    if (!me || (me.familyId != null && !me.familyAdult)) return 0;
+    const others = persons.filter(
+      (p) => p.id !== me.id && p.familyId == null && p.email == null && p.passwordHash == null
+        && p._count.passkeys === 0 && p._count.tickets > 0,
+    );
+    if (others.length === 0) return 0;
+
+    let familyId = me.familyId;
+    if (familyId == null) {
+      familyId = (await tx.riderFamily.create({ data: { accountId }, select: { id: true } })).id;
+      await tx.riderProfile.update({ where: { id: me.id }, data: { familyId, familyAdult: true } });
+    }
+    const members = await tx.riderProfile.count({ where: { accountId, familyId } });
+    const add = others.slice(0, Math.max(0, FAMILY_MAX_MEMBERS - members)).map((p) => p.id);
+    if (add.length === 0) return 0;
+    const r = await tx.riderProfile.updateMany({
+      where: { accountId, id: { in: add }, familyId: null },
+      data: { familyId, familyAdult: false },
+    });
+    return r.count;
+  });
 }
 
 /** Fehler mit Meldung für die Oberfläche (deutsch) und HTTP-Status. */
@@ -352,7 +429,7 @@ export async function assignRider(
     throw new RiderError("Das Abo hat noch keine E-Mail-Adresse. Trag sie zuerst ein, dann den Fahrer.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS}::int, ${customerId}::int)`;
     let personId: number;
     let created = false;
@@ -389,6 +466,8 @@ export async function assignRider(
     await tx.ticket.update({ where: { id: ticket.id }, data: { riderProfileId: personId } });
     return { personId, created };
   });
+  if (result.created) await syncKontoFamily(accountId, customerId);
+  return result;
 }
 
 /** Name und Geburtsdatum einer Person ändern (nur übergebene Felder). */

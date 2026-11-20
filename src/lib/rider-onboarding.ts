@@ -3,17 +3,23 @@
  *
  * Der Kunde gibt auf `/app` nur seine Adresse ein und bekommt einen Link
  * (`/app/mail/<schlüssel>`, signiert, 48 Stunden gültig). Erst wenn er den Link
- * öffnet, ist die Adresse bestätigt: Das System sucht Abos mit dieser Adresse,
- * der Kunde wählt seine aus und landet in seinem Profil. Ohne Abo geht es mit
- * einem Profil ohne Ticket weiter (Abo dann in der App buchbar). Tagestickets
- * mit der Adresse kommen wie bisher automatisch dazu.
+ * öffnet, ist die Adresse bestätigt.
+ *
+ * - Gehört die Adresse zu einem Kundenkonto (lib/customers), wählt der Kunde
+ *   einmal, wer er ist: eine Person des Kontos oder „fahre selbst nicht“.
+ *   Die übrigen Personen des Kontos ohne eigenen Zugang kommen als Familie
+ *   dazu (`syncKontoFamily`), neue Abos des Kontos von selbst.
+ * - Ohne Konto (noch nicht verknüpft) wie bisher: Abos mit dieser Adresse
+ *   auswählen, ohne Abo geht es mit einem Profil ohne Ticket weiter.
+ *
+ * Tagestickets mit der Adresse kommen in beiden Fällen dazu.
  */
 import { prisma } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { countLinked, dayTicketsByEmail, mailLinkKey, MAIL_LINK_HOURS, MAIL_MAX_PER_DAY, MAIL_PAUSE_MINUTES, normalizeEmail, DAY_GUEST_MAIL_SUBJECT } from "./day-guest";
 import { newRiderToken } from "./rider-app";
 import { samePersonAbos } from "./abo-person";
-import { customerIdForEmail, holderPersonForEmail } from "./customers";
+import { customerIdForEmail, kontoLogin, syncKontoFamily, type LoginPerson } from "./customers";
 import { sendEmail } from "./email-sender";
 import { riderLinkMail } from "./rider-mail-template";
 
@@ -32,21 +38,23 @@ export interface OnboardingAbo {
 export interface OnboardingState {
   /** Vorhandenes Profil zu dieser Adresse (Token), sonst null. */
   token: string | null;
-  /** Abos mit dieser Adresse, die noch in keinem Profil sind. */
+  /** Ohne Konto: Abos mit dieser Adresse, die noch in keinem Profil sind. */
   abos: OnboardingAbo[];
+  /** Konto zur Adresse, solange sich noch niemand damit angemeldet hat: Wer bist du? */
+  konto: { persons: LoginPerson[]; guess: number | null } | null;
 }
 
-/** Profil zu einer bestätigten Adresse: am Profil selbst oder über ein zugeordnetes Ticket. */
-async function profileByEmail(accountId: number, email: string): Promise<{ id: number; token: string; email: string | null } | null> {
-  const direct = await prisma.riderProfile.findFirst({
+/** Profil, das diese Adresse bestätigt hat. */
+async function confirmedProfile(accountId: number, email: string): Promise<{ id: number; token: string; email: string | null } | null> {
+  return prisma.riderProfile.findFirst({
     where: { accountId, email },
     select: { id: true, token: true, email: true },
     orderBy: { id: "asc" },
   });
-  if (direct) return direct;
-  // Kundenkonto zur Adresse: dessen Inhaber (lib/customers).
-  const holder = await holderPersonForEmail(accountId, email);
-  if (holder) return holder;
+}
+
+/** Ohne Konto: Profil über ein zugeordnetes Ticket mit dieser Adresse (aus der Zeit vor den Konten). */
+async function profileViaTicket(accountId: number, email: string): Promise<{ id: number; token: string; email: string | null } | null> {
   const viaTicket = await prisma.ticket.findFirst({
     where: { accountId, riderProfileId: { not: null }, email: { equals: email, mode: "insensitive" } },
     select: { riderProfile: { select: { id: true, token: true, email: true } } },
@@ -85,31 +93,78 @@ async function openAbos(accountId: number, email: string, now: Date): Promise<On
 
 /** Was der Kunde nach dem Öffnen des Mail-Links sieht. */
 export async function onboardingState(accountId: number, email: string, now: Date = new Date()): Promise<OnboardingState> {
-  const [profile, abos] = await Promise.all([profileByEmail(accountId, email), openAbos(accountId, email, now)]);
-  return { token: profile?.token ?? null, abos };
+  const confirmed = await confirmedProfile(accountId, email);
+  const konto = await kontoLogin(accountId, email, now);
+  if (konto) {
+    return { token: confirmed?.token ?? null, abos: [], konto: confirmed ? null : { persons: konto.persons, guess: konto.guess } };
+  }
+  const [viaTicket, abos] = await Promise.all([
+    confirmed ? Promise.resolve(null) : profileViaTicket(accountId, email),
+    openAbos(accountId, email, now),
+  ]);
+  return { token: (confirmed ?? viaTicket)?.token ?? null, abos, konto: null };
+}
+
+export interface OnboardingInput {
+  /** Ohne Konto: gewählte Abos mit dieser Adresse. */
+  ticketIds?: number[];
+  /** Mit Konto: wer man ist; null = fährt selbst nicht. Fehlt es, gilt der Vorschlag. */
+  personId?: number | null;
 }
 
 /**
- * Anmeldung abschließen: Profil zur Adresse holen oder anlegen, die gewählten
- * Abos (nur solche mit dieser Adresse) und weitere Abo-Tickets derselben
- * Person zuordnen, Tagestickets der Adresse dazu. Gibt den Token zurück.
+ * Anmeldung abschließen. Mit Konto: die gewählte Person (oder eine neue ohne
+ * Abo) bekommt die Adresse, die übrigen Personen kommen in ihre Familie.
+ * Ohne Konto: Profil zur Adresse holen oder anlegen, die gewählten Abos (nur
+ * solche mit dieser Adresse) und weitere Abo-Tickets derselben Person
+ * zuordnen. Tagestickets der Adresse kommen dazu. Gibt den Token zurück.
  */
 export async function completeOnboarding(
   accountId: number,
   email: string,
-  ticketIds: number[],
+  input: OnboardingInput,
   now: Date = new Date(),
 ): Promise<string | null> {
   const config = await prisma.gamificationConfig.findUnique({ where: { accountId }, select: { enabled: true } });
   const account = await prisma.account.findUnique({ where: { id: accountId }, select: { isActive: true } });
   if (!config?.enabled || !account?.isActive) return null;
 
-  const allowed = new Set((await openAbos(accountId, email, now)).map((a) => a.ticketId));
-  const chosen = [...new Set(ticketIds)].filter((id) => allowed.has(id));
+  const customerId = await customerIdForEmail(accountId, email);
+  let profile = await confirmedProfile(accountId, email);
+  if (customerId != null) {
+    if (!profile) {
+      // Wer bist du? Nur eine Person dieses Kontos ohne eigenen Zugang.
+      const konto = await kontoLogin(accountId, email, now);
+      const personId = input.personId === undefined ? konto?.guess ?? null : input.personId;
+      if (personId != null && konto?.persons.some((p) => p.id === personId)) {
+        const claimed = await prisma.riderProfile.updateMany({
+          where: { id: personId, accountId, customerId, email: null, passwordHash: null },
+          data: { email },
+        });
+        if (claimed.count === 1) {
+          profile = await prisma.riderProfile.findUnique({ where: { id: personId }, select: { id: true, token: true, email: true } });
+        }
+      }
+      if (!profile) {
+        profile = await prisma.riderProfile.create({
+          data: { token: newRiderToken(), accountId, email, customerId },
+          select: { id: true, token: true, email: true },
+        });
+      }
+    } else {
+      // Profil aus der Zeit vor dem Konto: gehört jetzt dazu.
+      await prisma.riderProfile.updateMany({ where: { id: profile.id, customerId: null }, data: { customerId } });
+    }
+    await adoptDay(accountId, email, profile.id, now);
+    await syncKontoFamily(accountId, customerId);
+    return profile.token;
+  }
 
-  let profile = await profileByEmail(accountId, email);
+  // Ohne Konto: wie vor den Kundenkonten.
+  const allowed = new Set((await openAbos(accountId, email, now)).map((a) => a.ticketId));
+  const chosen = [...new Set(input.ticketIds ?? [])].filter((id) => allowed.has(id));
+  if (!profile) profile = await profileViaTicket(accountId, email);
   if (!profile) {
-    const customerId = await customerIdForEmail(accountId, email);
     profile = await prisma.riderProfile.create({
       data: { token: newRiderToken(), accountId, email, customerId },
       select: { id: true, token: true, email: true },
@@ -155,16 +210,19 @@ export async function completeOnboarding(
     });
   }
 
-  // Tagestickets dieser Saison mit derselben Adresse.
-  const day = (await dayTicketsByEmail(accountId, email, now)).filter((t) => t.riderProfileId == null).map((t) => t.id);
-  if (day.length > 0) {
-    await prisma.ticket.updateMany({
-      where: { accountId, id: { in: day }, riderProfileId: null },
-      data: { riderProfileId: profile.id, gamificationOptOut: false },
-    });
-    await countLinked(accountId, day).catch((err) => console.error("[rider] count day tickets failed:", err));
-  }
+  await adoptDay(accountId, email, profile.id, now);
   return profile.token;
+}
+
+/** Tagestickets dieser Saison mit derselben Adresse ins Profil holen. */
+async function adoptDay(accountId: number, email: string, profileId: number, now: Date): Promise<void> {
+  const day = (await dayTicketsByEmail(accountId, email, now)).filter((t) => t.riderProfileId == null).map((t) => t.id);
+  if (day.length === 0) return;
+  await prisma.ticket.updateMany({
+    where: { accountId, id: { in: day }, riderProfileId: null },
+    data: { riderProfileId: profileId, gamificationOptOut: false },
+  });
+  await countLinked(accountId, day).catch((err) => console.error("[rider] count day tickets failed:", err));
 }
 
 /** Konten, für die eine Adresse einen Link bekommt. */

@@ -96,7 +96,7 @@ test("planPersons: Abo ohne Namen bleibt offen", () => {
   assert.deepEqual(planPersons([anon], [], NOW).open, [anon.id]);
 });
 
-test("pickHolder: Kontoinhaber vor Kind, fremde Adresse scheidet aus", () => {
+test("pickHolder: Kontoinhaber vor Kind, fremde Adresse scheidet aus, nur Kinder-Abos = kein Vorschlag", () => {
   const people = [
     { id: 1, email: null, firstName: "Mia", lastName: "Beispiel", adultAbo: false },
     { id: 2, email: null, firstName: "Eva", lastName: "Beispiel", adultAbo: true },
@@ -104,8 +104,10 @@ test("pickHolder: Kontoinhaber vor Kind, fremde Adresse scheidet aus", () => {
   ];
   assert.equal(pickHolder(people, "eva@example.de", "Eva Beispiel"), 2);
   assert.equal(pickHolder(people, "eva@example.de", null), 2);
-  assert.equal(pickHolder([people[0]], "eva@example.de", "Eva Beispiel"), 1);
   assert.equal(pickHolder([people[2]], "eva@example.de", "Eva Beispiel"), null);
+  // Nur ein Kinder-Abo ohne den Namen des Inhabers: der Inhaber fährt selbst nicht.
+  assert.equal(pickHolder([people[0]], "eva@example.de", "Eva Beispiel"), null);
+  assert.equal(pickHolder([people[0]], "eva@example.de", "Mia Beispiel"), 1);
 });
 
 test("aboCategory: Fahr-Abos sind eine Art, Beach und Aqua je eine eigene", () => {
