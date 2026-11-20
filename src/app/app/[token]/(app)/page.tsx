@@ -8,6 +8,7 @@ import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challeng
 import { fmtDay, validityText } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
+import { loadRiderOpening } from "@/lib/rider-opening";
 import { nextAward } from "@/lib/awards";
 import { AwardBadge } from "@/components/rider/award-badge";
 import { NextAwardCard } from "@/components/rider/award-parts";
@@ -17,6 +18,12 @@ export const dynamic = "force-dynamic";
 const QR_ICON = (
   <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3h-3zM20 14v7M14 20h3" />
+  </svg>
+);
+
+const CLOCK_ICON = (
+  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
   </svg>
 );
 
@@ -31,10 +38,11 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { token } = await params;
   const rider = await requireRider(token);
   const base = riderAppPath(token);
-  const [offers, challenges, occupancy, family] = await Promise.all([
+  const [offers, challenges, occupancy, opening, family] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
+    loadRiderOpening(rider.accountId).catch(() => null),
     riderFamilyView(token),
   ]);
   // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
@@ -44,6 +52,8 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { current, next } = rider.level;
   const abo = aboStatus(rider.abo);
   const soon = abo.kind === "active" && abo.daysLeft <= RENEWAL_HINT_DAYS;
+  // Lift zu und niemand gefahren: „Geschlossen“ statt „Gerade ruhig“ und leerem Balken.
+  const closedQuiet = opening != null && !opening.open && occupancy?.riders === 0;
   const upcoming = nextAward(rider.awards);
   const earned = rider.awards
     .filter((a) => a.unlocked)
@@ -141,24 +151,39 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
               Stand {occupancy.at.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" })} Uhr
             </span>
           </div>
-          <div className="rd-between">
-            <div className="rd-display rd-h2">{OCCUPANCY_LABEL[occupancy.level]}</div>
-            <span className="rd-muted">
-              {occupancy.riders === 1 ? "1 Fahrer" : `${occupancy.riders} Fahrer`}
-            </span>
-          </div>
-          <div
-            className={`rd-bar rd-occ-${occupancy.level}`}
-            role="img"
-            aria-label={`${OCCUPANCY_LABEL[occupancy.level]}: ${occupancy.riders} Fahrer und ${occupancy.starts} Starts in der letzten Stunde`}
-          >
-            <i style={{ width: `${occupancy.percent}%` }} />
-          </div>
-          <span className="rd-muted">
-            {occupancy.riders === 0
-              ? "In der letzten Stunde ist niemand am Lift gestartet."
-              : `${occupancy.starts === 1 ? "1 Start" : `${occupancy.starts} Starts`} am Lift in der letzten Stunde.`}
-          </span>
+          {closedQuiet ? (
+            <div className="rd-display rd-h2">Geschlossen</div>
+          ) : (
+            <>
+              <div className="rd-between">
+                <div className="rd-display rd-h2">{OCCUPANCY_LABEL[occupancy.level]}</div>
+                <span className="rd-muted">
+                  {occupancy.riders === 1 ? "1 Fahrer" : `${occupancy.riders} Fahrer`}
+                </span>
+              </div>
+              <div
+                className={`rd-bar rd-occ-${occupancy.level}`}
+                role="img"
+                aria-label={`${OCCUPANCY_LABEL[occupancy.level]}: ${occupancy.riders} Fahrer und ${occupancy.starts} Starts in der letzten Stunde`}
+              >
+                <i style={{ width: `${occupancy.percent}%` }} />
+              </div>
+              <span className="rd-muted">
+                {occupancy.riders === 0
+                  ? "In der letzten Stunde ist niemand am Lift gestartet."
+                  : `${occupancy.starts === 1 ? "1 Start" : `${occupancy.starts} Starts`} am Lift in der letzten Stunde.`}
+              </span>
+            </>
+          )}
+          {opening && (
+            <div className={`rd-hours${opening.open ? " rd-hours-open" : ""}`}>
+              {CLOCK_ICON}
+              <span>
+                {opening.text}
+                {opening.note ? ` (${opening.note})` : ""}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
