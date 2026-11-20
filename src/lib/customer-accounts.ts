@@ -18,6 +18,8 @@ export interface CustomerPersonRow {
   lastName: string | null;
   /** ISO-Datum (YYYY-MM-DD) oder null. */
   birthDate: string | null;
+  /** Erstes Jahr an der Anlage (für die Treue-Awards), vom Personal gepflegt. */
+  ridingSince: number | null;
   /** Meldet sich selbst in der Kunden-App an (Adresse, Passwort oder Passkey). */
   app: boolean;
 }
@@ -114,7 +116,7 @@ export async function loadCustomerAccounts(db: PrismaClient, accountId: number, 
       annyCustomerIds: true,
       persons: {
         select: {
-          id: true, firstName: true, lastName: true, birthDate: true, email: true, passwordHash: true,
+          id: true, firstName: true, lastName: true, birthDate: true, ridingSince: true, email: true, passwordHash: true,
           _count: { select: { passkeys: true } },
         },
         orderBy: { id: "asc" },
@@ -144,6 +146,7 @@ export async function loadCustomerAccounts(db: PrismaClient, accountId: number, 
       firstName: p.firstName,
       lastName: p.lastName,
       birthDate: isoDay(p.birthDate),
+      ridingSince: p.ridingSince,
       app: p.email != null || p.passwordHash != null || p._count.passkeys > 0,
     })),
     abos: c.tickets

@@ -5,10 +5,10 @@
  */
 import { randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { tenantClient, type TenantDb } from "./prisma";
+import { prisma, tenantClient, type TenantDb } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { runChallenges } from "./challenge-service";
-import { notifyVoucher } from "./rider-push";
+import { notifyAward } from "./rider-push";
 import {
   aggregateScans,
   awardKey,
@@ -16,8 +16,15 @@ import {
   dbDateToYmd,
   mergeDayStats,
   reachedMilestones,
+  seasonsCount,
   ymdToDbDate,
+  ALL_TIME_KEY,
   BENEFIT_STATE_MESSAGE,
+  EARLY_WINDOW_MS,
+  type DayStat,
+  type GamiMetric,
+  type GamiPeriod,
+  type MilestoneRule,
 } from "./gamification";
 
 export interface GamiConfig {
@@ -135,65 +142,174 @@ export async function recordStart(input: {
   await runChallenges(db, accountId, ticketId, ymd, config.startCapPerDay);
 }
 
-/** Neu erreichte Meilensteine eines Tickets vergeben; gibt die Anzahl zurück. */
+/** Meilenstein aus der Datenbank als Zählregel (Aktionstage als "YYYY-MM-DD"). */
+export function toMilestoneRule(m: {
+  id: number;
+  metric: string;
+  threshold: number;
+  period: string;
+  eventDays: Date[];
+}): MilestoneRule {
+  return {
+    id: m.id,
+    metric: m.metric as GamiMetric,
+    threshold: m.threshold,
+    period: m.period as GamiPeriod,
+    eventDays: m.eventDays.map(dbDateToYmd),
+  };
+}
+
+/**
+ * Tagessummen einer Person über alle Jahre, je Kalendertag zusammengelegt.
+ * Mit `withEarly` wird je Tag gemerkt, ob der erste Start in der ersten
+ * Stunde nach dem ersten Abo-Start des Tages am Lift lag (Award „früh am
+ * Lift“). Das kostet eine zweite Abfrage und läuft nur, wenn ein Meilenstein
+ * es braucht.
+ */
+export async function loadPersonDays(
+  db: TenantDb,
+  accountId: number,
+  ticketIds: number[],
+  withEarly: boolean,
+): Promise<DayStat[]> {
+  if (ticketIds.length === 0) return [];
+  const stats = await db.riderDayStat.findMany({
+    where: { accountId, ticketId: { in: ticketIds } },
+    select: { day: true, starts: true, firstStartAt: true },
+  });
+  const firstOfDay = new Map<string, number>();
+  if (withEarly && stats.length > 0) {
+    const days = [...new Set(stats.map((s) => s.day.getTime()))].map((t) => new Date(t));
+    const rows = await db.riderDayStat.groupBy({
+      by: ["day"],
+      // Nur Abos: ein Tagesticket ohne Scan trägt als Zeit den Beginn des Tickets.
+      where: { accountId, day: { in: days }, ticket: { subscriptionId: { not: null } } },
+      _min: { firstStartAt: true },
+    });
+    for (const r of rows) {
+      if (r._min.firstStartAt) firstOfDay.set(dbDateToYmd(r.day), r._min.firstStartAt.getTime());
+    }
+  }
+  return mergeDayStats(
+    stats.map((s) => {
+      const day = dbDateToYmd(s.day);
+      const first = firstOfDay.get(day);
+      const delay = first == null ? null : s.firstStartAt.getTime() - first;
+      return { day, starts: s.starts, early: delay != null && delay >= 0 && delay <= EARLY_WINDOW_MS };
+    }),
+  );
+}
+
+/** Herkunft eines Gutscheins aus einem Award, so steht sie am Gutschein. */
+export function awardVoucherNote(name: string, periodKey: string): string {
+  return periodKey === ALL_TIME_KEY ? `Award ${name}` : `Award ${name} (${periodKey})`;
+}
+
+/** Namensräume für pg_advisory_xact_lock(int, int): eine Vergabe je Person bzw. Ticket zugleich. */
+const AWARD_LOCK_PERSON = 7302;
+const AWARD_LOCK_TICKET = 7303;
+
+/**
+ * Award anlegen, wenn die Person ihn in diesem Zeitraum noch nicht hat;
+ * liefert die ID oder null. Die Sperre je Person verhindert, dass ein Scan am
+ * Drehkreuz und das Öffnen der App denselben Award gleichzeitig auf zwei
+ * Tickets vergeben: die Eindeutigkeit in der Datenbank gilt nur je Ticket.
+ */
+async function claimAward(input: {
+  accountId: number;
+  milestoneId: number;
+  ticketId: number;
+  /** Alle Tickets der Person. */
+  ticketIds: number[];
+  periodKey: string;
+  profileId: number | null;
+}): Promise<number | null> {
+  const { accountId, milestoneId, ticketId, periodKey } = input;
+  return prisma.$transaction(async (tx) => {
+    if (input.profileId != null) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${AWARD_LOCK_PERSON}::int, ${input.profileId}::int)`;
+    } else {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${AWARD_LOCK_TICKET}::int, ${ticketId}::int)`;
+    }
+    const has = await tx.milestoneAward.findFirst({
+      where: { accountId, milestoneId, periodKey, ticketId: { in: input.ticketIds } },
+      select: { id: true },
+    });
+    if (has) return null;
+    const award = await tx.milestoneAward.create({
+      data: { milestoneId, ticketId, periodKey, accountId },
+      select: { id: true },
+    });
+    return award.id;
+  });
+}
+
+/**
+ * Neu erreichte Meilensteine (Awards) eines Tickets vergeben; gibt die Anzahl
+ * zurück. Gezählt wird je Person über alle Jahre: Awards ohne Zeitraum
+ * (Starts gesamt, Saisons) gibt es einmal, die anderen je Saison oder Monat.
+ * `notify: false` verschickt keine Push-Nachricht (die App ist gerade offen).
+ */
 export async function awardMilestones(
   db: TenantDb,
   accountId: number,
   ticketId: number,
   refYmd: string,
   capPerDay: number,
+  opts: { notify?: boolean } = {},
 ): Promise<number> {
   const milestones = await db.milestone.findMany({ where: { accountId, active: true } });
   if (milestones.length === 0) return 0;
 
   // Meilensteine gelten je Person: alle Tickets desselben Profils zählen zusammen.
-  const owner = await db.ticket.findFirst({ where: { id: ticketId, accountId }, select: { riderProfileId: true } });
+  const owner = await db.ticket.findFirst({
+    where: { id: ticketId, accountId },
+    select: { riderProfileId: true, riderProfile: { select: { ridingSince: true } } },
+  });
   const ticketIds = owner?.riderProfileId
     ? (await db.ticket.findMany({ where: { accountId, riderProfileId: owner.riderProfileId }, select: { id: true } })).map((t) => t.id)
     : [ticketId];
 
-  const year = refYmd.slice(0, 4);
-  const [stats, awards] = await Promise.all([
-    db.riderDayStat.findMany({
-      where: {
-        accountId,
-        ticketId: { in: ticketIds },
-        day: { gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) },
-      },
-      select: { day: true, starts: true },
-    }),
+  const [days, awards] = await Promise.all([
+    loadPersonDays(db, accountId, ticketIds, milestones.some((m) => m.metric === "EARLY_DAYS")),
     db.milestoneAward.findMany({
-      where: { accountId, ticketId: { in: ticketIds }, periodKey: { startsWith: year } },
+      where: { accountId, ticketId: { in: ticketIds } },
       select: { milestoneId: true, periodKey: true },
     }),
   ]);
 
   const awarded = new Set(awards.map((a) => awardKey(a.milestoneId, a.periodKey)));
-  const days = mergeDayStats(stats.map((s) => ({ day: dbDateToYmd(s.day), starts: s.starts })));
-  const reached = reachedMilestones(milestones, days, refYmd, capPerDay, awarded);
+  const seasons = seasonsCount(days, owner?.riderProfile?.ridingSince ?? null, refYmd);
+  const reached = reachedMilestones(milestones.map(toMilestoneRule), days, refYmd, capPerDay, awarded, seasons);
 
   let created = 0;
   for (const r of reached) {
     const milestone = milestones.find((m) => m.id === r.milestoneId);
     if (!milestone) continue;
     try {
-      // Erst der Award (eindeutig je Meilenstein/Ticket/Zeitraum): verliert ein
-      // paralleler Scan das Rennen, entsteht kein zweiter Gutschein.
-      const award = await db.milestoneAward.create({
-        data: { milestoneId: milestone.id, ticketId, periodKey: r.periodKey, accountId },
+      // Erst der Award (einmal je Person und Zeitraum): verliert ein paralleler
+      // Scan das Rennen, entsteht kein zweiter Gutschein.
+      const awardId = await claimAward({
+        accountId,
+        milestoneId: milestone.id,
+        ticketId,
+        ticketIds,
+        periodKey: r.periodKey,
+        profileId: owner?.riderProfileId ?? null,
       });
+      if (awardId == null) continue;
       created += 1;
       if (milestone.voucherLabel) {
         const voucher = await createBenefitVoucher(db, {
           accountId,
           ticketId,
           label: milestone.voucherLabel,
-          notes: `Meilenstein ${milestone.name} (${r.periodKey})`,
+          notes: awardVoucherNote(milestone.name, r.periodKey),
           validDays: milestone.voucherValidDays,
         });
-        await db.milestoneAward.update({ where: { id: award.id }, data: { voucherId: voucher.id } });
-        notifyVoucher(accountId, ticketId, milestone.voucherLabel);
+        await db.milestoneAward.update({ where: { id: awardId }, data: { voucherId: voucher.id } });
       }
+      if (opts.notify !== false) notifyAward(accountId, ticketId, milestone.name, milestone.voucherLabel);
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
     }

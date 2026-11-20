@@ -321,6 +321,7 @@ function AccountDialogBody({
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {p.birthDate ? `Geboren ${fmtDay(p.birthDate, "")}` : "Ohne Geburtsdatum"}
+                      {p.ridingSince != null ? ` · dabei seit ${p.ridingSince}` : ""}
                       {riderChoices.find((r) => r.id === p.id)?.abos.length
                         ? ` · fährt mit ${riderChoices.find((r) => r.id === p.id)!.abos.join(", ")}`
                         : ""}
@@ -396,6 +397,7 @@ function PersonForm({ person, onCancel, onDone }: { person: CustomerPersonRow; o
   const [firstName, setFirstName] = useState(person.firstName ?? "");
   const [lastName, setLastName] = useState(person.lastName ?? "");
   const [birthDate, setBirthDate] = useState(person.birthDate ?? "");
+  const [ridingSince, setRidingSince] = useState(person.ridingSince != null ? String(person.ridingSince) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canSave = !!(firstName.trim() || lastName.trim());
@@ -409,7 +411,12 @@ function PersonForm({ person, onCancel, onDone }: { person: CustomerPersonRow; o
       const res = await fetch(`/api/customers/persons/${person.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ firstName, lastName, birthDate: birthDate || null }),
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          birthDate: birthDate || null,
+          ridingSince: ridingSince.trim() ? Number(ridingSince) : null,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Speichern fehlgeschlagen");
@@ -456,6 +463,24 @@ function PersonForm({ person, onCancel, onDone }: { person: CustomerPersonRow; o
           onChange={(e) => setBirthDate(e.target.value)}
           className="max-sm:h-11"
         />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="person-since">Fährt seit (Jahr)</Label>
+        <Input
+          id="person-since"
+          type="number"
+          inputMode="numeric"
+          min={1960}
+          max={new Date().getFullYear()}
+          step={1}
+          placeholder="z. B. 2019"
+          value={ridingSince}
+          onChange={(e) => setRidingSince(e.target.value)}
+          className="max-sm:h-11"
+        />
+        <p className="text-xs text-muted-foreground">
+          Erstes Jahr an der Anlage. Zählt bei den Treue-Awards der Kunden-App mit, weil die Starts erst seit 2026 gezählt werden. Leer lassen, wenn unbekannt.
+        </p>
       </div>
       <p className="text-xs text-muted-foreground">
         Gilt für alle Abos der Person, an Kasse, Scanner und in der Kunden-App. Die Daten am Abo selbst bleiben.

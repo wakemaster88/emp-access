@@ -91,7 +91,8 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 - **Meilensteine** (`Milestone`): Besuchstage, Starts oder Wochen in Serie, je
   Saison (Kalenderjahr) oder Monat, optional mit Gutschein. Vergabe einmal je
   Ticket und Zeitraum (`MilestoneAward`, eindeutig). Starts zählen für
-  Meilensteine nur bis zur Tagesobergrenze (Standard 10).
+  Meilensteine nur bis zur Tagesobergrenze (Standard 10). Seit dem 20.11.2026
+  heißen sie Awards und können mehr, siehe „Awards in der Kunden-App“.
 - **Leistungs-Gutscheine**: `Voucher.kind = BENEFIT` mit `label`. Sie geben
   keinen Zutritt und erzeugen kein Ticket (Drehkreuz lehnt ab), sondern werden
   nur entwertet: Scan am Check-in-Monitor oder Code/Klick unter Gutscheine.
@@ -197,7 +198,8 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   je Profil; als Adresse sind nur die Push-Dienste der Browser erlaubt
   (`isPushServiceUrl` in `src/lib/rider-push.ts`).
 - Gesendet wird nur an die betroffene Person und nur bei einem **neuen
-  Gutschein** (Meilenstein oder Challenge, `notifyVoucher`). Der Versand läuft
+  Award** (`notifyAward`, auch ohne Gutschein) oder einem **neuen Gutschein**
+  aus einer Challenge (`notifyVoucher`). Der Versand läuft
   neben dem Scan her und hält ihn nicht auf. „Statistik neu berechnen“ vergibt
   keine Gutscheine und meldet deshalb auch nichts.
 - Schnittstellen: `/api/rider/<token>/push` (GET, POST, DELETE, nur mit
@@ -654,3 +656,57 @@ Bestandsdaten.
   den Hinweis auf den Weg über die E-Mail-Adresse.
 - Noch offen: Die Datenbankregel „kein Abo ohne Konto“ kommt erst, wenn die
   Liste „Abos ohne E-Mail“ leer ist.
+
+## Awards in der Kunden-App (20.11.2026)
+
+- Ein Award ist ein Meilenstein (`Milestone`) mit Seltenheit (`tier`: Bronze,
+  Silver, Gold, Legendary). Verwaltung unter Gäste › Kunden App › Awards; dort
+  ist jeder Award änderbar (Name, Ziel, Gutschein, Kurztext für die Kachel,
+  Zugabe ohne Gutschein, Beschreibung, Aktionstage, aktiv).
+- **Vorlage**: Die Migration `20261120190100_awards_vorlage` legt für jedes
+  Konto mit eingeschalteter Kunden App 20 Awards an (Liste in
+  `AWARD_DEFAULTS`, `src/lib/awards.ts`; `Milestone.key` verhindert doppeltes
+  Anlegen). Meilensteine mit Namen „TEST: …“, die noch nie vergeben wurden,
+  schaltet sie dort aus (nicht gelöscht).
+- **Zählarten** (`GamiMetric`), immer je Person über alle ihre Tickets:
+  - Starts, Besuchstage, Wochen in Serie wie bisher.
+  - `EARLY_DAYS`: Tage, an denen der erste eigene Start höchstens 60 Minuten
+    nach dem ersten Abo-Start des Tages lag (`EARLY_WINDOW_MS`). Eine feste
+    Öffnungszeit braucht es dafür nicht.
+  - `WEEKENDS`: längste Folge von Wochenenden (Samstag oder Sonntag) mit Start.
+  - `EVENT_DAYS`: Start an einem Aktionstag. Die Tage trägt das Personal am
+    Award ein (`Milestone.eventDays`, Taste „Heute“). So laufen Day One
+    (Opening-Tag) und Ice Breaker (kalter Tag): Wassertemperatur und
+    Opening-Tag stehen in keiner Datenquelle.
+  - `SEASONS`: Jahre mit mindestens einem Start. Steht an der Person ein
+    früheres Jahr („Fährt seit“, `RiderProfile.ridingSince`, Abos ›
+    Kundenkonten › Person bearbeiten), zählen die Jahre davor lückenlos mit,
+    weil Starts erst seit 2026 gezählt werden.
+- **Zeitraum**: neu ist „Gesamt“ (`ALL_TIME`, `periodKey` „all“): über alle
+  Jahre, einmal vergeben. Starts und Saisons der Vorlage zählen so,
+  Besuchstage und Specials je Saison (jedes Jahr neu zu holen).
+- **Vergabe** (`awardMilestones`): nach jedem Start und beim Öffnen der App
+  (`loadRider`, dann ohne Push, damit Abzeichen und Gutschein zusammen
+  erscheinen). Wer ein Ziel schon erreicht hatte, bekommt Award und Gutschein
+  also beim nächsten Start oder Öffnen. Eine Sperre je Person
+  (`claimAward`, `pg_advisory_xact_lock`) verhindert, dass Scan und App
+  denselben Award gleichzeitig auf zwei Tickets vergeben. Push beim Scan:
+  „Award freigeschaltet: …“ (`notifyAward`).
+- **Kunden-App**: Reiter Awards (`/app/<token>/awards`, „Trophy Case“) mit
+  Reihen Starts am Lift, Besuchstage, Specials, Treue; gesperrte Awards blass
+  mit Fortschritt. Detailseite je Award mit Reihe und Gutschein. Start-Seite
+  mit Abzeichen-Leiste und „Nächster Award“ (`nextAward`: größter Anteil am
+  Ziel, Aktionstage nie, Treue erst zuletzt). Gutscheine als Tickets mit dem
+  Abzeichen des Awards.
+- **Abzeichen** (`award-badge.tsx`): Form nach Zählart (Starts Sechseck,
+  Besuchstage Kreis, Specials Stern, Treue Kranz), Metall nach Seltenheit.
+  Eigene Awards aus der Verwaltung bekommen dieselben Abzeichen.
+- **Freischalt-Moment** (`rider-award-unlock.tsx`): frisch vergebene Awards
+  erscheinen einmal als Vollbild mit Konfetti, höchstens sechs nacheinander.
+  Gemerkt am Server (`MilestoneAward.seenAt`,
+  `POST /api/rider/<token>/awards/seen`) und zusätzlich im Gerät. Mit
+  „Bewegung reduzieren“ ohne Animation. Der Partner in der Familienansicht
+  sieht ihn nicht.
+- Gutscheine aus Awards tragen die Notiz „Award <Name>“ bzw.
+  „Award <Name> (<Jahr>)“ und gelten 365 Tage; Private Session, Abo-Monat und
+  50 % aufs Abo laufen nicht ab.

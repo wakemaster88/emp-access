@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay } from "@/lib/rider-format";
+import { AwardBadge } from "@/components/rider/award-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export default async function RiderVoucher({ params }: { params: Promise<{ token
         Zurück
       </Link>
       <div className="rd-card rd-center" style={{ padding: "24px 20px", gap: 12 }}>
+        {voucher.award && <AwardBadge award={voucher.award} size={92} />}
         {voucher.source && <div className="rd-label">{voucher.source}</div>}
         <div className="rd-display" style={{ fontSize: 36 }}>{voucher.label}</div>
         {svg && (

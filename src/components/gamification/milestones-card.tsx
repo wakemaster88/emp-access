@@ -16,10 +16,12 @@ import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Award, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Award, CalendarPlus, Loader2, Plus, Save, Trash2, X } from "lucide-react";
+import { awardText } from "@/lib/awards";
 import {
-  GAMI_METRICS, GAMI_PERIODS, METRIC_LABEL, PERIOD_LABEL, milestoneConditionText,
-  type GamiMetric, type GamiPeriod,
+  GAMI_METRICS, GAMI_PERIODS, GAMI_TIERS, METRIC_LABEL, PERIOD_LABEL, TIER_LABEL, milestoneConditionText,
+  type GamiMetric, type GamiPeriod, type GamiTier,
 } from "@/lib/gamification";
 
 export interface MilestoneRow {
@@ -30,6 +32,12 @@ export interface MilestoneRow {
   period: GamiPeriod;
   voucherLabel: string | null;
   voucherValidDays: number | null;
+  voucherShort: string | null;
+  bonus: string | null;
+  tier: GamiTier;
+  hint: string | null;
+  /** Aktionstage als "YYYY-MM-DD" (nur Zählart „Aktionstage“). */
+  eventDays: string[];
   active: boolean;
   awarded: number;
   redeemed: number;
@@ -44,6 +52,12 @@ interface FormState {
   withVoucher: boolean;
   voucherLabel: string;
   voucherValidDays: string;
+  voucherShort: string;
+  bonus: string;
+  tier: GamiTier;
+  hint: string;
+  eventDays: string[];
+  newEventDay: string;
   active: boolean;
 }
 
@@ -55,7 +69,13 @@ const EMPTY: FormState = {
   period: "SEASON",
   withVoucher: true,
   voucherLabel: "",
-  voucherValidDays: "30",
+  voucherValidDays: "365",
+  voucherShort: "",
+  bonus: "",
+  tier: "BRONZE",
+  hint: "",
+  eventDays: [],
+  newEventDay: "",
   active: true,
 };
 
@@ -69,12 +89,28 @@ function toForm(m: MilestoneRow): FormState {
     withVoucher: m.voucherLabel != null,
     voucherLabel: m.voucherLabel ?? "",
     voucherValidDays: m.voucherValidDays != null ? String(m.voucherValidDays) : "",
+    voucherShort: m.voucherShort ?? "",
+    bonus: m.bonus ?? "",
+    tier: m.tier,
+    hint: m.hint ?? "",
+    eventDays: m.eventDays,
+    newEventDay: "",
     active: m.active,
   };
 }
 
-/** Meilensteine (Awards) anlegen und ändern; je Meilenstein optional ein Leistungs-Gutschein. */
-export function MilestonesCard({ milestones }: { milestones: MilestoneRow[] }) {
+const fmtYmd = (ymd: string) => `${ymd.slice(8, 10)}.${ymd.slice(5, 7)}.${ymd.slice(0, 4)}`;
+
+/** Fehlt bei der Zählart „Aktionstage“ ein Tag in der laufenden Saison, kann niemand den Award holen. */
+function missingEventDay(m: { metric: GamiMetric; eventDays: string[] }, today: string): boolean {
+  return m.metric === "EVENT_DAYS" && !m.eventDays.some((d) => d.startsWith(today.slice(0, 4)));
+}
+
+/**
+ * Awards (Meilensteine) anlegen und ändern: Ziel, Seltenheit und optional ein
+ * Leistungs-Gutschein. `today` ist der heutige Tag in Europe/Berlin.
+ */
+export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow[]; today: string }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -111,9 +147,14 @@ export function MilestonesCard({ milestones }: { milestones: MilestoneRow[] }) {
             name: form.name.trim(),
             metric: form.metric,
             threshold,
-            period: form.period,
+            period: form.metric === "SEASONS" ? "ALL_TIME" : form.period,
             voucherLabel: form.withVoucher ? form.voucherLabel.trim() : null,
             voucherValidDays: form.withVoucher ? validDays : null,
+            voucherShort: form.withVoucher ? form.voucherShort.trim() : null,
+            bonus: form.bonus.trim(),
+            tier: form.tier,
+            hint: form.hint.trim(),
+            eventDays: form.metric === "EVENT_DAYS" ? form.eventDays : [],
             active: form.active,
           }),
         },
@@ -153,21 +194,26 @@ export function MilestonesCard({ milestones }: { milestones: MilestoneRow[] }) {
 
   const selected = form?.id != null ? milestones.find((m) => m.id === form.id) : undefined;
 
+  const addEventDay = (day: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+    setForm((f) => (f ? { ...f, eventDays: [...new Set([...f.eventDays, day])].sort(), newEventDay: "" } : f));
+  };
+
   return (
     <>
       <Card flush>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Award className="h-4 w-4 text-primary shrink-0" />
-            Meilensteine ({milestones.length})
+            Awards ({milestones.length})
           </CardTitle>
           <CardDescription>
-            Wer die Bedingung im Zeitraum erreicht, bekommt den Meilenstein einmal – und den Gutschein, wenn einer hinterlegt ist.
+            Wer das Ziel im Zeitraum erreicht, bekommt den Award einmal – und den Gutschein, wenn einer hinterlegt ist. Die Kunden-App zeigt alle aktiven Awards als Abzeichen.
           </CardDescription>
           <CardAction>
-            <Button onClick={() => open(EMPTY)} className="max-sm:h-11" aria-label="Meilenstein anlegen">
+            <Button onClick={() => open(EMPTY)} className="max-sm:h-11" aria-label="Award anlegen">
               <Plus className="h-4 w-4" />
-              <span>Meilenstein<span className="max-sm:sr-only"> anlegen</span></span>
+              <span>Award<span className="max-sm:sr-only"> anlegen</span></span>
             </Button>
           </CardAction>
         </CardHeader>
@@ -187,8 +233,8 @@ export function MilestonesCard({ milestones }: { milestones: MilestoneRow[] }) {
               <TableEmpty
                 colSpan={6}
                 icon={Award}
-                title="Noch keine Meilensteine"
-                description="Lege zum Beispiel „Stammfahrer“ für 10 Besuchstage in der Saison an."
+                title="Noch keine Awards"
+                description="Lege zum Beispiel „Regular“ für 5 Besuchstage in der Saison an."
                 compact={false}
               />
             )}
@@ -196,7 +242,11 @@ export function MilestonesCard({ milestones }: { milestones: MilestoneRow[] }) {
               <TableRow key={m.id} className="cursor-pointer max-sm:h-11" onClick={() => open(toForm(m))}>
                 <TableCell className="max-sm:whitespace-normal">
                   <span className="font-medium text-foreground">{m.name}</span>
+                  <span className="text-muted-foreground"> · {TIER_LABEL[m.tier]}</span>
                   <div className="sm:hidden text-xs text-muted-foreground">{milestoneConditionText(m)}</div>
+                  {m.active && missingEventDay(m, today) && (
+                    <div className="text-xs text-warning">Kein Aktionstag für {today.slice(0, 4)} eingetragen</div>
+                  )}
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">{milestoneConditionText(m)}</TableCell>
                 <TableCell className="hidden md:table-cell">
@@ -229,16 +279,24 @@ export function MilestonesCard({ milestones }: { milestones: MilestoneRow[] }) {
       <Dialog open={!!form} onOpenChange={(o) => !o && !saving && setForm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{form?.id == null ? "Meilenstein anlegen" : "Meilenstein bearbeiten"}</DialogTitle>
+            <DialogTitle>{form?.id == null ? "Award anlegen" : "Award bearbeiten"}</DialogTitle>
             <DialogDescription>
-              Gezählt wird je Abo-Ticket. Eine Saison ist das Kalenderjahr.
+              Gezählt wird je Person. Eine Saison ist das Kalenderjahr, „Gesamt“ zählt über alle Jahre.
             </DialogDescription>
           </DialogHeader>
           {form && (
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="ms-name">Name</Label>
-                <Input id="ms-name" value={form.name} maxLength={60} onChange={(e) => set({ name: e.target.value })} className="max-sm:h-11" />
+              <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ms-name">Name</Label>
+                  <Input id="ms-name" value={form.name} maxLength={60} onChange={(e) => set({ name: e.target.value })} className="max-sm:h-11" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ms-tier">Seltenheit</Label>
+                  <NativeSelect id="ms-tier" value={form.tier} onChange={(e) => set({ tier: e.target.value as GamiTier })}>
+                    {GAMI_TIERS.map((t) => <option key={t} value={t}>{TIER_LABEL[t]}</option>)}
+                  </NativeSelect>
+                </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-1.5">
@@ -253,10 +311,83 @@ export function MilestonesCard({ milestones }: { milestones: MilestoneRow[] }) {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="ms-period">Zeitraum</Label>
-                  <NativeSelect id="ms-period" value={form.period} onChange={(e) => set({ period: e.target.value as GamiPeriod })}>
+                  <NativeSelect
+                    id="ms-period"
+                    value={form.metric === "SEASONS" ? "ALL_TIME" : form.period}
+                    disabled={form.metric === "SEASONS"}
+                    onChange={(e) => set({ period: e.target.value as GamiPeriod })}
+                  >
                     {GAMI_PERIODS.map((p) => <option key={p} value={p}>{PERIOD_LABEL[p]}</option>)}
                   </NativeSelect>
                 </div>
+              </div>
+
+              {form.metric === "EARLY_DAYS" && (
+                <p className="text-xs text-muted-foreground">
+                  Ein Tag zählt, wenn der erste Start der Person höchstens eine Stunde nach dem ersten Abo-Start des Tages liegt.
+                </p>
+              )}
+              {form.metric === "SEASONS" && (
+                <p className="text-xs text-muted-foreground">
+                  Eine Saison zählt mit mindestens einem Besuchstag. Für Jahre vor der Zählung trägst du bei der Person unter Abos › Kundenkonten „Fährt seit“ ein.
+                </p>
+              )}
+              {form.metric === "EVENT_DAYS" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="ms-eventday">Aktionstage</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <Input
+                      id="ms-eventday"
+                      type="date"
+                      value={form.newEventDay}
+                      onChange={(e) => set({ newEventDay: e.target.value })}
+                      className="w-auto flex-1 min-w-36 max-sm:h-11"
+                    />
+                    <Button type="button" variant="outline" disabled={!form.newEventDay} onClick={() => addEventDay(form.newEventDay)} className="max-sm:h-11">
+                      <CalendarPlus className="h-4 w-4" />
+                      Hinzufügen
+                    </Button>
+                    <Button type="button" variant="outline" disabled={form.eventDays.includes(today)} onClick={() => addEventDay(today)} className="max-sm:h-11">
+                      Heute
+                    </Button>
+                  </div>
+                  {form.eventDays.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {form.eventDays.map((d) => (
+                        <Badge key={d} variant="neutral" className="gap-1 font-normal tabular-nums">
+                          {fmtYmd(d)}
+                          <button
+                            type="button"
+                            aria-label={`${fmtYmd(d)} entfernen`}
+                            className="-mr-1 rounded-full p-0.5 hover:bg-foreground/10"
+                            onClick={() => set({ eventDays: form.eventDays.filter((x) => x !== d) })}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    Wer an einem dieser Tage startet, bekommt den Award, je Saison einmal. Trag den Opening-Tag oder einen kalten Tag hier ein, auch am Tag selbst.
+                  </p>
+                  {missingEventDay(form, today) && (
+                    <Notice tone="warning" compact title={`Für ${today.slice(0, 4)} ist noch kein Aktionstag eingetragen.`} />
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="ms-hint">Beschreibung in der App</Label>
+                <Textarea
+                  id="ms-hint"
+                  rows={2}
+                  value={form.hint}
+                  maxLength={160}
+                  placeholder={Number.isInteger(threshold) && threshold >= 1 ? awardText({ metric: form.metric, threshold, period: form.metric === "SEASONS" ? "ALL_TIME" : form.period }) : undefined}
+                  onChange={(e) => set({ hint: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">Leer lassen, dann steht dort der Text aus dem Ziel.</p>
               </div>
 
               <div className="flex items-center justify-between gap-3">
@@ -273,8 +404,17 @@ export function MilestonesCard({ milestones }: { milestones: MilestoneRow[] }) {
                     <Label htmlFor="ms-days">Gültig (Tage)</Label>
                     <Input id="ms-days" type="number" min={1} inputMode="numeric" value={form.voucherValidDays} placeholder="unbegrenzt" onChange={(e) => set({ voucherValidDays: e.target.value })} className="max-sm:h-11" />
                   </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="ms-short">Kurztext für die Kachel</Label>
+                    <Input id="ms-short" value={form.voucherShort} maxLength={24} placeholder="z. B. Bring a Friend" onChange={(e) => set({ voucherShort: e.target.value })} className="max-sm:h-11" />
+                  </div>
                 </div>
               )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="ms-bonus">Zugabe ohne Gutschein</Label>
+                <Input id="ms-bonus" value={form.bonus} maxLength={80} placeholder="z. B. Hall-of-Fame-Wand" onChange={(e) => set({ bonus: e.target.value })} className="max-sm:h-11" />
+              </div>
 
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="ms-active">Aktiv</Label>

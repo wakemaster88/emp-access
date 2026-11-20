@@ -6,7 +6,7 @@ import { isTenantAdminRole } from "@/lib/api-auth";
 import { berlinYmd } from "@/lib/berlin-day";
 import {
   benefitVoucherState, challengePhase, dbDateToYmd, offerVisible, parsePriceMap, ymdToDbDate,
-  type GamiMetric, type GamiPeriod,
+  type GamiMetric, type GamiPeriod, type GamiTier,
 } from "@/lib/gamification";
 import { challengeUnits, settleDueChallenges, type ChallengeRow } from "@/lib/challenge-service";
 import { Header } from "@/components/layout/header";
@@ -58,7 +58,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       options={[
         { value: "auswertung", label: "Auswertung", icon: BarChart3, href: "/gamification" },
         { value: "fahrer", label: "Fahrer", icon: Users, href: "/gamification?tab=fahrer" },
-        { value: "meilensteine", label: "Meilensteine", icon: Award, href: "/gamification?tab=meilensteine" },
+        { value: "meilensteine", label: "Awards", icon: Award, href: "/gamification?tab=meilensteine" },
         { value: "challenges", label: "Challenges", icon: Swords, href: "/gamification?tab=challenges" },
         { value: "angebote", label: "Angebote", icon: Megaphone, href: "/gamification?tab=angebote" },
         { value: "gutscheine", label: "Gutscheine", icon: Gift, href: "/gamification?tab=gutscheine" },
@@ -77,7 +77,10 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         _count: { _all: true },
         _sum: { starts: true },
       }),
-      db.milestoneAward.count({ where: { accountId, periodKey: { startsWith: String(year) } } }),
+      // Nach dem Tag der Vergabe: Awards ohne Zeitraum tragen kein Jahr im Schlüssel.
+      db.milestoneAward.count({
+        where: { accountId, awardedAt: { gte: new Date(`${year}-01-01T00:00:00+01:00`), lt: new Date(`${year + 1}-01-01T00:00:00+01:00`) } },
+      }),
       db.voucher.count({
         where: {
           accountId, kind: "BENEFIT", redeemedAt: null, disabledAt: null,
@@ -113,7 +116,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
           <StatCard label="Aktive Fahrer" value={riders.length} icon={Users} hint={`Saison ${year}`} />
           <StatCard label="Besuchstage" value={totalDays} icon={CalendarCheck} tone="info" hint="alle Fahrer zusammen" />
           <StatCard label="Starts" value={totalStarts} icon={Play} tone="success" hint="an den Start-Geräten" />
-          <StatCard label="Meilensteine vergeben" value={awards} icon={Trophy} tone="violet" hint={`${openVouchers} Gutscheine offen, ${redeemedVouchers} eingelöst`} />
+          <StatCard label="Awards vergeben" value={awards} icon={Trophy} tone="violet" hint={`${openVouchers} Gutscheine offen, ${redeemedVouchers} eingelöst`} />
         </div>
         <div className="grid gap-4 sm:gap-5 lg:grid-cols-2">
           <Card flush>
@@ -265,11 +268,16 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       period: m.period as GamiPeriod,
       voucherLabel: m.voucherLabel,
       voucherValidDays: m.voucherValidDays,
+      voucherShort: m.voucherShort,
+      bonus: m.bonus,
+      tier: m.tier as GamiTier,
+      hint: m.hint,
+      eventDays: m.eventDays.map(dbDateToYmd),
       active: m.active,
       awarded: awarded.get(m.id) ?? 0,
       redeemed: redeemed.get(m.id) ?? 0,
     }));
-    content = <MilestonesCard milestones={rows} />;
+    content = <MilestonesCard milestones={rows} today={berlinYmd(new Date())} />;
   }
 
   if (tab === "challenges") {

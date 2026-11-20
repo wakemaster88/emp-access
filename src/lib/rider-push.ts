@@ -66,11 +66,20 @@ export async function sendPushToRider(profileId: number, accountId: number, payl
   return sent;
 }
 
+interface PersonPush {
+  /** Seite der App hinter der Nachricht, z. B. "/gutscheine". */
+  path: string;
+  tag: string;
+  own: { title: string; body: string };
+  /** Text für die Erwachsenen der Familie; `who` ist der Vorname des Kindes. */
+  forChild: (who: string) => { title: string; body: string };
+}
+
 /**
- * Neuer Gutschein: die Person hinter dem Ticket benachrichtigen. Läuft neben
- * dem Scan her und darf ihn nie aufhalten oder scheitern lassen.
+ * Die Person hinter einem Ticket benachrichtigen. Läuft neben dem Scan her
+ * und darf ihn nie aufhalten oder scheitern lassen.
  */
-export function notifyVoucher(accountId: number, ticketId: number, label: string): void {
+function pushToPerson(accountId: number, ticketId: number, what: string, msg: PersonPush): void {
   if (!isWebPushConfigured()) return;
   void (async () => {
     const ticket = await prisma.ticket.findFirst({
@@ -79,13 +88,8 @@ export function notifyVoucher(accountId: number, ticketId: number, label: string
     });
     const profile = ticket?.riderProfile;
     if (!profile) return;
-    const url = `${riderAppPath(profile.token)}/gutscheine`;
-    await sendPushToRider(profile.id, accountId, {
-      title: "Neuer Gutschein",
-      body: `${label} wartet in deiner App auf dich.`,
-      url,
-      tag: "rider-voucher",
-    });
+    const url = `${riderAppPath(profile.token)}${msg.path}`;
+    await sendPushToRider(profile.id, accountId, { ...msg.own, url, tag: msg.tag });
     // Kinder haben oft kein eigenes Gerät: die Erwachsenen der Familie erfahren es auch.
     if (profile.familyId == null || profile.familyAdult) return;
     const adults = await prisma.riderProfile.findMany({
@@ -94,12 +98,34 @@ export function notifyVoucher(accountId: number, ticketId: number, label: string
     });
     const who = ticket?.firstName?.trim() || "dein Kind";
     for (const adult of adults) {
-      await sendPushToRider(adult.id, accountId, {
-        title: "Neuer Gutschein",
-        body: `${label} für ${who} wartet in der App.`,
-        url,
-        tag: `rider-voucher-${profile.id}`,
-      });
+      await sendPushToRider(adult.id, accountId, { ...msg.forChild(who), url, tag: `${msg.tag}-${profile.id}` });
     }
-  })().catch((e) => console.error("[rider-push] Gutschein-Meldung fehlgeschlagen:", e));
+  })().catch((e) => console.error(`[rider-push] ${what} fehlgeschlagen:`, e));
+}
+
+/** Neuer Gutschein (z. B. aus einer Challenge): die Person hinter dem Ticket benachrichtigen. */
+export function notifyVoucher(accountId: number, ticketId: number, label: string): void {
+  pushToPerson(accountId, ticketId, "Gutschein-Meldung", {
+    path: "/gutscheine",
+    tag: "rider-voucher",
+    own: { title: "Neuer Gutschein", body: `${label} wartet in deiner App auf dich.` },
+    forChild: (who) => ({ title: "Neuer Gutschein", body: `${label} für ${who} wartet in der App.` }),
+  });
+}
+
+/** Text der Nachricht zu einem neuen Award, für die Person selbst oder für die Eltern (`who`). */
+export function awardPushText(name: string, voucherLabel: string | null, who?: string): { title: string; body: string } {
+  const title = who ? `Award für ${who}: ${name}` : `Award freigeschaltet: ${name}`;
+  if (!voucherLabel) return { title, body: who ? "Schau in der App nach." : "Schau ihn dir in der App an." };
+  return { title, body: who ? `Der Gutschein wartet in der App: ${voucherLabel}` : `Dein Gutschein wartet in der App: ${voucherLabel}` };
+}
+
+/** Neuer Award: die Person hinter dem Ticket benachrichtigen. Mehrere auf einmal ersetzen sich (gleicher `tag`). */
+export function notifyAward(accountId: number, ticketId: number, name: string, voucherLabel: string | null): void {
+  pushToPerson(accountId, ticketId, "Award-Meldung", {
+    path: "/awards",
+    tag: "rider-award",
+    own: awardPushText(name, voucherLabel),
+    forChild: (who) => awardPushText(name, voucherLabel, who),
+  });
 }

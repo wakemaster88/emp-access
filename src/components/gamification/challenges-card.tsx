@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Loader2, Plus, Save, Swords, Trash2 } from "lucide-react";
 import {
-  CHALLENGE_KIND_LABEL, GAMI_METRICS, METRIC_LABEL, challengeConditionText,
+  CHALLENGE_KIND_LABEL, CHALLENGE_METRICS, METRIC_LABEL, challengeConditionText,
   type ChallengeKind, type ChallengePhase, type GamiMetric,
 } from "@/lib/gamification";
 
@@ -278,7 +278,7 @@ export function ChallengesCard({ challenges, today }: { challenges: ChallengeAdm
                 <div className="space-y-1.5">
                   <Label htmlFor="ch-metric">Zählt</Label>
                   <NativeSelect id="ch-metric" value={form.metric} disabled={locked} onChange={(e) => set({ metric: e.target.value as GamiMetric })}>
-                    {GAMI_METRICS.map((m) => <option key={m} value={m}>{METRIC_LABEL[m]}</option>)}
+                    {CHALLENGE_METRICS.map((m) => <option key={m} value={m}>{METRIC_LABEL[m]}</option>)}
                   </NativeSelect>
                 </div>
                 {form.kind === "TASK" ? (
