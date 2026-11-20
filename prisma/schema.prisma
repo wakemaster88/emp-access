@@ -73,12 +73,30 @@ enum GamiMetric {
   VISIT_DAYS
   STARTS
   STREAK_WEEKS
+  /// Besuchstage mit Start in der ersten Stunde nach dem ersten Start des Tages.
+  EARLY_DAYS
+  /// Wochenenden in Folge mit mindestens einem Besuchstag.
+  WEEKENDS
+  /// Besuchstage an Aktionstagen (`Milestone.eventDays`), z. B. Opening.
+  EVENT_DAYS
+  /// Saisons mit mindestens einem Besuchstag (nur mit Zeitraum ALL_TIME).
+  SEASONS
 }
 
 /// Gamification: Zeitraum, in dem gezaehlt wird (Saison = Kalenderjahr).
 enum GamiPeriod {
   SEASON
   MONTH
+  /// Ohne Ende: zaehlt ueber alle Jahre, der Award wird einmal vergeben.
+  ALL_TIME
+}
+
+/// Gamification: Seltenheit eines Awards, bestimmt das Metall des Abzeichens.
+enum GamiTier {
+  BRONZE
+  SILVER
+  GOLD
+  LEGENDARY
 }
 
 enum ScanResult {
@@ -3472,6 +3490,18 @@ model Milestone {
   voucherLabel     String?
   /// Gueltigkeit des Gutscheins in Tagen; NULL = unbegrenzt.
   voucherValidDays Int?
+  /// Kurzform des Gutscheins fuer die Award-Kachel der Kunden-App ("Bring a Friend").
+  voucherShort     String?
+  /// Zugabe ohne Gutschein, z. B. "Hall-of-Fame-Wand".
+  bonus            String?
+  /// Seltenheit: bestimmt das Metall des Abzeichens in der Kunden-App.
+  tier             GamiTier         @default(BRONZE)
+  /// Beschreibung in der Kunden-App; NULL = aus Bedingung erzeugt.
+  hint             String?
+  /// Aktionstage (Europe/Berlin) fuer `EVENT_DAYS`, z. B. der Opening-Tag.
+  eventDays        DateTime[]       @default([]) @db.Date
+  /// Schluessel der Vorlage ("first-splash"); NULL = selbst angelegt.
+  key              String?
   active           Boolean          @default(true)
   sortOrder        Int              @default(0)
   accountId        Int
@@ -3480,10 +3510,11 @@ model Milestone {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
+  @@unique([accountId, key])
   @@index([accountId])
 }
 
-/// Erreichter Meilenstein eines Tickets in einem Zeitraum ("2027" oder "2027-06").
+/// Erreichter Meilenstein eines Tickets in einem Zeitraum ("2027", "2027-06" oder "all").
 model MilestoneAward {
   id          Int       @id @default(autoincrement())
   milestoneId Int
@@ -3496,6 +3527,8 @@ model MilestoneAward {
   accountId   Int
   account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   awardedAt   DateTime  @default(now())
+  /// Freischalt-Moment in der Kunden-App gezeigt; NULL = steht noch aus.
+  seenAt      DateTime?
 
   @@unique([milestoneId, ticketId, periodKey])
   @@index([accountId])
@@ -3610,6 +3643,9 @@ model RiderProfile {
   firstName     String?
   lastName      String?
   birthDate     DateTime?
+  /// Jahr der ersten Saison am Lift (traegt das Personal ein). Fuer die
+  /// Treue-Awards: Saisons vor der ersten gezaehlten zaehlen so mit.
+  ridingSince   Int?
   accountId     Int
   account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tickets       Ticket[]

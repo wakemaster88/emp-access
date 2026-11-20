@@ -8,27 +8,58 @@
  */
 import { berlinYmd } from "./berlin-day";
 
-export type GamiMetric = "VISIT_DAYS" | "STARTS" | "STREAK_WEEKS";
-export type GamiPeriod = "SEASON" | "MONTH";
+export type GamiMetric =
+  | "VISIT_DAYS"
+  | "STARTS"
+  | "STREAK_WEEKS"
+  | "EARLY_DAYS"
+  | "WEEKENDS"
+  | "EVENT_DAYS"
+  | "SEASONS";
+export type GamiPeriod = "SEASON" | "MONTH" | "ALL_TIME";
+/** Seltenheit eines Awards: bestimmt das Metall des Abzeichens. */
+export type GamiTier = "BRONZE" | "SILVER" | "GOLD" | "LEGENDARY";
 
-export const GAMI_METRICS: GamiMetric[] = ["VISIT_DAYS", "STARTS", "STREAK_WEEKS"];
-export const GAMI_PERIODS: GamiPeriod[] = ["SEASON", "MONTH"];
+export const GAMI_METRICS: GamiMetric[] = [
+  "VISIT_DAYS", "STARTS", "STREAK_WEEKS", "EARLY_DAYS", "WEEKENDS", "EVENT_DAYS", "SEASONS",
+];
+/** Challenges haben einen festen Zeitraum: dort zählen nur diese drei. */
+export const CHALLENGE_METRICS: GamiMetric[] = ["VISIT_DAYS", "STARTS", "STREAK_WEEKS"];
+export const GAMI_PERIODS: GamiPeriod[] = ["SEASON", "MONTH", "ALL_TIME"];
+export const GAMI_TIERS: GamiTier[] = ["BRONZE", "SILVER", "GOLD", "LEGENDARY"];
 
 export const METRIC_LABEL: Record<GamiMetric, string> = {
   VISIT_DAYS: "Besuchstage",
   STARTS: "Starts",
   STREAK_WEEKS: "Wochen in Serie",
+  EARLY_DAYS: "Tage mit Start in der ersten Stunde",
+  WEEKENDS: "Wochenenden in Folge",
+  EVENT_DAYS: "Aktionstage",
+  SEASONS: "Saisons",
 };
 
 export const PERIOD_LABEL: Record<GamiPeriod, string> = {
   SEASON: "Saison",
   MONTH: "Monat",
+  ALL_TIME: "Gesamt",
 };
+
+export const TIER_LABEL: Record<GamiTier, string> = {
+  BRONZE: "Bronze",
+  SILVER: "Silver",
+  GOLD: "Gold",
+  LEGENDARY: "Legendary",
+};
+
+/** So lange nach dem ersten Start des Tages gilt ein Start als früh. */
+export const EARLY_WINDOW_MS = 60 * 60_000;
 
 /** Tagessumme: Kalendertag als "YYYY-MM-DD" und die Starts an diesem Tag. */
 export interface DayStat {
   day: string;
   starts: number;
+  /** Erster Start lag in der ersten Stunde nach dem ersten Start des Tages am Lift. */
+  early?: boolean;
 }
 
 export interface MilestoneRule {
@@ -36,17 +67,30 @@ export interface MilestoneRule {
   metric: GamiMetric;
   threshold: number;
   period: GamiPeriod;
+  /** Aktionstage als "YYYY-MM-DD" (nur für `EVENT_DAYS`). */
+  eventDays?: string[];
 }
 
 export interface Metrics {
   visitDays: number;
   starts: number;
   streakWeeks: number;
+  earlyDays: number;
+  weekends: number;
 }
 
-/** Schlüssel des Zeitraums, in den ein Tag fällt: "2027" (Saison) oder "2027-06" (Monat). */
+/** Schlüssel für Awards ohne Zeitraum: sie werden genau einmal vergeben. */
+export const ALL_TIME_KEY = "all";
+
+/** Schlüssel des Zeitraums, in den ein Tag fällt: "2027" (Saison), "2027-06" (Monat) oder "all". */
 export function periodKey(period: GamiPeriod, ymd: string): string {
+  if (period === "ALL_TIME") return ALL_TIME_KEY;
   return period === "MONTH" ? ymd.slice(0, 7) : ymd.slice(0, 4);
+}
+
+/** Liegt der Tag im Zeitraum, in den der Stichtag fällt? */
+export function inPeriod(day: string, period: GamiPeriod, refYmd: string): boolean {
+  return period === "ALL_TIME" || day.startsWith(periodKey(period, refYmd));
 }
 
 /** Fortlaufende Wochennummer (Montag bis Sonntag), über Jahresgrenzen hinweg lückenlos. */
@@ -88,6 +132,19 @@ export function currentWeekStreak(days: string[], refYmd: string): number {
   return run;
 }
 
+/** Fällt der Tag auf Samstag oder Sonntag? */
+export function isWeekendDay(ymd: string): boolean {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return wd === 0 || wd === 6;
+}
+
+/** Längste Folge aufeinanderfolgender Wochenenden (Samstag oder Sonntag) mit Besuch. */
+export function longestWeekendStreak(days: string[]): number {
+  // Samstag und Sonntag liegen in derselben Woche (Montag bis Sonntag).
+  return longestWeekStreak(days.filter(isWeekendDay));
+}
+
 /**
  * Kennzahlen aus Tagessummen. `capPerDay` begrenzt, wie viele Starts eines
  * Tages zählen – damit sich Meilensteine nicht durch Durchdrehen am Drehkreuz
@@ -100,13 +157,62 @@ export function computeMetrics(days: DayStat[], capPerDay: number): Metrics {
     visitDays: visited.length,
     starts: visited.reduce((sum, d) => sum + Math.min(d.starts, cap), 0),
     streakWeeks: longestWeekStreak(visited.map((d) => d.day)),
+    earlyDays: visited.filter((d) => d.early).length,
+    weekends: longestWeekendStreak(visited.map((d) => d.day)),
   };
 }
 
+/** Wert einer Kennzahl. Aktionstage und Saisons brauchen mehr als Tagessummen: siehe `ruleValue`. */
 export function metricValue(metrics: Metrics, metric: GamiMetric): number {
-  if (metric === "VISIT_DAYS") return metrics.visitDays;
-  if (metric === "STARTS") return metrics.starts;
-  return metrics.streakWeeks;
+  switch (metric) {
+    case "VISIT_DAYS": return metrics.visitDays;
+    case "STARTS": return metrics.starts;
+    case "STREAK_WEEKS": return metrics.streakWeeks;
+    case "EARLY_DAYS": return metrics.earlyDays;
+    case "WEEKENDS": return metrics.weekends;
+    default: return 0;
+  }
+}
+
+/**
+ * Saisons dabei: Jahre mit mindestens einem Besuchstag bis zum Stichtag. Hat
+ * das Personal an der Person ein früheres Startjahr eingetragen
+ * (`ridingSince`), zählen die Jahre davor lückenlos mit.
+ */
+export function seasonsCount(days: DayStat[], ridingSince: number | null | undefined, refYmd: string): number {
+  const refYear = Number(refYmd.slice(0, 4));
+  const years = new Set<number>();
+  for (const d of days) {
+    const y = Number(d.day.slice(0, 4));
+    if (d.starts > 0 && y <= refYear) years.add(y);
+  }
+  if (years.size === 0) return 0;
+  const first = Math.min(...years);
+  const before = ridingSince != null && ridingSince >= 1950 && ridingSince < first ? first - ridingSince : 0;
+  return years.size + before;
+}
+
+/** Was außer den Tagessummen in die Zählung eingeht. */
+export interface RuleContext {
+  capPerDay: number;
+  /** Saisons dabei (`seasonsCount`); ohne Angabe aus den Tagessummen. */
+  seasons?: number;
+}
+
+/** Wert eines Meilensteins zum Stichtag, im Zeitraum, in den der Stichtag fällt. */
+export function ruleValue(
+  rule: Pick<MilestoneRule, "metric" | "period" | "eventDays">,
+  days: DayStat[],
+  refYmd: string,
+  ctx: RuleContext,
+): number {
+  if (rule.metric === "SEASONS") return ctx.seasons ?? seasonsCount(days, null, refYmd);
+  const scoped = days.filter((d) => inPeriod(d.day, rule.period, refYmd));
+  if (rule.metric === "EVENT_DAYS") {
+    const events = new Set(rule.eventDays ?? []);
+    return scoped.filter((d) => d.starts > 0 && events.has(d.day)).length;
+  }
+  return metricValue(computeMetrics(scoped, ctx.capPerDay), rule.metric);
 }
 
 /** Schlüssel, unter dem ein vergebener Meilenstein gemerkt wird. */
@@ -117,9 +223,10 @@ export function awardKey(milestoneId: number, key: string): string {
 /**
  * Welche Meilensteine sind zum Stichtag erreicht und noch nicht vergeben?
  *
- * `days` enthält die Tagessummen des Tickets (mindestens die der laufenden
- * Saison); gezählt wird je Meilenstein nur der Zeitraum, in dem der Stichtag
- * liegt.
+ * `days` enthält die Tagessummen der Person (für Awards ohne Zeitraum alle
+ * Jahre); gezählt wird je Meilenstein nur der Zeitraum, in dem der Stichtag
+ * liegt. `seasons` sind die Saisons dabei, wenn sie nicht allein aus den
+ * Tagessummen folgen.
  */
 export function reachedMilestones(
   milestones: MilestoneRule[],
@@ -127,19 +234,14 @@ export function reachedMilestones(
   refYmd: string,
   capPerDay: number,
   awarded: ReadonlySet<string>,
+  seasons?: number,
 ): Array<{ milestoneId: number; periodKey: string }> {
   const out: Array<{ milestoneId: number; periodKey: string }> = [];
-  const cache = new Map<string, Metrics>();
   for (const m of milestones) {
     if (m.threshold <= 0) continue;
     const key = periodKey(m.period, refYmd);
     if (awarded.has(awardKey(m.id, key))) continue;
-    let metrics = cache.get(key);
-    if (!metrics) {
-      metrics = computeMetrics(days.filter((d) => d.day.startsWith(key)), capPerDay);
-      cache.set(key, metrics);
-    }
-    if (metricValue(metrics, m.metric) >= m.threshold) {
+    if (ruleValue(m, days, refYmd, { capPerDay, seasons }) >= m.threshold) {
       out.push({ milestoneId: m.id, periodKey: key });
     }
   }
@@ -184,7 +286,7 @@ export function dbDateToYmd(d: Date): string {
 
 /** Bedingung eines Meilensteins in Worten, z. B. "10 Besuchstage · Saison". */
 export function milestoneConditionText(m: { metric: GamiMetric; threshold: number; period: GamiPeriod }): string {
-  return `${m.threshold} ${METRIC_LABEL[m.metric]} · ${PERIOD_LABEL[m.period]}`;
+  return `${m.threshold.toLocaleString("de-DE")} ${METRIC_LABEL[m.metric]} · ${PERIOD_LABEL[m.period]}`;
 }
 
 export type BenefitVoucherState = "open" | "redeemed" | "expired" | "disabled";
@@ -208,13 +310,22 @@ export const BENEFIT_STATE_MESSAGE: Record<Exclude<BenefitVoucherState, "open">,
 
 /**
  * Tagessummen mehrerer Tickets derselben Person zusammenlegen (Kunden-App):
- * derselbe Kalendertag zählt einmal, die Starts werden addiert.
+ * derselbe Kalendertag zählt einmal, die Starts werden addiert. Früh war der
+ * Tag, wenn es eines der Tickets war.
  */
 export function mergeDayStats(days: DayStat[]): DayStat[] {
-  const byDay = new Map<string, number>();
-  for (const d of days) byDay.set(d.day, (byDay.get(d.day) ?? 0) + d.starts);
+  const byDay = new Map<string, { starts: number; early: boolean }>();
+  for (const d of days) {
+    const cur = byDay.get(d.day);
+    if (cur) {
+      cur.starts += d.starts;
+      cur.early = cur.early || !!d.early;
+    } else {
+      byDay.set(d.day, { starts: d.starts, early: !!d.early });
+    }
+  }
   return [...byDay.entries()]
-    .map(([day, starts]) => ({ day, starts }))
+    .map(([day, v]) => (v.early ? { day, starts: v.starts, early: true } : { day, starts: v.starts }))
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 
@@ -235,11 +346,10 @@ export function milestoneProgress(
   days: DayStat[],
   refYmd: string,
   capPerDay: number,
+  seasons?: number,
 ): MilestoneProgress[] {
   return milestones.map((m) => {
-    const key = periodKey(m.period, refYmd);
-    const metrics = computeMetrics(days.filter((d) => d.day.startsWith(key)), capPerDay);
-    const value = metricValue(metrics, m.metric);
+    const value = ruleValue(m, days, refYmd, { capPerDay, seasons });
     return {
       id: m.id,
       name: m.name,

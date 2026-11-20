@@ -1,25 +1,56 @@
 import { z } from "zod";
 
-/** Eingabe für das Anlegen und Ändern eines Meilensteins. */
+const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** Eingabe für das Anlegen und Ändern eines Meilensteins (Awards). */
 export const milestoneSchema = z.object({
   name: z.string().trim().min(1).max(60),
-  metric: z.enum(["VISIT_DAYS", "STARTS", "STREAK_WEEKS"]),
+  metric: z.enum(["VISIT_DAYS", "STARTS", "STREAK_WEEKS", "EARLY_DAYS", "WEEKENDS", "EVENT_DAYS", "SEASONS"]),
   threshold: z.number().int().min(1).max(10_000),
-  period: z.enum(["SEASON", "MONTH"]),
+  period: z.enum(["SEASON", "MONTH", "ALL_TIME"]),
   voucherLabel: z.string().trim().max(80).nullable(),
   voucherValidDays: z.number().int().min(1).max(730).nullable(),
+  // Ab hier neu mit den Awards; ältere Aufrufer lassen die Felder weg.
+  voucherShort: z.string().trim().max(24).nullable().optional(),
+  bonus: z.string().trim().max(80).nullable().optional(),
+  tier: z.enum(["BRONZE", "SILVER", "GOLD", "LEGENDARY"]).optional(),
+  hint: z.string().trim().max(160).nullable().optional(),
+  eventDays: z.array(ymd).max(60).optional(),
   active: z.boolean(),
 });
 
 export type MilestoneInput = z.infer<typeof milestoneSchema>;
 
-/** Leere Leistung heißt: Meilenstein ohne Gutschein. */
-export function normalizeMilestone(input: MilestoneInput): MilestoneInput {
-  const voucherLabel = input.voucherLabel && input.voucherLabel.length > 0 ? input.voucherLabel : null;
-  return { ...input, voucherLabel, voucherValidDays: voucherLabel ? input.voucherValidDays : null };
-}
+const blank = (v: string | null | undefined) => (v && v.length > 0 ? v : null);
 
-const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+/**
+ * Für die Datenbank aufbereiten: leere Leistung heißt Meilenstein ohne
+ * Gutschein, Saisons zählen immer über alle Jahre, Aktionstage gibt es nur
+ * bei der Zählart „Aktionstage“. Nicht übergebene Award-Felder bleiben, wie
+ * sie sind.
+ */
+export function normalizeMilestone(input: MilestoneInput) {
+  const voucherLabel = blank(input.voucherLabel);
+  return {
+    name: input.name,
+    metric: input.metric,
+    threshold: input.threshold,
+    period: input.metric === "SEASONS" ? ("ALL_TIME" as const) : input.period,
+    voucherLabel,
+    voucherValidDays: voucherLabel ? input.voucherValidDays : null,
+    ...(input.voucherShort !== undefined && { voucherShort: voucherLabel ? blank(input.voucherShort) : null }),
+    ...(input.bonus !== undefined && { bonus: blank(input.bonus) }),
+    ...(input.tier !== undefined && { tier: input.tier }),
+    ...(input.hint !== undefined && { hint: blank(input.hint) }),
+    ...(input.eventDays !== undefined && {
+      eventDays:
+        input.metric === "EVENT_DAYS"
+          ? [...new Set(input.eventDays)].sort().map((d) => new Date(`${d}T00:00:00.000Z`))
+          : [],
+    }),
+    active: input.active,
+  };
+}
 
 /** Eingabe für das Anlegen und Ändern einer Challenge. */
 export const challengeSchema = z

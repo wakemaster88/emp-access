@@ -11,7 +11,7 @@
  * - `runCustomerTick`: Cron tick-5min, holt alle Abos mit Adresse nach, die
  *   noch kein Konto haben (Bestandsdaten, verpasste Schreibwege).
  * - `assignRider`, `updatePersonData`: Kasse und Abo-Seite sagen, wer mit
- *   einem Abo fährt, und pflegen Name und Geburtsdatum der Person.
+ *   einem Abo fährt, und pflegen Name, Geburtsdatum und „Fährt seit“ der Person.
  * - `mergeCustomers`: zwei Konten derselben Familie zusammenlegen. Die
  *   Adresse des übernommenen Kontos bleibt als weitere Adresse
  *   (`aliasEmails`); `customerIdForEmail` und `ensureCustomer` finden das
@@ -391,13 +391,16 @@ export async function assignRider(
   });
 }
 
+/** Frühestes Jahr, das bei „Fährt seit“ eingetragen werden kann. */
+export const RIDING_SINCE_MIN = 1960;
+
 /** Name und Geburtsdatum einer Person ändern (nur übergebene Felder). */
 export async function updatePersonData(
   accountId: number,
   personId: number,
-  input: { firstName?: string | null; lastName?: string | null; birthDate?: Date | null },
+  input: { firstName?: string | null; lastName?: string | null; birthDate?: Date | null; ridingSince?: number | null },
 ): Promise<void> {
-  const data: { firstName?: string | null; lastName?: string | null; birthDate?: Date | null } = {};
+  const data: { firstName?: string | null; lastName?: string | null; birthDate?: Date | null; ridingSince?: number | null } = {};
   if (input.firstName !== undefined) data.firstName = cleanName(input.firstName);
   if (input.lastName !== undefined) data.lastName = cleanName(input.lastName);
   if (input.birthDate !== undefined) {
@@ -405,6 +408,13 @@ export async function updatePersonData(
       throw new RiderError("Das Geburtsdatum stimmt nicht.");
     }
     data.birthDate = input.birthDate;
+  }
+  if (input.ridingSince !== undefined) {
+    const year = input.ridingSince;
+    if (year != null && (!Number.isInteger(year) || year < RIDING_SINCE_MIN || year > new Date().getFullYear())) {
+      throw new RiderError("Das Jahr bei „Fährt seit“ stimmt nicht.");
+    }
+    data.ridingSince = year;
   }
   if (Object.keys(data).length === 0) return;
   const r = await prisma.riderProfile.updateMany({ where: { id: personId, accountId }, data });
@@ -465,7 +475,7 @@ export async function mergeCustomers(accountId: number, intoId: number, fromId: 
       where: { accountId, customerId: into.id },
       select: {
         id: true, firstName: true, lastName: true, birthDate: true, email: true, passwordHash: true, nickname: true,
-        lastSeenAt: true, familyId: true, _count: { select: { passkeys: true, pushSubscriptions: true } },
+        lastSeenAt: true, familyId: true, ridingSince: true, _count: { select: { passkeys: true, pushSubscriptions: true } },
       },
       orderBy: { id: "asc" },
     });
@@ -480,12 +490,16 @@ export async function mergeCustomers(accountId: number, intoId: number, fromId: 
       if (group.length < 2) continue;
       // Wer einen Zugang hat, bleibt; sonst die älteste Person.
       const keep = group.find((p) => !isPlainPerson(p)) ?? group[0];
+      let since = keep.ridingSince;
       for (const p of group) {
         if (p.id === keep.id || !isPlainPerson(p)) continue;
         await tx.ticket.updateMany({ where: { accountId, riderProfileId: p.id }, data: { riderProfileId: keep.id } });
         await tx.riderProfile.delete({ where: { id: p.id } });
+        // „Fährt seit“ der zusammengefassten Person bleibt, das frühere Jahr gilt.
+        if (p.ridingSince != null && (since == null || p.ridingSince < since)) since = p.ridingSince;
         folded += 1;
       }
+      if (since !== keep.ridingSince) await tx.riderProfile.update({ where: { id: keep.id }, data: { ridingSince: since } });
     }
     return { abos: abos.count, persons: persons.count, folded };
   }, { timeout: 20_000 });

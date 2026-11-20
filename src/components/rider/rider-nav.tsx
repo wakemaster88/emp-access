@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 const ICONS = {
   start: <><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>,
+  awards: <><circle cx="12" cy="15" r="5.5" /><path d="M8.5 10.6 6 3h12l-2.5 7.6M10 3l2 4.5L14 3" /></>,
   challenges: <><path d="M8 4h8v6a4 4 0 0 1-8 0z" /><path d="M8 6H4v1a4 4 0 0 0 4 4M16 6h4v1a4 4 0 0 1-4 4M12 14v4M8 20h8" /></>,
   gutscheine: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3h-3zM20 14v7M14 20h3" /></>,
   profil: <><circle cx="12" cy="8" r="4" /><path d="M4 21c1-4 4-6 8-6s7 2 8 6" /></>,
@@ -65,6 +66,7 @@ export function RiderNav({ base }: { base: string }) {
   const compact = useCompactOnScroll(pathname);
   const items = [
     { key: "start" as const, label: "Start", href: base, active: pathname === base },
+    { key: "awards" as const, label: "Awards", href: `${base}/awards`, active: pathname.startsWith(`${base}/awards`) },
     { key: "challenges" as const, label: "Challenges", href: `${base}/challenges`, active: pathname.startsWith(`${base}/challenges`) },
     { key: "gutscheine" as const, label: "Gutscheine", href: `${base}/gutscheine`, active: pathname.startsWith(`${base}/gutscheine`) },
     { key: "profil" as const, label: "Profil", href: `${base}/profil`, active: pathname.startsWith(`${base}/profil`) },

@@ -3,8 +3,10 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { RiderError, updatePersonData } from "@/lib/customers";
 
 /**
- * Name und Geburtsdatum einer Person ändern (Abos › Kundenkonten).
- * Body: `{ firstName?, lastName?, birthDate? }`, nur übergebene Felder.
+ * Name, Geburtsdatum und „Fährt seit“ einer Person ändern (Abos ›
+ * Kundenkonten). Body: `{ firstName?, lastName?, birthDate?, ridingSince? }`,
+ * nur übergebene Felder. `ridingSince` ist das erste Jahr an der Anlage und
+ * zählt bei den Treue-Awards mit; `null` leert es.
  */
 export async function PATCH(
   request: NextRequest,
@@ -26,6 +28,10 @@ export async function PATCH(
   const firstName = field(body.firstName);
   const lastName = field(body.lastName);
   const birth = field(body.birthDate);
+  const since = body.ridingSince;
+  if (since !== undefined && since !== null && typeof since !== "number") {
+    return NextResponse.json({ error: "Das Jahr bei „Fährt seit“ stimmt nicht." }, { status: 400 });
+  }
   if (firstName !== undefined && lastName !== undefined && !firstName?.trim() && !lastName?.trim()) {
     return NextResponse.json({ error: "Bitte Vor- oder Nachnamen eintragen." }, { status: 400 });
   }
@@ -35,6 +41,7 @@ export async function PATCH(
       firstName,
       lastName,
       birthDate: birth === undefined ? undefined : birth ? new Date(birth) : null,
+      ridingSince: since,
     });
     return NextResponse.json({ ok: true });
   } catch (err) {

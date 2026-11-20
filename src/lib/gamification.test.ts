@@ -1,14 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ALL_TIME_KEY,
   aggregateScans,
   awardKey,
   benefitVoucherState,
   computeMetrics,
   currentWeekStreak,
+  inPeriod,
+  isWeekendDay,
   longestWeekStreak,
+  longestWeekendStreak,
   periodKey,
   reachedMilestones,
+  ruleValue,
+  seasonsCount,
   weekIndex,
   type DayStat,
   type MilestoneRule,
@@ -49,8 +55,102 @@ test("computeMetrics deckelt Starts pro Tag", () => {
     { day: "2027-06-02", starts: 33 },
     { day: "2027-06-03", starts: 0 },
   ];
-  assert.deepEqual(computeMetrics(days, 10), { visitDays: 2, starts: 14, streakWeeks: 1 });
+  assert.deepEqual(computeMetrics(days, 10), { visitDays: 2, starts: 14, streakWeeks: 1, earlyDays: 0, weekends: 0 });
   assert.equal(computeMetrics(days, 0).starts, 37);
+});
+
+test("computeMetrics zählt frühe Tage und Wochenenden in Folge", () => {
+  // 2027-06-05/06 und 12 sind Samstag/Sonntag, der 19.06. fehlt, 26.06. ist wieder ein Samstag.
+  const days: DayStat[] = [
+    { day: "2027-06-05", starts: 3, early: true },
+    { day: "2027-06-06", starts: 2 },
+    { day: "2027-06-09", starts: 4, early: true },
+    { day: "2027-06-12", starts: 1 },
+    { day: "2027-06-26", starts: 1, early: true },
+    { day: "2027-06-27", starts: 0, early: true },
+  ];
+  const m = computeMetrics(days, 10);
+  assert.equal(m.earlyDays, 3);
+  assert.equal(m.weekends, 2);
+  assert.equal(isWeekendDay("2027-06-05"), true);
+  assert.equal(isWeekendDay("2027-06-07"), false);
+  // Zwei Tage desselben Wochenendes zählen einmal, Wochentage gar nicht.
+  assert.equal(longestWeekendStreak(["2027-06-05", "2027-06-06", "2027-06-09"]), 1);
+  assert.equal(longestWeekendStreak(["2027-06-06", "2027-06-12", "2027-06-19"]), 3);
+});
+
+test("periodKey und inPeriod: Awards ohne Zeitraum zählen alle Jahre", () => {
+  assert.equal(periodKey("ALL_TIME", "2027-06-14"), ALL_TIME_KEY);
+  assert.equal(inPeriod("2024-08-01", "ALL_TIME", "2027-06-14"), true);
+  assert.equal(inPeriod("2026-08-01", "SEASON", "2027-06-14"), false);
+  assert.equal(inPeriod("2027-05-31", "MONTH", "2027-06-14"), false);
+  assert.equal(inPeriod("2027-06-01", "MONTH", "2027-06-14"), true);
+});
+
+test("ruleValue: Starts über alle Jahre, Aktionstage und Saisons", () => {
+  const days: DayStat[] = [
+    { day: "2026-08-01", starts: 40 },
+    { day: "2026-09-12", starts: 5 },
+    { day: "2027-04-03", starts: 12 },
+    { day: "2027-11-20", starts: 2 },
+  ];
+  const ctx = { capPerDay: 30 };
+  assert.equal(ruleValue({ metric: "STARTS", period: "ALL_TIME" }, days, "2027-11-20", ctx), 49);
+  assert.equal(ruleValue({ metric: "STARTS", period: "SEASON" }, days, "2027-11-20", ctx), 14);
+  assert.equal(ruleValue({ metric: "VISIT_DAYS", period: "SEASON" }, days, "2027-11-20", ctx), 2);
+  // Aktionstage: nur Tage der Liste, an denen die Person wirklich gestartet ist, und nur im Zeitraum.
+  const opening = { metric: "EVENT_DAYS" as const, period: "SEASON" as const, eventDays: ["2026-08-01", "2027-04-03", "2027-04-04"] };
+  assert.equal(ruleValue(opening, days, "2027-11-20", ctx), 1);
+  assert.equal(ruleValue({ ...opening, eventDays: [] }, days, "2027-11-20", ctx), 0);
+  assert.equal(ruleValue({ metric: "EVENT_DAYS", period: "SEASON" }, days, "2027-11-20", ctx), 0);
+  // Saisons: aus den Tagessummen oder vorgegeben.
+  assert.equal(ruleValue({ metric: "SEASONS", period: "ALL_TIME" }, days, "2027-11-20", ctx), 2);
+  assert.equal(ruleValue({ metric: "SEASONS", period: "ALL_TIME" }, days, "2027-11-20", { capPerDay: 30, seasons: 6 }), 6);
+});
+
+test("seasonsCount: Jahre mit Start, dazu die Jahre seit „Fährt seit“", () => {
+  const days: DayStat[] = [
+    { day: "2026-08-01", starts: 3 },
+    { day: "2027-04-03", starts: 0 },
+    { day: "2028-05-01", starts: 2 },
+  ];
+  assert.equal(seasonsCount([], 2015, "2028-06-01"), 0);
+  assert.equal(seasonsCount(days, null, "2028-06-01"), 2);
+  // Stichtag vor dem Start 2028: nur 2026 zählt.
+  assert.equal(seasonsCount(days, null, "2027-12-31"), 1);
+  // Seit 2021 dabei: 2021 bis 2025 kommen lückenlos dazu.
+  assert.equal(seasonsCount(days, 2021, "2028-06-01"), 7);
+  // Ein Jahr nach dem ersten gezählten Start ändert nichts, Unsinn auch nicht.
+  assert.equal(seasonsCount(days, 2027, "2028-06-01"), 2);
+  assert.equal(seasonsCount(days, 12, "2028-06-01"), 2);
+});
+
+test("reachedMilestones: Awards über alle Jahre werden nur einmal vergeben", () => {
+  const milestones: MilestoneRule[] = [
+    { id: 1, metric: "STARTS", threshold: 25, period: "ALL_TIME" },
+    { id: 2, metric: "SEASONS", threshold: 2, period: "ALL_TIME" },
+    { id: 3, metric: "SEASONS", threshold: 5, period: "ALL_TIME" },
+    { id: 4, metric: "EVENT_DAYS", threshold: 1, period: "SEASON", eventDays: ["2027-04-03"] },
+    { id: 5, metric: "EARLY_DAYS", threshold: 1, period: "SEASON" },
+  ];
+  const days: DayStat[] = [
+    { day: "2026-08-01", starts: 20, early: true },
+    { day: "2027-04-03", starts: 6 },
+  ];
+  assert.deepEqual(reachedMilestones(milestones, days, "2027-04-03", 100, new Set()), [
+    { milestoneId: 1, periodKey: ALL_TIME_KEY },
+    { milestoneId: 2, periodKey: ALL_TIME_KEY },
+    { milestoneId: 4, periodKey: "2027" },
+  ]);
+  // Im Jahr darauf: der Award über alle Jahre ist schon vergeben, der Aktionstag der Vorsaison zählt nicht neu.
+  const awarded = new Set([awardKey(1, ALL_TIME_KEY), awardKey(2, ALL_TIME_KEY), awardKey(4, "2027")]);
+  const later = [...days, { day: "2028-05-01", starts: 1 }];
+  assert.deepEqual(reachedMilestones(milestones, later, "2028-05-01", 100, awarded), []);
+  // Mit „Fährt seit 2023“ sind es 2023 bis 2028 und damit sechs Saisons.
+  assert.deepEqual(
+    reachedMilestones(milestones, later, "2028-05-01", 100, awarded, seasonsCount(later, 2023, "2028-05-01")),
+    [{ milestoneId: 3, periodKey: ALL_TIME_KEY }],
+  );
 });
 
 test("reachedMilestones: Schwelle, Zeitraum und bereits Vergebenes", () => {
@@ -124,6 +224,13 @@ test("mergeDayStats: derselbe Tag aus zwei Tickets zählt einmal", () => {
       { day: "2027-06-02", starts: 7 },
     ],
   );
+  // Früh war die Person, wenn es eines ihrer Tickets an dem Tag war.
+  const merged = mergeDayStats([
+    { day: "2027-06-02", starts: 3 },
+    { day: "2027-06-02", starts: 4, early: true },
+    { day: "2027-06-03", starts: 1, early: false },
+  ]);
+  assert.deepEqual(merged.map((d) => !!d.early), [true, false]);
 });
 
 test("milestoneProgress und seasonLevel", () => {

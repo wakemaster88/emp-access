@@ -6,6 +6,9 @@ import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challeng
 import { fmtDay, validityText } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
+import { nextAward } from "@/lib/awards";
+import { AwardBadge } from "@/components/rider/award-badge";
+import { NextAwardCard } from "@/components/rider/award-parts";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +39,16 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { current, next } = rider.level;
   const abo = aboStatus(rider.abo);
   const soon = abo.kind === "active" && abo.daysLeft <= RENEWAL_HINT_DAYS;
-  const others = rider.progress.filter((p) => !p.reached && p.id !== next?.id).slice(0, 3);
+  const upcoming = nextAward(rider.awards);
+  const earned = rider.awards
+    .filter((a) => a.unlocked)
+    .sort((a, b) => (b.awardedAt?.getTime() ?? 0) - (a.awardedAt?.getTime() ?? 0));
+  // Der Gutschein, der als Nächstes winkt: vom nächsten Award, sonst von der nächsten Stufe.
+  const nextVoucher = upcoming?.voucherLabel
+    ? `Dein nächster Gutschein: ${upcoming.voucherLabel} für den Award ${upcoming.name}.`
+    : next?.voucherLabel
+      ? `Dein nächster Gutschein: ${next.voucherLabel} bei ${next.threshold} ${METRIC_LABEL[next.metric]}.`
+      : "Gerade kein offener Gutschein.";
 
   return (
     <>
@@ -183,11 +195,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         <Link href={`${base}/gutscheine`} style={{ fontSize: 12, textDecoration: "none" }}>alle ansehen</Link>
       </div>
       {open.length === 0 ? (
-        <div className="rd-card rd-muted">
-          {next?.voucherLabel
-            ? `Dein nächster Gutschein: ${next.voucherLabel} bei ${next.threshold} ${METRIC_LABEL[next.metric]}.`
-            : "Gerade kein offener Gutschein."}
-        </div>
+        <div className="rd-card rd-muted">{nextVoucher}</div>
       ) : (
         <div className="rd-card rd-list">
           {open.slice(0, 3).map((v) => (
@@ -202,6 +210,21 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             </Link>
           ))}
         </div>
+      )}
+
+      {rider.awards.length > 0 && (
+        <>
+          <div className="rd-between" style={{ marginTop: 4 }}>
+            <div className="rd-label">Awards · {earned.length} von {rider.awards.length}</div>
+            <Link href={`${base}/awards`} style={{ fontSize: 12, textDecoration: "none" }}>alle ansehen</Link>
+          </div>
+          {earned.length > 0 && (
+            <Link href={`${base}/awards`} prefetch className="rd-card rd-aw-strip" aria-label={`${earned.length} Awards freigeschaltet, alle ansehen`}>
+              {earned.slice(0, 5).map((a) => <AwardBadge key={a.id} award={a} size={60} />)}
+            </Link>
+          )}
+          {upcoming && <NextAwardCard award={upcoming} href={`${base}/awards/${upcoming.id}`} />}
+        </>
       )}
 
       <div className="rd-label" style={{ marginTop: 4 }}>Deine Saison {rider.year}</div>
@@ -234,23 +257,6 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         <p className="rd-muted" style={{ margin: 0 }}>
           Neue Tickets zählen von selbst mit, wenn sie auf deine E-Mail-Adresse gebucht sind. An der Kasse trägt man sie dir auch gern ein.
         </p>
-      )}
-
-      {others.length > 0 && (
-        <>
-          <div className="rd-label" style={{ marginTop: 4 }}>Weitere Ziele</div>
-          <div className="rd-card" style={{ gap: 12 }}>
-            {others.map((p) => (
-              <div key={p.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div className="rd-between">
-                  <b>{p.name}</b>
-                  <span className="rd-muted">{p.value} von {p.threshold} {METRIC_LABEL[p.metric]}</span>
-                </div>
-                <div className="rd-bar" style={{ height: 8 }}><i style={{ width: `${Math.round((p.value / p.threshold) * 100)}%` }} /></div>
-              </div>
-            ))}
-          </div>
-        </>
       )}
 
       {!rider.enabled && (

@@ -6,11 +6,13 @@
  */
 import { randomBytes } from "node:crypto";
 import { cache } from "react";
-import { prisma } from "./prisma";
+import { prisma, tenantClient } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { adoptDayTickets } from "./day-guest";
 import { samePersonAbos } from "./abo-person";
 import { aboNamesRider, isKidsSubscriptionName } from "./customer-person";
+import { awardCategory, awardText, voucherShortLabel, type AwardCategory } from "./awards";
+import { awardMilestones, loadPersonDays, toMilestoneRule } from "./gamification-service";
 import {
   benefitVoucherState,
   computeMetrics,
@@ -20,7 +22,9 @@ import {
   aheadOfPercent,
   parsePriceMap,
   mergeDayStats,
+  periodKey,
   seasonRecap,
+  seasonsCount,
   milestoneProgress,
   seasonLevel,
   ymdToDbDate,
@@ -28,6 +32,7 @@ import {
   type BenefitVoucherState,
   type GamiMetric,
   type GamiPeriod,
+  type GamiTier,
   type MilestoneProgress,
   type SeasonRecap,
 } from "./gamification";
@@ -40,6 +45,15 @@ export function riderAppPath(token: string): string {
   return `/app/${encodeURIComponent(token)}`;
 }
 
+/** Was das Abzeichen eines Awards braucht (Form und Aufdruck folgen aus Zählart, Ziel und Schlüssel). */
+export interface AwardBadgeData {
+  name: string;
+  tier: GamiTier;
+  metric: GamiMetric;
+  threshold: number;
+  key: string | null;
+}
+
 export interface RiderVoucher {
   id: number;
   code: string;
@@ -48,7 +62,46 @@ export interface RiderVoucher {
   state: BenefitVoucherState;
   expiresAt: Date | null;
   redeemedAt: Date | null;
+  /** Award, aus dem der Gutschein stammt (für Abzeichen und Kurztext). */
+  award: (AwardBadgeData & { id: number; voucherShort: string | null }) | null;
 }
+
+/** Ein Award im Trophy Case der Kunden-App, mit dem Stand der Person. */
+export interface RiderAward extends AwardBadgeData {
+  /** ID des Meilensteins. */
+  id: number;
+  period: GamiPeriod;
+  category: AwardCategory;
+  /** Stand, höchstens das Ziel. */
+  value: number;
+  /** Im laufenden Zeitraum (oder überhaupt) vergeben. */
+  unlocked: boolean;
+  awardedAt: Date | null;
+  /** Früherer Zeitraum mit diesem Award ("2026"), wenn er im laufenden noch fehlt. */
+  lastPeriod: string | null;
+  /** Wofür es den Award gibt. */
+  text: string;
+  voucherLabel: string | null;
+  voucherShort: string | null;
+  bonus: string | null;
+  /** Gutschein aus diesem Award im laufenden Zeitraum. */
+  voucher: { id: number; state: BenefitVoucherState; expiresAt: Date | null; redeemedAt: Date | null } | null;
+}
+
+/** Frisch vergebener Award, dessen Freischalt-Moment die App noch zeigen soll. */
+export interface RiderUnlock extends AwardBadgeData {
+  /** ID der Vergabe (`MilestoneAward`). */
+  awardId: number;
+  milestoneId: number;
+  text: string;
+  voucherLabel: string | null;
+  bonus: string | null;
+  /** Offener Gutschein dazu, falls es einen gibt. */
+  voucherId: number | null;
+}
+
+/** So viele Freischalt-Momente zeigt die App höchstens nacheinander. */
+export const MAX_UNLOCKS_SHOWN = 6;
 
 export interface RiderView {
   profileId: number;
@@ -72,13 +125,27 @@ export interface RiderView {
   progress: MilestoneProgress[];
   level: { current: MilestoneProgress | null; next: MilestoneProgress | null };
   vouchers: RiderVoucher[];
+  /** Alle aktiven Awards in der Reihenfolge der Verwaltung. */
+  awards: RiderAward[];
+  /** Noch nicht gezeigte Freischalt-Momente, älteste zuerst. */
+  unlocks: RiderUnlock[];
+  /** Starts über alle Jahre (mit Tagesgrenze). */
+  startsTotal: number;
+  /** Saisons dabei und das Jahr der ersten. */
+  seasons: number;
+  seasonsSince: number | null;
 }
 
 /**
  * Alles, was die Kunden-App zeigt. Liefert null, wenn der Token unbekannt ist
  * oder am Profil kein Ticket mehr hängt.
  */
-export async function loadRider(token: string, now: Date = new Date(), adopted = false): Promise<RiderView | null> {
+export async function loadRider(
+  token: string,
+  now: Date = new Date(),
+  adopted = false,
+  awarded = false,
+): Promise<RiderView | null> {
   if (!token || token.length < 16) return null;
   const profile = await prisma.riderProfile.findUnique({
     where: { token },
@@ -108,7 +175,7 @@ export async function loadRider(token: string, now: Date = new Date(), adopted =
     const emails = [...new Set([profile.email, ...profile.tickets.map((t) => t.email?.trim().toLowerCase())].filter((e): e is string => !!e))].slice(0, 5);
     let added = 0;
     for (const e of emails) added += await adoptDayTickets(profile.accountId, e, now).catch(() => 0);
-    if (added > 0) return loadRider(token, now, true);
+    if (added > 0) return loadRider(token, now, true, awarded);
   }
 
   // Nutzung merken (für „App aktiv“ in der Verwaltung), höchstens einmal je Stunde.
@@ -123,16 +190,8 @@ export async function loadRider(token: string, now: Date = new Date(), adopted =
   const ymd = berlinYmd(now);
   const year = Number(ymd.slice(0, 4));
 
-  const [config, stats, milestones, vouchers] = await Promise.all([
+  const [config, milestones, vouchers, awardRows] = await Promise.all([
     prisma.gamificationConfig.findUnique({ where: { accountId } }),
-    prisma.riderDayStat.findMany({
-      where: {
-        accountId,
-        ticketId: { in: ticketIds },
-        day: { gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) },
-      },
-      select: { day: true, starts: true },
-    }),
     prisma.milestone.findMany({
       where: { accountId, active: true },
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
@@ -142,24 +201,46 @@ export async function loadRider(token: string, now: Date = new Date(), adopted =
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
+    prisma.milestoneAward.findMany({
+      where: { accountId, ticketId: { in: ticketIds } },
+      select: { id: true, milestoneId: true, periodKey: true, awardedAt: true, seenAt: true, voucherId: true },
+      orderBy: { awardedAt: "desc" },
+      take: 500,
+    }),
   ]);
+  // Awards ohne Zeitraum zählen über alle Jahre; die Saisonwerte unten nur das laufende.
+  const allDays = await loadPersonDays(prisma, accountId, ticketIds, milestones.some((m) => m.metric === "EARLY_DAYS"));
 
   const cap = config?.startCapPerDay ?? 10;
-  const days = mergeDayStats(stats.map((s) => ({ day: dbDateToYmd(s.day), starts: s.starts })));
+  const days = allDays.filter((d) => d.day.startsWith(String(year)));
   const metrics = computeMetrics(days, 0);
+  const seasons = seasonsCount(allDays, profile.ridingSince, ymd);
   const progress = milestoneProgress(
-    milestones.map((m) => ({
-      id: m.id,
-      name: m.name,
-      metric: m.metric as GamiMetric,
-      period: m.period as GamiPeriod,
-      threshold: m.threshold,
-      voucherLabel: m.voucherLabel,
-    })),
-    days,
+    milestones.map((m) => ({ ...toMilestoneRule(m), name: m.name, voucherLabel: m.voucherLabel })),
+    allDays,
     ymd,
     cap,
+    seasons,
   );
+
+  // Schon erreicht, aber noch nicht vergeben (z. B. Ziel vor dem Start der
+  // Awards geschafft): jetzt vergeben, damit Abzeichen und Gutschein zusammen
+  // erscheinen. Sonst käme beides erst mit dem nächsten Start am Lift.
+  const currentKey = (m: { id: number; period: string }) => `${m.id}:${periodKey(m.period as GamiPeriod, ymd)}`;
+  const awardedNow = new Map(awardRows.map((a) => [`${a.milestoneId}:${a.periodKey}`, a]));
+  const awardTicket = profile.tickets.filter((t) => t.subscription).sort((a, b) => b.id - a.id)[0] ?? profile.tickets[0];
+  if (!awarded && config?.enabled && awardTicket) {
+    const pending = milestones.some((m) => progress.find((p) => p.id === m.id)?.reached && !awardedNow.has(currentKey(m)));
+    if (pending) {
+      const created = await awardMilestones(tenantClient(accountId), accountId, awardTicket.id, ymd, cap, { notify: false }).catch(
+        (e) => {
+          console.error("[rider-app] Awards beim Öffnen vergeben fehlgeschlagen:", e);
+          return 0;
+        },
+      );
+      if (created > 0) return loadRider(token, now, true, true);
+    }
+  }
 
   // Das Abo, das am längsten gilt, ist das aktuelle.
   const withSub = profile.tickets.filter((t) => t.subscription);
@@ -200,6 +281,65 @@ export async function loadRider(token: string, now: Date = new Date(), adopted =
 
   const first = newest ?? profile.tickets[0];
   const order: Record<BenefitVoucherState, number> = { open: 0, redeemed: 1, expired: 2, disabled: 3 };
+
+  const voucherById = new Map(vouchers.map((v) => [v.id, v]));
+  const milestoneById = new Map(milestones.map((m) => [m.id, m]));
+  const badge = (m: (typeof milestones)[number]): AwardBadgeData => ({
+    name: m.name,
+    tier: m.tier as GamiTier,
+    metric: m.metric as GamiMetric,
+    threshold: m.threshold,
+    key: m.key,
+  });
+  const awards: RiderAward[] = milestones.map((m) => {
+    const p = progress.find((x) => x.id === m.id);
+    const row = awardedNow.get(currentKey(m)) ?? null;
+    // Die Liste ist nach Datum absteigend sortiert: der erste andere Zeitraum ist der jüngste.
+    const earlier = row ? null : awardRows.find((a) => a.milestoneId === m.id) ?? null;
+    const v = row?.voucherId != null ? voucherById.get(row.voucherId) ?? null : null;
+    return {
+      ...badge(m),
+      id: m.id,
+      period: m.period as GamiPeriod,
+      category: awardCategory(m.metric as GamiMetric),
+      value: row ? m.threshold : p?.value ?? 0,
+      unlocked: row != null,
+      awardedAt: row?.awardedAt ?? null,
+      lastPeriod: earlier?.periodKey ?? null,
+      text: awardText({ metric: m.metric as GamiMetric, threshold: m.threshold, period: m.period as GamiPeriod, hint: m.hint }),
+      voucherLabel: m.voucherLabel,
+      voucherShort: voucherShortLabel(m),
+      bonus: m.bonus,
+      voucher: v && !v.disabledAt
+        ? { id: v.id, state: benefitVoucherState(v, now), expiresAt: v.expiresAt, redeemedAt: v.redeemedAt }
+        : null,
+    };
+  });
+  const unlocks: RiderUnlock[] = awardRows
+    .filter((a) => a.seenAt == null && milestoneById.has(a.milestoneId))
+    .slice(0, MAX_UNLOCKS_SHOWN)
+    .reverse()
+    .map((a) => {
+      const m = milestoneById.get(a.milestoneId)!;
+      const v = a.voucherId != null ? voucherById.get(a.voucherId) ?? null : null;
+      return {
+        ...badge(m),
+        awardId: a.id,
+        milestoneId: m.id,
+        text: awardText({ metric: m.metric as GamiMetric, threshold: m.threshold, period: m.period as GamiPeriod, hint: m.hint }),
+        voucherLabel: m.voucherLabel,
+        bonus: m.bonus,
+        voucherId: v && benefitVoucherState(v, now) === "open" ? v.id : null,
+      };
+    });
+  // Gutschein → Award, auch für frühere Zeiträume.
+  const awardOfVoucher = new Map<number, (typeof milestones)[number]>();
+  for (const a of awardRows) {
+    const m = milestoneById.get(a.milestoneId);
+    if (a.voucherId != null && m) awardOfVoucher.set(a.voucherId, m);
+  }
+  const firstYear = allDays.find((d) => d.starts > 0)?.day.slice(0, 4);
+
   return {
     profileId: profile.id,
     accountId,
@@ -228,18 +368,40 @@ export async function loadRider(token: string, now: Date = new Date(), adopted =
     progress,
     level: seasonLevel(progress),
     vouchers: vouchers
-      .map((v) => ({
-        id: v.id,
-        code: v.code,
-        label: v.label ?? "Gutschein",
-        source: v.notes,
-        state: benefitVoucherState(v, now),
-        expiresAt: v.expiresAt,
-        redeemedAt: v.redeemedAt,
-      }))
+      .map((v) => {
+        const m = awardOfVoucher.get(v.id);
+        return {
+          id: v.id,
+          code: v.code,
+          label: v.label ?? "Gutschein",
+          source: v.notes,
+          state: benefitVoucherState(v, now),
+          expiresAt: v.expiresAt,
+          redeemedAt: v.redeemedAt,
+          award: m ? { ...badge(m), id: m.id, voucherShort: voucherShortLabel(m) } : null,
+        };
+      })
       .filter((v) => v.state !== "disabled")
       .sort((a, b) => order[a.state] - order[b.state]),
+    awards,
+    unlocks,
+    startsTotal: computeMetrics(allDays, cap).starts,
+    seasons,
+    seasonsSince:
+      seasons > 0 && firstYear
+        ? Math.min(Number(firstYear), profile.ridingSince != null && profile.ridingSince >= 1950 ? profile.ridingSince : Number(firstYear))
+        : null,
   };
+}
+
+/** Freischalt-Momente als gezeigt merken: alle offenen der Person, nicht nur die gezeigten. */
+export async function markAwardsSeen(rider: Pick<RiderView, "accountId" | "ticketIds">, now: Date = new Date()): Promise<number> {
+  if (rider.ticketIds.length === 0) return 0;
+  const res = await prisma.milestoneAward.updateMany({
+    where: { accountId: rider.accountId, ticketId: { in: rider.ticketIds }, seenAt: null },
+    data: { seenAt: now },
+  });
+  return res.count;
 }
 
 /** Je Request nur einmal laden (Layout und Seite teilen sich das Ergebnis). */
