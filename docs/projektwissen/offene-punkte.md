@@ -22,6 +22,10 @@ Stand 8. November 2026. Erledigtes bitte streichen.
 - MCP-Schnittstelle: Dürfen Türen und Tore über MCP geschaltet werden
   (Stufe `access`, `MCP_OFFERED_LEVELS`)?
 - Vereinsportal: Soll der Zugang nur außerhalb der Betriebszeit gelten?
+- Abos über die E-Mail (20.11.2026, Etappe 2 ff.): Gibt es einen
+  Reepay-Export mit E-Mail-Adressen? Adressen der manuell angelegten Abos?
+  Pflichtfeld „Fahrer: Vorname und Geburtsdatum“ an den anny-Abo-Plänen?
+  Altersgrenze Kids Abo (angenommen unter 18)?
 
 ## Hub-Maschine
 

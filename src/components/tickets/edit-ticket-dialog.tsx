@@ -570,11 +570,15 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                 </div>
               </div>
 
-              {/* 2b. Email (für automatische Mails) */}
+              {/* 2b. E-Mail: bei Abos Pflicht (siehe lib/abo-email) */}
               <div className="space-y-1.5">
                 <Label htmlFor="e-email" className="flex items-center gap-1.5">
-                  Email
-                  <span className="text-muted-foreground font-normal text-xs">– für automatische Mails</span>
+                  E-Mail
+                  {form.subscriptionId !== "none" ? (
+                    <span className="text-destructive">*</span>
+                  ) : (
+                    <span className="text-muted-foreground font-normal text-xs">– für automatische Mails</span>
+                  )}
                 </Label>
                 <Input
                   id="e-email"
@@ -585,6 +589,9 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                   className={FIELD}
                   autoComplete="email"
                 />
+                {form.subscriptionId !== "none" && !form.email.trim() && (
+                  <p className="text-xs text-warning">Diesem Abo fehlt die E-Mail-Adresse. Ohne sie findet der Kunde sein Abo nicht in der App.</p>
+                )}
               </div>
 
               {/* 3. Ticket-Typ (Service) */}

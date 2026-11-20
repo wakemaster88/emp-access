@@ -6,6 +6,7 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
 import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
 import { foreignRefError } from "@/lib/tenant-refs";
+import { aboEmailError, cleanEmail } from "@/lib/abo-email";
 
 // Backoffice: gleiche Schema-Erweiterung wie im Public-Endpoint, damit
 // auch hier ein "Baendchen umhaengen" moeglich ist (transferCode=true).
@@ -66,6 +67,13 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const data = parsed.data;
   const transferCode = data.transferCode === true;
+
+  // Jedes Abo hängt an einer E-Mail-Adresse (siehe lib/abo-email).
+  const email = cleanEmail(data.email);
+  const emailError = aboEmailError(null, { subscriptionId: data.subscriptionId, email });
+  if (emailError) {
+    return NextResponse.json({ error: { formErrors: [emailError], fieldErrors: { email: [emailError] } } }, { status: 400 });
+  }
 
   const refError = await foreignRefError(db, accountId, {
     accessAreaIds: [data.accessAreaId],
@@ -221,7 +229,7 @@ export async function POST(request: NextRequest) {
       slotEnd: data.slotEnd,
       validityDurationMinutes: data.validityDurationMinutes,
       profileImage: data.profileImage,
-      email: data.email,
+      email,
       accountId: accountId!,
       ...(serviceAreaIds.length > 0
         ? {

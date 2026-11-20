@@ -58,6 +58,7 @@ export async function buildMissingCardWarning(
     lastName: ticket.lastName,
     email: ticket.email,
     excludeTicketId: ticket.id,
+    subscriptionId: ticket.subscriptionId,
   });
 
   if (predecessor?.rfidCode) {

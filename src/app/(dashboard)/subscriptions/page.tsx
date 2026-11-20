@@ -8,6 +8,8 @@ import { SubscriptionsTable } from "@/components/subscriptions/subscriptions-tab
 import { ExpiringAbosCard } from "@/components/subscriptions/expiring-abos-card";
 import { SubscriptionStats } from "@/components/subscriptions/subscription-stats";
 import { computeSubscriptionStats } from "@/lib/subscription-stats";
+import { AbosWithoutEmailCard } from "@/components/subscriptions/abos-without-email-card";
+import { loadAbosWithoutEmail } from "@/lib/abos-without-email";
 
 interface AnnyExtra {
   services?: string[];
@@ -23,7 +25,7 @@ export default async function SubscriptionsPage() {
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
   const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
 
-  const [subscriptions, areas, annyConfig, expiringAboTickets, stats] = await Promise.all([
+  const [subscriptions, areas, annyConfig, expiringAboTickets, stats, abosWithoutEmail] = await Promise.all([
     db.subscription.findMany({
       where: accountFilter,
       include: {
@@ -82,6 +84,9 @@ export default async function SubscriptionsPage() {
     isSuperAdmin
       ? Promise.resolve(null)
       : computeSubscriptionStats(db as unknown as PrismaClient, session.user.accountId!, 365),
+    isSuperAdmin
+      ? Promise.resolve([])
+      : loadAbosWithoutEmail(db as unknown as PrismaClient, session.user.accountId!),
   ]);
 
   let annyServices: string[] = [];
@@ -102,6 +107,8 @@ export default async function SubscriptionsPage() {
       <div className="page-content space-y-4 sm:space-y-5">
         {stats && <SubscriptionStats stats={stats} />}
         <ExpiringAbosCard tickets={expiringAboTickets} readonly={isSuperAdmin} />
+        {/* Jedes Abo hängt an einer E-Mail-Adresse (lib/abo-email); ältere ohne Adresse stehen hier. */}
+        {abosWithoutEmail.length > 0 && <AbosWithoutEmailCard rows={abosWithoutEmail} />}
         {/* Tabelle läuft bis an den Kartenrand, daher unten kein Innenabstand.
             Den Kopf der Karte (Titel, Beschreibung, „Abo anlegen“) rendert SubscriptionsTable. */}
         <Card flush>
