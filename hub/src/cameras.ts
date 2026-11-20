@@ -18,8 +18,10 @@ import { bestShot, fuseEmbeddings, type FaceShot } from "./face-rules.js";
 import { detectPersons, faceViaZoom } from "./person-crop.js";
 import { CameraMotion, type CloseUp, type MotionDriver, type PersistedMove } from "./camera-motion.js";
 import { RULE_HOLD_MS, isZoneCamera, readTrackingCfg } from "./camera-motion-rules.js";
-import { findAllowedVehicle, scorePlateFromJpeg, type PlateScore } from "./plate.js";
-import { jpegContainsVehicle } from "./vision.js";
+import { findAllowedVehicle, plateAutoMinConf, scorePlateFromJpeg, type PlateScore } from "./plate.js";
+import { checkVehicle } from "./vision.js";
+import { KNOWN_CITY, normalizePlate } from "./plate-match.js";
+import { burstConsensus, burstDone, pickFallbackFrame, type FrameRead } from "./vehicle-burst-rules.js";
 import { speakOnCamera } from "./camera-talk.js";
 import { syncDoorbirds } from "./doorbird.js";
 import { actuateIfAllowed } from "./vehicle-actuate.js";
@@ -95,6 +97,10 @@ interface CameraRuntime {
   snapshotInFlight: boolean;
   /** VEHICLE kam während einer Pipeline – Burst danach nachholen. */
   pendingVehicle: boolean;
+  /** Letzter Burst ohne Fahrzeug (Fehlalarm) – steuert die Licht-Sperre. */
+  burstEmpty?: boolean;
+  /** Bis dahin kein Weißlicht beim Fahrzeug-Burst (Licht löst selbst Alarme aus). */
+  spotlightMuteUntil?: number;
   unreachableLogged: boolean;
   /** Kamera beantwortet keine Batch-Requests – Einzelabfragen. */
   noBatch?: boolean;
@@ -204,6 +210,20 @@ function plateRank(score: PlateScore | null | undefined): number {
   if (!score?.plate) return -1;
   return score.confidence + (score.viaWhitelist ? 0.25 : 0);
 }
+
+/**
+ * macOS Vision als zweite Kennzeichen-OCR im Burst. Standard aus: In 24 h
+ * (19./20.11.2026) 16 Aufrufe, 0 Treffer, je 2–7,5 s Wartezeit vor dem
+ * Upload. HUB_VEHICLE_PLATE_VISION=1 schaltet sie wieder ein.
+ */
+const VEHICLE_PLATE_VISION = process.env.HUB_VEHICLE_PLATE_VISION === "1";
+/** Burst endet, wenn ein Kennzeichen auf so vielen Bildern übereinstimmt … */
+const VEHICLE_CONFIRM_FRAMES = Number(process.env.HUB_VEHICLE_CONFIRM_FRAMES || 3);
+/** … plus so viele Bilder danach (mit Lieferdienst-Prüfung ein paar mehr für die Seitenaufschrift). */
+const VEHICLE_AFTER_PLATE_FRAMES = Number(process.env.HUB_VEHICLE_AFTER_PLATE_FRAMES || 2);
+const VEHICLE_AFTER_PLATE_FRAMES_DELIVERY = Number(process.env.HUB_VEHICLE_AFTER_PLATE_FRAMES_DELIVERY || 4);
+/** Nach einem Licht-Burst ohne Fahrzeug so lange kein Weißlicht (Licht-Schleife in der Dämmerung). */
+const VEHICLE_LIGHT_MUTE_MS = Number(process.env.HUB_VEHICLE_SPOTLIGHT_MUTE_MS || 5 * 60_000);
 
 function vehicleVisionMode(): "always" | "never" | "auto" {
   const mode = (process.env.HUB_VEHICLE_VISION || "auto").toLowerCase();
@@ -786,11 +806,24 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
   }
   cam.snapshotInFlight = true;
   try {
+    cam.burstEmpty = false;
     const lightOff = await vehicleLightOn(cam, cameraId);
     try {
       return await uploadVehicleSnapshotBody(cam, cameraId);
     } finally {
-      if (lightOff) await lightOff();
+      if (lightOff) {
+        await lightOff();
+        // Licht an, aber kein Fahrzeug: Das Ein-/Ausschalten selbst löst an der
+        // Kamera den nächsten Fahrzeug-Alarm aus (19.11. 15:28–15:33 Uhr alle ~8 s,
+        // 16 von 19 Licht-Bursts leer). Eine Weile ohne Licht weiter.
+        if (cam.burstEmpty && VEHICLE_LIGHT_MUTE_MS > 0) {
+          cam.spotlightMuteUntil = Date.now() + VEHICLE_LIGHT_MUTE_MS;
+          log(
+            `Fahrzeug-Burst ${cam.config.name}: Licht-Burst ohne Fahrzeug – ${Math.round(VEHICLE_LIGHT_MUTE_MS / 60_000)} min kein Weißlicht`
+          );
+          improve("alpr", "spotlight_mute", { cam: cam.config.name });
+        }
+      }
     }
   } finally {
     cam.snapshotInFlight = false;
@@ -822,6 +855,7 @@ const VEHICLE_LIGHT_MAX_MS = 60_000;
 async function vehicleLightOn(cam: CameraRuntime, cameraId: number): Promise<(() => Promise<void>) | null> {
   try {
     if (process.env.HUB_VEHICLE_SPOTLIGHT?.trim() === "0") return null;
+    if (cam.spotlightMuteUntil && Date.now() < cam.spotlightMuteUntil) return null;
     const forecast = await getForecast().catch(() => null);
     if (!isDark(new Date(), forecast?.days ?? [])) return null;
     const caps = capsCache.get(cameraId)?.caps ?? (await getCameraCaps(cameraId).catch(() => null));
@@ -833,6 +867,9 @@ async function vehicleLightOn(cam: CameraRuntime, cameraId: number): Promise<(()
       WhiteLed?: { state?: number };
     };
     if (cur.WhiteLed?.state === 1) return null;
+    // Alarm schon vorbei (Flackern): kein Licht für einen Burst, der gleich abbricht.
+    const still = await pollStates(cam).catch(() => null);
+    if (still && !still.VEHICLE) return null;
     await setSpotlight(cameraId, { on: true, brightness: 100 });
     log(`Fahrzeug-Burst ${cam.config.name}: dunkel – Weißlicht an`);
     improve("alpr", "spotlight", { cam: cam.config.name });
@@ -905,31 +942,30 @@ async function uploadVehicleSnapshotBody(
     });
   };
 
+  const burstOpts = {
+    minConf: plateAutoMinConf(),
+    knownCity: KNOWN_CITY,
+    confirmFrames: VEHICLE_CONFIRM_FRAMES,
+    afterFrames: cam.config.deliveryMode ? VEHICLE_AFTER_PLATE_FRAMES_DELIVERY : VEHICLE_AFTER_PLATE_FRAMES,
+  };
+  const frameReads = (): FrameRead[] =>
+    scored.flatMap((r) => (r ? [{ index: r.index, candidates: r.score.candidates }] : []));
+
   log(
     `Fahrzeug-Burst ${cam.config.name}: max ${plan.count}×${plan.gapMs}ms solange VEHICLE (+${VEHICLE_GRACE_FRAMES} Grace), OCR parallel ohne Vision …`
   );
   for (let i = 0; i < plan.count; i++) {
+    const frameStart = Date.now();
+    let states: Record<string, boolean>;
+    let jpeg: Buffer;
     try {
       // Nur lesen, nicht in cam.states schreiben: sonst sieht der parallele
       // Poll beim Flackern eine neue Flanke, meldet Phantom-Ereignisse und
       // stößt mitten im Burst den nächsten an.
-      const states = await pollStates(cam);
-      if (!states.VEHICLE) {
-        if (snaps.length === 0) {
-          log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
-          return null;
-        }
-        // Alarm flackert oft, Auto noch im Bild: ein paar Frames weiter.
-        if (graceLeft <= 0) {
-          log(
-            `Fahrzeug-Burst ${cam.config.name}: VEHICLE ende nach ${snaps.length} Frames`
-          );
-          break;
-        }
-        graceLeft--;
-      } else {
-        graceLeft = VEHICLE_GRACE_FRAMES;
-      }
+      // Alarm-Abfrage und Bild gleichzeitig: nacheinander plus feste Pause
+      // waren ~1,15 s je Bild statt der geplanten 400 ms (Log 19./20.11.).
+      await ensureLogin(cam); // einmal vorweg, nicht zweimal parallel
+      [states, jpeg] = await Promise.all([pollStates(cam), captureSnap(cam)]);
     } catch (e) {
       if (snaps.length === 0) {
         log(
@@ -941,17 +977,40 @@ async function uploadVehicleSnapshotBody(
       }
       break;
     }
+    if (!states.VEHICLE) {
+      if (snaps.length === 0) {
+        log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
+        cam.burstEmpty = true;
+        return null;
+      }
+      // Alarm flackert oft, Auto noch im Bild: ein paar Frames weiter.
+      if (graceLeft <= 0) {
+        log(
+          `Fahrzeug-Burst ${cam.config.name}: VEHICLE ende nach ${snaps.length} Frames`
+        );
+        break;
+      }
+      graceLeft--;
+    } else {
+      graceLeft = VEHICLE_GRACE_FRAMES;
+    }
 
-    snaps.push(await captureSnap(cam));
+    snaps.push(jpeg);
     const index = snaps.length - 1;
-    const jpeg = snaps[index];
     scoreJobs.push(
       scorePlateFromJpeg(jpeg, { vision: false }).then((score) => {
         considerPlate(index, score);
       })
     );
-    if (i < plan.count - 1) {
-      await new Promise((r) => setTimeout(r, plan.gapMs));
+    // Kennzeichen steht sicher fest: nicht noch 10–15 s weiter knipsen.
+    if (burstDone(frameReads(), snaps.length, burstOpts)) {
+      log(`Fahrzeug-Burst ${cam.config.name}: Kennzeichen sicher – fertig nach ${snaps.length} Frames`);
+      improve("alpr", "early_stop", { cam: cam.config.name, frames: snaps.length });
+      break;
+    }
+    const wait = plan.gapMs - (Date.now() - frameStart);
+    if (i < plan.count - 1 && wait > 0) {
+      await new Promise((r) => setTimeout(r, wait));
     }
   }
 
@@ -979,6 +1038,37 @@ async function uploadVehicleSnapshotBody(
     }
   }
 
+  // Mehrheit über den Burst statt bestem Einzelbild: Einzelbilder lesen gern
+  // ein Zeichen falsch (ST-U 1212E einmal, GT-U 1212E viermal). Hat schon ein
+  // freigegebenes Kennzeichen geschaltet, bleibt es dabei.
+  const consensus = actedPlate ? null : burstConsensus(frameReads(), burstOpts);
+  if (consensus) {
+    const own = scored[consensus.bestIndex]?.score;
+    const sameAsOwn = !!own?.plate && normalizePlate(own.plate) === normalizePlate(consensus.plate);
+    if (!bestScore?.plate || bestScore.plate !== consensus.plate || bestIdx !== consensus.bestIndex) {
+      log(
+        `Fahrzeug-Burst ${cam.config.name}: ${consensus.plate} auf ${consensus.frames} Bildern (conf ${consensus.confidence.toFixed(2)}) → Frame ${consensus.bestIndex + 1}`
+      );
+    }
+    bestIdx = consensus.bestIndex;
+    bestScore =
+      sameAsOwn && own
+        ? own
+        : {
+            // Nur Anzeige/Cloud: schaltet nie (actuate false → localActed=1).
+            plate: consensus.plate,
+            confidence: consensus.confidence,
+            candidates: own?.candidates ?? [],
+            raw: own?.raw ?? [],
+            viaWhitelist: false,
+            matchKind: "auto",
+            matchConfidence: consensus.confidence,
+            probable: own?.probable ?? null,
+            actuate: false,
+          };
+    improve("alpr", "consensus", { cam: cam.config.name, frames: consensus.frames });
+  }
+
   let buf: Buffer | null = bestIdx != null && bestScore?.plate ? snaps[bestIdx] : null;
   let plate = actedPlate ?? bestScore?.plate ?? null;
 
@@ -992,24 +1082,31 @@ async function uploadVehicleSnapshotBody(
         `Fahrzeug-Burst ${cam.config.name}: kein Plate – letzter Frame ${snaps.length}/${snaps.length}`
       );
     } else {
-      for (let i = snaps.length - 1; i >= 0; i--) {
-        // Größen-/Zonenregel: geparkte Autos und Straße im Hintergrund zählen nicht.
-        // Cloud-Einstellung der Kamera geht vor, sonst Umgebung (HUB_VEHICLE_*).
-        const ok = await jpegContainsVehicle(snaps[i], {
-          quick: true,
-          cameraId,
-          label: cam.config.name,
-          minArea: cam.config.vehicleMinArea ?? undefined,
-          zone: cam.config.vehicleZone ?? undefined,
-        });
-        if (ok === true) {
-          buf = snaps[i];
-          bestIdx = i;
-          log(
-            `Fahrzeug-Burst ${cam.config.name}: kein Plate – Vision YES Frame ${i + 1}/${snaps.length}`
-          );
-          break;
+      // Bild mit Schild-artiger Lesung, sonst größte Fahrzeug-Box (Auto am
+      // nächsten). Früher: letztes Bild mit Fahrzeug, oft schon das Heck.
+      let pick = pickFallbackFrame(frameReads(), [], 0);
+      if (!pick) {
+        const areas: Array<number | null> = [];
+        for (let i = 0; i < snaps.length; i++) {
+          // Größen-/Zonenregel: geparkte Autos und Straße im Hintergrund zählen nicht.
+          // Cloud-Einstellung der Kamera geht vor, sonst Umgebung (HUB_VEHICLE_*).
+          const r = await checkVehicle(snaps[i], {
+            cameraId,
+            label: cam.config.name,
+            minArea: cam.config.vehicleMinArea ?? undefined,
+            zone: cam.config.vehicleZone ?? undefined,
+          });
+          // Alter Tracker ohne Boxen meldet Fläche 0: zählt trotzdem als Fahrzeug.
+          areas.push(r.vehicle === true ? Math.max(r.area, 1e-6) : r.vehicle === false ? 0 : null);
         }
+        pick = pickFallbackFrame([], areas, 0);
+      }
+      if (pick) {
+        buf = snaps[pick.index];
+        bestIdx = pick.index;
+        log(
+          `Fahrzeug-Burst ${cam.config.name}: kein Plate – Frame ${pick.index + 1}/${snaps.length} (${pick.why === "ocr" ? "Schild sichtbar" : "Fahrzeug am größten"})`
+        );
       }
       if (!buf) {
         if (dumpRoot) {
@@ -1019,6 +1116,7 @@ async function uploadVehicleSnapshotBody(
         log(
           `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Plate/Fahrzeug in ${snaps.length} Frames)`
         );
+        cam.burstEmpty = true;
         improve("alpr", "skip", { cam: cam.config.name, frames: snaps.length });
         // Auch Skips throtteln – sonst Dauerschleife bei statischen Fehlalarmen.
         cam.lastSnapshotAt = Date.now();
@@ -1033,7 +1131,7 @@ async function uploadVehicleSnapshotBody(
     !!plate &&
     !!bestScore?.viaWhitelist &&
     bestScore.confidence >= PLATE_EARLY_STOP_CONF;
-  if (buf && !alprSure && !localPromise) {
+  if (VEHICLE_PLATE_VISION && buf && !alprSure && !localPromise) {
     log(
       `Fahrzeug-Burst ${cam.config.name}: Vision einmal auf Frame ${(bestIdx ?? 0) + 1}/${snaps.length}`
     );

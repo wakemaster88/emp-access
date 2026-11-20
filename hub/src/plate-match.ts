@@ -11,6 +11,8 @@
  * Fahrzeug fuer ein freigegebenes halten.
  */
 
+import { GERMAN_CITY_CODES } from "./plate-cities.js";
+
 export interface OcrCandidate {
   plate: string;
   confidence: number;
@@ -51,12 +53,12 @@ export interface PlatePick {
   probable: string | null;
 }
 
-/** Bekannte Kreise (NRW/Umgebung) – gleiche Basis wie PlateOCR.swift. */
-export const KNOWN_CITY = new Set([
-  "RE", "BOR", "UN", "GE", "EN", "DO", "BO", "E", "HA", "HER", "HAM", "BOT",
-  "MG", "NE", "D", "K", "AC", "BN", "SU", "LEV", "GL", "ME", "RS", "W", "SG",
-  "OB", "MH", "DU", "KR", "VIE", "WES", "KLE", "COE", "ST", "SO",
-]);
+/**
+ * Bekannte Kreise: alle deutschen Unterscheidungszeichen (plate-cities.ts).
+ * Früher nur ~35 Ruhrgebiets-Kreise – Kennzeichen aus der Region wurden
+ * trotz sicherer Lesung verworfen (Befund 20.11.2026).
+ */
+export const KNOWN_CITY: ReadonlySet<string> = GERMAN_CITY_CODES;
 
 export function normalizePlate(plate: string): string {
   return plate
