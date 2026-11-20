@@ -1,0 +1,207 @@
+/**
+ * Wer fährt mit welchem Abo eines Kundenkontos? (Etappe 2, Variante B)
+ *
+ * Ein Kundenkonto hängt an einer E-Mail-Adresse. Bei anny-Familienkonten
+ * tragen alle Abos Name und Geburtsdatum des Kontoinhabers, auch das Abo des
+ * Kindes. Die Regeln:
+ *
+ * 1. Ein Abo, das schon einer Person gehört (Kasse, App), behält sie.
+ * 2. Ein Kids-Abo mit einem Geburtsdatum ab 18 Jahren geht nie automatisch an
+ *    eine Person: „Fahrer offen“.
+ * 3. Abos mit gleichem Vor-, Nachnamen und Geburtsdatum gehören derselben
+ *    Person, solange sie nacheinander laufen (Verlängerung, Wechsel von Kids
+ *    auf Ride). Läuft ein Fahr-Abo (Ride, Ride + Gear, Kids) gleichzeitig mit
+ *    einem Fahr-Abo dieser Person, gehört es jemand anderem: „Fahrer offen“.
+ *    Abos anderer Art (Beach, Aqua) darf dieselbe Person nebenher haben.
+ *    Gekündigte oder vorzeitig ungültige Abos zählen dabei nicht mit.
+ * 4. Gibt es für die Daten noch keine Person, entsteht sie aus dem Abo.
+ *
+ * Reine Funktion; angewendet wird der Plan in `customers.ts`.
+ */
+import { canBeSamePerson } from "./abo-person";
+import { normalizeName } from "./ticket-predecessor";
+
+/** Bis zu diesem Alter gilt das Kids Abo (Annahme, offene Frage an Aaron). */
+export const KIDS_MAX_AGE = 18;
+
+export interface PlanTicket {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  birthDate: Date | null;
+  startDate: Date | null;
+  endDate: Date | null;
+  /** Abo für Kinder (Kids Abo). */
+  kids: boolean;
+  /** Art des Abos (`aboCategory`): gleichzeitig nur eins je Art und Person. */
+  category: string;
+  status: string;
+  riderProfileId: number | null;
+}
+
+export interface PlanPerson {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  birthDate: Date | null;
+}
+
+export interface PersonPlan {
+  /** Neue Personen mit ihren Abos; Daten vom jüngsten Abo. */
+  create: Array<{ firstName: string | null; lastName: string | null; birthDate: Date | null; ticketIds: number[] }>;
+  /** Bestehende Personen bekommen diese Abos. */
+  assign: Array<{ personId: number; ticketIds: number[] }>;
+  /** Fahrer offen: Abos ohne Person. */
+  open: number[];
+}
+
+/** Vergleichsform aus Vorname, Nachname und Geburtstag; leer ohne Namen. */
+export function personDataKey(p: { firstName: string | null; lastName: string | null; birthDate: Date | null }): string {
+  const first = normalizeName(p.firstName);
+  const last = normalizeName(p.lastName);
+  if (!first && !last) return "";
+  return `${first}|${last}|${p.birthDate ? p.birthDate.toISOString().slice(0, 10) : ""}`;
+}
+
+/** Volljährig zu Beginn des Abos (ohne Beginn: heute)? Ohne Geburtsdatum unbekannt. */
+export function isAdultAt(birthDate: Date | null, at: Date): boolean | null {
+  if (!birthDate) return null;
+  const limit = new Date(birthDate);
+  limit.setUTCFullYear(limit.getUTCFullYear() + KIDS_MAX_AGE);
+  return limit.getTime() <= at.getTime();
+}
+
+/** Kids Abo am Namen erkennen („Kids Abo“, „Kinder-Abo“). */
+export function isKidsSubscriptionName(name: string | null | undefined): boolean {
+  return /\bkids?\b|kinder/i.test(name ?? "");
+}
+
+/**
+ * Art eines Abos: alle Fahr-Abos (Ride, Ride + Gear, Kids) sind eine Art, denn
+ * man fährt nur mit einem. Andere Abos (Beach, Aqua) sind je eine eigene Art.
+ */
+export function aboCategory(subscriptionId: number | null, name: string | null | undefined): string {
+  return /\bride\b|\bkids?\b|kinder|wake|wasserski/i.test(name ?? "") ? "ride" : `abo-${subscriptionId ?? 0}`;
+}
+
+/** Ein gekündigtes oder vorzeitig ungültiges Abo hat seine Laufzeit nicht genutzt. */
+function usedPeriod(t: PlanTicket, now: Date): boolean {
+  if (t.status !== "CANCELED" && t.status !== "INVALID") return true;
+  return t.endDate != null && t.endDate.getTime() <= now.getTime();
+}
+
+/** Können zwei Abos mit gleichen Daten derselben Person gehören? */
+function compatible(a: PlanTicket, b: PlanTicket, now: Date): boolean {
+  if (a.category !== b.category || !usedPeriod(a, now) || !usedPeriod(b, now)) return true;
+  return canBeSamePerson(a, b);
+}
+
+/**
+ * Taugen Name und Geburtsdatum am Abo als Daten des Fahrers? Nicht bei einem
+ * Kids-Abo mit Erwachsenen-Geburtsdatum: dort steht das Elternteil.
+ */
+export function aboNamesRider(t: { kids: boolean; birthDate: Date | null; startDate: Date | null }, now: Date = new Date()): boolean {
+  return !(t.kids && isAdultAt(t.birthDate, t.startDate ?? now) === true);
+}
+
+interface Chain {
+  personId: number | null;
+  key: string;
+  tickets: PlanTicket[];
+  added: PlanTicket[];
+}
+
+export function planPersons(tickets: PlanTicket[], persons: PlanPerson[], now: Date = new Date()): PersonPlan {
+  const chains: Chain[] = persons.map((p) => {
+    const own = tickets.filter((t) => t.riderProfileId === p.id);
+    // Ohne eigene Daten zählt die Person wie ihr jüngstes Abo mit Fahrer-Daten.
+    const latest = own
+      .filter((t) => aboNamesRider(t, now))
+      .sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0))[0];
+    const key = personDataKey(p) || (latest ? personDataKey(latest) : "");
+    return { personId: p.id, key, tickets: own, added: [] };
+  });
+
+  // Abos, die schon einer Person gehören (auch einer fremden), bleiben, wie sie sind.
+  const free = tickets.filter((t) => t.riderProfileId == null);
+
+  // Kids-Abos von Kindern zuerst, damit sie die Person mit Kinder-Daten
+  // bekommen; sonst nach Beginn.
+  const rank = (t: PlanTicket) => (t.kids && isAdultAt(t.birthDate, t.startDate ?? now) === false ? 0 : 1);
+  free.sort((a, b) => rank(a) - rank(b) || (a.startDate?.getTime() ?? 0) - (b.startDate?.getTime() ?? 0) || a.id - b.id);
+
+  const open: number[] = [];
+  for (const t of free) {
+    if (!aboNamesRider(t, now)) {
+      open.push(t.id);
+      continue;
+    }
+    const key = personDataKey(t);
+    if (!key) {
+      open.push(t.id);
+      continue;
+    }
+    const same = chains.filter((c) => c.key === key);
+    const fits = same.find((c) => c.tickets.every((o) => compatible(o, t, now)));
+    if (fits) {
+      fits.tickets.push(t);
+      fits.added.push(t);
+    } else if (same.length === 0) {
+      chains.push({ personId: null, key, tickets: [t], added: [t] });
+    } else {
+      open.push(t.id);
+    }
+  }
+
+  // Personen ohne Daten und ohne Abo (in der App per E-Mail angemeldet, bevor
+  // es ein Abo gab) übernehmen eine neue Person, am liebsten die mit einem
+  // Abo für Erwachsene und dem jüngsten Beginn.
+  const latestStart = (c: Chain) => Math.max(...c.tickets.map((t) => t.startDate?.getTime() ?? 0));
+  const unbound = chains.filter((c) => c.personId != null && c.key === "" && c.tickets.length === 0);
+  for (const u of unbound) {
+    const target = chains
+      .filter((c) => c.personId == null)
+      .sort((a, b) => Number(a.tickets.every((t) => t.kids)) - Number(b.tickets.every((t) => t.kids)) || latestStart(b) - latestStart(a))[0];
+    if (!target) break;
+    target.personId = u.personId;
+  }
+
+  const plan: PersonPlan = { create: [], assign: [], open };
+  for (const c of chains) {
+    if (c.added.length === 0) continue;
+    const ids = c.added.map((t) => t.id);
+    if (c.personId != null) {
+      plan.assign.push({ personId: c.personId, ticketIds: ids });
+    } else {
+      const latest = [...c.added].sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0) || b.id - a.id)[0];
+      plan.create.push({ firstName: latest.firstName, lastName: latest.lastName, birthDate: latest.birthDate, ticketIds: ids });
+    }
+  }
+  return plan;
+}
+
+export interface HolderCandidate {
+  id: number;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  /** Hat ein Abo, das kein Kids Abo ist. */
+  adultAbo: boolean;
+}
+
+/**
+ * Welche Person eines Kontos meldet sich mit dessen Adresse an? Der
+ * Kontoinhaber: zuerst die Person mit seinem Namen, dann eine mit einem Abo
+ * für Erwachsene, sonst die älteste. Personen mit einer anderen bestätigten
+ * Adresse scheiden aus.
+ */
+export function pickHolder(candidates: HolderCandidate[], customerEmail: string, customerName: string | null): number | null {
+  const holderName = normalizeName(customerName);
+  const score = (p: HolderCandidate) => {
+    if (holderName && normalizeName(`${p.firstName ?? ""}${p.lastName ?? ""}`) === holderName) return 0;
+    return p.adultAbo ? 1 : 2;
+  };
+  const pool = candidates.filter((p) => p.email == null || p.email === customerEmail);
+  pool.sort((a, b) => score(a) - score(b) || a.id - b.id);
+  return pool[0]?.id ?? null;
+}

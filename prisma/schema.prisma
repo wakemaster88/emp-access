@@ -191,6 +191,7 @@ model Account {
   gamificationConfig   GamificationConfig?
   riderProfiles        RiderProfile[]
   riderFamilies        RiderFamily[]
+  customers            Customer[]
   riderPasskeys        RiderPasskey[]
   riderPushSubscriptions RiderPushSubscription[]
   riderDayStats        RiderDayStat[]
@@ -561,14 +562,19 @@ model Ticket {
   updatedAt               DateTime             @updatedAt
 
   /// Kunden-App: Profil, das mehrere Abo-Tickets derselben Person buendelt.
+  /// Bei Abos die Person, die damit faehrt; NULL = „Fahrer offen“.
   riderProfileId          Int?
   riderProfile            RiderProfile?        @relation(fields: [riderProfileId], references: [id], onDelete: SetNull)
+  /// Kundenkonto (E-Mail-Adresse), dem das Abo gehoert. Siehe `Customer`.
+  customerId              Int?
+  customer                Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
   /// Fahrer ist aus der Gamification ausgestiegen: es wird nichts gezaehlt.
   gamificationOptOut      Boolean              @default(false)
   riderDayStats           RiderDayStat[]
   milestoneAwards         MilestoneAward[]
   challengeAwards         ChallengeAward[]
   @@index([riderProfileId])
+  @@index([customerId])
   @@index([accountId])
   @@index([rfidCode])
   @@index([qrCode])
@@ -3596,6 +3602,14 @@ model RiderProfile {
   familyId      Int?
   family        RiderFamily? @relation(fields: [familyId], references: [id], onDelete: SetNull)
   familyAdult   Boolean   @default(false)
+  /// Person eines Kundenkontos: wer mit den Abos faehrt. Name und
+  /// Geburtsdatum gehoeren der Person; der anny-Sync ueberschreibt nur die
+  /// Rohdaten am Ticket (dort steht bei Familienkonten der Kontoinhaber).
+  customerId    Int?
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  firstName     String?
+  lastName      String?
+  birthDate     DateTime?
   accountId     Int
   account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tickets       Ticket[]
@@ -3605,6 +3619,30 @@ model RiderProfile {
   @@index([accountId])
   @@index([familyId])
   @@index([accountId, email])
+  @@index([customerId])
+}
+
+/// Kundenkonto: eine E-Mail-Adresse je Mandant (Aaron, 20.11.2026: Abos
+/// immer ueber die E-Mail). Jedes Abo mit Adresse gehoert einem Konto; wer
+/// damit faehrt, sagt die Person (`RiderProfile`, `Ticket.riderProfileId`).
+/// anny fuehrt ebenfalls ein Konto je Adresse; seine Kundennummern stehen
+/// hier, damit das Konto einer Adressaenderung in anny folgt.
+model Customer {
+  id              Int            @id @default(autoincrement())
+  /// Klein geschrieben, ohne Leerraum; eindeutig je Mandant.
+  email           String
+  /// Name des Kontoinhabers (aus anny bzw. vom ersten Abo).
+  name            String?
+  annyCustomerIds String[]       @default([])
+  tickets         Ticket[]
+  persons         RiderProfile[]
+  accountId       Int
+  account         Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([accountId, email])
+  @@index([accountId])
 }
 
 /// Familie in der Kunden-App: buendelt Profile, gezaehlt wird weiter je Person.

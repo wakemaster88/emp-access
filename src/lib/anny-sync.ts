@@ -5,6 +5,7 @@ import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import type { AnnyBooking } from "@/lib/anny-types";
 import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
 import { findPredecessor } from "@/lib/ticket-predecessor";
+import { ensureCustomer, syncCustomerPersons } from "@/lib/customers";
 import { newAnnyIncomplete, orphanCleanupScope, type AnnyIncomplete } from "./anny-orphans";
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
@@ -300,6 +301,8 @@ function ticketChanged(
   for (const k of keys) {
     if ((incoming[k] ?? null) !== (existing[k] ?? null)) return true;
   }
+  // Kundenkonto nur vergleichen, wenn dieser Lauf eins mitbringt (Abos).
+  if ("customerId" in incoming && (incoming.customerId ?? null) !== (existing.customerId ?? null)) return true;
   const eStart = existing.startDate ? new Date(existing.startDate).getTime() : null;
   const iStart = incoming.startDate ? new Date(incoming.startDate).getTime() : null;
   if (eStart !== iStart) return true;
@@ -1525,11 +1528,38 @@ export async function syncAnnyForAccount(
         select: {
           id: true, uuid: true, status: true, extras: true, endDate: true,
           name: true, firstName: true, lastName: true, startDate: true,
-          ticketTypeName: true, subscriptionId: true, email: true,
+          ticketTypeName: true, subscriptionId: true, email: true, customerId: true,
         },
       })
     : [];
   const existingSubByUuid = new Map(existingSubTickets.map((t) => [t.uuid, t]));
+
+  // Kundenkonten (eine Adresse je Konto, siehe lib/customers). Einmal laden,
+  // nur bei neuer Adresse, Kundennummer oder neuem Namen schreiben.
+  const customerByEmail = new Map(
+    (await prisma.customer.findMany({
+      where: { accountId },
+      select: { id: true, email: true, name: true, annyCustomerIds: true },
+    })).map((c) => [c.email, c]),
+  );
+  const customerFor = async (email: string | null, name: string | null, annyCustomerId: string): Promise<number | null> => {
+    const key = email?.trim().toLowerCase();
+    if (!key) return null;
+    const known = customerByEmail.get(key);
+    if (known && known.annyCustomerIds.includes(annyCustomerId) && (!name || known.name === name)) return known.id;
+    const id = await ensureCustomer(accountId, { email: key, name, annyCustomerId });
+    if (id != null) {
+      customerByEmail.set(key, {
+        id,
+        email: key,
+        name: name ?? known?.name ?? null,
+        annyCustomerIds: [...new Set([...(known?.annyCustomerIds ?? []), annyCustomerId])],
+      });
+    }
+    return id;
+  };
+  /** Konten mit neuen oder neu zugeordneten Abos: Personen danach nachziehen. */
+  const personSyncCustomers = new Set<number>();
 
   for (const ps of allPlanSubscriptions) {
     const customerId = ps.customer?.id;
@@ -1567,11 +1597,22 @@ export async function syncAnnyForAccount(
     const endDate = calcSubscriptionEndDate(ps, startDate, planName, subscriptionId, subDefaultEndDate);
     const birthDate = ps.customer?.birth_date ? new Date(ps.customer.birth_date) : null;
 
+    let customerAccountId: number | null = null;
+    try {
+      customerAccountId = await customerFor(email, customerName.trim() || null, String(customerId));
+    } catch (e) {
+      console.error(
+        `[anny sync] account=${accountId} Kundenkonto fuer ${uuid} nicht angelegt:`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+
     const ticketData = {
       name: customerName || `Abo ${ps.id ?? ""}`,
       firstName: firstName || null,
       lastName: lastName || null,
       email,
+      ...(customerAccountId != null && { customerId: customerAccountId }),
       birthDate,
       startDate,
       endDate,
@@ -1647,6 +1688,7 @@ export async function syncAnnyForAccount(
 
         await prisma.ticket.update({ where: { id: existing.id }, data: ticketData });
         subUpdated++;
+        if (customerAccountId != null && existing.customerId !== customerAccountId) personSyncCustomers.add(customerAccountId);
       } else {
         const inherited: Record<string, unknown> = {};
 
@@ -1713,8 +1755,22 @@ export async function syncAnnyForAccount(
         }
         await prisma.ticket.create({ data: { ...ticketData, ...inherited, uuid, accountId } });
         subCreated++;
+        if (customerAccountId != null) personSyncCustomers.add(customerAccountId);
       }
     } catch { /* skip */ }
+  }
+
+  // Wer faehrt mit den neuen Abos? (lib/customer-person). Ein Fehler bremst
+  // den Sync nicht; zugeordnet wird dann beim naechsten neuen Abo des Kontos.
+  for (const cid of personSyncCustomers) {
+    try {
+      await syncCustomerPersons(accountId, cid);
+    } catch (e) {
+      console.error(
+        `[anny sync] account=${accountId} Personen fuer Konto ${cid} nicht zugeordnet:`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
   }
 
   created += subCreated;

@@ -10,6 +10,7 @@ import { prisma } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { adoptDayTickets } from "./day-guest";
 import { samePersonAbos } from "./abo-person";
+import { aboNamesRider, isKidsSubscriptionName } from "./customer-person";
 import {
   benefitVoucherState,
   computeMetrics,
@@ -262,6 +263,8 @@ export async function ensureRiderProfile(accountId: number, ticketId: number): P
       birthDate: true,
       startDate: true,
       endDate: true,
+      customerId: true,
+      subscription: { select: { name: true } },
       riderProfile: { select: { id: true, token: true } },
     },
   });
@@ -285,8 +288,16 @@ export async function ensureRiderProfile(accountId: number, ticketId: number): P
     profile = others.find((t) => t.riderProfile != null)?.riderProfile ?? null;
   }
   if (!profile) {
+    // Neue Person des Kundenkontos, mit den Daten vom Abo, wenn sie dem
+    // Fahrer gehören (nicht beim Kids-Abo mit den Daten der Eltern).
+    const ownData = aboNamesRider({ kids: isKidsSubscriptionName(ticket.subscription?.name), birthDate: ticket.birthDate, startDate: ticket.startDate });
     profile = await prisma.riderProfile.create({
-      data: { token: newRiderToken(), accountId },
+      data: {
+        token: newRiderToken(),
+        accountId,
+        customerId: ticket.customerId,
+        ...(ownData && { firstName: ticket.firstName, lastName: ticket.lastName, birthDate: ticket.birthDate }),
+      },
       select: { id: true, token: true },
     });
   }

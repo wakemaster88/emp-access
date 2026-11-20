@@ -5,6 +5,7 @@ import { validateApiToken } from "@/lib/api-auth";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
 import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
+import { linkAboCustomerSafe } from "@/lib/customers";
 import { foreignRefError } from "@/lib/tenant-refs";
 import { aboEmailError, cleanEmail } from "@/lib/abo-email";
 
@@ -164,6 +165,8 @@ export async function POST(request: NextRequest) {
     const ticket = await db.ticket.create({
       data: buildTicketData(),
     });
+    // Abo: Kundenkonto zur Adresse und Person (lib/customers).
+    if (ticket.subscriptionId != null) await linkAboCustomerSafe(accountId!, ticket.id);
 
     // Abo/Service verlangt eine Karte, es wurde aber keine hinterlegt: Das
     // Ticket ist dann nicht scanbar und der Scan trifft weiter das (ggf.

@@ -6,6 +6,7 @@ import { ticketCreateSchema } from "@/lib/validators";
 import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
 import { foreignRefError } from "@/lib/tenant-refs";
 import { aboEmailError, cleanEmail } from "@/lib/abo-email";
+import { linkAboCustomerSafe } from "@/lib/customers";
 
 export async function GET(
   request: NextRequest,
@@ -160,6 +161,11 @@ export async function PUT(
       version: { increment: 1 },
     },
   });
+
+  // Abo: Kundenkonto zur (neuen) Adresse und Person (lib/customers).
+  if (ticket.subscriptionId != null && (data.email !== undefined || data.subscriptionId !== undefined)) {
+    await linkAboCustomerSafe(accountId!, ticket.id);
+  }
 
   // Tagesgäste: das Ticket folgt seiner Adresse ins passende App-Profil.
   if (data.email !== undefined) {

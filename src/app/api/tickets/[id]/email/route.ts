@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { normalizeEmail } from "@/lib/day-guest";
+import { linkAboCustomerSafe } from "@/lib/customers";
 
 /**
  * E-Mail-Adresse eines Abos nachtragen oder ändern (Abos › „Abos ohne E-Mail“).
@@ -41,5 +42,6 @@ export async function PATCH(
     data: { email, version: { increment: 1 } },
     select: { id: true, email: true },
   });
+  await linkAboCustomerSafe(accountId, updated.id);
   return NextResponse.json(updated);
 }

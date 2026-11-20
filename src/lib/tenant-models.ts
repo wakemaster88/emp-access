@@ -22,6 +22,7 @@ export const TENANT_MODELS = new Set<string>([
   "Challenge",
   "ChallengeAward",
   "ClimateSample",
+  "Customer",
   "Device",
   "DiscoveredDevice",
   "EmailConfig",

@@ -8,12 +8,14 @@ import { runIrrigationTick } from "@/lib/irrigation";
 import { runOfflineCheckTick } from "@/lib/device-offline";
 import { runTelegramReportTick } from "@/lib/telegram-report-tick";
 import { runArticleImageTick } from "@/lib/warenwirtschaft-images";
+import { runCustomerTick } from "@/lib/customers";
 
 export const maxDuration = 120;
 
 /**
  * Ein Cron alle fuenf Minuten statt einzelner: Raumregeln, Raumklima, Klimaverlauf verdichten, Bewegungsmelder, Bewaesserung,
- * Geraete-Offline-Check, der Telegram-Tagesbericht und die Bildsuche fuer Artikel ohne Foto. Jeder Job laeuft in
+ * Geraete-Offline-Check, der Telegram-Tagesbericht, die Bildsuche fuer Artikel ohne Foto und Kundenkonten fuer Abos mit
+ * Adresse ohne Konto. Jeder Job laeuft in
  * seinem eigenen try/catch; ein Fehler bremst die anderen nicht.
  */
 export async function GET(request: NextRequest) {
@@ -32,6 +34,7 @@ export async function GET(request: NextRequest) {
     deviceOffline: runOfflineCheckTick,
     telegramReport: runTelegramReportTick,
     articleImages: runArticleImageTick,
+    customers: () => runCustomerTick(),
   } as const;
 
   const entries = Object.entries(jobs) as [keyof typeof jobs, () => Promise<unknown>][];
