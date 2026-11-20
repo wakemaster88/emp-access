@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import type { AnnyBooking } from "@/lib/anny-types";
+import { addMonths, annyContractStart, annyRunningEnd } from "@/lib/anny-sub-dates";
 import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
 import { findPredecessor } from "@/lib/ticket-predecessor";
 import { ensureCustomer, syncCustomerPersons } from "@/lib/customers";
@@ -269,16 +270,12 @@ function calcSubscriptionEndDate(
     null;
 
   if (contractMonths && startDate) {
-    const end = new Date(startDate);
-    end.setMonth(end.getMonth() + contractMonths);
-    return end;
+    return addMonths(startDate, contractMonths);
   }
 
   const nameMonths = parseDurationMonthsFromName(planName) ?? parseDurationMonthsFromName(ps.plan?.name ?? ps.plan?.title ?? null);
   if (nameMonths && startDate) {
-    const end = new Date(startDate);
-    end.setMonth(end.getMonth() + nameMonths);
-    return end;
+    return addMonths(startDate, nameMonths);
   }
 
   if (subscriptionId != null) {
@@ -567,6 +564,11 @@ export async function syncAnnyForAccount(
       const id = inc.id != null ? String(inc.id) : "";
       if (t && id) incMap.set(`${t}:${id}`, inc);
     }
+
+    // Feldnamen (ohne Werte) ins Log: zeigt, ob anny einen Vertragsbeginn
+    // mitliefert (`starts_at` ist nur der laufende Abrechnungsmonat).
+    const firstAttrs = (allData[0]?.attributes ?? null) as Record<string, unknown> | null;
+    if (firstAttrs) console.log(`[anny sync] plan-subscription Felder: ${Object.keys(firstAttrs).sort().join(",")}`);
 
     const resolved: PlanSubscription[] = [];
     for (const raw of allData) {
@@ -1599,8 +1601,17 @@ export async function syncAnnyForAccount(
     const lastName = ps.customer?.family_name ?? customerName.split(/\s+/).slice(1).join(" ") ?? "";
     const email = ps.customer?.email?.trim() || null;
 
-    const startDate = ps.starts_at ? new Date(ps.starts_at) : null;
-    const endDate = calcSubscriptionEndDate(ps, startDate, planName, subscriptionId, subDefaultEndDate);
+    // `starts_at` ist der Beginn des laufenden Abrechnungsmonats, nicht der
+    // Vertragsbeginn (lib/anny-sub-dates). Beginn = frühester je gesehener.
+    const periodStart = ps.starts_at ? new Date(ps.starts_at) : null;
+    const startDate = annyContractStart(periodStart, existingSubByUuid.get(uuid)?.startDate ?? null);
+    const endDate = ps.contract_ends_at
+      ? calcSubscriptionEndDate(ps, startDate, planName, subscriptionId, subDefaultEndDate)
+      : annyRunningEnd(
+          calcSubscriptionEndDate(ps, startDate, planName, subscriptionId, subDefaultEndDate),
+          periodStart,
+          baseStatus === "VALID",
+        );
     const birthDate = ps.customer?.birth_date ? new Date(ps.customer.birth_date) : null;
 
     let customerAccountId: number | null = null;
