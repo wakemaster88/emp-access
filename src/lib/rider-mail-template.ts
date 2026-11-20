@@ -251,3 +251,30 @@ export function riderInviteMail(args: {
   ].join("\n");
   return { subject, html, text };
 }
+
+/**
+ * Einladung in die Familie per Mail (Profil › Familie › „Per E-Mail
+ * einladen“, lib/rider-family-invite). Der Link meldet an wie der
+ * Anmelde-Link und nimmt die Person danach in die Familie auf.
+ */
+export function familyInviteMail(args: { url: string; accountName: string; origin: string; inviterName: string; days: number }): RiderLinkMail {
+  const subject = "Einladung in die App";
+  const intro = `${args.inviterName} lädt dich in die App von ${args.accountName} ein, gleich in die gemeinsame Familie. Ihr seht dann gegenseitig Abo, Besuchstage, Starts und Gutscheine und kümmert euch zusammen um die Kinder. Gezählt wird weiter für jede Person einzeln.`;
+  const note = `Der Link gilt ${args.days} Tage. Beim ersten Öffnen richtest du einen Passkey oder ein Passwort ein, danach findest du die App jederzeit unter ${args.origin.replace(/^https?:\/\//, "")}/app. Die Familie kannst du im Profil jederzeit verlassen.`;
+  const footer = `Du kennst ${args.inviterName} nicht oder willst das nicht? Dann musst du nichts tun, ohne Klick passiert nichts.`;
+  const html = riderMailHtml({
+    title: subject,
+    preheader: `${args.inviterName} lädt dich in die App ein.`,
+    accountName: args.accountName,
+    origin: args.origin,
+    headline: ["Deine", "Einladung"],
+    introHtml: escapeHtml(intro),
+    chips: ["Abo", "Besuche", "Familie"],
+    button: "Einladung annehmen",
+    url: args.url,
+    noteHtml: escapeHtml(note),
+    footerHtml: escapeHtml(footer),
+  });
+  const text = ["Deine Einladung", "", intro, "", "Hier nimmst du sie an:", args.url, "", note, "", footer].join("\n");
+  return { subject, html, text };
+}

@@ -5,6 +5,7 @@ import { verifyMailLinkKey } from "@/lib/day-guest";
 import { completeOnboarding } from "@/lib/rider-onboarding";
 import { riderAppPath } from "@/lib/rider-app";
 import { signInByMail } from "@/lib/rider-auth";
+import { acceptFamilyInvite, FAMILY_INVITE_COOKIE } from "@/lib/rider-family-invite";
 
 const schema = z.object({
   key: z.string().min(10).max(800),
@@ -33,5 +34,12 @@ export async function POST(request: NextRequest) {
     personId: parsed.data.personId,
   });
   if (!token) return NextResponse.json({ error: "Die App ist gerade nicht freigeschaltet." }, { status: 403 });
-  return signInByMail(NextResponse.json({ url: riderAppPath(token) }), token, link.email);
+
+  // Kam die Person über eine Einladung in eine Familie (Cookie aus /app/mail): jetzt beitreten.
+  const family = request.cookies.get(FAMILY_INVITE_COOKIE)?.value;
+  const joinError = family ? await acceptFamilyInvite(token, family) : null;
+  const url = joinError && family ? `/app/familie/${encodeURIComponent(family)}` : riderAppPath(token);
+  const res = await signInByMail(NextResponse.json({ url }), token, link.email);
+  if (family) res.cookies.delete(FAMILY_INVITE_COOKIE);
+  return res;
 }

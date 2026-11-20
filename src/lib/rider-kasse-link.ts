@@ -286,7 +286,7 @@ async function linkChild(a: {
   const kidName = existing ? memberName(existing) : t.firstName!.trim();
   const kidBirth = existing?.birthDate ?? (ticketIsRider ? t.birthDate : null);
   if (isAdultAt(kidBirth, now) === true) {
-    throw new RiderError(`${kidName} ist volljährig. Erwachsene kommen in der App über „Partner einladen“ in die Familie.`);
+    throw new RiderError(`${kidName} ist volljährig. Erwachsene lädt man in der App unter Familie per E-Mail ein.`);
   }
   if (existing?.familyId != null && existing.familyId !== p.familyId) {
     throw new RiderError(`${kidName} gehört schon zu einer anderen Familie.`);

@@ -27,13 +27,14 @@ interface Props {
 
 type Msg = { ok: boolean; text: string } | null;
 
-/** Familie im eigenen Profil: Mitglieder, Kind hinzufügen, Partner einladen, verlassen. */
+/** Familie im eigenen Profil: Mitglieder, per E-Mail einladen, Einladungslink teilen, verlassen. */
 export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
   const [adding, setAdding] = useState(false);
   const [email, setEmail] = useState("");
+  const [who, setWho] = useState<"adult" | "child">("adult");
   const [invite, setInvite] = useState("");
   const [copied, setCopied] = useState(false);
   const [confirm, setConfirm] = useState<number | "leave" | null>(null);
@@ -60,11 +61,20 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
   async function add(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
-    if (await call({ action: "link", email })) {
-      setAdding(false);
-      setEmail("");
-      setMsg({ ok: true, text: "Wenn zu der Adresse ein Abo gehört, ist dorthin jetzt ein Link unterwegs. Sobald er bestätigt ist, siehst du das Abo hier. Der Link gilt 7 Tage." });
-    }
+    const address = email.trim();
+    const json = await call({ action: who === "adult" ? "mail" : "link", email: address });
+    if (!json) return;
+    setAdding(false);
+    setEmail("");
+    setMsg({
+      ok: true,
+      text: who === "child"
+        ? "Wenn zu der Adresse ein Abo gehört, ist dorthin jetzt ein Link unterwegs. Sobald er bestätigt ist, siehst du das Abo hier. Der Link gilt 7 Tage."
+        : json.result === "member"
+          ? `${address} gehört schon zu deiner Familie.`
+          : `Die Einladung an ${address} ist unterwegs. Wer den Link öffnet, ist gleich in der App und in deiner Familie. Er gilt 7 Tage.`,
+    });
+    router.refresh();
   }
 
   async function makeInvite() {
@@ -133,7 +143,7 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
       <b>Familie</b>
       {others.length === 0 ? (
         <span className="rd-muted">
-          Verwalte die Abos deiner Familie in einer App. Kinder brauchen keinen eigenen Zugang, dein Partner behält seinen eigenen.
+          Verwalte die Abos deiner Familie in einer App. Lade Erwachsene per E-Mail ein, sie behalten ihren eigenen Zugang; Kinder brauchen keinen.
           Abos, die du mit deiner Adresse für andere buchst, kommen von selbst dazu.
         </span>
       ) : (
@@ -172,31 +182,43 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
       {adding ? (
         <form onSubmit={add} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="rd-field">
-            <label htmlFor="rd-fam-mail">E-Mail-Adresse des Kindes</label>
+            <label htmlFor="rd-fam-mail">E-Mail-Adresse</label>
             <input id="rd-fam-mail" className="rd-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={180} autoComplete="off" inputMode="email" />
-            <span className="rd-muted">
-              Für Abos, die mit einer eigenen Adresse des Kindes gebucht sind. Dorthin schicken wir einen Link; erst wenn er bestätigt ist, gehört das Abo zur Familie.
-              Ohne eigene Adresse verknüpft die Kasse das Abo: zeig dort den Code unter „Abo fehlt?“.
-            </span>
           </div>
+          <fieldset style={{ border: 0, margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+            <legend style={{ marginBottom: 4 }}>Wen lädst du ein?</legend>
+            <label className="rd-check">
+              <span className="rd-grow"><b>Erwachsene Person</b><br /><span className="rd-muted">Partner oder andere Erwachsene, mit eigenem Zugang zur App</span></span>
+              <input type="radio" name="rd-fam-who" checked={who === "adult"} onChange={() => setWho("adult")} />
+            </label>
+            <label className="rd-check">
+              <span className="rd-grow"><b>Kind mit eigener Adresse</b><br /><span className="rd-muted">Das Abo ist mit dieser Adresse gebucht</span></span>
+              <input type="radio" name="rd-fam-who" checked={who === "child"} onChange={() => setWho("child")} />
+            </label>
+          </fieldset>
+          <span className="rd-muted">
+            {who === "adult"
+              ? "Wir schicken eine Einladung an die Adresse. Wer den Link öffnet, ist angemeldet und gleich in deiner Familie."
+              : "Dorthin schicken wir einen Link; erst wenn er bestätigt ist, gehört das Abo zur Familie. Kinder ohne eigene Adresse verknüpft die Kasse: zeig dort den Code unter „Abo fehlt?“."}
+          </span>
           <div className="rd-row">
-            <button type="submit" className="rd-btn rd-grow" disabled={busy}><span>{busy ? "Einen Moment …" : "Link schicken"}</span></button>
+            <button type="submit" className="rd-btn rd-grow" disabled={busy}><span>{busy ? "Einen Moment …" : who === "adult" ? "Einladung schicken" : "Link schicken"}</span></button>
             <button type="button" className="rd-btn rd-btn-ghost rd-grow" onClick={() => setAdding(false)} disabled={busy}><span>Abbrechen</span></button>
           </div>
         </form>
       ) : (
-        <button type="button" className="rd-btn rd-btn-wide" onClick={() => { setAdding(true); setMsg(null); }}><span>Kind hinzufügen</span></button>
+        <button type="button" className="rd-btn rd-btn-wide" onClick={() => { setAdding(true); setMsg(null); }}><span>Per E-Mail einladen</span></button>
       )}
 
       {invite ? (
         <div className="rd-field">
-          <label htmlFor="rd-fam-invite">Einladung für deinen Partner</label>
+          <label htmlFor="rd-fam-invite">Einladungslink</label>
           <input id="rd-fam-invite" className="rd-input" readOnly value={invite} onFocus={(e) => e.currentTarget.select()} />
-          <span className="rd-muted">Gilt 7 Tage. Dein Partner öffnet den Link, meldet sich mit seinem eigenen Zugang an und tritt bei.</span>
+          <span className="rd-muted">Gilt 7 Tage. Wer den Link öffnet, meldet sich mit seinem eigenen Zugang an und tritt bei.</span>
           <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={share}><span>{copied ? "Kopiert" : "Link teilen"}</span></button>
         </div>
       ) : (
-        <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={makeInvite} disabled={busy}><span>Partner einladen</span></button>
+        <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={makeInvite} disabled={busy}><span>Stattdessen Link teilen</span></button>
       )}
 
       {/* Mit Personen aus dem eigenen Konto gibt es nichts zu verlassen: sie gehören dazu. */}

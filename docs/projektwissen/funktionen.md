@@ -318,8 +318,10 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   des Kindes von der Kasse und wählen „Zu meiner Familie hinzufügen“. Der Weg
   mit Kartennummer und Geburtsdatum ist seit 20.11.2026 weg (Aaron: „geht
   nicht“). Kinder mit eigener Adresse kommen per Bestätigungslink (Etappe 4b).
-- Partner einladen: Link `/app/familie/<schlüssel>` (HMAC, 7 Tage). Der
-  Partner meldet sich mit seinem eigenen Zugang an und tritt bei.
+- Erwachsene einladen: Profil › Familie › „Per E-Mail einladen“ (siehe
+  „Per E-Mail in App und Familie einladen“) oder „Stattdessen Link teilen“:
+  Link `/app/familie/<schlüssel>` (HMAC, 7 Tage), die Person meldet sich mit
+  ihrem eigenen Zugang an und tritt bei.
 - Jeder kann die Familie im Profil verlassen, Erwachsene können Kinder
   entfernen. Ohne Erwachsene oder mit nur einem Mitglied löst sich die
   Familie auf (`tidyFamily`).
@@ -706,7 +708,7 @@ Bestandsdaten.
   in `src/lib/customer-person.ts`, Art nach `aboCategory`). Zählt im Lauf als
   übersprungen. Abos ohne Person werden nicht geprüft.
 - Kind mit eigener Adresse (eigenes Kundenkonto) in die Familie holen: In der
-  App unter Profil › Familie › Kind hinzufügen „Mit seiner E-Mail-Adresse“.
+  App unter Profil › Familie › „Per E-Mail einladen“, „Kind mit eigener Adresse“.
   Die App antwortet immer gleich; eine Mail „Familie in der App bestätigen“
   geht nur raus, wenn zur Adresse ein anderes Konto mit Personen unter 18
   (oder ohne Geburtsdatum) ohne Familie gehört, höchstens alle 10 Minuten und
@@ -750,6 +752,30 @@ Kasse), alte oder andere Adresse, anny-Adresse anders als die in der App
   Kids-Abos mit den Daten der Eltern lehnt der Server mit Text ab.
 - Zwei verschiedene Kundenkonten legt der Monitor nicht zusammen, er
   verweist auf Abos › Kundenkonten (nur Admins).
+
+## Per E-Mail in App und Familie einladen (20.11.2026)
+
+Aaron: „hier will ich leute per email direkt zur app einladen“.
+
+- App, Profil › Familie › „Per E-Mail einladen“: Adresse eingeben, „Erwachsene
+  Person“ oder „Kind mit eigener Adresse“ (das Kind geht wie bisher über den
+  Bestätigungslink, Etappe 4b). Für Erwachsene schickt `POST
+  /api/rider/[token]/family` mit `action: "mail"` die Mail „Einladung in die
+  App“ im Look der App (`inviteFamilyByMail` in
+  `src/lib/rider-family-invite.ts`, `familyInviteMail`).
+- Der Link ist der Anmelde-Link `/app/mail/<schlüssel>` (7 Tage) mit
+  `?familie=<einladungsschlüssel>`: Er belegt die Adresse, meldet an (beim
+  ersten Mal über das Einrichten) und nimmt die Person als Erwachsene in die
+  Familie auf. Gehören zur Adresse schon Abos oder ein Kundenkonto, wählt sie
+  zuerst wie bei der Anmeldung, wer sie ist; der Schlüssel wartet so lange im
+  Cookie `rd-family-invite` und `POST /api/rider/onboarding` tritt danach bei.
+- Verwaltet die eingeladene Person schon eine Familie nur mit Kindern (etwa
+  aus ihrem Kundenkonto), kommen die Kinder mit (`joinFamily`). Mit weiteren
+  Erwachsenen muss sie die alte Familie erst verlassen; dann zeigt die
+  Einladungsseite den Grund.
+- Grenzen: je Adresse höchstens alle 10 Minuten und 3-mal am Tag, je Person
+  10 Einladungen in der Stunde. Ist die Adresse schon in der Familie, geht
+  keine Mail raus.
 
 ## Personen ohne Abo löschen (20.11.2026)
 
