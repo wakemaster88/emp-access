@@ -25,6 +25,7 @@ import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamificatio
 import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
 import { RankingDisplayCard } from "@/components/gamification/ranking-display-card";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
+import { AppQrCard } from "@/components/gamification/app-qr-card";
 
 type Tab = "auswertung" | "fahrer" | "meilensteine" | "challenges" | "angebote" | "gutscheine" | "einstellungen";
 const TABS: Tab[] = ["auswertung", "fahrer", "meilensteine", "challenges", "angebote", "gutscheine", "einstellungen"];
@@ -237,6 +238,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
     }
     content = (
       <div className="space-y-4 sm:space-y-5">
+        <AppQrCard accountName={session.user.accountName ?? ""} />
         {dayGuests && <DayGuestMailsCard rows={dayGuests.rows} year={year} withoutEmail={dayGuests.withoutEmail} mailReady={dayGuests.mailReady} />}
         <RidersCard riders={rows} year={year} />
       </div>

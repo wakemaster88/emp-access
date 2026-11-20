@@ -61,6 +61,9 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   `/app/<token>`; der Token ist der Schlüssel, es gibt kein Passwort.
 - Fahrer ohne Geburtsdatum oder Kartennummer bekommen den Link an der Kasse:
   Gäste › Kunden App › Fahrer › App-Link (QR-Code und Link zum Kopieren).
+- Für neue Kunden steht oben unter Gäste › Kunden App › Fahrer ein fester
+  QR-Code auf `/app` mit A4-Aushang zum Drucken (`src/lib/app-poster.ts`,
+  seit 20.11.2026).
 - `RiderProfile` bündelt die Abo-Tickets einer Person (Vorname, Nachname und
   Geburtsdatum gleich) und trägt Spitzname und Ranglisten-Einwilligung
   (`showInRanking`, ab Werk aus).
