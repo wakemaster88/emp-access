@@ -23,9 +23,12 @@
  *    danach neu. SKIP_WAITING aus der Seite greift, falls er doch wartet.
  *
  * VERSION bei jeder Aenderung an dieser Datei hochzaehlen: alte Caches
- * werden beim Aktivieren weggeraeumt.
+ * werden beim Aktivieren weggeraeumt. Ebenso nach Migrationen, die alter
+ * Code nicht lesen kann (z. B. neuer Enum-Wert): eine Seite aus dem Cache
+ * bindet die App per Skew Protection an das alte Deployment, das dann an
+ * der neuen Datenbank scheitert (20.11.2026, Awards mit ALL_TIME).
  */
-const VERSION = "2026-11-16-1";
+const VERSION = "2026-11-20-1";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 // Name muss zu RIDER_CACHE_PREFIX in src/lib/rider-local.ts passen (Abmelden loescht danach).
 const RIDER_CACHE = `emp-rider-${VERSION}`;
