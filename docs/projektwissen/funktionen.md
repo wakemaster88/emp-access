@@ -4,6 +4,20 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Kalender der Betriebszeiten (20.11.2026)
+
+- Seite `/betriebszeiten` hat zwei Tabs: „Profile“ (Karten wie bisher) und
+  „Kalender“ über alle Bereiche (`src/components/betriebszeiten/operating-calendar.tsx`).
+- Monat: je Tag eine Zeile pro Bereich mit Uhrzeit (Handy: nur farbige Balken),
+  geschlossene Bereiche bleiben leer, Ausnahmetage gelb mit Punkt. Ein Tipp auf
+  einen Tag zeigt darunter alle Bereiche mit Zeit und Saison bzw. Ausnahme.
+- Woche: Zeitleiste je Tag und Bereich, Stundenbereich passt sich an die Woche an;
+  Spannen über Mitternacht laufen am Folgetag ab 0 Uhr weiter.
+- Farbe je Bereich aus `--chart-1` … `--chart-5` in Profil-Reihenfolge; Bereiche
+  lassen sich über die Chips aus- und einblenden.
+- Rechenlogik in `src/lib/operating-calendar.ts` (Monatsraster, KW, Tagesspannen),
+  Öffnung je Tag weiter über `openingForDay` aus `src/lib/operating-hours.ts`.
+
 ## Veranstaltungen und Partnerzugang (20.11.2026)
 
 Für die Rooftop Lounge und andere Räume, die für Feiern belegt werden.
