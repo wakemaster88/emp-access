@@ -16,6 +16,7 @@ import { TicketCodeSearch } from "@/components/tickets/ticket-code-search";
 import { TicketSortFilter } from "@/components/tickets/ticket-sort-filter";
 import { AreaFilter } from "@/components/tickets/area-filter";
 import { Eye, EyeOff } from "lucide-react";
+import { riderView } from "@/lib/customer-person";
 
 interface Props {
   searchParams: Promise<{ showAll?: string; area?: string; code?: string; sort?: string; order?: string; source?: string; sub?: string; svc?: string }>;
@@ -92,6 +93,8 @@ export default async function TicketsPage({ searchParams }: Props) {
         service: { include: { serviceAreas: { select: { accessAreaId: true } } } },
         ticketAreas: { include: { accessArea: true } },
         _count: { select: { scans: true } },
+        // Abo: Person, die damit fährt (Name statt der Daten am Ticket).
+        riderProfile: { select: { firstName: true, lastName: true, birthDate: true } },
       },
       orderBy: buildOrderBy(sort, orderDir),
       take: 500,
@@ -257,7 +260,17 @@ export default async function TicketsPage({ searchParams }: Props) {
               />
             </div>
             <TicketsTable
-              tickets={tickets as never}
+              tickets={tickets.map(({ riderProfile, ...t }) => {
+                // Abo: Name der Person, die damit fährt, nur zur Anzeige; der
+                // Bearbeiten-Dialog ändert weiter die Daten am Ticket.
+                const r = riderView({ ...t, riderProfile });
+                const hasRider = !!(riderProfile?.firstName?.trim() || riderProfile?.lastName?.trim());
+                return {
+                  ...t,
+                  rider: hasRider ? { firstName: r.firstName, lastName: r.lastName, birthDate: r.birthDate } : null,
+                  riderOpen: r.riderOpen,
+                };
+              }) as never}
               areas={areas}
               subscriptions={subsWithAreas}
               services={svcsWithAreas}

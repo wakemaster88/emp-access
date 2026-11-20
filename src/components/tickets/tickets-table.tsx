@@ -54,6 +54,12 @@ interface TicketsTableProps {
   showAll?: boolean;
 }
 
+/** Angezeigter Name: bei Abos die Person, die damit fährt, sonst die Daten am Ticket. */
+function shownName(t: TicketData): string {
+  const src = t.rider ?? t;
+  return [src.firstName, src.lastName].filter(Boolean).join(" ") || t.name;
+}
+
 function calcAge(birthDate: Date | string | null | undefined): number | null {
   if (!birthDate) return null;
   const b = new Date(birthDate);
@@ -379,8 +385,9 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                         ) : null}
                         <div className="min-w-0">
                           <p className="font-medium text-foreground truncate">
-                            {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                            {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground">({a})</span> : null; })()}
+                            {shownName(ticket)}
+                            {(() => { const a = calcAge(ticket.rider ? ticket.rider.birthDate : ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground">({a})</span> : null; })()}
+                            {ticket.riderOpen && <Badge variant="warning" className="ml-1.5 align-middle">Fahrer offen</Badge>}
                           </p>
                           {(ticket.ticketTypeName || ticket.subscription?.name) && (
                             <p className="text-xs text-muted-foreground truncate">
@@ -462,14 +469,15 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                           ) : (
                             <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                               <span className="text-xs font-bold text-muted-foreground">
-                                {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
+                                {(shownName(ticket)[0] || "?").toUpperCase()}
                               </span>
                             </div>
                           )}
                           <div className="min-w-0">
                             <p className="font-medium text-foreground truncate">
-                              {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                              {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground">({a})</span> : null; })()}
+                              {shownName(ticket)}
+                              {(() => { const a = calcAge(ticket.rider ? ticket.rider.birthDate : ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground">({a})</span> : null; })()}
+                              {ticket.riderOpen && <Badge variant="warning" className="ml-1.5 align-middle">Fahrer offen</Badge>}
                             </p>
                             {empAreas.length > 0 && (
                               <div className="flex items-center gap-1 flex-wrap mt-0.5">

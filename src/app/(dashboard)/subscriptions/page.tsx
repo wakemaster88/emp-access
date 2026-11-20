@@ -10,6 +10,8 @@ import { SubscriptionStats } from "@/components/subscriptions/subscription-stats
 import { computeSubscriptionStats } from "@/lib/subscription-stats";
 import { AbosWithoutEmailCard } from "@/components/subscriptions/abos-without-email-card";
 import { loadAbosWithoutEmail } from "@/lib/abos-without-email";
+import { RidersOpenCard } from "@/components/subscriptions/riders-open-card";
+import { loadRidersOpen } from "@/lib/riders-open";
 
 interface AnnyExtra {
   services?: string[];
@@ -25,7 +27,7 @@ export default async function SubscriptionsPage() {
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
   const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
 
-  const [subscriptions, areas, annyConfig, expiringAboTickets, stats, abosWithoutEmail] = await Promise.all([
+  const [subscriptions, areas, annyConfig, expiringAboTickets, stats, abosWithoutEmail, ridersOpen] = await Promise.all([
     db.subscription.findMany({
       where: accountFilter,
       include: {
@@ -87,6 +89,9 @@ export default async function SubscriptionsPage() {
     isSuperAdmin
       ? Promise.resolve([])
       : loadAbosWithoutEmail(db as unknown as PrismaClient, session.user.accountId!),
+    isSuperAdmin
+      ? Promise.resolve([])
+      : loadRidersOpen(db as unknown as PrismaClient, session.user.accountId!),
   ]);
 
   let annyServices: string[] = [];
@@ -109,6 +114,8 @@ export default async function SubscriptionsPage() {
         <ExpiringAbosCard tickets={expiringAboTickets} readonly={isSuperAdmin} />
         {/* Jedes Abo hängt an einer E-Mail-Adresse (lib/abo-email); ältere ohne Adresse stehen hier. */}
         {abosWithoutEmail.length > 0 && <AbosWithoutEmailCard rows={abosWithoutEmail} />}
+        {/* Abos mit Kundenkonto, aber ohne Person (lib/customer-person): wer fährt? */}
+        {ridersOpen.length > 0 && <RidersOpenCard rows={ridersOpen} />}
         {/* Tabelle läuft bis an den Kartenrand, daher unten kein Innenabstand.
             Den Kopf der Karte (Titel, Beschreibung, „Abo anlegen“) rendert SubscriptionsTable. */}
         <Card flush>

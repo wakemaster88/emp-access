@@ -540,3 +540,26 @@ Bestandsdaten.
   Ride-Abos neben einem Kids-Abo mit denselben Daten), 48 haben keine Adresse.
 - Noch nicht: Anzeige und Auswahl der Person an Kasse und im Backend,
   Kundenkonten-Seite, Familie aus dem Konto (Etappen 3 und 4).
+
+## Fahrer an Kasse, Scanner und Backend, Etappe 3a (20.11.2026)
+
+- Anzeige: Shop-Monitor (Liste, Scan), Scanner-Pi und Ticket-Liste im Backend
+  zeigen bei Abos Name und Geburtsdatum der Person, die damit fährt
+  (`riderView` in `src/lib/customer-person.ts`), nicht die Daten am Ticket
+  (bei anny die des Kontoinhabers). Der Bearbeiten-Dialog im Backend ändert
+  weiter die Daten am Ticket.
+- „Fahrer offen“ (Abo mit Konto, ohne Person): Badge an Ticket-Karte und
+  Ticket-Liste, Hinweis im Ticket-Overlay mit „Eintragen“. Neue Daten im
+  Personen-Formular ordnen das Abo einer Person des Kontos mit genau diesen
+  Daten zu oder legen sie an (`assignRider`). Unveränderte Daten (etwa beim
+  Nachtragen der E-Mail) ordnen nichts zu.
+- Karte ausgeben nur mit Fahrer: `PUT /api/checkin/public/[token]/update`
+  lehnt eine neue RFID bei „Fahrer offen“ ab, bis Name und Geburtsdatum
+  eingetragen sind; das Overlay zeigt stattdessen „Erst den Fahrer eintragen“.
+- Name an der Kasse ändern: Hat das Abo eine Person, ändert das Formular die
+  Person (`updatePersonData`). Bei anny-Abos bleiben die Daten am Ticket
+  unangetastet, der Sync schreibt sie ohnehin neu.
+- Abo ohne E-Mail: Badge „E-Mail fehlt“ und Hinweis im Overlay.
+- Abos-Seite: Karte „Fahrer offen (n)“ mit Suche; der Dialog wählt eine
+  Person des Kontos oder legt eine neue an (`PUT /api/tickets/[id]/rider`,
+  Body `{ personId }` oder `{ firstName, lastName, birthDate }`).

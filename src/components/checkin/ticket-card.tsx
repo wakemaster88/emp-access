@@ -44,6 +44,7 @@ export function TicketCard({
   const addOns = (ticket.addOns ?? []) as TicketAddOn[];
   const needsPhoto = (ticket.service?.requiresPhoto || ticket.subscription?.requiresPhoto) && !ticket.profileImage;
   const needsRfid = (ticket.service?.requiresRfid || ticket.subscription?.requiresRfid) && !ticket.rfidCode;
+  const aboWithoutEmail = isSub && !ticket.email?.trim();
   // ANNY-Sync-Status:
   //   * Service hat keinen ANNY-Link        -> kein Badge
   //   * ANNY-Link + annyBookingId vorhanden -> "ANNY ✓" (gruen)
@@ -153,7 +154,7 @@ export function TicketCard({
             ))}
           </div>
         )}
-        {(needsPhoto || needsRfid || annyState || ticket.infoPending || bundleSize > 1) && (
+        {(needsPhoto || needsRfid || annyState || ticket.infoPending || bundleSize > 1 || ticket.riderOpen || aboWithoutEmail) && (
           <div className="flex gap-1 mt-1 flex-wrap">
             {bundleSize > 1 && (
               <Badge
@@ -165,6 +166,10 @@ export function TicketCard({
               </Badge>
             )}
             {needsPhoto && <Badge variant="danger" className={chipClass}>Foto fehlt</Badge>}
+            {/* Abo: wer fährt, ist noch offen (Kids-Abo mit Daten der Eltern),
+                bzw. ohne Adresse findet der Kunde es nicht in der App. */}
+            {ticket.riderOpen && <Badge variant="warning" className={chipClass}>Fahrer offen</Badge>}
+            {aboWithoutEmail && <Badge variant="warning" className={chipClass}>E-Mail fehlt</Badge>}
             {needsRfid && <Badge variant="danger" className={chipClass}>RFID fehlt</Badge>}
             {ticket.infoPending && (
               <Badge

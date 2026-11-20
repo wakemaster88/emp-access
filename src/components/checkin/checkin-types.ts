@@ -64,6 +64,10 @@ export interface CheckinTicket {
   annyOrderId: string | null;
   /** true = Info-Anfrage verschickt, aber noch keine Antwort ("Infos fehlen"). */
   infoPending?: boolean;
+  /** Abo mit Kundenkonto, aber noch ohne Person: „Fahrer offen“. Name und
+   *  Geburtsdatum oben sind dann die am Ticket (bei anny der Kontoinhaber),
+   *  sonst die der Person, die mit dem Abo fährt. */
+  riderOpen?: boolean;
   checkedIn: boolean;
   accessArea?: { id: number; name: string } | null;
   subscription?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean } | null;

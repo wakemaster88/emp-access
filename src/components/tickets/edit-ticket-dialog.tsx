@@ -152,6 +152,10 @@ export interface TicketData {
   extras?: Record<string, unknown> | null;
   _count: { scans: number };
   ticketAreas?: { accessArea: { id: number; name: string } }[];
+  /** Abo: Person, die damit fährt (nur Anzeige, siehe lib/customer-person). */
+  rider?: { firstName: string | null; lastName: string | null; birthDate: Date | string | null } | null;
+  /** Abo mit Kundenkonto, aber noch ohne Person. */
+  riderOpen?: boolean;
 }
 
 interface Area {

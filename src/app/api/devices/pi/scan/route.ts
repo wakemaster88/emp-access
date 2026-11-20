@@ -13,6 +13,7 @@ import { runScanRules } from "@/lib/room-rules";
 import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
 import { recordStart } from "@/lib/gamification-service";
 import { adoptDayTickets } from "@/lib/day-guest";
+import { riderView } from "@/lib/customer-person";
 
 /**
  * Meldung des Raspberry Pi, dass das Relais per Dashboard-Button geoeffnet
@@ -156,7 +157,12 @@ export async function POST(request: NextRequest) {
             name: true,
             firstName: true,
             lastName: true,
+            birthDate: true,
             ticketTypeName: true,
+            subscriptionId: true,
+            customerId: true,
+            riderProfileId: true,
+            riderProfile: { select: { firstName: true, lastName: true, birthDate: true } },
             subscription: { select: { name: true } },
             service: { select: { name: true } },
           },
@@ -179,8 +185,9 @@ export async function POST(request: NextRequest) {
         ticket: recent.ticket
           ? {
               name: recent.ticket.name,
-              firstName: recent.ticket.firstName,
-              lastName: recent.ticket.lastName,
+              // Abo: Name der Person, die damit fährt (lib/customer-person).
+              firstName: riderView(recent.ticket).firstName,
+              lastName: riderView(recent.ticket).lastName,
               ticketTypeName: recent.ticket.ticketTypeName,
               subscriptionName: recent.ticket.subscription?.name ?? null,
               serviceName: recent.ticket.service?.name ?? null,
@@ -313,6 +320,7 @@ export async function POST(request: NextRequest) {
         },
         ticketAreas: { select: { accessAreaId: true } },
         ticketDevices: { select: { deviceId: true } },
+        riderProfile: { select: { firstName: true, lastName: true, birthDate: true } },
         verein: {
           select: { accessTickets: { select: { ticket: { select: vereinAccessTicketSelect } } } },
         },
@@ -450,10 +458,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Ticket nicht gefunden" });
   }
 
+  // Abo: Name der Person, die damit fährt (lib/customer-person).
+  const rider = riderView(ticket);
   const ticketInfo = {
     name: ticket.name,
-    firstName: ticket.firstName,
-    lastName: ticket.lastName,
+    firstName: rider.firstName,
+    lastName: rider.lastName,
     ticketTypeName: ticket.ticketTypeName,
     subscriptionName: ticket.subscription?.name ?? null,
     serviceName: ticket.service?.name ?? null,

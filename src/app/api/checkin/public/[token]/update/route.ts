@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { rescheduleAnnyBooking } from "@/lib/anny-availability";
 import { dayTicketEmailChanged, normalizeEmail } from "@/lib/day-guest";
 import { aboEmailError } from "@/lib/abo-email";
-import { linkAboCustomerSafe } from "@/lib/customers";
+import { assignRider, linkAboCustomerSafe, RiderError, updatePersonData } from "@/lib/customers";
+import { personDataKey, riderDataEntered, riderView } from "@/lib/customer-person";
 
 export async function PUT(
   request: NextRequest,
@@ -23,11 +24,35 @@ export async function PUT(
 
   const ticket = await prisma.ticket.findFirst({
     where: { id: ticketId, accountId: monitor.accountId },
+    include: { riderProfile: { select: { firstName: true, lastName: true, birthDate: true } } },
   });
 
   if (!ticket) {
     return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 404 });
   }
+
+  // Abo: Name und Geburtsdatum gehören der Person, die damit fährt
+  // (lib/customers). Die Kasse sieht die Daten der Person (siehe GET) und
+  // trägt hier den Fahrer ein, wenn er noch offen ist.
+  const isAbo = ticket.subscriptionId != null;
+  const nameOrNull = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const riderInput =
+    isAbo && (body.firstName !== undefined || body.lastName !== undefined || body.birthDate !== undefined)
+      ? {
+          firstName: body.firstName !== undefined ? nameOrNull(body.firstName) : ticket.firstName,
+          lastName: body.lastName !== undefined ? nameOrNull(body.lastName) : ticket.lastName,
+          birthDate: body.birthDate !== undefined ? (body.birthDate ? new Date(body.birthDate) : null) : ticket.birthDate,
+        }
+      : null;
+  const shownBefore = riderView(ticket);
+  // Person vorhanden: nur ändern, was die Kasse wirklich geändert hat.
+  const personChanged =
+    riderInput != null && ticket.riderProfileId != null && personDataKey(riderInput) !== "" &&
+    personDataKey(riderInput) !== personDataKey(shownBefore);
+  // Noch keine Person: neue Daten heißen „dieser Mensch fährt“.
+  const riderEntered = riderInput != null && ticket.riderProfileId == null && riderDataEntered(ticket, riderInput);
+  // anny-Abos: Rohdaten am Ticket gehören dem Sync, die Kasse schreibt an die Person.
+  const annyAbo = isAbo && (ticket.uuid?.startsWith("anny-sub:") ?? false);
 
   const updateData: Record<string, unknown> = {};
 
@@ -37,6 +62,14 @@ export async function PUT(
 
   if (body.rfidCode !== undefined) {
     const rfid = (body.rfidCode as string)?.trim() || null;
+
+    // Karte ausgeben nur mit Fahrer: Bei „Fahrer offen“ zuerst die Person eintragen.
+    if (rfid && rfid !== ticket.rfidCode && shownBefore.riderOpen && !riderEntered) {
+      return NextResponse.json({
+        error: "Wer fährt mit diesem Abo? Trag zuerst Vorname, Nachname und Geburtsdatum des Fahrers ein.",
+        riderOpen: true,
+      }, { status: 400 });
+    }
 
     if (rfid) {
       const existing = await prisma.ticket.findFirst({
@@ -191,15 +224,15 @@ export async function PUT(
     }
   }
 
-  if (body.firstName !== undefined) {
+  if (body.firstName !== undefined && !annyAbo) {
     const v = typeof body.firstName === "string" ? body.firstName.trim() : "";
     updateData.firstName = v || null;
   }
-  if (body.lastName !== undefined) {
+  if (body.lastName !== undefined && !annyAbo) {
     const v = typeof body.lastName === "string" ? body.lastName.trim() : "";
     updateData.lastName = v || null;
   }
-  if (body.birthDate !== undefined) {
+  if (body.birthDate !== undefined && !annyAbo) {
     updateData.birthDate = body.birthDate ? new Date(body.birthDate) : null;
   }
 
@@ -244,7 +277,7 @@ export async function PUT(
   // Wenn Vor-/Nachname aktualisiert wurden, ziehen wir den `name`
   // automatisch nach. So bleibt das, was im Listing/Header angezeigt
   // wird, konsistent.
-  if (body.firstName !== undefined || body.lastName !== undefined) {
+  if ((body.firstName !== undefined || body.lastName !== undefined) && !annyAbo) {
     const newFirst =
       body.firstName !== undefined
         ? (typeof body.firstName === "string" ? body.firstName.trim() : "")
@@ -259,21 +292,45 @@ export async function PUT(
     }
   }
 
-  if (Object.keys(updateData).length === 0) {
+  const riderChange = personChanged || riderEntered;
+  if (Object.keys(updateData).length === 0 && !riderChange) {
     return NextResponse.json({ error: "Keine Änderungen" }, { status: 400 });
   }
 
-  updateData.version = { increment: 1 };
-
-  const updated = await prisma.ticket.update({
-    where: { id: ticket.id },
-    data: updateData,
-  });
+  if (Object.keys(updateData).length > 0) {
+    updateData.version = { increment: 1 };
+    await prisma.ticket.update({
+      where: { id: ticket.id },
+      data: updateData,
+    });
+  }
 
   // Abo: Kundenkonto zur neuen Adresse (lib/customers).
-  if (updateData.email !== undefined && updated.subscriptionId != null) {
-    await linkAboCustomerSafe(monitor.accountId, updated.id);
+  if (updateData.email !== undefined && isAbo) {
+    await linkAboCustomerSafe(monitor.accountId, ticket.id);
   }
+
+  // Fahrer: Person ändern oder (bei „Fahrer offen“) zuordnen. Ohne Konto
+  // (keine Adresse) bleiben die Daten nur am Ticket.
+  if (riderInput && riderChange) {
+    try {
+      if (ticket.riderProfileId != null) {
+        await updatePersonData(monitor.accountId, ticket.riderProfileId, riderInput);
+      } else {
+        const now = await prisma.ticket.findUnique({ where: { id: ticket.id }, select: { customerId: true } });
+        if (now?.customerId != null) await assignRider(monitor.accountId, ticket.id, riderInput);
+      }
+    } catch (err) {
+      if (err instanceof RiderError) return NextResponse.json({ error: err.message }, { status: err.status });
+      throw err;
+    }
+  }
+
+  const updated = await prisma.ticket.findUniqueOrThrow({
+    where: { id: ticket.id },
+    include: { riderProfile: { select: { firstName: true, lastName: true, birthDate: true } } },
+  });
+  const shown = riderView(updated);
 
   // Tagesgäste: das Ticket folgt seiner Adresse ins passende App-Profil.
   if (updateData.email !== undefined) {
@@ -288,9 +345,10 @@ export async function PUT(
     ticket: {
       id: updated.id,
       name: updated.name,
-      firstName: updated.firstName,
-      lastName: updated.lastName,
-      birthDate: updated.birthDate,
+      firstName: shown.firstName,
+      lastName: shown.lastName,
+      birthDate: shown.birthDate,
+      riderOpen: shown.riderOpen,
       email: updated.email,
       profileImage: updated.profileImage,
       rfidCode: updated.rfidCode,

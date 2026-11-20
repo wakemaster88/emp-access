@@ -665,6 +665,15 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         return;
       }
 
+      // Karte ohne Fahrer („Fahrer offen“) oder ungültige Fahrer-Daten: Meldung zeigen.
+      if (!res.ok && json?.riderOpen && json?.error) {
+        if (typeof window !== "undefined") {
+          alert(json.error);
+        }
+        setUpdatingTicket(null);
+        return;
+      }
+
       // Ungültige E-Mail-Adresse: Meldung zeigen, Formular offen lassen.
       if (!res.ok && update.email !== undefined && json?.error) {
         if (typeof window !== "undefined") {
@@ -693,6 +702,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         if (json.ticket?.startDate !== undefined && update.slotStart !== undefined) patch.startDate = json.ticket.startDate;
         if (json.ticket?.endDate !== undefined && update.slotEnd !== undefined) patch.endDate = json.ticket.endDate;
         if (json.ticket?.name) patch.name = json.ticket.name;
+        if (typeof json.ticket?.riderOpen === "boolean") patch.riderOpen = json.ticket.riderOpen;
         setSelectedTicket((prev) => prev ? { ...prev, ...patch } : null);
       }
     } finally {
