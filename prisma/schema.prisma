@@ -3646,6 +3646,10 @@ model RiderProfile {
   /// Jahr der ersten Saison am Lift (traegt das Personal ein). Fuer die
   /// Treue-Awards: Saisons vor der ersten gezaehlten zaehlen so mit.
   ridingSince   Int?
+  /// Profilbild, das die Person in der App selbst waehlt (Data-URL, auf
+  /// 320 px verkleinert). Nur fuer die App; das Foto zum Abgleich an der
+  /// Kasse bleibt `Ticket.profileImage`.
+  photo         String?   @db.Text
   accountId     Int
   account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tickets       Ticket[]

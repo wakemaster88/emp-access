@@ -123,11 +123,10 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   (`showInRanking`, ab Werk aus).
 - Seiten: Start (Abo mit Gültigkeit, offene Gutscheine, Stufe, Besuchstage,
   Starts, Serie, weitere Ziele), Gutscheine (QR-Code zum Entwerten an der
-  Kasse), Profil (Abo und enthaltene Bereiche, Spitzname, Aussteigen).
-- **Aussteigen** löscht Tagessummen und Meilensteine der Person, setzt
-  `Ticket.gamificationOptOut` (danach wird nichts mehr gezählt) und entfernt
-  das Profil. Verdiente Gutscheine bleiben gültig. Eine neue Anmeldung hebt
-  den Ausstieg wieder auf.
+  Kasse), Profil (Abo und enthaltene Bereiche, Spitzname).
+- **Aussteigen** (Statistik löschen) gab es bis 20.11.2026; Aaron hat es
+  entfernt („statistik löschen darf es nicht geben“). `Ticket.gamificationOptOut`
+  bleibt für frühere Ausstiege; eine neue Anmeldung hebt ihn auf.
 - Datenbank-Seite in `src/lib/rider-app.ts`.
 
 ## Challenges und Angebote, Etappe 3 (15.11.2026)
@@ -710,3 +709,25 @@ Bestandsdaten.
 - Gutscheine aus Awards tragen die Notiz „Award <Name>“ bzw.
   „Award <Name> (<Jahr>)“ und gelten 365 Tage; Private Session, Abo-Monat und
   50 % aufs Abo laufen nicht ab.
+
+## Profil der Kunden-App: eigene Daten und Profilbild (20.11.2026)
+
+- Wunsch von Aaron: Profilseite übersichtlicher; Kunden ändern Vorname,
+  Nachname, Geburtsdatum und Profilbild selbst.
+- Aufbau (`/app/<token>/profil`): oben Bild, Name, Spitzname und Adresse,
+  darunter die persönlichen Daten; dann Abo, Spitzname und Rangliste, Familie,
+  Anmeldung (Passkey und Passwort als Zeilen), Benachrichtigungen; ganz unten
+  Abmelden (Statistik löschen gibt es nicht mehr). Styles in `profil/profil.css`.
+- Speichern: `PATCH /api/rider/<token>/person` (`riderApiManage`): die Person
+  selbst oder Eltern für ihr Kind; der Partner sieht nur. Prüfung in
+  `src/lib/rider-person.ts` (Vor- und Nachname Pflicht, Geburtsdatum ab 1900
+  und nicht in der Zukunft).
+- Die Daten landen an der Person (`RiderProfile.firstName/lastName/birthDate`)
+  und erscheinen über `riderView` auch an Kasse, Scanner und im Backend. Die
+  Rohdaten am Ticket (anny) bleiben. Damit eine Verlängerung mit dem alten
+  Namen aus anny trotzdem zur Person findet, merkt sich `planPersons` die
+  Daten der Abos, die die Person schon hat.
+- Profilbild: `RiderProfile.photo` (Data-URL, im Browser auf 320 × 320 px als
+  JPEG verkleinert, höchstens 400 000 Zeichen). Nur für die App. Das Foto zum
+  Abgleich an der Kasse (`Ticket.profileImage`) ändert der Kunde nicht, damit
+  niemand sein Abo mit fremdem Foto weitergeben kann.

@@ -209,29 +209,21 @@ export function RiderSecurity({ token, hasPassword, passkeys }: { token: string;
     });
   };
 
-  async function logout() {
-    setBusy(true);
-    await post(`${api}/logout`).catch(() => null);
-    // Lokal gespeicherte Seiten (Abo, Gutscheine, Familie) gehören nicht aufs Gerät, wenn niemand angemeldet ist.
-    await clearRiderLocalData();
-    window.location.assign(`/app/${encodeURIComponent(token)}`);
-  }
-
   return (
-    <div className="rd-card" style={{ gap: 10 }}>
-      <b>Anmeldung</b>
-      <span className="rd-muted">
-        {state.passkeys > 0 ? `${state.passkeys} ${state.passkeys === 1 ? "Passkey" : "Passkeys"}` : "Kein Passkey"}
-        {" · "}
-        {state.hasPassword ? "Passwort gesetzt" : "kein Passwort"}
-      </span>
-      {supported && (
-        <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" disabled={busy} onClick={addPasskey}>
-          <span>Passkey hinzufügen</span>
-        </button>
-      )}
+    <div className="rd-card rd-list rd-set">
+      <div>
+        <span className="rd-grow">
+          <b>Passkey</b>
+          <span className="rd-dim">{state.passkeys > 0 ? `${state.passkeys} eingerichtet` : "Anmelden mit Face ID oder Fingerabdruck"}</span>
+        </span>
+        {supported && (
+          <button type="button" className="rd-btn rd-btn-ghost rd-btn-sm" disabled={busy} onClick={addPasskey}>
+            <span>{state.passkeys > 0 ? "Weiterer" : "Einrichten"}</span>
+          </button>
+        )}
+      </div>
       {open ? (
-        <form onSubmit={savePassword} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <form onSubmit={savePassword} className="rd-set-form">
           {state.hasPassword && (
             <div className="rd-field">
               <label htmlFor="rd-cur">Bisheriges Passwort</label>
@@ -249,12 +241,32 @@ export function RiderSecurity({ token, hasPassword, passkeys }: { token: string;
           </div>
         </form>
       ) : (
-        <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" disabled={busy} onClick={() => { setOpen(true); setMsg(null); }}>
-          <span>{state.hasPassword ? "Passwort ändern" : "Passwort festlegen"}</span>
-        </button>
+        <div>
+          <span className="rd-grow">
+            <b>Passwort</b>
+            <span className="rd-dim">{state.hasPassword ? "gesetzt" : "nicht gesetzt"}</span>
+          </span>
+          <button type="button" className="rd-btn rd-btn-ghost rd-btn-sm" disabled={busy} onClick={() => { setOpen(true); setMsg(null); }}>
+            <span>{state.hasPassword ? "Ändern" : "Festlegen"}</span>
+          </button>
+        </div>
       )}
       {msg && <div className={`rd-msg ${msg.ok ? "rd-msg-ok" : "rd-msg-err"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</div>}
-      <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" disabled={busy} onClick={logout}><span>Abmelden</span></button>
     </div>
+  );
+}
+
+/** Abmelden auf diesem Gerät; lokal gespeicherte Seiten werden gelöscht. */
+export function RiderLogout({ token }: { token: string }) {
+  const [busy, setBusy] = useState(false);
+  async function logout() {
+    setBusy(true);
+    await post(`/api/rider/${encodeURIComponent(token)}/auth/logout`).catch(() => null);
+    // Lokal gespeicherte Seiten (Abo, Gutscheine, Familie) gehören nicht aufs Gerät, wenn niemand angemeldet ist.
+    await clearRiderLocalData();
+    window.location.assign(`/app/${encodeURIComponent(token)}`);
+  }
+  return (
+    <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" disabled={busy} onClick={logout}><span>Abmelden</span></button>
   );
 }

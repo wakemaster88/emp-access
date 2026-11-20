@@ -125,6 +125,12 @@ export function aboNamesRider(t: { kids: boolean; birthDate: Date | null; startD
 interface Chain {
   personId: number | null;
   key: string;
+  /**
+   * Weitere Daten, unter denen die Person schon Abos hat. Ändert jemand in
+   * der App seinen Namen (Tippfehler, Heirat), steht bei anny weiter der alte
+   * am Abo; die Verlängerung soll trotzdem zu ihm finden.
+   */
+  aliases: Set<string>;
   tickets: PlanTicket[];
   added: PlanTicket[];
 }
@@ -137,7 +143,8 @@ export function planPersons(tickets: PlanTicket[], persons: PlanPerson[], now: D
       .filter((t) => aboNamesRider(t, now))
       .sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0))[0];
     const key = personDataKey(p) || (latest ? personDataKey(latest) : "");
-    return { personId: p.id, key, tickets: own, added: [] };
+    const aliases = new Set(own.filter((t) => aboNamesRider(t, now)).map(personDataKey).filter((k) => k && k !== key));
+    return { personId: p.id, key, aliases, tickets: own, added: [] };
   });
 
   // Abos, die schon einer Person gehören (auch einer fremden), bleiben, wie sie sind.
@@ -159,13 +166,16 @@ export function planPersons(tickets: PlanTicket[], persons: PlanPerson[], now: D
       open.push(t.id);
       continue;
     }
-    const same = chains.filter((c) => c.key === key);
+    // Zuerst die Person mit genau diesen Daten, sonst eine, die unter diesen
+    // Daten schon ein Abo hat.
+    const exact = chains.filter((c) => c.key === key);
+    const same = exact.length > 0 ? exact : chains.filter((c) => c.aliases.has(key));
     const fits = same.find((c) => c.tickets.every((o) => compatible(o, t, now)));
     if (fits) {
       fits.tickets.push(t);
       fits.added.push(t);
     } else if (same.length === 0) {
-      chains.push({ personId: null, key, tickets: [t], added: [t] });
+      chains.push({ personId: null, key, aliases: new Set(), tickets: [t], added: [t] });
     } else {
       open.push(t.id);
     }
