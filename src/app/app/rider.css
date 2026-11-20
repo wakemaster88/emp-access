@@ -493,6 +493,10 @@ html[data-rd-intro="skip"] .rd-intro { display: none; }
 .rd-occ-low > i { background: var(--rd-accent-soft); }
 .rd-occ-medium > i { background: var(--rd-accent); }
 .rd-occ-high > i { background: var(--rd-danger); }
+/* Öffnungszeiten unten in „Auslastung jetzt“. */
+.rd-hours { display: flex; align-items: center; gap: 8px; padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--rd-line); color: var(--rd-soft); font-weight: 600; font-size: 14px; }
+.rd-hours > svg { flex: none; color: var(--rd-muted); }
+.rd-hours-open > svg { color: var(--rd-accent-soft); }
 
 /*
  * Awards (Trophy Case, Award-Seite, Freischalt-Moment). Die Abzeichen selbst
