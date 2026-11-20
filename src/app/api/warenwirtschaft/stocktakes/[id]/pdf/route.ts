@@ -4,7 +4,10 @@ import { buildStocktakePdf, stocktakePdfFileName } from "@/lib/stocktake-pdf";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** GET /api/warenwirtschaft/stocktakes/[id]/pdf – Inventurliste als PDF (Ablage, Steuerberater). */
+/**
+ * GET /api/warenwirtschaft/stocktakes/[id]/pdf – Inventurliste als PDF (Ablage,
+ * Steuerberater) mit Bestätigung durch Zähler und Schreiber und Protokoll.
+ */
 export async function GET(_request: NextRequest, { params }: Ctx) {
   const s = await wawiSession();
   if ("error" in s) return s.error;
@@ -13,7 +16,11 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
   const [st, account] = await Promise.all([
     s.db.stocktake.findFirst({
       where: { id, accountId: s.accountId },
-      include: { lines: { orderBy: [{ category: "asc" }, { name: "asc" }] } },
+      include: {
+        lines: { orderBy: [{ category: "asc" }, { name: "asc" }] },
+        signatures: true,
+        events: { orderBy: { id: "asc" } },
+      },
     }),
     s.db.account.findUnique({ where: { id: s.accountId }, select: { name: true } }),
   ]);
@@ -28,6 +35,8 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
     closedAt: st.closedAt,
     closedBy: st.closedBy,
     lines: st.lines,
+    signatures: st.signatures,
+    events: st.events,
   });
 
   return new Response(pdf, {

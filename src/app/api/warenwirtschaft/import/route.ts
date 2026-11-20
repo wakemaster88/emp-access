@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dateOnly, wawiSession } from "@/lib/warenwirtschaft-server";
 import { readXlsx } from "@/lib/xlsx-read";
+import { logEvents } from "@/lib/stocktake-audit";
 import { articleKey, assetKey, parseWawiWorkbook } from "@/lib/warenwirtschaft-import";
 
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -95,6 +96,10 @@ export async function POST(request: NextRequest) {
             }];
           }),
         });
+        await logEvents(db, st.id, accountId, { name: s.userName, adminId: s.adminId, via: "app" }, [
+          { type: "CREATED", note: `aus Excel übernommen: ${file.name}`.slice(0, 300) },
+          { type: "CLOSED", note: "Übernahme einer bereits abgeschlossenen Inventur" },
+        ]);
         result.stocktake = { id: st.id, date: parsed.cutoffDate };
       }
     }

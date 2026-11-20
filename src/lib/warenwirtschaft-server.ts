@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { COUNT_LINK_DAYS } from "@/lib/warenwirtschaft";
+import { CORRECTION_REASON_MIN } from "@/lib/stocktake-log";
 import { getSessionWithDb } from "@/lib/api-auth";
 import type { TenantDb } from "@/lib/prisma";
 
@@ -9,13 +10,22 @@ import type { TenantDb } from "@/lib/prisma";
  * Sitzung mit Mandanten-Datenbank für die Warenwirtschaft. Der Super-Admin
  * hat kein eigenes Konto und bekommt hier keinen Schreibzugriff.
  */
-export async function wawiSession(): Promise<{ error: NextResponse } | { db: TenantDb; accountId: number; userName: string }> {
+export async function wawiSession(): Promise<
+  { error: NextResponse } | { db: TenantDb; accountId: number; userName: string; adminId: number | null; email: string | null }
+> {
   const s = await getSessionWithDb();
   if ("error" in s) return { error: s.error! };
   if (s.isSuperAdmin || !s.accountId) {
     return { error: NextResponse.json({ error: "Nur innerhalb eines Kontos möglich" }, { status: 403 }) };
   }
-  return { db: s.db, accountId: s.accountId, userName: s.session.user.name || s.session.user.email || "Unbekannt" };
+  const adminId = Number.parseInt(s.session.user.id ?? "", 10);
+  return {
+    db: s.db,
+    accountId: s.accountId,
+    userName: s.session.user.name || s.session.user.email || "Unbekannt",
+    adminId: Number.isInteger(adminId) ? adminId : null,
+    email: s.session.user.email ?? null,
+  };
 }
 
 export function badRequest(error: unknown) {
@@ -165,3 +175,20 @@ export function publicImage(image: string | null | undefined): string | null {
   if (image.startsWith("data:image/") && image.length <= 400_000) return image;
   return null;
 }
+
+/** Bestätigung einer Inventur als Zähler oder Schreiber. */
+export const stocktakeSignSchema = z.object({
+  role: z.enum(["COUNTER", "WRITER"]),
+  /** Antwort von navigator.credentials.get() (Passkey) … */
+  response: z.unknown().optional(),
+  /** … oder ersatzweise das eigene Passwort, wenn kein Passkey eingerichtet ist. */
+  password: z.string().max(200).optional(),
+});
+
+/** Korrektur einer festgeschriebenen Inventur: Feld, neuer Wert, Begründung. */
+export const stocktakeCorrectionSchema = z.object({
+  lineId: z.number().int(),
+  field: z.enum(["counted", "broken", "purchasePriceCents"]),
+  value: z.number().finite().min(-1_000_000).max(100_000_000).nullable(),
+  reason: z.string().trim().min(CORRECTION_REASON_MIN, `Bitte kurz begründen (mindestens ${CORRECTION_REASON_MIN} Zeichen)`).max(500),
+});

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { badRequest, countTokenExpiry, dateOnly, newCountToken, stocktakeCreateSchema, wawiSession } from "@/lib/warenwirtschaft-server";
+import { logEvents } from "@/lib/stocktake-audit";
 
 /**
  * POST /api/warenwirtschaft/stocktakes – Inventur anlegen.
@@ -61,5 +62,8 @@ export async function POST(request: NextRequest) {
     },
     select: { id: true },
   });
+  await logEvents(s.db, stocktake.id, s.accountId, { name: s.userName, adminId: s.adminId, via: "app" }, [
+    { type: "CREATED", note: `${articles.length} Artikel` },
+  ]);
   return NextResponse.json(stocktake, { status: 201 });
 }

@@ -15,8 +15,12 @@ import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableR
 import { ArticleThumb } from "./article-visual";
 import { QtyInput, type Field } from "./qty-input";
 import { StocktakeLinkCard } from "./count-link-card";
+import { StocktakeConfirmCard, type SignatureView } from "./stocktake-confirm-card";
+import { StocktakeLogCard, type EventView } from "./stocktake-log-card";
+import { StocktakeCorrectionDialog, type CorrectionLine } from "./stocktake-correction-dialog";
+import { METHOD_LABEL, ROLE_LABEL } from "@/lib/stocktake-log";
 import { formatEuro, formatQty, parseGermanNumber, stocktakeTotals, totalsByCategory, valueCents } from "@/lib/warenwirtschaft";
-import { AlertTriangle, CheckCircle2, ClipboardList, Download, Euro, FileText, Lock, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardList, Download, Euro, FileText, Lock, Pencil, Trash2 } from "lucide-react";
 
 export interface CountLine {
   id: number;
@@ -44,8 +48,25 @@ export interface StocktakeInfo {
   countTokenExpiresAt: string | null;
 }
 
+export interface StocktakeAudit {
+  signatures: SignatureView[];
+  events: EventView[];
+  eventTotal: number;
+  currentAdminId: number | null;
+}
+
 type View = "all" | "open" | "counted" | "diff";
-export function StocktakeCount({ info, initialLines, listPath }: { info: StocktakeInfo; initialLines: CountLine[]; listPath: string }) {
+export function StocktakeCount({
+  info,
+  initialLines,
+  listPath,
+  audit,
+}: {
+  info: StocktakeInfo;
+  initialLines: CountLine[];
+  listPath: string;
+  audit: StocktakeAudit;
+}) {
   const router = useRouter();
   const cutoff = info.kind === "CUTOFF";
   const closed = info.status === "CLOSED";
@@ -58,6 +79,9 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
   const [invalid, setInvalid] = useState<Set<string>>(new Set());
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [correcting, setCorrecting] = useState<CorrectionLine | null>(null);
+  const signed = audit.signatures.length;
+  const canClose = signed === 2;
   const queue = useRef<Promise<void>>(Promise.resolve());
 
   // Laufende Speichervorgänge, für die Effekte unten (State wäre dort veraltet).
@@ -137,7 +161,10 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
   async function close() {
     await queue.current;
     const res = await fetch(`/api/warenwirtschaft/stocktakes/${info.id}/close`, { method: "POST" });
-    if (!res.ok) throw new Error("Festschreiben fehlgeschlagen");
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(typeof data.error === "string" ? data.error : "Festschreiben fehlgeschlagen");
+    }
     router.refresh();
   }
 
@@ -168,9 +195,16 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
 
       {!closed && <StocktakeLinkCard stocktakeId={info.id} token={info.countToken} expiresAt={info.countTokenExpiresAt} />}
 
+      {!closed && (
+        <StocktakeConfirmCard stocktakeId={info.id} signatures={audit.signatures} currentAdminId={audit.currentAdminId} pendingSaves={saving} />
+      )}
+
       {closed && (
         <Notice tone="neutral" icon={Lock} title={`Festgeschrieben${info.closedAt ? ` am ${new Date(info.closedAt).toLocaleDateString("de-DE")}` : ""}${info.closedBy ? ` von ${info.closedBy}` : ""}`}>
-          Die gezählten Mengen sind als Bestand übernommen. Diese Liste bleibt unverändert.
+          {audit.signatures.length > 0
+            ? `Bestätigt von ${audit.signatures.map((s) => `${s.name} (${ROLE_LABEL[s.role]}, ${METHOD_LABEL[s.method] ?? s.method})`).join(" und ")}. `
+            : "Ohne digitale Bestätigung festgeschrieben. "}
+          Ändern geht nur noch über eine begründete Korrektur, die im Protokoll steht.
         </Notice>
       )}
 
@@ -180,6 +214,7 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
           <CardDescription>
             {cutoff ? "Stichtag" : "Zähltag"} {dateLabel}
             {!closed && " · Eingaben werden sofort gespeichert. Enter springt zum nächsten Feld."}
+            {!closed && !canClose && " Festschreiben geht, sobald Zähler und Schreiber bestätigt haben."}
           </CardDescription>
           <CardAction className="flex flex-wrap justify-end gap-2">
             <Button asChild variant="outline" className="max-sm:h-11">
@@ -201,7 +236,14 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
                 </a>
               </Button>
             ) : (
-              <Button type="button" onClick={() => setConfirmClose(true)} disabled={saving > 0} className="max-sm:h-11" aria-label="Inventur festschreiben">
+              <Button
+                type="button"
+                onClick={() => setConfirmClose(true)}
+                disabled={saving > 0 || !canClose}
+                className="max-sm:h-11"
+                aria-label="Inventur festschreiben"
+                title={canClose ? undefined : "Erst bestätigen Zähler und Schreiber"}
+              >
                 <Lock className="h-4 w-4" />
                 <span>Festschreiben</span>
               </Button>
@@ -281,7 +323,19 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
                       <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">{formatQty(l.expected)}</TableCell>
                       <TableCell className="text-right">
                         {closed ? (
-                          <span className="font-medium tabular-nums">{formatQty(l.counted)}</span>
+                          <span className="inline-flex items-center justify-end gap-1">
+                            <span className="font-medium tabular-nums">{formatQty(l.counted)}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setCorrecting(l)}
+                              aria-label={`${l.name} korrigieren`}
+                              className="h-11 w-11 text-muted-foreground sm:h-8 sm:w-8"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </span>
                         ) : (
                           <QtyInput value={l.counted} field="counted" onCommit={(raw) => commit(l, "counted", raw)} label={`Ist ${l.name}`} invalid={invalid.has(`${l.id}-counted`)} className="w-20" />
                         )}
@@ -339,6 +393,8 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
         </Card>
       )}
 
+      <StocktakeLogCard events={audit.events} total={audit.eventTotal} />
+
       {!closed && (
         <div className="flex justify-end">
           <Button type="button" variant="ghost" onClick={() => setConfirmDelete(true)} className="h-11 gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:h-9">
@@ -354,13 +410,14 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
         title="Inventur festschreiben?"
         description={
           open > 0
-            ? `${open} Artikel sind noch nicht gezählt und behalten ihren bisherigen Bestand. Gezählte Mengen werden als Bestand übernommen; danach ist die Liste nicht mehr änderbar.`
-            : "Die gezählten Mengen werden als Bestand übernommen; danach ist die Liste nicht mehr änderbar."
+            ? `${open} Artikel sind noch nicht gezählt und behalten ihren bisherigen Bestand. Gezählte Mengen werden als Bestand übernommen; danach ändert die Liste nur noch eine begründete Korrektur.`
+            : "Die gezählten Mengen werden als Bestand übernommen; danach ändert die Liste nur noch eine begründete Korrektur."
         }
         confirmLabel="Festschreiben"
         destructive={false}
         onConfirm={close}
       />
+      {correcting && <StocktakeCorrectionDialog key={correcting.id} stocktakeId={info.id} line={correcting} onClose={() => setCorrecting(null)} />}
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}

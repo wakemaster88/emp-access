@@ -170,6 +170,8 @@ model Account {
   articles             Article[]
   stocktakes           Stocktake[]
   stocktakeLines       StocktakeLine[]
+  stocktakeSignatures  StocktakeSignature[]
+  stocktakeEvents      StocktakeEvent[]
   inventoryAssets      InventoryAsset[]
   inventoryAssetCounts InventoryAssetCount[]
   inventoryCountLinks  InventoryCountLink[]
@@ -266,7 +268,8 @@ model Admin {
   loginFailures    Int       @default(0)
   loginLockedUntil DateTime?
 
-  passkeys Passkey[]
+  passkeys            Passkey[]
+  stocktakeSignatures StocktakeSignature[]
 
   @@index([accountId])
   @@index([email])
@@ -3708,8 +3711,73 @@ model Stocktake {
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
   lines     StocktakeLine[]
+  signatures StocktakeSignature[]
+  events     StocktakeEvent[]
 
   @@index([accountId, kind, date])
+}
+
+/// Rolle bei der Inventur: wer zählt und wer aufschreibt (Vier-Augen-Prinzip).
+enum StocktakeRole {
+  COUNTER
+  WRITER
+}
+
+/// Digitale Bestätigung einer Inventur durch Zähler bzw. Schreiber, mit dem
+/// eigenen Login und Passkey (ersatzweise Passwort) – statt Unterschrift auf
+/// Papier. `contentHash` ist die Prüfsumme der Zählliste beim Bestätigen;
+/// ändert sich danach eine Menge, wird die Bestätigung gelöscht und muss neu
+/// erfolgen. Festschreiben geht nur mit beiden Bestätigungen.
+model StocktakeSignature {
+  id          Int           @id @default(autoincrement())
+  accountId   Int
+  account     Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  stocktakeId Int
+  stocktake   Stocktake     @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  role        StocktakeRole
+  adminId     Int?
+  admin       Admin?        @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  /// Name und E-Mail zum Zeitpunkt der Bestätigung (bleiben, auch wenn der Login gelöscht wird).
+  name        String
+  email       String?
+  /// "passkey" oder "password"
+  method      String
+  contentHash String
+  signedAt    DateTime      @default(now())
+
+  @@unique([stocktakeId, role])
+  @@index([accountId])
+}
+
+/// Protokoll einer Inventur (GoBD): jede Eingabe, Bestätigung, das
+/// Festschreiben und jede spätere Korrektur mit Person, Zeit, altem und
+/// neuem Wert. Wird nur angehängt, nie geändert oder gelöscht.
+model StocktakeEvent {
+  id          Int       @id @default(autoincrement())
+  accountId   Int
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  stocktakeId Int
+  stocktake   Stocktake @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  /// CREATED, COUNT, LINE_ADDED, SIGNED, SIGNATURE_VOID, CLOSED, CORRECTION
+  type        String
+  /// Zeile der Inventur (kein Fremdschlüssel, damit der Eintrag bleibt).
+  lineId      Int?
+  lineName    String?
+  /// counted, broken oder purchasePriceCents
+  field       String?
+  oldValue    Float?
+  newValue    Float?
+  /// Wer: Name des Logins bzw. beim Zähl-Link der eingegebene Name.
+  actor       String
+  adminId     Int?
+  /// "app", "link" (Zähl-Link am Handy) oder "system"
+  via         String    @default("app")
+  /// Begründung (Pflicht bei Korrekturen) oder Hinweis.
+  note        String?
+  createdAt   DateTime  @default(now())
+
+  @@index([stocktakeId, createdAt])
+  @@index([accountId])
 }
 
 model StocktakeLine {
