@@ -3,6 +3,7 @@ import { publicRateLimit } from "@/lib/rate-limit";
 import { verifyMailLinkKey } from "@/lib/day-guest";
 import { completeOnboarding, onboardingState } from "@/lib/rider-onboarding";
 import { riderAppPath } from "@/lib/rider-app";
+import { signInByMail } from "@/lib/rider-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,8 @@ export const dynamic = "force-dynamic";
  * Link aus der Anmelde-Mail. Gibt es zur Adresse ein Konto, mit dem sich noch
  * niemand angemeldet hat, oder Abos ohne Profil, geht es zur Auswahl. Sonst
  * direkt in die App (vorhandenes oder neues Profil): beim ersten Mal zum
- * Einrichten, danach zur Anmeldung. Ein abgelaufener oder falscher Link führt
- * zur Startseite.
+ * Einrichten, danach angemeldet (der Link belegt die Adresse). Ein
+ * abgelaufener oder falscher Link führt zur Startseite.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ key: string }> }) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
@@ -27,5 +28,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.redirect(new URL(`/app/willkommen/${encodeURIComponent(key)}`, request.url));
   }
   const token = await completeOnboarding(link.accountId, link.email, {});
-  return NextResponse.redirect(token ? new URL(riderAppPath(token), request.url) : home);
+  if (!token) return NextResponse.redirect(home);
+  return signInByMail(NextResponse.redirect(new URL(riderAppPath(token), request.url)), token, link.email);
 }

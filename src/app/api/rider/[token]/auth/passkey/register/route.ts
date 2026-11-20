@@ -3,14 +3,19 @@ import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { relyingPartyFrom, suggestPasskeyName } from "@/lib/passkey-utils";
 import { mayManageCredentials, riderVerifyRegistration, setRiderCookie } from "@/lib/rider-auth";
 import { NOT_ALLOWED, riderAuthContext } from "@/lib/rider-auth-api";
+import { endOtherSessions, riderResetKeyValid } from "@/lib/rider-reset";
 
-/** POST: Passkey prüfen und speichern; meldet danach direkt an. */
+/**
+ * POST: Passkey prüfen und speichern; meldet danach direkt an. Über den Link
+ * „Passwort vergessen“ (`resetKey`) enden dabei alle anderen Sitzungen.
+ */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const ctx = await riderAuthContext(request, params, "pk-reg");
   if ("error" in ctx) return ctx.error;
-  if (!(await mayManageCredentials(ctx.profile))) return NOT_ALLOWED();
+  const body = (await request.json().catch(() => null)) as { response?: RegistrationResponseJSON; resetKey?: unknown } | null;
+  if (!(await mayManageCredentials(ctx.profile, body?.resetKey))) return NOT_ALLOWED();
+  const viaReset = body?.resetKey != null && riderResetKeyValid(ctx.profile, body.resetKey);
 
-  const body = (await request.json().catch(() => null)) as { response?: RegistrationResponseJSON } | null;
   if (!body?.response || typeof body.response !== "object") {
     return NextResponse.json({ error: "Ungültige Anfrage" }, { status: 400 });
   }
@@ -23,5 +28,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!ok) {
     return NextResponse.json({ error: "Der Passkey konnte nicht geprüft werden. Bitte noch einmal versuchen." }, { status: 400 });
   }
-  return setRiderCookie(NextResponse.json({ ok: true }), ctx.profile);
+  const sessionVersion = viaReset ? await endOtherSessions(ctx.profile.id) : ctx.profile.sessionVersion;
+  return setRiderCookie(NextResponse.json({ ok: true }), { id: ctx.profile.id, sessionVersion });
 }

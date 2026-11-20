@@ -33,6 +33,7 @@ test("Service Worker hält nur angemeldete Seiten der Kunden-App lokal vor", () 
   assert.equal(riderCacheToken(`/app/${TOKEN}/rueckblick`), TOKEN);
   assert.equal(riderCacheToken(`/app/${TOKEN}/anmelden`), null);
   assert.equal(riderCacheToken(`/app/${TOKEN}/einrichten`), null);
+  assert.equal(riderCacheToken(`/app/${TOKEN}/neu/42.1.schluessel`), null);
   assert.equal(riderCacheToken(`/app/${TOKEN}/manifest.webmanifest`), null);
   assert.equal(riderCacheToken("/app/familie/irgendeinlangerschluessel"), null);
   assert.equal(riderCacheToken("/app/mail/irgendeinlangerschluessel"), null);

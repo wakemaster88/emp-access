@@ -4,7 +4,9 @@
  * Der Link `/app/<token>` ist nur die Einladung: Beim ersten Öffnen richtet
  * der Fahrer ein Passwort oder einen Passkey ein. Danach reicht der Link
  * allein nicht mehr, jede Seite und jede Schnittstelle verlangt die Sitzung.
- * Wer den Zugang verliert, bekommt ihn an der Kasse zurückgesetzt.
+ * Der Link aus der Anmelde-Mail (`/app/mail/…`) belegt die Adresse und meldet
+ * direkt an (`signInByMail`). Passwort vergessen: Link zum Neufestlegen per
+ * Mail (lib/rider-reset), oder an der Kasse zurücksetzen lassen.
  */
 import { cache } from "react";
 import { cookies } from "next/headers";
@@ -25,6 +27,7 @@ import type { RelyingParty } from "./passkey-utils";
 import { loadRider, newRiderToken, riderAppPath, type RiderView } from "./rider-app";
 import { familyRelation, loadFamilyMembers, type FamilyMember, type FamilyPerson, type FamilyRelation } from "./rider-family";
 import { RIDER_COOKIE, RIDER_SESSION_DAYS, signRiderSession, verifyRiderSession } from "./rider-session";
+import { riderResetKeyValid } from "./rider-reset";
 
 const MAX_FAILURES = 5;
 const LOCK_MS = 15 * 60_000;
@@ -207,8 +210,22 @@ export async function riderApiSession(
  * Wer darf eine Anmeldung hinterlegen? Beim ersten Mal jeder mit dem
  * Einladungslink, danach nur noch die angemeldete Person.
  */
-export async function mayManageCredentials(p: RiderAuthProfile): Promise<boolean> {
-  return !hasCredential(p) || (await hasSession(p));
+export async function mayManageCredentials(p: RiderAuthProfile, resetKey?: unknown): Promise<boolean> {
+  return !hasCredential(p) || (resetKey != null && riderResetKeyValid(p, resetKey)) || (await hasSession(p));
+}
+
+/**
+ * Link aus der Anmelde-Mail: Er belegt die Adresse. Gehört sie diesem Zugang
+ * (bestätigt) und ist schon ein Passwort oder Passkey eingerichtet, ist man
+ * damit angemeldet. Ohne Anmeldedaten geht es wie bisher zum Einrichten.
+ */
+export async function signInByMail(res: NextResponse, token: string, email: string): Promise<NextResponse> {
+  const p = await prisma.riderProfile.findUnique({
+    where: { token },
+    select: { id: true, email: true, sessionVersion: true, passwordHash: true, _count: { select: { passkeys: true } } },
+  });
+  if (!p || p.email !== email || (p.passwordHash == null && p._count.passkeys === 0)) return res;
+  return setRiderCookie(res, p);
 }
 
 export function setRiderCookie(res: NextResponse, p: { id: number; sessionVersion: number }): NextResponse {
@@ -276,6 +293,13 @@ async function consumeChallenge(challenge: string, p: string): Promise<boolean> 
     where: { challenge, purpose: p, expiresAt: { gt: new Date() } },
   });
   return count === 1;
+}
+
+/** Name im Passkey-Menü des Handys: Vorname und Nachname der Person, sonst „Deine Saison“. */
+export async function riderPasskeyLabel(profileId: number): Promise<string> {
+  const p = await prisma.riderProfile.findUnique({ where: { id: profileId }, select: { firstName: true, lastName: true } });
+  const name = [p?.firstName, p?.lastName].map((v) => v?.trim()).filter(Boolean).join(" ").slice(0, 60);
+  return name || "Deine Saison";
 }
 
 export async function riderRegistrationOptions(rp: RelyingParty, p: RiderAuthProfile, label: string) {
@@ -389,6 +413,63 @@ export async function riderVerifyLogin(
     },
   });
   return true;
+}
+
+// ------------------------------------- Passkey ohne Link (Startseite /app)
+
+const ANY_LOGIN = "rider-login:any";
+
+/** Anmeldung ohne Link: das Handy bietet alle Passkeys für diese Domain an. */
+export async function riderAnyLoginOptions(rp: RelyingParty) {
+  const options = await generateAuthenticationOptions({ rpID: rp.rpID, timeout: TIMEOUT_MS, userVerification: "required" });
+  await storeChallenge(options.challenge, ANY_LOGIN);
+  return options;
+}
+
+/**
+ * Passkey ohne Link prüfen. Der Passkey verrät das Profil; liefert es bei
+ * Erfolg (für Cookie und Weiterleitung), sonst null.
+ */
+export async function riderVerifyAnyLogin(
+  rp: RelyingParty,
+  response: AuthenticationResponseJSON,
+): Promise<{ id: number; token: string; sessionVersion: number } | null> {
+  if (!response || typeof response.id !== "string") return null;
+  const key = await prisma.riderPasskey.findUnique({
+    where: { credentialId: response.id },
+    select: { id: true, credentialId: true, publicKey: true, counter: true, transports: true, profile: { select: { token: true } } },
+  });
+  if (!key) return null;
+  const profile = await findRiderAuthProfile(key.profile.token);
+  if (!profile) return null;
+  let verified;
+  try {
+    verified = await verifyAuthenticationResponse({
+      response,
+      expectedChallenge: (challenge) => consumeChallenge(challenge, ANY_LOGIN),
+      expectedOrigin: rp.origin,
+      expectedRPID: rp.rpID,
+      requireUserVerification: true,
+      credential: {
+        id: key.credentialId,
+        publicKey: new Uint8Array(key.publicKey),
+        counter: key.counter,
+        transports: key.transports as never,
+      },
+    });
+  } catch {
+    return null;
+  }
+  if (!verified.verified) return null;
+  await prisma.riderPasskey.update({
+    where: { id: key.id },
+    data: {
+      counter: verified.authenticationInfo.newCounter,
+      backedUp: verified.authenticationInfo.credentialBackedUp,
+      lastUsedAt: new Date(),
+    },
+  });
+  return { id: profile.id, token: profile.token, sessionVersion: profile.sessionVersion };
 }
 
 /**

@@ -1,6 +1,7 @@
 import { AwardBadge, AwardBadgeDefs } from "@/components/rider/award-badge";
 import { GiftIcon } from "@/components/rider/award-parts";
 import { RiderMailLink } from "@/components/rider/rider-mail-link";
+import { RiderPasskeyLogin } from "@/components/rider/rider-auth";
 import { AWARD_DEFAULTS } from "@/lib/awards";
 import { RIDER_LOCATION } from "@/lib/rider-shop";
 
@@ -83,6 +84,8 @@ export default async function RiderLoginPage({ searchParams }: { searchParams: P
       </ul>
 
       <RiderMailLink />
+
+      <RiderPasskeyLogin />
 
       <p className="rd-muted rd-wl-foot">
         Noch kein Abo? Die App geht auch ohne. An der Kasse bekommst du deinen persönlichen Link auch als QR-Code.

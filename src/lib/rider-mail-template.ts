@@ -172,3 +172,35 @@ export function familyChildMail(args: { url: string; accountName: string; origin
   ].join("\n");
   return { subject, html, text };
 }
+
+/** Passwort vergessen: Link zum Festlegen eines neuen Passworts oder Passkeys (lib/rider-reset). */
+export function riderResetMail(args: { url: string; accountName: string; origin: string; minutes: number }): RiderLinkMail {
+  const subject = "Neues Passwort für die App";
+  const note = `Der Link gilt ${args.minutes} Minuten und nur einmal. Danach bist du angemeldet. Auf anderen Geräten meldest du dich mit dem neuen Passwort oder Passkey neu an.`;
+  const footer = "Du hast nichts angefordert? Dann musst du nichts tun, dein bisheriges Passwort bleibt.";
+  const html = riderMailHtml({
+    title: subject,
+    preheader: "Leg ein neues Passwort oder einen Passkey fest.",
+    accountName: args.accountName,
+    origin: args.origin,
+    headline: ["Neues", "Passwort"],
+    introHtml: "Du hast ein neues Passwort für deine App angefordert. Tipp auf die Taste und leg ein neues Passwort fest, oder richte gleich einen Passkey ein: Dann meldest du dich mit Face ID oder Fingerabdruck an.",
+    chips: ["Passwort", "Passkey"],
+    button: "Neu festlegen",
+    url: args.url,
+    noteHtml: note,
+    footerHtml: footer,
+  });
+  const text = [
+    "Neues Passwort",
+    "",
+    `Du hast ein neues Passwort für deine App von ${args.accountName} angefordert. Über diesen Link legst du ein neues Passwort oder einen Passkey fest:`,
+    "",
+    args.url,
+    "",
+    note,
+    "",
+    footer,
+  ].join("\n");
+  return { subject, html, text };
+}

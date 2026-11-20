@@ -24,10 +24,10 @@ function messageOf(e: unknown): string | null {
 type RegOptions = Parameters<typeof startRegistration>[0]["optionsJSON"];
 type AuthOptions = Parameters<typeof startAuthentication>[0]["optionsJSON"];
 
-async function registerPasskey(api: string) {
-  const optionsJSON = await post<RegOptions>(`${api}/passkey/register-options`);
+async function registerPasskey(api: string, resetKey?: string) {
+  const optionsJSON = await post<RegOptions>(`${api}/passkey/register-options`, { resetKey });
   const response = await startRegistration({ optionsJSON });
-  await post(`${api}/passkey/register`, { response });
+  await post(`${api}/passkey/register`, { response, resetKey });
 }
 
 const KEY_ICON = (
@@ -36,8 +36,12 @@ const KEY_ICON = (
   </svg>
 );
 
-/** Erstes Öffnen des Einladungslinks: Passkey oder Passwort einrichten. */
-export function RiderSetup({ token }: { token: string }) {
+/**
+ * Erstes Öffnen des Einladungslinks: Passkey oder Passwort einrichten. Mit
+ * `resetKey` (Link aus der Mail „Passwort vergessen“) dasselbe für einen
+ * bestehenden Zugang.
+ */
+export function RiderSetup({ token, resetKey }: { token: string; resetKey?: string }) {
   const api = `/api/rider/${encodeURIComponent(token)}/auth`;
   const home = `/app/${encodeURIComponent(token)}`;
   const supported = useSyncExternalStore(...passkeySupportSnapshot(browserSupportsWebAuthn, true));
@@ -70,7 +74,7 @@ export function RiderSetup({ token }: { token: string }) {
       return;
     }
     void run(async () => {
-      await post(`${api}/password`, { password });
+      await post(`${api}/password`, { password, resetKey });
     });
   }
 
@@ -80,13 +84,13 @@ export function RiderSetup({ token }: { token: string }) {
         <div className="rd-card" style={{ gap: 10 }}>
           <b>Am einfachsten: Passkey</b>
           <span className="rd-muted">Du meldest dich mit Face ID, Fingerabdruck oder dem Code deines Handys an. Kein Passwort nötig.</span>
-          <button type="button" className="rd-btn rd-btn-wide" disabled={busy} onClick={() => run(() => registerPasskey(api))}>
+          <button type="button" className="rd-btn rd-btn-wide" disabled={busy} onClick={() => run(() => registerPasskey(api, resetKey))}>
             <span style={{ display: "inline-flex", alignItems: "center" }}>{KEY_ICON}Passkey einrichten</span>
           </button>
         </div>
       )}
       <form className="rd-card" onSubmit={submit} style={{ gap: 12 }}>
-        <b>{supported ? "Oder mit Passwort" : "Passwort festlegen"}</b>
+        <b>{supported ? (resetKey ? "Oder neues Passwort" : "Oder mit Passwort") : resetKey ? "Neues Passwort festlegen" : "Passwort festlegen"}</b>
         <div className="rd-field">
           <label htmlFor="rd-pw">Passwort</label>
           <input id="rd-pw" className="rd-input" type="password" autoComplete="new-password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} />
@@ -163,6 +167,114 @@ export function RiderSignIn({ token, hasPassword, hasPasskey }: { token: string;
         <div className="rd-msg rd-msg-err" role="alert">Dieser Browser kann keine Passkeys. Öffne die App auf dem Gerät, auf dem du sie eingerichtet hast.</div>
       )}
     </>
+  );
+}
+
+/**
+ * Passwort vergessen: Link zum Neufestlegen an die Adresse des Zugangs
+ * schicken. Ohne bekannte Adresse bleibt nur die Kasse.
+ */
+export function RiderForgot({ token, maskedEmail }: { token: string; maskedEmail: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!maskedEmail) {
+    return (
+      <p className="rd-muted" style={{ margin: 0 }}>
+        Passwort vergessen oder neues Handy? An der Kasse setzen wir deinen Zugang zurück und du bekommst einen neuen Link.
+      </p>
+    );
+  }
+
+  async function send() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await post(`/api/rider/${encodeURIComponent(token)}/auth/reset`);
+      setSent(true);
+    } catch (e) {
+      setError(messageOf(e) ?? "Das hat nicht geklappt.");
+    }
+    setBusy(false);
+  }
+
+  if (sent) {
+    return (
+      <div className="rd-card" role="status" style={{ gap: 8 }}>
+        <b>Schau in dein Postfach</b>
+        <span className="rd-soft">
+          Wir haben dir einen Link an <b>{maskedEmail}</b> geschickt. Damit legst du ein neues Passwort oder einen Passkey fest. Er gilt 60 Minuten.
+        </span>
+        <span className="rd-muted">Nichts da? Schau im Spam-Ordner nach oder frag an der Kasse.</span>
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={() => setOpen(true)}>
+        <span>Passwort vergessen?</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="rd-card" style={{ gap: 10 }}>
+      <b>Passwort vergessen?</b>
+      <span className="rd-muted">
+        Wir schicken dir einen Link an <b>{maskedEmail}</b>. Damit legst du ein neues Passwort fest oder richtest gleich einen Passkey ein.
+      </span>
+      {error && <div className="rd-msg rd-msg-err" role="alert">{error}</div>}
+      <button type="button" className="rd-btn rd-btn-wide" disabled={busy} onClick={send}>
+        <span>{busy ? "Einen Moment …" : "Link schicken"}</span>
+      </button>
+      <span className="rd-muted">Andere Adresse oder kein Zugriff mehr? An der Kasse setzen wir deinen Zugang zurück.</span>
+    </div>
+  );
+}
+
+/**
+ * Startseite ohne Link: mit einem Passkey dieses Geräts anmelden. Das Handy
+ * zeigt die eingerichteten Passkeys; der gewählte führt zur eigenen App.
+ */
+export function RiderPasskeyLogin() {
+  const supported = useSyncExternalStore(...passkeySupportSnapshot(browserSupportsWebAuthn, false));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!supported) return null;
+
+  async function login() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const optionsJSON = await post<AuthOptions>("/api/rider/passkey/options");
+      const response = await startAuthentication({ optionsJSON });
+      const { url } = await post<{ url: string }>("/api/rider/passkey/login", { response });
+      await clearRiderLocalData();
+      window.location.assign(url);
+      return;
+    } catch (e) {
+      const text = messageOf(e);
+      if (text) setError(text);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="rd-card" style={{ gap: 10 }}>
+      <div>
+        <b>Schon dabei?</b>
+        <p className="rd-muted" style={{ margin: "4px 0 0" }}>Mit Face ID oder Fingerabdruck direkt in deine App.</p>
+      </div>
+      {error && <div className="rd-msg rd-msg-err" role="alert">{error}</div>}
+      <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" disabled={busy} onClick={login}>
+        <span style={{ display: "inline-flex", alignItems: "center" }}>{KEY_ICON}{busy ? "Einen Moment …" : "Mit Passkey anmelden"}</span>
+      </button>
+    </div>
   );
 }
 

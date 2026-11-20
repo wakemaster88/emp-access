@@ -28,7 +28,7 @@
  * bindet die App per Skew Protection an das alte Deployment, das dann an
  * der neuen Datenbank scheitert (20.11.2026, Awards mit ALL_TIME).
  */
-const VERSION = "2026-11-20-1";
+const VERSION = "2026-11-20-2";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 // Name muss zu RIDER_CACHE_PREFIX in src/lib/rider-local.ts passen (Abmelden loescht danach).
 const RIDER_CACHE = `emp-rider-${VERSION}`;
@@ -75,7 +75,7 @@ function isStaticAsset(url) {
 
 /**
  * Token der Kunden-App, wenn der Pfad eine angemeldete Seite ist, die lokal
- * vorgehalten werden darf; sonst null. Anmelden/Einrichten, Manifest,
+ * vorgehalten werden darf; sonst null. Anmelden/Einrichten/Neu festlegen, Manifest,
  * Mail- und Familien-Links bleiben aussen vor.
  */
 function riderCacheToken(pathname) {
@@ -84,7 +84,7 @@ function riderCacheToken(pathname) {
   const token = m[1];
   if (token === "familie" || token === "mail" || decodeURIComponent(token).length < 16) return null;
   const rest = m[2] || "";
-  if (/^\/(anmelden|einrichten)(\/|$)/.test(rest) || /\.[a-z]+$/i.test(rest)) return null;
+  if (/^\/(anmelden|einrichten|neu)(\/|$)/.test(rest) || /\.[a-z]+$/i.test(rest)) return null;
   return token;
 }
 
