@@ -199,7 +199,12 @@ export async function familyInviteInfo(key: string): Promise<{ familyId: number;
   return { familyId: link.familyId, accountId: inviter.accountId, inviterName: memberName(inviter) };
 }
 
-/** Der Einladung folgen: die angemeldete Person wird Erwachsene der Familie. */
+/**
+ * Der Einladung folgen: die angemeldete Person wird Erwachsene der Familie.
+ * Verwaltet sie schon eine eigene Familie nur mit Kindern (etwa die Personen
+ * ihres Kundenkontos), kommen die Kinder mit; mit weiteren Erwachsenen muss
+ * sie die alte Familie zuerst verlassen.
+ */
 export async function joinFamily(person: FamilyPerson, key: string): Promise<void> {
   const invite = await familyInviteInfo(key);
   if (!invite || invite.accountId !== person.accountId) throw new FamilyError("Diese Einladung gilt nicht mehr.");
@@ -207,13 +212,24 @@ export async function joinFamily(person: FamilyPerson, key: string): Promise<voi
     if (!person.familyAdult) await prisma.riderProfile.update({ where: { id: person.id }, data: { familyAdult: true } });
     return;
   }
-  if (person.familyId != null) {
-    const others = await prisma.riderProfile.count({ where: { familyId: person.familyId, accountId: person.accountId, id: { not: person.id } } });
-    if (others > 0) throw new FamilyError("Du gehörst schon zu einer Familie. Verlasse sie zuerst in deinem Profil.");
+  const others = person.familyId != null
+    ? await prisma.riderProfile.findMany({
+        where: { familyId: person.familyId, accountId: person.accountId, id: { not: person.id } },
+        select: { id: true, familyAdult: true },
+      })
+    : [];
+  if (others.length > 0 && (!person.familyAdult || others.some((o) => o.familyAdult))) {
+    throw new FamilyError("Du gehörst schon zu einer Familie mit weiteren Erwachsenen. Verlasse sie zuerst in deinem Profil.");
   }
-  await assertRoom(invite.familyId, person.accountId);
+  await assertRoom(invite.familyId, person.accountId, 1 + others.length);
   const old = person.familyId;
-  await prisma.riderProfile.update({ where: { id: person.id }, data: { familyId: invite.familyId, familyAdult: true } });
+  await prisma.$transaction([
+    prisma.riderProfile.update({ where: { id: person.id }, data: { familyId: invite.familyId, familyAdult: true } }),
+    prisma.riderProfile.updateMany({
+      where: { id: { in: others.map((o) => o.id) }, accountId: person.accountId, familyId: old ?? -1 },
+      data: { familyId: invite.familyId, familyAdult: false },
+    }),
+  ]);
   if (old != null) await tidyFamily(old, person.accountId);
 }
 

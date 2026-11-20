@@ -62,6 +62,23 @@ test("riderInviteMail: Anrede, Abo und Link, Werte maskiert", async () => {
   assert.match(anon.text, /^Willkommen an Bord\n\nDanke für dein Abo!/);
 });
 
+test("familyInviteMail: nennt, wer einlädt, Link und Gültigkeit, Werte maskiert", async () => {
+  const { familyInviteMail } = await import("./rider-mail-template");
+  const m = familyInviteMail({
+    url: "https://app.example/app/mail/abc?familie=xyz",
+    accountName: "Wasserski <Test>",
+    origin: "https://app.example",
+    inviterName: "Anna <b>",
+    days: 7,
+  });
+  assert.equal(m.subject, "Einladung in die App");
+  assert.match(m.html, /Anna &lt;b&gt; lädt dich in die App von Wasserski &lt;Test&gt; ein/);
+  assert.doesNotMatch(m.html, /<b>|<Test>/);
+  assert.match(m.html, /app\/mail\/abc\?familie=xyz/);
+  assert.match(m.text, /Hier nimmst du sie an:\nhttps:\/\/app\.example\/app\/mail\/abc\?familie=xyz/);
+  assert.match(m.text, /Der Link gilt 7 Tage/);
+});
+
 test("mailLinkKey: Einladung gilt länger als der Anmelde-Link", async () => {
   process.env.AUTH_SECRET ||= "test-secret";
   const { mailLinkKey, verifyMailLinkKey } = await import("./day-guest");
