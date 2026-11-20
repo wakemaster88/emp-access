@@ -127,7 +127,7 @@ export function OffersCard({ offers, reach }: { offers: OfferAdminRow[]; reach: 
             Angebote ({offers.length})
           </CardTitle>
           <CardDescription>
-            Erscheinen oben auf der Startseite der Kunden-App, höchstens drei gleichzeitig.
+            Oben auf der Startseite der App, höchstens drei zugleich.
           </CardDescription>
           <CardAction>
             <Button onClick={() => open(EMPTY)} className="max-sm:h-11" aria-label="Angebot anlegen">

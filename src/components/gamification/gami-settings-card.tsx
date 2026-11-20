@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
-import { History, Loader2, Save, Settings } from "lucide-react";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
+import { Check, History, Loader2, Save, Settings } from "lucide-react";
 
 interface Option {
   id: number;
@@ -122,151 +122,174 @@ export function GamiSettingsCard({ initial, subscriptions, services, devices, ye
     }
   }
 
+  const dayServices = services.filter((s) => form.dayServiceIds.includes(s.id));
+  const priceSubs = subscriptions.filter((s) => form.subscriptionIds.includes(s.id));
+
   return (
-    <div className="space-y-4 sm:space-y-5">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="h-4 w-4 text-primary shrink-0" />
-            Einstellungen
-          </CardTitle>
-          <CardDescription>
-            Solange die Gamification aus ist, wird nichts gezählt und kein Gutschein ausgegeben.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex items-center justify-between gap-3">
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Settings className="h-4 w-4 text-primary shrink-0" />
+          Zählen und Awards
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-0.5">
             <Label htmlFor="gami-enabled">Gamification aktiv</Label>
-            <Switch id="gami-enabled" checked={form.enabled} onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))} />
+            <p className="text-xs text-muted-foreground">Aus: nichts wird gezählt, kein Gutschein ausgegeben.</p>
           </div>
+          <Switch id="gami-enabled" checked={form.enabled} onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))} />
+        </div>
 
+        <ChipField
+          id="gami-subs"
+          label="Teilnehmende Abos"
+          empty="Keine Abos angelegt."
+          options={subscriptions}
+          selected={form.subscriptionIds}
+          onToggle={(id, on) => setForm((f) => ({ ...f, subscriptionIds: toggle(f.subscriptionIds, id, on) }))}
+        />
+
+        <ChipField
+          id="gami-devices"
+          label="Start-Geräte"
+          hint="Ein erlaubter Abo-Scan hier zählt als Start, z. B. am Drehkreuz zur Seilbahn."
+          empty="Keine Scanner angelegt."
+          options={devices}
+          selected={form.startDeviceIds}
+          onToggle={(id, on) => setForm((f) => ({ ...f, startDeviceIds: toggle(f.startDeviceIds, id, on) }))}
+        />
+
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <Label htmlFor="gami-cap">Starts pro Tag höchstens</Label>
+            <p className="text-xs text-muted-foreground">Gilt für Awards. Die Statistik zählt alle.</p>
+          </div>
+          <Input
+            id="gami-cap"
+            type="number"
+            min={1}
+            max={100}
+            inputMode="numeric"
+            value={form.startCapPerDay}
+            onChange={(e) => setForm((f) => ({ ...f, startCapPerDay: e.target.value }))}
+            aria-invalid={!(Number.isInteger(cap) && cap >= 1 && cap <= 100)}
+            className="w-20 shrink-0 text-right max-sm:h-11"
+          />
+        </div>
+
+        <ChipField
+          id="gami-day"
+          label="Tagestickets in der App"
+          hint="Gäste mit diesen Tickets holen sich ihren Link per Mail an die Adresse am Ticket. Jeder Tag mit Ticket zählt als Besuchstag."
+          empty="Keine Ticket-Typen angelegt."
+          options={services}
+          selected={form.dayServiceIds}
+          onToggle={(id, on) => setForm((f) => ({ ...f, dayServiceIds: toggle(f.dayServiceIds, id, on) }))}
+        />
+
+        {dayServices.length > 0 && (
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Teilnehmende Abos</legend>
-            {subscriptions.length === 0 && <p className="text-sm text-muted-foreground">Keine Abos angelegt.</p>}
-            <div className="grid gap-2 sm:grid-cols-2">
-              {subscriptions.map((s) => (
-                <label key={s.id} className="flex min-h-9 items-center gap-2 text-sm max-sm:min-h-11">
-                  <Checkbox
-                    checked={form.subscriptionIds.includes(s.id)}
-                    onCheckedChange={(v) => setForm((f) => ({ ...f, subscriptionIds: toggle(f.subscriptionIds, s.id, v === true) }))}
-                  />
-                  {s.name}
-                </label>
+            <legend className="text-sm font-medium">Preise für den Abo-Rechner</legend>
+            <p className="text-xs text-muted-foreground">
+              Ab dem dritten Besuch rechnet die App vor, ob sich das günstigste Abo lohnt. Ohne Preise erscheint der Rechner nicht.
+            </p>
+            <div className="divide-y divide-border rounded-lg border border-border">
+              {dayServices.map((s) => (
+                <PriceRow
+                  key={`s${s.id}`}
+                  name={s.name}
+                  value={form.servicePrices[String(s.id)]}
+                  onChange={(v) => setForm((f) => ({ ...f, servicePrices: { ...f.servicePrices, [String(s.id)]: v } }))}
+                />
+              ))}
+              {priceSubs.map((s) => (
+                <PriceRow
+                  key={`a${s.id}`}
+                  name={s.name}
+                  value={form.subscriptionPrices[String(s.id)]}
+                  onChange={(v) => setForm((f) => ({ ...f, subscriptionPrices: { ...f.subscriptionPrices, [String(s.id)]: v } }))}
+                />
               ))}
             </div>
           </fieldset>
+        )}
 
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Start-Geräte</legend>
-            <p className="text-xs text-muted-foreground">
-              Ein erlaubter Scan eines Abo-Tickets an diesen Geräten zählt als Start, zum Beispiel das Drehkreuz an der Seilbahn.
-            </p>
-            {devices.length === 0 && <p className="text-sm text-muted-foreground">Keine Scanner angelegt.</p>}
-            <div className="grid gap-2 sm:grid-cols-2">
-              {devices.map((d) => (
-                <label key={d.id} className="flex min-h-9 items-center gap-2 text-sm max-sm:min-h-11">
-                  <Checkbox
-                    checked={form.startDeviceIds.includes(d.id)}
-                    onCheckedChange={(v) => setForm((f) => ({ ...f, startDeviceIds: toggle(f.startDeviceIds, d.id, v === true) }))}
-                  />
-                  {d.name}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+        {notice && <Notice tone={notice.ok ? "success" : "danger"} compact title={notice.text} />}
 
-          <div className="space-y-1.5 sm:max-w-xs">
-            <Label htmlFor="gami-cap">Starts pro Tag, die höchstens zählen</Label>
-            <Input id="gami-cap" type="number" min={1} max={100} inputMode="numeric" value={form.startCapPerDay} onChange={(e) => setForm((f) => ({ ...f, startCapPerDay: e.target.value }))} className="max-sm:h-11" />
-            <p className="text-xs text-muted-foreground">Gilt für Meilensteine nach Starts. Die Statistik zeigt weiter alle Starts.</p>
-          </div>
-
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Tagestickets in der App</legend>
-            <p className="text-xs text-muted-foreground">
-              Gäste mit diesen Tickets können die App nutzen: Sie fordern dort ihren Link an und bekommen ihn an die E-Mail-Adresse am Ticket.
-              Die Adresse kommt aus der Online-Buchung oder wird am Shop-Monitor und im Reiter Fahrer eingetragen. Jeder Tag mit Ticket zählt als Besuchstag. Mit Preis rechnet die App ab dem dritten Besuch vor, ob sich ein Abo lohnt.
-            </p>
-            {services.length === 0 && <p className="text-sm text-muted-foreground">Keine Ticket-Typen angelegt.</p>}
-            <div className="grid gap-2 sm:grid-cols-2">
-              {services.map((s) => {
-                const on = form.dayServiceIds.includes(s.id);
-                return (
-                  <div key={s.id} className="flex min-h-9 items-center gap-2 max-sm:min-h-11">
-                    <label className="flex min-w-0 flex-1 items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={on}
-                        onCheckedChange={(v) => setForm((f) => ({ ...f, dayServiceIds: toggle(f.dayServiceIds, s.id, v === true) }))}
-                      />
-                      <span className="truncate">{s.name}</span>
-                    </label>
-                    {on && (
-                      <Input
-                        aria-label={`Preis ${s.name} in Euro`}
-                        placeholder="Preis €"
-                        inputMode="decimal"
-                        value={form.servicePrices[String(s.id)] ?? ""}
-                        onChange={(e) => setForm((f) => ({ ...f, servicePrices: { ...f.servicePrices, [String(s.id)]: e.target.value } }))}
-                        aria-invalid={euroCents(form.servicePrices[String(s.id)]) === undefined}
-                        className="w-24 shrink-0 max-sm:h-11"
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </fieldset>
-
-          {form.subscriptionIds.length > 0 && form.dayServiceIds.length > 0 && (
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-medium">Abo-Preise für den Abo-Rechner</legend>
-              <p className="text-xs text-muted-foreground">Ohne Preis erscheint der Abo-Rechner nicht. Verglichen wird mit dem günstigsten Abo.</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {subscriptions.filter((s) => form.subscriptionIds.includes(s.id)).map((s) => (
-                  <div key={s.id} className="flex min-h-9 items-center gap-2 max-sm:min-h-11">
-                    <span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>
-                    <Input
-                      aria-label={`Preis ${s.name} in Euro`}
-                      placeholder="Preis €"
-                      inputMode="decimal"
-                      value={form.subscriptionPrices[String(s.id)] ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, subscriptionPrices: { ...f.subscriptionPrices, [String(s.id)]: e.target.value } }))}
-                      aria-invalid={euroCents(form.subscriptionPrices[String(s.id)]) === undefined}
-                      className="w-24 shrink-0 max-sm:h-11"
-                    />
-                  </div>
-                ))}
-              </div>
-            </fieldset>
-          )}
-
-          {notice && <Notice tone={notice.ok ? "success" : "danger"} compact title={notice.text} />}
-
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Button onClick={save} disabled={saving || !valid} className="gap-1.5 max-sm:h-11 max-sm:w-full">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Speichern
           </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-4 w-4 text-primary shrink-0" />
-            Statistik {year} neu berechnen
-          </CardTitle>
-          <CardDescription>
-            Baut die Tagessummen des laufenden Jahres aus den gespeicherten Scans neu auf, mit den oben gespeicherten Abos und Start-Geräten.
-            Dabei werden keine Meilensteine oder Gutscheine vergeben.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button variant="outline" onClick={backfill} disabled={backfilling} className="gap-1.5 max-sm:h-11 max-sm:w-full">
+          <Button
+            variant="ghost"
+            onClick={backfill}
+            disabled={backfilling}
+            title={`Baut die Tagessummen ${year} aus den gespeicherten Scans neu auf, mit den gespeicherten Abos und Start-Geräten. Vergibt keine Awards.`}
+            className="gap-1.5 text-muted-foreground max-sm:h-11 max-sm:w-full"
+          >
             {backfilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
-            Neu berechnen
+            Statistik {year} neu berechnen
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Mehrfachauswahl als Chips mit Überschrift und kurzem Hinweis. */
+function ChipField({
+  id, label, hint, empty, options, selected, onToggle,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  empty: string;
+  options: Option[];
+  selected: number[];
+  onToggle: (id: number, on: boolean) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="space-y-0.5">
+        <p id={id} className="text-sm font-medium">{label}</p>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      {options.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <ToggleChipGroup aria-labelledby={id}>
+          {options.map((o) => {
+            const on = selected.includes(o.id);
+            return (
+              <ToggleChip key={o.id} pressed={on} onPressedChange={(v) => onToggle(o.id, v)} className="max-w-full">
+                {on && <Check />}
+                <span className="truncate">{o.name}</span>
+              </ToggleChip>
+            );
+          })}
+        </ToggleChipGroup>
+      )}
+    </div>
+  );
+}
+
+/** Eine Zeile „Name … Preis €“ für den Abo-Rechner. */
+function PriceRow({ name, value, onChange }: { name: string; value: string | undefined; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5">
+      <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
+      <Input
+        aria-label={`Preis ${name} in Euro`}
+        placeholder="€"
+        inputMode="decimal"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        aria-invalid={euroCents(value) === undefined}
+        className="w-24 shrink-0 text-right max-sm:h-11"
+      />
     </div>
   );
 }

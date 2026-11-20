@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Award, BarChart3, CalendarCheck, Gift, Megaphone, Play, Settings, Swords, Trophy, Users } from "lucide-react";
+import { Award, BarChart3, CalendarCheck, Gift, Megaphone, Play, Settings, Trophy, Users } from "lucide-react";
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { isTenantAdminRole } from "@/lib/api-auth";
@@ -24,14 +24,15 @@ import { DayGuestMailsCard, type DayGuestMailRow } from "@/components/gamificati
 import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamification/challenges-card";
 import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
 import { riderPushReach } from "@/lib/rider-announce";
-import { RankingDisplayCard } from "@/components/gamification/ranking-display-card";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
-import { AppQrCard } from "@/components/gamification/app-qr-card";
+import { AppShareCard } from "@/components/gamification/app-share-card";
 import { AppInviteCard } from "@/components/gamification/app-invite-card";
 import { inviteStatus } from "@/lib/rider-invite";
 
-type Tab = "auswertung" | "fahrer" | "meilensteine" | "challenges" | "angebote" | "gutscheine" | "einstellungen";
-const TABS: Tab[] = ["auswertung", "fahrer", "meilensteine", "challenges", "angebote", "gutscheine", "einstellungen"];
+type Tab = "auswertung" | "fahrer" | "meilensteine" | "aktionen" | "gutscheine" | "einstellungen";
+const TABS: Tab[] = ["auswertung", "fahrer", "meilensteine", "aktionen", "gutscheine", "einstellungen"];
+/** Alte Links (?tab=challenges, ?tab=angebote) führen in den gemeinsamen Reiter „Aktionen“. */
+const LEGACY_TABS: Record<string, Tab> = { challenges: "aktionen", angebote: "aktionen" };
 
 function ticketLabel(t: { name: string; firstName: string | null; lastName: string | null }): string {
   const full = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
@@ -46,7 +47,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
   if (!accountId || !isTenantAdminRole(session.user.role)) redirect("/");
 
   const { tab: rawTab } = await searchParams;
-  const tab: Tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "auswertung";
+  const tab: Tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : LEGACY_TABS[rawTab ?? ""] ?? "auswertung";
   const db = tenantClient(accountId);
   const year = Number(berlinYmd(new Date()).slice(0, 4));
   const yearRange = { gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) };
@@ -59,11 +60,10 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       className="max-sm:[&_svg]:hidden"
       value={tab}
       options={[
-        { value: "auswertung", label: "Auswertung", icon: BarChart3, href: "/gamification" },
+        { value: "auswertung", label: "Übersicht", icon: BarChart3, href: "/gamification" },
         { value: "fahrer", label: "Fahrer", icon: Users, href: "/gamification?tab=fahrer" },
         { value: "meilensteine", label: "Awards", icon: Award, href: "/gamification?tab=meilensteine" },
-        { value: "challenges", label: "Challenges", icon: Swords, href: "/gamification?tab=challenges" },
-        { value: "angebote", label: "Angebote", icon: Megaphone, href: "/gamification?tab=angebote" },
+        { value: "aktionen", label: "Aktionen", icon: Megaphone, href: "/gamification?tab=aktionen" },
         { value: "gutscheine", label: "Gutscheine", icon: Gift, href: "/gamification?tab=gutscheine" },
         { value: "einstellungen", label: "Einstellungen", icon: Settings, href: "/gamification?tab=einstellungen" },
       ]}
@@ -244,7 +244,6 @@ export default async function GamificationPage({ searchParams }: { searchParams:
     }
     content = (
       <div className="space-y-4 sm:space-y-5">
-        <AppQrCard accountName={session.user.accountName ?? ""} />
         {dayGuests && <DayGuestMailsCard rows={dayGuests.rows} year={year} withoutEmail={dayGuests.withoutEmail} mailReady={dayGuests.mailReady} />}
         <RidersCard riders={rows} year={year} />
       </div>
@@ -283,7 +282,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
     content = <MilestonesCard milestones={rows} today={berlinYmd(new Date())} />;
   }
 
-  if (tab === "challenges") {
+  if (tab === "aktionen") {
     const today = berlinYmd(new Date());
     const cap = config?.startCapPerDay ?? 10;
     // Beendete Top-X-Challenges auswerten, auch wenn seit dem Ende niemand gestartet ist.
@@ -293,13 +292,13 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       db.challengeAward.groupBy({ by: ["challengeId"], where: { accountId }, _count: { _all: true } }),
     ]);
     const winnersById = new Map(winners.map((w) => [w.challengeId, w._count._all]));
-    const rows: ChallengeAdminRow[] = [];
+    const challengeRows: ChallengeAdminRow[] = [];
     for (const c of challenges) {
       const startDate = dbDateToYmd(c.startDate);
       const endDate = dbDateToYmd(c.endDate);
       const phase = challengePhase({ startYmd: startDate, endYmd: endDate }, today);
       const units = phase === "upcoming" ? [] : await challengeUnits(db, accountId, c as ChallengeRow, cap);
-      rows.push({
+      challengeRows.push({
         id: c.id,
         name: c.name,
         description: c.description,
@@ -321,16 +320,14 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         pushSent: c.pushSent,
       });
     }
-    content = <ChallengesCard challenges={rows} today={today} reach={await riderPushReach(accountId)} />;
-  }
-
-  if (tab === "angebote") {
-    const today = berlinYmd(new Date());
-    const offers = await db.riderOffer.findMany({
-      where: { accountId },
-      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-      take: 200,
-    });
+    const [offers, reach] = await Promise.all([
+      db.riderOffer.findMany({
+        where: { accountId },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+        take: 200,
+      }),
+      riderPushReach(accountId),
+    ]);
     const rows: OfferAdminRow[] = offers.map((o) => {
       const validFrom = o.validFrom ? dbDateToYmd(o.validFrom) : null;
       const validTo = o.validTo ? dbDateToYmd(o.validTo) : null;
@@ -347,7 +344,13 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         pushSent: o.pushSent,
       };
     });
-    content = <OffersCard offers={rows} reach={await riderPushReach(accountId)} />;
+    // Beides sind Meldungen in der App mit optionalem Push: ein Reiter, zwei Listen.
+    content = (
+      <>
+        <ChallengesCard challenges={challengeRows} today={today} reach={reach} />
+        <OffersCard offers={rows} reach={reach} />
+      </>
+    );
   }
 
   if (tab === "gutscheine") {
@@ -409,7 +412,10 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         year={year}
       />
       <AppInviteCard initial={invites} />
-      <RankingDisplayCard path={config?.displayToken ? `/rangliste/${config.displayToken}` : null} />
+      <AppShareCard
+        accountName={session.user.accountName ?? ""}
+        rankingPath={config?.displayToken ? `/rangliste/${config.displayToken}` : null}
+      />
       </>
     );
   }

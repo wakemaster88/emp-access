@@ -53,8 +53,8 @@ export function AppInviteCard({ initial }: { initial: InviteStatus }) {
           Einladung zur App
         </CardTitle>
         <CardDescription>
-          Eine Mail mit Link in die App, je Adresse nur einmal. Wer schon in der App ist, bekommt keine.
-          {status.sent > 0 && ` Bisher verschickt: ${status.sent}.`}
+          Je Adresse eine Mail mit Link, nur an wen noch nicht in der App ist.
+          {status.sent > 0 && ` Bisher ${status.sent} verschickt.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -64,7 +64,7 @@ export function AppInviteCard({ initial }: { initial: InviteStatus }) {
           <div className="space-y-0.5">
             <Label htmlFor="invite-new">Bei neuem Abo aus anny</Label>
             <p className="text-xs text-muted-foreground">
-              Nach dem nächsten anny-Abgleich, nur für frisch gebuchte Abos. Verlängerungen und Bestandskunden bekommen sie hierüber nicht.
+              Nur frisch gebuchte Abos, nach dem nächsten Abgleich. Keine Verlängerungen.
             </p>
           </div>
           <Switch
@@ -80,8 +80,7 @@ export function AppInviteCard({ initial }: { initial: InviteStatus }) {
             <div className="space-y-0.5">
               <Label htmlFor="invite-existing">An Bestandskunden</Label>
               <p className="text-xs text-muted-foreground">
-                Laufende Abos, die noch nicht in der App sind: {open === 1 ? "1 Adresse" : `${open} Adressen`} offen.
-                Es gehen höchstens 10 Mails alle 5 Minuten raus, nur zwischen 9 und 20 Uhr. Ausschalten stoppt den Versand sofort.
+                {open === 1 ? "1 Adresse" : `${open} Adressen`} offen. Höchstens 10 Mails je 5 Minuten, 9 bis 20 Uhr. Aus stoppt sofort.
               </p>
             </div>
             <Switch

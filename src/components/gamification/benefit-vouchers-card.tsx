@@ -4,10 +4,10 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -46,6 +46,10 @@ export function BenefitVouchersCard({ vouchers }: { vouchers: BenefitVoucherRow[
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // Offene zuerst: eingelöste und abgelaufene sind nur noch Verlauf.
+  const openCount = vouchers.filter((v) => v.state === "open").length;
+  const [filter, setFilter] = useState<"open" | "all">(openCount > 0 ? "open" : "all");
+  const shown = filter === "open" ? vouchers.filter((v) => v.state === "open") : vouchers;
 
   async function redeem(value: string) {
     const trimmed = value.trim();
@@ -82,26 +86,23 @@ export function BenefitVouchersCard({ vouchers }: { vouchers: BenefitVoucherRow[
             <ScanLine className="h-4 w-4 text-primary shrink-0" />
             Gutschein entwerten
           </CardTitle>
-          <CardDescription>
-            QR-Code mit dem Handscanner scannen oder den Code eintippen. Am Check-in-Monitor reicht ebenfalls ein Scan.
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <form
-            className="flex flex-col gap-2 sm:flex-row sm:items-end"
+            className="flex items-center gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               void redeem(code);
             }}
           >
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="benefit-code">Code</Label>
+            <div className="min-w-0 flex-1">
               <Input
                 id="benefit-code"
                 ref={inputRef}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="GS-…"
+                placeholder="Code scannen"
+                aria-label="Gutschein-Code"
                 autoComplete="off"
                 autoFocus
                 className="font-mono max-sm:h-11"
@@ -112,6 +113,7 @@ export function BenefitVouchersCard({ vouchers }: { vouchers: BenefitVoucherRow[
               Entwerten
             </Button>
           </form>
+          <p className="text-xs text-muted-foreground">Am Check-in-Monitor reicht ebenfalls ein Scan.</p>
           {result && <Notice tone={result.ok ? "success" : "danger"} compact title={result.text} role={result.ok ? "status" : "alert"} />}
         </CardContent>
       </Card>
@@ -120,9 +122,20 @@ export function BenefitVouchersCard({ vouchers }: { vouchers: BenefitVoucherRow[
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Gift className="h-4 w-4 text-primary shrink-0" />
-            Leistungs-Gutscheine ({vouchers.length})
+            Leistungs-Gutscheine
           </CardTitle>
         </CardHeader>
+        <CardContent className="pb-3">
+          <Segmented
+            aria-label="Gutscheine filtern"
+            value={filter}
+            onValueChange={setFilter}
+            options={[
+              { value: "open", label: "Offen", count: openCount },
+              { value: "all", label: "Alle", count: vouchers.length },
+            ]}
+          />
+        </CardContent>
         <Table edge>
           <TableHeader>
             <TableRow>
@@ -130,21 +143,20 @@ export function BenefitVouchersCard({ vouchers }: { vouchers: BenefitVoucherRow[
               <TableHead className="hidden sm:table-cell">Fahrer</TableHead>
               <TableHead className="hidden lg:table-cell">Code</TableHead>
               <TableHead className="hidden md:table-cell">Gültig bis</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right"><span className="sr-only">Aktion</span></TableHead>
+              <TableHead className="text-right">Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {vouchers.length === 0 && (
+            {shown.length === 0 && (
               <TableEmpty
-                colSpan={6}
+                colSpan={5}
                 icon={Gift}
-                title="Noch keine Leistungs-Gutscheine"
-                description="Sie entstehen automatisch, sobald ein Fahrer einen Meilenstein mit Gutschein erreicht."
-                compact={false}
+                title={vouchers.length === 0 ? "Noch keine Leistungs-Gutscheine" : "Keine offenen Gutscheine"}
+                description={vouchers.length === 0 ? "Sie entstehen automatisch, sobald ein Fahrer einen Award mit Gutschein erreicht." : undefined}
+                compact={vouchers.length > 0}
               />
             )}
-            {vouchers.map((v) => {
+            {shown.map((v) => {
               const badge = STATE_BADGE[v.state];
               return (
                 <TableRow key={v.id} className="max-sm:h-11">
@@ -158,20 +170,21 @@ export function BenefitVouchersCard({ vouchers }: { vouchers: BenefitVoucherRow[
                   <TableCell className="hidden sm:table-cell">{v.owner ?? "–"}</TableCell>
                   <TableCell className="hidden lg:table-cell font-mono text-xs">{v.code}</TableCell>
                   <TableCell className="hidden md:table-cell tabular-nums">{v.expiresAt ? fmtDate(v.expiresAt) : "unbegrenzt"}</TableCell>
-                  <TableCell>
-                    <Badge variant={badge.variant} className="font-normal">{badge.label}</Badge>
-                    {v.state === "redeemed" && (
-                      <div className="text-xs text-muted-foreground tabular-nums">
-                        {fmtDate(v.redeemedAt)}{v.redeemedVia === "CHECKIN" ? " · Check-in" : v.redeemedVia === "ADMIN" ? " · Admin" : ""}
-                      </div>
-                    )}
-                  </TableCell>
                   <TableCell className="text-right">
-                    {v.state === "open" && (
+                    {v.state === "open" ? (
                       <Button variant="outline" size="sm" onClick={() => void redeem(v.code)} disabled={busy != null} className="max-sm:h-11">
                         {busy === v.code ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                         Entwerten
                       </Button>
+                    ) : (
+                      <>
+                        <Badge variant={badge.variant} className="font-normal">{badge.label}</Badge>
+                        {v.state === "redeemed" && (
+                          <div className="text-xs text-muted-foreground tabular-nums">
+                            {fmtDate(v.redeemedAt)}{v.redeemedVia === "CHECKIN" ? " · Check-in" : v.redeemedVia === "ADMIN" ? " · Admin" : ""}
+                          </div>
+                        )}
+                      </>
                     )}
                   </TableCell>
                 </TableRow>
