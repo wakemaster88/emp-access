@@ -9,6 +9,10 @@
  *   jeder nur für sich selbst.
  * - Kinder brauchen keinen eigenen Zugang; die Erwachsenen sehen ihr Abo,
  *   ihre Statistik und ihre Gutscheine.
+ * - Wege in die Familie: Personen des eigenen Kundenkontos von selbst
+ *   (lib/customers `syncKontoFamily`), Kinder per Kartennummer und
+ *   Geburtsdatum (`addFamilyChild`) oder mit eigener Adresse per
+ *   Bestätigungslink (lib/rider-family-link), Partner per Einladungslink.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "./prisma";
@@ -129,7 +133,7 @@ export async function tidyFamily(familyId: number, accountId: number): Promise<v
 }
 
 /** Familie der angemeldeten Person holen oder anlegen; sie wird dabei Erwachsene. */
-async function ensureFamily(viewer: FamilyPerson): Promise<number> {
+export async function ensureFamily(viewer: FamilyPerson): Promise<number> {
   if (viewer.familyId != null) {
     if (!viewer.familyAdult) throw new FamilyError("Nur Erwachsene der Familie können Mitglieder hinzufügen.");
     return viewer.familyId;
@@ -142,9 +146,9 @@ async function ensureFamily(viewer: FamilyPerson): Promise<number> {
 /** Fehler mit einem Text, den die App dem Gast zeigt. */
 export class FamilyError extends Error {}
 
-async function assertRoom(familyId: number, accountId: number): Promise<void> {
+export async function assertRoom(familyId: number, accountId: number, adding = 1): Promise<void> {
   const count = await prisma.riderProfile.count({ where: { familyId, accountId } });
-  if (count >= FAMILY_MAX_MEMBERS) throw new FamilyError(`Eine Familie hat höchstens ${FAMILY_MAX_MEMBERS} Mitglieder.`);
+  if (count + adding > FAMILY_MAX_MEMBERS) throw new FamilyError(`Eine Familie hat höchstens ${FAMILY_MAX_MEMBERS} Mitglieder.`);
 }
 
 /**
@@ -165,7 +169,7 @@ export async function addFamilyChild(viewer: FamilyPerson, targetProfileId: numb
     );
   }
   if (target.passwordHash != null || target._count.passkeys > 0) {
-    throw new FamilyError("Diese Person hat einen eigenen Zugang. Schick ihr den Einladungslink.");
+    throw new FamilyError("Diese Person hat einen eigenen Zugang. Hol sie über ihre E-Mail-Adresse dazu, dann bestätigt sie per Link.");
   }
   const familyId = await ensureFamily(viewer);
   await assertRoom(familyId, viewer.accountId);
