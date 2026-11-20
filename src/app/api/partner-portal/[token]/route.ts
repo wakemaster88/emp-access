@@ -32,11 +32,7 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
 
   const today = berlinYmd(new Date());
   const horizonEnd = addCalendarDays(today, partner.horizonDays);
-<<<<<<< HEAD
   const [venues, extras, events, busy, mail] = await Promise.all([
-=======
-  const [venues, extras, events, busy] = await Promise.all([
->>>>>>> origin/claude/project-thread-iy5t9v
     loadVenues(partner.accountId, partner.areaIds),
     prisma.venueExtra.findMany({
       where: { accountId: partner.accountId, areaId: { in: partner.areaIds }, active: true },
@@ -56,22 +52,16 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
       berlinDayRange(today).start,
       berlinDayRange(addCalendarDays(horizonEnd, 1)).start,
     ),
-<<<<<<< HEAD
     prisma.emailConfig.findUnique({ where: { accountId: partner.accountId }, select: { logoUrl: true, websiteUrl: true } }),
-=======
->>>>>>> origin/claude/project-thread-iy5t9v
   ]);
 
   return NextResponse.json({
     partner: {
       name: partner.name,
       accountName: partner.account.name,
-<<<<<<< HEAD
       logoUrl: partner.logoUrl,
       accountLogoUrl: mail?.logoUrl ?? null,
       websiteUrl: mail?.websiteUrl ?? null,
-=======
->>>>>>> origin/claude/project-thread-iy5t9v
       editLockHours: partner.editLockHours,
       horizon: { from: today, to: horizonEnd },
     },

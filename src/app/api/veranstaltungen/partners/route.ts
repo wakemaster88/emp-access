@@ -7,11 +7,7 @@ import { partnerSchema } from "@/lib/venue-event-rules";
 export const dynamic = "force-dynamic";
 
 const select = {
-<<<<<<< HEAD
   id: true, name: true, contactName: true, logoUrl: true, contactEmail: true, notifyEmail: true,
-=======
-  id: true, name: true, contactName: true, contactEmail: true, notifyEmail: true,
->>>>>>> origin/claude/project-thread-iy5t9v
   portalToken: true, portalEnabled: true, areaIds: true, editLockHours: true, horizonDays: true,
   _count: { select: { events: true } },
 } as const;
