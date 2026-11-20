@@ -30,7 +30,7 @@ export default async function VeranstaltungenEinstellungenPage() {
     prisma.eventPartner.findMany({
       where: { accountId },
       select: {
-        id: true, name: true, contactName: true, contactEmail: true, notifyEmail: true, portalToken: true,
+        id: true, name: true, contactName: true, logoUrl: true, contactEmail: true, notifyEmail: true, portalToken: true,
         portalEnabled: true, areaIds: true, editLockHours: true, horizonDays: true, _count: { select: { events: true } },
       },
       orderBy: { name: "asc" },

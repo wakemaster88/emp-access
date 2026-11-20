@@ -3887,6 +3887,8 @@ model EventPartner {
   name          String
   /// Ansprechpartner beim Partner (Freitext, fuer uns).
   contactName   String?
+  /// Logo des Partners (https-Bild-URL) fuer den Kopf seines Zugangs.
+  logoUrl       String?
   /// Mails an den Partner (neues Dokument, Bestaetigung, Absage).
   contactEmail  String?
   /// Mails an uns (Termin eingetragen, geaendert, abgesagt). Push geht immer.

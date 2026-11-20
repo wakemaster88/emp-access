@@ -47,6 +47,7 @@ export interface PartnerRow {
   id: number;
   name: string;
   contactName: string | null;
+  logoUrl: string | null;
   contactEmail: string | null;
   notifyEmail: string | null;
   portalToken: string | null;
@@ -394,6 +395,7 @@ function PartnerDialog({ target, venues, onClose }: { target: PartnerRow | "new"
   const existing = target && target !== "new" ? target : null;
   const [name, setName] = useState("");
   const [contactName, setContactName] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [notifyEmail, setNotifyEmail] = useState("");
   const [enabled, setEnabled] = useState(true);
@@ -410,6 +412,7 @@ function PartnerDialog({ target, venues, onClose }: { target: PartnerRow | "new"
     if (!target) return;
     setName(existing?.name ?? "");
     setContactName(existing?.contactName ?? "");
+    setLogoUrl(existing?.logoUrl ?? "");
     setContactEmail(existing?.contactEmail ?? "");
     setNotifyEmail(existing?.notifyEmail ?? "");
     setEnabled(existing?.portalEnabled ?? true);
@@ -431,6 +434,7 @@ function PartnerDialog({ target, venues, onClose }: { target: PartnerRow | "new"
       const body = {
         name: name.trim(),
         contactName: contactName.trim() || null,
+        logoUrl: logoUrl.trim() || null,
         contactEmail: contactEmail.trim() || null,
         notifyEmail: notifyEmail.trim() || null,
         portalEnabled: enabled,
@@ -484,6 +488,13 @@ function PartnerDialog({ target, venues, onClose }: { target: PartnerRow | "new"
           <div className="space-y-1.5">
             <Label htmlFor="vp-name">Name *</Label>
             <Input id="vp-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Firmenname" className="max-sm:h-11" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="vp-logo">Logo des Partners (optional)</Label>
+            <Input id="vp-logo" type="url" inputMode="url" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} maxLength={500}
+              placeholder="https://…/logo.png" className="max-sm:h-11" />
+            <p className="text-xs text-muted-foreground">Bild-Adresse, z. B. von der Website des Partners. Erscheint oben in seinem Zugang; ohne Logo der Anfangsbuchstabe. Euer Logo kommt aus E-Mail-Einstellungen.</p>
           </div>
 
           <label className="glass-tile flex min-h-11 cursor-pointer items-center justify-between gap-3 px-4 py-2">

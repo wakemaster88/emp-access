@@ -32,7 +32,7 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
 
   const today = berlinYmd(new Date());
   const horizonEnd = addCalendarDays(today, partner.horizonDays);
-  const [venues, extras, events, busy] = await Promise.all([
+  const [venues, extras, events, busy, mail] = await Promise.all([
     loadVenues(partner.accountId, partner.areaIds),
     prisma.venueExtra.findMany({
       where: { accountId: partner.accountId, areaId: { in: partner.areaIds }, active: true },
@@ -52,12 +52,16 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
       berlinDayRange(today).start,
       berlinDayRange(addCalendarDays(horizonEnd, 1)).start,
     ),
+    prisma.emailConfig.findUnique({ where: { accountId: partner.accountId }, select: { logoUrl: true, websiteUrl: true } }),
   ]);
 
   return NextResponse.json({
     partner: {
       name: partner.name,
       accountName: partner.account.name,
+      logoUrl: partner.logoUrl,
+      accountLogoUrl: mail?.logoUrl ?? null,
+      websiteUrl: mail?.websiteUrl ?? null,
       editLockHours: partner.editLockHours,
       horizon: { from: today, to: horizonEnd },
     },
