@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { berlinOffset } from "@/lib/anny-availability";
 import { checkinPhotoUrl } from "@/lib/photo-url";
+import { withRiderView } from "@/lib/customer-person";
 
 export async function GET(
   request: NextRequest,
@@ -73,6 +74,12 @@ export async function GET(
     // Auftrag, zu dem `addOns` gehoert. Das Frontend zaehlt das Material je
     // Auftrag, weil ein Auftrag mehrere Tickets umfasst.
     annyOrderId: true,
+    // Abo: Kundenkonto und Person, die damit faehrt. Die Antwort zeigt Name
+    // und Geburtsdatum der Person statt der Daten am Ticket (bei anny die
+    // des Kontoinhabers), dazu `riderOpen` fuer „Fahrer offen“.
+    customerId: true,
+    riderProfileId: true,
+    riderProfile: { select: { firstName: true, lastName: true, birthDate: true } },
   } as const;
 
   const [
@@ -387,7 +394,7 @@ export async function GET(
   }
 
   const enrichedTickets = tickets.filter((t) => !hiddenWeekTicketIds.has(t.id)).map((t) => ({
-    ...t,
+    ...withRiderView(t),
     profileImage: photoUrl(t),
     checkedIn: checkedInForTicket(t),
     infoPending:
@@ -411,7 +418,7 @@ export async function GET(
   const enrichedSubscriptions = subscriptions.map((sub) => ({
     ...sub,
     tickets: sub.tickets.map((t) => ({
-      ...t,
+      ...withRiderView(t),
       profileImage: photoUrl(t),
       checkedIn: checkedInForTicket(t),
       infoPending:

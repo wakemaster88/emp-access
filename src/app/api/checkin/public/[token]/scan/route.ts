@@ -5,6 +5,7 @@ import { berlinOffset } from "@/lib/anny-availability";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { redeemBenefitVoucher } from "@/lib/gamification-service";
+import { riderView } from "@/lib/customer-person";
 
 export async function POST(
   request: NextRequest,
@@ -44,6 +45,7 @@ export async function POST(
         accessArea: { select: { id: true, name: true } },
         subscription: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true } },
         service: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true } },
+        riderProfile: { select: { firstName: true, lastName: true, birthDate: true } },
       },
     });
     if (candidates.length > 0) {
@@ -151,13 +153,17 @@ export async function POST(
     checkedIn = !!scanToday;
   }
 
+  // Abo: Name der Person, die damit fährt (lib/customer-person).
+  const rider = riderView(ticket);
   return NextResponse.json({
     found: true,
     ticket: {
       id: ticket.id,
       name: ticket.name,
-      firstName: ticket.firstName,
-      lastName: ticket.lastName,
+      firstName: rider.firstName,
+      lastName: rider.lastName,
+      birthDate: rider.birthDate,
+      riderOpen: rider.riderOpen,
       ticketTypeName: ticket.ticketTypeName,
       status: ticket.status,
       validityType: ticket.validityType,

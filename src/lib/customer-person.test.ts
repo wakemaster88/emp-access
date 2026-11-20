@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aboCategory, aboNamesRider, isAdultAt, isKidsSubscriptionName, personDataKey, pickHolder, planPersons, type PlanTicket } from "./customer-person";
+import { aboCategory, aboNamesRider, isAdultAt, isKidsSubscriptionName, personDataKey, pickHolder, planPersons, riderDataEntered, riderView, withRiderView, type PlanTicket } from "./customer-person";
 
 const NOW = new Date("2026-11-20T12:00:00Z");
 const d = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
@@ -130,4 +130,27 @@ test("planPersons: gekündigtes Abo neben dem neuen zählt nicht als zweite Pers
   const plan = planPersons([canceled, fresh], [], NOW);
   assert.deepEqual(plan.open, []);
   assert.equal(plan.create.length, 1);
+});
+
+test("riderView: Person mit Namen geht vor, sonst Daten am Ticket", () => {
+  const base = { firstName: "Eva", lastName: "Muster", birthDate: d("1981-03-04"), subscriptionId: 5, customerId: 7 };
+  const kid = riderView({ ...base, riderProfileId: 3, riderProfile: { firstName: "Mia", lastName: "Muster", birthDate: d("2014-06-01") } });
+  assert.deepEqual([kid.firstName, kid.birthDate?.toISOString().slice(0, 10), kid.riderOpen], ["Mia", "2014-06-01", false]);
+  const empty = riderView({ ...base, riderProfileId: 3, riderProfile: { firstName: null, lastName: " ", birthDate: null } });
+  assert.equal(empty.firstName, "Eva");
+  const open = riderView({ ...base, riderProfileId: null });
+  assert.equal(open.riderOpen, true);
+  assert.equal(riderView({ ...base, customerId: null, riderProfileId: null }).riderOpen, false);
+  assert.equal(riderView({ ...base, subscriptionId: null, riderProfileId: null }).riderOpen, false);
+  const t = withRiderView({ id: 1, ...base, riderProfileId: 3, riderProfile: { firstName: "Mia", lastName: null, birthDate: null } });
+  assert.equal("riderProfile" in t, false);
+  assert.equal(t.firstName, "Mia");
+});
+
+test("riderDataEntered: nur neue Daten zählen", () => {
+  const ticket = { firstName: "Eva", lastName: "Muster", birthDate: d("1981-03-04") };
+  assert.equal(riderDataEntered(ticket, { ...ticket }), false);
+  assert.equal(riderDataEntered(ticket, { firstName: " eva ", lastName: "MUSTER", birthDate: d("1981-03-04") }), false);
+  assert.equal(riderDataEntered(ticket, { firstName: "Mia", lastName: "Muster", birthDate: d("2014-06-01") }), true);
+  assert.equal(riderDataEntered(ticket, { firstName: "", lastName: null, birthDate: d("2014-06-01") }), false);
 });

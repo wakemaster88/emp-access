@@ -205,3 +205,51 @@ export function pickHolder(candidates: HolderCandidate[], customerEmail: string,
   pool.sort((a, b) => score(a) - score(b) || a.id - b.id);
   return pool[0]?.id ?? null;
 }
+
+export interface RiderSource {
+  firstName: string | null;
+  lastName: string | null;
+  birthDate: Date | null;
+  subscriptionId: number | null;
+  customerId: number | null;
+  riderProfileId: number | null;
+  riderProfile?: { firstName: string | null; lastName: string | null; birthDate: Date | null } | null;
+}
+
+export interface RiderView {
+  firstName: string | null;
+  lastName: string | null;
+  birthDate: Date | null;
+  /** Abo mit Kundenkonto, aber noch ohne Person: wer fährt, ist unbekannt. */
+  riderOpen: boolean;
+}
+
+/**
+ * Name und Geburtsdatum, die Kasse, Scanner und Backend für ein Ticket zeigen:
+ * die der Person, wenn das Abo einer Person mit Namen gehört, sonst die am
+ * Ticket (bei anny die des Kontoinhabers).
+ */
+export function riderView(t: RiderSource): RiderView {
+  const p = t.riderProfile;
+  const riderOpen = t.subscriptionId != null && t.customerId != null && t.riderProfileId == null;
+  if (p && (p.firstName?.trim() || p.lastName?.trim())) {
+    return { firstName: p.firstName, lastName: p.lastName, birthDate: p.birthDate, riderOpen };
+  }
+  return { firstName: t.firstName, lastName: t.lastName, birthDate: t.birthDate, riderOpen };
+}
+
+/** Ticket mit den Daten der Person statt der Rohdaten; `riderProfile` fällt weg. */
+export function withRiderView<T extends RiderSource>(t: T): Omit<T, "riderProfile"> & RiderView {
+  const { riderProfile: _omit, ...rest } = t;
+  void _omit;
+  return { ...rest, ...riderView(t) };
+}
+
+/** Hat die Kasse andere Fahrer-Daten eingetragen, als am Abo stehen? */
+export function riderDataEntered(
+  ticket: { firstName: string | null; lastName: string | null; birthDate: Date | null },
+  input: { firstName: string | null; lastName: string | null; birthDate: Date | null },
+): boolean {
+  if (!normalizeName(input.firstName) && !normalizeName(input.lastName)) return false;
+  return personDataKey(input) !== personDataKey(ticket);
+}

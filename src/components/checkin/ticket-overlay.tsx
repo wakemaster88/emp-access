@@ -11,7 +11,7 @@ import { IconChip } from "@/components/ui/icon-chip";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Textarea } from "@/components/ui/textarea";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Camera, Loader2, X, Package, Fingerprint, Pencil, Printer, TicketX, Plus, StickyNote, Pause, Play, ClipboardList, Mail } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Camera, Loader2, X, Package, Fingerprint, Pencil, Printer, TicketX, Plus, StickyNote, Pause, Play, ClipboardList, Mail, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PackageSearch, Layers } from "lucide-react";
 import { printTicket } from "./checkin-print";
@@ -157,6 +157,19 @@ export function TicketOverlay({
     }
   }, [editBirthDate]);
 
+  // „Fahrer offen“: Am Abo stehen die Daten des Kontoinhabers. Die Kasse trägt
+  // den Menschen ein, der damit fährt; der Nachname bleibt als Vorschlag stehen.
+  const riderOpen = !!ticket.riderOpen;
+  const aboWithoutEmail = isSub && !ticket.email?.trim();
+  const openRiderEdit = () => {
+    setEditFirstName("");
+    setEditLastName(ticket.lastName ?? "");
+    setEditBirthDate("");
+    setEditEmail(ticket.email ?? "");
+    setEmailError(false);
+    setEditMode("person");
+  };
+
   return (
     <div className={cn("fixed inset-0 z-50 flex items-end sm:items-center justify-center", overlayScrimClass)} onClick={onClose}>
       <div
@@ -227,13 +240,54 @@ export function TicketOverlay({
           </Button>
         </div>
 
+        {/* Abo: Fahrer offen oder ohne Adresse. Hinweis mit dem nächsten Schritt. */}
+        {(riderOpen || aboWithoutEmail) && editMode !== "person" && (
+          <div className="px-5 py-3 border-b border-border space-y-2">
+            {riderOpen && (
+              <Notice
+                tone="warning"
+                icon={UserPlus}
+                title="Fahrer offen"
+                compact
+                action={
+                  <Button variant="outline" onClick={openRiderEdit} className="h-11 font-semibold sm:h-14">
+                    Eintragen
+                  </Button>
+                }
+              >
+                <p>Am Abo stehen die Daten des Kontoinhabers. Trag ein, wer damit fährt, bevor du eine Karte ausgibst.</p>
+              </Notice>
+            )}
+            {aboWithoutEmail && (
+              <Notice
+                tone="warning"
+                icon={Mail}
+                title="E-Mail fehlt"
+                compact
+                action={
+                  <Button variant="outline" onClick={() => setEditMode("person")} className="h-11 font-semibold sm:h-14">
+                    Eintragen
+                  </Button>
+                }
+              >
+                <p>Ohne Adresse findet der Kunde sein Abo nicht in der App. Frag danach.</p>
+              </Notice>
+            )}
+          </div>
+        )}
+
         {/* Person-Edit */}
         {editMode === "person" && (
           <div className="px-5 py-4 border-b border-border space-y-3 bg-glass-tile">
             <p className="text-label">
               <Users className="h-3.5 w-3.5 inline mr-1.5" />
-              Person
+              {riderOpen ? "Fahrer" : "Person"}
             </p>
+            {riderOpen && (
+              <p className="text-xs text-muted-foreground">
+                Vorname, Nachname und Geburtsdatum der Person, die mit diesem Abo fährt.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <label className="text-[13px] font-medium text-muted-foreground">Vorname</label>
@@ -839,14 +893,32 @@ export function TicketOverlay({
               variant="secondary"
               onClick={() => { setEditMode(editMode === "rfid" ? null : "rfid"); setRfidInput(ticket.rfidCode ?? ""); }}
               className="h-12 font-semibold sm:h-14"
+              aria-expanded={editMode === "rfid"}
             >
               <Fingerprint />
               RFID {ticket.rfidCode ? "ändern" : "setzen"}
             </Button>
           </div>
 
+          {/* Karte ausgeben nur mit Fahrer: bei „Fahrer offen“ erst die Person. */}
+          {editMode === "rfid" && riderOpen && (
+            <Notice
+              tone="warning"
+              icon={UserPlus}
+              title="Erst den Fahrer eintragen"
+              compact
+              action={
+                <Button onClick={openRiderEdit} className="h-11 font-semibold sm:h-14">
+                  Fahrer eintragen
+                </Button>
+              }
+            >
+              <p>Die Karte gehört der Person, die mit dem Abo fährt.</p>
+            </Notice>
+          )}
+
           {/* RFID input */}
-          {editMode === "rfid" && (
+          {editMode === "rfid" && !riderOpen && (
             <div className="space-y-2">
               <div className="flex gap-2">
                 <RfidInput

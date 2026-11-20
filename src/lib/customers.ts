@@ -10,13 +10,15 @@
  *   zuordnen (Backend, Shop-Monitor).
  * - `runCustomerTick`: Cron tick-5min, holt alle Abos mit Adresse nach, die
  *   noch kein Konto haben (Bestandsdaten, verpasste Schreibwege).
+ * - `assignRider`, `updatePersonData`: Kasse und Abo-Seite sagen, wer mit
+ *   einem Abo fährt, und pflegen Name und Geburtsdatum der Person.
  *
  * Tagestickets bekommen kein Konto; sie finden ihr Profil weiter über die
  * Adresse (`day-guest.ts`).
  */
 import { prisma } from "./prisma";
 import { cleanEmail } from "./abo-email";
-import { aboCategory, aboNamesRider, isKidsSubscriptionName, pickHolder, planPersons } from "./customer-person";
+import { aboCategory, aboNamesRider, isKidsSubscriptionName, personDataKey, pickHolder, planPersons } from "./customer-person";
 import { newRiderToken } from "./rider-app";
 
 /** Namensraum für pg_advisory_xact_lock(int, int): ein Lauf je Konto zugleich. */
@@ -274,4 +276,100 @@ export async function holderPersonForEmail(
   );
   const p = customer.persons.find((x) => x.id === id);
   return p ? { id: p.id, token: p.token, email: p.email } : null;
+}
+
+/** Fehler mit Meldung für die Oberfläche (deutsch) und HTTP-Status. */
+export class RiderError extends Error {
+  constructor(message: string, readonly status: number = 400) {
+    super(message);
+  }
+}
+
+export type RiderInput =
+  | { personId: number }
+  | { firstName: string | null; lastName: string | null; birthDate: Date | null };
+
+function cleanName(v: string | null | undefined): string | null {
+  const s = v?.trim().replace(/\s+/g, " ");
+  return s ? s.slice(0, 80) : null;
+}
+
+/**
+ * Sagt, wer mit einem Abo fährt: eine Person desselben Kundenkontos oder eine
+ * neue mit Vorname, Nachname und Geburtsdatum. Gibt es im Konto schon eine
+ * Person mit genau diesen Daten, bekommt sie das Abo.
+ */
+export async function assignRider(
+  accountId: number,
+  ticketId: number,
+  input: RiderInput,
+): Promise<{ personId: number; created: boolean }> {
+  const ticket = await prisma.ticket.findFirst({
+    where: { id: ticketId, accountId },
+    select: { id: true, subscriptionId: true, customerId: true },
+  });
+  if (!ticket) throw new RiderError("Abo nicht gefunden.", 404);
+  if (ticket.subscriptionId == null) throw new RiderError("Einen Fahrer gibt es nur bei Abos.");
+  const customerId = ticket.customerId;
+  if (customerId == null) {
+    throw new RiderError("Das Abo hat noch keine E-Mail-Adresse. Trag sie zuerst ein, dann den Fahrer.");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS}::int, ${customerId}::int)`;
+    let personId: number;
+    let created = false;
+    if ("personId" in input) {
+      const person = await tx.riderProfile.findFirst({
+        where: { id: input.personId, accountId, customerId },
+        select: { id: true },
+      });
+      if (!person) throw new RiderError("Diese Person gehört nicht zum Kundenkonto des Abos.");
+      personId = person.id;
+    } else {
+      const data = { firstName: cleanName(input.firstName), lastName: cleanName(input.lastName), birthDate: input.birthDate };
+      if (!data.firstName && !data.lastName) throw new RiderError("Bitte Vor- oder Nachnamen des Fahrers eintragen.");
+      if (data.birthDate && (isNaN(data.birthDate.getTime()) || data.birthDate.getTime() > Date.now())) {
+        throw new RiderError("Das Geburtsdatum stimmt nicht.");
+      }
+      const key = personDataKey(data);
+      const persons = await tx.riderProfile.findMany({
+        where: { accountId, customerId },
+        select: { id: true, firstName: true, lastName: true, birthDate: true },
+      });
+      const same = persons.find((p) => personDataKey(p) === key);
+      if (same) {
+        personId = same.id;
+      } else {
+        const person = await tx.riderProfile.create({
+          data: { token: newRiderToken(), accountId, customerId, ...data },
+          select: { id: true },
+        });
+        personId = person.id;
+        created = true;
+      }
+    }
+    await tx.ticket.update({ where: { id: ticket.id }, data: { riderProfileId: personId } });
+    return { personId, created };
+  });
+}
+
+/** Name und Geburtsdatum einer Person ändern (nur übergebene Felder). */
+export async function updatePersonData(
+  accountId: number,
+  personId: number,
+  input: { firstName?: string | null; lastName?: string | null; birthDate?: Date | null },
+): Promise<void> {
+  const data: { firstName?: string | null; lastName?: string | null; birthDate?: Date | null } = {};
+  if (input.firstName !== undefined) data.firstName = cleanName(input.firstName);
+  if (input.lastName !== undefined) data.lastName = cleanName(input.lastName);
+  if (input.birthDate !== undefined) {
+    if (input.birthDate && (isNaN(input.birthDate.getTime()) || input.birthDate.getTime() > Date.now())) {
+      throw new RiderError("Das Geburtsdatum stimmt nicht.");
+    }
+    data.birthDate = input.birthDate;
+  }
+  if (Object.keys(data).length === 0) return;
+  const r = await prisma.riderProfile.updateMany({ where: { id: personId, accountId }, data });
+  if (r.count === 0) throw new RiderError("Person nicht gefunden.", 404);
 }
