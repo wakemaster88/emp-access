@@ -15,7 +15,10 @@ import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Loader2, Megaphone, Plus, Save, Trash2 } from "lucide-react";
+import { Bell, Loader2, Megaphone, Plus, Save, Trash2 } from "lucide-react";
+import { berlinHour, berlinYmd } from "@/lib/berlin-day";
+import { offerAnnounceBlock, offerPushText } from "@/lib/rider-announce-rules";
+import { PushAnnounceField, type PushReach } from "./push-announce-field";
 
 export interface OfferAdminRow {
   id: number;
@@ -27,6 +30,10 @@ export interface OfferAdminRow {
   active: boolean;
   /** Heute in der App sichtbar. */
   visible: boolean;
+  pushPlanned: boolean;
+  /** ISO-Zeit des Push-Versands oder null. */
+  pushedAt: string | null;
+  pushSent: number | null;
 }
 
 interface FormState {
@@ -36,9 +43,11 @@ interface FormState {
   validFrom: string;
   validTo: string;
   active: boolean;
+  push: boolean;
 }
 
-const EMPTY: FormState = { id: null, title: "", text: "", validFrom: "", validTo: "", active: true };
+/** Neue Angebote melden wir standardmäßig per Push; abschalten geht im Dialog. */
+const EMPTY: FormState = { id: null, title: "", text: "", validFrom: "", validTo: "", active: true, push: true };
 
 function fmt(ymd: string | null): string {
   if (!ymd) return "";
@@ -54,7 +63,7 @@ function rangeText(o: { validFrom: string | null; validTo: string | null }): str
 }
 
 /** Angebote, die Abo-Fahrer auf der Startseite der Kunden-App sehen. */
-export function OffersCard({ offers }: { offers: OfferAdminRow[] }) {
+export function OffersCard({ offers, reach }: { offers: OfferAdminRow[]; reach: PushReach }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -67,6 +76,7 @@ export function OffersCard({ offers }: { offers: OfferAdminRow[] }) {
     setConfirmDelete(false);
   };
   const set = (patch: Partial<FormState>) => setForm((f) => (f ? { ...f, ...patch } : f));
+  const selected = form?.id != null ? offers.find((o) => o.id === form.id) : undefined;
   const valid =
     !!form &&
     form.title.trim().length > 0 &&
@@ -90,6 +100,7 @@ export function OffersCard({ offers }: { offers: OfferAdminRow[] }) {
                 validFrom: form.validFrom || null,
                 validTo: form.validTo || null,
                 active: form.active,
+                push: form.push,
               }),
             },
       );
@@ -147,10 +158,11 @@ export function OffersCard({ offers }: { offers: OfferAdminRow[] }) {
               <TableRow
                 key={o.id}
                 className="cursor-pointer max-sm:h-11"
-                onClick={() => open({ id: o.id, title: o.title, text: o.text ?? "", validFrom: o.validFrom ?? "", validTo: o.validTo ?? "", active: o.active })}
+                onClick={() => open({ id: o.id, title: o.title, text: o.text ?? "", validFrom: o.validFrom ?? "", validTo: o.validTo ?? "", active: o.active, push: o.pushPlanned })}
               >
                 <TableCell className="whitespace-normal">
                   <span className="font-medium text-foreground">{o.title}</span>
+                  {o.pushedAt && <Bell className="ml-1.5 inline h-3.5 w-3.5 text-muted-foreground" aria-label="Push gesendet" />}
                   {o.text && <div className="text-xs text-muted-foreground">{o.text}</div>}
                   <div className="text-xs text-muted-foreground sm:hidden">{rangeText(o)}</div>
                 </TableCell>
@@ -196,6 +208,20 @@ export function OffersCard({ offers }: { offers: OfferAdminRow[] }) {
                 <Label htmlFor="of-active">Aktiv</Label>
                 <Switch id="of-active" checked={form.active} onCheckedChange={(v) => set({ active: v })} />
               </div>
+
+              <PushAnnounceField
+                id="of-push"
+                checked={form.push}
+                onChange={(v) => set({ push: v })}
+                preview={offerPushText({ title: form.title.trim() || "Titel", text: form.text, toYmd: form.validTo || null })}
+                reach={reach}
+                status={selected ? { pushedAt: selected.pushedAt, pushSent: selected.pushSent } : null}
+                block={offerAnnounceBlock(
+                  { title: form.title, active: form.active, fromYmd: form.validFrom || null, toYmd: form.validTo || null, pushPlanned: form.push, pushedAt: null },
+                  berlinYmd(new Date()),
+                  berlinHour(new Date()),
+                )}
+              />
 
               {error && <Notice tone="danger" compact title={error} />}
               {confirmDelete && (

@@ -212,7 +212,7 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   Betriebsmeldungen für Mitarbeiter gehen nie an Fahrer. Höchstens 10 Geräte
   je Profil; als Adresse sind nur die Push-Dienste der Browser erlaubt
   (`isPushServiceUrl` in `src/lib/rider-push.ts`).
-- Gesendet wird nur an die betroffene Person und nur bei einem **neuen
+- Persönlich gesendet wird nur an die betroffene Person bei einem **neuen
   Award** (`notifyAward`, auch ohne Gutschein) oder einem **neuen Gutschein**
   aus einer Challenge (`notifyVoucher`). Der Versand läuft
   neben dem Scan her und hält ihn nicht auf. „Statistik neu berechnen“ vergibt
@@ -224,6 +224,27 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 - **Verlängerungs-Hinweis**: Das Dashboard der App zeigt in den letzten 30
   Tagen der Laufzeit und nach dem Ablauf eine Karte mit dem Enddatum
   (`renewalHint` in `src/lib/gamification.ts`). Es geht keine Nachricht raus.
+
+### Push bei neuen Angeboten und Challenges (20.11.2026)
+
+- Aaron: „bei neuen angeboten, challenges soll eine push nachricht an die
+  kunden gehen“. Beim Anlegen in Kunden App › Angebote bzw. Challenges gibt es
+  den Schalter **Push an Kunden senden** (bei neuen Einträgen an) mit Vorschau
+  der Nachricht und der Zahl erreichbarer Kunden und Geräte.
+- Gesendet wird **einmal** je Eintrag (`pushPlanned`, `pushedAt`, `pushSent`
+  an `RiderOffer` und `Challenge`), an jedes Gerät mit eingeschalteten
+  Benachrichtigungen. Bearbeiten meldet nichts erneut; ein noch nicht
+  gesendeter Push lässt sich im Dialog wieder abschalten.
+- Nie gesendet: Titel mit „TEST:“, ausgeschaltete Einträge, abgelaufene
+  Zeiträume, Konten mit ausgeschalteter Kunden-App, ohne VAPID-Keys (lokal).
+- Zeitpunkt: Angebot, sobald es in der App sichtbar ist („Sichtbar ab“),
+  Challenge sofort (sie erscheint schon vor dem Start). Nur 9 bis 21 Uhr
+  Berlin; sonst übernimmt der 5-Minuten-Cron (`runAnnouncementTick`) am
+  Morgen. Ein ausgeschalteter Eintrag mit Push-Plan meldet sich beim
+  Einschalten.
+- Code: Regeln und Texte `src/lib/rider-announce-rules.ts` (mit Tests),
+  Versand `src/lib/rider-announce.ts`; der Eintrag wird vor dem Senden als
+  gesendet markiert, damit Speichern und Cron nie doppelt melden.
 
 
 ## Tagesgäste in der Kunden-App und Abo-Rechner, Etappe 7 (15.11.2026)

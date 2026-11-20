@@ -16,7 +16,10 @@ import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Loader2, Plus, Save, Swords, Trash2 } from "lucide-react";
+import { Bell, Loader2, Plus, Save, Swords, Trash2 } from "lucide-react";
+import { berlinHour } from "@/lib/berlin-day";
+import { challengeAnnounceBlock, challengePushText } from "@/lib/rider-announce-rules";
+import { PushAnnounceField, type PushReach } from "./push-announce-field";
 import {
   CHALLENGE_KIND_LABEL, CHALLENGE_METRICS, METRIC_LABEL, challengeConditionText,
   type ChallengeKind, type ChallengePhase, type GamiMetric,
@@ -41,6 +44,10 @@ export interface ChallengeAdminRow {
   /** Fahrer mit mindestens einem Start im Zeitraum. */
   participants: number;
   winners: number;
+  pushPlanned: boolean;
+  /** ISO-Zeit des Push-Versands oder null. */
+  pushedAt: string | null;
+  pushSent: number | null;
 }
 
 interface FormState {
@@ -57,6 +64,7 @@ interface FormState {
   voucherLabel: string;
   voucherValidDays: string;
   active: boolean;
+  push: boolean;
 }
 
 function toForm(c: ChallengeAdminRow): FormState {
@@ -74,6 +82,7 @@ function toForm(c: ChallengeAdminRow): FormState {
     voucherLabel: c.voucherLabel ?? "",
     voucherValidDays: c.voucherValidDays != null ? String(c.voucherValidDays) : "",
     active: c.active,
+    push: c.pushPlanned,
   };
 }
 
@@ -89,7 +98,9 @@ const PHASE: Record<ChallengePhase, { label: string; variant: "info" | "success"
 };
 
 /** Challenges anlegen und ändern: „Aufgabe erfüllt“ oder „Top X“, je mit Zeitraum und optionalem Gutschein. */
-export function ChallengesCard({ challenges, today }: { challenges: ChallengeAdminRow[]; today: string }) {
+export function ChallengesCard({
+  challenges, today, reach,
+}: { challenges: ChallengeAdminRow[]; today: string; reach: PushReach }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -99,6 +110,7 @@ export function ChallengesCard({ challenges, today }: { challenges: ChallengeAdm
   const empty: FormState = {
     id: null, name: "", description: "", kind: "TASK", metric: "VISIT_DAYS", threshold: "5", topCount: "3",
     startDate: today, endDate: today, withVoucher: true, voucherLabel: "", voucherValidDays: "30", active: true,
+    push: true,
   };
   const open = (f: FormState) => {
     setForm(f);
@@ -146,6 +158,7 @@ export function ChallengesCard({ challenges, today }: { challenges: ChallengeAdm
             voucherLabel: form.withVoucher ? form.voucherLabel.trim() : null,
             voucherValidDays: form.withVoucher ? validDays : null,
             active: form.active,
+            push: form.push,
           }),
         },
       );
@@ -225,6 +238,7 @@ export function ChallengesCard({ challenges, today }: { challenges: ChallengeAdm
               <TableRow key={c.id} className="cursor-pointer max-sm:h-11" onClick={() => open(toForm(c))}>
                 <TableCell className="max-sm:whitespace-normal">
                   <span className="font-medium text-foreground">{c.name}</span>
+                  {c.pushedAt && <Bell className="ml-1.5 inline h-3.5 w-3.5 text-muted-foreground" aria-label="Push gesendet" />}
                   <div className="text-xs text-muted-foreground md:hidden">
                     <span className="sm:hidden">{challengeConditionText(c)} · </span>
                     {fmt(c.startDate)} bis {fmt(c.endDate)}
@@ -330,6 +344,35 @@ export function ChallengesCard({ challenges, today }: { challenges: ChallengeAdm
                 <Label htmlFor="ch-active">Aktiv</Label>
                 <Switch id="ch-active" checked={form.active} onCheckedChange={(v) => set({ active: v })} />
               </div>
+
+              {!locked && (
+                <PushAnnounceField
+                  id="ch-push"
+                  checked={form.push}
+                  onChange={(v) => set({ push: v })}
+                  preview={challengePushText(
+                    {
+                      name: form.name.trim() || "Name",
+                      description: form.description,
+                      kind: form.kind,
+                      metric: form.metric,
+                      threshold: form.kind === "TASK" ? threshold || 0 : null,
+                      topCount: form.kind === "TOP_X" ? topCount || 0 : null,
+                      startYmd: form.startDate,
+                      endYmd: form.endDate,
+                      voucherLabel: form.withVoucher && form.voucherLabel.trim() ? form.voucherLabel.trim() : null,
+                    },
+                    today,
+                  )}
+                  reach={reach}
+                  status={selected ? { pushedAt: selected.pushedAt, pushSent: selected.pushSent } : null}
+                  block={challengeAnnounceBlock(
+                    { name: form.name, active: form.active, startYmd: form.startDate, endYmd: form.endDate, pushPlanned: form.push, pushedAt: null },
+                    today,
+                    berlinHour(new Date()),
+                  )}
+                />
+              )}
 
               {error && <Notice tone="danger" compact title={error} />}
 

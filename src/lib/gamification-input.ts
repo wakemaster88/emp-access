@@ -66,6 +66,8 @@ export const challengeSchema = z
     voucherLabel: z.string().trim().max(80).nullable(),
     voucherValidDays: z.number().int().min(1).max(730).nullable(),
     active: z.boolean(),
+    /** Push an die Kunden-App senden; fehlt der Wert, bleibt der Plan, wie er ist. */
+    push: z.boolean().optional(),
   })
   .refine((c) => c.startDate <= c.endDate, { message: "Das Ende liegt vor dem Start" })
   .refine((c) => (c.kind === "TASK" ? c.threshold != null : c.topCount != null), {
@@ -100,6 +102,8 @@ export const offerSchema = z
     validFrom: ymd.nullable(),
     validTo: ymd.nullable(),
     active: z.boolean(),
+    /** Push an die Kunden-App senden; fehlt der Wert, bleibt der Plan, wie er ist. */
+    push: z.boolean().optional(),
   })
   .refine((o) => !o.validFrom || !o.validTo || o.validFrom <= o.validTo, { message: "Das Ende liegt vor dem Start" });
 
@@ -113,4 +117,13 @@ export function normalizeOffer(input: OfferInput) {
     validTo: input.validTo ? new Date(`${input.validTo}T00:00:00.000Z`) : null,
     active: input.active,
   };
+}
+
+/**
+ * Push-Plan beim Speichern: nur ändern, wenn der Schalter mitkommt und noch
+ * nichts gesendet ist. Ein gesendeter Push lässt sich nicht zurückholen.
+ */
+export function pushPlanPatch(push: boolean | undefined, pushedAt: Date | null): { pushPlanned?: boolean } {
+  if (push === undefined || pushedAt) return {};
+  return { pushPlanned: push };
 }

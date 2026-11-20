@@ -3566,6 +3566,12 @@ model Challenge {
   active           Boolean          @default(true)
   /// TOP_X: Zeitpunkt der Auswertung; NULL = noch nicht ausgewertet.
   settledAt        DateTime?
+  /// Push an die Kunden-App gewünscht (Schalter beim Anlegen). Gesendet wird
+  /// einmal, sobald die Challenge aktiv ist (siehe `rider-announce.ts`).
+  pushPlanned      Boolean          @default(false)
+  pushedAt         DateTime?
+  /// Erreichte Geräte beim Versand.
+  pushSent         Int?
   accountId        Int
   account          Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   awards           ChallengeAward[]
@@ -3605,6 +3611,12 @@ model RiderOffer {
   validTo   DateTime? @db.Date
   active    Boolean   @default(true)
   sortOrder Int       @default(0)
+  /// Push an die Kunden-App gewünscht; gesendet wird einmal, sobald das
+  /// Angebot sichtbar ist (siehe `rider-announce.ts`).
+  pushPlanned Boolean   @default(false)
+  pushedAt    DateTime?
+  /// Erreichte Geräte beim Versand.
+  pushSent    Int?
   accountId Int
   account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt DateTime  @default(now())

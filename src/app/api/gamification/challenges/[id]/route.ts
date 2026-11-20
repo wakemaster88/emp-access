@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
-import { challengeSchema, normalizeChallenge } from "@/lib/gamification-input";
+import { challengeSchema, normalizeChallenge, pushPlanPatch } from "@/lib/gamification-input";
+import { runAccountAnnouncements } from "@/lib/rider-announce";
 
 async function resolve(params: Promise<{ id: string }>) {
   const session = await gamiAdminSession();
@@ -11,12 +12,12 @@ async function resolve(params: Promise<{ id: string }>) {
   }
   const existing = await session.db.challenge.findFirst({
     where: { id, accountId: session.accountId },
-    select: { id: true, settledAt: true },
+    select: { id: true, settledAt: true, pushedAt: true },
   });
   if (!existing) {
     return { error: NextResponse.json({ error: "Nicht gefunden" }, { status: 404 }) };
   }
-  return { ...session, id, settledAt: existing.settledAt };
+  return { ...session, id, settledAt: existing.settledAt, pushedAt: existing.pushedAt };
 }
 
 /**
@@ -34,8 +35,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const data = normalizeChallenge(parsed.data);
   const challenge = await ctx.db.challenge.update({
     where: { id: ctx.id },
-    data: ctx.settledAt ? { name: data.name, description: data.description, active: data.active } : data,
+    data: ctx.settledAt
+      ? { name: data.name, description: data.description, active: data.active }
+      : { ...data, ...pushPlanPatch(parsed.data.push, ctx.pushedAt) },
   });
+  // Bearbeiten allein meldet nichts; nur ein geplanter, noch offener Push geht jetzt raus.
+  if (challenge.pushPlanned && !challenge.pushedAt) {
+    const accountId = ctx.accountId;
+    after(() => runAccountAnnouncements(accountId).catch((e) => console.error("[announce]", e)));
+  }
   return NextResponse.json(challenge);
 }
 
