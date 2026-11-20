@@ -69,7 +69,11 @@ export function EventRow({ event, showArea, onOpen }: { event: EventRowData; sho
         event.status === "CANCELED" && "opacity-70",
       )}
     >
+<<<<<<< HEAD
       <span className="flex h-12 w-14 shrink-0 flex-col items-center justify-center rounded-control bg-foreground/[0.05] dark:bg-white/[0.06]">
+=======
+      <span className="flex size-12 shrink-0 flex-col items-center justify-center rounded-control bg-foreground/[0.05] dark:bg-white/[0.06]">
+>>>>>>> origin/claude/project-thread-iy5t9v
         <span className="text-[11px] text-muted-foreground">{formatEventDay(event.date).slice(0, 2)}</span>
         <span className="text-base leading-5 font-semibold tabular-nums">{d}.{m}.</span>
       </span>
