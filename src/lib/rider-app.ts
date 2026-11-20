@@ -345,8 +345,9 @@ export async function loadRider(
     accountId,
     accountName: profile.account.name,
     ticketIds,
+    // Vorname der Person (am Kids-Abo steht bei anny der Name der Eltern), sonst vom Abo.
     // Tagestickets tragen keinen Namen: dann grüßt die App mit dem Spitznamen oder ohne Namen.
-    firstName: first?.firstName?.trim() || (dayGuest ? profile.nickname ?? "" : first?.name ?? ""),
+    firstName: profile.firstName?.trim() || first?.firstName?.trim() || (dayGuest ? profile.nickname ?? "" : first?.name ?? ""),
     nickname: profile.nickname,
     showInRanking: profile.showInRanking,
     enabled: config?.enabled ?? false,

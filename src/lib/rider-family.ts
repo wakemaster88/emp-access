@@ -9,6 +9,10 @@
  *   jeder nur für sich selbst.
  * - Kinder brauchen keinen eigenen Zugang; die Erwachsenen sehen ihr Abo,
  *   ihre Statistik und ihre Gutscheine.
+ * - Wege in die Familie: Personen des eigenen Kundenkontos von selbst
+ *   (lib/customers `syncKontoFamily`), Kinder per Kartennummer und
+ *   Geburtsdatum (`addFamilyChild`) oder mit eigener Adresse per
+ *   Bestätigungslink (lib/rider-family-link), Partner per Einladungslink.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "./prisma";
@@ -65,12 +69,16 @@ export interface FamilyMember {
   adult: boolean;
   /** Hat einen eigenen Zugang (Passkey oder Passwort). */
   hasLogin: boolean;
+  /** Kundenkonto der Person (lib/customers); Personen eines Kontos bleiben zusammen. */
+  customerId: number | null;
 }
 
 const MEMBER_SELECT = {
   id: true,
   token: true,
+  firstName: true,
   nickname: true,
+  customerId: true,
   familyAdult: true,
   passwordHash: true,
   email: true,
@@ -83,15 +91,15 @@ const MEMBER_SELECT = {
 };
 
 type MemberRow = {
-  id: number; token: string; nickname: string | null; familyAdult: boolean; passwordHash: string | null; email: string | null;
+  id: number; token: string; firstName: string | null; nickname: string | null; customerId: number | null; familyAdult: boolean; passwordHash: string | null; email: string | null;
   _count: { passkeys: number };
   tickets: Array<{ firstName: string | null; name: string; endDate: Date | null; subscriptionId: number | null }>;
 };
 
-/** Anzeigename: Vorname vom Abo-Ticket, sonst Spitzname. */
-export function memberName(p: Pick<MemberRow, "nickname" | "tickets">): string {
+/** Anzeigename: Vorname der Person, sonst vom Abo-Ticket, sonst Spitzname. */
+export function memberName(p: Pick<MemberRow, "nickname" | "tickets"> & { firstName?: string | null }): string {
   const abo = p.tickets.find((t) => t.subscriptionId != null) ?? p.tickets[0];
-  return abo?.firstName?.trim() || p.nickname?.trim() || abo?.name?.trim() || "Mitglied";
+  return p.firstName?.trim() || abo?.firstName?.trim() || p.nickname?.trim() || abo?.name?.trim() || "Mitglied";
 }
 
 function toMember(p: MemberRow): FamilyMember {
@@ -101,6 +109,7 @@ function toMember(p: MemberRow): FamilyMember {
     name: memberName(p),
     adult: p.familyAdult,
     hasLogin: p.passwordHash != null || p._count.passkeys > 0,
+    customerId: p.customerId,
   };
 }
 
@@ -124,7 +133,7 @@ export async function tidyFamily(familyId: number, accountId: number): Promise<v
 }
 
 /** Familie der angemeldeten Person holen oder anlegen; sie wird dabei Erwachsene. */
-async function ensureFamily(viewer: FamilyPerson): Promise<number> {
+export async function ensureFamily(viewer: FamilyPerson): Promise<number> {
   if (viewer.familyId != null) {
     if (!viewer.familyAdult) throw new FamilyError("Nur Erwachsene der Familie können Mitglieder hinzufügen.");
     return viewer.familyId;
@@ -137,9 +146,9 @@ async function ensureFamily(viewer: FamilyPerson): Promise<number> {
 /** Fehler mit einem Text, den die App dem Gast zeigt. */
 export class FamilyError extends Error {}
 
-async function assertRoom(familyId: number, accountId: number): Promise<void> {
+export async function assertRoom(familyId: number, accountId: number, adding = 1): Promise<void> {
   const count = await prisma.riderProfile.count({ where: { familyId, accountId } });
-  if (count >= FAMILY_MAX_MEMBERS) throw new FamilyError(`Eine Familie hat höchstens ${FAMILY_MAX_MEMBERS} Mitglieder.`);
+  if (count + adding > FAMILY_MAX_MEMBERS) throw new FamilyError(`Eine Familie hat höchstens ${FAMILY_MAX_MEMBERS} Mitglieder.`);
 }
 
 /**
@@ -160,7 +169,7 @@ export async function addFamilyChild(viewer: FamilyPerson, targetProfileId: numb
     );
   }
   if (target.passwordHash != null || target._count.passkeys > 0) {
-    throw new FamilyError("Diese Person hat einen eigenen Zugang. Schick ihr den Einladungslink.");
+    throw new FamilyError("Diese Person hat einen eigenen Zugang. Hol sie über ihre E-Mail-Adresse dazu, dann bestätigt sie per Link.");
   }
   const familyId = await ensureFamily(viewer);
   await assertRoom(familyId, viewer.accountId);
@@ -182,7 +191,7 @@ export async function familyInviteInfo(key: string): Promise<{ familyId: number;
   if (!link) return null;
   const inviter = await prisma.riderProfile.findFirst({
     where: { id: link.inviterId, familyId: link.familyId, familyAdult: true },
-    select: { accountId: true, nickname: true, email: true, tickets: MEMBER_SELECT.tickets },
+    select: { accountId: true, firstName: true, nickname: true, email: true, tickets: MEMBER_SELECT.tickets },
   });
   if (!inviter || (inviter.tickets.length === 0 && !inviter.email)) return null;
   return { familyId: link.familyId, accountId: inviter.accountId, inviterName: memberName(inviter) };
@@ -213,9 +222,20 @@ export async function leaveFamily(person: FamilyPerson): Promise<void> {
   await tidyFamily(person.familyId, person.accountId);
 }
 
-/** Ein Kind aus der Familie nehmen. Partner gehen nur selbst. */
+/**
+ * Ein Kind aus der Familie nehmen. Partner gehen nur selbst. Personen aus dem
+ * Kundenkonto der Erwachsenen bleiben: sie kämen beim nächsten Abgleich
+ * ohnehin wieder (lib/customers `syncKontoFamily`).
+ */
 export async function removeFamilyChild(viewer: FamilyPerson, targetProfileId: number): Promise<void> {
   if (viewer.familyId == null || !viewer.familyAdult) throw new FamilyError("Das geht nur als Erwachsene der Familie.");
+  const [me, target] = await Promise.all([
+    prisma.riderProfile.findUnique({ where: { id: viewer.id }, select: { customerId: true } }),
+    prisma.riderProfile.findFirst({ where: { id: targetProfileId, accountId: viewer.accountId }, select: { customerId: true } }),
+  ]);
+  if (me?.customerId != null && target?.customerId === me.customerId) {
+    throw new FamilyError("Dieses Mitglied gehört zu deinem Kundenkonto und bleibt deshalb in der Familie.");
+  }
   const removed = await prisma.riderProfile.updateMany({
     where: { id: targetProfileId, accountId: viewer.accountId, familyId: viewer.familyId, familyAdult: false },
     data: { familyId: null },

@@ -84,6 +84,24 @@ export function aboCategory(subscriptionId: number | null, name: string | null |
   return /\bride\b|\bkids?\b|kinder|wake|wasserski/i.test(name ?? "") ? "ride" : `abo-${subscriptionId ?? 0}`;
 }
 
+export interface FollowUpAbo {
+  id: number;
+  /** `aboCategory` */
+  category: string;
+  endDate: Date | null;
+}
+
+/**
+ * Hat die Person nach `abo` schon ein weiteres Abo derselben Art, das länger
+ * läuft (verlängert oder neu gebucht)? Dann braucht es keine Ablauf-Mail.
+ * `others` sind die laufenden Abos derselben Person.
+ */
+export function hasFollowUpAbo(abo: FollowUpAbo, others: FollowUpAbo[]): boolean {
+  if (!abo.endDate) return false;
+  const end = abo.endDate.getTime();
+  return others.some((o) => o.id !== abo.id && o.category === abo.category && (o.endDate == null || o.endDate.getTime() > end));
+}
+
 /** Ein gekündigtes oder vorzeitig ungültiges Abo hat seine Laufzeit nicht genutzt. */
 function usedPeriod(t: PlanTicket, now: Date): boolean {
   if (t.status !== "CANCELED" && t.status !== "INVALID") return true;
@@ -190,10 +208,11 @@ export interface HolderCandidate {
 }
 
 /**
- * Welche Person eines Kontos meldet sich mit dessen Adresse an? Der
+ * Wer meldet sich vermutlich mit der Adresse eines Kontos an? Der
  * Kontoinhaber: zuerst die Person mit seinem Namen, dann eine mit einem Abo
- * für Erwachsene, sonst die älteste. Personen mit einer anderen bestätigten
- * Adresse scheiden aus.
+ * für Erwachsene. Hat das Konto nur Kinder-Abos, fährt der Inhaber selbst
+ * nicht (null). Personen mit einer anderen bestätigten Adresse scheiden aus.
+ * Nur ein Vorschlag: In der App bestätigt der Kunde, wer er ist.
  */
 export function pickHolder(candidates: HolderCandidate[], customerEmail: string, customerName: string | null): number | null {
   const holderName = normalizeName(customerName);
@@ -201,7 +220,7 @@ export function pickHolder(candidates: HolderCandidate[], customerEmail: string,
     if (holderName && normalizeName(`${p.firstName ?? ""}${p.lastName ?? ""}`) === holderName) return 0;
     return p.adultAbo ? 1 : 2;
   };
-  const pool = candidates.filter((p) => p.email == null || p.email === customerEmail);
+  const pool = candidates.filter((p) => (p.email == null || p.email === customerEmail) && score(p) < 2);
   pool.sort((a, b) => score(a) - score(b) || a.id - b.id);
   return pool[0]?.id ?? null;
 }

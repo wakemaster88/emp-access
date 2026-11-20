@@ -7,6 +7,11 @@
  * nur Tickets in einem 24h-Fenster um die Trigger-Tage betrachtet, damit
  * Cron-Reruns am gleichen Tag keine Doppel-Sends verursachen (zusätzlich
  * abgesichert durch `EmailSend`-Cooldown).
+ *
+ * Kundenkonten (lib/customers): Die Mail geht an die Adresse des Kontos, der
+ * Name in der Mail ist der der Person, die mit dem Abo fährt (`riderView`).
+ * Ablauf-Mails entfallen, wenn dieselbe Person schon ein Folge-Abo derselben
+ * Art hat (`hasFollowUpAbo`).
  */
 
 import { prisma } from "@/lib/prisma";
@@ -17,6 +22,7 @@ import {
   wrapEmailHtml,
   type TemplateVariables,
 } from "@/lib/email-templates";
+import { aboCategory, hasFollowUpAbo, riderView, type FollowUpAbo } from "@/lib/customer-person";
 import { randomBytes } from "crypto";
 import type { EmailRule, EmailRuleTrigger, Ticket } from "@prisma/client";
 
@@ -49,6 +55,8 @@ interface TicketCandidate {
   ticket: Ticket & {
     subscription?: { id: number; name: string } | null;
     service?: { id: number; name: string } | null;
+    riderProfile?: { firstName: string | null; lastName: string | null; birthDate: Date | null } | null;
+    customer?: { email: string } | null;
   };
   /** Bezugs-Datum, das die Mail auslöst (z. B. endDate oder firstScanAt). */
   triggerDate: Date;
@@ -85,7 +93,8 @@ async function loadCandidates(
 
   const baseWhere = {
     accountId,
-    email: { not: null },
+    // Adresse am Ticket oder am Kundenkonto.
+    OR: [{ email: { not: null } }, { customerId: { not: null } }],
     status: { in: ["VALID" as const, "REDEEMED" as const] },
     ...(rule.subscriptionId ? { subscriptionId: rule.subscriptionId } : {}),
     ...(rule.serviceId ? { serviceId: rule.serviceId } : {}),
@@ -150,6 +159,8 @@ async function loadCandidates(
     include: {
       subscription: { select: { id: true, name: true } },
       service: { select: { id: true, name: true } },
+      riderProfile: { select: { firstName: true, lastName: true, birthDate: true } },
+      customer: { select: { email: true } },
     },
     take: 500,
   });
@@ -170,6 +181,45 @@ async function loadCandidates(
     });
   }
   return result;
+}
+
+/** Empfänger: die Adresse des Kundenkontos, sonst die am Ticket. */
+export function mailRecipient(t: { email: string | null; customer?: { email: string } | null }): string | null {
+  return t.customer?.email || t.email || null;
+}
+
+const RUNNING_ABO = ["VALID", "REDEEMED", "PAUSED"] as const;
+
+/**
+ * Ablauf-Kandidaten, deren Person schon ein Folge-Abo derselben Art hat
+ * (verlängert oder neu gebucht). Eine Abfrage je Regel.
+ */
+async function renewedTicketIds(accountId: number, candidates: TicketCandidate[]): Promise<Set<number>> {
+  const personIds = [...new Set(candidates.map((c) => c.ticket.riderProfileId).filter((v): v is number => v != null))];
+  if (personIds.length === 0) return new Set();
+  const others = await prisma.ticket.findMany({
+    where: {
+      accountId,
+      riderProfileId: { in: personIds },
+      subscriptionId: { not: null },
+      status: { in: [...RUNNING_ABO] },
+    },
+    select: { id: true, riderProfileId: true, subscriptionId: true, endDate: true, subscription: { select: { name: true } } },
+  });
+  const byPerson = new Map<number, FollowUpAbo[]>();
+  for (const o of others) {
+    const list = byPerson.get(o.riderProfileId!) ?? [];
+    list.push({ id: o.id, category: aboCategory(o.subscriptionId, o.subscription?.name), endDate: o.endDate });
+    byPerson.set(o.riderProfileId!, list);
+  }
+  const renewed = new Set<number>();
+  for (const c of candidates) {
+    const t = c.ticket;
+    if (t.riderProfileId == null) continue;
+    const self: FollowUpAbo = { id: t.id, category: aboCategory(t.subscriptionId, t.subscription?.name), endDate: t.endDate };
+    if (hasFollowUpAbo(self, byPerson.get(t.riderProfileId) ?? [])) renewed.add(t.id);
+  }
+  return renewed;
 }
 
 async function isWithinCooldown(args: {
@@ -224,7 +274,9 @@ function buildTemplateVars(args: {
 }): TemplateVariables {
   const { candidate, accountName, rule, voucher, brand } = args;
   const t = candidate.ticket;
-  const fullName = [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
+  // Name der Person, die mit dem Abo fährt; sonst der am Ticket.
+  const rider = riderView({ ...t, riderProfile: t.riderProfile ?? null });
+  const fullName = [rider.firstName, rider.lastName].filter((v) => v?.trim()).join(" ") || t.name;
   const rawDaysUntilExpiry = t.endDate
     ? Math.round((startOfDay(t.endDate).getTime() - startOfDay(new Date()).getTime()) / MS_PER_DAY)
     : null;
@@ -234,8 +286,8 @@ function buildTemplateVars(args: {
     formattedEndDate,
   });
   return {
-    firstName: t.firstName ?? fullName.split(" ")[0] ?? "",
-    lastName: t.lastName ?? "",
+    firstName: rider.firstName?.trim() || fullName.split(" ")[0] || "",
+    lastName: rider.lastName?.trim() ?? "",
     fullName,
     ticketTypeName: t.ticketTypeName,
     subscriptionName: t.subscription?.name ?? null,
@@ -325,10 +377,13 @@ export async function processAccountEmailRules(
     try {
       const candidates = await loadCandidates(accountId, rule, now);
       stats.considered = candidates.length;
+      const expiry = rule.trigger === "SUBSCRIPTION_EXPIRING" || rule.trigger === "SUBSCRIPTION_EXPIRED";
+      const renewed = expiry ? await renewedTicketIds(accountId, candidates) : new Set<number>();
 
       for (const candidate of candidates) {
         const ticket = candidate.ticket;
-        if (!ticket.email) {
+        const to = mailRecipient(ticket);
+        if (!to || renewed.has(ticket.id)) {
           stats.skipped++;
           continue;
         }
@@ -391,7 +446,7 @@ export async function processAccountEmailRules(
 
         const result = await sendEmail({
           config: provider,
-          to: ticket.email,
+          to,
           subject,
           html,
         });
@@ -402,7 +457,7 @@ export async function processAccountEmailRules(
             ruleId: rule.id,
             ticketId: ticket.id,
             voucherId: voucher?.id ?? null,
-            to: ticket.email,
+            to,
             subject,
             status: result.ok ? "SENT" : "FAILED",
             errorMessage: result.ok ? null : (result.error?.slice(0, 500) ?? "unbekannter Fehler"),

@@ -37,11 +37,13 @@ test("familyInviteKey: gilt sieben Tage und lässt sich nicht fälschen", async 
   assert.equal(verifyFamilyInviteKey("", now), null);
 });
 
-test("memberName: Vorname vom Abo, sonst Spitzname", async () => {
+test("memberName: Vorname der Person, sonst vom Abo, sonst Spitzname", async () => {
   const { memberName } = await import("./rider-family");
   const t = (firstName: string | null, name: string, subscriptionId: number | null) => ({ firstName, name, endDate: null, subscriptionId });
   assert.equal(memberName({ nickname: "Wave", tickets: [t(null, "Tagesticket", null), t("Mia", "Mia Muster", 2)] }), "Mia");
   assert.equal(memberName({ nickname: "Wave", tickets: [t(null, "Tagesticket", null)] }), "Wave");
   assert.equal(memberName({ nickname: null, tickets: [t(null, "Tagesticket", null)] }), "Tagesticket");
   assert.equal(memberName({ nickname: null, tickets: [] }), "Mitglied");
+  // Am Kids-Abo steht bei anny der Name der Eltern: der Vorname der Person gewinnt.
+  assert.equal(memberName({ firstName: "Mia", nickname: null, tickets: [t("Eva", "Eva Muster", 2)] }), "Mia");
 });

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aboCategory, aboNamesRider, isAdultAt, isKidsSubscriptionName, personDataKey, pickHolder, planPersons, riderDataEntered, riderView, withRiderView, type PlanTicket } from "./customer-person";
+import { aboCategory, aboNamesRider, hasFollowUpAbo, isAdultAt, isKidsSubscriptionName, personDataKey, pickHolder, planPersons, riderDataEntered, riderView, withRiderView, type PlanTicket } from "./customer-person";
 
 const NOW = new Date("2026-11-20T12:00:00Z");
 const d = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
@@ -96,7 +96,7 @@ test("planPersons: Abo ohne Namen bleibt offen", () => {
   assert.deepEqual(planPersons([anon], [], NOW).open, [anon.id]);
 });
 
-test("pickHolder: Kontoinhaber vor Kind, fremde Adresse scheidet aus", () => {
+test("pickHolder: Kontoinhaber vor Kind, fremde Adresse scheidet aus, nur Kinder-Abos = kein Vorschlag", () => {
   const people = [
     { id: 1, email: null, firstName: "Mia", lastName: "Beispiel", adultAbo: false },
     { id: 2, email: null, firstName: "Eva", lastName: "Beispiel", adultAbo: true },
@@ -104,8 +104,10 @@ test("pickHolder: Kontoinhaber vor Kind, fremde Adresse scheidet aus", () => {
   ];
   assert.equal(pickHolder(people, "eva@example.de", "Eva Beispiel"), 2);
   assert.equal(pickHolder(people, "eva@example.de", null), 2);
-  assert.equal(pickHolder([people[0]], "eva@example.de", "Eva Beispiel"), 1);
   assert.equal(pickHolder([people[2]], "eva@example.de", "Eva Beispiel"), null);
+  // Nur ein Kinder-Abo ohne den Namen des Inhabers: der Inhaber fährt selbst nicht.
+  assert.equal(pickHolder([people[0]], "eva@example.de", "Eva Beispiel"), null);
+  assert.equal(pickHolder([people[0]], "eva@example.de", "Mia Beispiel"), 1);
 });
 
 test("aboCategory: Fahr-Abos sind eine Art, Beach und Aqua je eine eigene", () => {
@@ -153,4 +155,15 @@ test("riderDataEntered: nur neue Daten zählen", () => {
   assert.equal(riderDataEntered(ticket, { firstName: " eva ", lastName: "MUSTER", birthDate: d("1981-03-04") }), false);
   assert.equal(riderDataEntered(ticket, { firstName: "Mia", lastName: "Muster", birthDate: d("2014-06-01") }), true);
   assert.equal(riderDataEntered(ticket, { firstName: "", lastName: null, birthDate: d("2014-06-01") }), false);
+});
+
+test("hasFollowUpAbo: Verlängerung derselben Art zählt, andere Art und kürzere nicht", () => {
+  const d = (v: string) => new Date(`${v}T12:00:00Z`);
+  const abo = { id: 1, category: "ride", endDate: d("2026-11-30") };
+  assert.equal(hasFollowUpAbo(abo, [abo]), false);
+  assert.equal(hasFollowUpAbo(abo, [abo, { id: 2, category: "ride", endDate: d("2027-11-30") }]), true);
+  assert.equal(hasFollowUpAbo(abo, [{ id: 2, category: "ride", endDate: null }]), true);
+  assert.equal(hasFollowUpAbo(abo, [{ id: 3, category: "abo-7", endDate: d("2027-11-30") }]), false);
+  assert.equal(hasFollowUpAbo(abo, [{ id: 4, category: "ride", endDate: d("2026-10-01") }]), false);
+  assert.equal(hasFollowUpAbo({ ...abo, endDate: null }, [{ id: 2, category: "ride", endDate: null }]), false);
 });

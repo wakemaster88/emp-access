@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clearRiderLocalData } from "@/lib/rider-local";
 
@@ -10,6 +11,8 @@ export interface FamilyMemberItem {
   name: string;
   adult: boolean;
   hasLogin: boolean;
+  /** Kundenkonto der Person; Personen aus dem eigenen Konto bleiben in der Familie. */
+  customerId: number | null;
 }
 
 interface Props {
@@ -30,6 +33,8 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
   const [adding, setAdding] = useState(false);
+  const [mode, setMode] = useState<"card" | "mail">("card");
+  const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [invite, setInvite] = useState("");
@@ -37,6 +42,7 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
   const [confirm, setConfirm] = useState<number | "leave" | null>(null);
   const url = `/api/rider/${encodeURIComponent(token)}/family`;
   const others = members.filter((m) => m.profileId !== selfId);
+  const ownKonto = members.find((m) => m.profileId === selfId)?.customerId ?? null;
 
   async function call(body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
     setBusy(true);
@@ -57,6 +63,14 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
   async function add(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
+    if (mode === "mail") {
+      if (await call({ action: "link", email })) {
+        setAdding(false);
+        setEmail("");
+        setMsg({ ok: true, text: "Wenn zu der Adresse ein Abo gehört, ist dorthin jetzt ein Link unterwegs. Sobald er bestätigt ist, siehst du das Abo hier. Der Link gilt 7 Tage." });
+      }
+      return;
+    }
     if (await call({ action: "add", code, birthDate })) {
       setAdding(false);
       setCode("");
@@ -133,6 +147,7 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
       {others.length === 0 ? (
         <span className="rd-muted">
           Verwalte die Abos deiner Familie in einer App. Kinder brauchen keinen eigenen Zugang, dein Partner behält seinen eigenen.
+          Abos, die du mit deiner Adresse für andere buchst, kommen von selbst dazu.
         </span>
       ) : (
         <ul className="rd-family-list">
@@ -142,10 +157,14 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
                 <b>{m.name}</b>
                 <br />
                 <span className="rd-muted">
-                  {m.adult ? "Partner, eigener Zugang" : m.hasLogin ? "Kind, mit eigenem Zugang" : "Kind, ohne eigenen Zugang"}
+                  {m.adult
+                    ? "Partner, eigener Zugang"
+                    : ownKonto != null && m.customerId === ownKonto
+                      ? "Aus deinem Kundenkonto, von dir verwaltet"
+                      : m.hasLogin ? "Kind, mit eigenem Zugang" : "Kind, ohne eigenen Zugang"}
                 </span>
               </span>
-              {!m.adult &&
+              {!m.adult && (ownKonto == null || m.customerId !== ownKonto) &&
                 (confirm === m.profileId ? (
                   <>
                     <button type="button" className="rd-btn rd-btn-danger rd-btn-sm" onClick={() => remove(m.profileId)} disabled={busy}><span>Ja</span></button>
@@ -165,17 +184,38 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
 
       {adding ? (
         <form onSubmit={add} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="rd-field">
-            <label htmlFor="rd-fam-code">Kartennummer des Kindes</label>
-            <input id="rd-fam-code" className="rd-input" value={code} onChange={(e) => setCode(e.target.value)} required minLength={3} maxLength={100} autoComplete="off" autoCapitalize="characters" />
-            <span className="rd-muted">Steht auf der Abo-Karte.</span>
-          </div>
-          <div className="rd-field">
-            <label htmlFor="rd-fam-birth">Geburtsdatum des Kindes</label>
-            <input id="rd-fam-birth" className="rd-input" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} required />
-          </div>
+          <fieldset style={{ border: 0, margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+            <legend style={{ marginBottom: 4 }}>Wie holst du das Kind dazu?</legend>
+            <label className="rd-check">
+              <span className="rd-grow"><b>Mit der Abo-Karte</b><br /><span className="rd-muted">Kartennummer und Geburtsdatum</span></span>
+              <input type="radio" name="rd-fam-mode" checked={mode === "card"} onChange={() => setMode("card")} />
+            </label>
+            <label className="rd-check">
+              <span className="rd-grow"><b>Mit seiner E-Mail-Adresse</b><br /><span className="rd-muted">Wenn das Abo mit einer eigenen Adresse gebucht ist</span></span>
+              <input type="radio" name="rd-fam-mode" checked={mode === "mail"} onChange={() => setMode("mail")} />
+            </label>
+          </fieldset>
+          {mode === "mail" ? (
+            <div className="rd-field">
+              <label htmlFor="rd-fam-mail">E-Mail-Adresse des Kindes</label>
+              <input id="rd-fam-mail" className="rd-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={180} autoComplete="off" inputMode="email" />
+              <span className="rd-muted">Dorthin schicken wir einen Link. Erst wenn er bestätigt ist, gehört das Abo zur Familie.</span>
+            </div>
+          ) : (
+            <>
+              <div className="rd-field">
+                <label htmlFor="rd-fam-code">Kartennummer des Kindes</label>
+                <input id="rd-fam-code" className="rd-input" value={code} onChange={(e) => setCode(e.target.value)} required minLength={3} maxLength={100} autoComplete="off" autoCapitalize="characters" />
+                <span className="rd-muted">Steht auf der Abo-Karte.</span>
+              </div>
+              <div className="rd-field">
+                <label htmlFor="rd-fam-birth">Geburtsdatum des Kindes</label>
+                <input id="rd-fam-birth" className="rd-input" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} required />
+              </div>
+            </>
+          )}
           <div className="rd-row">
-            <button type="submit" className="rd-btn rd-grow" disabled={busy}><span>{busy ? "Einen Moment …" : "Hinzufügen"}</span></button>
+            <button type="submit" className="rd-btn rd-grow" disabled={busy}><span>{busy ? "Einen Moment …" : mode === "mail" ? "Link schicken" : "Hinzufügen"}</span></button>
             <button type="button" className="rd-btn rd-btn-ghost rd-grow" onClick={() => setAdding(false)} disabled={busy}><span>Abbrechen</span></button>
           </div>
         </form>
@@ -194,7 +234,8 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
         <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={makeInvite} disabled={busy}><span>Partner einladen</span></button>
       )}
 
-      {members.length > 0 &&
+      {/* Mit Personen aus dem eigenen Konto gibt es nichts zu verlassen: sie gehören dazu. */}
+      {members.length > 0 && !others.some((m) => !m.adult && ownKonto != null && m.customerId === ownKonto) &&
         (confirm === "leave" ? (
           <div className="rd-row">
             <button type="button" className="rd-btn rd-btn-danger rd-grow" onClick={leave} disabled={busy}><span>Wirklich verlassen</span></button>
@@ -210,6 +251,76 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
 /** Auf der Seite hinter dem Einladungslink: der Familie beitreten. */
 export function RiderFamilyJoin({ inviteKey }: { inviteKey: string }) {
   return <FamilyAction url="/api/rider/family/join" body={{ key: inviteKey }} label="Familie beitreten" />;
+}
+
+export interface FamilyConfirmPerson {
+  id: number;
+  name: string;
+  /** Gehört schon zur Familie. */
+  joined: boolean;
+}
+
+/** Hinter dem Link aus der Mail: Personen wählen und in die Familie bestätigen. */
+export function RiderFamilyConfirm({ confirmKey, persons, inviterName }: { confirmKey: string; persons: FamilyConfirmPerson[]; inviterName: string }) {
+  const [chosen, setChosen] = useState<number[]>(persons.filter((p) => !p.joined).map((p) => p.id));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy || chosen.length === 0) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/rider/family/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: confirmKey, personIds: chosen }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (res.ok) {
+        setDone(true);
+      } else {
+        setError(typeof json.error === "string" ? json.error : "Das hat nicht geklappt.");
+      }
+    } catch {
+      setError("Keine Verbindung. Bitte noch einmal versuchen.");
+    }
+    setBusy(false);
+  }
+
+  if (done) {
+    return (
+      <>
+        <div className="rd-msg rd-msg-ok" role="status">Bestätigt. Das Abo gehört jetzt zur Familie von {inviterName}.</div>
+        <Link href="/app" className="rd-btn rd-btn-ghost rd-btn-wide"><span>Zur App</span></Link>
+      </>
+    );
+  }
+
+  return (
+    <form className="rd-card" style={{ gap: 10 }} onSubmit={submit}>
+      <fieldset style={{ border: 0, margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+        <legend style={{ marginBottom: 4 }}>Wer gehört zur Familie?</legend>
+        {persons.map((p) => (
+          <label key={p.id} className="rd-check">
+            <span className="rd-grow"><b>{p.name}</b>{p.joined && <><br /><span className="rd-muted">Schon in der Familie</span></>}</span>
+            <input
+              type="checkbox"
+              checked={p.joined || chosen.includes(p.id)}
+              disabled={p.joined}
+              onChange={(e) => setChosen((c) => (e.target.checked ? [...c, p.id] : c.filter((id) => id !== p.id)))}
+            />
+          </label>
+        ))}
+      </fieldset>
+      {error && <div className="rd-msg rd-msg-err" role="alert">{error}</div>}
+      <button type="submit" className="rd-btn rd-btn-wide" disabled={busy || chosen.length === 0}>
+        <span>{busy ? "Einen Moment …" : "Bestätigen"}</span>
+      </button>
+    </form>
+  );
 }
 
 /** Beim Einrichten: dieses Abo als Kind in die eigene Familie holen, statt einen Zugang anzulegen. */
