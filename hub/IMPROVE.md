@@ -1055,3 +1055,28 @@ Nur Oberfläche, keine Logik. `/api/improve` war aus der Cloud-Sitzung nicht err
 ### Nächster Schritt
 
 - Am Hub-Dashboard (Handy und Desktop, hell und dunkel) kurz ansehen, ob eine Fläche ohne Glas zu flach wirkt.
+
+## 2026-11-20 (Fahrzeuge: Kennzeichen aus der Region, richtiges Bild, schnellerer Burst)
+
+Snapshot über Log-Abruf (HUB_LOG, Hub `imac-technikraum`, Stand b7992b4): `alpr.skip` 124, `alpr.upload_noplate` 79, `alpr.plate` 14, `alpr.spotlight` 46, `alpr.deferred` 38 seit 14.11. Offene Hinweise: Gallery knapp unter Schwelle, Halteverbot-Prüfung schlägt fehl, DoorBird-Monitor bricht ab (nicht Teil dieser Änderung). Log 19.11. 11 Uhr bis 20.11. 12:25 UTC: 58 Fahrzeug-Bursts an der Kamera Eingang.
+
+### Befunde
+
+- **Lesbare Kennzeichen verworfen.** 16 Uploads, davon nur 2 mit Kennzeichen (22 weitere Bursts ganz verworfen). In mindestens 9 Bursts las fast-alpr das Kennzeichen über mehrere Bilder sicher (GT-AR 9876 18× mit 0,98, PB-IV 1992 15× mit 0,96, BS-KQ 920, LIP-AK 529, BE-BM 62, GT-U 1212E), verworfen wurde es, weil der Kreis nicht in `KNOWN_CITY` stand (nur ~35 Ruhrgebiets-Kreise, weder WAF noch BE, GT, PB, MS). Ergebnis: „Fahrzeug ohne Kennzeichen“ trotz klarer Lesung.
+- **Einzelbild-Fehllesung gewinnt.** 20.11. 08:59: Bild 1 „ST-U 1212E“ (0,91, ST bekannt) wurde genommen, obwohl die folgenden Bilder „G-TU/GT-U 1212E“ mit 0,95–0,97 lasen. 19.11. 13:59 ähnlich (ST-A 2966 statt GT-AR …).
+- **Falsches Bild.** Ohne angenommenes Kennzeichen prüfte YOLO die Bilder von hinten und nahm das erste mit Fahrzeug, also das letzte: 7 von 14 Uploads „Frame 20/20“ bzw. letzter Frame, oft das wegfahrende Auto, obwohl das Schild 10 Bilder vorher lesbar war.
+- **Träge.** Bildabstand im Mittel 1,15 s statt 400 ms (Alarm-Abfrage, 4K-Snap und feste Pause nacheinander). Der Burst lief immer bis 20 Bilder (~23 s), auch wenn das Kennzeichen nach 3 Bildern feststand. Danach macOS Vision „einmal“: 16 Aufrufe, 0 Treffer, je 2–7,5 s. Vom Eintreffen bis zum Upload so 25–35 s.
+- **Licht-Schleife in der Dämmerung.** 19.11. 15:28–15:33 UTC und 20.11. 07:07 UTC: Licht an → 800 ms → Alarm schon weg → Licht aus, ~8 s später neuer Fahrzeug-Alarm. 16 von 19 Licht-Bursts ohne ein einziges Bild. Das Schalten selbst löst den Kamera-Alarm aus.
+
+### Änderung
+
+- `plate-cities.ts` (neu): alle deutschen Unterscheidungszeichen (654, ohne Umlaut-Zeichen) als `KNOWN_CITY`; Kreise der Region (WAF, BE, GT, HAM, MS, …) als Tie-Break in `scorePlateFormat` (GTU1212E → GT-U statt G-TU). Schalten hängt weiter nur am exakten Whitelist-Treffer.
+- `vehicle-burst-rules.ts` (neu, rein): `burstConsensus` (Mehrheit über den Burst, abgeschnittene Lesungen zählen zur längeren; ≥ 2 Bilder oder 1 Bild ≥ 0,95; 1–2 Ziffern brauchen 3 Bilder; Upload-Bild = mittleres der sichersten), `pickFallbackFrame` (ohne Kennzeichen: Bild mit Schild-artiger Lesung, sonst größte Fahrzeug-Box), `burstDone` (Kennzeichen auf 3 Bildern bestätigt → noch 2 Bilder, mit Lieferdienst-Prüfung 4, dann Schluss).
+- `cameras.ts`: Alarm-Abfrage und Snap gleichzeitig, Pause nur noch bis zum Takt; Burst endet nach bestätigtem Kennzeichen; Konsens-Kennzeichen ersetzt Einzelbild-Treffer (eigener Score nur, wenn das Bild selbst genau das las, sonst `actuate: false` → `localActed=1`); macOS Vision im Burst aus (`HUB_VEHICLE_PLATE_VISION=1` an). Weißlicht nur, wenn der Alarm unmittelbar vorher noch steht; Licht-Burst ohne Fahrzeug sperrt das Licht 5 min (`HUB_VEHICLE_SPOTLIGHT_MUTE_MS`). Neue Zähler `alpr.consensus`, `alpr.early_stop`, `alpr.spotlight_mute`.
+- Geprüft: `tsc -p hub` 0 Fehler, `npm test` 517/517 (neu: 7 für die Burst-Regeln mit den Lesungen aus dem Log, 1 für Kreise der Region). Nicht an der Kamera geprüft.
+
+### Nächster Schritt
+
+- Nach einem Tag: Anteil `alpr.plate` an den Uploads gegen heute (2 von 16) vergleichen; Log-Zeilen „auf N Bildern … → Frame“ und „Kennzeichen sicher – fertig nach“ ansehen. Bildabstand im Log prüfen (Ziel ≤ 0,8 s); verträgt die Kamera die gleichzeitigen Anfragen nicht (Fehler „Re-Check fehlgeschlagen“), zurück auf nacheinander.
+- `alpr.spotlight_mute` in der Dämmerung beobachten. Bleibt es bei Fehlalarmen ohne Licht, die KI-Erkennungszone der Kamera Eingang verkleinern (nur mit Aarons OK).
+- `hub/plate/PlateOCR.swift` hat noch die alte Kreisliste; im Burst ist Vision jetzt aus, bei Bedarf nachziehen.

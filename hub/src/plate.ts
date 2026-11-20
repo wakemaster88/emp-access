@@ -20,6 +20,7 @@ import {
   type OcrResult,
   type PlateMatchKind,
 } from "./plate-match.js";
+import { LOCAL_CITY_CODES } from "./plate-cities.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -277,6 +278,8 @@ function scorePlateFormat(plate: string): number {
   else s += 1;
   if (digits.length >= 3) s += 2;
   if (KNOWN_CITY.has(city)) s += 4;
+  // Tie-Break GT-U vs. G-TU: Kreis aus der Region gewinnt.
+  if (LOCAL_CITY_CODES.has(city)) s += 2;
   if (new Set(mid).size === mid.length) s += 1;
   return s;
 }
@@ -348,6 +351,11 @@ export interface PlateScore {
  */
 export function plateActuationAllowed(exact: boolean, confidence: number | null): boolean {
   return plateMayActuate({ exact, confidence }, ALPR_ACTUATE_MIN_CONF);
+}
+
+/** Mindest-Confidence fuer ein nicht gelistetes Kennzeichen (HUB_PLATE_MIN_CONF). */
+export function plateAutoMinConf(): number {
+  return MIN_CONF;
 }
 
 /** Schwelle fuer Log-Texte. */

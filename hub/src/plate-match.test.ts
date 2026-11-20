@@ -64,7 +64,9 @@ test("ein Zeichen daneben schaltet nicht – auch bei hoher Confidence", () => {
 
 test("zwei Zeichen daneben schalten nicht", () => {
   const pick = pickPlate(ocr([["BD-OC 626E", 0.99]]), WL, AUTO_MIN);
-  assert.equal(pick.plate, null); // BD ist kein bekannter Kreis
+  // BD ist ein gültiges Zeichen: als fremdes Kennzeichen gelesen, nie als Whitelist.
+  assert.equal(pick.plate, "BD-OC 626E");
+  assert.equal(pick.matchKind, "auto");
   assert.equal(isWhitelisted(pick.plate), false);
   assert.equal(pick.probable, "BO-QC 626E");
   assert.equal(actuates(pick), false);
@@ -137,4 +139,13 @@ test("plateMayActuate: ungueltige Werte schalten nie", () => {
   assert.equal(plateMayActuate({ exact: true, confidence: 0.49 }, ACT_MIN), false);
   assert.equal(plateMayActuate({ exact: true, confidence: Number.NaN }, ACT_MIN), false);
   assert.equal(plateMayActuate({ exact: true, confidence: 1 }, Number.NaN), false);
+});
+
+test("Kennzeichen aus der Region gelten als bekannter Kreis (WAF, BE, GT, PB)", () => {
+  for (const plate of ["WAF-AB 123", "BE-BM 620", "GT-AR 9876", "PB-IV 1992", "LIP-AK 529"]) {
+    const pick = pickPlate(ocr([[plate, 0.95]]), WL, AUTO_MIN);
+    assert.equal(pick.plate, plate);
+    assert.equal(pick.matchKind, "auto");
+    assert.equal(actuates(pick), false);
+  }
 });
