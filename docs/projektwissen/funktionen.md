@@ -55,10 +55,10 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   `src/app/app/rider.css`, bewusst ohne die ui-Bausteine der Verwaltung).
   Als PWA installierbar: Manifest je Fahrer, der globale Service Worker
   (`public/sw.js`) liefert Offline-Seite und Cache.
-- **Anmeldung** auf `/app`: Kartennummer des Abos plus Geburtsdatum
-  (`api/rider/login`, begrenzt auf 10 Versuche je 10 Minuten, gleiche Antwort
-  für unbekannte Karte und falsches Datum). Ergebnis ist der persönliche Link
-  `/app/<token>`; der Token ist der Schlüssel, es gibt kein Passwort.
+- **Anmeldung** auf `/app` seit 20.11.2026 nur per E-Mail (Aaron: Karte und
+  Geburtsdatum war schlecht, es soll auch ohne Abo gehen). Siehe Abschnitt
+  „Anmeldung per E-Mail“ unten. Ergebnis ist der persönliche Link
+  `/app/<token>`; beim ersten Öffnen werden Passkey oder Passwort eingerichtet.
 - Fahrer ohne Geburtsdatum oder Kartennummer bekommen den Link an der Kasse:
   Gäste › Kunden App › Fahrer › App-Link (QR-Code und Link zum Kopieren).
 - Für neue Kunden steht oben unter Gäste › Kunden App › Fahrer ein fester
@@ -397,3 +397,25 @@ werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
   Summen. Stufen nach Fahrern: 0 „Gerade ruhig“, 1–5 „Wenig los“, 6–14
   „Mittel“, ab 15 „Viel los“ (aus den Daten 21.08.–15.11.2026: Median 7,
   Spitze 34 je Stunde). Ohne Start-Gerät bleibt die Karte weg.
+
+## Anmeldung per E-Mail, auch ohne Abo (20.11.2026)
+
+- `/app` fragt nur die E-Mail-Adresse ab (`api/rider/mail-link`, Antwort immer
+  gleich). `requestAppLink` in `src/lib/rider-onboarding.ts` schickt den Link
+  `/app/mail/<schlüssel>` (signiert, 48 Stunden) an das Konto, in dem die
+  Adresse an einem Profil, Abo oder Tagesticket bekannt ist. Ist sie nirgends
+  bekannt, geht die Mail an das einzige Konto mit eingeschalteter Kunden App.
+  Höchstens alle 10 Minuten und 5 Mal am Tag je Adresse.
+- Nach dem Klick: Gibt es Abos mit dieser Adresse, die in keinem Profil
+  hängen, zeigt `/app/willkommen/<schlüssel>` sie zur Auswahl (ein laufendes
+  Abo ist vorgewählt). `api/rider/onboarding` ordnet nur Abos mit genau dieser
+  Adresse zu, dazu ältere Abo-Tickets derselben Person und Tagestickets der
+  Adresse. Ohne Auswahl oder ohne gefundenes Abo geht es ohne Abo weiter.
+- `RiderProfile.email` hält die bestätigte Adresse. Ein Profil mit Adresse
+  gilt auch ohne Ticket (`loadRider`, `findRiderAuthProfile`, `sessionRider`);
+  die App zeigt dann „Du hast noch kein Abo“ mit dem Abo-Shop.
+- Der alte Weg mit Kartennummer und Geburtsdatum (`api/rider/login`) ist
+  entfernt. Der persönliche Link von der Kasse bleibt.
+- Offen: Profile ohne Ticket erscheinen nicht in der Liste Kunden App ›
+  Fahrer. Ein später gekauftes Abo holt der Kunde, indem er sich erneut per
+  Mail-Link anmeldet und es auswählt.

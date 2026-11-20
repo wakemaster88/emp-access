@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-/** Tagesgäste: Link zur App an die E-Mail-Adresse der Buchung schicken lassen. */
+/** Anmeldung: Link zur App an die eigene E-Mail-Adresse schicken lassen. */
 export function RiderMailLink() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,12 +35,12 @@ export function RiderMailLink() {
       <div className="rd-field">
         <label htmlFor="rd-mail">E-Mail-Adresse</label>
         <input id="rd-mail" className="rd-input" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={180} />
-        <span className="rd-muted">Die Adresse, mit der du gebucht hast oder die du an der Kasse angegeben hast.</span>
+        <span className="rd-muted">Am besten die Adresse, mit der du dein Abo oder Ticket gebucht hast.</span>
       </div>
       {error && <div className="rd-msg rd-msg-err" role="alert">{error}</div>}
       {done && (
         <div className="rd-msg rd-msg-ok" role="status">
-          Wenn wir zu dieser Adresse ein Ticket aus dieser Saison haben, ist dein Link gleich im Postfach. Sonst trägt die Kasse deine Adresse gern ein.
+          Dein Link ist gleich im Postfach. Er gilt 48 Stunden.
         </div>
       )}
       <button type="submit" className="rd-btn rd-btn-wide" disabled={busy}>

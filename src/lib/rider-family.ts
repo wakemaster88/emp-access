@@ -73,6 +73,7 @@ const MEMBER_SELECT = {
   nickname: true,
   familyAdult: true,
   passwordHash: true,
+  email: true,
   _count: { select: { passkeys: true } },
   tickets: {
     select: { firstName: true, name: true, endDate: true, subscriptionId: true },
@@ -82,7 +83,7 @@ const MEMBER_SELECT = {
 };
 
 type MemberRow = {
-  id: number; token: string; nickname: string | null; familyAdult: boolean; passwordHash: string | null;
+  id: number; token: string; nickname: string | null; familyAdult: boolean; passwordHash: string | null; email: string | null;
   _count: { passkeys: number };
   tickets: Array<{ firstName: string | null; name: string; endDate: Date | null; subscriptionId: number | null }>;
 };
@@ -107,7 +108,7 @@ function toMember(p: MemberRow): FamilyMember {
 export async function loadFamilyMembers(familyId: number, accountId: number): Promise<FamilyMember[]> {
   const rows = await prisma.riderProfile.findMany({ where: { familyId, accountId }, select: MEMBER_SELECT });
   return rows
-    .filter((r) => r.tickets.length > 0)
+    .filter((r) => r.tickets.length > 0 || r.email != null)
     .map(toMember)
     .sort((a, b) => Number(b.adult) - Number(a.adult) || a.name.localeCompare(b.name, "de"));
 }
@@ -181,9 +182,9 @@ export async function familyInviteInfo(key: string): Promise<{ familyId: number;
   if (!link) return null;
   const inviter = await prisma.riderProfile.findFirst({
     where: { id: link.inviterId, familyId: link.familyId, familyAdult: true },
-    select: { accountId: true, nickname: true, tickets: MEMBER_SELECT.tickets },
+    select: { accountId: true, nickname: true, email: true, tickets: MEMBER_SELECT.tickets },
   });
-  if (!inviter || inviter.tickets.length === 0) return null;
+  if (!inviter || (inviter.tickets.length === 0 && !inviter.email)) return null;
   return { familyId: link.familyId, accountId: inviter.accountId, inviterName: memberName(inviter) };
 }
 

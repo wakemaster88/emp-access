@@ -3564,6 +3564,9 @@ model RiderProfile {
   /// Einwilligung: mit Spitznamen in Ranglisten erscheinen.
   showInRanking Boolean   @default(false)
   lastSeenAt    DateTime?
+  /// Bestätigte E-Mail-Adresse (Anmeldung per Mail-Link, klein geschrieben).
+  /// Ein Profil mit Adresse gilt auch ohne Ticket (Kunde noch ohne Abo).
+  email         String?
   /// bcrypt-Hash; NULL = kein Passwort gesetzt.
   passwordHash     String?
   /// Wird beim Zuruecksetzen erhoeht: alle bisherigen Sitzungen enden.
@@ -3585,6 +3588,7 @@ model RiderProfile {
 
   @@index([accountId])
   @@index([familyId])
+  @@index([accountId, email])
 }
 
 /// Familie in der Kunden-App: buendelt Profile, gezaehlt wird weiter je Person.

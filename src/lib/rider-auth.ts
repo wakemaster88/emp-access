@@ -62,11 +62,13 @@ export async function findRiderAuthProfile(token: string): Promise<RiderAuthProf
       loginLockedUntil: true,
       familyId: true,
       familyAdult: true,
+      email: true,
       account: { select: { isActive: true } },
       _count: { select: { passkeys: true, tickets: true } },
     },
   });
-  if (!p || !p.account.isActive || p._count.tickets === 0) return null;
+  // Ohne Ticket gilt ein Profil nur mit bestätigter Adresse (Kunde noch ohne Abo).
+  if (!p || !p.account.isActive || (p._count.tickets === 0 && !p.email)) return null;
   return {
     id: p.id,
     accountId: p.accountId,
@@ -102,12 +104,12 @@ export const sessionRider = cache(async (): Promise<(FamilyPerson & { token: str
   const p = await prisma.riderProfile.findUnique({
     where: { id: s.profileId },
     select: {
-      id: true, accountId: true, token: true, sessionVersion: true, familyId: true, familyAdult: true, passwordHash: true,
+      id: true, accountId: true, token: true, sessionVersion: true, familyId: true, familyAdult: true, passwordHash: true, email: true,
       account: { select: { isActive: true } },
       _count: { select: { passkeys: true, tickets: true } },
     },
   });
-  if (!p || !p.account.isActive || p.sessionVersion !== s.version || p._count.tickets === 0) return null;
+  if (!p || !p.account.isActive || p.sessionVersion !== s.version || (p._count.tickets === 0 && !p.email)) return null;
   if (p.passwordHash == null && p._count.passkeys === 0) return null;
   return { id: p.id, accountId: p.accountId, token: p.token, familyId: p.familyId, familyAdult: p.familyAdult };
 });

@@ -1,11 +1,12 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { publicRateLimit } from "@/lib/rate-limit";
-import { normalizeEmail, requestDayGuestLink } from "@/lib/day-guest";
+import { normalizeEmail } from "@/lib/day-guest";
+import { requestAppLink } from "@/lib/rider-onboarding";
 
 /**
- * POST: Link zur App per Mail anfordern (Tagesgäste). Die Mail geht nur an die
- * Adresse, die am Ticket steht. Die Antwort ist immer dieselbe, damit niemand
- * herausfindet, welche Adressen bekannt sind.
+ * POST: Link zur App per Mail anfordern (Anmeldung mit oder ohne Abo). Die
+ * Mail geht nur an die eingegebene Adresse. Die Antwort ist immer dieselbe,
+ * damit niemand herausfindet, welche Adressen bekannt sind.
  */
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
   const origin = (process.env.AUTH_URL || process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/$/, "");
   // Erst nach der Antwort suchen und senden: so verrät auch die Dauer nichts.
   after(() =>
-    requestDayGuestLink(email, origin).catch((err) => {
+    requestAppLink(email, origin).catch((err) => {
       console.error("[rider] mail link failed:", err);
     }),
   );
