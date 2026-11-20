@@ -1,4 +1,8 @@
+import Link from "next/link";
+import { PartyPopper } from "lucide-react";
 import { safeAuth } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { tenantClient } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
@@ -254,7 +258,18 @@ export default async function AreaDetailPage({ params }: Props) {
   return (
     <>
       <Header title="Ressourcen" accountName={session.user.accountName} />
-      <div className="page-content">
+      <div className="page-content space-y-4">
+        {area.eventVenue && (
+          <Notice
+            tone="info"
+            icon={PartyPopper}
+            title="Veranstaltungsraum"
+            action={<Button asChild variant="outline" size="sm"><Link href={`/veranstaltungen`}>Belegung</Link></Button>}
+            compact
+          >
+            Termine, Partner, Zusatzleistungen und Rechnungen stehen unter Veranstaltungen.
+          </Notice>
+        )}
         <AreaDetailView
           data={data}
           allAreas={allAreas.map((a) => ({

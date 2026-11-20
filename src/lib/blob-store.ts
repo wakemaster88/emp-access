@@ -20,6 +20,7 @@ export const BLOB_PREFIXES = [
   "vehicle-sightings",
   "alert-images",
   "key-pdfs",
+  "event-docs",
 ] as const;
 export type BlobPrefix = (typeof BLOB_PREFIXES)[number];
 
@@ -128,6 +129,10 @@ async function existingPaths(prefix: BlobPrefix, paths: string[]): Promise<Set<s
       const rows = await prisma.keySignature.findMany({ where: { pdfBlob: where }, select: { pdfBlob: true } });
       return new Set(rows.map((r) => r.pdfBlob!));
     }
+    case "event-docs": {
+      const rows = await prisma.venueEventDocument.findMany({ where: { pdfBlob: where }, select: { pdfBlob: true } });
+      return new Set(rows.map((r) => r.pdfBlob!));
+    }
   }
 }
 
@@ -189,5 +194,14 @@ export async function storePdfColumn(
   bytes: Uint8Array<ArrayBuffer>,
 ): Promise<{ pdf?: Uint8Array<ArrayBuffer>; pdfBlob?: string }> {
   const path = await storeBlob("key-pdfs", accountId, bytes, "application/pdf", "pdf");
+  return path ? { pdfBlob: path } : { pdf: bytes };
+}
+
+/** PDF einer Veranstaltung (Auftragsbestaetigung, Rechnung) fuer VenueEventDocument. */
+export async function storeEventDocument(
+  accountId: number,
+  bytes: Uint8Array<ArrayBuffer>,
+): Promise<{ pdf?: Uint8Array<ArrayBuffer>; pdfBlob?: string }> {
+  const path = await storeBlob("event-docs", accountId, bytes, "application/pdf", "pdf");
   return path ? { pdfBlob: path } : { pdf: bytes };
 }
