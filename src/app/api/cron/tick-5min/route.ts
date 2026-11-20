@@ -9,6 +9,7 @@ import { runOfflineCheckTick } from "@/lib/device-offline";
 import { runTelegramReportTick } from "@/lib/telegram-report-tick";
 import { runArticleImageTick } from "@/lib/warenwirtschaft-images";
 import { runCustomerTick } from "@/lib/customers";
+import { runInviteTick } from "@/lib/rider-invite";
 import { runAnnouncementTick } from "@/lib/rider-announce";
 
 export const maxDuration = 120;
@@ -16,7 +17,8 @@ export const maxDuration = 120;
 /**
  * Ein Cron alle fuenf Minuten statt einzelner: Raumregeln, Raumklima, Klimaverlauf verdichten, Bewegungsmelder, Bewaesserung,
  * Geraete-Offline-Check, der Telegram-Tagesbericht, die Bildsuche fuer Artikel ohne Foto und Kundenkonten fuer Abos mit
- * Adresse ohne Konto sowie geplante Pushes zu neuen Angeboten und Challenges der Kunden-App. Jeder Job laeuft in
+ * Adresse ohne Konto, Einladungen zur App an Bestandskunden sowie geplante Pushes zu neuen Angeboten und Challenges der
+ * Kunden-App. Jeder Job laeuft in
  * seinem eigenen try/catch; ein Fehler bremst die anderen nicht.
  */
 export async function GET(request: NextRequest) {
@@ -36,6 +38,7 @@ export async function GET(request: NextRequest) {
     telegramReport: runTelegramReportTick,
     articleImages: runArticleImageTick,
     customers: () => runCustomerTick(),
+    riderInvites: () => runInviteTick(),
     riderAnnouncements: () => runAnnouncementTick(),
   } as const;
 
