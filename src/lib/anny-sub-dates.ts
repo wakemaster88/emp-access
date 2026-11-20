@@ -10,11 +10,30 @@
  * Deshalb gilt: Der Vertragsbeginn ist der früheste je gesehene Beginn.
  */
 
-/** Früheres von bekanntem Beginn (Ticket) und gemeldetem Zeitraum-Beginn. */
-export function annyContractStart(periodStart: Date | null, knownStart: Date | null): Date | null {
-  if (!periodStart) return knownStart;
-  if (!knownStart) return periodStart;
-  return knownStart.getTime() < periodStart.getTime() ? knownStart : periodStart;
+/**
+ * Frühestes von gemeldetem Zeitraum-Beginn, bekanntem Beginn (Ticket) und
+ * Anlage bei anny (`created_at`, praktisch der Kauf).
+ */
+export function annyContractStart(
+  periodStart: Date | null,
+  knownStart: Date | null,
+  createdAt: Date | null = null,
+): Date | null {
+  let best: Date | null = null;
+  for (const d of [periodStart, knownStart, createdAt]) {
+    if (!d || Number.isNaN(d.getTime())) continue;
+    if (!best || d.getTime() < best.getTime()) best = d;
+  }
+  return best;
+}
+
+/** anny `minimum_term` (in Intervallen des Plans) in Monaten; null, wenn unbekannt. */
+export function minimumTermMonths(term: number | null | undefined, interval: string | null | undefined): number | null {
+  if (!term || term <= 0 || !Number.isFinite(term)) return null;
+  const i = (interval ?? "month").toLowerCase();
+  if (i.startsWith("year") || i === "yearly" || i === "annual") return term * 12;
+  if (i.startsWith("month")) return term;
+  return null;
 }
 
 /** Monate addieren, am Monatsende auf den letzten Tag begrenzt (31.01. + 1 = 28./29.02.). */

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import type { AnnyBooking } from "@/lib/anny-types";
-import { addMonths, annyContractStart, annyRunningEnd } from "@/lib/anny-sub-dates";
+import { addMonths, annyContractStart, annyRunningEnd, minimumTermMonths } from "@/lib/anny-sub-dates";
 import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
 import { findPredecessor } from "@/lib/ticket-predecessor";
 import { ensureCustomer, syncCustomerPersons } from "@/lib/customers";
@@ -133,6 +133,10 @@ interface PlanSubscription {
   status?: string;
   starts_at?: string;
   ends_at?: string;
+  /** Anlage des Abos bei anny (praktisch das Kaufdatum). */
+  created_at?: string;
+  /** Mindestlaufzeit in Abrechnungsintervallen des Plans (Monate oder Jahre). */
+  minimum_term?: number;
   contract_ends_at?: string;
   minimum_contract_months?: number;
   minimum_contract_period?: number;
@@ -277,6 +281,11 @@ function calcSubscriptionEndDate(
   const nameMonths = parseDurationMonthsFromName(planName) ?? parseDurationMonthsFromName(ps.plan?.name ?? ps.plan?.title ?? null);
   if (nameMonths && startDate) {
     return addMonths(startDate, nameMonths);
+  }
+
+  const termMonths = minimumTermMonths(ps.minimum_term, ps.plan?.interval);
+  if (termMonths && startDate) {
+    return addMonths(startDate, termMonths);
   }
 
   if (subscriptionId != null) {
@@ -1607,7 +1616,10 @@ export async function syncAnnyForAccount(
     // `starts_at` ist der Beginn des laufenden Abrechnungsmonats, nicht der
     // Vertragsbeginn (lib/anny-sub-dates). Beginn = frühester je gesehener.
     const periodStart = ps.starts_at ? new Date(ps.starts_at) : null;
-    const startDate = annyContractStart(periodStart, existingSubByUuid.get(uuid)?.startDate ?? null);
+    // `created_at` = Anlage bei anny, also der Kauf. Bei geplanten oder
+    // angefragten Abos liegt der Beginn später, dort zählt er nicht.
+    const createdAt = ps.created_at && !["planned", "requested"].includes(psStatus) ? new Date(ps.created_at) : null;
+    const startDate = annyContractStart(periodStart, existingSubByUuid.get(uuid)?.startDate ?? null, createdAt);
     const endDate = ps.contract_ends_at
       ? calcSubscriptionEndDate(ps, startDate, planName, subscriptionId, subDefaultEndDate)
       : annyRunningEnd(
