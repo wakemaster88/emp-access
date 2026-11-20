@@ -2,10 +2,19 @@ import Link from "next/link";
 import { verifyMailLinkKey } from "@/lib/day-guest";
 import { aboRuntimeLabel, onboardingState } from "@/lib/rider-onboarding";
 import { RiderAboChoice } from "@/components/rider/rider-abo-choice";
+import { RiderWho } from "@/components/rider/rider-who";
+
+function age(birthDate: Date | null, now: Date): number | null {
+  if (!birthDate) return null;
+  let a = now.getUTCFullYear() - birthDate.getUTCFullYear();
+  const m = now.getUTCMonth() - birthDate.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < birthDate.getUTCDate())) a--;
+  return a;
+}
 
 export const dynamic = "force-dynamic";
 
-/** Nach dem Mail-Link: gefundene Abos zur Adresse auswählen. */
+/** Nach dem Mail-Link: wer man im Kundenkonto ist, sonst gefundene Abos zur Adresse auswählen. */
 export default async function RiderWelcomePage({ params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
   const link = verifyMailLinkKey(key);
@@ -19,6 +28,30 @@ export default async function RiderWelcomePage({ params }: { params: Promise<{ k
   }
   const state = await onboardingState(link.accountId, link.email);
   const now = new Date();
+  if (state.konto && state.konto.persons.length > 0) {
+    return (
+      <main className="rd-main">
+        <p className="rd-label">Willkommen</p>
+        <h1 className="rd-display rd-h1">Dein Konto</h1>
+        <p className="rd-soft" style={{ margin: 0 }}>
+          Zu {link.email} gehören diese Personen. Wähle dich aus. Die anderen siehst und verwaltest du danach in der App als Familie.
+        </p>
+        <RiderWho
+          mailKey={key}
+          guess={state.konto.guess}
+          persons={state.konto.persons.map((p) => {
+            const a = age(p.birthDate, now);
+            const abos = p.abos.length > 0 ? p.abos.join(", ") : "kein laufendes Abo";
+            return {
+              id: p.id,
+              name: [p.firstName, p.lastName].filter((v) => v?.trim()).join(" ") || "Ohne Namen",
+              detail: a != null ? `${abos} · ${a} Jahre` : abos,
+            };
+          })}
+        />
+      </main>
+    );
+  }
   return (
     <main className="rd-main">
       <p className="rd-label">Willkommen</p>

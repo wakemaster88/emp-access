@@ -10,6 +10,8 @@ export interface FamilyMemberItem {
   name: string;
   adult: boolean;
   hasLogin: boolean;
+  /** Kundenkonto der Person; Personen aus dem eigenen Konto bleiben in der Familie. */
+  customerId: number | null;
 }
 
 interface Props {
@@ -37,6 +39,7 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
   const [confirm, setConfirm] = useState<number | "leave" | null>(null);
   const url = `/api/rider/${encodeURIComponent(token)}/family`;
   const others = members.filter((m) => m.profileId !== selfId);
+  const ownKonto = members.find((m) => m.profileId === selfId)?.customerId ?? null;
 
   async function call(body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
     setBusy(true);
@@ -133,6 +136,7 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
       {others.length === 0 ? (
         <span className="rd-muted">
           Verwalte die Abos deiner Familie in einer App. Kinder brauchen keinen eigenen Zugang, dein Partner behält seinen eigenen.
+          Abos, die du mit deiner Adresse für andere buchst, kommen von selbst dazu.
         </span>
       ) : (
         <ul className="rd-family-list">
@@ -142,10 +146,14 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
                 <b>{m.name}</b>
                 <br />
                 <span className="rd-muted">
-                  {m.adult ? "Partner, eigener Zugang" : m.hasLogin ? "Kind, mit eigenem Zugang" : "Kind, ohne eigenen Zugang"}
+                  {m.adult
+                    ? "Partner, eigener Zugang"
+                    : ownKonto != null && m.customerId === ownKonto
+                      ? "Aus deinem Kundenkonto, von dir verwaltet"
+                      : m.hasLogin ? "Kind, mit eigenem Zugang" : "Kind, ohne eigenen Zugang"}
                 </span>
               </span>
-              {!m.adult &&
+              {!m.adult && (ownKonto == null || m.customerId !== ownKonto) &&
                 (confirm === m.profileId ? (
                   <>
                     <button type="button" className="rd-btn rd-btn-danger rd-btn-sm" onClick={() => remove(m.profileId)} disabled={busy}><span>Ja</span></button>
@@ -194,7 +202,8 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
         <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={makeInvite} disabled={busy}><span>Partner einladen</span></button>
       )}
 
-      {members.length > 0 &&
+      {/* Mit Personen aus dem eigenen Konto gibt es nichts zu verlassen: sie gehören dazu. */}
+      {members.length > 0 && !others.some((m) => !m.adult && ownKonto != null && m.customerId === ownKonto) &&
         (confirm === "leave" ? (
           <div className="rd-row">
             <button type="button" className="rd-btn rd-btn-danger rd-grow" onClick={leave} disabled={busy}><span>Wirklich verlassen</span></button>

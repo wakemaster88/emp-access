@@ -7,12 +7,15 @@ import { riderAppPath } from "@/lib/rider-app";
 
 const schema = z.object({
   key: z.string().min(10).max(800),
-  ticketIds: z.array(z.number().int().positive()).max(20),
+  ticketIds: z.array(z.number().int().positive()).max(20).optional(),
+  /** Mit Kundenkonto: wer man ist; null = fährt selbst nicht. */
+  personId: z.number().int().positive().nullable().optional(),
 });
 
 /**
  * POST: Anmeldung abschließen. Der Schlüssel aus der Mail belegt die Adresse;
- * zugeordnet werden nur Abos, die genau diese Adresse tragen.
+ * zugeordnet werden nur Abos bzw. Personen des Kontos, die zu genau dieser
+ * Adresse gehören.
  */
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
@@ -24,7 +27,10 @@ export async function POST(request: NextRequest) {
   const link = verifyMailLinkKey(parsed.data.key);
   if (!link) return NextResponse.json({ error: "Dieser Link gilt nicht mehr. Fordere einfach einen neuen an." }, { status: 401 });
 
-  const token = await completeOnboarding(link.accountId, link.email, parsed.data.ticketIds);
+  const token = await completeOnboarding(link.accountId, link.email, {
+    ticketIds: parsed.data.ticketIds,
+    personId: parsed.data.personId,
+  });
   if (!token) return NextResponse.json({ error: "Die App ist gerade nicht freigeschaltet." }, { status: 403 });
   return NextResponse.json({ url: riderAppPath(token) });
 }

@@ -473,7 +473,8 @@ werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
   entfernt. Der persönliche Link von der Kasse bleibt.
 - Offen: Profile ohne Ticket erscheinen nicht in der Liste Kunden App ›
   Fahrer. Ein später gekauftes Abo holt der Kunde, indem er sich erneut per
-  Mail-Link anmeldet und es auswählt.
+  Mail-Link anmeldet und es auswählt. (Seit Etappe 4a gilt das nur noch für
+  Adressen ohne Kundenkonto, siehe unten.)
 
 ## Abos über die E-Mail, Familienkonten, Etappe 1 (20.11.2026)
 
@@ -590,3 +591,38 @@ Bestandsdaten.
   Wörter oder mehr) oder gleicher anny-Kundennummer
   (`findDuplicateGroups`). Stand 20.11.2026: 2 Paare mit gleichem Namen,
   keine gemeinsame anny-Nummer.
+
+## Kunden-App mit Familie aus dem Konto, Etappe 4a (20.11.2026)
+
+- Anmeldung per Mail-Link mit der Adresse eines Kundenkontos (Haupt- oder
+  weitere Adresse): Beim ersten Mal fragt `/app/willkommen/<schlüssel>`
+  „Wer bist du?“ (`RiderWho`). Zur Wahl stehen die Personen des Kontos ohne
+  eigenen Zugang und „Ich fahre selbst nicht“ (Eltern, die nur für Kinder
+  buchen: neue Person ohne Abo). Vorschlag aus `pickHolder` (Name des
+  Kontoinhabers, sonst Person mit Erwachsenen-Abo, bei nur Kinder-Abos
+  keiner). Die gewählte Person bekommt die Adresse (`RiderProfile.email`),
+  danach geht jede Anmeldung direkt zu ihr (`kontoLogin`,
+  `completeOnboarding` in `src/lib/rider-onboarding.ts`).
+- Familie aus dem Konto (`syncKontoFamily` in `src/lib/customers.ts`): Wer
+  sich mit der Adresse angemeldet hat, wird Erwachsene einer Familie; die
+  übrigen Personen des Kontos ohne eigenen Zugang kommen als verwaltete
+  Mitglieder dazu. Personen mit eigenem Zugang nur per Einladung, wer schon
+  in einer anderen Familie ist, bleibt dort. Läuft nach jeder Anmeldung,
+  nach `syncCustomerPersons` (anny-Sync, Cron, Kasse, Zusammenlegen) und wenn
+  `assignRider` eine Person anlegt. Ohne Anmeldung entsteht keine Familie.
+- Personen aus dem eigenen Konto lassen sich nicht aus der Familie nehmen,
+  „Familie verlassen“ fehlt dann; die App zeigt „Aus deinem Kundenkonto, von
+  dir verwaltet“.
+- „Neues Abo: Für wen ist es?“ (`RiderForWhom` auf der Startseite, nur im
+  eigenen Profil der Person mit der Konto-Adresse): je Abo des Kontos mit
+  „Fahrer offen“ ich, eine Person des Kontos oder jemand Neues mit Vorname,
+  Nachname und Geburtsdatum (`POST /api/rider/[token]/rider`,
+  `kontoRidersFor` in `src/lib/rider-konto.ts`). Neue Abos derselben Person
+  (Verlängerung) landen ohne Frage im Profil.
+- Name in der App: Vorname der Person vor dem am Abo (`loadRider`,
+  `memberName`), damit Kinder nicht mit dem Namen der Eltern grüßen.
+- Adressen ohne Konto (Tagesgäste, Abo noch nicht verknüpft) wie bisher mit
+  Abo-Auswahl.
+- Noch offen (Etappe 4b): Ablauf-Mails je Konto mit dem Namen der Person,
+  Bestätigungslink für Kinder mit eigener Adresse. Die Datenbankregel „kein
+  Abo ohne Konto“ kommt erst, wenn die Liste „Abos ohne E-Mail“ leer ist.

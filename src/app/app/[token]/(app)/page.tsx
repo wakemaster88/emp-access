@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { riderAppPath } from "@/lib/rider-app";
-import { requireRider } from "@/lib/rider-auth";
+import { requireRider, riderFamilyView } from "@/lib/rider-auth";
+import { kontoRidersFor } from "@/lib/rider-konto";
+import { RiderForWhom } from "@/components/rider/rider-for-whom";
 import { METRIC_LABEL, RENEWAL_HINT_DAYS, formatEuro } from "@/lib/gamification";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
 import { fmtDay, validityText } from "@/lib/rider-format";
@@ -26,11 +28,14 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { token } = await params;
   const rider = await requireRider(token);
   const base = riderAppPath(token);
-  const [offers, challenges, occupancy] = await Promise.all([
+  const [offers, challenges, occupancy, family] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
+    riderFamilyView(token),
   ]);
+  // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
+  const konto = family?.relation === "self" ? await kontoRidersFor(rider.profileId) : null;
   const challenge = challenges.find((c) => c.phase === "running" && !c.won) ?? null;
   const open = rider.vouchers.filter((v) => v.state === "open");
   const { current, next } = rider.level;
@@ -51,6 +56,19 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           <h1 className="rd-display" style={{ fontSize: 48, fontWeight: 800 }}>{rider.firstName ? `Hi ${rider.firstName}` : "Hi"}</h1>
         </div>
       </div>
+
+      {konto && konto.abos.length > 0 && (
+        <RiderForWhom
+          token={token}
+          abos={konto.abos.map((a) => ({
+            ticketId: a.ticketId,
+            aboName: a.aboName,
+            runtime: a.endDate ? `bis ${fmtDay(a.endDate)}` : "ohne Enddatum",
+            lastName: a.lastName,
+          }))}
+          persons={konto.persons.map((p) => ({ id: p.id, label: p.id === rider.profileId ? "Ich" : p.name }))}
+        />
+      )}
 
       {abo.kind === "active" && rider.abo && (
         <div className={`rd-card${soon ? " rd-abo-warn" : ""}`}>
