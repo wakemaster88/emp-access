@@ -1,0 +1,102 @@
+/**
+ * Anmelde-Mail der Kunden-App im Look der App: dunkler Grund, Kopf in Petrol,
+ * kursive Versalschrift, gelber Akzent (CI tuttenbrocksee.com, wie
+ * `src/app/app/rider.css`). Bewusst ohne `wrapEmailHtml`, weil die Verwaltungs-
+ * Mails hell und schlicht sind. Nur Tabellen und Inline-Stile, damit es auch in
+ * Outlook und Gmail hält.
+ */
+import { escapeHtml } from "./email-templates";
+
+const BG = "#0b1214";
+const CARD = "#121a1c";
+const LINE = "#24373a";
+const BRAND = "#1a6d73";
+const BRAND_DARK = "#155a60";
+const ACCENT = "#fbbf24";
+const SOFT = "#c5d2d3";
+const MUTED = "#a0b3b5";
+const LINK = "#7fd6db";
+
+const SANS = "Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+const DISPLAY = "'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue Condensed', Impact, Arial, sans-serif";
+
+export interface RiderLinkMail {
+  subject: string;
+  html: string;
+  text: string;
+}
+
+/** Mail mit dem Anmelde-Link. `origin` dient für das App-Icon. */
+export function riderLinkMail(args: { url: string; accountName: string; origin: string; hours: number }): RiderLinkMail {
+  const url = escapeHtml(args.url);
+  const name = escapeHtml(args.accountName);
+  const icon = escapeHtml(`${args.origin}/app-icons/ride-pass-192.png`);
+  const chips = ["Abo", "Besuche", "Gutscheine"]
+    .map(
+      (c) =>
+        `<td style="padding:0 6px 0 0;"><span style="display:inline-block;font-family:${SANS};font-size:12px;font-weight:600;color:#a9e6ea;background:#12383b;border-radius:999px;padding:4px 11px;">${c}</span></td>`,
+    )
+    .join("");
+
+  const html = `<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
+<title>Dein Link zur App</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:${BG};">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Ein Klick und du bist in deiner App.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BG};">
+<tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background:${CARD};border:1px solid ${LINE};border-radius:10px;overflow:hidden;">
+  <tr><td style="background:${BRAND};background-image:linear-gradient(135deg,${BRAND} 0%,${BRAND_DARK} 100%);padding:28px 24px 26px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="vertical-align:middle;padding-right:12px;"><img src="${icon}" width="40" height="40" alt="" style="display:block;border:0;border-radius:9px;"></td>
+      <td style="vertical-align:middle;font-family:${SANS};font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#ffffff;">${name}</td>
+    </tr></table>
+    <div style="margin-top:22px;font-family:${DISPLAY};font-style:italic;font-weight:800;font-size:46px;line-height:0.95;text-transform:uppercase;color:#ffffff;">Deine<br><span style="color:${ACCENT};">Saison</span></div>
+  </td></tr>
+  <tr><td style="height:6px;line-height:6px;font-size:0;background:${ACCENT};">&nbsp;</td></tr>
+  <tr><td style="padding:26px 24px 8px;font-family:${SANS};font-size:16px;line-height:1.5;color:${SOFT};">
+    Hier ist dein Link zur App. Ein Klick, und du siehst dein Abo, deine Besuchstage, Starts und Gutscheine.
+  </td></tr>
+  <tr><td style="padding:10px 24px 4px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${chips}</tr></table></td></tr>
+  <tr><td style="padding:22px 24px 6px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td align="center" style="background:${BRAND};border-radius:6px;border-left:6px solid ${ACCENT};">
+        <a href="${url}" style="display:block;padding:15px 18px;font-family:${DISPLAY};font-style:italic;font-weight:800;font-size:22px;letter-spacing:0.02em;text-transform:uppercase;color:#ffffff;text-decoration:none;">App öffnen &rarr;</a>
+      </td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="padding:14px 24px 24px;font-family:${SANS};font-size:13.5px;line-height:1.5;color:${MUTED};">
+    Der Link gilt ${args.hours} Stunden. Beim ersten Öffnen wählst du dein Abo aus und richtest einen Passkey oder ein Passwort ein. Noch kein Abo? Dann geht es auch ohne.
+  </td></tr>
+  <tr><td style="padding:16px 24px 22px;border-top:1px solid ${LINE};font-family:${SANS};font-size:12px;line-height:1.5;color:${MUTED};">
+    Du hast nichts angefordert? Dann musst du nichts tun, ohne Klick passiert nichts.<br>
+    Klappt die Taste nicht? Diesen Link öffnen:<br><a href="${url}" style="color:${LINK};word-break:break-all;">${url}</a>
+  </td></tr>
+</table>
+<div style="padding:14px 0 0;font-family:${SANS};font-size:11px;color:#5f7477;">${name}</div>
+</td></tr>
+</table>
+</body>
+</html>`;
+
+  const text = [
+    "Deine Saison",
+    "",
+    `Hier ist dein Link zur App von ${args.accountName}. Ein Klick, und du siehst dein Abo, deine Besuchstage, Starts und Gutscheine.`,
+    "",
+    args.url,
+    "",
+    `Der Link gilt ${args.hours} Stunden. Beim ersten Öffnen wählst du dein Abo aus und richtest einen Passkey oder ein Passwort ein. Noch kein Abo? Dann geht es auch ohne.`,
+    "",
+    "Du hast nichts angefordert? Dann musst du nichts tun, ohne Klick passiert nichts.",
+  ].join("\n");
+
+  return { subject: "Dein Link zur App", html, text };
+}

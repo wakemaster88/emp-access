@@ -13,7 +13,7 @@ import { berlinYmd } from "./berlin-day";
 import { countLinked, dayTicketsByEmail, mailLinkKey, MAIL_LINK_HOURS, MAIL_MAX_PER_DAY, MAIL_PAUSE_MINUTES, normalizeEmail, DAY_GUEST_MAIL_SUBJECT } from "./day-guest";
 import { newRiderToken } from "./rider-app";
 import { sendEmail } from "./email-sender";
-import { escapeHtml, wrapEmailHtml } from "./email-templates";
+import { riderLinkMail } from "./rider-mail-template";
 
 const ABO_STATUS = ["VALID", "REDEEMED", "PAUSED"] as const;
 const MAX_ABOS = 20;
@@ -197,38 +197,13 @@ export async function requestAppLink(rawEmail: unknown, origin: string, now: Dat
     if (recent.length >= MAIL_MAX_PER_DAY || recent.some((r) => r.sentAt.getTime() > pauseFrom)) continue;
 
     const url = `${origin}/app/mail/${mailLinkKey(target.accountId, email, now)}`;
-    const name = target.name;
-    const innerHtml = [
-      `<p style="margin:0 0 16px;">Hallo,</p>`,
-      `<p style="margin:0 0 16px;">hier ist dein Link zur App von ${escapeHtml(name)}. Dort siehst du dein Abo, deine Besuche, Ziele und Gutscheine.</p>`,
-      `<p style="margin:0 0 20px;"><a href="${escapeHtml(url)}" style="display:inline-block;background:${escapeHtml(mail.brandColor || "#236770")};color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:10px;">App öffnen</a></p>`,
-      `<p style="margin:0 0 16px;">Der Link gilt ${MAIL_LINK_HOURS} Stunden. Beim ersten Öffnen wählst du dein Abo aus und richtest einen Passkey oder ein Passwort ein.</p>`,
-      `<p style="margin:0;color:#6b6862;font-size:13.5px;">Du hast nichts angefordert? Dann musst du nichts tun, ohne Klick passiert nichts.</p>`,
-    ].join("\n");
-    const text = [
-      "Hallo,",
-      "",
-      `hier ist dein Link zur App von ${name}. Dort siehst du dein Abo, deine Besuche, Ziele und Gutscheine.`,
-      "",
-      url,
-      "",
-      `Der Link gilt ${MAIL_LINK_HOURS} Stunden. Beim ersten Öffnen wählst du dein Abo aus und richtest einen Passkey oder ein Passwort ein.`,
-      "",
-      "Du hast nichts angefordert? Dann musst du nichts tun, ohne Klick passiert nichts.",
-    ].join("\n");
+    const content = riderLinkMail({ url, accountName: target.name, origin, hours: MAIL_LINK_HOURS });
     const result = await sendEmail({
       config: mail,
       to: email,
       subject: DAY_GUEST_MAIL_SUBJECT,
-      html: wrapEmailHtml({
-        innerHtml,
-        brandColor: mail.brandColor,
-        logoUrl: mail.logoUrl,
-        websiteUrl: mail.websiteUrl,
-        accountName: name,
-        preheader: "Dein persönlicher Link zur App",
-      }),
-      text,
+      html: content.html,
+      text: content.text,
     });
     await prisma.emailSend
       .create({
