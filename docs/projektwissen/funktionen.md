@@ -373,3 +373,19 @@ einzurichten. Antippen öffnet `/?doorbird=<cameraId>`, die Tor-Ansicht im
 Dashboard mit Livebild und Öffnen-Knopf. Meldungen älter als 2 Minuten
 werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
 öffnen“ (`/api/hub/doorbird-gate`). Code: `src/lib/doorbell-push.ts`.
+
+## Kunden-App: Standort, Restlaufzeit und Abo-Shop (20.11.2026)
+
+- Kopf der Startseite zeigt den Standort „Tuttenbrocksee“ (`RIDER_LOCATION`
+  in `src/lib/rider-shop.ts`).
+- Karte „Dein Abo“ mit den restlichen Tagen (Kalendertage Berlin bis zum
+  Enddatum, `aboStatus`). In den letzten 30 Tagen gelb umrandet mit Knopf
+  „Abo verlängern“. Ersetzt die Karte aus Etappe 6 („Sprich uns an der
+  Kasse an“).
+- Abgelaufen, gesperrt oder kein Abo: Karte mit Knopf zu `/app/<token>/abos`.
+  Dort steckt der anny-Shop als offizielles Widget (`<a-organization-page>`
+  von `cdn.anny.co`, Organisation `tuttenbrocksee`, Liste „Abonnements“),
+  dasselbe wie auf tuttenbrocksee.com/shop. Buchen und Bezahlen laufen bei
+  anny; das neue Abo kommt wie gewohnt über den ANNY-Sync.
+- CSP in `next.config.ts` erlaubt dafür `cdn.anny.co` (Skript, Stil, Schrift)
+  und Frames von `embed.anny.co`/`anny.co`.

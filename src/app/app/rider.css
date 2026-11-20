@@ -467,3 +467,18 @@ html[data-rd-intro="skip"] .rd-intro { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .rd-intro { display: none; }
 }
+
+/* Standort im Kopf der Startseite. */
+.rd-hero-line.rd-loc { gap: 6px; font-size: 12px; color: #ffffff; }
+.rd-hero-line.rd-loc::before { display: none; }
+.rd-hero .rd-loc svg { position: static; flex: none; width: 16px; height: 16px; color: var(--rd-accent); }
+
+/* Abo-Karte: Restlaufzeit in Tagen. */
+.rd-abo-days { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rd-abo-days .rd-display { font-size: 56px; line-height: 0.9; color: var(--rd-accent); }
+.rd-abo-days span { font-weight: 700; font-size: 16px; }
+.rd-abo-warn { border-color: var(--rd-accent); }
+
+/* Eingebetteter anny-Shop: hell wie bei anny, damit Preise und Knöpfe lesbar bleiben. */
+.rd-shop { background: #ffffff; color: #0f172a; border-radius: 6px; overflow: hidden; min-height: 60dvh; max-width: 100%; }
+.rd-shop a-organization-page { display: block; width: 100%; }

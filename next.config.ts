@@ -22,11 +22,14 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
-      "style-src 'self' 'unsafe-inline'",
+      // cdn.anny.co: Abo-Shop-Widget in der Kunden-App (src/components/rider/rider-abo-shop.tsx).
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.anny.co",
+      "style-src 'self' 'unsafe-inline' https://cdn.anny.co",
       "img-src 'self' data: blob: https: http:",
       "media-src 'self' data: blob: https: http:",
-      "font-src 'self' data:",
+      "font-src 'self' data: https://cdn.anny.co",
+      // Das anny-Widget legt ein iframe von embed.anny.co an; sonst nur eigene Frames.
+      "frame-src 'self' https://embed.anny.co https://anny.co",
       "connect-src 'self' https: wss: http: ws:",
       "worker-src 'self' blob:",
       "frame-ancestors 'none'",
