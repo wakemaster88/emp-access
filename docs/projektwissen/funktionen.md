@@ -423,3 +423,36 @@ werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
 - Offen: Profile ohne Ticket erscheinen nicht in der Liste Kunden App ›
   Fahrer. Ein später gekauftes Abo holt der Kunde, indem er sich erneut per
   Mail-Link anmeldet und es auswählt.
+
+## Abos über die E-Mail, Familienkonten, Etappe 1 (20.11.2026)
+
+Aaron, 20.11.2026: Abos aus dem eigenen System und aus anny werden immer über
+die E-Mail-Adresse gespeichert, Familienkonten sauber. Plan in vier Etappen:
+Kundenkonto je E-Mail mit Personen (Variante B). Etappe 1 ändert keine
+Bestandsdaten.
+
+- E-Mail-Pflicht (`src/lib/abo-email.ts`): neue Abos brauchen eine Adresse
+  (`POST /api/tickets`, Shop-Monitor), bei einem Abo lässt sie sich ändern,
+  aber nicht entfernen (`PUT /api/tickets/[id]`, Shop-Monitor). Ältere Abos
+  ohne Adresse bleiben bearbeitbar. Die Dialoge markieren das Feld.
+- Abos › „Abos ohne E-Mail“ (`src/lib/abos-without-email.ts`): laufende Abos
+  ohne Adresse mit Herkunft (Reepay-Import, manuell). Vorschlag, wenn andere
+  Tickets mit gleichem Vor- und Nachnamen genau eine Adresse tragen.
+  Eintragen über `PATCH /api/tickets/[id]/email` (ändert nur die Adresse).
+- Familienkonten in anny: ein Konto je E-Mail; Name und Geburtsdatum des
+  Kontoinhabers stehen auf jedem Abo des Kontos. Deshalb:
+  - Abos mit gleichem Namen und Geburtsdatum kommen nur automatisch ins
+    selbe Profil, wenn alle nacheinander laufen (höchstens 31 Tage
+    Überschneidung, `samePersonAbos` in `src/lib/abo-person.ts`). Laufen zwei
+    gleichzeitig, ist es ein Familienkonto: dann kommt nichts automatisch mit,
+    der Kunde wählt seine Abos selbst. Gilt für `ensureRiderProfile` und
+    `completeOnboarding`.
+  - Karte und Foto erben (`choosePredecessor` in
+    `src/lib/ticket-predecessor.ts`, ANNY-Sync und Kartenhinweis): läuft unter
+    der Adresse ein Abo einer anderen Art, kommen nur beendete Tickets
+    derselben Art in Frage. Verschiedene Karten zur selben Zeit heißen zwei
+    Personen: nichts erben, die Kasse vergibt die Karte. Ersatzkarten
+    nacheinander: die neueste gilt.
+- Nächste Etappen: Kundenkonto (`Customer`) und Personen mit eigenem Namen
+  und Geburtsdatum samt Übernahme der Bestandsdaten (2), Kasse und
+  Verwaltung (3), Kunden-App mit Familie aus dem Konto (4).

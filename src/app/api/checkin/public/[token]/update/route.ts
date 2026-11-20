@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rescheduleAnnyBooking } from "@/lib/anny-availability";
 import { dayTicketEmailChanged, normalizeEmail } from "@/lib/day-guest";
+import { aboEmailError } from "@/lib/abo-email";
 
 export async function PUT(
   request: NextRequest,
@@ -208,6 +209,9 @@ export async function PUT(
     if (raw && !email) {
       return NextResponse.json({ error: "Bitte eine gültige E-Mail-Adresse eingeben." }, { status: 400 });
     }
+    // Jedes Abo hängt an einer E-Mail-Adresse (siehe lib/abo-email).
+    const aboError = aboEmailError(ticket, { subscriptionId: ticket.subscriptionId, email });
+    if (aboError) return NextResponse.json({ error: aboError }, { status: 400 });
     updateData.email = email;
   }
 

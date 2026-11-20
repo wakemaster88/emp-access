@@ -100,6 +100,8 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
   // Vorgaenger-Ticket, findet der Scanner nur dieses und weist ab, sobald es
   // abgelaufen ist.
   const missingCard = !!selectedOption?.data.requiresRfid && !code.trim();
+  // Jedes Abo hängt an einer E-Mail-Adresse (siehe lib/abo-email).
+  const aboSelected = selectedOption?.type === "subscription";
 
   function reset() {
     setFirstName("");
@@ -283,7 +285,11 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
 
           <div className="space-y-1.5">
             <Label htmlFor="t-email">
-              Email <span className="text-muted-foreground font-normal">(für automatische Mails)</span>
+              {aboSelected ? (
+                <>E-Mail <span className="text-destructive">*</span></>
+              ) : (
+                <>E-Mail <span className="text-muted-foreground font-normal">(für automatische Mails)</span></>
+              )}
             </Label>
             <Input
               id="t-email"
@@ -292,8 +298,12 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
+              required={aboSelected}
               className={FIELD}
             />
+            {aboSelected && (
+              <p className="text-xs text-muted-foreground">Jedes Abo hängt an einer E-Mail-Adresse. Darüber findet der Kunde sein Abo in der App.</p>
+            )}
           </div>
 
           <div className="space-y-1.5">

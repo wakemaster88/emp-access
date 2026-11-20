@@ -12,6 +12,7 @@ import { prisma } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { countLinked, dayTicketsByEmail, mailLinkKey, MAIL_LINK_HOURS, MAIL_MAX_PER_DAY, MAIL_PAUSE_MINUTES, normalizeEmail, DAY_GUEST_MAIL_SUBJECT } from "./day-guest";
 import { newRiderToken } from "./rider-app";
+import { samePersonAbos } from "./abo-person";
 import { sendEmail } from "./email-sender";
 import { riderLinkMail } from "./rider-mail-template";
 
@@ -117,19 +118,34 @@ export async function completeOnboarding(
   if (chosen.length > 0) {
     const tickets = await prisma.ticket.findMany({
       where: { accountId, id: { in: chosen } },
-      select: { id: true, firstName: true, lastName: true, birthDate: true },
+      select: { id: true, firstName: true, lastName: true, birthDate: true, startDate: true, endDate: true },
     });
-    // Ältere Abo-Tickets derselben Person (Verlängerung) kommen mit.
+    const ids = new Set(chosen);
+    // Ältere Abo-Tickets derselben Person (Verlängerung) kommen mit. Gleicher
+    // Name und Geburtsdatum genügt nicht: Auf einem anny-Familienkonto tragen
+    // Eltern- und Kinder-Abo beide die Daten des Kontoinhabers. Laufen solche
+    // Abos gleichzeitig, kommt nichts automatisch mit (lib/abo-person).
     const samePerson = tickets
       .filter((t) => t.firstName && t.lastName && t.birthDate)
       .map((t) => ({ firstName: t.firstName!, lastName: t.lastName!, birthDate: t.birthDate! }));
+    if (samePerson.length > 0) {
+      // Auch Abos in anderen Profilen zählen mit: sie verraten ein Familienkonto.
+      const others = await prisma.ticket.findMany({
+        where: { accountId, subscriptionId: { not: null }, id: { notIn: chosen }, OR: samePerson },
+        select: { id: true, firstName: true, lastName: true, birthDate: true, startDate: true, endDate: true, riderProfileId: true },
+        take: 50,
+      });
+      for (const t of tickets) {
+        if (!t.firstName || !t.lastName || !t.birthDate) continue;
+        const sameData = (o: { firstName: string | null; lastName: string | null; birthDate: Date | null }) =>
+          o.firstName === t.firstName && o.lastName === t.lastName && o.birthDate?.getTime() === t.birthDate?.getTime();
+        for (const o of samePersonAbos(tickets.filter(sameData), others.filter(sameData))) {
+          if (o.riderProfileId == null) ids.add(o.id);
+        }
+      }
+    }
     await prisma.ticket.updateMany({
-      where: {
-        accountId,
-        subscriptionId: { not: null },
-        riderProfileId: null,
-        OR: [{ id: { in: chosen } }, ...samePerson],
-      },
+      where: { accountId, subscriptionId: { not: null }, riderProfileId: null, id: { in: [...ids] } },
       data: { riderProfileId: profile.id, gamificationOptOut: false },
     });
   }

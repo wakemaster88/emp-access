@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ticketCreateSchema } from "@/lib/validators";
 import { resolveAnnyOrganizationId, fetchAnnyServiceMatch, resolveServiceResourceId } from "@/lib/anny-availability";
 import { createAnnyBookingV2 } from "@/lib/anny-bookings";
+import { aboEmailError } from "@/lib/abo-email";
 
 const publicTicketCreateSchema = ticketCreateSchema.extend({
   voucherCode: z.string().min(1).optional(),
@@ -34,6 +35,12 @@ export async function POST(
 
   const data = parsed.data;
   const voucherCode = data.voucherCode?.trim() || null;
+
+  // Jedes Abo hängt an einer E-Mail-Adresse (siehe lib/abo-email).
+  const emailError = aboEmailError(null, { subscriptionId: data.subscriptionId, email: data.email });
+  if (emailError) {
+    return NextResponse.json({ error: { formErrors: [emailError], fieldErrors: { email: [emailError] } } }, { status: 400 });
+  }
   const transferCode = data.transferCode === true;
 
   // Guard: endDate nie vor startDate (z.B. zukuenftiger Ferienkurs-Start

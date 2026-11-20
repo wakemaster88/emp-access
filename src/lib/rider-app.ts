@@ -9,6 +9,7 @@ import { cache } from "react";
 import { prisma } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { adoptDayTickets } from "./day-guest";
+import { samePersonAbos } from "./abo-person";
 import {
   benefitVoucherState,
   computeMetrics,
@@ -245,8 +246,11 @@ export const loadRiderCached = cache((token: string) => loadRider(token));
 
 /**
  * Profil zu einem Abo-Ticket holen oder anlegen. Weitere Abo-Tickets
- * derselben Person (Vorname, Nachname, Geburtsdatum gleich) kommen mit ins
- * Profil. Hebt einen früheren Ausstieg auf: wer sich anmeldet, macht mit.
+ * derselben Person (Vorname, Nachname, Geburtsdatum gleich, alle zeitlich
+ * nacheinander) kommen mit ins Profil. Laufen Abos mit gleichen Daten
+ * gleichzeitig, ist es ein anny-Familienkonto mit mehreren Personen: dann
+ * bekommt jedes Abo sein eigenes Profil (siehe lib/abo-person).
+ * Hebt einen früheren Ausstieg auf: wer sich anmeldet, macht mit.
  */
 export async function ensureRiderProfile(accountId: number, ticketId: number): Promise<{ token: string } | null> {
   const ticket = await prisma.ticket.findFirst({
@@ -256,6 +260,8 @@ export async function ensureRiderProfile(accountId: number, ticketId: number): P
       firstName: true,
       lastName: true,
       birthDate: true,
+      startDate: true,
+      endDate: true,
       riderProfile: { select: { id: true, token: true } },
     },
   });
@@ -265,15 +271,18 @@ export async function ensureRiderProfile(accountId: number, ticketId: number): P
     ticket.firstName && ticket.lastName && ticket.birthDate
       ? { firstName: ticket.firstName, lastName: ticket.lastName, birthDate: ticket.birthDate }
       : null;
+  const others = samePerson
+    ? samePersonAbos([ticket], await prisma.ticket.findMany({
+        where: { accountId, subscriptionId: { not: null }, id: { not: ticket.id }, ...samePerson },
+        select: { id: true, startDate: true, endDate: true, riderProfileId: true, riderProfile: { select: { id: true, token: true } } },
+        take: 50,
+      }))
+    : [];
 
   let profile = ticket.riderProfile;
-  if (!profile && samePerson) {
+  if (!profile) {
     // Hat ein anderes Ticket derselben Person schon ein Profil, dann dieses nutzen.
-    const sibling = await prisma.ticket.findFirst({
-      where: { accountId, subscriptionId: { not: null }, riderProfileId: { not: null }, ...samePerson },
-      select: { riderProfile: { select: { id: true, token: true } } },
-    });
-    profile = sibling?.riderProfile ?? null;
+    profile = others.find((t) => t.riderProfile != null)?.riderProfile ?? null;
   }
   if (!profile) {
     profile = await prisma.riderProfile.create({
@@ -282,11 +291,12 @@ export async function ensureRiderProfile(accountId: number, ticketId: number): P
     });
   }
 
+  const adopt = others.filter((t) => t.riderProfileId == null).map((t) => t.id);
   await prisma.ticket.updateMany({
     where: {
       accountId,
       subscriptionId: { not: null },
-      OR: [{ id: ticket.id }, ...(samePerson ? [{ riderProfileId: null, ...samePerson }] : [])],
+      OR: [{ id: ticket.id }, ...(adopt.length > 0 ? [{ id: { in: adopt }, riderProfileId: null }] : [])],
     },
     data: { riderProfileId: profile.id, gamificationOptOut: false },
   });

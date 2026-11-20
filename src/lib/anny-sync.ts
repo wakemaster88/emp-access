@@ -4,7 +4,7 @@ import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import type { AnnyBooking } from "@/lib/anny-types";
 import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
-import { findPredecessorTicket } from "@/lib/ticket-predecessor";
+import { findPredecessor } from "@/lib/ticket-predecessor";
 import { newAnnyIncomplete, orphanCleanupScope, type AnnyIncomplete } from "./anny-orphans";
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
@@ -1648,39 +1648,54 @@ export async function syncAnnyForAccount(
         await prisma.ticket.update({ where: { id: existing.id }, data: ticketData });
         subUpdated++;
       } else {
-        const subCustData = customerDataMap.get(String(customerId));
         const inherited: Record<string, unknown> = {};
-        if (subCustData?.rfidCode) inherited.rfidCode = subCustData.rfidCode;
-        if (subCustData?.profileImage) inherited.profileImage = subCustData.profileImage;
 
-        // Die customerDataMap kennt nur Buchungstickets (`anny:<customerId>:`)
-        // derselben ANNY-Kundennummer. Sie greift nicht, wenn ANNY beim
-        // Neuabschluss eine neue Kundennummer vergibt oder die Karte noch an
-        // einem Alt-Ticket (Reepay-Import) haengt. Dann ueber Person suchen,
-        // sonst startet das neue Abo ohne Karte und der Scan trifft weiter das
-        // abgelaufene Vorgaenger-Ticket.
-        if (!inherited.rfidCode || !inherited.profileImage) {
-          try {
-            const predecessor = await findPredecessorTicket(prisma.ticket, accountId, {
-              firstName: ticketData.firstName,
-              lastName: ticketData.lastName,
-              email: ticketData.email,
-            });
-            if (predecessor) {
-              if (!inherited.rfidCode && predecessor.rfidCode) {
-                inherited.rfidCode = predecessor.rfidCode;
-              }
-              if (!inherited.profileImage && predecessor.profileImage) {
-                inherited.profileImage = predecessor.profileImage;
-              }
-              console.log(
-                `[anny sync] account=${accountId} Abo ${uuid}: Karte/Foto von Ticket ${predecessor.ticketId} uebernommen (match=${predecessor.matchedBy})`,
-              );
+        // Karte und Foto mitnehmen: zuerst von Buchungstickets derselben
+        // ANNY-Kundennummer (`anny:<customerId>:`), sonst vom Vorgaenger-Ticket
+        // ueber E-Mail und Namen. ANNY vergibt beim Neuabschluss teils eine
+        // neue Kundennummer, und Karten aus dem Reepay-Altbestand haengen an
+        // ganz anderen Tickets - ohne die Suche startete das neue Abo ohne
+        // Karte und der Scan traefe weiter das abgelaufene Vorgaenger-Ticket.
+        //
+        // Familienkonto (anny fuehrt ein Konto je E-Mail): Liegt unter der
+        // Adresse ein laufendes Abo einer anderen Art oder tragen die Tickets
+        // mehrere Karten, gehoert das neue Abo womoeglich einer anderen Person.
+        // Dann wird gar nichts uebernommen, die Kasse vergibt die Karte.
+        let familyGuard: string | null = null;
+        let predecessor: Awaited<ReturnType<typeof findPredecessor>>["match"] = null;
+        try {
+          const found = await findPredecessor(prisma.ticket, accountId, {
+            firstName: ticketData.firstName,
+            lastName: ticketData.lastName,
+            email: ticketData.email,
+            subscriptionId,
+          });
+          familyGuard = found.ambiguous;
+          predecessor = found.match;
+        } catch (e) {
+          console.error(
+            `[anny sync] account=${accountId} Vorgaenger-Suche fuer ${uuid} fehlgeschlagen:`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+
+        if (familyGuard) {
+          console.log(
+            `[anny sync] account=${accountId} Abo ${uuid}: Karte/Foto nicht uebernommen (${familyGuard === "family" ? "weiteres laufendes Abo unter dieser Adresse" : "mehrere Karten unter dieser Adresse"})`,
+          );
+        } else {
+          const subCustData = customerDataMap.get(String(customerId));
+          if (subCustData?.rfidCode) inherited.rfidCode = subCustData.rfidCode;
+          if (subCustData?.profileImage) inherited.profileImage = subCustData.profileImage;
+          if (predecessor && (!inherited.rfidCode || !inherited.profileImage)) {
+            if (!inherited.rfidCode && predecessor.rfidCode) {
+              inherited.rfidCode = predecessor.rfidCode;
             }
-          } catch (e) {
-            console.error(
-              `[anny sync] account=${accountId} Vorgaenger-Suche fuer ${uuid} fehlgeschlagen:`,
-              e instanceof Error ? e.message : String(e),
+            if (!inherited.profileImage && predecessor.profileImage) {
+              inherited.profileImage = predecessor.profileImage;
+            }
+            console.log(
+              `[anny sync] account=${accountId} Abo ${uuid}: Karte/Foto von Ticket ${predecessor.ticketId} uebernommen (match=${predecessor.matchedBy})`,
             );
           }
         }

@@ -5,6 +5,7 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
 import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
 import { foreignRefError } from "@/lib/tenant-refs";
+import { aboEmailError, cleanEmail } from "@/lib/abo-email";
 
 export async function GET(
   request: NextRequest,
@@ -51,6 +52,15 @@ export async function PUT(
     where: { id: ticketId, accountId: accountId! },
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+
+  // Jedes Abo hängt an einer E-Mail-Adresse (siehe lib/abo-email).
+  const emailError = aboEmailError(existing, {
+    subscriptionId: data.subscriptionId !== undefined ? data.subscriptionId : existing.subscriptionId,
+    email: data.email !== undefined ? data.email : existing.email,
+  });
+  if (emailError) {
+    return NextResponse.json({ error: { formErrors: [emailError], fieldErrors: { email: [emailError] } } }, { status: 400 });
+  }
 
   const refError = await foreignRefError(db, accountId, {
     accessAreaIds: [data.accessAreaId],
@@ -144,7 +154,7 @@ export async function PUT(
       ...(data.slotEnd !== undefined && { slotEnd: data.slotEnd }),
       ...(data.validityDurationMinutes !== undefined && { validityDurationMinutes: data.validityDurationMinutes }),
       ...(data.profileImage !== undefined && { profileImage: data.profileImage }),
-      ...(data.email !== undefined && { email: data.email }),
+      ...(data.email !== undefined && { email: cleanEmail(data.email) }),
       startDate: data.startDate ? new Date(data.startDate) : null,
       endDate: data.endDate ? new Date(data.endDate) : null,
       version: { increment: 1 },
