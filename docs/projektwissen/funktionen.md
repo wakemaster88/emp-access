@@ -27,7 +27,7 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 
 ## Gamification für Abo-Fahrer, Etappe 1 (15.11.2026)
 
-- Seite Gäste › Gamification (`/gamification`, nur Admins) mit den Reitern
+- Seite Gäste › Kunden App (`/gamification`, Menüpunkt seit 20.11.2026 so benannt, nur Admins) mit den Reitern
   Auswertung, Meilensteine, Gutscheine und Einstellungen. Ab Werk aus: ohne
   `GamificationConfig.enabled` wird nichts gezählt und nichts ausgegeben.
 - Ein **Start** ist ein GRANTED-Scan eines Abo-Tickets an einem Gerät mit
@@ -60,7 +60,7 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   für unbekannte Karte und falsches Datum). Ergebnis ist der persönliche Link
   `/app/<token>`; der Token ist der Schlüssel, es gibt kein Passwort.
 - Fahrer ohne Geburtsdatum oder Kartennummer bekommen den Link an der Kasse:
-  Gäste › Gamification › Fahrer › App-Link (QR-Code und Link zum Kopieren).
+  Gäste › Kunden App › Fahrer › App-Link (QR-Code und Link zum Kopieren).
 - `RiderProfile` bündelt die Abo-Tickets einer Person (Vorname, Nachname und
   Geburtsdatum gleich) und trägt Spitzname und Ranglisten-Einwilligung
   (`showInRanking`, ab Werk aus).
@@ -75,7 +75,7 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 
 ## Challenges und Angebote, Etappe 3 (15.11.2026)
 
-- **Challenges** (Gäste › Gamification › Challenges) haben einen festen
+- **Challenges** (Gäste › Kunden App › Challenges) haben einen festen
   Zeitraum, eine Kennzahl (Besuchstage, Starts, Wochen in Serie) und optional
   einen Gutschein. Zwei Arten:
   - **Aufgabe erfüllt** (`TASK`): wer die Schwelle im Zeitraum erreicht,
@@ -104,7 +104,7 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   und ab 50 %). Rechenregel `seasonRecap` in `src/lib/gamification.ts`.
 - **Rangliste für einen Bildschirm** (`/rangliste/<token>`): Saison nach
   Besuchstagen und bis zu zwei laufende Top-X-Challenges, lädt alle fünf
-  Minuten neu. Ein- und Ausschalten unter Gamification › Einstellungen
+  Minuten neu. Ein- und Ausschalten unter Kunden App › Einstellungen
   (`GamificationConfig.displayToken`); nach dem Abschalten gilt der Link
   nicht mehr. Gezeigt wird nur, wer Spitzname und Zustimmung gesetzt hat.
   Alle anderen zählen für die Plätze mit, erscheinen aber nicht.
@@ -161,7 +161,7 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 - Entscheidung von Aaron (15.11.2026): Tagesgäste kommen **nur über die
   E-Mail-Adresse am Ticket** in die App. Die zuerst gebauten Wege „Ticket
   selbst scannen“ und „QR-Code an der Kasse“ sind wieder entfernt.
-- Einstellungen (Gäste › Gamification › Einstellungen): „Tagestickets in der
+- Einstellungen (Gäste › Kunden App › Einstellungen): „Tagestickets in der
   App“ wählt die Ticket-Typen, optional mit Preis; dazu der Preis je Abo
   (`GamificationConfig.dayServiceIds`, `servicePrices`, `subscriptionPrices`).
   Ab Werk ist nichts gewählt.
