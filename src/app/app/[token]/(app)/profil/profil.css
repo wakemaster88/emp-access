@@ -65,7 +65,6 @@ div.rd-avatar { cursor: default; }
 .rd-set > .rd-set-form { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 0 14px; }
 .rd-set > .rd-msg { min-height: 0; margin-bottom: 12px; border-top: 0; }
 
-/* Ende des Profils: Abmelden, darunter der Ausstieg. */
+/* Ende des Profils: Abmelden. */
 .rd-sec-end { margin-top: 14px; }
-.rd-exit { background: transparent; }
 .rd-note { padding: 0 2px; }

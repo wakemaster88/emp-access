@@ -477,30 +477,6 @@ export async function ensureRiderProfile(accountId: number, ticketId: number): P
   return { token: profile.token };
 }
 
-/**
- * Aussteigen: Tagessummen und Meilensteine der Person löschen, künftig nichts
- * mehr zählen, Profil entfernen. Bereits verdiente Gutscheine bleiben gültig
- * und sind an der Kasse über den Namen auffindbar.
- */
-export async function deleteRiderData(profileId: number, accountId: number): Promise<void> {
-  const tickets = await prisma.ticket.findMany({
-    where: { accountId, riderProfileId: profileId },
-    select: { id: true },
-  });
-  const ticketIds = tickets.map((t) => t.id);
-  await prisma.$transaction([
-    prisma.riderDayStat.deleteMany({ where: { accountId, ticketId: { in: ticketIds } } }),
-    // Awards mit Gutschein bleiben: sonst gäbe es nach erneuter Anmeldung denselben Gutschein noch einmal.
-    prisma.milestoneAward.deleteMany({ where: { accountId, ticketId: { in: ticketIds }, voucherId: null } }),
-    prisma.challengeAward.deleteMany({ where: { accountId, ticketId: { in: ticketIds }, voucherId: null } }),
-    prisma.ticket.updateMany({
-      where: { accountId, id: { in: ticketIds } },
-      data: { gamificationOptOut: true, riderProfileId: null },
-    }),
-    prisma.riderProfile.delete({ where: { id: profileId } }),
-  ]);
-}
-
 export interface RiderRecap {
   year: number;
   recap: SeasonRecap;

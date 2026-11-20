@@ -6,19 +6,16 @@ interface Props {
   token: string;
   nickname: string | null;
   showInRanking: boolean;
-  /** Eltern bearbeiten das Profil ihres Kindes: ohne den Ausstieg. */
+  /** Eltern bearbeiten das Profil ihres Kindes. */
   managed?: boolean;
-  /** "ranking": Spitzname und Rangliste; "exit": nur der Ausstieg (ganz unten im Profil). */
-  part?: "ranking" | "exit";
 }
 
-/** Spitzname und Einwilligung für Ranglisten, oder der Ausstieg. */
-export function RiderProfileForm({ token, nickname, showInRanking, managed = false, part = "ranking" }: Props) {
+/** Spitzname und Einwilligung für Ranglisten. */
+export function RiderProfileForm({ token, nickname, showInRanking, managed = false }: Props) {
   const [nick, setNick] = useState(nickname ?? "");
   const [ranking, setRanking] = useState(showInRanking);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const url = `/api/rider/${encodeURIComponent(token)}/profile`;
 
   async function save(e: React.FormEvent) {
@@ -44,23 +41,7 @@ export function RiderProfileForm({ token, nickname, showInRanking, managed = fal
     setBusy(false);
   }
 
-  async function remove() {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const res = await fetch(url, { method: "DELETE" });
-      if (res.ok) {
-        window.location.assign("/app");
-        return;
-      }
-      setMsg({ ok: false, text: "Löschen fehlgeschlagen." });
-    } catch {
-      setMsg({ ok: false, text: "Keine Verbindung." });
-    }
-    setBusy(false);
-  }
-
-  if (part === "ranking") return (
+  return (
     <form className="rd-card" onSubmit={save} style={{ gap: 12 }}>
       <div className="rd-field">
         <label htmlFor="rd-nick">Spitzname</label>
@@ -78,24 +59,5 @@ export function RiderProfileForm({ token, nickname, showInRanking, managed = fal
       {msg && <div className={`rd-msg ${msg.ok ? "rd-msg-ok" : "rd-msg-err"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</div>}
       <button type="submit" className="rd-btn rd-btn-wide" disabled={busy}><span>Speichern</span></button>
     </form>
-  );
-
-  if (managed) return null;
-  return (
-    <div className="rd-card rd-exit" style={{ gap: 10 }}>
-      <b>Statistik löschen und aussteigen</b>
-      <span className="rd-muted">
-        Löscht deine Besuchstage, Starts und Meilensteine. Danach wird nichts mehr gezählt. Offene Gutscheine bleiben gültig, du findest sie dann an der Kasse über deinen Namen.
-      </span>
-      {confirmDelete ? (
-        <div className="rd-row">
-          <button type="button" className="rd-btn rd-btn-danger rd-grow" onClick={remove} disabled={busy}><span>Wirklich löschen</span></button>
-          <button type="button" className="rd-btn rd-btn-ghost rd-grow" onClick={() => setConfirmDelete(false)} disabled={busy}><span>Abbrechen</span></button>
-        </div>
-      ) : (
-        <button type="button" className="rd-btn rd-btn-danger rd-btn-wide" onClick={() => setConfirmDelete(true)}><span>Aussteigen</span></button>
-      )}
-      {msg && <div className={`rd-msg ${msg.ok ? "rd-msg-ok" : "rd-msg-err"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</div>}
-    </div>
   );
 }

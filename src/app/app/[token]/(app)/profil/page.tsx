@@ -14,8 +14,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Profil: oben Bild, Name und persönliche Daten (änderbar), dann Abo,
- * Spitzname, Familie, Anmeldung und Benachrichtigungen; unten Abmelden und
- * Aussteigen.
+ * Spitzname, Familie, Anmeldung und Benachrichtigungen; unten Abmelden.
+ * Statistik löschen gibt es nicht (Aaron, 20.11.2026).
  */
 export default async function RiderProfilePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -90,7 +90,6 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
           <div className="rd-sec-end">
             <RiderLogout token={token} />
           </div>
-          <RiderProfileForm token={token} nickname={rider.nickname} showInRanking={rider.showInRanking} part="exit" />
         </>
       ) : relation === "manage" ? (
         <>
