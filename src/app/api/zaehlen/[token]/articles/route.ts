@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { countLinkState, isPlausibleCountToken } from "@/lib/warenwirtschaft";
 import { MAX_PUBLIC_ARTICLES, publicArticleSchema } from "@/lib/warenwirtschaft-server";
+import { logEvents, voidSignatures } from "@/lib/stocktake-audit";
 
 type Ctx = { params: Promise<{ token: string }> };
 
@@ -70,5 +71,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       select: { id: true, name: true, sku: true, category: true, unit: true, counted: true, broken: true, countedBy: true },
     });
   });
+  const actor = { name: countedBy, via: "link" as const };
+  await logEvents(prisma, st.id, st.accountId, actor, [{ type: "LINE_ADDED", lineId: line.id, lineName: line.name, field: "counted", newValue: line.counted }]);
+  await voidSignatures(prisma, st.id, st.accountId, actor);
   return NextResponse.json({ ...line, image: null }, { status: 201 });
 }

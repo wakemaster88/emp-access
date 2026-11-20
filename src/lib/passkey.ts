@@ -38,7 +38,8 @@ export const passkeyListSelect = {
   lastUsedAt: true,
 } as const;
 
-export type ChallengePurpose = "login" | "register";
+/** "sign": Bestätigung einer Handlung (z. B. Inventur) durch den angemeldeten Admin. */
+export type ChallengePurpose = "login" | "register" | "sign";
 
 export { cleanPasskeyName, relyingPartyFrom, suggestPasskeyName, webauthnUserId } from "./passkey-utils";
 export type { RelyingParty } from "./passkey-utils";
@@ -66,7 +67,7 @@ export async function consumeChallenge(
     where: {
       challenge,
       purpose,
-      ...(purpose === "register" ? { adminId } : {}),
+      ...(purpose !== "login" ? { adminId } : {}),
       expiresAt: { gt: new Date() },
     },
   });
@@ -191,4 +192,63 @@ export async function verifyPasskeyLogin(rp: RelyingParty, raw: unknown) {
     data: { lastLogin: now, loginFailures: 0, loginLockedUntil: null },
   });
   return admin;
+}
+
+/**
+ * Optionen, mit denen der angemeldete Admin eine Handlung per Passkey
+ * bestätigt (Face ID, Fingerabdruck, Geräte-PIN). Nur seine eigenen Passkeys
+ * sind erlaubt. null, wenn er keinen eingerichtet hat.
+ */
+export async function createSignOptions(rp: RelyingParty, adminId: number) {
+  const keys = await prisma.passkey.findMany({ where: { adminId }, select: { credentialId: true, transports: true } });
+  if (keys.length === 0) return null;
+  const options = await generateAuthenticationOptions({
+    rpID: rp.rpID,
+    timeout: TIMEOUT_MS,
+    userVerification: "required",
+    challenge: randomBytes(32),
+    allowCredentials: keys.map((k) => ({ id: k.credentialId, transports: k.transports })),
+  });
+  await storeChallenge(options.challenge, "sign", adminId);
+  return options;
+}
+
+/** Ob der Admin mindestens einen Passkey hat. */
+export async function hasPasskey(adminId: number): Promise<boolean> {
+  return (await prisma.passkey.count({ where: { adminId } })) > 0;
+}
+
+/**
+ * Prüft die Passkey-Bestätigung: true nur, wenn der Passkey dem Admin gehört,
+ * die Challenge für ihn ausgestellt wurde und die Nutzerverifikation erfolgt ist.
+ */
+export async function verifyPasskeySignature(rp: RelyingParty, adminId: number, raw: unknown): Promise<boolean> {
+  const response = raw as AuthenticationResponseJSON | null;
+  if (!response || typeof response.id !== "string" || typeof response.response !== "object") return false;
+  const passkey = await prisma.passkey.findUnique({ where: { credentialId: response.id } });
+  if (!passkey || passkey.adminId !== adminId) return false;
+  let verified;
+  try {
+    verified = await verifyAuthenticationResponse({
+      response,
+      expectedChallenge: (challenge) => consumeChallenge(challenge, "sign", adminId),
+      expectedOrigin: rp.origin,
+      expectedRPID: rp.rpID,
+      requireUserVerification: true,
+      credential: {
+        id: passkey.credentialId,
+        publicKey: new Uint8Array(passkey.publicKey),
+        counter: passkey.counter,
+        transports: passkey.transports,
+      },
+    });
+  } catch {
+    return false;
+  }
+  if (!verified.verified) return false;
+  await prisma.passkey.update({
+    where: { id: passkey.id },
+    data: { counter: verified.authenticationInfo.newCounter, backedUp: verified.authenticationInfo.credentialBackedUp, lastUsedAt: new Date() },
+  });
+  return true;
 }

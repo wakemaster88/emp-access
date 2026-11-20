@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { countLinkState, isPlausibleCountToken } from "@/lib/warenwirtschaft";
 import { publicCountSchema, publicImage } from "@/lib/warenwirtschaft-server";
+import { applyLineChanges } from "@/lib/stocktake-audit";
 
 /**
  * Öffentlicher Zähl-Link einer Inventur (`/zaehlen/<token>`), damit
@@ -87,12 +88,8 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   const parsed = publicCountSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  // Protokoll mit dem eingegebenen Namen; die Bestätigung erfolgt später mit Login.
   const countedBy = parsed.data.name;
-  for (const l of parsed.data.lines) {
-    const data: { counted?: number | null; broken?: number | null; countedBy: string } = { countedBy };
-    if (l.counted !== undefined) data.counted = l.counted;
-    if (l.broken !== undefined) data.broken = l.broken;
-    await prisma.stocktakeLine.updateMany({ where: { id: l.id, stocktakeId: st.id, accountId: st.accountId }, data });
-  }
+  await applyLineChanges(prisma, st.id, st.accountId, { name: countedBy, via: "link" }, parsed.data.lines, { countedBy });
   return NextResponse.json({ ok: true });
 }

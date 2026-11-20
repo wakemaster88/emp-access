@@ -12,12 +12,15 @@ export async function StocktakeDetailPage({
   db,
   accountId,
   accountName,
+  adminId,
 }: {
   id: number;
   kind: "ROLLING" | "CUTOFF";
   db: TenantDb;
   accountId: number;
   accountName: string | null;
+  /** Angemeldeter Login (für die eigene Bestätigung). */
+  adminId: number | null;
 }) {
   const listPath = kind === "CUTOFF" ? "/warenwirtschaft/stichtag" : "/warenwirtschaft/inventur";
   if (!Number.isInteger(id)) notFound();
@@ -28,6 +31,9 @@ export async function StocktakeDetailPage({
         orderBy: [{ category: "asc" }, { name: "asc" }],
         include: { article: { select: { image: true } } },
       },
+      signatures: { orderBy: { role: "asc" } },
+      events: { orderBy: { id: "desc" }, take: 2000 },
+      _count: { select: { events: true } },
     },
   });
   if (!st) notFound();
@@ -52,6 +58,30 @@ export async function StocktakeDetailPage({
             closedBy: st.closedBy,
             countToken: st.countToken,
             countTokenExpiresAt: st.countTokenExpiresAt?.toISOString() ?? null,
+          }}
+          audit={{
+            currentAdminId: adminId,
+            eventTotal: st._count.events,
+            signatures: st.signatures.map((g) => ({
+              role: g.role,
+              adminId: g.adminId,
+              name: g.name,
+              method: g.method,
+              signedAt: g.signedAt.toISOString(),
+              contentHash: g.contentHash,
+            })),
+            events: st.events.map((e) => ({
+              id: e.id,
+              type: e.type,
+              lineName: e.lineName,
+              field: e.field,
+              oldValue: e.oldValue,
+              newValue: e.newValue,
+              actor: e.actor,
+              via: e.via,
+              note: e.note,
+              createdAt: e.createdAt.toISOString(),
+            })),
           }}
           initialLines={st.lines.map((l) => ({
             id: l.id,

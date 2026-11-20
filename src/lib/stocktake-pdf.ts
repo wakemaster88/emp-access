@@ -1,10 +1,25 @@
 import { jsPDF } from "jspdf";
 import { stocktakeTotals, totalsByCategory, valueCents, type StocktakeLineLike } from "./warenwirtschaft";
+import {
+  FIELD_LABEL,
+  METHOD_LABEL,
+  ROLE_LABEL,
+  STOCKTAKE_ROLES,
+  VIA_LABEL,
+  describeEvent,
+  formatFieldValue,
+  shortHash,
+  type LineField,
+  type StocktakeEventLike,
+  type StocktakeRole,
+} from "./stocktake-log";
 
 /**
  * Inventurliste als A4-PDF für Ablage und Steuerberater: Kopf mit Betrieb
  * und Stichtag, je Kategorie eine Tabelle mit Zwischensumme, danach die
- * Zusammenfassung mit Gesamtwert und Platz für die Unterschrift.
+ * Zusammenfassung mit Gesamtwert, der digitalen Bestätigung durch Zähler und
+ * Schreiber (statt Unterschrift), den Korrekturen nach dem Festschreiben und
+ * im Anhang dem vollständigen Protokoll.
  *
  * Bewertet wird wie in der App (`stocktakeTotals`): gezählte Menge mal
  * Einkaufspreis netto. Zeilen ohne Zählung oder mit Menge 0 erscheinen
@@ -27,9 +42,29 @@ export interface StocktakePdfInput {
   closedAt: Date | null;
   closedBy: string | null;
   lines: StocktakePdfLine[];
+  /** Digitale Bestätigungen (Zähler, Schreiber). */
+  signatures?: StocktakePdfSignature[];
+  /** Protokoll, beliebige Reihenfolge (wird nach Zeit sortiert). */
+  events?: StocktakePdfEvent[];
   /** Zeitpunkt der Erstellung (für Tests fest vorgebbar). */
   createdAt?: Date;
 }
+
+export interface StocktakePdfSignature {
+  role: StocktakeRole;
+  name: string;
+  email: string | null;
+  method: string;
+  signedAt: Date;
+  contentHash: string;
+}
+
+export interface StocktakePdfEvent extends StocktakeEventLike {
+  createdAt: Date;
+}
+
+/** Standardschrift im PDF kennt keinen Pfeil. */
+const pdfSafe = (s: string) => s.replace(/→/g, "->");
 
 const PAGE_W = 210;
 const PAGE_H = 297;
@@ -163,11 +198,12 @@ export function buildStocktakePdf(input: StocktakePdfInput): ArrayBuffer {
     [
       "Status",
       closed
-        ? `festgeschrieben${input.closedAt ? ` am ${dateDe(input.closedAt)}` : ""}${input.closedBy ? ` von ${input.closedBy}` : ""}`
+        ? `festgeschrieben${input.closedAt ? ` am ${dateDe(input.closedAt)}` : ""}`
         : "vorläufig, noch nicht festgeschrieben",
     ],
     ["Bewertung", "Einkaufspreise netto"],
     ["Erstellt", dateTimeDe(createdAt)],
+    ...(closed && input.closedBy ? ([["Abschluss", `durch ${input.closedBy}`]] as [string, string][]) : []),
   ];
   facts.forEach(([label, value], i) => {
     const x = i % 2 === 0 ? M : M + (RIGHT - M) / 2;
@@ -288,17 +324,145 @@ export function buildStocktakePdf(input: StocktakePdfInput): ArrayBuffer {
   text(String(listed.length), sx.count, y, { bold: true, size: 9, align: "right" });
   if (showBroken) text(pdfEuro(totals.brokenCents), sx.broken, y, { size: 9, align: "right" });
   text(pdfEuro(totals.valueCents), sx.value, y, { bold: true, size: 10.5, align: "right" });
-  y += 18;
+  y += 12;
 
-  // Unterschrift.
-  ensure(16);
+  // ── Bestätigung (statt Unterschrift) ───────────────────
+  const signatures = input.signatures ?? [];
+  const events = [...(input.events ?? [])].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   const half = (RIGHT - M) / 2;
-  pdf.setDrawColor(120);
-  pdf.setLineWidth(0.2);
-  pdf.line(M, y, M + half - 10, y);
-  pdf.line(M + half + 10, y, RIGHT, y);
-  text("Ort, Datum", M, y + 4, { size: 8, color: MUTED });
-  text("Aufgenommen / Unterschrift", M + half + 10, y + 4, { size: 8, color: MUTED });
+
+  const para = (s: string, size = 8, color = MUTED) => {
+    for (const line of pdf.splitTextToSize(s, RIGHT - M) as string[]) {
+      ensure(4.2);
+      text(line, M, y, { size, color });
+      y += 4;
+    }
+  };
+
+  ensure(14 + ROW_H * 3);
+  text("Bestätigung", M, y, { bold: true, size: 11 });
+  y += 5;
+  if (signatures.length > 0 || !closed) {
+    const bx = { role: M + 1.5, name: M + 24, at: M + 84, method: M + 122, hash: RIGHT - 1.5 };
+    pdf.setFillColor(FILL, FILL, FILL);
+    pdf.rect(M, y - 3.9, RIGHT - M, ROW_H, "F");
+    text("Rolle", bx.role, y, { bold: true, size: 8, color: MUTED });
+    text("Name", bx.name, y, { bold: true, size: 8, color: MUTED });
+    text("Bestätigt am", bx.at, y, { bold: true, size: 8, color: MUTED });
+    text("Verfahren", bx.method, y, { bold: true, size: 8, color: MUTED });
+    text("Prüfsumme", bx.hash, y, { bold: true, size: 8, color: MUTED, align: "right" });
+    y += ROW_H;
+    for (const role of STOCKTAKE_ROLES) {
+      const sig = signatures.find((g) => g.role === role);
+      ensure(ROW_H + 4);
+      text(ROLE_LABEL[role], bx.role, y, { size: 9, bold: true });
+      if (sig) {
+        const who = (pdf.splitTextToSize(sig.name, bx.at - bx.name - 3) as string[])[0] ?? "";
+        text(who, bx.name, y, { size: 9 });
+        if (sig.email) text((pdf.splitTextToSize(sig.email, bx.at - bx.name - 3) as string[])[0] ?? "", bx.name, y + 3.6, { size: 7, color: MUTED });
+        text(dateTimeDe(sig.signedAt), bx.at, y, { size: 8.5 });
+        text(METHOD_LABEL[sig.method] ?? sig.method, bx.method, y, { size: 8.5 });
+        text(shortHash(sig.contentHash), bx.hash, y, { size: 7.5, align: "right", color: 60 });
+      } else {
+        text("noch nicht bestätigt", bx.name, y, { size: 9, color: MUTED });
+      }
+      y += sig?.email ? ROW_H + 3 : ROW_H;
+      hairline(y - 3.9, 228);
+    }
+    y += 2;
+    para(
+      "Zähler und Schreiber haben die Zählung jeweils mit ihrem persönlichen Login elektronisch bestätigt (Passkey bzw. Passwort). " +
+        "Die Bestätigung ersetzt die Unterschrift. Die Prüfsumme (SHA-256) gehört zum Stand der Liste beim Bestätigen; " +
+        "jede Eingabe und jede spätere Korrektur steht mit Person und Zeit im Protokoll.",
+    );
+  } else {
+    para("Diese Inventur wurde vor Einführung der digitalen Bestätigung festgeschrieben bzw. übernommen. Bestätigung durch Unterschrift:");
+    y += 12;
+    ensure(10);
+    pdf.setDrawColor(120);
+    pdf.setLineWidth(0.2);
+    pdf.line(M, y, M + half - 10, y);
+    pdf.line(M + half + 10, y, RIGHT, y);
+    text("Zähler: Ort, Datum, Unterschrift", M, y + 4, { size: 8, color: MUTED });
+    text("Schreiber: Ort, Datum, Unterschrift", M + half + 10, y + 4, { size: 8, color: MUTED });
+    y += 8;
+  }
+  y += 6;
+
+  // ── Korrekturen nach dem Festschreiben ─────────────────
+  const corrections = events.filter((e) => e.type === "CORRECTION");
+  if (corrections.length > 0) {
+    ensure(14 + ROW_H * 2);
+    text("Korrekturen nach dem Festschreiben", M, y, { bold: true, size: 11 });
+    text(`${corrections.length} ${corrections.length === 1 ? "Eintrag" : "Einträge"}`, RIGHT, y, { align: "right", size: 8, color: MUTED });
+    y += 5;
+    const cx = { at: M + 1.5, who: M + 30, what: M + 64, change: M + 118, wChange: RIGHT - (M + 118) - 1.5 };
+    pdf.setFillColor(FILL, FILL, FILL);
+    pdf.rect(M, y - 3.9, RIGHT - M, ROW_H, "F");
+    text("Zeitpunkt", cx.at, y, { bold: true, size: 8, color: MUTED });
+    text("Person", cx.who, y, { bold: true, size: 8, color: MUTED });
+    text("Artikel", cx.what, y, { bold: true, size: 8, color: MUTED });
+    text("Änderung und Grund", cx.change, y, { bold: true, size: 8, color: MUTED });
+    y += ROW_H;
+    for (const c of corrections) {
+      pdf.setFontSize(8);
+      const field = c.field && c.field in FIELD_LABEL ? FIELD_LABEL[c.field as LineField] : c.field ?? "";
+      const change = pdf.splitTextToSize(
+        pdfSafe(`${field}: ${formatFieldValue(c.field, c.oldValue)} → ${formatFieldValue(c.field, c.newValue)}${c.note ? `. Grund: ${c.note}` : ""}`),
+        cx.wChange,
+      ) as string[];
+      const what = pdf.splitTextToSize(c.lineName ?? "", cx.change - cx.what - 3) as string[];
+      const rows = Math.max(change.length, what.length, 1);
+      const h = ROW_H + (rows - 1) * 3.5;
+      ensure(h);
+      text(dateTimeDe(c.createdAt).replace(" Uhr", ""), cx.at, y, { size: 8 });
+      text((pdf.splitTextToSize(c.actor, cx.what - cx.who - 3) as string[])[0] ?? "", cx.who, y, { size: 8 });
+      what.forEach((l, k) => text(l, cx.what, y + k * 3.5, { size: 8 }));
+      change.forEach((l, k) => text(l, cx.change, y + k * 3.5, { size: 8 }));
+      y += h - 3.9;
+      hairline(y + 0.2, 228);
+      y += 3.9;
+    }
+    y += 4;
+  }
+
+  // ── Anhang: vollständiges Protokoll ────────────────────
+  if (events.length > 0) {
+    pdf.addPage();
+    y = M + 4;
+    text("Anhang: Protokoll", M, y, { bold: true, size: 13 });
+    text(`${events.length} Einträge`, RIGHT, y, { align: "right", size: 8, color: MUTED });
+    y += 5;
+    para("Alle Eingaben, Bestätigungen, das Festschreiben und Korrekturen in zeitlicher Reihenfolge. Einträge werden nur angehängt, nie geändert.");
+    y += 3;
+    const px = { at: M + 1.5, who: M + 30, what: M + 70, wWhat: RIGHT - (M + 70) - 1.5 };
+    const head = () => {
+      pdf.setFillColor(FILL, FILL, FILL);
+      pdf.rect(M, y - 3.6, RIGHT - M, 5, "F");
+      text("Zeitpunkt", px.at, y, { bold: true, size: 7.5, color: MUTED });
+      text("Person", px.who, y, { bold: true, size: 7.5, color: MUTED });
+      text("Eintrag", px.what, y, { bold: true, size: 7.5, color: MUTED });
+      y += 5;
+    };
+    head();
+    for (const e of events) {
+      pdf.setFontSize(7.5);
+      const what = pdf.splitTextToSize(pdfSafe(describeEvent(e)), px.wWhat) as string[];
+      const who = `${e.actor}${e.via !== "app" ? ` (${VIA_LABEL[e.via] ?? e.via})` : ""}`;
+      const h = 4.4 + (what.length - 1) * 3.2;
+      if (y + h > BOTTOM) {
+        pdf.addPage();
+        y = M + 4;
+        text("Protokoll (Fortsetzung)", M, y, { bold: true, size: 10 });
+        y += 6;
+        head();
+      }
+      text(dateTimeDe(e.createdAt).replace(" Uhr", ""), px.at, y, { size: 7.5, color: 60 });
+      text((pdf.splitTextToSize(who, px.what - px.who - 3) as string[])[0] ?? "", px.who, y, { size: 7.5, color: 60 });
+      what.forEach((l, k) => text(l, px.what, y + k * 3.2, { size: 7.5 }));
+      y += h;
+    }
+  }
 
   // ── Fußzeile auf jeder Seite ────────────────────────────
   const pages = pdf.getNumberOfPages();

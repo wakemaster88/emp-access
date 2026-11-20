@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { badRequest, notFound, stocktakeLinesSchema, wawiSession } from "@/lib/warenwirtschaft-server";
+import { applyLineChanges } from "@/lib/stocktake-audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** PATCH /api/warenwirtschaft/stocktakes/[id]/lines – Zählmengen speichern (nur offene Inventur). */
+/**
+ * PATCH /api/warenwirtschaft/stocktakes/[id]/lines – Zählmengen speichern (nur
+ * offene Inventur). Jede Änderung steht mit Login, Zeit, alt und neu im
+ * Protokoll; vorhandene Bestätigungen werden dadurch aufgehoben.
+ */
 export async function PATCH(request: NextRequest, { params }: Ctx) {
   const s = await wawiSession();
   if ("error" in s) return s.error;
@@ -13,11 +18,6 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   const st = await s.db.stocktake.findFirst({ where: { id, accountId: s.accountId }, select: { status: true } });
   if (!st) return notFound("Inventur");
   if (st.status !== "OPEN") return NextResponse.json({ error: "Inventur ist festgeschrieben" }, { status: 409 });
-  for (const l of parsed.data.lines) {
-    const data: { counted?: number | null; broken?: number | null } = {};
-    if (l.counted !== undefined) data.counted = l.counted;
-    if (l.broken !== undefined) data.broken = l.broken;
-    await s.db.stocktakeLine.updateMany({ where: { id: l.id, stocktakeId: id, accountId: s.accountId }, data });
-  }
-  return NextResponse.json({ ok: true });
+  const changed = await applyLineChanges(s.db, id, s.accountId, { name: s.userName, adminId: s.adminId, via: "app" }, parsed.data.lines);
+  return NextResponse.json({ ok: true, changed });
 }

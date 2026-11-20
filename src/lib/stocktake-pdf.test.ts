@@ -40,3 +40,31 @@ test("buildStocktakePdf erzeugt ein mehrseitiges PDF", () => {
   const pages = Buffer.from(buf).toString("latin1").match(/\/Type \/Page\b/g)?.length ?? 0;
   assert.ok(pages >= 3, `erwartet mehrere Seiten, bekommen ${pages}`);
 });
+
+test("buildStocktakePdf zeigt Bestätigung, Korrekturen und Protokoll", () => {
+  const at = new Date("2026-01-02T10:00:00Z");
+  const buf = buildStocktakePdf({
+    accountName: "Testbetrieb",
+    kind: "CUTOFF",
+    title: "Stichtag 31.12.2025",
+    date: new Date("2025-12-31T00:00:00Z"),
+    status: "CLOSED",
+    closedAt: at,
+    closedBy: "Test",
+    lines: [{ name: "Cola", sku: "1", unit: "FL", category: "Getränke", purchasePriceCents: 63, expected: 1, counted: 2, broken: null }],
+    signatures: [
+      { role: "COUNTER", name: "Anna Zähler", email: "anna@example.org", method: "passkey", signedAt: at, contentHash: "ab".repeat(32) },
+      { role: "WRITER", name: "Ben Schreiber", email: null, method: "password", signedAt: at, contentHash: "ab".repeat(32) },
+    ],
+    events: [
+      { type: "COUNT", lineName: "Cola", field: "counted", oldValue: null, newValue: 2, actor: "Anna", via: "link", note: null, createdAt: at },
+      { type: "CORRECTION", lineName: "Cola", field: "purchasePriceCents", oldValue: 63, newValue: 73, actor: "Aaron", via: "app", note: "Rechnung", createdAt: at },
+    ],
+    createdAt: at,
+  });
+  const raw = Buffer.from(buf).toString("latin1");
+  assert.ok(raw.includes("Anna Z"), "Name des Zählers fehlt");
+  assert.ok(raw.includes("Korrekturen nach dem Festschreiben"));
+  assert.ok(raw.includes("Anhang: Protokoll"));
+  assert.ok(!raw.includes("Aufgenommen / Unterschrift"));
+});
