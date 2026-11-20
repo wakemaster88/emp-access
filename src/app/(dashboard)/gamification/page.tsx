@@ -51,7 +51,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
 
   const tabs = (
     <SegmentedLinks
-      aria-label="Gamification"
+      aria-label="Kunden App"
       className="max-sm:[&_svg]:hidden"
       value={tab}
       options={[
@@ -395,7 +395,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
 
   return (
     <>
-      <Header title="Gamification" accountName={session.user.accountName} />
+      <Header title="Kunden App" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         {tabs}
         {!config?.enabled && tab !== "einstellungen" && (

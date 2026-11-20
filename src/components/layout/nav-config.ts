@@ -106,7 +106,7 @@ export const navGroups: NavGroup[] = [
       { href: "/tickets", label: "Tickets", icon: Ticket, keywords: ["karten", "gäste", "anny"] },
       { href: "/subscriptions", label: "Abos", icon: CreditCard, keywords: ["abonnement", "mitgliedschaft"] },
       { href: "/vouchers", label: "Gutscheine", icon: Gift },
-      { href: "/gamification", label: "Gamification", icon: Trophy, keywords: ["meilensteine", "awards", "challenges", "starts", "besuchstage"] },
+      { href: "/gamification", label: "Kunden App", icon: Trophy, keywords: ["gamification", "app", "meilensteine", "awards", "challenges", "starts", "besuchstage"] },
       { href: "/vereine", label: "Vereine", icon: Users, keywords: ["buchungen", "portal"] },
       { href: "/lockers", label: "Schließfächer", icon: Lock, keywords: ["spind", "fach"] },
       { href: "/fundsachen", label: "Fundsachen", icon: PackageSearch, keywords: ["verloren", "gefunden"] },
