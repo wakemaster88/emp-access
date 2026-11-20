@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
 import { challengeSchema, normalizeChallenge } from "@/lib/gamification-input";
+import { runAccountAnnouncements } from "@/lib/rider-announce";
 
-/** POST: Challenge anlegen. */
+/** POST: Challenge anlegen; mit `push` geht eine Meldung an die Kunden. */
 export async function POST(request: NextRequest) {
   const session = await gamiAdminSession();
   if ("error" in session) return session.error;
@@ -12,6 +13,9 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe" }, { status: 400 });
   }
-  const challenge = await db.challenge.create({ data: { ...normalizeChallenge(parsed.data), accountId } });
+  const challenge = await db.challenge.create({
+    data: { ...normalizeChallenge(parsed.data), pushPlanned: parsed.data.push ?? false, accountId },
+  });
+  if (challenge.pushPlanned) after(() => runAccountAnnouncements(accountId).catch((e) => console.error("[announce]", e)));
   return NextResponse.json(challenge, { status: 201 });
 }

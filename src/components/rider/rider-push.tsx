@@ -127,7 +127,7 @@ export function RiderPush({ token }: { token: string }) {
       {state === "unsupported" && <span className="rd-muted">Dieser Browser kann keine Benachrichtigungen.</span>}
       {(state === "on" || state === "off") && (
         <>
-          <span className="rd-muted">Wir melden uns auf diesem Gerät nur, wenn ein neuer Gutschein auf dich wartet.</span>
+          <span className="rd-muted">Wir melden uns auf diesem Gerät bei neuen Gutscheinen und Awards sowie bei neuen Angeboten und Challenges.</span>
           <button type="button" className={`rd-btn rd-btn-wide ${state === "on" ? "rd-btn-ghost" : ""}`} disabled={busy} onClick={state === "on" ? disable : enable}>
             <span>{state === "on" ? "Ausschalten" : "Einschalten"}</span>
           </button>
