@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Building2, CalendarPlus, CheckCircle2, FileText, Loader2, PartyPopper, Pencil, Users, XCircle,
+  CalendarPlus, CheckCircle2, FileText, Loader2, PartyPopper, Pencil, Users, XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,12 +59,22 @@ function storeName(name: string) {
  * Auftragsbestätigung und Rechnungen ansehen. Fremde Termine erscheinen nur
  * als „belegt“.
  */
-export function PartnerPortalClient({ token, partnerName, accountName }: { token: string; partnerName: string; accountName: string }) {
+export function PartnerPortalClient({
+  token, partnerName, accountName, partnerLogoUrl, accountLogoUrl, venueNames,
+}: {
+  token: string;
+  partnerName: string;
+  accountName: string;
+  partnerLogoUrl: string | null;
+  accountLogoUrl: string | null;
+  venueNames: string[];
+}) {
   const [data, setData] = useState<PortalData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("mine");
   const [open, setOpen] = useState<PartnerEvent | "new" | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const wide = useWide();
 
   const load = useCallback(async () => {
     try {
@@ -96,26 +106,72 @@ export function PartnerPortalClient({ token, partnerName, accountName }: { token
     load();
   }
 
+  const next = upcoming[0] ?? null;
+  const venueTitle = venueNames.length === 1 ? venueNames[0] : "Veranstaltungen";
+  const showTabsCalendar = !wide;
+  const view: Tab = !showTabsCalendar && tab === "calendar" ? "mine" : tab;
+  const startNew = () => { setSuccess(null); setOpen("new"); };
+
   return (
-    <div className="mx-auto flex min-h-[100dvh] max-w-2xl flex-col text-foreground">
-      <header className="rounded-b-card bg-primary-fill text-primary-foreground dark:bg-primary/60">
-        <div className="px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-5 sm:px-6">
-          <p className="mb-3 inline-flex items-center gap-1 text-[11px] font-medium text-primary-foreground/75">
-            <Building2 className="size-3" /> {accountName} · Partnerzugang
-          </p>
-          <div className="flex items-center gap-3">
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary-foreground/15 ring-1 ring-primary-foreground/30">
-              <PartyPopper className="size-5" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="truncate text-lg font-semibold sm:text-xl">{partnerName}</h1>
-              <p className="text-xs text-primary-foreground/80">Veranstaltungen eintragen, Personen melden, Dokumente ansehen.</p>
+    <>
+      <header className="pp-hero">
+        <SkylineArt />
+        <div className="pp-wrap">
+          <div className="pp-brandbar">
+            <div className="pp-logos">
+              {accountLogoUrl ? (
+                <span className="pp-logo">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={accountLogoUrl} alt={accountName} referrerPolicy="no-referrer" />
+                </span>
+              ) : (
+                <span className="pp-wordmark">{accountName}<small>{venueTitle}</small></span>
+              )}
+              <span className="pp-x" aria-hidden>×</span>
+              {partnerLogoUrl ? (
+                <span className="pp-logo">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={partnerLogoUrl} alt={partnerName} referrerPolicy="no-referrer" />
+                </span>
+              ) : (
+                <span className="pp-monogram" aria-label={partnerName}>{partnerName.trim().charAt(0).toUpperCase()}</span>
+              )}
             </div>
           </div>
+          <p className="pp-kicker">Partnerzugang {partnerName}</p>
+          <h1 className="pp-title">{venueTitle}</h1>
+          <p className="pp-sub">
+            Hier tragt ihr eure Veranstaltungen ein, meldet die Personenzahl, wählt Zusatzleistungen und findet Auftragsbestätigung und Rechnungen.
+          </p>
+          {data && data.venues.length > 0 && (
+            <button type="button" className="pp-cta" onClick={startNew}>
+              <CalendarPlus aria-hidden /> Veranstaltung eintragen
+            </button>
+          )}
         </div>
       </header>
 
-      <main className="flex-1 space-y-4 px-4 pt-4 pb-8 sm:space-y-5 sm:px-6">
+      <div className="pp-wrap">
+        <div className="pp-stats" aria-label="Überblick">
+          <div className="pp-stat">
+            <p className="pp-stat-label">Nächste</p>
+            <p className="pp-stat-value">{next ? formatEventDay(next.date, false).slice(4) : "–"}</p>
+            <p className="pp-stat-hint">{next ? next.title : "nichts geplant"}</p>
+          </div>
+          <div className="pp-stat">
+            <p className="pp-stat-label">Kommend</p>
+            <p className="pp-stat-value">{data ? upcoming.length : "–"}</p>
+            <p className="pp-stat-hint">{upcoming.length === 1 ? "Veranstaltung" : "Veranstaltungen"}</p>
+          </div>
+          <div className="pp-stat">
+            <p className="pp-stat-label">Gäste</p>
+            <p className="pp-stat-value">{data ? upcoming.reduce((n, e) => n + e.guestCount, 0) : "–"}</p>
+            <p className="pp-stat-hint">geplant</p>
+          </div>
+        </div>
+      </div>
+
+      <main className="pp-wrap flex-1 space-y-4 pt-4 pb-8 sm:space-y-5 sm:pt-6">
         {loadError && (
           <Notice tone="danger" title={loadError} action={<Button variant="outline" size="sm" onClick={load}>Erneut versuchen</Button>} />
         )}
@@ -130,68 +186,75 @@ export function PartnerPortalClient({ token, partnerName, accountName }: { token
         )}
 
         {data && data.venues.length > 0 && (
-          <>
-            <Button className="w-full max-sm:h-11" onClick={() => { setSuccess(null); setOpen("new"); }}>
-              <CalendarPlus /> Veranstaltung eintragen
-            </Button>
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6">
+            <div className="min-w-0 space-y-4">
+              {openReports.length > 0 && (
+                <Notice tone="warning" icon={Users} title="Bitte tatsächliche Personenzahl melden" compact>
+                  {openReports.map((e) => `${e.title} (${formatEventDay(e.date)})`).join(", ")}
+                </Notice>
+              )}
 
-            {openReports.length > 0 && (
-              <Notice tone="warning" icon={Users} title="Bitte tatsächliche Personenzahl melden" compact>
-                {openReports.map((e) => `${e.title} (${formatEventDay(e.date)})`).join(", ")}
-              </Notice>
-            )}
+              <Segmented
+                aria-label="Ansicht"
+                stretch
+                value={view}
+                onValueChange={(v) => { setTab(v); setSuccess(null); }}
+                options={[
+                  { value: "mine", label: "Kommend", ...(upcoming.length ? { count: upcoming.length } : {}) },
+                  ...(showTabsCalendar ? [{ value: "calendar" as const, label: "Belegung" }] : []),
+                  { value: "past", label: "Vergangen" },
+                ]}
+              />
 
-            <Segmented
-              aria-label="Ansicht"
-              stretch
-              value={tab}
-              onValueChange={(v) => { setTab(v); setSuccess(null); }}
-              options={[
-                { value: "mine", label: "Kommend", ...(upcoming.length ? { count: upcoming.length } : {}) },
-                { value: "calendar", label: "Belegung" },
-                { value: "past", label: "Vergangen" },
-              ]}
-            />
+              {success && <Notice tone="success" icon={CheckCircle2} title={success} compact role="status" />}
 
-            {success && <Notice tone="success" icon={CheckCircle2} title={success} compact role="status" />}
+              {view === "mine" && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Eure Veranstaltungen</CardTitle>
+                    <CardDescription>Ändern und absagen geht bis {data.partner.editLockHours} Std. vor Beginn, danach meldet euch bitte direkt.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {upcoming.length === 0 ? (
+                      <EmptyState
+                        icon={PartyPopper}
+                        title="Noch keine Veranstaltung eingetragen"
+                        description="Tragt Datum, Uhrzeit und Personenzahl ein. Der Raum ist dann für euch geblockt, wir bestätigen mit der Auftragsbestätigung."
+                        action={<Button onClick={startNew} className="max-sm:h-11"><CalendarPlus /> Veranstaltung eintragen</Button>}
+                      />
+                    ) : groupByMonth(upcoming).map((g) => (
+                      <section key={g.month} className="space-y-2">
+                        <SectionHeading title={monthLabel(`${g.month}-01`)} />
+                        {g.rows.map((e) => <EventRow key={e.id} event={e} showArea={data.venues.length > 1} onOpen={() => { setSuccess(null); setOpen(e); }} />)}
+                      </section>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
 
-            {tab === "mine" && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Eure Veranstaltungen</CardTitle>
-                  <CardDescription>Ändern und absagen geht bis {data.partner.editLockHours} Std. vor Beginn, danach meldet euch bitte direkt.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {upcoming.length === 0 ? (
-                    <EmptyState size="sm" icon={PartyPopper} title="Gerade nichts eingetragen." />
-                  ) : groupByMonth(upcoming).map((g) => (
-                    <section key={g.month} className="space-y-2">
-                      <SectionHeading title={monthLabel(`${g.month}-01`)} />
-                      {g.rows.map((e) => <EventRow key={e.id} event={e} showArea={data.venues.length > 1} onOpen={() => { setSuccess(null); setOpen(e); }} />)}
-                    </section>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
+              {view === "calendar" && <OccupancyCard data={data} onOpen={(e) => setOpen(e)} />}
 
-            {tab === "calendar" && <OccupancyCard data={data} onOpen={(e) => setOpen(e)} />}
+              {view === "past" && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Vergangen und abgesagt</CardTitle>
+                    <CardDescription>Die letzten sechs Monate, mit Rechnungen.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {history.length === 0
+                      ? <EmptyState size="sm" icon={PartyPopper} title="Noch nichts." />
+                      : history.map((e) => <EventRow key={e.id} event={e} showArea={data.venues.length > 1} onOpen={() => setOpen(e)} />)}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
 
-            {tab === "past" && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Vergangen und abgesagt</CardTitle>
-                  <CardDescription>Die letzten sechs Monate, mit Rechnungen.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {history.length === 0
-                    ? <EmptyState size="sm" icon={PartyPopper} title="Noch nichts." />
-                    : history.map((e) => <EventRow key={e.id} event={e} showArea={data.venues.length > 1} onOpen={() => setOpen(e)} />)}
-                </CardContent>
-              </Card>
-            )}
-          </>
+            {wide && <OccupancyCard data={data} onOpen={(e) => setOpen(e)} />}
+          </div>
         )}
       </main>
+
+      <footer className="pp-footer">{accountName} · {venueTitle} · Partnerzugang für {partnerName}</footer>
 
       {data && (
         <PartnerEventDialog
@@ -202,7 +265,33 @@ export function PartnerPortalClient({ token, partnerName, accountName }: { token
           onSaved={(e, msg) => { onSaved(e, msg); setOpen(null); }}
         />
       )}
-    </div>
+    </>
+  );
+}
+
+/** Breiter Bildschirm (ab 1024 px): Belegung steht dann daneben statt als eigener Reiter. */
+function useWide(): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setWide(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return wide;
+}
+
+/** Feine Skyline mit Dachterrasse und Lichterkette, rechts unten im Kopf. */
+function SkylineArt() {
+  return (
+    <svg className="pp-hero-art" viewBox="0 0 560 180" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden>
+      <path d="M0 180V120h40V96h36v84M76 180V70h52v110M128 180V108h30v72M158 180V58h86v122M244 180V100h34v80M278 180V40h120v140M398 180V86h44v94M442 180V112h46v68M488 180V76h72v104" />
+      <path d="M278 40V22M398 40V22M278 22h120" />
+      <path d="M284 22c18 12 36 12 54 0s36-12 54 0" strokeDasharray="1 7" strokeLinecap="round" strokeWidth="4" />
+      <path d="M298 40v-10h10v10M330 40v-14M326 26h8M362 40v-10h10v10" />
+      <path d="M170 74h12M196 74h12M220 74h12M170 96h12M196 96h12M220 96h12M290 60h14M318 60h14M346 60h14M374 60h14M290 84h14M318 84h14M346 84h14M374 84h14M88 86h10M108 86h10M88 108h10M108 108h10M500 94h12M528 94h12M500 116h12M528 116h12" />
+    </svg>
   );
 }
 

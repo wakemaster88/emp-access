@@ -234,6 +234,13 @@ export function extrasKey(lines: Array<{ extraId: number | null; quantity: numbe
 export const partnerSchema = z.object({
   name: z.string().trim().min(1, "Bitte einen Namen angeben").max(120),
   contactName: optionalText(120),
+  logoUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .nullish()
+    .transform((v) => (v ? v : null))
+    .refine((v) => v == null || /^https:\/\/[^\s"'<>]+$/.test(v), "Das Logo braucht eine https-Adresse"),
   contactEmail: optionalEmail,
   notifyEmail: optionalEmail,
   portalEnabled: z.boolean(),
