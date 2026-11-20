@@ -14,7 +14,7 @@ export default async function RiderSignInPage({ params }: { params: Promise<{ to
   if (!profile) notFound();
   const access = await riderAccess(profile);
   if (access === "ok") redirect(riderAppPath(token));
-  if (access === "setup") redirect(`${riderAppPath(token)}/einrichten`);
+  if (access === "setup" || access === "held") redirect(`${riderAppPath(token)}/einrichten`);
   const email = await resetEmailFor(profile.id);
 
   return (

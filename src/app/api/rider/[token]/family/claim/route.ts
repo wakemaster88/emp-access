@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { publicRateLimit } from "@/lib/rate-limit";
-import { findRiderAuthProfile, sessionRider } from "@/lib/rider-auth";
+import { findRiderAuthProfile, riderHolder, sessionRider } from "@/lib/rider-auth";
 import { addFamilyChild, FamilyError } from "@/lib/rider-family";
 
 /**
@@ -18,6 +18,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!viewer) return NextResponse.json({ error: "Bitte melde dich zuerst in deiner App an." }, { status: 401 });
   const target = await findRiderAuthProfile(token);
   if (!target || target.accountId !== viewer.accountId) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+  // Konto schon aktiv: die Person gehört zu einem anderen Zugang.
+  const holder = await riderHolder(target);
+  if (holder && holder.token !== viewer.token) {
+    return NextResponse.json({ error: `Dieses Abo gehört schon zum Konto von ${holder.name}.` }, { status: 409 });
+  }
 
   try {
     await addFamilyChild(viewer, target.id);
