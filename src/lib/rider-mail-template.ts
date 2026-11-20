@@ -204,3 +204,50 @@ export function riderResetMail(args: { url: string; accountName: string; origin:
   ].join("\n");
   return { subject, html, text };
 }
+
+/**
+ * Einladung zur App nach einem neu gebuchten Abo (lib/rider-invite). Geht
+ * einmal an die Adresse des Kundenkontos, der Link meldet an wie der
+ * Anmelde-Link.
+ */
+export function riderInviteMail(args: {
+  url: string;
+  accountName: string;
+  origin: string;
+  days: number;
+  firstName: string | null;
+  aboName: string | null;
+}): RiderLinkMail {
+  const subject = "Dein Abo ist in der App";
+  const hello = args.firstName ? `Hallo ${args.firstName}, danke` : "Danke";
+  const abo = args.aboName ? `dein ${args.aboName}` : "dein Abo";
+  const intro = `${hello} für ${abo}! Mit der App hast du es immer dabei: Laufzeit, Besuchstage, Starts, Awards und Gutscheine.`;
+  const note = `Der Link gilt ${args.days} Tage. Beim ersten Öffnen richtest du einen Passkey oder ein Passwort ein, danach findest du die App jederzeit unter ${args.origin.replace(/^https?:\/\//, "")}/app. Fahren mehrere aus deiner Familie, wählst du kurz, wer du bist.`;
+  const footer = `Diese Mail kommt einmal, weil du bei ${args.accountName} ein Abo gebucht hast. Ohne Klick passiert nichts.`;
+  const html = riderMailHtml({
+    title: subject,
+    preheader: "Dein Abo, deine Besuche und Gutscheine in einer App.",
+    accountName: args.accountName,
+    origin: args.origin,
+    headline: ["Willkommen", "an Bord"],
+    introHtml: escapeHtml(intro),
+    chips: ["Abo", "Besuche", "Awards"],
+    button: "App öffnen",
+    url: args.url,
+    noteHtml: escapeHtml(note),
+    footerHtml: escapeHtml(footer),
+  });
+  const text = [
+    "Willkommen an Bord",
+    "",
+    intro,
+    "",
+    "Hier geht es in die App:",
+    args.url,
+    "",
+    note,
+    "",
+    footer,
+  ].join("\n");
+  return { subject, html, text };
+}

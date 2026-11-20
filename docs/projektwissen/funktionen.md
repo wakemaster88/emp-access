@@ -493,6 +493,26 @@ werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
   Mail-Link anmeldet und es auswählt. (Seit Etappe 4a gilt das nur noch für
   Adressen ohne Kundenkonto, siehe unten.)
 
+## Einladung zur App bei neuem anny-Abo (20.11.2026)
+
+Aaron: „wenn ein neues abo gebucht wird über anny soll er eine einladungsmail
+zur app bekommen“.
+
+- Der anny-Abgleich meldet jedes neu angelegte Abo-Ticket an
+  `sendAboInvites` (`src/lib/rider-invite.ts`), nach dem Zuordnen der
+  Personen. Die Mail `riderInviteMail` hat den Look der Anmelde-Mail, der
+  Link ist der Anmelde-Link `/app/mail/<schlüssel>`, hier 7 Tage gültig.
+- Eine Mail geht nur, wenn das Abo gültig ist und höchstens 7 Tage vorher
+  begonnen hat (künftiger Beginn zählt), die Adresse kein anderes Abo hat
+  (Bestandskunde, Verlängerung, Reepay), unter der Adresse noch niemand in der
+  App ist, die Adresse die Einladung noch nie bekommen hat (`EmailSend` mit
+  Betreff „Dein Abo ist in der App“, Status SENT) und Kunden-App und
+  Mailversand eingeschaltet sind. Abo-Arten wie in der App
+  (`GamificationConfig.subscriptionIds`). Höchstens 25 Mails je Lauf, eine je
+  Adresse (Familienkonto bekommt eine Mail, „Wer bist du?“ beim Öffnen).
+- Links aus dem Hintergrund nehmen `AUTH_URL`, `NEXTAUTH_URL` oder
+  `VERCEL_PROJECT_PRODUCTION_URL`; ohne alle drei geht keine Mail.
+
 ## Abos über die E-Mail, Familienkonten, Etappe 1 (20.11.2026)
 
 Aaron, 20.11.2026: Abos aus dem eigenen System und aus anny werden immer über

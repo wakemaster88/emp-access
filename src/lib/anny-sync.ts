@@ -6,6 +6,7 @@ import type { AnnyBooking } from "@/lib/anny-types";
 import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
 import { findPredecessor } from "@/lib/ticket-predecessor";
 import { ensureCustomer, syncCustomerPersons } from "@/lib/customers";
+import { sendAboInvites, type NewAbo } from "@/lib/rider-invite";
 import { newAnnyIncomplete, orphanCleanupScope, type AnnyIncomplete } from "./anny-orphans";
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
@@ -1566,6 +1567,8 @@ export async function syncAnnyForAccount(
   };
   /** Konten mit neuen oder neu zugeordneten Abos: Personen danach nachziehen. */
   const personSyncCustomers = new Set<number>();
+  /** Neu angelegte Abos: Einladung zur App (lib/rider-invite). */
+  const newAbos: NewAbo[] = [];
 
   for (const ps of allPlanSubscriptions) {
     const customerId = ps.customer?.id;
@@ -1759,9 +1762,18 @@ export async function syncAnnyForAccount(
             },
           };
         }
-        await prisma.ticket.create({ data: { ...ticketData, ...inherited, uuid, accountId } });
+        const createdTicket = await prisma.ticket.create({ data: { ...ticketData, ...inherited, uuid, accountId }, select: { id: true } });
         subCreated++;
         if (customerAccountId != null) personSyncCustomers.add(customerAccountId);
+        newAbos.push({
+          ticketId: createdTicket.id,
+          email: ticketData.email,
+          firstName: ticketData.firstName,
+          aboName: planName,
+          subscriptionId,
+          startDate: ticketData.startDate,
+          status: ticketData.status,
+        });
       }
     } catch { /* skip */ }
   }
@@ -1777,6 +1789,17 @@ export async function syncAnnyForAccount(
         e instanceof Error ? e.message : String(e),
       );
     }
+  }
+
+  // Einladung zur App für frisch gebuchte Abos, erst nach den Personen, damit
+  // „Wer bist du?“ beim Öffnen des Links schon die Personen des Kontos kennt.
+  try {
+    await sendAboInvites(accountId, newAbos);
+  } catch (e) {
+    console.error(
+      `[anny sync] account=${accountId} Einladungen zur App fehlgeschlagen:`,
+      e instanceof Error ? e.message : String(e),
+    );
   }
 
   created += subCreated;

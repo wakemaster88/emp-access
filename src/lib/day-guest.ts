@@ -40,9 +40,9 @@ function sign(payload: string): string {
 }
 
 /** Schlüssel im Mail-Link `/app/mail/<schlüssel>`: Konto, Adresse und Ablauf, signiert. */
-export function mailLinkKey(accountId: number, email: string, now: Date = new Date()): string {
+export function mailLinkKey(accountId: number, email: string, now: Date = new Date(), hours: number = MAIL_LINK_HOURS): string {
   const payload = Buffer.from(
-    JSON.stringify({ a: accountId, e: email, x: now.getTime() + MAIL_LINK_HOURS * 3_600_000 }),
+    JSON.stringify({ a: accountId, e: email, x: now.getTime() + hours * 3_600_000 }),
   ).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
