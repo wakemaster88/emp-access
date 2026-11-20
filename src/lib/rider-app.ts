@@ -98,11 +98,12 @@ export async function loadRider(token: string, now: Date = new Date(), adopted =
       },
     },
   });
-  if (!profile || !profile.account.isActive || profile.tickets.length === 0) return null;
+  // Ohne Ticket nur mit bestätigter Adresse (Kunde noch ohne Abo).
+  if (!profile || !profile.account.isActive || (profile.tickets.length === 0 && !profile.email)) return null;
 
   // Neue Tagestickets mit derselben E-Mail-Adresse gehören zum selben Gast.
   if (!adopted) {
-    const emails = [...new Set(profile.tickets.map((t) => t.email?.trim().toLowerCase()).filter((e): e is string => !!e))].slice(0, 5);
+    const emails = [...new Set([profile.email, ...profile.tickets.map((t) => t.email?.trim().toLowerCase())].filter((e): e is string => !!e))].slice(0, 5);
     let added = 0;
     for (const e of emails) added += await adoptDayTickets(profile.accountId, e, now).catch(() => 0);
     if (added > 0) return loadRider(token, now, true);
@@ -203,7 +204,7 @@ export async function loadRider(token: string, now: Date = new Date(), adopted =
     accountName: profile.account.name,
     ticketIds,
     // Tagestickets tragen keinen Namen: dann grüßt die App mit dem Spitznamen oder ohne Namen.
-    firstName: first.firstName?.trim() || (dayGuest ? profile.nickname ?? "" : first.name),
+    firstName: first?.firstName?.trim() || (dayGuest ? profile.nickname ?? "" : first?.name ?? ""),
     nickname: profile.nickname,
     showInRanking: profile.showInRanking,
     enabled: config?.enabled ?? false,
