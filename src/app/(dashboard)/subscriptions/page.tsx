@@ -12,6 +12,10 @@ import { AbosWithoutEmailCard } from "@/components/subscriptions/abos-without-em
 import { loadAbosWithoutEmail } from "@/lib/abos-without-email";
 import { RidersOpenCard } from "@/components/subscriptions/riders-open-card";
 import { loadRidersOpen } from "@/lib/riders-open";
+import { SegmentedLinks } from "@/components/ui/segmented-links";
+import { CustomerAccountsCard } from "@/components/subscriptions/customer-accounts-card";
+import { loadCustomerAccounts } from "@/lib/customer-accounts";
+import { isTenantAdminRole } from "@/lib/api-auth";
 
 interface AnnyExtra {
   services?: string[];
@@ -19,13 +23,44 @@ interface AnnyExtra {
   subscriptions?: string[];
 }
 
-export default async function SubscriptionsPage() {
+interface Props {
+  searchParams: Promise<{ ansicht?: string }>;
+}
+
+export default async function SubscriptionsPage({ searchParams }: Props) {
   const session = await safeAuth();
   if (!session?.user) redirect("/login");
 
   const isSuperAdmin = session.user.role === "SUPER_ADMIN";
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
   const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
+
+  // Kundenkonten gibt es je Mandant; der Super-Admin sieht nur die Abos.
+  const { ansicht } = await searchParams;
+  const view = !isSuperAdmin && ansicht === "konten" ? "konten" : "abos";
+  const views = isSuperAdmin ? null : (
+    <SegmentedLinks
+      aria-label="Ansicht"
+      value={view}
+      options={[
+        { value: "abos", label: "Abos", href: "/subscriptions" },
+        { value: "konten", label: "Kundenkonten", href: "/subscriptions?ansicht=konten" },
+      ]}
+    />
+  );
+
+  if (view === "konten") {
+    const accounts = await loadCustomerAccounts(db as unknown as PrismaClient, session.user.accountId!);
+    return (
+      <>
+        <Header title="Abos" accountName={session.user.accountName} />
+        <div className="page-content space-y-4 sm:space-y-5">
+          {views}
+          <CustomerAccountsCard data={accounts} canMerge={isTenantAdminRole(session.user.role)} />
+        </div>
+      </>
+    );
+  }
 
   const [subscriptions, areas, annyConfig, expiringAboTickets, stats, abosWithoutEmail, ridersOpen] = await Promise.all([
     db.subscription.findMany({
@@ -110,6 +145,7 @@ export default async function SubscriptionsPage() {
     <>
       <Header title="Abos" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
+        {views}
         {stats && <SubscriptionStats stats={stats} />}
         <ExpiringAbosCard tickets={expiringAboTickets} readonly={isSuperAdmin} />
         {/* Jedes Abo hängt an einer E-Mail-Adresse (lib/abo-email); ältere ohne Adresse stehen hier. */}

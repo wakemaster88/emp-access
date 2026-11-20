@@ -1536,24 +1536,30 @@ export async function syncAnnyForAccount(
 
   // Kundenkonten (eine Adresse je Konto, siehe lib/customers). Einmal laden,
   // nur bei neuer Adresse, Kundennummer oder neuem Namen schreiben.
-  const customerByEmail = new Map(
-    (await prisma.customer.findMany({
-      where: { accountId },
-      select: { id: true, email: true, name: true, annyCustomerIds: true },
-    })).map((c) => [c.email, c]),
-  );
+  // Weitere Adressen zusammengelegter Konten (`alias`) zeigen aufs selbe Konto;
+  // ihr Name ändert den Namen des Kontos nicht (wie in ensureCustomer).
+  const customerByEmail = new Map<string, { id: number; name: string | null; annyCustomerIds: string[]; alias: boolean }>();
+  for (const c of await prisma.customer.findMany({
+    where: { accountId },
+    select: { id: true, email: true, name: true, annyCustomerIds: true, aliasEmails: true },
+  })) {
+    customerByEmail.set(c.email, { id: c.id, name: c.name, annyCustomerIds: c.annyCustomerIds, alias: false });
+    for (const a of c.aliasEmails) {
+      if (!customerByEmail.has(a)) customerByEmail.set(a, { id: c.id, name: c.name, annyCustomerIds: c.annyCustomerIds, alias: true });
+    }
+  }
   const customerFor = async (email: string | null, name: string | null, annyCustomerId: string): Promise<number | null> => {
     const key = email?.trim().toLowerCase();
     if (!key) return null;
     const known = customerByEmail.get(key);
-    if (known && known.annyCustomerIds.includes(annyCustomerId) && (!name || known.name === name)) return known.id;
+    if (known && known.annyCustomerIds.includes(annyCustomerId) && (!name || known.alias || known.name === name)) return known.id;
     const id = await ensureCustomer(accountId, { email: key, name, annyCustomerId });
     if (id != null) {
       customerByEmail.set(key, {
         id,
-        email: key,
-        name: name ?? known?.name ?? null,
+        name: known?.alias ? known.name : (name ?? known?.name ?? null),
         annyCustomerIds: [...new Set([...(known?.annyCustomerIds ?? []), annyCustomerId])],
+        alias: known?.alias ?? false,
       });
     }
     return id;
