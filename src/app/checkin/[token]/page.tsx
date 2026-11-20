@@ -38,6 +38,7 @@ import type { BundlePart, CheckinData, CheckinTicket, EquipmentSetup, GuestInfoS
 import { DaySelector, GuestInfoSummaryPanel, LiveClock, OverlayGrip, RentalOverviewPanel, Section, overlayScrimClass, overlaySheetClass } from "@/components/checkin/checkin-ui";
 import { classifyInfoLabel, compareSetups, isYes, toDateStr } from "@/components/checkin/checkin-utils";
 import { CameraOverlay, ScanOverlay } from "@/components/checkin/scan-overlay";
+import { AppLinkDialog, type AppLinkState } from "@/components/checkin/app-link-dialog";
 import { SlotOverviewSection } from "@/components/checkin/slot-overview";
 import { TicketCard } from "@/components/checkin/ticket-card";
 import { TicketOverlay } from "@/components/checkin/ticket-overlay";
@@ -564,6 +565,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     }
   }, [token, selectedTicket, bundleByTicketId]);
 
+  // Abo mit der Kunden-App verknüpfen: App-Code und Abo-Karte, Reihenfolge egal.
+  const [appLink, setAppLink] = useState<AppLinkState | null>(null);
+  const appLinkRef = useRef<AppLinkState | null>(null);
+  const selectedTicketRef = useRef<CheckinTicket | null>(null);
+  useEffect(() => { appLinkRef.current = appLink; }, [appLink]);
+  useEffect(() => { selectedTicketRef.current = selectedTicket; }, [selectedTicket]);
+
   const handleScan = useCallback(async (code: string) => {
     if (!code.trim()) return;
     setScanLoading(true);
@@ -577,7 +585,25 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       if (typeof window !== "undefined") {
         console.log("[shop-monitor] scan response", json);
       }
-      if (json.found && json.ticket) {
+      if (json.appLink || json.appCodeInvalid) {
+        // App-Code: Dialog zum Verknüpfen; ein offenes Abo kommt gleich mit.
+        const open = selectedTicketRef.current;
+        const prev = appLinkRef.current;
+        const ticket = prev?.ticket ?? (open?.subscriptionId != null ? open : null);
+        setAppLink(json.appLink
+          ? { app: json.appLink, ticket, notice: null }
+          : { app: prev?.app ?? null, ticket, notice: json.message ?? "App-Code ungültig." });
+        setSelectedTicket(null);
+        setScanResult(null);
+        setScanMode(false);
+      } else if (appLinkRef.current) {
+        // Dialog offen: der Scan gehört zum Verknüpfen, nicht zur Ticket-Ansicht.
+        const ticket: CheckinTicket | null = json.found && json.ticket ? json.ticket : null;
+        setAppLink((prev) => prev && (ticket?.subscriptionId != null
+          ? { ...prev, ticket, notice: null }
+          : { ...prev, notice: ticket ? "Das ist kein Abo. Bitte die Abo-Karte scannen." : json.message ?? "Nicht gefunden." }));
+        setScanMode(false);
+      } else if (json.found && json.ticket) {
         setScanResult(json);
         setSelectedTicket(json.ticket);
         setScanMode(false);
@@ -1955,6 +1981,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AppLinkDialog
+        token={token}
+        state={appLink}
+        onClose={() => setAppLink(null)}
+        onLinked={() => refreshRef.current?.()}
+      />
 
       {/* Scan overlay */}
       {scanMode && (

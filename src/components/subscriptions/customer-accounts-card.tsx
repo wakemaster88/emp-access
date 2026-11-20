@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Merge, Pencil, UserPen } from "lucide-react";
+import { Loader2, Merge, Pencil, Trash2, UserPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -252,7 +252,13 @@ function AccountDialogBody({
     return (
       <>
         {header("Person bearbeiten", `${holderOf(c)} · ${c.email}`)}
-        <PersonForm person={p} onCancel={back} onDone={() => onDone("Person gespeichert.")} />
+        <PersonForm
+          person={p}
+          canDelete={canMerge}
+          onCancel={back}
+          onDone={() => onDone("Person gespeichert.")}
+          onDeleted={() => onDone(`${personName(p)} gelöscht.`)}
+        />
       </>
     );
   }
@@ -318,6 +324,7 @@ function AccountDialogBody({
                       {personName(p)}
                       {age != null && <span className="text-xs font-normal text-muted-foreground tabular-nums">({age})</span>}
                       {p.app && <Badge variant="neutral">App</Badge>}
+                      {p.tickets === 0 && <Badge variant="neutral">ohne Abo</Badge>}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {p.birthDate ? `Geboren ${fmtDay(p.birthDate, "")}` : "Ohne Geburtsdatum"}
@@ -393,7 +400,23 @@ function AccountDialogBody({
   );
 }
 
-function PersonForm({ person, onCancel, onDone }: { person: CustomerPersonRow; onCancel: () => void; onDone: () => void }) {
+function PersonForm({
+  person,
+  canDelete,
+  onCancel,
+  onDone,
+  onDeleted,
+}: {
+  person: CustomerPersonRow;
+  /** Admins: Personen ohne Abo löschen. */
+  canDelete: boolean;
+  onCancel: () => void;
+  onDone: () => void;
+  onDeleted: () => void;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Statistik hängt an den Abos: löschen nur ohne Ticket und ohne eigenen Zugang.
+  const deletable = canDelete && person.tickets === 0 && !person.app;
   const [firstName, setFirstName] = useState(person.firstName ?? "");
   const [lastName, setLastName] = useState(person.lastName ?? "");
   const [birthDate, setBirthDate] = useState(person.birthDate ?? "");
@@ -485,15 +508,53 @@ function PersonForm({ person, onCancel, onDone }: { person: CustomerPersonRow; o
       <p className="text-xs text-muted-foreground">
         Gilt für alle Abos der Person, an Kasse, Scanner und in der Kunden-App. Die Daten am Abo selbst bleiben.
       </p>
+      {canDelete && !deletable && (
+        <p className="text-xs text-muted-foreground">
+          {person.tickets > 0
+            ? "Löschen geht nur bei Personen ohne Abo, weil Starts und Awards am Abo hängen. Fährt eigentlich jemand anderes damit, beim Abo den Fahrer ändern."
+            : "Meldet sich selbst in der App an und lässt sich deshalb nicht löschen."}
+        </p>
+      )}
       {error && <Notice tone="danger" compact title={error} />}
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button type="button" variant="outline" disabled={busy} className="max-sm:h-11" onClick={onCancel}>
-          Zurück
-        </Button>
-        <Button type="submit" disabled={busy || !canSave} className="max-sm:h-11">
-          {busy ? <Loader2 className="animate-spin" /> : "Speichern"}
-        </Button>
-      </div>
+      {confirmDelete ? (
+        <ConfirmStep
+          title={`${personName(person)} löschen?`}
+          description={
+            "Mit der Person fährt kein Abo, Starts, Awards und Statistik bleiben unberührt."
+            + (person.ridingSince != null ? ` „Dabei seit ${person.ridingSince}“ geht verloren.` : "")
+            + (person.family ? " Sie verschwindet auch aus der Familie in der App." : "")
+          }
+          icon={Trash2}
+          onConfirm={async () => {
+            const res = await fetch(`/api/customers/persons/${person.id}`, { method: "DELETE" });
+            const data = (await res.json().catch(() => ({}))) as { error?: string };
+            if (!res.ok) throw new Error(data.error ?? "Löschen fehlgeschlagen");
+            onDeleted();
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : (
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          {deletable && (
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              className="text-destructive hover:text-destructive max-sm:h-11 sm:mr-auto"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 />
+              Person löschen
+            </Button>
+          )}
+          <Button type="button" variant="outline" disabled={busy} className="max-sm:h-11" onClick={onCancel}>
+            Zurück
+          </Button>
+          <Button type="submit" disabled={busy || !canSave} className="max-sm:h-11">
+            {busy ? <Loader2 className="animate-spin" /> : "Speichern"}
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { RiderError, updatePersonData } from "@/lib/customers";
+import { deletePerson, RiderError, updatePersonData } from "@/lib/customers";
 
 /**
  * Name, Geburtsdatum und „Fährt seit“ einer Person ändern (Abos ›
@@ -43,6 +43,36 @@ export async function PATCH(
       birthDate: birth === undefined ? undefined : birth ? new Date(birth) : null,
       ridingSince: since,
     });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    if (err instanceof RiderError) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
+  }
+}
+
+/**
+ * Person ohne Abo löschen (Abos › Kundenkonten). Geht nur, wenn mit ihr kein
+ * Ticket fährt und sie sich nicht selbst in der App anmeldet; so bleiben
+ * Starts, Awards und Statistik immer erhalten. Lässt sich nicht
+ * zurücknehmen, daher nur für Admins.
+ */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await getSessionWithDb({ requireAdmin: true });
+  if ("error" in session) return session.error;
+  const { accountId } = session;
+  if (!accountId) return NextResponse.json({ error: "Nur innerhalb eines Kontos möglich." }, { status: 403 });
+
+  const { id } = await params;
+  const personId = Number(id);
+  if (!Number.isInteger(personId) || personId <= 0) {
+    return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
+  }
+
+  try {
+    await deletePerson(accountId, personId);
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof RiderError) return NextResponse.json({ error: err.message }, { status: err.status });

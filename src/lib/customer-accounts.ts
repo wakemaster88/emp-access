@@ -2,7 +2,8 @@
  * Kundenkonten für die Abos-Seite (Abos › Kundenkonten).
  *
  * Je Konto: Adresse(n), Personen und Abos mit ihrem Fahrer. Bearbeitet wird
- * über `PATCH /api/customers/persons/[id]` (Person), `PUT
+ * über `PATCH /api/customers/persons/[id]` (Person; `DELETE` löscht eine
+ * Person ohne Abo), `PUT
  * /api/tickets/[id]/rider` (Fahrer) und `POST /api/customers/[id]/merge`
  * (Konten zusammenlegen, lib/customers).
  */
@@ -22,6 +23,10 @@ export interface CustomerPersonRow {
   ridingSince: number | null;
   /** Meldet sich selbst in der Kunden-App an (Adresse, Passwort oder Passkey). */
   app: boolean;
+  /** Tickets, mit denen die Person fährt (auch abgelaufene und aus anderen Konten). */
+  tickets: number;
+  /** Gehört in der App zu einer Familie. */
+  family: boolean;
 }
 
 export interface CustomerAboRow {
@@ -117,7 +122,7 @@ export async function loadCustomerAccounts(db: PrismaClient, accountId: number, 
       persons: {
         select: {
           id: true, firstName: true, lastName: true, birthDate: true, ridingSince: true, email: true, passwordHash: true,
-          _count: { select: { passkeys: true } },
+          familyId: true, _count: { select: { passkeys: true, tickets: true } },
         },
         orderBy: { id: "asc" },
         take: 30,
@@ -148,6 +153,8 @@ export async function loadCustomerAccounts(db: PrismaClient, accountId: number, 
       birthDate: isoDay(p.birthDate),
       ridingSince: p.ridingSince,
       app: p.email != null || p.passwordHash != null || p._count.passkeys > 0,
+      tickets: p._count.tickets,
+      family: p.familyId != null,
     })),
     abos: c.tickets
       .map((t) => ({

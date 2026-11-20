@@ -500,6 +500,36 @@ export async function updatePersonData(
   if (r.count === 0) throw new RiderError("Person nicht gefunden.", 404);
 }
 
+/**
+ * Person ohne Abo löschen (Abos › Kundenkonten), etwa eine doppelte nach dem
+ * Ändern des Fahrers. Starts, Awards und Statistik hängen an den Tickets, daher
+ * nur Personen, mit denen kein Ticket fährt; die Statistik bleibt so immer
+ * erhalten. Wer sich selbst in der App anmeldet, bleibt ebenfalls.
+ */
+export async function deletePerson(accountId: number, personId: number): Promise<void> {
+  const p = await prisma.riderProfile.findFirst({
+    where: { id: personId, accountId },
+    select: {
+      id: true, email: true, passwordHash: true, familyId: true, familyAdult: true,
+      _count: { select: { tickets: true, passkeys: true } },
+    },
+  });
+  if (!p) throw new RiderError("Person nicht gefunden.", 404);
+  if (p._count.tickets > 0) {
+    throw new RiderError("Mit dieser Person fährt noch ein Abo. Erst beim Abo eine andere Person als Fahrer wählen, dann löschen.", 409);
+  }
+  if (p.email != null || p.passwordHash != null || p._count.passkeys > 0) {
+    throw new RiderError("Diese Person meldet sich selbst in der App an und lässt sich deshalb nicht löschen.", 409);
+  }
+  if (p.familyId != null && p.familyAdult) {
+    throw new RiderError("Diese Person verwaltet eine Familie in der App und lässt sich deshalb nicht löschen.", 409);
+  }
+  // Nur, wenn bis jetzt kein Ticket dazugekommen ist.
+  const r = await prisma.riderProfile.deleteMany({ where: { id: p.id, accountId, tickets: { none: {} } } });
+  if (r.count === 0) throw new RiderError("Mit dieser Person fährt inzwischen ein Abo. Bitte neu laden.", 409);
+  console.log(`[customers] account=${accountId} Person ${p.id} ohne Abo gelöscht`);
+}
+
 export interface MergeResult {
   abos: number;
   persons: number;

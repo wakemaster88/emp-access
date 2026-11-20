@@ -140,6 +140,11 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           <Link href={`${base}/abos`} className="rd-btn rd-btn-wide" style={{ marginTop: 8 }}>
             <span>{abo.kind === "none" ? "Abos ansehen" : "Abo buchen"}</span>
           </Link>
+          {abo.kind === "none" && (
+            <Link href={`${base}/profil`} className="rd-muted" style={{ marginTop: 4, minHeight: 44, display: "flex", alignItems: "center" }}>
+              Abo schon gekauft? Im Profil gibt es den Code für die Kasse.
+            </Link>
+          )}
         </div>
       )}
 

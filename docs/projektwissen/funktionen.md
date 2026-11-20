@@ -292,10 +292,11 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 - **Kinder** brauchen keinen eigenen Zugang. Erwachsene ändern Spitznamen und
   Ranglisten-Einwilligung des Kindes, sonst nichts. Bekommt ein Kind einen
   Gutschein, erfahren es auch die Erwachsenen per Push.
-- Kind hinzufügen (Profil › Familie): mit Kartennummer und Geburtsdatum des
-  Kindes, oder die Eltern öffnen angemeldet den persönlichen Link des Kindes
-  von der Kasse und wählen „Zu meiner Familie hinzufügen“. Geht nur bei
-  Profilen ohne eigenen Zugang; wer einen hat, braucht die Einladung.
+- Kind hinzufügen: an der Kasse per App-Code (siehe „Abo an der Kasse mit der
+  App verknüpfen“), oder die Eltern öffnen angemeldet den persönlichen Link
+  des Kindes von der Kasse und wählen „Zu meiner Familie hinzufügen“. Der Weg
+  mit Kartennummer und Geburtsdatum ist seit 20.11.2026 weg (Aaron: „geht
+  nicht“). Kinder mit eigener Adresse kommen per Bestätigungslink (Etappe 4b).
 - Partner einladen: Link `/app/familie/<schlüssel>` (HMAC, 7 Tage). Der
   Partner meldet sich mit seinem eigenen Zugang an und tritt bei.
 - Jeder kann die Familie im Profil verlassen, Erwachsene können Kinder
@@ -667,10 +668,51 @@ Bestandsdaten.
   Erwachsene treten weiter über den Einladungslink für Partner bei. Die
   Erwachsene kann solche Kinder wieder entfernen, sie gehören nicht zu ihrem
   Konto.
-- Wer per Kartennummer ein Kind mit eigenem Zugang hinzufügen will, bekommt
-  den Hinweis auf den Weg über die E-Mail-Adresse.
 - Noch offen: Die Datenbankregel „kein Abo ohne Konto“ kommt erst, wenn die
   Liste „Abos ohne E-Mail“ leer ist.
+
+## Abo an der Kasse mit der App verknüpfen (20.11.2026)
+
+Für Abos, die nicht unter der Adresse der App liegen: Abo ohne Adresse (Import,
+Kasse), alte oder andere Adresse, anny-Adresse anders als die in der App
+(Aaron: „qr code scann an der kasse“).
+
+- App, Profil › „Abo fehlt?“: zeigt auf Knopfdruck einen QR-Code, den
+  App-Code (`APP` + Ablauf in Minuten + HMAC + Profil-ID, nur Ziffern und
+  Großbuchstaben, 15 Minuten gültig). Er kommt per `POST
+  /api/rider/[token]/kasse-code`, nicht mit der Seite, weil der Service Worker
+  Seiten zwischenspeichert. Nur für Erwachsene, nicht für Kinder einer Familie.
+- Shop-Monitor: App-Code und Abo-Karte scannen, Reihenfolge egal (ist ein Abo
+  offen, kommt es gleich mit). `POST …/scan` erkennt den App-Code
+  (`readAppCode`) vor der Ticketsuche und liefert `appLink`; der Dialog
+  „Abo mit der App verknüpfen“ fragt, wer fährt: die Person der App selbst
+  oder ein Kind. Solange er offen ist, gehören Scans ihm. Enter vom Scanner
+  löst darin keine Taste aus. Verknüpft wird über `POST …/app-link`
+  (`linkAboToApp` in `src/lib/rider-kasse-link.ts`).
+- „Selbst“: Ein Abo ohne Adresse bekommt die der App. Sonst kommt die
+  App-Person ins Kundenkonto des Abos und ihre Adresse wird eine weitere
+  Adresse des Kontos (Alias), so überlebt sie den anny-Abgleich. Eine
+  bisherige Person am Abo ohne eigene Adresse und mit gleichem Vornamen wird
+  mit der App-Person zusammengefasst (Abos, Name, Geburtsdatum, „Fährt seit“,
+  Profilbild). Anderer Vorname: Hinweis auf „Kind“.
+- „Kind“: Die Person am Abo (oder eine neue aus den Abo-Daten) kommt als
+  verwaltetes Mitglied in die Familie der App-Person; ein Abo ohne Adresse
+  bekommt die der App. Volljährige, Kinder einer anderen Familie und
+  Kids-Abos mit den Daten der Eltern lehnt der Server mit Text ab.
+- Zwei verschiedene Kundenkonten legt der Monitor nicht zusammen, er
+  verweist auf Abos › Kundenkonten (nur Admins).
+
+## Personen ohne Abo löschen (20.11.2026)
+
+- Abos › Kundenkonten › Person bearbeiten: „Person löschen“ für Admins
+  (`DELETE /api/customers/persons/[id]`, `deletePerson` in
+  `src/lib/customers.ts`). Personen ohne Ticket tragen das Abzeichen „ohne
+  Abo“.
+- Nur, wenn mit der Person kein Ticket fährt (auch kein abgelaufenes):
+  Starts, Awards und Statistik hängen an den Tickets und bleiben so immer
+  erhalten. Personen mit eigenem Zugang (Adresse, Passwort, Passkey) und
+  Erwachsene einer Familie bleiben ebenfalls. Doppelte Person mit Abo: erst
+  beim Abo den Fahrer ändern, dann löschen.
 
 ## Awards in der Kunden-App (20.11.2026)
 

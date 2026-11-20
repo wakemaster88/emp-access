@@ -10,9 +10,11 @@
  * - Kinder brauchen keinen eigenen Zugang; die Erwachsenen sehen ihr Abo,
  *   ihre Statistik und ihre Gutscheine.
  * - Wege in die Familie: Personen des eigenen Kundenkontos von selbst
- *   (lib/customers `syncKontoFamily`), Kinder per Kartennummer und
- *   Geburtsdatum (`addFamilyChild`) oder mit eigener Adresse per
- *   Bestätigungslink (lib/rider-family-link), Partner per Einladungslink.
+ *   (lib/customers `syncKontoFamily`), Kinder an der Kasse per App-Code
+ *   (lib/rider-kasse-link), über den persönlichen Link von der Kasse
+ *   (`addFamilyChild`) oder mit eigener Adresse per Bestätigungslink
+ *   (lib/rider-family-link), Partner per Einladungslink. Per Kartennummer
+ *   geht es nicht mehr (Aaron, 20.11.2026).
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "./prisma";

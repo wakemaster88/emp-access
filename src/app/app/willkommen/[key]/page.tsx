@@ -59,7 +59,7 @@ export default async function RiderWelcomePage({ params }: { params: Promise<{ k
       <p className="rd-soft" style={{ margin: 0 }}>
         {state.abos.length > 0
           ? `Zu ${link.email} haben wir diese Abos gefunden. Wähle die aus, die dir gehören.`
-          : `Zu ${link.email} haben wir noch kein Abo gefunden. Du kannst die App trotzdem nutzen und dein Abo direkt darin buchen.`}
+          : `Zu ${link.email} haben wir noch kein Abo gefunden. Du kannst die App trotzdem nutzen und dein Abo direkt darin buchen. Läuft dein Abo unter einer anderen Adresse, verknüpft die Kasse es mit dem Code aus deinem Profil.`}
       </p>
       <RiderAboChoice
         mailKey={key}
