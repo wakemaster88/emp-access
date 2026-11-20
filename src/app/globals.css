@@ -365,6 +365,32 @@
   textarea {
     font-size: max(16px, 1rem);
   }
+  /*
+   * Datums- und Zeitfelder: iOS Safari gibt ihnen eine eigene Mindestbreite
+   * und ignoriert `width: 100%` – zwei Felder nebeneinander (Start/Ende) oder
+   * das Geburtsdatum ragten dadurch rechts über den Rand. Ohne native
+   * Darstellung halten sie sich an die Spaltenbreite; Wert linksbündig wie
+   * alle anderen Felder, Höhe auch bei leerem Feld stabil.
+   */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="week"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
+  }
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="time"]::-webkit-date-and-time-value,
+  input[type="datetime-local"]::-webkit-date-and-time-value,
+  input[type="month"]::-webkit-date-and-time-value,
+  input[type="week"]::-webkit-date-and-time-value {
+    text-align: left;
+    min-width: 0;
+    min-height: 1.5em;
+  }
   ::selection {
     background: color-mix(in oklch, var(--primary) 25%, transparent);
   }
