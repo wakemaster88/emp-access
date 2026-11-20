@@ -4,6 +4,7 @@ import { publicRateLimit } from "@/lib/rate-limit";
 import { verifyMailLinkKey } from "@/lib/day-guest";
 import { completeOnboarding } from "@/lib/rider-onboarding";
 import { riderAppPath } from "@/lib/rider-app";
+import { signInByMail } from "@/lib/rider-auth";
 
 const schema = z.object({
   key: z.string().min(10).max(800),
@@ -32,5 +33,5 @@ export async function POST(request: NextRequest) {
     personId: parsed.data.personId,
   });
   if (!token) return NextResponse.json({ error: "Die App ist gerade nicht freigeschaltet." }, { status: 403 });
-  return NextResponse.json({ url: riderAppPath(token) });
+  return signInByMail(NextResponse.json({ url: riderAppPath(token) }), token, link.email);
 }

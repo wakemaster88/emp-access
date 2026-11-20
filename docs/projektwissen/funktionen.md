@@ -184,6 +184,22 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   Gamification › Fahrer › App-Link › Zugang zurücksetzen. Löscht Passwort
   und Passkeys, beendet alle Sitzungen (`sessionVersion`) und gibt einen
   neuen Link aus; der alte gilt nicht mehr. Statistik und Gutscheine bleiben.
+- **Passwort selbst zurücksetzen** (seit 20.11.2026): Auf `/anmelden` schickt
+  „Passwort vergessen?“ einen Link an die Adresse des Zugangs (bestätigte
+  Adresse, sonst Kundenkonto, sonst neuestes Ticket; `src/lib/rider-reset.ts`).
+  `/app/<token>/neu/<schlüssel>` legt ein neues Passwort oder einen Passkey
+  fest und meldet an. Der Schlüssel gilt 60 Minuten und nur einmal (Signatur
+  über `sessionVersion` und Passwort-Hash, `src/lib/rider-reset-key.ts`);
+  danach enden alle anderen Sitzungen. Höchstens alle 5 Minuten, 5 Mails am Tag.
+  Ohne bekannte Adresse bleibt nur die Kasse.
+- **Mail-Link meldet an** (seit 20.11.2026): Der Link aus „Link zur App
+  schicken“ belegt die Adresse. Gehört sie dem Zugang und ist schon Passwort
+  oder Passkey eingerichtet, ist man damit direkt angemeldet
+  (`signInByMail`); vorher führte er zur Passwort-Abfrage.
+- **Passkey ohne Link** (seit 20.11.2026): Startseite `/app` hat „Mit Passkey
+  anmelden“; das Handy bietet die Passkeys der Domain an, der gewählte führt
+  zur eigenen App (`/api/rider/passkey/options` und `/login`). Passkeys tragen
+  im Handy-Menü den Namen der Person statt „Deine Saison“ (gilt für neue).
 
 
 ## Push und Verlängerungs-Hinweis in der Kunden-App, Etappe 6 (15.11.2026)
