@@ -23,6 +23,7 @@ import { RidersCard, type RiderRow } from "@/components/gamification/riders-card
 import { DayGuestMailsCard, type DayGuestMailRow } from "@/components/gamification/day-guest-mails-card";
 import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamification/challenges-card";
 import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
+import { riderPushReach } from "@/lib/rider-announce";
 import { RankingDisplayCard } from "@/components/gamification/ranking-display-card";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 import { AppQrCard } from "@/components/gamification/app-qr-card";
@@ -313,9 +314,12 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         phase,
         participants: units.filter((u) => u.value > 0).length,
         winners: winnersById.get(c.id) ?? 0,
+        pushPlanned: c.pushPlanned,
+        pushedAt: c.pushedAt?.toISOString() ?? null,
+        pushSent: c.pushSent,
       });
     }
-    content = <ChallengesCard challenges={rows} today={today} />;
+    content = <ChallengesCard challenges={rows} today={today} reach={await riderPushReach(accountId)} />;
   }
 
   if (tab === "angebote") {
@@ -336,9 +340,12 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         validTo,
         active: o.active,
         visible: offerVisible({ active: o.active, fromYmd: validFrom, toYmd: validTo }, today),
+        pushPlanned: o.pushPlanned,
+        pushedAt: o.pushedAt?.toISOString() ?? null,
+        pushSent: o.pushSent,
       };
     });
-    content = <OffersCard offers={rows} />;
+    content = <OffersCard offers={rows} reach={await riderPushReach(accountId)} />;
   }
 
   if (tab === "gutscheine") {

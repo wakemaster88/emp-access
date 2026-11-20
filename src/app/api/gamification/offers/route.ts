@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
 import { offerSchema, normalizeOffer } from "@/lib/gamification-input";
+import { runAccountAnnouncements } from "@/lib/rider-announce";
 
-/** POST: Angebot für die Kunden-App anlegen. */
+/** POST: Angebot für die Kunden-App anlegen; mit `push` geht eine Meldung an die Kunden. */
 export async function POST(request: NextRequest) {
   const session = await gamiAdminSession();
   if ("error" in session) return session.error;
@@ -18,7 +19,13 @@ export async function POST(request: NextRequest) {
     select: { sortOrder: true },
   });
   const offer = await db.riderOffer.create({
-    data: { ...normalizeOffer(parsed.data), sortOrder: (last?.sortOrder ?? 0) + 1, accountId },
+    data: {
+      ...normalizeOffer(parsed.data),
+      pushPlanned: parsed.data.push ?? false,
+      sortOrder: (last?.sortOrder ?? 0) + 1,
+      accountId,
+    },
   });
+  if (offer.pushPlanned) after(() => runAccountAnnouncements(accountId).catch((e) => console.error("[announce]", e)));
   return NextResponse.json(offer, { status: 201 });
 }
