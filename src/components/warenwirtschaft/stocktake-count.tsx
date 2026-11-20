@@ -16,7 +16,7 @@ import { ArticleThumb } from "./article-visual";
 import { QtyInput, type Field } from "./qty-input";
 import { StocktakeLinkCard } from "./count-link-card";
 import { formatEuro, formatQty, parseGermanNumber, stocktakeTotals, totalsByCategory, valueCents } from "@/lib/warenwirtschaft";
-import { AlertTriangle, CheckCircle2, ClipboardList, Download, Euro, Lock, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardList, Download, Euro, FileText, Lock, Trash2 } from "lucide-react";
 
 export interface CountLine {
   id: number;
@@ -181,7 +181,18 @@ export function StocktakeCount({ info, initialLines, listPath }: { info: Stockta
             {cutoff ? "Stichtag" : "Zähltag"} {dateLabel}
             {!closed && " · Eingaben werden sofort gespeichert. Enter springt zum nächsten Feld."}
           </CardDescription>
-          <CardAction>
+          <CardAction className="flex flex-wrap justify-end gap-2">
+            <Button asChild variant="outline" className="max-sm:h-11">
+              <a
+                href={`/api/warenwirtschaft/stocktakes/${info.id}/pdf`}
+                target="_blank"
+                rel="noopener"
+                aria-label={closed ? "Inventurliste als PDF öffnen" : "Vorläufige Inventurliste als PDF öffnen"}
+              >
+                <FileText className="h-4 w-4" />
+                <span>PDF</span>
+              </a>
+            </Button>
             {closed ? (
               <Button asChild variant="outline" className="max-sm:h-11">
                 <a href={`/api/warenwirtschaft/stocktakes/${info.id}/export`} aria-label="Als CSV laden">

@@ -10,7 +10,7 @@ Neue Menügruppe „Warenwirtschaft“ mit vier Seiten:
 
 - **Artikel** (`/warenwirtschaft/artikel`): Bezeichnung, Kategorie, Einheit, EK netto (Cent), Bestand, Artikel-Nr., Lieferant, Bild. Lagerwert = Bestand × EK.
 - **Inventur** (`/warenwirtschaft/inventur`): laufende Zählung jederzeit, optional nur einzelne Kategorien. Soll = Bestand beim Anlegen, Abweichung wird bewertet.
-- **Stichtagsinventur** (`/warenwirtschaft/stichtag`): alle aktiven Artikel zu einem Datum (Vorschlag 31.12.), Bruch wird extra bewertet, Zusammenfassung je Kategorie wie das Excel-Blatt, CSV-Export. Pro Datum gibt es nur eine Stichtagsinventur.
+- **Stichtagsinventur** (`/warenwirtschaft/stichtag`): alle aktiven Artikel zu einem Datum (Vorschlag 31.12.), Bruch wird extra bewertet, Zusammenfassung je Kategorie wie das Excel-Blatt, CSV-Export und PDF-Inventurliste für Ablage und Steuerberater (Kopf mit Betrieb und Stichtag, Tabelle je Kategorie mit Zwischensumme, Gesamtwert netto, Unterschriftszeile; vor dem Festschreiben als „vorläufig“ gekennzeichnet). Pro Datum gibt es nur eine Stichtagsinventur.
 - **Inventar** (`/warenwirtschaft/inventar`): Inventarverzeichnis wie die Excel-Vorlage, Blätter Gastronomie, Strandbad, Wasserski, Events, Büro & Shop, Übernachtung; Menge je Jahr (`InventoryAssetCount`), Zählung direkt in der Tabelle.
 
 „Festschreiben“ übernimmt gezählte Mengen als Artikelbestand und sperrt die Inventur. Zeilen (`StocktakeLine`) halten Name, Einheit und Preis als Momentaufnahme, damit alte Inventuren gleich bleiben.
