@@ -389,3 +389,8 @@ werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
   anny; das neue Abo kommt wie gewohnt über den ANNY-Sync.
 - CSP in `next.config.ts` erlaubt dafür `cdn.anny.co` (Skript, Stil, Schrift)
   und Frames von `embed.anny.co`/`anny.co`.
+- Karte „Auslastung jetzt“ (`src/lib/rider-occupancy.ts`): verschiedene Fahrer
+  und Starts an Start-Geräten (`countsAsStart`) in der letzten Stunde, nur als
+  Summen. Stufen nach Fahrern: 0 „Gerade ruhig“, 1–5 „Wenig los“, 6–14
+  „Mittel“, ab 15 „Viel los“ (aus den Daten 21.08.–15.11.2026: Median 7,
+  Spitze 34 je Stunde). Ohne Start-Gerät bleibt die Karte weg.

@@ -5,6 +5,7 @@ import { METRIC_LABEL, RENEWAL_HINT_DAYS, formatEuro } from "@/lib/gamification"
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
 import { fmtDay, validityText } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
+import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +26,10 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { token } = await params;
   const rider = await requireRider(token);
   const base = riderAppPath(token);
-  const [offers, challenges] = await Promise.all([
+  const [offers, challenges, occupancy] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),
+    loadRiderOccupancy(rider.accountId).catch(() => null),
   ]);
   const challenge = challenges.find((c) => c.phase === "running" && !c.won) ?? null;
   const open = rider.vouchers.filter((v) => v.state === "open");
@@ -98,6 +100,35 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           <Link href={`${base}/abos`} className="rd-btn rd-btn-wide" style={{ marginTop: 8 }}>
             <span>{abo.kind === "none" ? "Abos ansehen" : "Abo buchen"}</span>
           </Link>
+        </div>
+      )}
+
+      {occupancy && (
+        <div className="rd-card">
+          <div className="rd-between">
+            <div className="rd-label">Auslastung jetzt</div>
+            <span className="rd-muted" style={{ fontSize: 12 }}>
+              Stand {occupancy.at.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" })} Uhr
+            </span>
+          </div>
+          <div className="rd-between">
+            <div className="rd-display rd-h2">{OCCUPANCY_LABEL[occupancy.level]}</div>
+            <span className="rd-muted">
+              {occupancy.riders === 1 ? "1 Fahrer" : `${occupancy.riders} Fahrer`}
+            </span>
+          </div>
+          <div
+            className={`rd-bar rd-occ-${occupancy.level}`}
+            role="img"
+            aria-label={`${OCCUPANCY_LABEL[occupancy.level]}: ${occupancy.riders} Fahrer und ${occupancy.starts} Starts in der letzten Stunde`}
+          >
+            <i style={{ width: `${occupancy.percent}%` }} />
+          </div>
+          <span className="rd-muted">
+            {occupancy.riders === 0
+              ? "In der letzten Stunde ist niemand am Lift gestartet."
+              : `${occupancy.starts === 1 ? "1 Start" : `${occupancy.starts} Starts`} am Lift in der letzten Stunde.`}
+          </span>
         </div>
       )}
 

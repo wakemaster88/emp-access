@@ -482,3 +482,8 @@ html[data-rd-intro="skip"] .rd-intro { display: none; }
 /* Eingebetteter anny-Shop: hell wie bei anny, damit Preise und Knöpfe lesbar bleiben. */
 .rd-shop { background: #ffffff; color: #0f172a; border-radius: 6px; overflow: hidden; min-height: 60dvh; max-width: 100%; }
 .rd-shop a-organization-page { display: block; width: 100%; }
+
+/* Auslastung am Lift: Balkenfarbe je Stufe. */
+.rd-occ-low > i { background: var(--rd-accent-soft); }
+.rd-occ-medium > i { background: var(--rd-accent); }
+.rd-occ-high > i { background: var(--rd-danger); }
