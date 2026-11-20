@@ -25,7 +25,7 @@ import { prisma } from "./prisma";
 import { CHALLENGE_TTL_MS } from "./passkey";
 import type { RelyingParty } from "./passkey-utils";
 import { loadRider, newRiderToken, riderAppPath, type RiderView } from "./rider-app";
-import { familyRelation, loadFamilyMembers, type FamilyMember, type FamilyPerson, type FamilyRelation } from "./rider-family";
+import { familyRelation, loadFamilyMembers, memberName, type FamilyMember, type FamilyPerson, type FamilyRelation } from "./rider-family";
 import { RIDER_COOKIE, RIDER_SESSION_DAYS, signRiderSession, verifyRiderSession } from "./rider-session";
 import { riderResetKeyValid } from "./rider-reset";
 
@@ -49,6 +49,10 @@ export interface RiderAuthProfile {
   passkeyCount: number;
   familyId: number | null;
   familyAdult: boolean;
+  /** Bestätigte Adresse der Person; null ohne eigene Adresse. */
+  email: string | null;
+  /** Kundenkonto der Person (lib/customers). */
+  customerId: number | null;
 }
 
 export async function findRiderAuthProfile(token: string): Promise<RiderAuthProfile | null> {
@@ -66,6 +70,7 @@ export async function findRiderAuthProfile(token: string): Promise<RiderAuthProf
       familyId: true,
       familyAdult: true,
       email: true,
+      customerId: true,
       account: { select: { isActive: true } },
       _count: { select: { passkeys: true, tickets: true } },
     },
@@ -83,6 +88,8 @@ export async function findRiderAuthProfile(token: string): Promise<RiderAuthProf
     passkeyCount: p._count.passkeys,
     familyId: p.familyId,
     familyAdult: p.familyAdult,
+    email: p.email,
+    customerId: p.customerId,
   };
 }
 
@@ -127,12 +134,52 @@ export async function riderRelation(p: RiderAuthProfile): Promise<FamilyRelation
   return rel === "self" ? null : rel;
 }
 
-export type RiderAccess = "setup" | "login" | "ok";
+export type RiderAccess = "setup" | "login" | "ok" | "held";
 
-/** Was der Besucher dieses Links darf: einrichten, anmelden oder hinein. */
+/** Zugang, der eine Person ohne eigenen Zugang schon mitverwaltet. */
+export interface RiderHolder {
+  token: string;
+  name: string;
+}
+
+/**
+ * Ist das Konto schon aktiv? Eine Person ohne eigene Adresse und ohne eigenen
+ * Zugang gehört dann zu einem eingerichteten Zugang: als Kind einer Familie,
+ * deren Erwachsene sich angemeldet haben, oder als Person eines
+ * Kundenkontos, dessen Adresse schon einen Zugang hat. Ihr Link richtet dann
+ * keinen zweiten Zugang mehr ein (Aaron, 20.11.2026: „die seite nur …
+ * wenn konto noch nicht aktiv“). Null: die Person darf selbst einrichten.
+ */
+export async function riderHolder(p: RiderAuthProfile): Promise<RiderHolder | null> {
+  if (hasCredential(p) || p.email != null) return null;
+  const withLogin = { OR: [{ passwordHash: { not: null } }, { passkeys: { some: {} } }] };
+  const select = { token: true, firstName: true, nickname: true, tickets: { select: { firstName: true, name: true, endDate: true, subscriptionId: true }, orderBy: { id: "desc" as const }, take: 5 } };
+  let holder =
+    p.familyId != null && !p.familyAdult
+      ? await prisma.riderProfile.findFirst({
+          where: { accountId: p.accountId, familyId: p.familyId, familyAdult: true, id: { not: p.id }, ...withLogin },
+          select,
+          orderBy: { id: "asc" },
+        })
+      : null;
+  if (!holder && p.customerId != null) {
+    const konto = await prisma.customer.findFirst({ where: { id: p.customerId, accountId: p.accountId }, select: { email: true, aliasEmails: true } });
+    if (konto) {
+      holder = await prisma.riderProfile.findFirst({
+        where: { accountId: p.accountId, customerId: p.customerId, id: { not: p.id }, email: { in: [konto.email, ...konto.aliasEmails] }, ...withLogin },
+        select,
+        orderBy: { id: "asc" },
+      });
+    }
+  }
+  return holder ? { token: holder.token, name: memberName(holder) } : null;
+}
+
+/** Was der Besucher dieses Links darf: einrichten, anmelden, hinein oder („held“) beim Konto anmelden. */
 export async function riderAccess(p: RiderAuthProfile): Promise<RiderAccess> {
   if ((await riderRelation(p)) != null) return "ok";
-  return hasCredential(p) ? "login" : "setup";
+  if (hasCredential(p)) return "login";
+  return (await riderHolder(p)) ? "held" : "setup";
 }
 
 export interface RiderFamilyView {
@@ -171,7 +218,7 @@ export const requireRider = cache(async (token: string): Promise<RiderView> => {
   const profile = await findRiderAuthProfile(token);
   if (!profile) notFound();
   const access = await riderAccess(profile);
-  if (access === "setup") redirect(`${riderAppPath(token)}/einrichten`);
+  if (access === "setup" || access === "held") redirect(`${riderAppPath(token)}/einrichten`);
   if (access === "login") redirect(`${riderAppPath(token)}/anmelden`);
   const rider = await loadRider(token);
   if (!rider) notFound();
@@ -208,10 +255,13 @@ export async function riderApiSession(
 
 /**
  * Wer darf eine Anmeldung hinterlegen? Beim ersten Mal jeder mit dem
- * Einladungslink, danach nur noch die angemeldete Person.
+ * Einladungslink, solange das Konto nicht schon aktiv ist (`riderHolder`),
+ * danach nur noch die angemeldete Person.
  */
 export async function mayManageCredentials(p: RiderAuthProfile, resetKey?: unknown): Promise<boolean> {
-  return !hasCredential(p) || (resetKey != null && riderResetKeyValid(p, resetKey)) || (await hasSession(p));
+  if (resetKey != null && riderResetKeyValid(p, resetKey)) return true;
+  if (!hasCredential(p)) return (await riderHolder(p)) == null;
+  return hasSession(p);
 }
 
 /**

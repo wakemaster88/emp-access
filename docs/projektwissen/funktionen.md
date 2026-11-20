@@ -171,6 +171,18 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
   richtet der Fahrer unter `/app/<token>/einrichten` einen Passkey oder ein
   Passwort (mindestens 8 Zeichen) ein. Danach öffnet der Link allein die App
   nicht mehr, sondern führt zu `/app/<token>/anmelden`.
+- **Persönlich und nur bei neuem Konto** (20.11.2026, Aaron: „personalisiert.
+  die seite nur funktioniert wenn konto noch nicht aktiv“): Die Seite grüßt
+  mit Vornamen, nennt Betrieb und Abo („Dein Ride Abo läuft bis …“,
+  `src/lib/rider-setup.ts`). Gehört die Person ohne eigene Adresse schon zu
+  einem eingerichteten Zugang (Kind einer Familie, deren Erwachsene sich
+  angemeldet haben, oder Person eines Kundenkontos, dessen Adresse einen
+  Zugang hat; `riderHolder` in `src/lib/rider-auth.ts`), richtet der Link
+  nichts mehr ein: Die Seite sagt, zu wem die Person gehört, und führt zu
+  dessen Anmeldung. Auch die Schnittstellen für Passwort und Passkey lehnen
+  dann ab (`mayManageCredentials`). Ist man auf dem Gerät schon angemeldet,
+  heißt die Karte „Ist Lisa dein Kind?“; bei Volljährigen (Geburtsdatum der
+  Person) erscheint sie nicht.
 - Sitzung: signiertes Cookie `rider_session` (HMAC mit `AUTH_SECRET`, 180
   Tage, `src/lib/rider-session.ts`). Alle Seiten unter `[token]/(app)` und
   die Profil-Schnittstelle verlangen sie (`requireRider`, `riderApiSession`
