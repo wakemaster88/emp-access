@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addMonths, annyContractStart, annyRunningEnd, reconstructAnnyStart } from "./anny-sub-dates";
+import { addMonths, annyContractStart, annyRunningEnd, minimumTermMonths, reconstructAnnyStart } from "./anny-sub-dates";
 
 const d = (s: string) => new Date(s);
 
@@ -37,4 +37,21 @@ test("Vertragsbeginn zurückrechnen (Fall Ratschow)", () => {
   assert.equal(reconstructAnnyStart(d("2026-10-29T16:41:46Z"), d("2026-05-29T15:54:49Z")).toISOString(), "2026-05-29T16:41:46.000Z");
   // Nicht verschoben: bleibt
   assert.equal(reconstructAnnyStart(d("2026-11-20T12:38:16Z"), d("2026-11-20T13:05:00Z")).toISOString(), "2026-11-20T12:38:16.000Z");
+});
+
+test("Vertragsbeginn: created_at von anny zählt als Kauf", () => {
+  // März-Abo: Ticket kennt nur den verschobenen Beginn, anny die Anlage
+  assert.equal(
+    annyContractStart(d("2026-11-13T17:42:37Z"), d("2026-11-13T17:42:37Z"), d("2026-02-13T17:40:00Z"))?.toISOString(),
+    "2026-02-13T17:40:00.000Z",
+  );
+  assert.equal(annyContractStart(d("2026-11-13T17:42:37Z"), null, new Date("kaputt"))?.toISOString(), "2026-11-13T17:42:37.000Z");
+});
+
+test("Mindestlaufzeit aus anny in Monaten", () => {
+  assert.equal(minimumTermMonths(12, "month"), 12);
+  assert.equal(minimumTermMonths(2, "year"), 24);
+  assert.equal(minimumTermMonths(24, undefined), 24);
+  assert.equal(minimumTermMonths(0, "month"), null);
+  assert.equal(minimumTermMonths(3, "week"), null);
 });
