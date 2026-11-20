@@ -3455,6 +3455,10 @@ model GamificationConfig {
   servicePrices   Json?
   /// Abo-Preise fuer den Abo-Rechner in Cent: {"<subscriptionId>": 39000}.
   subscriptionPrices Json?
+  /// Einladung zur App, wenn ueber anny ein neues Abo gebucht wird (lib/rider-invite).
+  inviteNewAbos   Boolean  @default(true)
+  /// Einladung an laufende Abos, die noch nicht in der App sind (in Etappen ueber tick-5min).
+  inviteExistingAbos Boolean @default(false)
   accountId       Int      @unique
   account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())

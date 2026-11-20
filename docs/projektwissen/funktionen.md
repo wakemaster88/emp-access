@@ -513,6 +513,14 @@ zur app bekommen“.
   Adresse (Familienkonto bekommt eine Mail, „Wer bist du?“ beim Öffnen).
 - Links aus dem Hintergrund nehmen `AUTH_URL`, `NEXTAUTH_URL` oder
   `VERCEL_PROJECT_PRODUCTION_URL`; ohne alle drei geht keine Mail.
+- Schalter unter Kunden App › Einstellungen, Karte „Einladung zur App“
+  (Aaron: „beides im backend aktivieren und deaktivieren“):
+  „Bei neuem Abo aus anny“ (`GamificationConfig.inviteNewAbos`, Standard an)
+  und „An Bestandskunden“ (`inviteExistingAbos`, Standard aus, Einschalten
+  mit Rückfrage und Anzahl). Bestandskunden = laufende Abos (VALID/PAUSED,
+  nicht abgelaufen), Adresse nicht in der App, noch keine Einladung; Versand
+  über `runInviteTick` im Cron tick-5min, 10 Mails je Lauf, 9–20 Uhr Berlin.
+  Nach 3 Fehlversuchen an eine Adresse wird sie ausgelassen.
 
 ## Abos über die E-Mail, Familienkonten, Etappe 1 (20.11.2026)
 

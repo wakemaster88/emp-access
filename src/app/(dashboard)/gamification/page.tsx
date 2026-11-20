@@ -26,6 +26,8 @@ import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers
 import { RankingDisplayCard } from "@/components/gamification/ranking-display-card";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 import { AppQrCard } from "@/components/gamification/app-qr-card";
+import { AppInviteCard } from "@/components/gamification/app-invite-card";
+import { inviteStatus } from "@/lib/rider-invite";
 
 type Tab = "auswertung" | "fahrer" | "meilensteine" | "challenges" | "angebote" | "gutscheine" | "einstellungen";
 const TABS: Tab[] = ["auswertung", "fahrer", "meilensteine", "challenges", "angebote", "gutscheine", "einstellungen"];
@@ -372,7 +374,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
   }
 
   if (tab === "einstellungen") {
-    const [subscriptions, services, devices] = await Promise.all([
+    const [subscriptions, services, devices, invites] = await Promise.all([
       db.subscription.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.service.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.device.findMany({
@@ -380,6 +382,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         select: { id: true, name: true, countsAsStart: true },
         orderBy: { name: "asc" },
       }),
+      inviteStatus(accountId),
     ]);
     content = (
       <>
@@ -398,6 +401,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         devices={devices.map((d) => ({ id: d.id, name: d.name }))}
         year={year}
       />
+      <AppInviteCard initial={invites} />
       <RankingDisplayCard path={config?.displayToken ? `/rangliste/${config.displayToken}` : null} />
       </>
     );
