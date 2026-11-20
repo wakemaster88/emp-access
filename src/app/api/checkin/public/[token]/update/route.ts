@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { rescheduleAnnyBooking } from "@/lib/anny-availability";
 import { dayTicketEmailChanged, normalizeEmail } from "@/lib/day-guest";
 import { aboEmailError } from "@/lib/abo-email";
+import { linkAboCustomerSafe } from "@/lib/customers";
 
 export async function PUT(
   request: NextRequest,
@@ -268,6 +269,11 @@ export async function PUT(
     where: { id: ticket.id },
     data: updateData,
   });
+
+  // Abo: Kundenkonto zur neuen Adresse (lib/customers).
+  if (updateData.email !== undefined && updated.subscriptionId != null) {
+    await linkAboCustomerSafe(monitor.accountId, updated.id);
+  }
 
   // Tagesgäste: das Ticket folgt seiner Adresse ins passende App-Profil.
   if (updateData.email !== undefined) {

@@ -456,3 +456,36 @@ Bestandsdaten.
 - Nächste Etappen: Kundenkonto (`Customer`) und Personen mit eigenem Namen
   und Geburtsdatum samt Übernahme der Bestandsdaten (2), Kasse und
   Verwaltung (3), Kunden-App mit Familie aus dem Konto (4).
+
+## Kundenkonto und Personen, Etappe 2 (20.11.2026)
+
+- Tabelle `Customer`: eine E-Mail-Adresse je Mandant (klein geschrieben,
+  eindeutig), Name des Kontoinhabers, anny-Kundennummern. `Ticket.customerId`
+  zeigt bei Abos auf das Konto der Adresse am Ticket. Tagestickets bekommen
+  kein Konto, sie finden ihr Profil weiter über die Adresse.
+- Person = `RiderProfile` mit `customerId`, `firstName`, `lastName`,
+  `birthDate`. `Ticket.riderProfileId` sagt, wer mit dem Abo fährt; NULL bei
+  einem Abo mit Konto heißt „Fahrer offen“. Der anny-Sync schreibt Namen nur
+  ans Ticket, nie an die Person.
+- Regeln (`planPersons` in `src/lib/customer-person.ts`): bestehende
+  Zuordnungen bleiben; Kids-Abo mit Geburtsdatum ab 18 (`KIDS_MAX_AGE`,
+  Annahme) bleibt offen; gleiche Daten, nacheinander laufend = dieselbe
+  Person; ein zweites Fahr-Abo (Ride, Ride + Gear, Kids, `aboCategory`) zur
+  selben Zeit bleibt offen; Beach und Aqua darf dieselbe Person nebenher
+  haben; gekündigte oder vorzeitig ungültige Abos zählen dabei nicht. Ein
+  Profil ohne Daten und Abo (App per E-Mail) übernimmt die erste neue Person.
+- Schreibwege (`src/lib/customers.ts`): anny-Sync (`customerFor`, Konto folgt
+  einer Adressänderung über die anny-Kundennummer), `POST/PUT
+  /api/tickets`, `PATCH /api/tickets/[id]/email`, Shop-Monitor. Der Cron
+  `tick-5min` (Job `customers`) holt Abos mit Adresse ohne Konto nach, bis
+  400 je Lauf. Ein Lauf je Konto zugleich (`pg_advisory_xact_lock`).
+- Kunden-App: Die Anmeldung mit der Adresse eines Kontos landet beim
+  Kontoinhaber (`holderPersonForEmail`, `pickHolder`). Neue Profile bekommen
+  das Konto der Adresse, `ensureRiderProfile` legt die Person mit den Daten
+  vom Abo an (nicht beim Kids-Abo mit Eltern-Daten).
+- Probelauf auf einer Kopie der Bestandsdaten (20.11.2026): 153 Konten,
+  160 Abos zugeordnet, 148 Personen neu. Von 197 laufenden Abos haben 140 eine
+  Person, 9 stehen auf „Fahrer offen“ (6 Kids-Abos mit Eltern-Daten, 3
+  Ride-Abos neben einem Kids-Abo mit denselben Daten), 48 haben keine Adresse.
+- Noch nicht: Anzeige und Auswahl der Person an Kasse und im Backend,
+  Kundenkonten-Seite, Familie aus dem Konto (Etappen 3 und 4).

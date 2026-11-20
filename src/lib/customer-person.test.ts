@@ -1,0 +1,133 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { aboCategory, aboNamesRider, isAdultAt, isKidsSubscriptionName, personDataKey, pickHolder, planPersons, type PlanTicket } from "./customer-person";
+
+const NOW = new Date("2026-11-20T12:00:00Z");
+const d = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
+const PARENT = { firstName: "Eva", lastName: "Beispiel", birthDate: d("1984-03-02") };
+const KID = { firstName: "Mia", lastName: "Beispiel", birthDate: d("2014-07-09") };
+
+let next = 1;
+function T(p: Partial<PlanTicket> & { start: string; end: string }): PlanTicket {
+  const { start, end, ...rest } = p;
+  const kids = rest.kids ?? false;
+  return { id: next++, ...PARENT, startDate: d(start), endDate: d(end), kids, category: "ride", status: "VALID", riderProfileId: null, ...rest };
+}
+
+test("Hilfen: Alter, Kids-Abo, Vergleichsform", () => {
+  assert.equal(isAdultAt(d("2008-11-21"), NOW), false);
+  assert.equal(isAdultAt(d("2008-11-20"), NOW), true);
+  assert.equal(isAdultAt(null, NOW), null);
+  assert.equal(isKidsSubscriptionName("Kids Abo"), true);
+  assert.equal(isKidsSubscriptionName("Kinder-Abo"), true);
+  assert.equal(isKidsSubscriptionName("Ride Abo"), false);
+  assert.equal(personDataKey({ firstName: "Eva", lastName: "Bei-spiel", birthDate: d("1984-03-02") }), "eva|beispiel|1984-03-02");
+  assert.equal(personDataKey({ firstName: null, lastName: " ", birthDate: null }), "");
+  assert.equal(aboNamesRider({ kids: true, birthDate: PARENT.birthDate, startDate: d("2026-05-01") }), false);
+  assert.equal(aboNamesRider({ kids: true, birthDate: KID.birthDate, startDate: d("2026-05-01") }), true);
+});
+
+test("planPersons: ein Konto, Verlängerungen, eine neue Person", () => {
+  const a = T({ start: "2024-05-01", end: "2025-04-30" });
+  const b = T({ start: "2025-05-01", end: "2026-04-30" });
+  const c = T({ start: "2026-04-15", end: "2027-04-14" });
+  const plan = planPersons([c, a, b], [], NOW);
+  assert.deepEqual(plan.open, []);
+  assert.equal(plan.create.length, 1);
+  assert.deepEqual(plan.create[0].ticketIds, [a.id, b.id, c.id]);
+  assert.equal(plan.create[0].firstName, "Eva");
+});
+
+test("planPersons: Familienkonto, Kids-Abo mit Eltern-Daten bleibt offen", () => {
+  const ride = T({ start: "2026-04-01", end: "2027-03-31" });
+  const kids = T({ start: "2026-05-01", end: "2027-04-30", kids: true });
+  const plan = planPersons([ride, kids], [], NOW);
+  assert.deepEqual(plan.open, [kids.id]);
+  assert.deepEqual(plan.create.map((c) => c.ticketIds), [[ride.id]]);
+});
+
+test("planPersons: zwei gleichzeitige Abos mit gleichen Daten, das zweite bleibt offen", () => {
+  const ride = T({ start: "2026-04-01", end: "2027-03-31" });
+  const beach = T({ start: "2026-05-01", end: "2027-04-30" });
+  const plan = planPersons([ride, beach], [], NOW);
+  assert.deepEqual(plan.open, [beach.id]);
+  assert.deepEqual(plan.create[0].ticketIds, [ride.id]);
+});
+
+test("planPersons: Kind mit eigenen Daten wird eigene Person, Kids-Abo zuerst", () => {
+  const ride = T({ start: "2026-04-01", end: "2027-03-31" });
+  const kids = T({ ...KID, start: "2026-05-01", end: "2027-04-30", kids: true });
+  const plan = planPersons([ride, kids], [], NOW);
+  assert.deepEqual(plan.open, []);
+  assert.deepEqual(plan.create.map((c) => c.firstName).sort(), ["Eva", "Mia"]);
+});
+
+test("planPersons: Wechsel von Kids auf Ride bleibt dieselbe Person", () => {
+  const kids = T({ ...KID, start: "2025-05-01", end: "2026-04-30", kids: true });
+  const ride = T({ ...KID, start: "2026-05-01", end: "2027-04-30" });
+  const plan = planPersons([kids, ride], [], NOW);
+  assert.equal(plan.create.length, 1);
+  assert.deepEqual(plan.create[0].ticketIds.sort(), [kids.id, ride.id].sort());
+});
+
+test("planPersons: bestehende Person behält ihre Abos und bekommt die Verlängerung", () => {
+  const old = T({ start: "2025-05-01", end: "2026-04-30", riderProfileId: 7 });
+  const renew = T({ start: "2026-05-01", end: "2027-04-30" });
+  const plan = planPersons([old, renew], [{ id: 7, firstName: null, lastName: null, birthDate: null }], NOW);
+  assert.deepEqual(plan.create, []);
+  assert.deepEqual(plan.assign, [{ personId: 7, ticketIds: [renew.id] }]);
+});
+
+test("planPersons: Abo einer fremden Person bleibt unberührt", () => {
+  const foreign = T({ start: "2026-04-01", end: "2027-03-31", riderProfileId: 99 });
+  const plan = planPersons([foreign], [], NOW);
+  assert.deepEqual(plan, { create: [], assign: [], open: [] });
+});
+
+test("planPersons: Profil ohne Abo (App per E-Mail) übernimmt die neue Person", () => {
+  const ride = T({ start: "2026-04-01", end: "2027-03-31" });
+  const plan = planPersons([ride], [{ id: 5, firstName: null, lastName: null, birthDate: null }], NOW);
+  assert.deepEqual(plan.create, []);
+  assert.deepEqual(plan.assign, [{ personId: 5, ticketIds: [ride.id] }]);
+});
+
+test("planPersons: Abo ohne Namen bleibt offen", () => {
+  const anon = T({ firstName: null, lastName: null, start: "2026-04-01", end: "2027-03-31" });
+  assert.deepEqual(planPersons([anon], [], NOW).open, [anon.id]);
+});
+
+test("pickHolder: Kontoinhaber vor Kind, fremde Adresse scheidet aus", () => {
+  const people = [
+    { id: 1, email: null, firstName: "Mia", lastName: "Beispiel", adultAbo: false },
+    { id: 2, email: null, firstName: "Eva", lastName: "Beispiel", adultAbo: true },
+    { id: 3, email: "andere@example.de", firstName: "Eva", lastName: "Beispiel", adultAbo: true },
+  ];
+  assert.equal(pickHolder(people, "eva@example.de", "Eva Beispiel"), 2);
+  assert.equal(pickHolder(people, "eva@example.de", null), 2);
+  assert.equal(pickHolder([people[0]], "eva@example.de", "Eva Beispiel"), 1);
+  assert.equal(pickHolder([people[2]], "eva@example.de", "Eva Beispiel"), null);
+});
+
+test("aboCategory: Fahr-Abos sind eine Art, Beach und Aqua je eine eigene", () => {
+  assert.equal(aboCategory(2, "Ride Abo"), "ride");
+  assert.equal(aboCategory(6, "Ride + Gear Abo"), "ride");
+  assert.equal(aboCategory(5, "Kids Abo"), "ride");
+  assert.equal(aboCategory(1, "Beach Abo"), "abo-1");
+  assert.equal(aboCategory(4, "Aqua Abo"), "abo-4");
+});
+
+test("planPersons: Beach und Aqua gleichzeitig gehören derselben Person", () => {
+  const beach = T({ start: "2026-10-26", end: "2027-06-26", category: "abo-1" });
+  const aqua = T({ start: "2026-10-26", end: "2027-05-26", category: "abo-4" });
+  const plan = planPersons([beach, aqua], [], NOW);
+  assert.deepEqual(plan.open, []);
+  assert.deepEqual(plan.create.map((c) => c.ticketIds.sort()), [[beach.id, aqua.id].sort()]);
+});
+
+test("planPersons: gekündigtes Abo neben dem neuen zählt nicht als zweite Person", () => {
+  const canceled = T({ start: "2026-10-26", end: "2028-10-26", category: "abo-4", status: "CANCELED" });
+  const fresh = T({ start: "2026-10-31", end: "2028-10-31", category: "abo-4" });
+  const plan = planPersons([canceled, fresh], [], NOW);
+  assert.deepEqual(plan.open, []);
+  assert.equal(plan.create.length, 1);
+});

@@ -6,6 +6,7 @@ import { ticketCreateSchema } from "@/lib/validators";
 import { resolveAnnyOrganizationId, fetchAnnyServiceMatch, resolveServiceResourceId } from "@/lib/anny-availability";
 import { createAnnyBookingV2 } from "@/lib/anny-bookings";
 import { aboEmailError } from "@/lib/abo-email";
+import { linkAboCustomerSafe } from "@/lib/customers";
 
 const publicTicketCreateSchema = ticketCreateSchema.extend({
   voucherCode: z.string().min(1).optional(),
@@ -432,10 +433,12 @@ export async function POST(
         });
         return tx.ticket.create({ data: ticketData });
       });
+      if (ticket.subscriptionId != null) await linkAboCustomerSafe(ticket.accountId, ticket.id);
       return NextResponse.json(ticket, { status: 201 });
     }
 
     const ticket = await prisma.ticket.create({ data: ticketData });
+    if (ticket.subscriptionId != null) await linkAboCustomerSafe(ticket.accountId, ticket.id);
     return NextResponse.json(ticket, { status: 201 });
   } catch (e) {
     return handleCreateError(e);
