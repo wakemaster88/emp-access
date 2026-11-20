@@ -121,7 +121,7 @@ export function RiderPush({ token }: { token: string }) {
       </div>
       {state === "needs-install" && (
         <span className="rd-muted">
-          Auf iPhone und iPad geht das nur als App: in Safari auf Teilen tippen, dann „Zum Home-Bildschirm“, und die App von dort öffnen.
+          Auf iPhone und iPad nur in der App: in Safari Teilen, dann „Zum Home-Bildschirm“.
         </span>
       )}
       {state === "unsupported" && <span className="rd-muted">Dieser Browser kann keine Benachrichtigungen.</span>}

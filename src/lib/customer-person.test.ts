@@ -167,3 +167,20 @@ test("hasFollowUpAbo: Verlängerung derselben Art zählt, andere Art und kürzer
   assert.equal(hasFollowUpAbo(abo, [{ id: 4, category: "ride", endDate: d("2026-10-01") }]), false);
   assert.equal(hasFollowUpAbo({ ...abo, endDate: null }, [{ id: 2, category: "ride", endDate: null }]), false);
 });
+
+test("planPersons: Name in der App geändert, Verlängerung mit altem Namen findet die Person", () => {
+  const old = T({ start: "2025-05-01", end: "2026-04-30", firstName: "Eav", riderProfileId: 7 });
+  const renewal = T({ start: "2026-05-01", end: "2027-04-30", firstName: "Eav" });
+  const plan = planPersons([old, renewal], [{ id: 7, ...PARENT }], NOW);
+  assert.deepEqual(plan.open, []);
+  assert.deepEqual(plan.create, []);
+  assert.deepEqual(plan.assign, [{ personId: 7, ticketIds: [renewal.id] }]);
+});
+
+test("planPersons: genaue Daten gehen vor früheren Daten einer anderen Person", () => {
+  const old = T({ start: "2025-05-01", end: "2026-04-30", riderProfileId: 7 });
+  const renewal = T({ start: "2026-05-01", end: "2027-04-30" });
+  // Person 7 heißt inzwischen anders, Person 8 trägt die Daten am Abo.
+  const plan = planPersons([old, renewal], [{ id: 7, ...PARENT, firstName: "Evi" }, { id: 8, ...PARENT }], NOW);
+  assert.deepEqual(plan.assign, [{ personId: 8, ticketIds: [renewal.id] }]);
+});
