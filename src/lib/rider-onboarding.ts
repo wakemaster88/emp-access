@@ -13,7 +13,7 @@ import { berlinYmd } from "./berlin-day";
 import { countLinked, dayTicketsByEmail, mailLinkKey, MAIL_LINK_HOURS, MAIL_MAX_PER_DAY, MAIL_PAUSE_MINUTES, normalizeEmail, DAY_GUEST_MAIL_SUBJECT } from "./day-guest";
 import { newRiderToken } from "./rider-app";
 import { samePersonAbos } from "./abo-person";
-import { holderPersonForEmail } from "./customers";
+import { customerIdForEmail, holderPersonForEmail } from "./customers";
 import { sendEmail } from "./email-sender";
 import { riderLinkMail } from "./rider-mail-template";
 
@@ -109,9 +109,9 @@ export async function completeOnboarding(
 
   let profile = await profileByEmail(accountId, email);
   if (!profile) {
-    const customer = await prisma.customer.findUnique({ where: { accountId_email: { accountId, email } }, select: { id: true } });
+    const customerId = await customerIdForEmail(accountId, email);
     profile = await prisma.riderProfile.create({
-      data: { token: newRiderToken(), accountId, email, customerId: customer?.id ?? null },
+      data: { token: newRiderToken(), accountId, email, customerId },
       select: { id: true, token: true, email: true },
     });
   } else if (profile.email == null) {

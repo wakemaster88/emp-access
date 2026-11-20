@@ -563,3 +563,30 @@ Bestandsdaten.
 - Abos-Seite: Karte „Fahrer offen (n)“ mit Suche; der Dialog wählt eine
   Person des Kontos oder legt eine neue an (`PUT /api/tickets/[id]/rider`,
   Body `{ personId }` oder `{ firstName, lastName, birthDate }`).
+
+## Kundenkonten bearbeiten und zusammenlegen, Etappe 3b (20.11.2026)
+
+- Abos-Seite, Umschalter „Abos | Kundenkonten“ (`/subscriptions?ansicht=konten`,
+  nicht für den Super-Admin). Tabelle aller Konten mit Suche (Name, Adresse,
+  Personen), Badge „Fahrer offen“, laufende Abos. Daten:
+  `loadCustomerAccounts` in `src/lib/customer-accounts.ts`.
+- Konto-Dialog: Personen mit Alter und Abos, Abos mit Fahrer. Person
+  bearbeiten (`PATCH /api/customers/persons/[id]`, gilt für alle Abos der
+  Person), Fahrer ändern (`PUT /api/tickets/[id]/rider`, gleiches Formular wie
+  „Fahrer offen“, `rider-form.tsx`).
+- Zusammenlegen (nur Admin, `POST /api/customers/[id]/merge`, Body
+  `{ fromId }`, `mergeCustomers`): Abos und Personen kommen ins geöffnete
+  Konto, das andere Konto wird gelöscht. Seine Adressen bleiben als weitere
+  Adressen (`Customer.aliasEmails`), anny-Kundennummern werden vereint, der
+  Name bleibt der des Zielkontos. Personen mit gleichem Namen und
+  Geburtsdatum werden eins, wenn eine davon keinen eigenen Zugang hat
+  (Adresse, Passwort, Passkey, Push, Familie, Spitzname, App-Besuch). Danach
+  ordnet `syncCustomerPersons` offene Abos neu zu. Nicht umkehrbar.
+- Weitere Adressen: `customerIdForEmail` und `ensureCustomer` finden das Konto
+  auch über `aliasEmails` (anny-Sync, Kasse, Cron, App-Anmeldung). Ändert
+  anny die Adresse eines Kunden, wird die alte Adresse ebenfalls weitere
+  Adresse.
+- Vorschläge „Vielleicht doppelt“: Konten mit gleichem Inhabernamen (zwei
+  Wörter oder mehr) oder gleicher anny-Kundennummer
+  (`findDuplicateGroups`). Stand 20.11.2026: 2 Paare mit gleichem Namen,
+  keine gemeinsame anny-Nummer.

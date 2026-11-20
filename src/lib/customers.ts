@@ -12,6 +12,10 @@
  *   noch kein Konto haben (Bestandsdaten, verpasste Schreibwege).
  * - `assignRider`, `updatePersonData`: Kasse und Abo-Seite sagen, wer mit
  *   einem Abo fährt, und pflegen Name und Geburtsdatum der Person.
+ * - `mergeCustomers`: zwei Konten derselben Familie zusammenlegen. Die
+ *   Adresse des übernommenen Kontos bleibt als weitere Adresse
+ *   (`aliasEmails`); `customerIdForEmail` und `ensureCustomer` finden das
+ *   Konto auch darüber.
  *
  * Tagestickets bekommen kein Konto; sie finden ihr Profil weiter über die
  * Adresse (`day-guest.ts`).
@@ -32,6 +36,18 @@ function isUniqueViolation(e: unknown): boolean {
 
 const CUSTOMER_SELECT = { id: true, email: true, name: true, annyCustomerIds: true } as const;
 
+/** Konto zur Adresse: Hauptadresse oder weitere Adresse nach dem Zusammenlegen. */
+export async function customerIdForEmail(accountId: number, email: string): Promise<number | null> {
+  const main = await prisma.customer.findUnique({ where: { accountId_email: { accountId, email } }, select: { id: true } });
+  if (main) return main.id;
+  const alias = await prisma.customer.findFirst({
+    where: { accountId, aliasEmails: { has: email } },
+    select: { id: true },
+    orderBy: { id: "asc" },
+  });
+  return alias?.id ?? null;
+}
+
 export async function ensureCustomer(
   accountId: number,
   input: { email: string | null | undefined; name?: string | null; annyCustomerId?: string | number | null },
@@ -42,8 +58,23 @@ export async function ensureCustomer(
   const name = input.name?.trim() || null;
 
   let c = await prisma.customer.findUnique({ where: { accountId_email: { accountId, email } }, select: CUSTOMER_SELECT });
+  if (!c) {
+    // Weitere Adresse eines zusammengelegten Kontos: Name bleibt der des Kontos.
+    const alias = await prisma.customer.findFirst({
+      where: { accountId, aliasEmails: { has: email } },
+      select: CUSTOMER_SELECT,
+      orderBy: { id: "asc" },
+    });
+    if (alias) {
+      if (anny && !alias.annyCustomerIds.includes(anny)) {
+        await prisma.customer.update({ where: { id: alias.id }, data: { annyCustomerIds: { push: anny } } });
+      }
+      return alias.id;
+    }
+  }
   if (!c && anny) {
-    // Adresse in anny geändert: dasselbe Konto, neue Adresse.
+    // Adresse in anny geändert: dasselbe Konto, neue Adresse. Die alte bleibt
+    // als weitere Adresse (ältere Abos, Anmeldung in der App).
     const moved = await prisma.customer.findMany({
       where: { accountId, annyCustomerIds: { has: anny } },
       select: CUSTOMER_SELECT,
@@ -51,7 +82,11 @@ export async function ensureCustomer(
     });
     if (moved.length === 1) {
       try {
-        c = await prisma.customer.update({ where: { id: moved[0].id }, data: { email }, select: CUSTOMER_SELECT });
+        c = await prisma.customer.update({
+          where: { id: moved[0].id },
+          data: { email, aliasEmails: { push: moved[0].email } },
+          select: CUSTOMER_SELECT,
+        });
         console.log(`[customers] account=${accountId} Konto ${c.id}: Adresse aus anny geändert`);
       } catch (e) {
         if (!isUniqueViolation(e)) throw e;
@@ -248,8 +283,10 @@ export async function holderPersonForEmail(
   accountId: number,
   email: string,
 ): Promise<{ id: number; token: string; email: string | null } | null> {
+  const customerId = await customerIdForEmail(accountId, email);
+  if (customerId == null) return null;
   const customer = await prisma.customer.findUnique({
-    where: { accountId_email: { accountId, email } },
+    where: { id: customerId },
     select: {
       name: true,
       persons: {
@@ -372,4 +409,88 @@ export async function updatePersonData(
   if (Object.keys(data).length === 0) return;
   const r = await prisma.riderProfile.updateMany({ where: { id: personId, accountId }, data });
   if (r.count === 0) throw new RiderError("Person nicht gefunden.", 404);
+}
+
+export interface MergeResult {
+  abos: number;
+  persons: number;
+  /** Doppelte Personen (gleiche Daten, ohne eigenen Zugang), die zusammengefasst wurden. */
+  folded: number;
+}
+
+/** Eine Person ohne eigenen Zugang und ohne Spuren in der App. */
+function isPlainPerson(p: {
+  email: string | null; passwordHash: string | null; nickname: string | null; lastSeenAt: Date | null; familyId: number | null;
+  _count: { passkeys: number; pushSubscriptions: number };
+}): boolean {
+  return p.email == null && p.passwordHash == null && p.nickname == null && p.lastSeenAt == null && p.familyId == null
+    && p._count.passkeys === 0 && p._count.pushSubscriptions === 0;
+}
+
+/**
+ * Zwei Konten zusammenlegen: Abos und Personen von `fromId` kommen nach
+ * `intoId`. Die Adressen von `fromId` bleiben als weitere Adressen, damit neue
+ * Abos (anny, Kasse) dort landen. Personen mit gleichen Daten werden
+ * zusammengefasst, wenn eine davon keinen eigenen Zugang hat.
+ */
+export async function mergeCustomers(accountId: number, intoId: number, fromId: number): Promise<MergeResult> {
+  if (intoId === fromId) throw new RiderError("Ein Konto lässt sich nicht mit sich selbst zusammenlegen.");
+  const result = await prisma.$transaction(async (tx) => {
+    // Beide Konten sperren, immer in derselben Reihenfolge.
+    for (const id of [intoId, fromId].sort((a, b) => a - b)) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS}::int, ${id}::int)`;
+    }
+    const select = { id: true, email: true, name: true, annyCustomerIds: true, aliasEmails: true } as const;
+    const [into, from] = await Promise.all([
+      tx.customer.findFirst({ where: { id: intoId, accountId }, select }),
+      tx.customer.findFirst({ where: { id: fromId, accountId }, select }),
+    ]);
+    if (!into || !from) throw new RiderError("Kundenkonto nicht gefunden.", 404);
+
+    const abos = await tx.ticket.updateMany({ where: { accountId, customerId: from.id }, data: { customerId: into.id } });
+    const persons = await tx.riderProfile.updateMany({ where: { accountId, customerId: from.id }, data: { customerId: into.id } });
+    await tx.customer.delete({ where: { id: from.id } });
+    const aliasEmails = [...new Set([...into.aliasEmails, from.email, ...from.aliasEmails])].filter((e) => e !== into.email);
+    await tx.customer.update({
+      where: { id: into.id },
+      data: {
+        aliasEmails,
+        annyCustomerIds: [...new Set([...into.annyCustomerIds, ...from.annyCustomerIds])],
+        ...(!into.name && from.name && { name: from.name }),
+      },
+    });
+
+    // Gleiche Person in beiden Konten (Name und Geburtsdatum): eine behalten.
+    const all = await tx.riderProfile.findMany({
+      where: { accountId, customerId: into.id },
+      select: {
+        id: true, firstName: true, lastName: true, birthDate: true, email: true, passwordHash: true, nickname: true,
+        lastSeenAt: true, familyId: true, _count: { select: { passkeys: true, pushSubscriptions: true } },
+      },
+      orderBy: { id: "asc" },
+    });
+    const groups = new Map<string, typeof all>();
+    for (const p of all) {
+      const key = personDataKey(p);
+      if (!key) continue;
+      groups.set(key, [...(groups.get(key) ?? []), p]);
+    }
+    let folded = 0;
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      // Wer einen Zugang hat, bleibt; sonst die älteste Person.
+      const keep = group.find((p) => !isPlainPerson(p)) ?? group[0];
+      for (const p of group) {
+        if (p.id === keep.id || !isPlainPerson(p)) continue;
+        await tx.ticket.updateMany({ where: { accountId, riderProfileId: p.id }, data: { riderProfileId: keep.id } });
+        await tx.riderProfile.delete({ where: { id: p.id } });
+        folded += 1;
+      }
+    }
+    return { abos: abos.count, persons: persons.count, folded };
+  }, { timeout: 20_000 });
+  // Abos ohne Fahrer finden jetzt vielleicht eine Person des anderen Kontos.
+  await syncCustomerPersons(accountId, intoId);
+  console.log(`[customers] account=${accountId} Konto ${fromId} in ${intoId} übernommen: ${result.abos} Abos, ${result.persons} Personen, ${result.folded} zusammengefasst`);
+  return result;
 }

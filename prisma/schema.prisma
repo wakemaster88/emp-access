@@ -3634,6 +3634,9 @@ model Customer {
   /// Name des Kontoinhabers (aus anny bzw. vom ersten Abo).
   name            String?
   annyCustomerIds String[]       @default([])
+  /// Weitere Adressen nach dem Zusammenlegen zweier Konten. Abos mit einer
+  /// dieser Adressen landen in diesem Konto (lib/customers).
+  aliasEmails     String[]       @default([])
   tickets         Ticket[]
   persons         RiderProfile[]
   accountId       Int
