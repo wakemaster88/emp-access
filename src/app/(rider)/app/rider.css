@@ -147,6 +147,10 @@
 
 .rd-pill { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
 .rd-pill-open { color: var(--rd-accent-soft); background: var(--rd-accent-bg); }
+/* Kopf einer Challenge-Karte: Marke (Zeitraum, Status) über dem Titel, damit
+   lange Titel die volle Breite haben und nichts über den Rand ragt. */
+.rd-card-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.rd-card-head > .rd-h2 { overflow-wrap: break-word; max-width: 100%; }
 .rd-pill-off { color: var(--rd-muted); background: var(--rd-line); }
 .rd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .rd-chip { padding: 4px 10px; border-radius: 999px; background: var(--rd-line); font-weight: 500; font-size: 13px; }
