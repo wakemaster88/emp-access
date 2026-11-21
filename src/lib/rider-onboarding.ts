@@ -133,12 +133,13 @@ export async function completeOnboarding(
   let profile = await confirmedProfile(accountId, email);
   if (customerId != null) {
     if (!profile) {
-      // Wer bist du? Nur eine Person dieses Kontos ohne eigenen Zugang.
+      // Wer bist du? Nur eine Person dieses Kontos ohne bestätigte Adresse
+      // (mit Zugang nur der Kontoinhaber, siehe kontoLogin).
       const konto = await kontoLogin(accountId, email, now);
       const personId = input.personId === undefined ? konto?.guess ?? null : input.personId;
       if (personId != null && konto?.persons.some((p) => p.id === personId)) {
         const claimed = await prisma.riderProfile.updateMany({
-          where: { id: personId, accountId, customerId, email: null, passwordHash: null },
+          where: { id: personId, accountId, customerId, email: null },
           data: { email },
         });
         if (claimed.count === 1) {

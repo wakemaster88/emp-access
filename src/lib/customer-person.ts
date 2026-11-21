@@ -235,6 +235,22 @@ export function pickHolder(candidates: HolderCandidate[], customerEmail: string,
   return pool[0]?.id ?? null;
 }
 
+/**
+ * Steht eine Person ohne bestätigte Adresse bei „Wer bist du?“ zur Wahl?
+ * Ohne Zugang immer. Mit Zugang (Passkey oder Passwort über den App-Link)
+ * nur, wenn sie den Namen des Kontoinhabers trägt: Dann ist sie, wer die
+ * Mail des Kontos öffnet. Ein anderes Familienmitglied mit eigenem Zugang
+ * bekommt der Kontoinhaber so nicht.
+ */
+export function offerAtLogin(
+  p: { firstName: string | null; lastName: string | null; hasAccess: boolean },
+  customerName: string | null,
+): boolean {
+  if (!p.hasAccess) return true;
+  const holderName = normalizeName(customerName);
+  return holderName !== "" && normalizeName(`${p.firstName ?? ""}${p.lastName ?? ""}`) === holderName;
+}
+
 export interface RiderSource {
   firstName: string | null;
   lastName: string | null;
