@@ -50,7 +50,7 @@ const buildTime = new Date().toISOString();
 
 const nextConfig: NextConfig = {
   env: { NEXT_PUBLIC_BUILD_ID: buildId, NEXT_PUBLIC_BUILD_TIME: buildTime },
-  serverExternalPackages: ["bcryptjs"],
+  serverExternalPackages: ["bcryptjs", "sharp"],
   async headers() {
     return [
       { source: "/(.*)", headers: securityHeaders },

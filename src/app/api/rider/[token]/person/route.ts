@@ -5,6 +5,7 @@ import { publicRateLimit } from "@/lib/rate-limit";
 import { riderApiManage } from "@/lib/rider-auth";
 import { parsePersonInput, PHOTO_MAX_CHARS } from "@/lib/rider-person";
 import { checkProfilePhoto } from "@/lib/profile-photo-check";
+import { PHOTO_CHECKS_EXHAUSTED, takePhotoCheck } from "@/lib/photo-check-limit";
 
 const schema = z.object({
   firstName: z.string().max(200).optional(),
@@ -32,6 +33,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   // Neues Profilbild: die KI prüft, ob darauf eine Person mit erkennbarem Gesicht ist.
   if (typeof result.data.photo === "string") {
+    if (!(await takePhotoCheck(ctx.profile.id))) return NextResponse.json({ error: PHOTO_CHECKS_EXHAUSTED }, { status: 429 });
     const check = await checkProfilePhoto(result.data.photo);
     if (!check.ok) return NextResponse.json({ error: check.error, verdict: check.verdict }, { status: 422 });
   }

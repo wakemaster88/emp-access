@@ -49,8 +49,9 @@ async function shrink(file: File): Promise<string> {
   }
 }
 
-function photoUrl(id: number): string {
-  return `/api/rider/challenge-photo/${id}`;
+/** `small`: Vorschaubild fürs Raster (fällt bei älteren Fotos auf das Foto zurück). */
+function photoUrl(id: number, small = false): string {
+  return `/api/rider/challenge-photo/${id}${small ? "?klein" : ""}`;
 }
 
 /** Fotos, Stimmen und Antworten einer Foto-Challenge oder Abstimmung. */
@@ -179,7 +180,7 @@ export function RiderChallengeVoting({ token, challengeId, kind, running, ended,
             <>
               <button type="button" className="rd-photo-thumb" onClick={() => setZoom(mine)} aria-label="Dein Foto groß ansehen">
                 {/* eslint-disable-next-line @next/next/no-img-element -- Foto aus der eigenen Schnittstelle */}
-                <img src={photoUrl(mine.id)} alt="" />
+                <img src={photoUrl(mine.id, true)} alt="" />
               </button>
               <div className="rd-grow">
                 <b>{mine.hidden ? "Dein Foto wurde ausgeblendet" : "Dein Foto ist dabei"}</b>
@@ -214,7 +215,7 @@ export function RiderChallengeVoting({ token, challengeId, kind, running, ended,
             <figure key={e.id} className={`rd-photo${e.voted ? " rd-photo-voted" : ""}${e.winner ? " rd-photo-win" : ""}`}>
               <button type="button" className="rd-photo-img" onClick={() => setZoom(e)} aria-label={`Foto von ${e.name} groß ansehen`}>
                 {/* eslint-disable-next-line @next/next/no-img-element -- Foto aus der eigenen Schnittstelle */}
-                <img src={photoUrl(e.id)} alt="" loading="lazy" />
+                <img src={photoUrl(e.id, true)} alt="" loading="lazy" />
                 {e.rank != null && <span className="rd-photo-rank">{e.rank}</span>}
               </button>
               <figcaption>

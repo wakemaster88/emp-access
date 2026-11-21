@@ -135,8 +135,11 @@ async function existingPaths(prefix: BlobPrefix, paths: string[]): Promise<Set<s
       return new Set(rows.map((r) => r.pdfBlob!));
     }
     case "challenge-photos": {
-      const rows = await prisma.challengeEntry.findMany({ where: { imageBlob: where }, select: { imageBlob: true } });
-      return new Set(rows.map((r) => r.imageBlob!));
+      const rows = await prisma.challengeEntry.findMany({
+        where: { OR: [{ imageBlob: where }, { thumbBlob: where }] },
+        select: { imageBlob: true, thumbBlob: true },
+      });
+      return new Set(rows.flatMap((r) => [r.imageBlob, r.thumbBlob]).filter((p): p is string => p != null));
     }
   }
 }
