@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
@@ -23,10 +24,14 @@ interface Props {
     /** Preise in Cent, Schlüssel ist die ID als Text. */
     servicePrices: Record<string, number>;
     subscriptionPrices: Record<string, number>;
+    /** Fühler für die Wassertemperatur (Awards für kaltes Wasser); null = keiner. */
+    waterSensorDeviceId: number | null;
   };
   subscriptions: Option[];
   services: Option[];
   devices: Option[];
+  /** Fühler, die als Quelle der Wassertemperatur in Frage kommen. */
+  sensors: Option[];
   year: number;
 }
 
@@ -59,7 +64,7 @@ function toCents(texts: Record<string, string>, ids: number[]): Record<string, n
 }
 
 /** Gamification ein-/ausschalten, teilnehmende Abos und Start-Geräte wählen, Jahr zurückrechnen. */
-export function GamiSettingsCard({ initial, subscriptions, services, devices, year }: Props) {
+export function GamiSettingsCard({ initial, subscriptions, services, devices, sensors, year }: Props) {
   const router = useRouter();
   const [form, setForm] = useState({
     ...initial,
@@ -177,6 +182,21 @@ export function GamiSettingsCard({ initial, subscriptions, services, devices, ye
             aria-invalid={!(Number.isInteger(cap) && cap >= 1 && cap <= 100)}
             className="w-20 shrink-0 text-right max-sm:h-11"
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="gami-water">Fühler für die Wassertemperatur</Label>
+          <NativeSelect
+            id="gami-water"
+            value={form.waterSensorDeviceId != null ? String(form.waterSensorDeviceId) : ""}
+            onChange={(e) => setForm((f) => ({ ...f, waterSensorDeviceId: e.target.value ? Number(e.target.value) : null }))}
+          >
+            <option value="">Kein Fühler</option>
+            {sensors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </NativeSelect>
+          <p className="text-xs text-muted-foreground">
+            Für Awards mit der Zählart „Tage mit kaltem Wasser“, zum Beispiel Ice Breaker. Die Grad-Grenze stellst du am Award ein.
+          </p>
         </div>
 
         <ChipField

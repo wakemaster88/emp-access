@@ -13,6 +13,8 @@ const schema = z.object({
   /** Preise in Cent für den Abo-Rechner, Schlüssel ist die ID als Text. */
   servicePrices: z.record(z.string().regex(/^\d+$/), z.number().int().min(1).max(10_000_00)).default({}),
   subscriptionPrices: z.record(z.string().regex(/^\d+$/), z.number().int().min(1).max(10_000_00)).default({}),
+  /** Fühler für die Wassertemperatur; fehlt der Wert, bleibt die Wahl, wie sie ist. */
+  waterSensorDeviceId: z.number().int().positive().nullable().optional(),
 });
 
 /** Nur Preise zu IDs behalten, die zum Konto gehören und gewählt sind. */
@@ -35,7 +37,13 @@ export async function PUT(request: NextRequest) {
 
   const dayServiceIds = cleanIds(parsed.data.dayServiceIds);
 
-  const refError = await foreignRefError(db, accountId, { subscriptionIds, deviceIds: startDeviceIds, serviceIds: dayServiceIds });
+  const waterSensorDeviceId = parsed.data.waterSensorDeviceId;
+
+  const refError = await foreignRefError(db, accountId, {
+    subscriptionIds,
+    deviceIds: waterSensorDeviceId != null ? [...startDeviceIds, waterSensorDeviceId] : startDeviceIds,
+    serviceIds: dayServiceIds,
+  });
   if (refError) return NextResponse.json({ error: refError }, { status: 400 });
 
   const data = {
@@ -45,6 +53,7 @@ export async function PUT(request: NextRequest) {
     dayServiceIds,
     servicePrices: pickPrices(parsed.data.servicePrices, dayServiceIds),
     subscriptionPrices: pickPrices(parsed.data.subscriptionPrices, subscriptionIds),
+    ...(waterSensorDeviceId !== undefined && { waterSensorDeviceId }),
   };
   await db.$transaction([
     db.gamificationConfig.upsert({

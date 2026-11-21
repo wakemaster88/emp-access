@@ -5,7 +5,9 @@ const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 /** Eingabe für das Anlegen und Ändern eines Meilensteins (Awards). */
 export const milestoneSchema = z.object({
   name: z.string().trim().min(1).max(60),
-  metric: z.enum(["VISIT_DAYS", "STARTS", "STREAK_WEEKS", "EARLY_DAYS", "WEEKENDS", "EVENT_DAYS", "SEASONS"]),
+  metric: z.enum([
+    "VISIT_DAYS", "STARTS", "STREAK_WEEKS", "EARLY_DAYS", "WEEKENDS", "EVENT_DAYS", "OPENING_DAY", "COLD_DAYS", "SEASONS",
+  ]),
   threshold: z.number().int().min(1).max(10_000),
   period: z.enum(["SEASON", "MONTH", "ALL_TIME"]),
   voucherLabel: z.string().trim().max(80).nullable(),
@@ -16,8 +18,10 @@ export const milestoneSchema = z.object({
   tier: z.enum(["BRONZE", "SILVER", "GOLD", "LEGENDARY"]).optional(),
   hint: z.string().trim().max(160).nullable().optional(),
   eventDays: z.array(ymd).max(60).optional(),
+  /** Grenze der Wassertemperatur in °C (Zählart „Tage mit kaltem Wasser“). */
+  tempBelow: z.number().min(-5).max(40).nullable().optional(),
   active: z.boolean(),
-});
+}).refine((m) => m.metric !== "COLD_DAYS" || m.tempBelow != null, { message: "Die Grenze der Wassertemperatur fehlt" });
 
 export type MilestoneInput = z.infer<typeof milestoneSchema>;
 
@@ -25,16 +29,18 @@ const blank = (v: string | null | undefined) => (v && v.length > 0 ? v : null);
 
 /**
  * Für die Datenbank aufbereiten: leere Leistung heißt Meilenstein ohne
- * Gutschein, Saisons zählen immer über alle Jahre, Aktionstage gibt es nur
- * bei der Zählart „Aktionstage“. Nicht übergebene Award-Felder bleiben, wie
- * sie sind.
+ * Gutschein, Saisons zählen immer über alle Jahre, der erste Tag der Saison
+ * ist genau ein Tag. Eingetragene Tage gibt es nur bei den Zählarten
+ * „Aktionstage“ und „Erster Tag der Saison“ (dort ersetzen sie den
+ * automatisch ermittelten Tag), die Grad-Grenze nur bei „Tage mit kaltem
+ * Wasser“. Nicht übergebene Award-Felder bleiben, wie sie sind.
  */
 export function normalizeMilestone(input: MilestoneInput) {
   const voucherLabel = blank(input.voucherLabel);
   return {
     name: input.name,
     metric: input.metric,
-    threshold: input.threshold,
+    threshold: input.metric === "OPENING_DAY" ? 1 : input.threshold,
     period: input.metric === "SEASONS" ? ("ALL_TIME" as const) : input.period,
     voucherLabel,
     voucherValidDays: voucherLabel ? input.voucherValidDays : null,
@@ -44,10 +50,11 @@ export function normalizeMilestone(input: MilestoneInput) {
     ...(input.hint !== undefined && { hint: blank(input.hint) }),
     ...(input.eventDays !== undefined && {
       eventDays:
-        input.metric === "EVENT_DAYS"
+        input.metric === "EVENT_DAYS" || input.metric === "OPENING_DAY"
           ? [...new Set(input.eventDays)].sort().map((d) => new Date(`${d}T00:00:00.000Z`))
           : [],
     }),
+    tempBelow: input.metric === "COLD_DAYS" ? input.tempBelow ?? null : null,
     active: input.active,
   };
 }

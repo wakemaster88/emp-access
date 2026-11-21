@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import { AwardBadge } from "@/components/rider/award-badge";
 import { GiftIcon, LockIcon, TierTag } from "@/components/rider/award-parts";
 import { RiderShare } from "@/components/rider/rider-share";
-import { CATEGORY_LABEL, awardFace, awardRemainingText, awardUnit, tierRank } from "@/lib/awards";
+import { CATEGORY_LABEL, awardCountable, awardFace, awardHowText, awardRemainingText, awardUnit, tierRank } from "@/lib/awards";
+import { berlinYmd } from "@/lib/berlin-day";
+import { formatDegrees } from "@/lib/gamification";
+import { loadWaterNow } from "@/lib/gamification-service";
 import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay, validityText } from "@/lib/rider-format";
@@ -20,7 +23,9 @@ export default async function RiderAwardDetail({ params }: { params: Promise<{ t
   const a = rider.awards.find((x) => x.id === Number(id));
   if (!a) notFound();
   const base = riderAppPath(token);
-  const countable = a.metric !== "EVENT_DAYS" && a.threshold > 0;
+  const countable = awardCountable(a);
+  // Die aktuelle Wassertemperatur zeigt, ob sich der Weg zum See heute lohnt.
+  const waterNow = a.metric === "COLD_DAYS" && !a.unlocked ? await loadWaterNow(rider.accountId).catch(() => null) : null;
   // Die Reihe: gleiche Zählart im gleichen Zeitraum, vom kleinsten zum größten Ziel.
   const ladder = rider.awards
     .filter((x) => x.metric === a.metric && x.period === a.period)
@@ -70,6 +75,8 @@ export default async function RiderAwardDetail({ params }: { params: Promise<{ t
             {awardRemainingText(a)}
             {a.metric === "VISIT_DAYS" ? " Jeder Tag mit mindestens einem Start zählt." : ""}
             {a.metric === "EARLY_DAYS" ? " Es zählt die erste Stunde nach dem ersten Start des Tages." : ""}
+            {a.metric === "COLD_DAYS" && a.tempBelow != null ? ` Kalt ist ein Tag mit unter ${formatDegrees(a.tempBelow)} °C Wassertemperatur.` : ""}
+            {waterNow != null ? ` Gerade hat das Wasser ${formatDegrees(waterNow)} °C.` : ""}
             {a.lastPeriod ? ` Zuletzt geschafft: ${a.lastPeriod}.` : ""}
           </div>
         </div>
@@ -79,7 +86,7 @@ export default async function RiderAwardDetail({ params }: { params: Promise<{ t
         <div className="rd-card">
           <span className="rd-label">So holst du ihn</span>
           <div className="rd-soft">
-            Sei an dem Tag am Start, an dem er vergeben wird. Den Tag gibt das Team bekannt.
+            {awardHowText(a, { today: berlinYmd(new Date()), openingDay: a.openingDay, waterNow })}
             {a.lastPeriod ? ` Zuletzt geschafft: ${a.lastPeriod}.` : ""}
           </div>
         </div>

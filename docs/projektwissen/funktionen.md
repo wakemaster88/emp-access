@@ -833,7 +833,7 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
 - Ein Award ist ein Meilenstein (`Milestone`) mit Seltenheit (`tier`: Bronze,
   Silver, Gold, Legendary). Verwaltung unter Gäste › Kunden App › Awards; dort
   ist jeder Award änderbar (Name, Ziel, Gutschein, Kurztext für die Kachel,
-  Zugabe ohne Gutschein, Beschreibung, Aktionstage, aktiv).
+  Zugabe ohne Gutschein, Beschreibung, Aktionstage, Grad-Grenze, aktiv).
 - **Vorlage**: Die Migration `20261120190100_awards_vorlage` legt für jedes
   Konto mit eingeschalteter Kunden App 20 Awards an (Liste in
   `AWARD_DEFAULTS`, `src/lib/awards.ts`; `Milestone.key` verhindert doppeltes
@@ -846,9 +846,28 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
     Öffnungszeit braucht es dafür nicht.
   - `WEEKENDS`: längste Folge von Wochenenden (Samstag oder Sonntag) mit Start.
   - `EVENT_DAYS`: Start an einem Aktionstag. Die Tage trägt das Personal am
-    Award ein (`Milestone.eventDays`, Taste „Heute“). So laufen Day One
-    (Opening-Tag) und Ice Breaker (kalter Tag): Wassertemperatur und
-    Opening-Tag stehen in keiner Datenquelle.
+    Award ein (`Milestone.eventDays`, Taste „Heute“). Für eigene Awards; Day
+    One und Ice Breaker liefen bis 21.11.2026 so.
+  - `OPENING_DAY` (seit 21.11.2026, Day One): Start am ersten Tag der Saison.
+    Das ist von selbst der erste Tag des Jahres, an dem ein Abo-Ticket
+    gestartet ist (`loadOpeningDays`; Tagestickets zählen dafür nicht, weil
+    sie ohne Scan den Beginn des Tickets als Tag tragen). Für das Jahr, in
+    dem die Zählung begonnen hat, gibt es keinen automatischen Tag: 2026
+    beginnen die Daten am 09.05., also mitten in der Saison, deshalb vergibt
+    das System Day One erst ab 2027 von selbst. Trägt das Personal
+    am Award einen Tag ein, gilt für dessen Jahr dieser Tag (`openingDayOf`),
+    zum Beispiel wenn vor dem Opening jemand zur Probe gefahren ist. Die
+    Schwelle ist immer 1.
+  - `COLD_DAYS` (seit 21.11.2026, Ice Breaker): Besuchstage, an denen das
+    Wasser kälter war als die Grenze am Award (`Milestone.tempBelow`, Vorlage
+    10 °C). Quelle ist der Klimaverlauf (`ClimateSample`) des Fühlers aus
+    Gäste › Kunden App › Einstellungen › „Fühler für die Wassertemperatur“
+    (`GamificationConfig.waterSensorDeviceId`; die Migration wählt den
+    einzigen Fühler mit dem Namen „Wasser“ vor). Es gilt der kleinste
+    Mittelwert von einer Stunde vor dem ersten bis eine Stunde nach dem
+    letzten Start der Person (`WATER_WINDOW_MS`, `loadWaterTemps`). Ohne
+    Fühler oder ohne Messwert in dem Fenster zählt der Tag nicht. Messwerte
+    gibt es seit 05.11.2026.
   - `SEASONS`: Jahre mit mindestens einem Start. Steht an der Person ein
     früheres Jahr („Fährt seit“, `RiderProfile.ridingSince`, Abos ›
     Kundenkonten › Person bearbeiten), zählen die Jahre davor lückenlos mit,
@@ -867,8 +886,11 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
   Reihen Starts am Lift, Besuchstage, Specials, Treue; gesperrte Awards blass
   mit Fortschritt. Detailseite je Award mit Reihe und Gutschein. Start-Seite
   mit Abzeichen-Leiste und „Nächster Award“ (`nextAward`: größter Anteil am
-  Ziel, Aktionstage nie, Treue erst zuletzt). Gutscheine als Tickets mit dem
-  Abzeichen des Awards.
+  Ziel; Awards, bei denen ein einzelner Tag entscheidet, nie
+  (`awardCountable`), Treue erst zuletzt). Solche Awards zeigen statt eines
+  Balkens „So holst du ihn“ (`awardHowText`): bei Day One den ersten Tag der
+  laufenden Saison, bei Ice Breaker die gerade gemessene Wassertemperatur
+  (`loadWaterNow`). Gutscheine als Tickets mit dem Abzeichen des Awards.
 - **Abzeichen** (`award-badge.tsx`): Form nach Zählart (Starts Sechseck,
   Besuchstage Kreis, Specials Stern, Treue Kranz), Metall nach Seltenheit.
   Eigene Awards aus der Verwaltung bekommen dieselben Abzeichen.
@@ -880,7 +902,9 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
   sieht ihn nicht.
 - Gutscheine aus Awards tragen die Notiz „Award <Name>“ bzw.
   „Award <Name> (<Jahr>)“ und gelten 365 Tage; Private Session, Abo-Monat und
-  50 % aufs Abo laufen nicht ab.
+  50 % aufs Abo laufen nicht ab. Sunset Session und Grillplatz sind im Abo
+  nicht enthalten (Aaron, 21.11.2026): die Gutscheine von Thousand Club und
+  Endless Summer sind also echte Belohnungen.
 
 ## Profil der Kunden-App: eigene Daten und Profilbild (20.11.2026)
 

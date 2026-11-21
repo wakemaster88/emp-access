@@ -18,6 +18,7 @@ import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { MilestonesCard, type MilestoneRow } from "@/components/gamification/milestones-card";
+import { loadOpeningDays, loadWaterNow } from "@/lib/gamification-service";
 import { BenefitVouchersCard, type BenefitVoucherRow } from "@/components/gamification/benefit-vouchers-card";
 import { RidersCard, type RiderRow } from "@/components/gamification/riders-card";
 import { DayGuestMailsCard, type DayGuestMailRow } from "@/components/gamification/day-guest-mails-card";
@@ -251,7 +252,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
   }
 
   if (tab === "meilensteine") {
-    const [milestones, awardCounts, redeemedAwards] = await Promise.all([
+    const [milestones, awardCounts, redeemedAwards, openingDays, sensor, waterNow] = await Promise.all([
       db.milestone.findMany({ where: { accountId }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
       db.milestoneAward.groupBy({ by: ["milestoneId"], where: { accountId }, _count: { _all: true } }),
       db.milestoneAward.groupBy({
@@ -259,6 +260,11 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         where: { accountId, voucher: { redeemedAt: { not: null } } },
         _count: { _all: true },
       }),
+      loadOpeningDays(db, accountId, [String(year)]),
+      config?.waterSensorDeviceId != null
+        ? db.device.findFirst({ where: { id: config.waterSensorDeviceId, accountId }, select: { name: true } })
+        : null,
+      loadWaterNow(accountId).catch(() => null),
     ]);
     const awarded = new Map(awardCounts.map((a) => [a.milestoneId, a._count._all]));
     const redeemed = new Map(redeemedAwards.map((a) => [a.milestoneId, a._count._all]));
@@ -275,11 +281,19 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       tier: m.tier as GamiTier,
       hint: m.hint,
       eventDays: m.eventDays.map(dbDateToYmd),
+      tempBelow: m.tempBelow,
       active: m.active,
       awarded: awarded.get(m.id) ?? 0,
       redeemed: redeemed.get(m.id) ?? 0,
     }));
-    content = <MilestonesCard milestones={rows} today={berlinYmd(new Date())} />;
+    content = (
+      <MilestonesCard
+        milestones={rows}
+        today={berlinYmd(new Date())}
+        openingDay={openingDays[String(year)] ?? null}
+        waterSensor={sensor ? { name: sensor.name, now: waterNow } : null}
+      />
+    );
   }
 
   if (tab === "aktionen") {
@@ -384,12 +398,17 @@ export default async function GamificationPage({ searchParams }: { searchParams:
   }
 
   if (tab === "einstellungen") {
-    const [subscriptions, services, devices, invites] = await Promise.all([
+    const [subscriptions, services, devices, sensors, invites] = await Promise.all([
       db.subscription.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.service.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.device.findMany({
         where: { accountId, type: "RASPBERRY_PI" },
         select: { id: true, name: true, countsAsStart: true },
+        orderBy: { name: "asc" },
+      }),
+      db.device.findMany({
+        where: { accountId, category: "SENSOR" },
+        select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
       inviteStatus(accountId),
@@ -405,10 +424,12 @@ export default async function GamificationPage({ searchParams }: { searchParams:
           dayServiceIds: config?.dayServiceIds ?? [],
           servicePrices: Object.fromEntries([...parsePriceMap(config?.servicePrices)].map(([id, c]) => [String(id), c])),
           subscriptionPrices: Object.fromEntries([...parsePriceMap(config?.subscriptionPrices)].map(([id, c]) => [String(id), c])),
+          waterSensorDeviceId: config?.waterSensorDeviceId ?? null,
         }}
         subscriptions={subscriptions}
         services={services}
         devices={devices.map((d) => ({ id: d.id, name: d.name }))}
+        sensors={sensors}
         year={year}
       />
       <AppInviteCard initial={invites} />

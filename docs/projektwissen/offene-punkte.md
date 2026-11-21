@@ -22,11 +22,8 @@ Stand 8. November 2026. Erledigtes bitte streichen.
 - MCP-Schnittstelle: Dürfen Türen und Tore über MCP geschaltet werden
   (Stufe `access`, `MCP_OFFERED_LEVELS`)?
 - Vereinsportal: Soll der Zugang nur außerhalb der Betriebszeit gelten?
-- Awards (20.11.2026): Kosten Sunset Session und Grillplatz für Abo-Fahrer
-  extra? Davon hängt ab, was die Gutscheine von Thousand Club und Endless
-  Summer wert sind. Für Day One und Ice Breaker muss das Personal den
-  Aktionstag am Award eintragen; für die Treue-Awards „Fährt seit“ an den
-  Personen nachtragen, die schon vor 2026 dabei waren.
+- Awards (20.11.2026): für die Treue-Awards „Fährt seit“ an den Personen
+  nachtragen, die schon vor 2026 dabei waren.
 - Abos über die E-Mail (20.11.2026, Etappe 2 ff.): Gibt es einen
   Reepay-Export mit E-Mail-Adressen? Adressen der manuell angelegten Abos?
   Pflichtfeld „Fahrer: Vorname und Geburtsdatum“ an den anny-Abo-Plänen?
