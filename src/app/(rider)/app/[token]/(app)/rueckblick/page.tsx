@@ -1,6 +1,7 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { loadRiderRecap, riderAppPath } from "@/lib/rider-app";
+import { loadRiderRecap } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { formatDegrees, tempStatNote, ymdToDbDate } from "@/lib/gamification";
 import { fmtDay } from "@/lib/rider-format";
@@ -18,7 +19,7 @@ export default async function RiderRecapPage({
 }) {
   const { token } = await params;
   const rider = await requireRider(token);
-  const base = riderAppPath(token);
+  const base = await riderBase(token);
   const wanted = Number((await searchParams).jahr);
   const data = await loadRiderRecap(rider, wanted === rider.year - 1 ? wanted : rider.year);
   if (!data) notFound();

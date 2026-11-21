@@ -1,5 +1,5 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
-import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { loadRiderChallengesCached, type RiderChallenge } from "@/lib/rider-challenges";
 import { METRIC_LABEL } from "@/lib/gamification";
@@ -94,7 +94,7 @@ export default async function RiderChallenges({ params }: { params: Promise<{ to
         <div className="rd-card rd-muted">
           <p style={{ margin: 0 }}>
             In Ranglisten stehst du für andere als „Anonym“. Mit Spitzname und Zustimmung im{" "}
-            <Link href={`${riderAppPath(token)}/profil`}>Profil</Link> erscheinst du mit Spitznamen.
+            <Link href={`${(await riderBase(token))}/profil`}>Profil</Link> erscheinst du mit Spitznamen.
           </p>
         </div>
       )}

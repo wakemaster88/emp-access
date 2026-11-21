@@ -1,8 +1,9 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
 import { AwardBadge } from "@/components/rider/award-badge";
 import { CheckIcon, GiftIcon, LockIcon, TierTag } from "@/components/rider/award-parts";
 import { awardCountable, awardRemainingText, voucherHeadline } from "@/lib/awards";
-import { riderAppPath, type RiderVoucher } from "@/lib/rider-app";
+import { type RiderVoucher } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay, voucherValidity } from "@/lib/rider-format";
 import { RiderSkills } from "@/components/rider/rider-skills";
@@ -44,7 +45,7 @@ function Ticket({ v, href }: { v: RiderVoucher; href: string }) {
 export default async function RiderVouchers({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const rider = await requireRider(token);
-  const base = riderAppPath(token);
+  const base = await riderBase(token);
   const open = rider.vouchers.filter((v) => v.state === "open");
   const skills = await loadRiderSkills(rider).catch(() => []);
   const past = rider.vouchers.filter((v) => v.state !== "open");
