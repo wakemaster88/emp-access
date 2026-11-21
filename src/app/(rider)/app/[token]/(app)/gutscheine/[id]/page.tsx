@@ -5,6 +5,7 @@ import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay } from "@/lib/rider-format";
 import { AwardBadge } from "@/components/rider/award-badge";
+import { RiderWakeLock } from "@/components/rider/rider-wake-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,7 @@ export default async function RiderVoucher({ params }: { params: Promise<{ token
           </span>
         </div>
       </div>
+      {open && <RiderWakeLock />}
       {open && (
         <div className="rd-card">
           <b>So löst du ihn ein</b>

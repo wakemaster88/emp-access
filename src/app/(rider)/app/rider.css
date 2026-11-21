@@ -110,7 +110,7 @@
   gap: 8px;
 }
 .rd-list { padding: 2px 16px; gap: 0; }
-.rd-list > * { min-height: 58px; display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--rd-text); }
+.rd-list > *, .rd-root .rd-list > a { min-height: 58px; display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--rd-text); }
 .rd-list > * + * { border-top: 1px solid var(--rd-line); }
 .rd-list b { font-size: 14px; }
 .rd-dim { color: var(--rd-muted); }
@@ -193,7 +193,7 @@
   width: 100%;
 }
 .rd-check { min-height: 56px; display: flex; align-items: center; gap: 12px; }
-.rd-check input { width: 22px; height: 22px; accent-color: var(--rd-accent); flex: none; }
+.rd-check input { width: 24px; height: 24px; accent-color: var(--rd-accent); flex: none; }
 .rd-msg { border-radius: 6px; padding: 10px 12px; font-weight: 500; }
 .rd-msg-ok { background: var(--rd-accent-bg); color: var(--rd-accent-soft); }
 .rd-msg-err { background: #3a1410; color: #ffb4a8; }
@@ -646,11 +646,11 @@ html[data-rd-intro="skip"] .rd-intro { display: none; }
 .rd-aw-vt { display: flex; align-items: stretch; position: relative; overflow: hidden; text-decoration: none; color: var(--rd-text) !important; border: 1px solid rgb(251 191 36 / 0.55); border-radius: 14px;
   background: linear-gradient(0deg, rgb(251 191 36 / 0.07), rgb(251 191 36 / 0.07)), var(--rd-card); }
 .rd-aw-vt-b { display: grid; place-items: center; padding: 8px 0 8px 8px; }
-.rd-aw-vt-t { flex: 1; min-width: 0; padding: 12px 10px 12px 6px; }
-.rd-aw-vt-h { font-size: 23px; margin: 3px 0; overflow-wrap: anywhere; }
+.rd-aw-vt-t { flex: 1; min-width: 0; padding: 10px 10px 10px 6px; }
+.rd-aw-vt-h { font-size: 22px; margin: 2px 0; overflow-wrap: anywhere; }
 .rd-aw-vt-d { font-size: 13px; font-weight: 600; color: var(--rd-soft); line-height: 1.3; }
 .rd-aw-vt-v { font-size: 11.5px; color: var(--rd-muted); margin-top: 6px; font-weight: 600; }
-.rd-aw-vt-q { flex: none; width: 84px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-left: 2px dashed rgb(251 191 36 / 0.55); position: relative; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--rd-accent); }
+.rd-aw-vt-q { flex: none; width: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-left: 2px dashed rgb(251 191 36 / 0.55); position: relative; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--rd-accent); }
 .rd-aw-vt-q::before, .rd-aw-vt-q::after { content: ""; position: absolute; left: -10px; width: 18px; height: 18px; border-radius: 50%; background: var(--rd-bg); border: 1px solid rgb(251 191 36 / 0.55); }
 .rd-aw-vt-q::before { top: -10px; }
 .rd-aw-vt-q::after { bottom: -10px; }
@@ -825,3 +825,12 @@ a.rd-cal-nav { border: 1px solid var(--rd-line-strong); }
 .rd-pill-soon { color: var(--rd-on-accent); background: var(--rd-accent); }
 .rd-abo .rd-bar { margin-top: 2px; }
 .rd-abo-facts { display: flex; flex-direction: column; gap: 2px; padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--rd-line); color: var(--rd-soft); font-size: 13px; }
+
+/* Passwortfeld mit Auge (RiderPasswordInput) */
+.rd-pw { position: relative; display: block; }
+.rd-pw .rd-input { padding-right: 52px; }
+.rd-pw-eye { position: absolute; top: 2px; right: 2px; width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--rd-muted); cursor: pointer; border-radius: 8px; }
+.rd-pw-eye[aria-pressed="true"] { color: var(--rd-text); }
+
+/* „alle ansehen“ neben Abschnittsüberschriften: volle Tippfläche */
+.rd-more { min-height: 44px; display: inline-flex; align-items: center; padding: 0 2px 0 12px; font-size: 13px; font-weight: 600; text-decoration: none; }

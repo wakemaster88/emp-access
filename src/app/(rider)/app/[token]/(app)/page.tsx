@@ -7,12 +7,12 @@ import { METRIC_LABEL, RENEWAL_HINT_DAYS, formatDegrees, formatEuro } from "@/li
 import { loadWaterNow } from "@/lib/gamification-service";
 import { loadAirNow } from "@/lib/weather-history";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
-import { fmtDay, validityText } from "@/lib/rider-format";
+import { fmtDay, voucherValidity } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
 import { loadRiderOpening } from "@/lib/rider-opening";
 import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
-import { awardRemainingText, nextAward } from "@/lib/awards";
+import { awardRemainingText, nextAward, voucherHeadline } from "@/lib/awards";
 import { berlinYmd } from "@/lib/berlin-day";
 import type { RiderView } from "@/lib/rider-app";
 import { AwardBadge } from "@/components/rider/award-badge";
@@ -135,11 +135,14 @@ function TodayCard({
       )}
       {unlockedToday.length > 0 && (
         <Link href={`${base}/awards`} prefetch className="rd-today-row">
-          {unlockedToday.slice(0, 3).map((a) => <AwardBadge key={a.id} award={a} size={44} />)}
+          {unlockedToday.slice(0, 2).map((a) => <AwardBadge key={a.id} award={a} size={40} />)}
           <span className="rd-grow">
-            <b>Heute freigeschaltet</b>
+            <b>{unlockedToday.length === 1 ? "Neuer Award" : `${unlockedToday.length} neue Awards`}</b>
             <br />
-            <span className="rd-muted">{unlockedToday.map((a) => a.name).join(", ")}</span>
+            <span className="rd-muted">
+              {unlockedToday.slice(0, 2).map((a) => a.name).join(", ")}
+              {unlockedToday.length > 2 ? ` und ${unlockedToday.length - 2} weitere` : ""}
+            </span>
           </span>
           {CHEVRON_RIGHT}
         </Link>
@@ -278,15 +281,11 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             ) : (
               <span className="rd-muted">bis {fmtDay(abo.endDate)}</span>
             )}
-            <div className="rd-abo-facts">
-              {rider.abo.areas.length > 0 && (
+            {rider.abo.areas.length > 0 && (
+              <div className="rd-abo-facts">
                 <span><span className="rd-muted">Gilt für</span> {[...new Set(rider.abo.areas)].join(", ")}</span>
-              )}
-              <span>
-                <span className="rd-muted">Damit {rider.year}:</span>{" "}
-                {rider.visitDays === 1 ? "1 Besuchstag" : `${rider.visitDays} Besuchstage`} · {rider.starts === 1 ? "1 Start" : `${rider.starts} Starts`}
-              </span>
-            </div>
+              </div>
+            )}
             {soon && (
               <Link href={`${base}/abos`} className="rd-btn rd-btn-wide" style={{ marginTop: 4 }}>
                 <span>Abo verlängern</span>
@@ -432,7 +431,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         <>
           <div className="rd-between" style={{ marginTop: 4 }}>
             <div className="rd-label">Challenge</div>
-            <Link href={`${base}/challenges`} style={{ fontSize: 12, textDecoration: "none" }}>alle ansehen</Link>
+            <Link href={`${base}/challenges`} className="rd-more">alle ansehen</Link>
           </div>
           <Link href={`${base}/challenges`} className="rd-card" style={{ textDecoration: "none", color: "inherit" }}>
             <div className="rd-between">
@@ -453,7 +452,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
 
       <div className="rd-between" style={{ marginTop: 4 }}>
         <div className="rd-label">Gutscheine</div>
-        <Link href={`${base}/gutscheine`} style={{ fontSize: 12, textDecoration: "none" }}>alle ansehen</Link>
+        <Link href={`${base}/gutscheine`} className="rd-more">alle ansehen</Link>
       </div>
       {open.length === 0 ? (
         <div className="rd-card rd-muted">{nextVoucher}</div>
@@ -463,9 +462,9 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             <Link key={v.id} href={`${base}/gutscheine/${v.id}`} prefetch>
               {QR_ICON}
               <span className="rd-grow">
-                <b>{v.label}</b>
+                <b>{voucherHeadline(v.label, v.award?.voucherShort).head}</b>
                 <br />
-                <span className="rd-muted">{validityText(v.expiresAt)}</span>
+                <span className="rd-muted">Gültig {voucherValidity(v.expiresAt)}</span>
               </span>
               <span className="rd-btn rd-btn-sm"><span>Zeigen</span></span>
             </Link>
@@ -477,7 +476,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         <>
           <div className="rd-between" style={{ marginTop: 4 }}>
             <div className="rd-label">Awards · {earned.length} von {rider.awards.length}</div>
-            <Link href={`${base}/awards`} style={{ fontSize: 12, textDecoration: "none" }}>alle ansehen</Link>
+            <Link href={`${base}/awards`} className="rd-more">alle ansehen</Link>
           </div>
           {earned.length > 0 && (
             <Link href={`${base}/awards`} prefetch className="rd-card rd-aw-strip" aria-label={`${earned.length} Awards freigeschaltet, alle ansehen`}>
@@ -488,31 +487,29 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         </>
       )}
 
-      <div className="rd-label" style={{ marginTop: 4 }}>Deine Saison {rider.year}</div>
-      {(current || next) && (
-        <div className="rd-card">
-          <div className="rd-between">
-            <div className="rd-display rd-h2">{current?.name ?? "Los geht’s"}</div>
-            {next && <div className="rd-muted">noch {next.threshold - next.value} bis {next.name}</div>}
-          </div>
-          {next && (
-            <div className="rd-bar" role="img" aria-label={`${next.value} von ${next.threshold} ${METRIC_LABEL[next.metric]}`}>
-              <i style={{ width: `${Math.round((next.value / next.threshold) * 100)}%` }} />
-            </div>
-          )}
-        </div>
-      )}
-      <div className="rd-stats">
-        <div className="rd-stat"><div className="rd-display">{rider.visitDays}</div><div className="rd-muted">Besuchstage</div></div>
-        <div className="rd-stat"><div className="rd-display">{rider.starts}</div><div className="rd-muted">Starts</div></div>
-        <div className="rd-stat"><div className="rd-display">{rider.streakWeeks}</div><div className="rd-muted">Wochen in Serie</div></div>
+      <div className="rd-between" style={{ marginTop: 4 }}>
+        <div className="rd-label">Deine Saison {rider.year}</div>
+        {rider.visitDays > 0 && <Link href={`${base}/rueckblick`} className="rd-more">Rückblick</Link>}
       </div>
-
-      {rider.visitDays > 0 && (
-        <Link href={`${base}/rueckblick`} className="rd-btn rd-btn-ghost rd-btn-wide">
-          <span>Dein Saisonrückblick {rider.year}</span>
-        </Link>
-      )}
+      <div className="rd-card">
+        {(current || next) && (
+          <>
+            <div className="rd-between">
+              <div className="rd-display rd-h2">{current?.name ?? "Los geht’s"}</div>
+              {next && <div className="rd-muted">noch {next.threshold - next.value} bis {next.name}</div>}
+            </div>
+            {next && (
+              <div className="rd-bar" role="img" aria-label={`${next.value} von ${next.threshold} ${METRIC_LABEL[next.metric]}`}>
+                <i style={{ width: `${Math.round((next.value / next.threshold) * 100)}%` }} />
+              </div>
+            )}
+          </>
+        )}
+        <span className="rd-soft">
+          {rider.visitDays === 1 ? "1 Besuchstag" : `${rider.visitDays} Besuchstage`} · {rider.starts === 1 ? "1 Start" : `${rider.starts} Starts`}
+          {rider.streakWeeks > 0 ? ` · ${rider.streakWeeks} ${rider.streakWeeks === 1 ? "Woche" : "Wochen"} in Serie` : ""}
+        </span>
+      </div>
 
       {rider.dayGuest && (
         <p className="rd-muted" style={{ margin: 0 }}>

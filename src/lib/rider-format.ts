@@ -16,3 +16,9 @@ export function validityText(expiresAt: Date | null, now: Date = new Date()): st
   if (days <= 1) return "nur noch heute";
   return `noch ${days} Tage`;
 }
+
+/** Gültigkeit eines Gutscheins kurz: bald ablaufend als Countdown, sonst das Datum. */
+export function voucherValidity(expiresAt: Date | null, now: Date = new Date()): string {
+  if (!expiresAt) return "ohne Ablauf";
+  return daysUntil(expiresAt, now) <= 30 ? validityText(expiresAt, now) : `bis ${fmtDay(expiresAt)}`;
+}

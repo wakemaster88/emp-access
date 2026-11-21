@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { RiderWakeLock } from "./rider-wake-lock";
 
 interface Shown {
   code: string;
@@ -61,6 +62,7 @@ export function RiderKasseCode({ token }: { token: string }) {
       </span>
       {shown && !expired ? (
         <div className="rd-center" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <RiderWakeLock />
           <div className="rd-qr" role="img" aria-label="QR-Code für die Kasse" dangerouslySetInnerHTML={{ __html: shown.svg }} />
           <div className="rd-kasse-code">{shown.code}</div>
           <span className="rd-muted">Gilt bis {clock(shown.expiresAt)} Uhr. Hat die Kasse verknüpft, tipp auf Fertig, dann erscheint das Abo.</span>

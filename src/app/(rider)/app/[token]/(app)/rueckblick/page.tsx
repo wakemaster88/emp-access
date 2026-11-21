@@ -4,6 +4,7 @@ import { loadRiderRecap, riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { formatDegrees, tempStatNote, ymdToDbDate } from "@/lib/gamification";
 import { fmtDay } from "@/lib/rider-format";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,17 @@ export default async function RiderRecapPage({
   const { recap, year } = data;
   const other = year === rider.year ? rider.year - 1 : rider.year;
   const level = year === rider.year ? rider.level : null;
+  // Knopf zur anderen Saison nur, wenn es dort Besuchstage gibt (sonst führt er auf eine leere Seite).
+  const otherDays =
+    other === rider.year
+      ? rider.visitDays
+      : await prisma.riderDayStat.count({
+          where: {
+            accountId: rider.accountId,
+            ticketId: { in: rider.ticketIds },
+            day: { gte: ymdToDbDate(`${other}-01-01`), lte: ymdToDbDate(`${other}-12-31`) },
+          },
+        });
 
   return (
     <>
@@ -102,10 +114,16 @@ export default async function RiderRecapPage({
         </div>
       )}
 
-      <Link href={base} className="rd-btn rd-btn-wide"><span>Zur Übersicht</span></Link>
-      <Link href={`${base}/rueckblick?jahr=${other}`} className="rd-btn rd-btn-ghost rd-btn-wide">
-        <span>Saison {other} ansehen</span>
-      </Link>
+      {otherDays > 0 && (
+        <Link href={`${base}/rueckblick?jahr=${other}`} className="rd-btn rd-btn-ghost rd-btn-wide">
+          <span>Saison {other} ansehen</span>
+        </Link>
+      )}
+      {year !== rider.year && (
+        <Link href={`${base}/rueckblick`} className="rd-btn rd-btn-ghost rd-btn-wide">
+          <span>Zurück zur Saison {rider.year}</span>
+        </Link>
+      )}
     </>
   );
 }
