@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Users, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { paymentOpenInfo } from "@/lib/payment-open";
+import { aboEndState, aboTariffLabel } from "@/lib/abo-term";
 import { PackageSearch } from "lucide-react";
 import type { CheckinTicket, TicketAddOn, TicketExtra } from "./checkin-types";
 import { calcAge, formatTicketTimeLabel, isRentalAddOn, personName } from "./checkin-utils";
@@ -76,18 +77,20 @@ export function TicketCard({
       )}
     >
       {ticket.profileImage ? (
-        <img src={ticket.profileImage} alt="" className="h-12 w-12 rounded-xl object-cover shrink-0 ring-1 ring-glass-border" />
+        <img src={ticket.profileImage} alt="" className="size-12 sm:size-14 rounded-xl object-cover shrink-0 ring-1 ring-glass-border" />
       ) : (
-        <div className="h-12 w-12 rounded-xl bg-glass-tile ring-1 ring-inset ring-glass-border flex items-center justify-center shrink-0">
+        <div className="size-12 sm:size-14 rounded-xl bg-glass-tile ring-1 ring-inset ring-glass-border flex items-center justify-center shrink-0">
           <Users className="h-5 w-5 text-muted-foreground" />
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-foreground truncate">
+        <p className="text-sm sm:text-base font-semibold text-foreground truncate">
           {personName(ticket)}
           {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground tabular-nums">({a})</span> : null; })()}
         </p>
-        {(() => {
+        {isSub ? (
+          <AboTermLine ticket={ticket} />
+        ) : (() => {
           const timeLabel = formatTicketTimeLabel(ticket);
           return (
             <p className="text-xs text-muted-foreground truncate">
@@ -97,21 +100,6 @@ export function TicketCard({
             </p>
           );
         })()}
-        {isSub && ticket.startDate && ticket.endDate && (
-          <p className="text-[11px] text-muted-foreground tabular-nums mt-0.5">
-            {new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
-            {" – "}
-            {new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
-            {new Date(ticket.endDate) < new Date() && (
-              <span className="text-destructive font-semibold ml-1">abgelaufen</span>
-            )}
-          </p>
-        )}
-        {isSub && ticket.startDate && !ticket.endDate && (
-          <p className="text-[11px] text-muted-foreground tabular-nums mt-0.5">
-            ab {new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
-          </p>
-        )}
         {extras.length > 0 && (
           <div className="flex gap-1 mt-1 flex-wrap">
             {extras.map((ex, i) => (
@@ -212,8 +200,7 @@ export function TicketCard({
         ) : checked ? (
           <Badge variant="success" className="text-[11px] px-2 py-0.5 font-bold">Eingecheckt</Badge>
         ) : onCheckin ? (
-          <div className="flex flex-col items-end gap-1">
-            {isSub && <Badge variant="secondary" className="text-[11px] px-2 py-0.5 font-bold">Abo</Badge>}
+          <>
             {/* Touch-Ziel 44 px auf dem Handy, 56 px am Kiosk (Abschnitt 20); die
                 Breite folgt dem Text, damit der Name daneben Platz behält.
                 `disabled:pointer-events-auto`: Die gesperrte Taste schluckt einen
@@ -226,7 +213,7 @@ export function TicketCard({
             >
               {checkingIn ? <Loader2 className="animate-spin" /> : "Einchecken"}
             </Button>
-          </div>
+          </>
         ) : isSub ? (
           <Badge variant="secondary" className="text-[11px] px-2 py-0.5 font-bold">Abo</Badge>
         ) : null}
@@ -235,3 +222,37 @@ export function TicketCard({
   );
 }
 
+
+const fmtShort = (d: Date) =>
+  d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "Europe/Berlin" });
+
+/**
+ * Laufzeit auf der Abo-Karte in einer Zeile: Tarif ohne den Abo-Namen (der
+ * steht schon im Gruppenkopf) und das Ende („bis 06.04.27“, kurz vor Ablauf
+ * „noch 5 Tage“ in der Hinweisfarbe). Der volle Zeitraum steht im Tooltip.
+ */
+function AboTermLine({ ticket }: { ticket: CheckinTicket }) {
+  const tariff = aboTariffLabel(ticket.ticketTypeName);
+  const start = ticket.startDate ? new Date(ticket.startDate) : null;
+  const end = ticket.endDate ? new Date(ticket.endDate) : null;
+  const endState = end ? aboEndState(end) : null;
+  const range = start && end ? `${fmtShort(start)} – ${fmtShort(end)}` : start ? `ab ${fmtShort(start)}` : undefined;
+  return (
+    <p className="text-sm text-muted-foreground truncate tabular-nums" title={range}>
+      {tariff}
+      {tariff && (endState || (!end && start)) ? " · " : ""}
+      {endState ? (
+        <span
+          className={cn(
+            endState.tone === "warning" && "font-semibold text-warning",
+            endState.tone === "danger" && "font-semibold text-destructive",
+          )}
+        >
+          {endState.label}
+        </span>
+      ) : start ? (
+        `ab ${fmtShort(start)}`
+      ) : null}
+    </p>
+  );
+}
