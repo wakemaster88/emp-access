@@ -78,6 +78,7 @@ interface ScanResult {
     status: string;
     areaName: string | null;
     serviceName: string | null;
+    paymentOpen?: string;
     subscriptionName: string | null;
   };
   time: Date;
@@ -418,6 +419,9 @@ export function ScannerClient({
                         <MapPin className="h-4 w-4" />
                         {lastResult.ticket.areaName}
                       </span>
+                    )}
+                    {lastResult.ticket.paymentOpen && (
+                      <span className="font-semibold">{lastResult.ticket.paymentOpen}</span>
                     )}
                   </div>
                 )}

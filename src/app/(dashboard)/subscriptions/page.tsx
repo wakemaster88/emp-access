@@ -12,6 +12,8 @@ import { AbosWithoutEmailCard } from "@/components/subscriptions/abos-without-em
 import { loadAbosWithoutEmail } from "@/lib/abos-without-email";
 import { RidersOpenCard } from "@/components/subscriptions/riders-open-card";
 import { loadRidersOpen } from "@/lib/riders-open";
+import { PaymentOpenCard } from "@/components/subscriptions/payment-open-card";
+import { loadPaymentOpen } from "@/lib/payment-open";
 import { SegmentedLinks } from "@/components/ui/segmented-links";
 import { CustomerAccountsCard } from "@/components/subscriptions/customer-accounts-card";
 import { loadCustomerAccounts } from "@/lib/customer-accounts";
@@ -62,7 +64,7 @@ export default async function SubscriptionsPage({ searchParams }: Props) {
     );
   }
 
-  const [subscriptions, areas, annyConfig, expiringAboTickets, stats, abosWithoutEmail, ridersOpen] = await Promise.all([
+  const [subscriptions, areas, annyConfig, expiringAboTickets, stats, abosWithoutEmail, ridersOpen, paymentOpen] = await Promise.all([
     db.subscription.findMany({
       where: accountFilter,
       include: {
@@ -127,6 +129,9 @@ export default async function SubscriptionsPage({ searchParams }: Props) {
     isSuperAdmin
       ? Promise.resolve([])
       : loadRidersOpen(db as unknown as PrismaClient, session.user.accountId!),
+    isSuperAdmin
+      ? Promise.resolve([])
+      : loadPaymentOpen(db as unknown as PrismaClient, session.user.accountId!),
   ]);
 
   let annyServices: string[] = [];
@@ -147,6 +152,8 @@ export default async function SubscriptionsPage({ searchParams }: Props) {
       <div className="page-content space-y-4 sm:space-y-5">
         {views}
         {stats && <SubscriptionStats stats={stats} />}
+        {/* Vom anny-Abgleich wegen überfälliger Rechnung pausiert (lib/payment-open). */}
+        {paymentOpen.length > 0 && <PaymentOpenCard rows={paymentOpen} />}
         <ExpiringAbosCard tickets={expiringAboTickets} readonly={isSuperAdmin} />
         {/* Jedes Abo hängt an einer E-Mail-Adresse (lib/abo-email); ältere ohne Adresse stehen hier. */}
         {abosWithoutEmail.length > 0 && <AbosWithoutEmailCard rows={abosWithoutEmail} />}

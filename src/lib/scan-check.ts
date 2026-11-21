@@ -1,3 +1,4 @@
+import { paymentOpenInfo, paymentOpenScanMessage, paymentOpenSentence } from "@/lib/payment-open";
 import { prisma } from "@/lib/prisma";
 import type { PrismaClient } from "@prisma/client";
 import { isWithinSchedule } from "@/lib/schedule";
@@ -28,6 +29,8 @@ export interface ScanCheckTicketInfo {
   serviceName: string | null;
   subscriptionName: string | null;
   vereinName: string | null;
+  /** Bei „Zahlung offen“: Betrag und Fälligkeit als Satz. */
+  paymentOpen?: string;
 }
 
 export interface ScanCheckResult {
@@ -272,8 +275,12 @@ export async function performScanCheck({
     await db.scan.create({
       data: { code, result: "DENIED", ticketId: ticket.id, accountId, ...scanDeviceData },
     });
-    const paymentPaused = !!(ticket.extras as Record<string, unknown> | null)?.paymentPause;
-    return { granted: false, message: paymentPaused ? "Zahlung offen" : "Abo pausiert", ticket: ticketInfo };
+    const payment = paymentOpenInfo(ticket.extras);
+    return {
+      granted: false,
+      message: payment ? paymentOpenScanMessage(payment) : "Abo pausiert",
+      ticket: payment ? { ...ticketInfo, paymentOpen: paymentOpenSentence(payment) } : ticketInfo,
+    };
   }
 
   if (ticket.status === "CANCELED") {

@@ -3,6 +3,8 @@ import { prisma, tenantClient } from "@/lib/prisma";
 import { secretsEqual } from "@/lib/cron-auth";
 import { annyBarcodeForTicket, extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
+import { applyAnnyPaymentEvent, isAnnyPaymentEvent } from "@/lib/anny-payment-webhook";
+import type { PrismaClient } from "@prisma/client";
 
 interface AnnyLineItem {
   id?: string | number;
@@ -127,6 +129,21 @@ export async function POST(request: NextRequest) {
   const body = rawBody as unknown as AnnyEventBody;
 
   const eventType = body.event ?? "";
+
+  // Rechnungen und Abos sind keine Buchungen: eigener Zweig, immer 200,
+  // damit anny nicht endlos wiederholt.
+  if (isAnnyPaymentEvent(eventType)) {
+    try {
+      const data = rawBody.data;
+      const result = await applyAnnyPaymentEvent(db as unknown as PrismaClient, accountId, eventType, data);
+      const keys = data && typeof data === "object" ? Object.keys(data as object).slice(0, 30) : [];
+      console.log(`[anny webhook] ${eventType} ${result.handled}`, { ids: result.ticketIds, keys });
+      return NextResponse.json({ ok: true, ...result });
+    } catch (e) {
+      console.error(`[anny webhook] ${eventType} fehlgeschlagen:`, e);
+      return NextResponse.json({ ok: false, event: eventType });
+    }
+  }
   const isDelete = eventType === "bookings.deleted";
   const isCancel = eventType === "bookings.cancelled" || eventType === "bookings.canceled";
 
