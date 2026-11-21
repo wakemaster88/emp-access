@@ -12,18 +12,26 @@ test("historyStart: ein Tag vor dem ersten Besuchstag, frühestens ab dem Vorjah
   assert.equal(historyStart(null, NOW).toISOString(), "2026-11-20T10:00:00.000Z");
 });
 
-test("weatherRequests: Archiv für alte Tage, Vorhersage-API für die letzten 92", () => {
+test("weatherRequests: Archiv für alte Tage, Vorhersage-API nur für die letzten zehn", () => {
   const to = new Date("2026-11-21T10:00:00Z");
+  assert.equal(FORECAST_PAST_DAYS, 10);
   const all = weatherRequests(new Date("2026-05-08T00:00:00Z"), to, NOW);
   assert.equal(all.length, 2);
   assert.match(all[0].url, /archive-api/);
-  assert.deepEqual(all[0].params, { start_date: "2026-05-08", end_date: "2026-08-20" });
-  assert.equal(iso(all[0].toMs), "2026-08-20T23:00:00.000Z");
+  assert.deepEqual(all[0].params, { start_date: "2026-05-08", end_date: "2026-11-10" });
+  assert.equal(iso(all[0].toMs), "2026-11-10T23:00:00.000Z");
   assert.match(all[1].url, /api\.open-meteo\.com\/v1\/forecast/);
-  assert.deepEqual(all[1].params, { past_days: String(FORECAST_PAST_DAYS), forecast_days: "1" });
+  assert.deepEqual(all[1].params, { past_days: "10", forecast_days: "1" });
   // Beide Bereiche schließen ohne Lücke und ohne Überschneidung aneinander an.
-  assert.equal(iso(all[1].fromMs), "2026-08-21T00:00:00.000Z");
+  assert.equal(iso(all[1].fromMs), "2026-11-11T00:00:00.000Z");
   assert.equal(all[1].toMs, to.getTime());
+
+  // Die Lücke vom 21.11.2026 (21.08. bis 09.09.): die Vorhersage-API lieferte
+  // diese Tage nicht, sie kommen jetzt aus dem Archiv.
+  const hole = weatherRequests(new Date("2026-08-21T00:00:00Z"), new Date("2026-09-09T23:00:00Z"), NOW);
+  assert.equal(hole.length, 1);
+  assert.match(hole[0].url, /archive-api/);
+  assert.deepEqual(hole[0].params, { start_date: "2026-08-21", end_date: "2026-09-09" });
 
   // Laufender Betrieb: nur die neue Stunde, also nur heute.
   const next = weatherRequests(to, to, NOW);

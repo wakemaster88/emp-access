@@ -974,11 +974,14 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
   (`runWeatherHistoryTick`, `src/lib/weather-history.ts`) holt einmal je
   Stunde die neuen Stunden für jedes Konto mit eingeschalteter Kunden-App
   und Standort. Beim ersten Lauf füllt er rückwirkend ab dem ersten
-  gezählten Besuchstag, höchstens ab dem Vorjahr: die letzten 92 Tage über
+  gezählten Besuchstag, höchstens ab dem Vorjahr: die letzten zehn Tage über
   die Vorhersage-API, Älteres über das Archiv
-  (`archive-api.open-meteo.com`). Scheitert ein Abruf, holt ein späterer
-  Takt die Lücke nach. Ohne Standort gibt es keine Luftwerte und die Kachel
-  erscheint nicht.
+  (`archive-api.open-meteo.com`, hängt etwa fünf Tage hinterher). Die
+  Vorhersage-API reicht laut Doku 92 Tage zurück, lieferte am 21.11.2026 aber
+  nur 72; dadurch fehlten zuerst der 21.08. bis 09.09.2026. Fehlen Stunden
+  im Bestand (Abruf gescheitert, Stunden ohne Wert), holt der Takt die erste
+  Lücke einmal je Stunde nach (`firstGap`). Ohne Standort gibt es keine
+  Luftwerte und die Kachel erscheint nicht.
 - **Standort des Kontos** (`Account.latitude`, `Account.longitude`): war bis
   21.11.2026 leer. Die Cloud rechnete das Wetter für Bewässerung und
   Tagesvorschau sowie Sonnenauf- und -untergang für Regeln deshalb für
