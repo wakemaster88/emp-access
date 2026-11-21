@@ -255,9 +255,10 @@
 .rd-nav-lens::before {
   content: "";
   position: absolute;
-  inset: 2px 8px;
+  /* Schmaler Rand und flache Schräge: „Gutscheine“ und „Challenges“ passen auch bei 320 px in die Linse. */
+  inset: 2px 3px;
   border-radius: 12px;
-  transform: skewX(-12deg);
+  transform: skewX(-8deg);
   background: rgb(251 191 36 / 0.14);
   box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(251 191 36 / 0.4);
 }
@@ -284,14 +285,19 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   font-weight: 600;
+  letter-spacing: -0.01em;
   max-height: 14px;
   opacity: 1;
   transition: max-height 0.5s var(--rd-spring), opacity 0.3s ease;
 }
-.rd-nav a[aria-current="page"] { color: var(--rd-accent); font-weight: 700; }
+/* Gleiche Schriftstärke wie inaktiv: fett wäre breiter als die Linse. */
+.rd-nav a[aria-current="page"] { color: var(--rd-accent); }
 /* Fünf Einträge: auf schmalen Geräten etwas kleiner, damit die Wörter nicht aneinanderstoßen. */
 @media (max-width: 389px) {
   .rd-nav { font-size: 10px; }
+}
+@media (max-width: 359px) {
+  .rd-nav { font-size: 9.5px; }
 }
 .rd-nav-wrap[data-compact] .rd-nav { height: 50px; }
 .rd-nav-wrap[data-compact] .rd-nav a > span { max-height: 0; opacity: 0; }
