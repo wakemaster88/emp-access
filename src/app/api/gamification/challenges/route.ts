@@ -1,9 +1,9 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
-import { challengeSchema, normalizeChallenge } from "@/lib/gamification-input";
+import { challengeSchema, normalizeChallenge, pollOptions } from "@/lib/gamification-input";
 import { runAccountAnnouncements } from "@/lib/rider-announce";
 
-/** POST: Challenge anlegen; mit `push` geht eine Meldung an die Kunden. */
+/** POST: Challenge anlegen (bei einer Abstimmung mit Antworten); mit `push` geht eine Meldung an die Kunden. */
 export async function POST(request: NextRequest) {
   const session = await gamiAdminSession();
   if ("error" in session) return session.error;
@@ -16,6 +16,11 @@ export async function POST(request: NextRequest) {
   const challenge = await db.challenge.create({
     data: { ...normalizeChallenge(parsed.data), pushPlanned: parsed.data.push ?? false, accountId },
   });
+  if (challenge.kind === "POLL") {
+    await db.challengeOption.createMany({
+      data: pollOptions(parsed.data.options).map((label, i) => ({ challengeId: challenge.id, label, sortOrder: i, accountId })),
+    });
+  }
   if (challenge.pushPlanned) after(() => runAccountAnnouncements(accountId).catch((e) => console.error("[announce]", e)));
   return NextResponse.json(challenge, { status: 201 });
 }

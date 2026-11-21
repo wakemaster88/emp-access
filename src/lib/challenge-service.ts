@@ -7,10 +7,13 @@
  */
 import type { TenantDb } from "./prisma";
 import {
+  challengeCountsRides,
+  challengeSettlesAtEnd,
   challengeValue,
   dbDateToYmd,
   mergeDayStats,
   rankStandings,
+  type ChallengeKind,
   type DayStat,
   type GamiMetric,
   type Standing,
@@ -21,7 +24,7 @@ import { notifyVoucher } from "./rider-push";
 export interface ChallengeRow {
   id: number;
   name: string;
-  kind: "TASK" | "TOP_X";
+  kind: ChallengeKind;
   metric: GamiMetric;
   threshold: number | null;
   topCount: number | null;
@@ -52,6 +55,8 @@ export async function challengeUnits(
   c: ChallengeRow,
   capPerDay: number,
 ): Promise<RiderUnit[]> {
+  // Foto und Abstimmung zählen keine Starts.
+  if (!challengeCountsRides(c.kind)) return [];
   const stats = await db.riderDayStat.findMany({
     where: { accountId, day: { gte: c.startDate, lte: c.endDate }, ticket: { gamificationOptOut: false } },
     select: { ticketId: true, day: true, starts: true, ticket: { select: { riderProfileId: true } } },
@@ -174,7 +179,38 @@ export async function awardTaskChallenges(
 }
 
 /**
- * Beendete Top-X-Challenges auswerten. Jede Challenge wird genau einmal
+ * Foto-Challenge: die sichtbaren Fotos nach Stimmen; Gewinner wie bei Top X
+ * (Gleichstand auf dem letzten Gewinnerplatz: alle). Ohne Stimme kein Platz.
+ */
+export async function photoStandings(
+  db: TenantDb,
+  accountId: number,
+  challengeId: number,
+  topCount: number,
+): Promise<Array<Standing<number> & { profileId: number }>> {
+  const entries = await db.challengeEntry.findMany({
+    where: { accountId, challengeId, hidden: false },
+    select: { id: true, profileId: true, _count: { select: { votes: true } } },
+  });
+  const byId = new Map(entries.map((e) => [e.id, e.profileId]));
+  return rankStandings(entries.map((e) => ({ key: e.id, value: e._count.votes })), topCount).map((s) => ({
+    ...s,
+    profileId: byId.get(s.key)!,
+  }));
+}
+
+/** Gewinn einer Person: am jüngsten Ticket ihres Profils; ohne Ticket nichts. */
+async function awardProfile(db: TenantDb, accountId: number, c: ChallengeRow, profileId: number, rank: number): Promise<boolean> {
+  const ticket = await db.ticket.findFirst({
+    where: { accountId, riderProfileId: profileId },
+    orderBy: { id: "desc" },
+    select: { id: true },
+  });
+  return ticket ? award(db, accountId, c, ticket.id, rank) : false;
+}
+
+/**
+ * Beendete Top-X- und Foto-Challenges auswerten. Jede Challenge wird genau einmal
  * ausgewertet: `settledAt` wird atomar gesetzt, bevor Gewinne entstehen.
  */
 export async function settleChallenges(
@@ -186,13 +222,19 @@ export async function settleChallenges(
 ): Promise<number> {
   let settled = 0;
   for (const c of challenges) {
-    if (c.kind !== "TOP_X" || dbDateToYmd(c.endDate) >= todayYmd) continue;
+    if (!challengeSettlesAtEnd(c.kind) || dbDateToYmd(c.endDate) >= todayYmd) continue;
     const claim = await db.challenge.updateMany({
       where: { id: c.id, accountId, settledAt: null },
       data: { settledAt: new Date() },
     });
     if (claim.count === 0) continue;
     settled += 1;
+    if (c.kind === "PHOTO") {
+      for (const s of await photoStandings(db, accountId, c.id, c.topCount ?? 1)) {
+        if (s.winner) await awardProfile(db, accountId, c, s.profileId, s.rank);
+      }
+      continue;
+    }
     const ranked = rankUnits(await challengeUnits(db, accountId, c, capPerDay), c.topCount ?? 0);
     for (const s of ranked) {
       if (s.winner) await award(db, accountId, c, s.unit.awardTicketId, s.rank);
@@ -230,7 +272,7 @@ export async function settleDueChallenges(
   capPerDay: number,
 ): Promise<number> {
   const due = await db.challenge.findMany({
-    where: { accountId, active: true, settledAt: null, kind: "TOP_X" },
+    where: { accountId, active: true, settledAt: null, kind: { in: ["TOP_X", "PHOTO"] } },
   });
   return settleChallenges(db, accountId, todayYmd, capPerDay, due as ChallengeRow[]);
 }

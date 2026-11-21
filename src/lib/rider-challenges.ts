@@ -21,6 +21,7 @@ import {
   awardTaskChallenges, challengeUnits, openChallenges, rankUnits, settleDueChallenges, type ChallengeRow,
 } from "./challenge-service";
 import type { RiderView } from "./rider-app";
+import { loadVoting, type VotingView } from "./challenge-voting";
 
 export interface RiderChallenge {
   id: number;
@@ -43,6 +44,8 @@ export interface RiderChallenge {
   rank: number | null;
   participants: number;
   top: Array<{ rank: number; name: string; value: number; me: boolean }>;
+  /** Foto-Challenge und Abstimmung: Fotos bzw. Antworten mit dem Stand der Person. */
+  voting: VotingView | null;
 }
 
 const KEEP_ENDED_DAYS = 30;
@@ -87,10 +90,22 @@ export async function loadRiderChallenges(
   const wonIds = new Set(awards.map((a) => a.challengeId));
   const myKey = `p${rider.profileId}`;
 
+  const phases = new Map(
+    challenges.map((c) => [c.id, challengePhase({ startYmd: dbDateToYmd(c.startDate), endYmd: dbDateToYmd(c.endDate) }, today)]),
+  );
+  const voting = await loadVoting(
+    accountId,
+    challenges.map((c) => ({ id: c.id, kind: c.kind, phase: phases.get(c.id)!, topCount: c.topCount })),
+    rider.profileId,
+  ).catch((e) => {
+    console.error("[challenges] Abstimmungen nicht geladen:", e instanceof Error ? e.message : e);
+    return new Map<number, VotingView>();
+  });
+
   const out: RiderChallenge[] = [];
   for (const c of challenges) {
     const row = c as ChallengeRow;
-    const phase = challengePhase({ startYmd: dbDateToYmd(c.startDate), endYmd: dbDateToYmd(c.endDate) }, today);
+    const phase = phases.get(c.id)!;
     const units = phase === "upcoming" ? [] : await challengeUnits(db, accountId, row, rider.startCapPerDay);
     const mine = units.find((u) => u.key === myKey);
     let rank: number | null = null;
@@ -132,6 +147,7 @@ export async function loadRiderChallenges(
       rank,
       participants: units.filter((u) => u.value > 0).length,
       top,
+      voting: voting.get(c.id) ?? null,
     });
   }
   const order: Record<ChallengePhase, number> = { running: 0, upcoming: 1, ended: 2 };

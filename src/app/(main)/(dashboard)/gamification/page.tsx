@@ -9,6 +9,7 @@ import {
   type GamiMetric, type GamiPeriod, type GamiTier,
 } from "@/lib/gamification";
 import { challengeUnits, settleDueChallenges, type ChallengeRow } from "@/lib/challenge-service";
+import { loadVoting } from "@/lib/challenge-voting";
 import { Header } from "@/components/layout/header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
@@ -310,11 +311,20 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       db.challengeAward.groupBy({ by: ["challengeId"], where: { accountId }, _count: { _all: true } }),
     ]);
     const winnersById = new Map(winners.map((w) => [w.challengeId, w._count._all]));
+    const phaseOf = (c: { startDate: Date; endDate: Date }) =>
+      challengePhase({ startYmd: dbDateToYmd(c.startDate), endYmd: dbDateToYmd(c.endDate) }, today);
+    const voting = await loadVoting(
+      accountId,
+      challenges.map((c) => ({ id: c.id, kind: c.kind, phase: phaseOf(c), topCount: c.topCount })),
+      null,
+      true,
+    );
     const challengeRows: ChallengeAdminRow[] = [];
     for (const c of challenges) {
       const startDate = dbDateToYmd(c.startDate);
       const endDate = dbDateToYmd(c.endDate);
-      const phase = challengePhase({ startYmd: startDate, endYmd: endDate }, today);
+      const phase = phaseOf(c);
+      const v = voting.get(c.id);
       const units = phase === "upcoming" ? [] : await challengeUnits(db, accountId, c as ChallengeRow, cap);
       challengeRows.push({
         id: c.id,
@@ -331,8 +341,14 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         active: c.active,
         settled: c.settledAt != null,
         phase,
-        participants: units.filter((u) => u.value > 0).length,
+        participants:
+          c.kind === "PHOTO" ? (v?.entries.filter((e) => !e.hidden).length ?? 0)
+          : c.kind === "POLL" ? (v?.totalVotes ?? 0)
+          : units.filter((u) => u.value > 0).length,
         winners: winnersById.get(c.id) ?? 0,
+        options: v?.options.map((o) => ({ label: o.label, votes: o.votes ?? 0, percent: o.percent ?? 0 })) ?? [],
+        entries: v?.entries.map((e) => ({ id: e.id, name: e.name, votes: e.votes ?? 0, rank: e.rank, hidden: e.hidden })) ?? [],
+        started: (v?.entries.length ?? 0) > 0 || (v?.totalVotes ?? 0) > 0,
         pushPlanned: c.pushPlanned,
         pushedAt: c.pushedAt?.toISOString() ?? null,
         pushSent: c.pushSent,

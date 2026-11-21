@@ -223,6 +223,9 @@ model Account {
   milestoneAwards      MilestoneAward[]
   challenges           Challenge[]
   challengeAwards      ChallengeAward[]
+  challengeOptions     ChallengeOption[]
+  challengeEntries     ChallengeEntry[]
+  challengeVotes       ChallengeVote[]
   riderOffers          RiderOffer[]
   discoveredDevices    DiscoveredDevice[]
   knownNetworkDevices  KnownNetworkDevice[]
@@ -3593,6 +3596,12 @@ enum ChallengeKind {
   TASK
   /// Top X: nach dem Ende gewinnen die Besten.
   TOP_X
+  /// Foto-Challenge: jeder laedt ein Foto hoch, die Fahrer stimmen ab, die
+  /// Fotos mit den meisten Stimmen gewinnen nach dem Ende (`topCount`).
+  PHOTO
+  /// Abstimmung: Frage (Name) mit Antworten (`ChallengeOption`), eine Stimme
+  /// je Person. Ohne Gewinn.
+  POLL
 }
 
 /// Challenge mit festem Zeitraum. TASK vergibt sofort beim Erreichen der
@@ -3623,6 +3632,9 @@ model Challenge {
   accountId        Int
   account          Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   awards           ChallengeAward[]
+  options          ChallengeOption[]
+  entries          ChallengeEntry[]
+  votes            ChallengeVote[]
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
@@ -3647,6 +3659,68 @@ model ChallengeAward {
   @@index([accountId])
   @@index([ticketId])
   @@index([voucherId])
+}
+
+/// Antwort einer Abstimmung (Challenge-Art POLL).
+model ChallengeOption {
+  id          Int             @id @default(autoincrement())
+  challengeId Int
+  challenge   Challenge       @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  label       String
+  sortOrder   Int             @default(0)
+  votes       ChallengeVote[]
+  accountId   Int
+  account     Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([challengeId])
+  @@index([accountId])
+}
+
+/// Foto einer Person zu einer Foto-Challenge (eines je Person). Das Bild liegt
+/// im Blob-Speicher (`imageBlob`), ohne Blob-Token als Bytes in `image`.
+model ChallengeEntry {
+  id          Int             @id @default(autoincrement())
+  challengeId Int
+  challenge   Challenge       @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  profileId   Int
+  profile     RiderProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  imageBlob   String?
+  image       Bytes?
+  /// Vom Personal ausgeblendet: fuer andere unsichtbar, zaehlt nicht.
+  hidden      Boolean         @default(false)
+  votes       ChallengeVote[]
+  accountId   Int
+  account     Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([challengeId, profileId])
+  @@index([accountId])
+  @@index([profileId])
+}
+
+/// Stimme einer Person: fuer ein Foto (PHOTO) oder eine Antwort (POLL).
+/// Eine Stimme je Person und Challenge; bis zum Ende aenderbar.
+model ChallengeVote {
+  id          Int              @id @default(autoincrement())
+  challengeId Int
+  challenge   Challenge        @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  profileId   Int
+  profile     RiderProfile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  entryId     Int?
+  entry       ChallengeEntry?  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  optionId    Int?
+  option      ChallengeOption? @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  accountId   Int
+  account     Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([challengeId, profileId])
+  @@index([accountId])
+  @@index([entryId])
+  @@index([optionId])
+  @@index([profileId])
 }
 
 /// Angebot auf dem Dashboard der Kunden-App.
@@ -3714,6 +3788,8 @@ model RiderProfile {
   /// 320 px verkleinert). Nur fuer die App; das Foto zum Abgleich an der
   /// Kasse bleibt `Ticket.profileImage`.
   photo         String?   @db.Text
+  challengeEntries ChallengeEntry[]
+  challengeVotes   ChallengeVote[]
   accountId     Int
   account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tickets       Ticket[]

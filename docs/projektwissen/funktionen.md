@@ -157,6 +157,39 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 - Logik in `src/lib/challenge-service.ts` und `src/lib/rider-challenges.ts`,
   Rechenregeln mit Tests in `src/lib/gamification.ts`.
 
+### Foto-Challenges und Abstimmungen (21.11.2026)
+
+Aaron: „challenges erweitern mit abstimmungen“ und „… mit bild upload“. Zwei
+weitere Arten, angelegt wie die anderen unter Kunden App › Aktionen:
+
+- **Foto-Challenge** (`PHOTO`): Im Zeitraum lädt jede Person ein Foto hoch
+  (`ChallengeEntry`, eines je Person; ein neues ersetzt das alte, dessen
+  Stimmen verfallen). Jede Person hat eine Stimme (`ChallengeVote`), nicht fürs
+  eigene Foto, bis zum Ende änderbar. Stimmenzahlen erst nach dem Ende; bis
+  dahin stehen die Fotos je Person in fester, anderer Reihenfolge. Nach dem
+  Endtag gewinnen die `topCount` Fotos mit den meisten Stimmen (Gleichstand
+  wie bei Top X, ohne Stimme kein Platz); der Gutschein hängt am jüngsten
+  Ticket der Person. Hochladen nur mit Ticket.
+- **Abstimmung** (`POLL`): Der Name ist die Frage, dazu 2 bis 6 Antworten
+  (`ChallengeOption`). Eine Stimme je Person, bis zum Ende änderbar; das
+  Ergebnis sieht, wer abgestimmt hat (alle nach dem Ende). Kein Gutschein.
+  Antworten und Art sind ab der ersten Stimme fest.
+- Abstimmen nur die angemeldete Person selbst (Eltern nicht für ihre Kinder);
+  hochladen auch Eltern für ihr Kind. Am Foto steht für andere der Spitzname
+  mit Zustimmung, sonst „Anonym“.
+- Fotos verkleinert der Browser auf 1600 px. Die KI (xAI, wie beim Profilbild,
+  `checkChallengePhoto` in `profile-photo-check.ts`, Log `[challenge-foto]`)
+  lehnt nur Unpassendes ab; fällt sie aus, wird gespeichert. Ablage im
+  Blob-Speicher (`challenge-photos/`), ohne Token als Bytes in der DB.
+  Ausliefern nur an angemeldete Kunden desselben Kontos
+  (`/api/rider/challenge-photo/<id>`).
+- Das Personal blendet Fotos im Dialog der Challenge aus oder ein
+  (`ChallengeEntry.hidden`): ausgeblendet sieht es nur die Person selbst, es
+  zählt nicht.
+- Code: `src/lib/challenge-voting.ts` (Laden, Abstimmen, Hochladen),
+  `src/lib/challenge-voting-rules.ts` (Regeln mit Tests),
+  `src/components/rider/rider-challenge-voting.tsx`.
+
 ## Saisonrückblick und Rangliste für Bildschirme, Etappe 4 (15.11.2026)
 
 - **Saisonrückblick** in der Kunden-App (`/app/<token>/rueckblick`, mit

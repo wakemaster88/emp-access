@@ -313,6 +313,37 @@
 .rd-rank .rd-me { color: var(--rd-accent); font-weight: 700; }
 .rd-rank .rd-me .rd-pos { color: var(--rd-accent); }
 
+/* Foto-Challenge und Abstimmung */
+.rd-linkbtn { background: none; border: 0; padding: 0; min-height: 32px; font: inherit; font-weight: 600; color: var(--rd-link); cursor: pointer; }
+.rd-poll { display: flex; flex-direction: column; gap: 8px; }
+.rd-poll-option { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 10px 14px; border-radius: 6px; border: 1px solid var(--rd-line-strong); background: var(--rd-bg); color: var(--rd-text); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.rd-poll-option:disabled { cursor: default; opacity: 0.7; }
+.rd-poll-option-mine { border-color: var(--rd-accent); color: var(--rd-accent); }
+.rd-poll-row { display: flex; flex-direction: column; gap: 6px; }
+.rd-poll-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.rd-poll-row .rd-bar > i { background: var(--rd-offer); }
+.rd-poll-mine .rd-poll-label, .rd-poll-mine b { color: var(--rd-accent); }
+.rd-poll-mine .rd-bar > i { background: var(--rd-accent); }
+.rd-photo-own { display: flex; align-items: center; gap: 12px; }
+.rd-photo-thumb { flex: none; width: 56px; height: 56px; padding: 0; border: 1px solid var(--rd-line-strong); border-radius: 6px; overflow: hidden; background: var(--rd-bg); cursor: pointer; }
+.rd-photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rd-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.rd-photo { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rd-photo-img { position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0; border: 1px solid var(--rd-line); border-radius: 6px; overflow: hidden; background: var(--rd-bg); cursor: zoom-in; }
+.rd-photo-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rd-photo-voted .rd-photo-img, .rd-photo-win .rd-photo-img { border: 2px solid var(--rd-accent); }
+.rd-photo-rank { position: absolute; left: 6px; top: 6px; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 4px; transform: skewX(-10deg); background: var(--rd-card); color: var(--rd-text); font-family: var(--font-barlow-condensed), inherit; font-style: italic; font-weight: 800; font-size: 18px; line-height: 28px; text-align: center; }
+.rd-photo-win .rd-photo-rank { background: var(--rd-accent); color: var(--rd-on-accent); }
+.rd-photo figcaption { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rd-photo-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-vote { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 40px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--rd-line-strong); background: var(--rd-bg); color: var(--rd-text); font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; }
+.rd-vote-on { background: var(--rd-accent); border-color: var(--rd-accent); color: var(--rd-on-accent); }
+.rd-vote:disabled { opacity: 0.6; cursor: default; }
+.rd-lightbox { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: calc(env(safe-area-inset-top) + 56px) 16px calc(env(safe-area-inset-bottom) + 16px); background: rgb(0 0 0 / 0.92); }
+.rd-lightbox img { max-width: 100%; max-height: calc(100dvh - 180px); object-fit: contain; border-radius: 6px; }
+.rd-lightbox-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; max-width: 480px; color: var(--rd-text); }
+.rd-lightbox-close { position: absolute; top: calc(env(safe-area-inset-top) + 10px); right: 12px; width: 44px; height: 44px; border-radius: 999px; border: 0; background: var(--rd-card); color: var(--rd-text); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
 /* Saisonrückblick */
 .rd-recap { background: var(--rd-accent); color: var(--rd-on-accent); clip-path: polygon(0 0, 100% 0, 100% 86%, 0 100%); margin: -20px -16px 0; padding: 28px 20px 48px; display: flex; flex-direction: column; gap: 6px; }
 .rd-recap-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
