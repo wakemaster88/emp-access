@@ -1,51 +1,12 @@
 import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
-import { Gift } from "lucide-react";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { RiderChallengeVoting } from "@/components/rider/rider-challenge-voting";
 import { loadRiderChallengesCached, type RiderChallenge } from "@/lib/rider-challenges";
 import { METRIC_LABEL } from "@/lib/gamification";
-import { daysUntil } from "@/lib/rider-format";
-import { clockText } from "@/lib/rider-announce-rules";
+import { ChallengePrize, challengeTimeText as timeText } from "@/components/rider/rider-challenge-parts";
 
 export const dynamic = "force-dynamic";
-
-/** Kurzes Datum für die Marke oben rechts: „6.12.“ */
-function shortDay(d: Date): string {
-  return d.toLocaleDateString("de-DE", { day: "numeric", month: "numeric", timeZone: "Europe/Berlin" });
-}
-
-function timeText(c: RiderChallenge): string {
-  const until = c.endTime ? ` bis ${clockText(c.endTime)}` : "";
-  if (c.phase === "upcoming") {
-    return c.endTime && c.startDate.getTime() === c.endDate.getTime()
-      ? `${shortDay(c.startDate)}${until}`
-      : `startet ${shortDay(c.startDate)}`;
-  }
-  if (c.phase === "ended") return `beendet ${shortDay(c.endDate)}`;
-  // Der Endtag zählt mit: bis zum Ende des Tages.
-  const days = daysUntil(new Date(c.endDate.getTime() + 86_400_000));
-  if (days <= 1) return c.endTime ? `heute${until}` : "endet heute";
-  return `noch ${days} Tage`;
-}
-
-function ruleText(c: RiderChallenge): string {
-  const metric = METRIC_LABEL[c.metric];
-  switch (c.kind) {
-    case "TASK":
-      return `Aufgabe: ${c.condition}`;
-    case "TOP_X":
-      return (c.topCount ?? 1) <= 1
-        ? `Platz 1 nach ${metric} gewinnt`
-        : `Die besten ${c.topCount} nach ${metric} gewinnen`;
-    case "PHOTO":
-      return (c.topCount ?? 1) === 1
-        ? "Foto-Challenge: das Foto mit den meisten Stimmen gewinnt"
-        : `Foto-Challenge: die ${c.topCount} Fotos mit den meisten Stimmen gewinnen`;
-    case "POLL":
-      return "Abstimmung: eine Stimme pro Person";
-  }
-}
 
 interface Viewer {
   token: string;
@@ -68,19 +29,7 @@ function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
         <div className="rd-display rd-h2">{c.name}</div>
       </div>
       {c.description && <div className="rd-soft">{c.description}</div>}
-      {c.voucherLabel || c.skillLabel ? (
-        <div className="rd-prize">
-          <Gift className="rd-prize-icon" aria-hidden />
-          <div className="rd-grow">
-            <div className="rd-label">{c.won ? "Dein Gewinn" : "Gewinn"}</div>
-            {c.voucherLabel && <b>{c.voucherLabel}</b>}
-            {c.skillLabel && <b>Skill: {c.skillLabel}</b>}
-            <div className="rd-muted">{ruleText(c)}</div>
-          </div>
-        </div>
-      ) : (
-        <div className="rd-muted">{ruleText(c)}</div>
-      )}
+      <ChallengePrize c={c} />
 
       {c.kind === "TASK" && c.phase !== "upcoming" && c.threshold != null && (
         <>

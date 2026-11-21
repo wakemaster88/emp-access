@@ -7,6 +7,7 @@ import { METRIC_LABEL, RENEWAL_HINT_DAYS, formatDegrees, formatEuro } from "@/li
 import { loadWaterNow } from "@/lib/gamification-service";
 import { loadAirNow } from "@/lib/weather-history";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
+import { ChallengePrize, challengeStandText, challengeTimeText } from "@/components/rider/rider-challenge-parts";
 import { loadRiderHoliday, type RiderHolidayView } from "@/lib/rider-holiday";
 import { holidayDayLabel } from "@/lib/holidays";
 import { loadRiderBirthday, type RiderBirthdayView } from "@/lib/rider-birthday";
@@ -538,24 +539,16 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             <div className="rd-label">Challenge</div>
             <Link href={`${base}/challenges`} className="rd-more">alle ansehen</Link>
           </div>
-          <Link href={`${base}/challenges`} className="rd-card" style={{ textDecoration: "none", color: "inherit" }}>
-            <div className="rd-between">
-              <div className="rd-display rd-h2">{challenge.name}</div>
-              <span className="rd-muted">
-                {challenge.kind === "TASK" && challenge.threshold != null
-                  ? `${Math.min(challenge.value, challenge.threshold)} von ${challenge.threshold}`
-                  : challenge.kind === "PHOTO"
-                    ? challenge.voting?.myEntry ? "Foto ist dabei" : "Foto hochladen"
-                    : challenge.kind === "POLL"
-                      ? challenge.voting?.myVoted ? "abgestimmt" : "stimm ab"
-                      : challenge.rank != null ? `Platz ${challenge.rank}` : "noch offen"}
-              </span>
+          <Link href={`${base}/challenges`} className="rd-card" style={{ textDecoration: "none", color: "inherit", gap: 10 }}>
+            <div className="rd-card-head">
+              <span className="rd-pill rd-pill-open">{challengeTimeText(challenge)}</span>
+              <div className="rd-display rd-h3">{challenge.name}</div>
             </div>
             {challenge.kind === "TASK" && challenge.threshold != null && (
               <div className="rd-bar"><i style={{ width: `${Math.min(100, Math.round((challenge.value / challenge.threshold) * 100))}%` }} /></div>
             )}
-            {challenge.voucherLabel && <span className="rd-muted">Gewinn: {challenge.voucherLabel}</span>}
-            {challenge.skillLabel && <span className="rd-muted">Skill: {challenge.skillLabel}</span>}
+            <b>{challengeStandText(challenge)}</b>
+            <ChallengePrize c={challenge} />
           </Link>
         </>
       )}
