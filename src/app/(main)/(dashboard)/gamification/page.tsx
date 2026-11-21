@@ -429,7 +429,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
   }
 
   if (tab === "einstellungen") {
-    const [subscriptions, services, devices, sensors, invites, audioZones, playlists, voteStanding] = await Promise.all([
+    const [subscriptions, services, devices, sensors, invites, audioZones, playlists, streams, voteStanding] = await Promise.all([
       db.subscription.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.service.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.device.findMany({
@@ -445,6 +445,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       inviteStatus(accountId),
       db.audioZone.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
       db.audioPlaylist.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      db.audioStream.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       loadMusicVoteAdmin(accountId),
     ]);
     const beachCapacity =
@@ -484,11 +485,12 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         initial={{
           enabled: config?.musicVoteEnabled ?? false,
           zoneIds: config?.musicVoteZoneIds ?? [],
-          playlistIds: config?.musicVotePlaylistIds ?? [],
+          options: config?.musicVoteOptions ?? [],
           holdMinutes: config?.musicVoteHoldMinutes ?? 60,
         }}
         zones={audioZones}
         playlists={playlists}
+        streams={streams}
         standing={voteStanding}
       />
       <AppInviteCard initial={invites} />

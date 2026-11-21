@@ -12,7 +12,10 @@ import { ymdToDbDate } from "./gamification";
 import { playlistPayload, queueZoneCommand } from "./audio";
 import {
   VOTE_ACTIVE_MS,
+  currentOption,
   decideZone,
+  optionKey,
+  parseOptionKey,
   isActiveRider,
   pickWinner,
   staffHoldUntil,
@@ -25,33 +28,44 @@ import {
 export interface MusicVoteConfig {
   enabled: boolean;
   zoneIds: number[];
-  playlistIds: number[];
+  /** "p<id>" / "s<id>" in App-Reihenfolge. */
+  options: string[];
   holdMinutes: number;
 }
 
 export async function loadMusicVoteConfig(db: TenantDb, accountId: number): Promise<MusicVoteConfig | null> {
   const c = await db.gamificationConfig.findUnique({
     where: { accountId },
-    select: { musicVoteEnabled: true, musicVoteZoneIds: true, musicVotePlaylistIds: true, musicVoteHoldMinutes: true },
+    select: { musicVoteEnabled: true, musicVoteZoneIds: true, musicVoteOptions: true, musicVoteHoldMinutes: true },
   });
   if (!c) return null;
   return {
     enabled: c.musicVoteEnabled,
     zoneIds: c.musicVoteZoneIds,
-    playlistIds: c.musicVotePlaylistIds,
+    options: c.musicVoteOptions,
     holdMinutes: c.musicVoteHoldMinutes,
   };
 }
 
-/** Playlists zur Wahl, in der eingestellten Reihenfolge. */
-async function loadOptions(db: TenantDb, accountId: number, ids: number[]): Promise<VoteOption[]> {
-  if (ids.length === 0) return [];
-  const rows = await db.audioPlaylist.findMany({
-    where: { accountId, id: { in: ids } },
-    select: { id: true, name: true },
-  });
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  return ids.map((id) => byId.get(id)).filter((r): r is VoteOption => r != null);
+/** Playlists und Webradios zur Wahl, in der eingestellten Reihenfolge. */
+async function loadOptions(db: TenantDb, accountId: number, keys: string[]): Promise<VoteOption[]> {
+  const parsed = keys.map(parseOptionKey).filter((k) => k != null);
+  if (parsed.length === 0) return [];
+  const playlistIds = parsed.filter((k) => k.kind === "PLAYLIST").map((k) => k.id);
+  const streamIds = parsed.filter((k) => k.kind === "STREAM").map((k) => k.id);
+  const [playlists, streams] = await Promise.all([
+    playlistIds.length
+      ? db.audioPlaylist.findMany({ where: { accountId, id: { in: playlistIds } }, select: { id: true, name: true } })
+      : [],
+    streamIds.length
+      ? db.audioStream.findMany({ where: { accountId, id: { in: streamIds } }, select: { id: true, name: true } })
+      : [],
+  ]);
+  const names = new Map<string, string>([
+    ...playlists.map((r) => [optionKey("PLAYLIST", r.id), r.name] as [string, string]),
+    ...streams.map((r) => [optionKey("STREAM", r.id), r.name] as [string, string]),
+  ]);
+  return keys.filter((k) => names.has(k)).map((key) => ({ key, name: names.get(key)! }));
 }
 
 /** Letzter Start heute je Person, nur Personen mit Start in den letzten 2 Stunden. */
@@ -87,23 +101,35 @@ async function lastStartToday(accountId: number, profileId: number, now: Date): 
 interface Standing {
   options: VoteOption[];
   tally: VoteTally[];
-  /** Stimmen aktiver Fahrer: profileId → playlistId. */
-  votes: Map<number, number>;
+  /** Stimmen aktiver Fahrer: profileId → Option. */
+  votes: Map<number, string>;
 }
 
 async function loadStanding(db: TenantDb, accountId: number, config: MusicVoteConfig, now: Date): Promise<Standing> {
   const [options, active, rows] = await Promise.all([
-    loadOptions(db, accountId, config.playlistIds),
+    loadOptions(db, accountId, config.options),
     activeRiders(accountId, now),
     db.riderMusicVote.findMany({
       where: { accountId, day: ymdToDbDate(berlinYmd(now)) },
-      select: { profileId: true, playlistId: true },
+      select: { profileId: true, option: true },
     }),
   ]);
-  const votes = new Map<number, number>();
-  for (const r of rows) if (active.has(r.profileId)) votes.set(r.profileId, r.playlistId);
-  const tally = tallyVotes(options, [...votes.values()].map((playlistId) => ({ playlistId })));
+  const votes = new Map<number, string>();
+  for (const r of rows) if (active.has(r.profileId)) votes.set(r.profileId, r.option);
+  const tally = tallyVotes(options, [...votes.values()].map((option) => ({ option })));
   return { options, tally, votes };
+}
+
+/** Name dessen, was gerade läuft: Playlist, Webradio-Sender oder „Webradio“. */
+function playingName(zone: {
+  sourceKind: string;
+  playlist: { name: string } | null;
+  stream: { name: string } | null;
+  currentTitle: string | null;
+}): string | null {
+  if (zone.sourceKind === "PLAYLIST") return zone.playlist?.name ?? zone.currentTitle;
+  if (zone.sourceKind === "STREAM") return zone.stream?.name ?? zone.currentTitle ?? "Webradio";
+  return zone.currentTitle;
 }
 
 async function loadZones(db: TenantDb, accountId: number, ids: number[]) {
@@ -119,15 +145,19 @@ async function loadZones(db: TenantDb, accountId: number, ids: number[]) {
       externalActive: true,
       sourceKind: true,
       playlistId: true,
+      streamId: true,
+      streamUrl: true,
+      currentTitle: true,
       staffChoiceAt: true,
       volume: true,
       playlist: { select: { name: true } },
+      stream: { select: { name: true } },
     },
     orderBy: { sortOrder: "asc" },
   });
 }
 
-export type ApplyResult = { switched: number; winner: number | null };
+export type ApplyResult = { switched: number; winner: string | null };
 
 /**
  * Mehrheit an den Zonen umsetzen. Wechselt nur Zonen, in denen gerade
@@ -144,26 +174,47 @@ export async function applyMusicVote(accountId: number, now = new Date()): Promi
     loadZones(db, accountId, config.zoneIds),
   ]);
   let switched = 0;
-  let winner: number | null = null;
+  let winner: string | null = null;
   for (const zone of zones) {
-    const current = zone.sourceKind === "PLAYLIST" ? zone.playlistId : null;
-    winner = pickWinner(standing.tally, current);
+    winner = pickWinner(standing.tally, currentOption(zone));
     const decision = decideZone(zone, winner, config.holdMinutes, now);
     if (decision.kind !== "switch") continue;
-    const payload = await playlistPayload(db, decision.playlistId);
-    if (!payload) continue;
-    await queueZoneCommand(
-      db,
-      accountId,
-      [zone],
-      "PLAY",
-      { kind: "PLAYLIST", volume: zone.volume, ...(payload as object), manual: false },
-      "VOTE",
-    );
-    await db.audioZone.update({
-      where: { id: zone.id },
-      data: { sourceKind: "PLAYLIST", playlistId: decision.playlistId },
-    });
+    const target = parseOptionKey(decision.option);
+    if (!target) continue;
+    if (target.kind === "PLAYLIST") {
+      const payload = await playlistPayload(db, target.id);
+      if (!payload) continue;
+      await queueZoneCommand(
+        db,
+        accountId,
+        [zone],
+        "PLAY",
+        { kind: "PLAYLIST", volume: zone.volume, ...(payload as object), manual: false },
+        "VOTE",
+      );
+      await db.audioZone.update({
+        where: { id: zone.id },
+        data: { sourceKind: "PLAYLIST", playlistId: target.id },
+      });
+    } else {
+      const stream = await db.audioStream.findFirst({
+        where: { id: target.id, accountId },
+        select: { id: true, name: true, url: true },
+      });
+      if (!stream) continue;
+      await queueZoneCommand(
+        db,
+        accountId,
+        [zone],
+        "PLAY",
+        { kind: "STREAM", url: stream.url, volume: zone.volume, manual: false },
+        "VOTE",
+      );
+      await db.audioZone.update({
+        where: { id: zone.id },
+        data: { sourceKind: "STREAM", streamId: stream.id, streamUrl: stream.url, currentTitle: stream.name },
+      });
+    }
     switched++;
   }
   return { switched, winner };
@@ -194,14 +245,14 @@ export async function loadMusicVoteView(
 ): Promise<MusicVoteView | null> {
   const db = tenantClient(accountId);
   const config = await loadMusicVoteConfig(db, accountId);
-  if (!config?.enabled || config.zoneIds.length === 0 || config.playlistIds.length === 0) return null;
+  if (!config?.enabled || config.zoneIds.length === 0 || config.options.length === 0) return null;
   const [standing, zones, lastStart, mine] = await Promise.all([
     loadStanding(db, accountId, config, now),
     loadZones(db, accountId, config.zoneIds),
     lastStartToday(accountId, profileId, now),
     db.riderMusicVote.findUnique({
       where: { profileId_day: { profileId, day: ymdToDbDate(berlinYmd(now)) } },
-      select: { playlistId: true },
+      select: { option: true },
     }),
   ]);
   if (standing.options.length === 0) return null;
@@ -216,10 +267,10 @@ export async function loadMusicVoteView(
   return {
     where: live.map((z) => z.name).join(", "),
     options: standing.tally,
-    myPlaylistId: mine?.playlistId ?? null,
+    myOption: mine?.option ?? null,
     canVote,
-    playingPlaylistId: playing && playing.sourceKind === "PLAYLIST" ? playing.playlistId : null,
-    playingName: playing ? (playing.sourceKind === "PLAYLIST" ? playing.playlist?.name ?? null : "Webradio") : null,
+    playingOption: playing ? currentOption(playing) : null,
+    playingName: playing ? playingName(playing) : null,
     holdUntil: hold ? hold.toISOString() : null,
     voters: standing.votes.size,
   };
@@ -227,22 +278,22 @@ export async function loadMusicVoteView(
 
 export type CastResult = { ok: true; view: MusicVoteView } | { ok: false; error: string; status: number };
 
-/** Stimme abgeben oder ändern (playlistId) bzw. zurücknehmen (null). */
+/** Stimme abgeben oder ändern ("p…"/"s…") bzw. zurücknehmen (null). */
 export async function castMusicVote(
   accountId: number,
   profileId: number,
-  playlistId: number | null,
+  option: string | null,
   now = new Date(),
 ): Promise<CastResult> {
   const db = tenantClient(accountId);
   const config = await loadMusicVoteConfig(db, accountId);
   if (!config?.enabled) return { ok: false, error: "Die Abstimmung ist gerade aus.", status: 409 };
   const day = ymdToDbDate(berlinYmd(now));
-  if (playlistId == null) {
+  if (option == null) {
     await db.riderMusicVote.deleteMany({ where: { accountId, profileId, day } });
   } else {
-    if (!config.playlistIds.includes(playlistId)) {
-      return { ok: false, error: "Diese Playlist steht nicht zur Wahl.", status: 400 };
+    if (!config.options.includes(option)) {
+      return { ok: false, error: "Das steht gerade nicht zur Wahl.", status: 400 };
     }
     if (!isActiveRider(await lastStartToday(accountId, profileId, now), now)) {
       return {
@@ -253,8 +304,8 @@ export async function castMusicVote(
     }
     await db.riderMusicVote.upsert({
       where: { profileId_day: { profileId, day } },
-      create: { accountId, profileId, day, playlistId },
-      update: { playlistId },
+      create: { accountId, profileId, day, option },
+      update: { option },
     });
   }
   await applyMusicVote(accountId, now).catch((e) => console.error("[music-vote] anwenden", e));
@@ -281,7 +332,7 @@ export async function loadMusicVoteAdmin(accountId: number, now = new Date()) {
         id: z.id,
         name: z.name,
         isPlaying: z.isPlaying,
-        playing: z.isPlaying ? (z.sourceKind === "PLAYLIST" ? z.playlist?.name ?? null : "Webradio") : null,
+        playing: z.isPlaying ? playingName(z) : null,
         holdUntil: hold ? hold.toISOString() : null,
       };
     }),

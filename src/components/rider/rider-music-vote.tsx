@@ -25,19 +25,19 @@ function clock(iso: string): string {
  */
 export function RiderMusicVote({ token, initial }: { token: string; initial: MusicVoteView }) {
   const [view, setView] = useState(initial);
-  const [busy, setBusy] = useState<number | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const total = view.options.reduce((s, o) => s + o.votes, 0);
 
-  async function vote(playlistId: number) {
-    const next = view.myPlaylistId === playlistId ? null : playlistId;
-    setBusy(playlistId);
+  async function vote(option: string) {
+    const next = view.myOption === option ? null : option;
+    setBusy(option);
     setError(null);
     try {
       const res = await fetch(`/api/rider/${encodeURIComponent(token)}/music-vote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playlistId: next }),
+        body: JSON.stringify({ option: next }),
       });
       const json = (await res.json().catch(() => ({}))) as { view?: MusicVoteView; error?: string };
       if (!res.ok || !json.view) {
@@ -56,7 +56,7 @@ export function RiderMusicVote({ token, initial }: { token: string; initial: Mus
     ? `Das Team hat gerade selbst gewählt. Eure Wahl gilt wieder ab ${clock(view.holdUntil)} Uhr.`
     : !view.playingName
       ? "Gerade läuft keine Musik. Eure Wahl gilt, sobald sie startet."
-      : view.playingPlaylistId == null
+      : view.playingOption == null
         ? `Gerade läuft ${view.playingName}.`
         : null;
 
@@ -69,25 +69,25 @@ export function RiderMusicVote({ token, initial }: { token: string; initial: Mus
         </span>
       </div>
       <b style={{ fontSize: 15 }}>
-        {view.canVote ? "Welche Playlist soll laufen?" : "Die Fahrer wählen die Playlist"}
+        {view.canVote ? "Was soll laufen?" : "Die Fahrer wählen die Musik"}
       </b>
       <ul className="rd-vote-list">
         {view.options.map((o) => {
-          const mine = view.myPlaylistId === o.playlistId;
-          const playing = view.playingPlaylistId === o.playlistId;
+          const mine = view.myOption === o.key;
+          const playing = view.playingOption === o.key;
           const percent = total > 0 ? Math.round((o.votes / total) * 100) : 0;
           return (
-            <li key={o.playlistId}>
+            <li key={o.key}>
               <button
                 type="button"
                 className={`rd-vote-opt${mine ? " rd-vote-mine" : ""}`}
                 aria-pressed={mine}
                 disabled={!view.canVote || busy != null}
-                onClick={() => void vote(o.playlistId)}
+                onClick={() => void vote(o.key)}
               >
                 <span className="rd-vote-head">
                   <span className="rd-vote-mark">{mine ? CHECK_ICON : null}</span>
-                  <span className="rd-grow rd-vote-name">{o.name}</span>
+                  <span className="rd-grow rd-vote-name">{o.name}{o.kind === "STREAM" && <small className="rd-muted"> · Radio</small>}</span>
                   {playing && <span className="rd-pill rd-pill-open rd-vote-live">{NOTE_ICON}läuft</span>}
                   <span className="rd-vote-count">{o.votes}</span>
                 </span>
@@ -103,7 +103,7 @@ export function RiderMusicVote({ token, initial }: { token: string; initial: Mus
       {status && <span className="rd-soft">{status}</span>}
       <span className="rd-muted" style={{ fontSize: 12 }}>
         {view.canVote
-          ? view.myPlaylistId != null
+          ? view.myOption != null
             ? `Deine Stimme zählt, bis du ${VOTE_ACTIVE_HOURS} Stunden nicht mehr am Lift gestartet bist. Nochmal tippen nimmt sie zurück.`
             : "Die meisten Stimmen gewinnen. Du kannst jederzeit umentscheiden."
           : `Abstimmen kann, wer in den letzten ${VOTE_ACTIVE_HOURS} Stunden am Lift gestartet ist.`}
