@@ -5,19 +5,24 @@ import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { RiderChallengeVoting } from "@/components/rider/rider-challenge-voting";
 import { loadRiderChallengesCached, type RiderChallenge } from "@/lib/rider-challenges";
 import { METRIC_LABEL } from "@/lib/gamification";
-import { daysUntil, fmtDay } from "@/lib/rider-format";
+import { daysUntil } from "@/lib/rider-format";
 import { clockText } from "@/lib/rider-announce-rules";
 
 export const dynamic = "force-dynamic";
+
+/** Kurzes Datum für die Marke oben rechts: „6.12.“ */
+function shortDay(d: Date): string {
+  return d.toLocaleDateString("de-DE", { day: "numeric", month: "numeric", timeZone: "Europe/Berlin" });
+}
 
 function timeText(c: RiderChallenge): string {
   const until = c.endTime ? ` bis ${clockText(c.endTime)}` : "";
   if (c.phase === "upcoming") {
     return c.endTime && c.startDate.getTime() === c.endDate.getTime()
-      ? `am ${fmtDay(c.startDate)}${until}`
-      : `startet am ${fmtDay(c.startDate)}`;
+      ? `${shortDay(c.startDate)}${until}`
+      : `startet ${shortDay(c.startDate)}`;
   }
-  if (c.phase === "ended") return `beendet am ${fmtDay(c.endDate)}`;
+  if (c.phase === "ended") return `beendet ${shortDay(c.endDate)}`;
   // Der Endtag zählt mit: bis zum Ende des Tages.
   const days = daysUntil(new Date(c.endDate.getTime() + 86_400_000));
   if (days <= 1) return c.endTime ? `heute${until}` : "endet heute";
@@ -52,8 +57,7 @@ function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
   const metric = METRIC_LABEL[c.metric];
   return (
     <div className="rd-card" style={{ gap: 10 }}>
-      <div className="rd-between" style={{ alignItems: "flex-start" }}>
-        <div className="rd-display rd-h2">{c.name}</div>
+      <div className="rd-card-head">
         {c.won ? (
           <span className="rd-pill rd-pill-win">{c.kind === "TASK" ? "geschafft" : "gewonnen"}</span>
         ) : c.kind === "POLL" && c.voting?.myVoted && c.phase === "running" ? (
@@ -61,6 +65,7 @@ function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
         ) : (
           <span className={`rd-pill ${c.phase === "running" ? "rd-pill-open" : "rd-pill-off"}`}>{timeText(c)}</span>
         )}
+        <div className="rd-display rd-h2">{c.name}</div>
       </div>
       {c.description && <div className="rd-soft">{c.description}</div>}
       {c.voucherLabel || c.skillLabel ? (
