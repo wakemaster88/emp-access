@@ -989,3 +989,15 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
   (51,756 / 8,043, dieselben Werte wie der Rückfall im Hub,
   `hub/src/weather.ts`). Ein Eingabefeld für den Standort gibt es in der
   Verwaltung nicht.
+
+## Ride Pass im Kundenkonto (21.11.2026)
+
+Abos › Kundenkonten › Konto öffnen: neben jeder Person (auch Kindern) führt die Taste mit dem Pokal zum Ride Pass der Person. Er zeigt dasselbe wie die Kunden-App, nur zum Ansehen:
+
+- Kopf: zuletzt in der App, Spitzname und ob er in Ranglisten erscheint; Kacheln Besuchstage und Starts der Saison, Starts gesamt, Saisons.
+- Reiter Statistik: Saisonrückblick der laufenden und der letzten Saison mit Luft- und Wassertemperatur im Schnitt.
+- Reiter Awards: vergebene Awards mit Datum, die drei, denen die Person am nächsten ist, und früher geholte.
+- Reiter Challenges: laufende und in den letzten 30 Tagen beendete mit dem Stand der Person.
+- Reiter Gutscheine: offen, eingelöst, abgelaufen mit Code und Herkunft.
+
+Technik: `GET /api/customers/persons/[id]/ride-pass` → `loadRidePassForStaff` (`src/lib/ride-pass-staff.ts`, Datenform in `ride-pass-staff-types.ts` ohne Datenbank-Import für die Client-Komponente). Sie nutzt `loadRider(…, readOnly)` und `loadRiderChallenges(…, readOnly)`: anders als beim Öffnen der App wird dabei nichts vergeben, ausgewertet, keine Tagestickets übernommen und kein „zuletzt in der App“ gesetzt. Oberfläche: `src/components/subscriptions/ride-pass-panel.tsx`.

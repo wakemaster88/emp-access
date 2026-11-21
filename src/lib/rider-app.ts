@@ -160,6 +160,8 @@ export async function loadRider(
   now: Date = new Date(),
   adopted = false,
   awarded = false,
+  /** Ansicht für das Personal: ändert nichts (kein „zuletzt gesehen“, keine Vergabe, keine Tagestickets). */
+  readOnly = false,
 ): Promise<RiderView | null> {
   if (!token || token.length < 16) return null;
   const profile = await prisma.riderProfile.findUnique({
@@ -187,7 +189,7 @@ export async function loadRider(
   if (!profile || !profile.account.isActive || (profile.tickets.length === 0 && !profile.email)) return null;
 
   // Neue Tagestickets mit derselben E-Mail-Adresse gehören zum selben Gast.
-  if (!adopted) {
+  if (!adopted && !readOnly) {
     const emails = [...new Set([profile.email, ...profile.tickets.map((t) => t.email?.trim().toLowerCase())].filter((e): e is string => !!e))].slice(0, 5);
     let added = 0;
     for (const e of emails) added += await adoptDayTickets(profile.accountId, e, now).catch(() => 0);
@@ -195,7 +197,7 @@ export async function loadRider(
   }
 
   // Nutzung merken (für „App aktiv“ in der Verwaltung), höchstens einmal je Stunde.
-  if (!profile.lastSeenAt || now.getTime() - profile.lastSeenAt.getTime() > 3_600_000) {
+  if (!readOnly && (!profile.lastSeenAt || now.getTime() - profile.lastSeenAt.getTime() > 3_600_000)) {
     void prisma.riderProfile
       .update({ where: { id: profile.id }, data: { lastSeenAt: now } })
       .catch(() => {});
@@ -246,7 +248,7 @@ export async function loadRider(
   const currentKey = (m: { id: number; period: string }) => `${m.id}:${periodKey(m.period as GamiPeriod, ymd)}`;
   const awardedNow = new Map(awardRows.map((a) => [`${a.milestoneId}:${a.periodKey}`, a]));
   const awardTicket = profile.tickets.filter((t) => t.subscription).sort((a, b) => b.id - a.id)[0] ?? profile.tickets[0];
-  if (!awarded && config?.enabled && awardTicket) {
+  if (!awarded && !readOnly && config?.enabled && awardTicket) {
     const pending = milestones.some((m) => progress.find((p) => p.id === m.id)?.reached && !awardedNow.has(currentKey(m)));
     if (pending) {
       const created = await awardMilestones(tenantClient(accountId), accountId, awardTicket.id, ymd, cap, { notify: false }).catch(
