@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { openingForDay, operatingSpanState, operatingSpansForDay, type ScheduleSpec } from "./operating-hours";
 import { scheduleSpecInclude, toScheduleSpec } from "./operating-queries";
+import { shortTime } from "./rider-calendar";
 import { DEFAULT_TIMEZONE, addDaysToYmd, formatHhmm, tzMinutesOfDay, tzYmd, weekdayBitOfYmd } from "./tz-time";
 
 /**
@@ -33,10 +34,6 @@ export function pickLiftSchedule<T extends { name: string; isDefault: boolean }>
   );
 }
 
-/** "12:00" -> "12", "12:30" -> "12:30". */
-function shortTime(hhmm: string): string {
-  return hhmm.endsWith(":00") ? String(Number(hhmm.slice(0, 2))) : hhmm.replace(/^0/, "");
-}
 
 function shortInstant(at: Date, tz: string): string {
   return shortTime(formatHhmm(tzMinutesOfDay(at, tz)));
@@ -85,4 +82,23 @@ export async function loadRiderOpening(accountId: number, now: Date = new Date()
   const schedule = pickLiftSchedule(schedules);
   if (!schedule) return null;
   return riderOpening(toScheduleSpec(schedule), now);
+}
+
+export interface RiderSchedule {
+  id: number;
+  name: string;
+  spec: ScheduleSpec;
+}
+
+/** Alle Betriebszeiten-Profile für den Kalender der Kunden-App, das des Lifts zuerst. */
+export async function loadRiderSchedules(accountId: number): Promise<RiderSchedule[]> {
+  const schedules = await prisma.operatingSchedule.findMany({
+    where: { accountId },
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    include: scheduleSpecInclude,
+  });
+  const lift = pickLiftSchedule(schedules);
+  return [...schedules]
+    .sort((a, b) => Number(b === lift) - Number(a === lift))
+    .map((s) => ({ id: s.id, name: s.name, spec: toScheduleSpec(s) }));
 }

@@ -149,6 +149,18 @@ export interface RiderView {
   /** Saisons dabei und das Jahr der ersten. */
   seasons: number;
   seasonsSince: number | null;
+  /** Heute schon am Lift gestartet (bzw. Tagesticket für heute): die Tagesauswertung oben auf der Startseite. */
+  today: RiderToday | null;
+}
+
+export interface RiderToday {
+  starts: number;
+  firstStartAt: Date;
+  lastStartAt: Date;
+  /** Meiste Starts an einem anderen Tag dieser Saison (0 ohne anderen Tag). */
+  bestBefore: number;
+  /** Kälteste Wassertemperatur, während die Person heute am Lift war; nur wenn ein Award danach zählt. */
+  waterTemp: number | null;
 }
 
 /**
@@ -208,7 +220,7 @@ export async function loadRider(
   const ymd = berlinYmd(now);
   const year = Number(ymd.slice(0, 4));
 
-  const [config, milestones, vouchers, awardRows] = await Promise.all([
+  const [config, milestones, vouchers, awardRows, todayRows] = await Promise.all([
     prisma.gamificationConfig.findUnique({ where: { accountId } }),
     prisma.milestone.findMany({
       where: { accountId, active: true },
@@ -224,6 +236,11 @@ export async function loadRider(
       select: { id: true, milestoneId: true, periodKey: true, awardedAt: true, seenAt: true, voucherId: true },
       orderBy: { awardedAt: "desc" },
       take: 500,
+    }),
+    // Tagesauswertung: höchstens eine Zeile je Ticket, über den eindeutigen Index (ticketId, day).
+    prisma.riderDayStat.findMany({
+      where: { accountId, ticketId: { in: ticketIds }, day: ymdToDbDate(ymd) },
+      select: { starts: true, firstStartAt: true, lastStartAt: true },
     }),
   ]);
   // Awards ohne Zeitraum zählen über alle Jahre; die Saisonwerte unten nur das laufende.
@@ -360,6 +377,17 @@ export async function loadRider(
     if (a.voucherId != null && m) awardOfVoucher.set(a.voucherId, m);
   }
   const firstYear = allDays.find((d) => d.starts > 0)?.day.slice(0, 4);
+  const todayStarts = todayRows.reduce((sum, r) => sum + r.starts, 0);
+  const today: RiderToday | null =
+    todayStarts > 0
+      ? {
+          starts: todayStarts,
+          firstStartAt: new Date(Math.min(...todayRows.map((r) => r.firstStartAt.getTime()))),
+          lastStartAt: new Date(Math.max(...todayRows.map((r) => r.lastStartAt.getTime()))),
+          bestBefore: Math.max(0, ...days.filter((d) => d.day !== ymd).map((d) => d.starts)),
+          waterTemp: allDays.find((d) => d.day === ymd)?.waterTemp ?? null,
+        }
+      : null;
 
   return {
     profileId: profile.id,
@@ -417,6 +445,7 @@ export async function loadRider(
       seasons > 0 && firstYear
         ? Math.min(Number(firstYear), profile.ridingSince != null && profile.ridingSince >= 1950 ? profile.ridingSince : Number(firstYear))
         : null,
+    today,
   };
 }
 

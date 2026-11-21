@@ -756,3 +756,57 @@ html[data-rd-intro="skip"] .rd-intro { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .rd-wl-badges .rd-badge { animation: none; }
 }
+
+/* Öffnungszeiten: Zeile in „Auslastung jetzt“ führt zum Kalender. */
+a.rd-hours { text-decoration: none; min-height: 44px; padding-top: 8px; }
+a.rd-hours .rd-grow { color: var(--rd-soft); }
+a.rd-hours .rd-hours-more { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 600; color: var(--rd-link); }
+
+/* Bereiche im Kalender: umbrechen statt seitlich scrollen. */
+.rd-family-wrap { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; }
+
+/* Öffnungszeiten-Kalender (/app/<token>/zeiten). */
+.rd-cal { gap: 12px; }
+.rd-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rd-cal-nav { width: 44px; height: 44px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--rd-text) !important; }
+a.rd-cal-nav { border: 1px solid var(--rd-line-strong); }
+.rd-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.rd-cal-wd { text-align: center; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rd-muted); padding-bottom: 2px; }
+.rd-cal-day {
+  position: relative;
+  min-height: 50px;
+  padding: 5px 2px 4px;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: var(--rd-muted);
+}
+.rd-cal-num { font-weight: 700; font-size: 15px; line-height: 1.1; }
+.rd-cal-hours { font-size: 10px; font-weight: 600; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+.rd-cal-out { visibility: hidden; }
+.rd-cal-open { background: var(--rd-accent-bg); color: var(--rd-accent-soft); }
+.rd-cal-open .rd-cal-num { color: var(--rd-text); }
+.rd-cal-past { opacity: 0.5; }
+.rd-cal-exc::after { content: ""; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 999px; background: var(--rd-accent); }
+.rd-cal-today { box-shadow: inset 0 0 0 2px var(--rd-accent); }
+.rd-cal-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; }
+.rd-cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.rd-cal-key { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.rd-cal-key-open { background: var(--rd-accent-bg); border: 1px solid var(--rd-accent-soft); }
+.rd-cal-key-exc { width: 8px; height: 8px; border-radius: 999px; background: var(--rd-accent); }
+.rd-cal-list > * { min-height: 48px; }
+.rd-cal-list-hours { flex: none; font-weight: 700; color: var(--rd-accent-soft); }
+.rd-cal-list-today b { color: var(--rd-accent); }
+
+/* Tagesauswertung oben auf der Startseite, sobald die Person heute gestartet ist. */
+.rd-today { border-color: var(--rd-accent); gap: 10px; }
+.rd-today-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.rd-today-stats > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rd-today-stats .rd-display { font-size: 40px; line-height: 0.95; color: var(--rd-accent); white-space: nowrap; }
+.rd-today-stats .rd-display small { font-size: 22px; }
+.rd-today-stats .rd-muted { font-size: 12px; }
+.rd-today-row { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--rd-line); text-decoration: none; color: var(--rd-text) !important; }
+.rd-today-row .rd-bar { margin-top: 6px; }
+.rd-today-rec { color: var(--rd-accent); font-weight: 700; }
