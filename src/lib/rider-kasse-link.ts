@@ -20,6 +20,13 @@
  *
  * Zwei verschiedene Kundenkonten legt nur die Verwaltung zusammen
  * (Abos › Kundenkonten).
+ *
+ * Hängt das Abo schon an einer anderen Person der App (eigene App, Kind einer
+ * Familie, anderer Name), zeigt die Kasse, wo es steht (`aboAppOwner`), und
+ * kann diese Verknüpfung nach Rückfrage lösen und neu verknüpfen
+ * (`replace`, Aaron 21.11.2026: „das sollte man verwalten und auch wieder
+ * lösen können“). Gelöst wird nur dieses Abo; Besuche, Starts und Awards
+ * hängen am Abo und ziehen mit.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "./prisma";
@@ -27,7 +34,7 @@ import { cleanEmail } from "./abo-email";
 import { aboNamesRider, isAdultAt, isKidsSubscriptionName } from "./customer-person";
 import { customerIdForEmail, ensureCustomer, linkAboCustomer, RiderError, syncCustomerPersons } from "./customers";
 import { newRiderToken } from "./rider-app";
-import { assertRoom, ensureFamily, FamilyError, memberName } from "./rider-family";
+import { assertRoom, ensureFamily, FamilyError, memberName, tidyFamily } from "./rider-family";
 import { maskEmail } from "./rider-reset-key";
 import { normalizeName } from "./ticket-predecessor";
 
@@ -97,6 +104,64 @@ export async function appLinkInfo(accountId: number, profileId: number): Promise
 
 export type AppLinkRole = "self" | "child";
 
+/** Wo das Abo in der App steht; für die Kasse. */
+export interface AboOwner {
+  profileId: number;
+  name: string;
+  /** Eigener Zugang (Passwort oder Passkey). */
+  ownApp: boolean;
+  maskedEmail: string | null;
+  /** Kind einer Familie: Name einer Erwachsenen der Familie. */
+  familyOf: string | null;
+}
+
+/** Ein Satz für die Kasse: „Aaron, Kind in der Familie von Anna“. */
+export function ownerText(o: AboOwner): string {
+  if (o.familyOf) return `${o.name}, Kind in der Familie von ${o.familyOf}`;
+  if (o.ownApp) return o.maskedEmail ? `App von ${o.name} (${o.maskedEmail})` : `App von ${o.name}`;
+  return `${o.name}, noch ohne eigenen Zugang`;
+}
+
+/** Wer fährt in der App mit diesem Abo? Null, wenn es noch keiner Person gehört. */
+export async function aboAppOwner(accountId: number, ticketId: number): Promise<AboOwner | null> {
+  const t = await prisma.ticket.findFirst({ where: { id: ticketId, accountId }, select: { riderProfileId: true } });
+  if (t?.riderProfileId == null) return null;
+  const r = await prisma.riderProfile.findFirst({
+    where: { id: t.riderProfileId, accountId },
+    select: {
+      id: true, firstName: true, nickname: true, email: true, passwordHash: true, familyId: true, familyAdult: true,
+      _count: { select: { passkeys: true } }, tickets: TICKETS_FOR_NAME,
+    },
+  });
+  if (!r) return null;
+  const adult = r.familyId != null && !r.familyAdult
+    ? await prisma.riderProfile.findFirst({
+        where: { accountId, familyId: r.familyId, familyAdult: true, id: { not: r.id } },
+        select: { firstName: true, nickname: true, tickets: TICKETS_FOR_NAME },
+        orderBy: { id: "asc" },
+      })
+    : null;
+  const email = cleanEmail(r.email);
+  return {
+    profileId: r.id,
+    name: memberName(r),
+    ownApp: r.passwordHash != null || r._count.passkeys > 0,
+    maskedEmail: email ? maskEmail(email) : null,
+    familyOf: adult ? memberName(adult) : null,
+  };
+}
+
+/**
+ * Das Abo hängt schon an einer anderen Person der App. Die Kasse zeigt das
+ * und bietet an, die Verknüpfung zu lösen (`replace`).
+ */
+export class AboLinkedError extends RiderError {
+  readonly replaceable = true;
+  constructor(message: string) {
+    super(message, 409);
+  }
+}
+
 /** Gleicher Vorname, oder einer fehlt: dann kann es dieselbe Person sein. */
 export function sameFirstName(a: string | null | undefined, b: string | null | undefined): boolean {
   const x = normalizeName(a);
@@ -121,6 +186,7 @@ export async function linkAboToApp(
   profileId: number,
   role: AppLinkRole,
   now: Date = new Date(),
+  replace = false,
 ): Promise<string> {
   const t = await prisma.ticket.findFirst({
     where: { id: ticketId, accountId },
@@ -155,8 +221,8 @@ export async function linkAboToApp(
   }
 
   return role === "self"
-    ? linkSelf({ accountId, t, p: { id: p.id, firstName: p.firstName, customerId: p.customerId }, name, email, appKonto, konto })
-    : linkChild({ accountId, t, p, name, email, konto, now });
+    ? linkSelf({ accountId, t, p: { id: p.id, firstName: p.firstName, customerId: p.customerId }, name, email, appKonto, konto, replace })
+    : linkChild({ accountId, t, p, name, email, konto, now, replace });
 }
 
 interface LinkTicket {
@@ -178,33 +244,44 @@ async function linkSelf(a: {
   email: string | null;
   appKonto: number | null;
   konto: number | null;
+  replace: boolean;
 }): Promise<string> {
-  const { accountId, t, p, name, email, appKonto } = a;
+  const { accountId, t, p, name, email, appKonto, replace } = a;
   let konto = a.konto;
   if (konto != null && appKonto != null && appKonto !== konto) throw twoKonten();
 
   // Wer fuhr bisher? Dieselbe Person ohne eigene Adresse wird zusammengefasst.
-  const prev = t.riderProfileId != null && t.riderProfileId !== p.id
+  let prev = t.riderProfileId != null && t.riderProfileId !== p.id
     ? await prisma.riderProfile.findUnique({
         where: { id: t.riderProfileId },
         select: {
           id: true, email: true, customerId: true, firstName: true, lastName: true, birthDate: true, nickname: true,
-          showInRanking: true, ridingSince: true, familyId: true, photo: true,
+          showInRanking: true, ridingSince: true, familyId: true, familyAdult: true, photo: true,
         },
       })
     : null;
+  // Hängt das Abo an einer anderen Person (Familie, eigene App, anderer Name),
+  // nur nach Rückfrage lösen: dann geht nur dieses Abo um, die Person bleibt.
+  let released: { id: number; familyId: number | null } | null = null;
   if (prev) {
-    if (prev.familyId != null) {
-      throw new RiderError(`Das Abo gehört in der App zu einer Familie (${prev.firstName ?? "ohne Namen"}). Bitte dort verwalten oder „Kind“ wählen.`);
+    const conflict =
+      prev.familyId != null ? "family" : prev.email != null ? "app" : !sameFirstName(prev.firstName, p.firstName) ? "name" : null;
+    if (conflict) {
+      if (!replace) {
+        const owner = await aboAppOwner(accountId, t.id);
+        const where = owner ? ownerText(owner) : prev.firstName ?? "eine andere Person";
+        throw new AboLinkedError(
+          conflict === "name" && !owner?.familyOf
+            ? `Am Abo fährt ${prev.firstName}, die App gehört ${name}. Fährt ein Kind damit? Dann „Kind“ wählen, sonst die bisherige Verknüpfung lösen.`
+            : `Das Abo ist schon verknüpft: ${where}.`,
+        );
+      }
+      released = { id: prev.id, familyId: prev.familyId };
+      prev = null;
+    } else if (prev.customerId != null && prev.customerId !== (konto ?? appKonto)) {
+      // Die bisherige Person muss im selben Konto landen wie die App.
+      throw twoKonten();
     }
-    if (prev.email != null) {
-      throw new RiderError(`Das Abo hängt schon an einer App mit eigener Adresse (${maskEmail(prev.email)}). Bitte diese App nutzen.`);
-    }
-    if (!sameFirstName(prev.firstName, p.firstName)) {
-      throw new RiderError(`Am Abo fährt ${prev.firstName}, die App gehört ${p.firstName}. Fährt ein Kind damit? Dann „Kind“ wählen.`);
-    }
-    // Die bisherige Person muss im selben Konto landen wie die App.
-    if (prev.customerId != null && prev.customerId !== (konto ?? appKonto)) throw twoKonten();
   }
 
   if (konto == null && email) {
@@ -253,9 +330,28 @@ async function linkSelf(a: {
     await tx.ticket.update({ where: { id: t.id }, data: { riderProfileId: p.id } });
   });
   if (prev) console.log(`[rider-kasse-link] account=${accountId} Person ${prev.id} ohne Adresse in ${p.id} zusammengefasst`);
+  if (released) {
+    await dropEmptyPerson(accountId, released);
+    console.log(`[rider-kasse-link] account=${accountId} Abo ${t.id} von Person ${released.id} gelöst, jetzt bei ${p.id}`);
+  }
   // Zieht auch die Familie nach (syncKontoFamily).
   if (konto != null) await syncCustomerPersons(accountId, konto);
   return `Verknüpft. ${t.subscription?.name ?? "Das Abo"} steht jetzt in der App von ${name}.`;
+}
+
+/**
+ * Nach dem Lösen: Hat die bisherige Person kein Abo mehr, keinen eigenen
+ * Zugang und verwaltet keine Familie, fällt sie weg (sie war nur der Platz
+ * für dieses Abo). Eine Familie mit nur noch einer Person löst sich auf.
+ */
+async function dropEmptyPerson(accountId: number, person: { id: number; familyId: number | null }): Promise<void> {
+  await prisma.riderProfile.deleteMany({
+    where: {
+      id: person.id, accountId, email: null, passwordHash: null, familyAdult: false,
+      tickets: { none: {} }, passkeys: { none: {} },
+    },
+  });
+  if (person.familyId != null) await tidyFamily(person.familyId, accountId);
 }
 
 async function linkChild(a: {
@@ -266,15 +362,16 @@ async function linkChild(a: {
   email: string | null;
   konto: number | null;
   now: Date;
+  replace: boolean;
 }): Promise<string> {
-  const { accountId, t, p, name, email, now } = a;
+  const { accountId, t, p, name, email, now, replace } = a;
   if (t.riderProfileId === p.id) {
     throw new RiderError(`Mit dem Abo fährt ${name} selbst. Fährt ein Kind damit, erst den Fahrer am Abo ändern.`);
   }
   const existing = t.riderProfileId != null
     ? await prisma.riderProfile.findUnique({
         where: { id: t.riderProfileId },
-        select: { id: true, firstName: true, nickname: true, birthDate: true, familyId: true, tickets: TICKETS_FOR_NAME },
+        select: { id: true, firstName: true, nickname: true, birthDate: true, familyId: true, familyAdult: true, tickets: TICKETS_FOR_NAME },
       })
     : null;
   // Die Daten am Abo sind die des Fahrers, nicht die eines Elternteils am Kids-Abo.
@@ -288,10 +385,16 @@ async function linkChild(a: {
   if (isAdultAt(kidBirth, now) === true) {
     throw new RiderError(`${kidName} ist volljährig. Erwachsene lädt man in der App unter Familie per E-Mail ein.`);
   }
-  if (existing?.familyId != null && existing.familyId !== p.familyId) {
-    throw new RiderError(`${kidName} gehört schon zu einer anderen Familie.`);
+  // In einer anderen Familie: nur nach Rückfrage herüberholen, nie eine Erwachsene.
+  const oldFamily = existing?.familyId != null && existing.familyId !== p.familyId ? existing.familyId : null;
+  if (oldFamily != null) {
+    if (existing!.familyAdult) throw new RiderError(`${kidName} verwaltet eine eigene Familie in der App und lässt sich nicht als Kind verknüpfen.`);
+    if (!replace) {
+      const owner = await aboAppOwner(accountId, t.id);
+      throw new AboLinkedError(`Das Abo ist schon verknüpft: ${owner ? ownerText(owner) : `${kidName}, in einer anderen Familie`}.`);
+    }
   }
-  const joins = existing?.familyId == null;
+  const joins = existing?.familyId == null || oldFamily != null;
   if (joins && p.familyId != null) await familyCall(() => assertRoom(p.familyId!, accountId, 1));
 
   // Abo ohne Adresse: bekommt die der App und kommt in ihr Konto.
@@ -322,6 +425,10 @@ async function linkChild(a: {
   if (joins) {
     const familyId = await familyCall(() => ensureFamily({ id: p.id, accountId, familyId: p.familyId, familyAdult: p.familyAdult }));
     await prisma.riderProfile.update({ where: { id: kidId }, data: { familyId, familyAdult: false } });
+    if (oldFamily != null) {
+      await tidyFamily(oldFamily, accountId);
+      console.log(`[rider-kasse-link] account=${accountId} Person ${kidId} aus Familie ${oldFamily} gelöst, jetzt bei ${p.id}`);
+    }
   }
   if (konto != null) await syncCustomerPersons(accountId, konto);
   return joins
