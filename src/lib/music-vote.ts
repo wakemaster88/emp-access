@@ -7,7 +7,7 @@
  * Personal gibt die Zone wieder frei).
  */
 import { prisma, tenantClient, type TenantDb } from "./prisma";
-import { berlinYmd } from "./berlin-day";
+import { berlinDayStart, berlinYmd } from "./berlin-day";
 import { ymdToDbDate } from "./gamification";
 import { playlistPayload, queueZoneCommand } from "./audio";
 import {
@@ -18,7 +18,9 @@ import {
   parseOptionKey,
   isActiveRider,
   pickWinner,
+  roundDue,
   staffHoldUntil,
+  voteRound,
   tallyVotes,
   type MusicVoteView,
   type VoteOption,
@@ -31,12 +33,15 @@ export interface MusicVoteConfig {
   /** "p<id>" / "s<id>" in App-Reihenfolge. */
   options: string[];
   holdMinutes: number;
+  /** Rundenlänge in Minuten, 0 = sofort. */
+  roundMinutes: number;
+  roundAt: Date | null;
 }
 
 export async function loadMusicVoteConfig(db: TenantDb, accountId: number): Promise<MusicVoteConfig | null> {
   const c = await db.gamificationConfig.findUnique({
     where: { accountId },
-    select: { musicVoteEnabled: true, musicVoteZoneIds: true, musicVoteOptions: true, musicVoteHoldMinutes: true },
+    select: { musicVoteEnabled: true, musicVoteZoneIds: true, musicVoteOptions: true, musicVoteHoldMinutes: true, musicVoteRoundMinutes: true, musicVoteRoundAt: true },
   });
   if (!c) return null;
   return {
@@ -44,6 +49,8 @@ export async function loadMusicVoteConfig(db: TenantDb, accountId: number): Prom
     zoneIds: c.musicVoteZoneIds,
     options: c.musicVoteOptions,
     holdMinutes: c.musicVoteHoldMinutes,
+    roundMinutes: c.musicVoteRoundMinutes,
+    roundAt: c.musicVoteRoundAt,
   };
 }
 
@@ -183,6 +190,12 @@ export async function applyMusicVote(accountId: number, now = new Date()): Promi
   const db = tenantClient(accountId);
   const config = await loadMusicVoteConfig(db, accountId);
   if (!config?.enabled || config.zoneIds.length === 0) return { switched: 0, winner: null };
+  // Mit Runden wird nur einmal je Rundenbeginn ausgewertet (die abgelaufene Runde).
+  const round = voteRound(now, berlinDayStart(now), config.roundMinutes);
+  if (!roundDue(round, config.roundAt)) return { switched: 0, winner: null };
+  if (round) {
+    await db.gamificationConfig.update({ where: { accountId }, data: { musicVoteRoundAt: round.start } });
+  }
   const [standing, zones] = await Promise.all([
     loadStanding(db, accountId, config, now),
     loadVoteZones(db, accountId, config.zoneIds),
@@ -300,8 +313,15 @@ export async function loadMusicVoteView(
     playingName: playing ? playingName(playing) : null,
     holdUntil: hold ? hold.toISOString() : null,
     holdBy: hold ? (live.some((z) => z.riderChoiceUntil && z.riderChoiceUntil.getTime() === hold.getTime()) ? "rider" : "staff") : null,
+    nextSwitchAt: nextSwitch(config, now),
     voters: standing.votes.size,
   };
+}
+
+/** Ende der laufenden Runde (ISO) oder null ohne Runden. */
+function nextSwitch(config: MusicVoteConfig, now: Date): string | null {
+  const round = voteRound(now, berlinDayStart(now), config.roundMinutes);
+  return round ? round.end.toISOString() : null;
 }
 
 export type CastResult = { ok: true; view: MusicVoteView } | { ok: false; error: string; status: number };
@@ -336,7 +356,10 @@ export async function castMusicVote(
       update: { option },
     });
   }
-  await applyMusicVote(accountId, now).catch((e) => console.error("[music-vote] anwenden", e));
+  // Ohne Runden gilt die Stimme sofort; mit Runden wechselt der Cron am Rundenende.
+  if (config.roundMinutes <= 0) {
+    await applyMusicVote(accountId, now).catch((e) => console.error("[music-vote] anwenden", e));
+  }
   const view = await loadMusicVoteView(accountId, profileId, now);
   if (!view) return { ok: false, error: "Die Abstimmung ist gerade aus.", status: 409 };
   return { ok: true, view };
@@ -354,6 +377,7 @@ export async function loadMusicVoteAdmin(accountId: number, now = new Date()) {
   return {
     tally: standing.tally,
     voters: standing.votes.size,
+    nextSwitchAt: nextSwitch(config, now),
     zones: zones.map((z) => {
       const hold = zoneHoldUntil(z, config.holdMinutes, now);
       return {

@@ -1051,7 +1051,8 @@ Aaron: „feiertage noch in der kunden app hinzufügen. dafür im backend auswä
 - Verwaltung: Kunden App › Aktionen › Karte „Feiertage“. Je Feiertag Aus, Gruß, Angebot oder Gutschein, dazu Überschrift (Standardgruß, falls leer), Text, beim Gutschein Leistung und Gültigkeit, „Schon vorher zeigen“ (0–14 Tage). Gilt jedes Jahr; das Datum rechnet `src/lib/holidays.ts` (NRW plus Heiligabend, Silvester, Oster- und Pfingstsonntag).
 - Daten: `RiderHoliday` (je Mandant und `key` einmal), `RiderHolidayGift` (vergebener Gutschein, eindeutig je Feiertag, Jahr und Person). Speichern über `PUT /api/gamification/holidays/<key>`.
 - App: Karte oben auf der Startseite (nach „Dein Tag heute“), `src/lib/rider-holiday.ts`. Überschneiden sich zwei Feiertage, zeigt die App den nächstliegenden.
-- Gutschein: Leistungs-Gutschein wie bei Awards. Jede Person mit gültigem Abo bekommt ihn einmal, beim ersten Öffnen der App im Zeitraum; ohne Abo bleibt es beim Gruß. Kein Push.
+- Gutschein: Leistungs-Gutschein wie bei Awards. Jede Person mit gültigem Abo bekommt ihn einmal, beim ersten Öffnen der App im Zeitraum; ohne Abo bleibt es beim Gruß.
+- Push (Aaron 21.11.2026: „ja“): Schalter „Push an Kunden senden“ im Dialog, beim ersten Einschalten an. Geht jedes Jahr einmal raus, sobald der Feiertag in der App erscheint (erster Tag von „Schon vorher zeigen“), nur 9–21 Uhr, über `runAccountAnnouncements` (`pushedYear`/`pushedAt`/`pushSent`). Empfänger wie bei Angeboten: alle Geräte mit Push-Erlaubnis; beim Gutschein heißt es deshalb „Mit Abo wartet ein Geschenk …“.
 
 ## Playlist-Abstimmung der Fahrer (21.11.2026)
 
@@ -1063,6 +1064,8 @@ Aaron: „in der kunden app soll optional aktiviert werden können, dass alle ak
 - Umsetzung `src/lib/music-vote.ts`, Regeln `music-vote-rules.ts`: gleich nach jeder Stimme und jede Minute im Cron `audio-schedules`. Sie wechselt nur laufende eigene Musik (nicht bei AirPlay/Bluetooth, nicht ohne Abspieler), startet nie selbst und schickt `manual: false`, das Musikfenster bleibt also unberührt. Der Wechsel setzt `AudioZone.playlistId` bzw. `streamId`/`streamUrl` (nach dem Ausschalten bleibt die zuletzt gewählte Playlist als Vorgabe der Zone).
 - Personal geht vor: Start/Stopp von Hand (Dashboard, Geräte-API, emp-control) setzt `AudioZone.staffChoiceAt`; danach ruht die Abstimmung für die eingestellte Zeit. Im Audio-Verlauf stehen Wechsel als „Fahrer-Abstimmung“ (`triggerKind = VOTE`).
 - Kunden-App: Karte „Musik · <Zone>“ auf der Startseite, für aktive Fahrer direkt unter „Dein Tag heute“, sonst unter der Auslastung (nur zum Ansehen).
+- Kunden-App (seit 21.11.2026 abends, Aaron: „die musik auswahl muss minimiert sein und oben bei betrieb … zu öffnen sein“): eingeklappte Zeile „Musik <läuft>“ in der Karte „Auslastung jetzt“ direkt unter den Öffnungszeiten (ohne Auslastung als eigene kleine Karte). Antippen klappt die Auswahl auf.
+- Runden (Aaron: „auch timer anzeigen bis wann abgestimmt werden kann für den wechsel“): `GamificationConfig.musicVoteRoundMinutes` (Vorgabe 15, Auswahl 0/5/10/15/20/30/60). Runden zählen ab Mitternacht (bei 15 also :00/:15/:30/:45); der Cron wertet einmal je Rundenbeginn aus (`musicVoteRoundAt` als Guard), gewechselt wird also nur am Rundenende. Die App zeigt den Countdown bis zum nächsten Wechsel und lädt danach den neuen Stand (`GET /api/rider/<token>/music-vote`). 0 = Wechsel sofort nach jeder Stimme wie vorher.
 
 ## Skills in der Kunden-App (Geräte schalten als Belohnung)
 

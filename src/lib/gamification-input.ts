@@ -158,6 +158,8 @@ export const holidaySchema = z
     daysBefore: z.number().int().min(0).max(14),
     ...skillReward,
     active: z.boolean(),
+    /** Push am Feiertag; fehlt der Wert, bleibt der Plan, wie er ist. */
+    push: z.boolean().optional(),
   })
   .refine((h) => h.show !== "OFFER" || !!h.text, { message: "Beim Angebot fehlt der Text" })
   .refine((h) => h.show !== "VOUCHER" || !!h.voucherLabel || !!h.skillId, {
@@ -178,6 +180,7 @@ export function normalizeHoliday(input: HolidayInput) {
     ...(voucher ? normalizeSkillReward(input) : { skillId: null, skillUses: 1, skillValidDays: null }),
     daysBefore: input.daysBefore,
     active: input.active,
+    ...(input.push !== undefined && { pushPlanned: input.push }),
   };
 }
 

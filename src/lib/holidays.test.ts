@@ -64,3 +64,20 @@ test("Eingabe: Angebot braucht Text, Gutschein braucht Leistung", () => {
   assert.equal(n.voucherValidDays, null);
   assert.equal(n.title, null);
 });
+
+test("Push am Feiertag: einmal je Jahr, ab dem ersten Anzeigetag, nur tagsüber", async () => {
+  const { holidayAnnounceBlock, holidayPushText } = await import("./rider-announce-rules");
+  const h = { key: "heiligabend", active: true, daysBefore: 2, pushPlanned: true, pushedYear: null };
+  assert.equal(holidayAnnounceBlock(h, "2026-12-21", 10), "not-yet");
+  assert.equal(holidayAnnounceBlock(h, "2026-12-22", 8), "night");
+  assert.equal(holidayAnnounceBlock(h, "2026-12-22", 9), null);
+  assert.equal(holidayAnnounceBlock({ ...h, pushedYear: 2026 }, "2026-12-23", 10), "sent");
+  assert.equal(holidayAnnounceBlock({ ...h, pushedYear: 2025 }, "2026-12-23", 10), null);
+  assert.equal(holidayAnnounceBlock({ ...h, pushPlanned: false }, "2026-12-24", 10), "not-planned");
+  assert.equal(holidayAnnounceBlock({ ...h, active: false }, "2026-12-24", 10), "off");
+
+  const v = holidayPushText({ key: "heiligabend", show: "VOUCHER", title: null, text: "Danke für die Saison", voucherLabel: "Heißgetränk" });
+  assert.equal(v.title, "Frohe Weihnachten");
+  assert.equal(v.body, "Danke für die Saison. Mit Abo wartet ein Geschenk in der App: Heißgetränk.");
+  assert.equal(holidayPushText({ key: "silvester", show: "GREETING", title: "", text: null, voucherLabel: null }).body, "Schau in der App vorbei.");
+});

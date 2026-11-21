@@ -280,9 +280,6 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
 
       {holiday && <HolidayCard holiday={holiday} base={base} />}
 
-      {/* Wer gerade fährt, stimmt oben ab; sonst steht die Karte unter der Auslastung. */}
-      {musicVote?.canVote && <RiderMusicVote token={token} initial={musicVote} />}
-
       {skills.length > 0 && <RiderSkills token={token} initial={skills} />}
 
       {konto && konto.abos.length > 0 && (
@@ -391,6 +388,12 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         </div>
       )}
 
+      {!occupancy && musicVote && (
+        <div className="rd-card">
+          <RiderMusicVote token={token} initial={musicVote} />
+        </div>
+      )}
+
       {occupancy && (
         <div className="rd-card">
           <div className="rd-between">
@@ -433,10 +436,10 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
               <span className="rd-hours-more">Kalender{CHEVRON_RIGHT}</span>
             </Link>
           )}
+          {/* Musik-Abstimmung eingeklappt direkt unter dem Betrieb. */}
+          {musicVote && <RiderMusicVote token={token} initial={musicVote} />}
         </div>
       )}
-
-      {musicVote && !musicVote.canVote && <RiderMusicVote token={token} initial={musicVote} />}
 
       {beach && (
         <div className="rd-card">

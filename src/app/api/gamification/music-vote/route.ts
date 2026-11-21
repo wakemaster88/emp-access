@@ -10,6 +10,8 @@ const schema = z.object({
   /** "p<id>" Playlist, "s<id>" Webradio, in App-Reihenfolge. */
   options: z.array(z.string().max(20)).max(100),
   holdMinutes: z.number().int().min(0).max(MAX_HOLD_MINUTES),
+  /** Rundenlänge: Wechsel nur am Rundenende, 0 = sofort. */
+  roundMinutes: z.number().int().min(0).max(120),
 });
 
 /** GET: aktueller Stand (Stimmen, Zonen) für die Karte in den Einstellungen. */
@@ -49,12 +51,13 @@ export async function PUT(request: NextRequest) {
     musicVoteZoneIds: zoneIds,
     musicVoteOptions: options,
     musicVoteHoldMinutes: parsed.data.holdMinutes,
+    musicVoteRoundMinutes: parsed.data.roundMinutes,
   };
   await db.gamificationConfig.upsert({
     where: { accountId },
     create: { ...data, accountId },
     update: data,
   });
-  if (data.musicVoteEnabled) await applyMusicVote(accountId).catch((e) => console.error("[music-vote] anwenden", e));
+  if (data.musicVoteEnabled && data.musicVoteRoundMinutes === 0) await applyMusicVote(accountId).catch((e) => console.error("[music-vote] anwenden", e));
   return NextResponse.json({ ok: true, zoneIds, options, standing: await loadMusicVoteAdmin(accountId) });
 }

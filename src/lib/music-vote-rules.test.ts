@@ -9,6 +9,8 @@ import {
   decideZone,
   isActiveRider,
   pickWinner,
+  roundDue,
+  voteRound,
   staffHoldUntil,
   tallyVotes,
   type ZoneForVote,
@@ -98,4 +100,24 @@ test("Optionen: Playlist und Webradio als Text", () => {
   assert.equal(currentOption({ isPlaying: true, sourceKind: "STREAM", playlistId: 1, streamId: 5 }), "s5");
   assert.equal(currentOption({ isPlaying: false, sourceKind: "PLAYLIST", playlistId: 1, streamId: null }), null);
   assert.deepEqual(cleanVoteIds(["s2", "p9", "p1"], ["p1", "s2"]), ["s2", "p1"]);
+});
+
+test("voteRound: Runden ab Mitternacht, Wechsel am Rundenende", () => {
+  const day = new Date("2026-07-11T22:00:00Z"); // 00:00 Berlin (Sommerzeit)
+  const at = new Date("2026-07-12T14:07:30Z"); // 16:07:30 Berlin
+  const r = voteRound(at, day, 15)!;
+  assert.equal(r.start.toISOString(), "2026-07-12T14:00:00.000Z");
+  assert.equal(r.end.toISOString(), "2026-07-12T14:15:00.000Z");
+  assert.equal(voteRound(at, day, 0), null);
+  // Letzte Runde endet um Mitternacht.
+  const late = voteRound(new Date("2026-07-12T21:50:00Z"), day, 60)!;
+  assert.equal(late.end.toISOString(), "2026-07-12T22:00:00.000Z");
+});
+
+test("roundDue: einmal je Rundenbeginn, ohne Runden immer", () => {
+  const round = { start: new Date("2026-07-12T14:00:00Z") };
+  assert.equal(roundDue(null, null), true);
+  assert.equal(roundDue(round, null), true);
+  assert.equal(roundDue(round, new Date("2026-07-12T13:45:00Z")), true);
+  assert.equal(roundDue(round, new Date("2026-07-12T14:00:00Z")), false);
 });

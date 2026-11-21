@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
@@ -13,6 +14,7 @@ import {
   DEFAULT_HOLD_MINUTES,
   MAX_HOLD_MINUTES,
   MAX_VOTE_OPTIONS,
+  ROUND_CHOICES,
   VOTE_ACTIVE_HOURS,
   optionKey,
   type VoteTally,
@@ -26,11 +28,14 @@ export interface MusicVoteSettings {
   /** "p<id>" Playlist, "s<id>" Webradio, in App-Reihenfolge. */
   options: string[];
   holdMinutes: number;
+  /** Wechsel nur am Rundenende, 0 = sofort. */
+  roundMinutes: number;
 }
 
 export interface MusicVoteStanding {
   tally: VoteTally[];
   voters: number;
+  nextSwitchAt: string | null;
   zones: { id: number; name: string; isPlaying: boolean; playing: string | null; holdUntil: string | null }[];
 }
 
@@ -74,7 +79,8 @@ export function MusicVoteCard({
     form.enabled !== saved.enabled ||
     form.zoneIds.join() !== saved.zoneIds.join() ||
     form.options.join() !== saved.options.join() ||
-    holdNum !== saved.holdMinutes;
+    holdNum !== saved.holdMinutes ||
+    form.roundMinutes !== saved.roundMinutes;
   const tooMany = form.options.length > MAX_VOTE_OPTIONS;
   const ready = !form.enabled || (form.zoneIds.length > 0 && form.options.length >= 2 && !tooMany);
   const choices = [
@@ -195,6 +201,23 @@ export function MusicVoteCard({
         </div>
 
         <div className="space-y-1.5 max-w-xs">
+          <Label htmlFor="vote-round">Wechsel alle</Label>
+          <NativeSelect
+            id="vote-round"
+            value={String(form.roundMinutes)}
+            onChange={(e) => { setForm((f) => ({ ...f, roundMinutes: Number(e.target.value) })); setDone(false); }}
+          >
+            {ROUND_CHOICES.map((m) => (
+              <option key={m} value={m}>{m === 0 ? "sofort nach jeder Stimme" : `${m} Minuten`}</option>
+            ))}
+          </NativeSelect>
+          <p className="text-xs text-muted-foreground">
+            Gewechselt wird am Ende jeder Runde (bei 15 Minuten um :00, :15, :30, :45). Die App zeigt den Countdown bis zum
+            nächsten Wechsel.
+          </p>
+        </div>
+
+        <div className="space-y-1.5 max-w-xs">
           <Label htmlFor="vote-hold">Ruhe nach Wahl des Teams (Minuten)</Label>
           <Input
             id="vote-hold"
@@ -215,6 +238,7 @@ export function MusicVoteCard({
           <div className="space-y-2">
             <p className="text-sm font-medium">
               Stand jetzt · {standing.voters === 1 ? "1 Stimme" : `${standing.voters} Stimmen`}
+              {standing.nextSwitchAt ? ` · Wechsel um ${clock(standing.nextSwitchAt)} Uhr` : ""}
             </p>
             <ul className="space-y-1.5">
               {standing.tally.map((t) => (

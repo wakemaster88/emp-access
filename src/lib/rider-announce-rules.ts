@@ -3,6 +3,7 @@
  * Challenge. Ohne Datenbank, damit die Tests sie direkt prüfen können.
  */
 import { challengeConditionText, offerVisible, type ChallengeKind, type GamiMetric } from "./gamification";
+import { currentHoliday, HOLIDAY_BY_KEY, type HolidayShowKind } from "./holidays";
 
 /** Gesendet wird nur tagsüber (Berlin), sonst wartet der Push bis zum Morgen. */
 export const ANNOUNCE_FROM_HOUR = 9;
@@ -128,4 +129,42 @@ export function announceBlockText(block: AnnounceBlock): string {
     case "not-planned":
       return "Kein Push.";
   }
+}
+
+export interface HolidayAnnounceInput {
+  key: string;
+  active: boolean;
+  daysBefore: number;
+  pushPlanned: boolean;
+  /** Jahr des Feiertags, für das der Push zuletzt ging. */
+  pushedYear: number | null;
+}
+
+/**
+ * Ein Feiertag wird jedes Jahr einmal gemeldet, sobald er in der App
+ * erscheint (erster Tag von „Schon vorher zeigen“), tagsüber.
+ */
+export function holidayAnnounceBlock(h: HolidayAnnounceInput, todayYmd: string, hour: number): AnnounceBlock | null {
+  if (!h.pushPlanned) return "not-planned";
+  if (!h.active) return "off";
+  const hit = currentHoliday([h], todayYmd);
+  if (!hit) return "not-yet";
+  if (h.pushedYear === hit.year) return "sent";
+  return inAnnounceHours(hour) ? null : "night";
+}
+
+export function holidayPushText(h: {
+  key: string;
+  show: HolidayShowKind;
+  title: string | null;
+  text: string | null;
+  voucherLabel: string | null;
+}): AnnounceText {
+  const title = h.title?.trim() || HOLIDAY_BY_KEY.get(h.key)?.greeting || "Schönen Feiertag";
+  const text = h.text?.trim() ? sentence(h.text.trim()) : "";
+  if (h.show === "VOUCHER" && h.voucherLabel) {
+    const gift = `Mit Abo wartet ein Geschenk in der App: ${sentence(h.voucherLabel.trim())}`;
+    return { title, body: text ? `${text} ${gift}` : gift };
+  }
+  return { title, body: text || "Schau in der App vorbei." };
 }
