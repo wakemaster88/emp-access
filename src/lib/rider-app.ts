@@ -12,7 +12,7 @@ import { adoptDayTickets } from "./day-guest";
 import { samePersonAbos } from "./abo-person";
 import { aboNamesRider, isKidsSubscriptionName } from "./customer-person";
 import { awardCategory, awardText, voucherShortLabel, type AwardCategory } from "./awards";
-import { awardMilestones, loadPersonDays, toMilestoneRule } from "./gamification-service";
+import { awardMilestones, loadRuleData, toMilestoneRule } from "./gamification-service";
 import {
   benefitVoucherState,
   computeMetrics,
@@ -22,6 +22,7 @@ import {
   aheadOfPercent,
   parsePriceMap,
   mergeDayStats,
+  openingDayOf,
   periodKey,
   seasonRecap,
   seasonsCount,
@@ -82,6 +83,10 @@ export interface RiderAward extends AwardBadgeData {
   lastPeriod: string | null;
   /** Wofür es den Award gibt. */
   text: string;
+  /** Grenze der Wassertemperatur in °C (nur Awards für kaltes Wasser). */
+  tempBelow: number | null;
+  /** Erster Tag der laufenden Saison, sobald er feststeht (nur Awards für den ersten Tag). */
+  openingDay: string | null;
   voucherLabel: string | null;
   voucherShort: string | null;
   bonus: string | null;
@@ -218,7 +223,7 @@ export async function loadRider(
     }),
   ]);
   // Awards ohne Zeitraum zählen über alle Jahre; die Saisonwerte unten nur das laufende.
-  const allDays = await loadPersonDays(prisma, accountId, ticketIds, milestones.some((m) => m.metric === "EARLY_DAYS"));
+  const { days: allDays, openingDays } = await loadRuleData(prisma, accountId, ticketIds, milestones, ymd);
 
   const cap = config?.startCapPerDay ?? 10;
   const days = allDays.filter((d) => d.day.startsWith(String(year)));
@@ -230,6 +235,7 @@ export async function loadRider(
     ymd,
     cap,
     seasons,
+    openingDays,
   );
 
   // Schon erreicht, aber noch nicht vergeben (z. B. Ziel vor dem Start der
@@ -315,7 +321,9 @@ export async function loadRider(
       unlocked: row != null,
       awardedAt: row?.awardedAt ?? null,
       lastPeriod: earlier?.periodKey ?? null,
-      text: awardText({ metric: m.metric as GamiMetric, threshold: m.threshold, period: m.period as GamiPeriod, hint: m.hint }),
+      text: awardText({ metric: m.metric as GamiMetric, threshold: m.threshold, period: m.period as GamiPeriod, hint: m.hint, tempBelow: m.tempBelow }),
+      tempBelow: m.tempBelow,
+      openingDay: m.metric === "OPENING_DAY" ? openingDayOf(String(year), m.eventDays.map(dbDateToYmd), openingDays) : null,
       voucherLabel: m.voucherLabel,
       voucherShort: voucherShortLabel(m),
       bonus: m.bonus,
@@ -335,7 +343,7 @@ export async function loadRider(
         ...badge(m),
         awardId: a.id,
         milestoneId: m.id,
-        text: awardText({ metric: m.metric as GamiMetric, threshold: m.threshold, period: m.period as GamiPeriod, hint: m.hint }),
+        text: awardText({ metric: m.metric as GamiMetric, threshold: m.threshold, period: m.period as GamiPeriod, hint: m.hint, tempBelow: m.tempBelow }),
         voucherLabel: m.voucherLabel,
         bonus: m.bonus,
         voucherId: v && benefitVoucherState(v, now) === "open" ? v.id : null,

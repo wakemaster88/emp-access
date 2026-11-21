@@ -4,7 +4,7 @@
  * Meilenstein (`Milestone`) mit Seltenheit; gezählt wird in `gamification.ts`,
  * vergeben in `gamification-service.ts`.
  */
-import type { GamiMetric, GamiPeriod, GamiTier } from "./gamification";
+import { formatDegrees, type GamiMetric, type GamiPeriod, type GamiTier } from "./gamification";
 
 /** Reihe, in der ein Award im Trophy Case steht. */
 export type AwardCategory = "starts" | "days" | "special" | "loyalty";
@@ -59,6 +59,8 @@ const UNIT: Record<GamiMetric, [string, string]> = {
   EARLY_DAYS: ["früher Tag", "frühe Tage"],
   WEEKENDS: ["Wochenende in Folge", "Wochenenden in Folge"],
   EVENT_DAYS: ["Aktionstag", "Aktionstage"],
+  OPENING_DAY: ["erster Tag der Saison", "erste Tage der Saison"],
+  COLD_DAYS: ["kalter Tag", "kalte Tage"],
   SEASONS: ["Saison", "Saisons"],
 };
 
@@ -77,17 +79,28 @@ const FACE_SUB: Partial<Record<GamiMetric, [string, string]>> = {
 export function awardFace(m: { metric: GamiMetric; threshold: number; key?: string | null }): AwardFace {
   if (m.metric === "EARLY_DAYS") return { icon: "sun" };
   if (m.metric === "WEEKENDS") return { icon: "flame" };
-  if (m.metric === "EVENT_DAYS") {
-    return m.key === "ice-breaker" ? { icon: "snow" } : { icon: "flag", mark: m.threshold < 10 ? String(m.threshold) : "" };
-  }
+  if (m.metric === "COLD_DAYS") return { icon: "snow" };
+  if (m.metric === "OPENING_DAY") return { icon: "flag", mark: "1" };
+  if (m.metric === "EVENT_DAYS") return { icon: "flag", mark: m.threshold < 10 ? String(m.threshold) : "" };
   const sub = FACE_SUB[m.metric] ?? ["", ""];
   return { big: compactNumber(m.threshold), sub: sub[m.threshold === 1 ? 0 : 1] };
 }
 
 const fmt = (n: number) => n.toLocaleString("de-DE");
 
+/** "unter 10 °C Wassertemperatur" oder, ohne Grenze, "kaltem Wasser". */
+function coldWater(tempBelow: number | null | undefined): string {
+  return tempBelow != null ? `unter ${formatDegrees(tempBelow)} °C Wassertemperatur` : "kaltem Wasser";
+}
+
 /** Wofür es den Award gibt, als Satz für die Kunden-App. Eine eigene Beschreibung geht vor. */
-export function awardText(m: { metric: GamiMetric; threshold: number; period: GamiPeriod; hint?: string | null }): string {
+export function awardText(m: {
+  metric: GamiMetric;
+  threshold: number;
+  period: GamiPeriod;
+  hint?: string | null;
+  tempBelow?: number | null;
+}): string {
   if (m.hint?.trim()) return m.hint.trim();
   const n = m.threshold;
   const where = m.period === "MONTH" ? "in einem Monat" : m.period === "SEASON" ? "in einer Saison" : "";
@@ -104,6 +117,10 @@ export function awardText(m: { metric: GamiMetric; threshold: number; period: Ga
       return `${fmt(n)} ${n === 1 ? "Wochenende" : "Wochenenden in Folge"} am Lift.`;
     case "EVENT_DAYS":
       return n === 1 ? "Start an einem Aktionstag." : `Start an ${fmt(n)} Aktionstagen.`;
+    case "OPENING_DAY":
+      return "Start am ersten Tag der Saison.";
+    case "COLD_DAYS":
+      return n === 1 ? `Start an einem Tag mit ${coldWater(m.tempBelow)}.` : `Start an ${fmt(n)} Tagen mit ${coldWater(m.tempBelow)}.`;
     case "SEASONS":
       return `${fmt(n)} ${awardUnit("SEASONS", n)} mit mindestens einem Start.`;
   }
@@ -113,11 +130,50 @@ export function awardText(m: { metric: GamiMetric; threshold: number; period: Ga
 export function awardRemainingText(m: { metric: GamiMetric; threshold: number; period: GamiPeriod; value: number }): string {
   const left = Math.max(0, m.threshold - m.value);
   if (m.metric === "EVENT_DAYS") return "Sei an einem Aktionstag am Start.";
+  if (m.metric === "OPENING_DAY") return "Sei am ersten Tag der Saison am Start.";
   const when = m.period === "MONTH" ? " in diesem Monat" : m.period === "SEASON" ? " in dieser Saison" : "";
   if (m.metric === "WEEKENDS" || m.metric === "STREAK_WEEKS") {
     return `Deine längste Serie${when}: ${fmt(m.value)} von ${fmt(m.threshold)}.`;
   }
   return `Noch ${fmt(left)} ${awardUnit(m.metric, left)}${when}.`;
+}
+
+/**
+ * Hat der Award einen Weg mit Fortschritt? Nicht, wenn ein einzelner Tag
+ * entscheidet: Aktionstag, erster Tag der Saison oder ein Tag mit kaltem Wasser.
+ */
+export function awardCountable(m: { metric: GamiMetric; threshold: number }): boolean {
+  if (m.threshold <= 0 || m.metric === "EVENT_DAYS" || m.metric === "OPENING_DAY") return false;
+  return !(m.metric === "COLD_DAYS" && m.threshold === 1);
+}
+
+const DAY_MONTH = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", timeZone: "UTC" });
+
+/** "9. Mai" aus "2026-05-09". */
+export function dayMonthText(ymd: string): string {
+  return DAY_MONTH.format(new Date(`${ymd}T00:00:00.000Z`));
+}
+
+/**
+ * So holt man einen Award ohne Fortschrittsbalken (Karte „So holst du ihn“).
+ * `openingDay` ist der erste Tag der laufenden Saison, sobald er feststeht,
+ * `waterNow` die gerade gemessene Wassertemperatur.
+ */
+export function awardHowText(
+  m: { metric: GamiMetric; tempBelow?: number | null },
+  info: { today: string; openingDay?: string | null; waterNow?: number | null },
+): string {
+  if (m.metric === "OPENING_DAY") {
+    if (!info.openingDay) return "Sei am ersten Tag der Saison am Start. Es zählt der erste Tag im Jahr, an dem am Lift gefahren wird.";
+    if (info.openingDay === info.today) return "Heute ist der erste Tag der Saison. Ein Start am Lift genügt.";
+    if (info.openingDay > info.today) return `Sei am ersten Tag der Saison am Start: am ${dayMonthText(info.openingDay)}.`;
+    return `Der erste Tag dieser Saison war der ${dayMonthText(info.openingDay)}. Die nächste Chance ist der erste Tag der nächsten Saison.`;
+  }
+  if (m.metric === "COLD_DAYS") {
+    const now = info.waterNow != null ? ` Gerade hat das Wasser ${formatDegrees(info.waterNow)} °C.` : "";
+    return `Starte an einem Tag mit ${coldWater(m.tempBelow)}. Gemessen wird automatisch im See.${now}`;
+  }
+  return "Sei an dem Tag am Start, an dem er vergeben wird. Den Tag gibt das Team bekannt.";
 }
 
 /** Kurzform des Gutscheins für die Kachel: eigener Kurztext, sonst der Teil vor dem Doppelpunkt. */
@@ -143,14 +199,15 @@ export function tierRank(tier: GamiTier): number {
 
 /**
  * Der Award, dem die Person am nächsten ist: der gesperrte mit dem größten
- * Anteil am Ziel. Aktionstage zählen nicht mit (dort gibt es keinen Weg), und
+ * Anteil am Ziel. Awards, bei denen ein einzelner Tag entscheidet, zählen
+ * nicht mit (dort gibt es keinen Weg, siehe `awardCountable`), und
  * Treue-Awards erst, wenn sonst nichts mehr offen ist: eine Saison lässt sich
  * nicht schneller fahren. Ohne jeden Fortschritt der erste der Liste.
  */
 export function nextAward<T extends { unlocked: boolean; metric: GamiMetric; threshold: number; value: number }>(
   awards: T[],
 ): T | null {
-  const open = awards.filter((a) => !a.unlocked && a.metric !== "EVENT_DAYS" && a.threshold > 0);
+  const open = awards.filter((a) => !a.unlocked && awardCountable(a));
   const reachable = open.filter((a) => a.metric !== "SEASONS");
   const pool = reachable.length > 0 ? reachable : open;
   if (pool.length === 0) return null;
@@ -184,6 +241,8 @@ export interface AwardDefault {
   voucherValidDays: number | null;
   bonus?: string;
   hint?: string;
+  /** Grenze der Wassertemperatur in °C (nur `COLD_DAYS`). */
+  tempBelow?: number;
 }
 
 const YEAR = 365;
@@ -191,8 +250,9 @@ const YEAR = 365;
 /**
  * Vorlage: 20 Awards mit Zielen aus den Scan-Daten 2026 und einem Gutschein
  * aus Imbiss-Karte und Ticketangeboten (mit Aaron am 20.11.2026 abgestimmt).
- * Die Migration `awards_vorlage` legt genau diese Liste an; danach sind alle
- * Werte in der Verwaltung änderbar.
+ * Die Migration `awards_vorlage` legt diese Liste an, `awards_wasser_vorlage`
+ * stellt Day One und Ice Breaker auf die automatische Vergabe um; danach sind
+ * alle Werte in der Verwaltung änderbar.
  */
 export const AWARD_DEFAULTS: AwardDefault[] = [
   { key: "first-splash", name: "First Splash", tier: "BRONZE", metric: "STARTS", threshold: 1, period: "ALL_TIME", voucherLabel: "Welcome Drink: ein Softdrink nach Wahl", voucherShort: "Welcome Drink", voucherValidDays: YEAR, hint: "Dein allererster Start am Lift." },
@@ -210,8 +270,8 @@ export const AWARD_DEFAULTS: AwardDefault[] = [
 
   { key: "butter-hunter", name: "Butter Hunter", tier: "SILVER", metric: "EARLY_DAYS", threshold: 5, period: "SEASON", voucherLabel: "Early-Bird-Kaffee: Café Crème oder Cappuccino", voucherShort: "Kaffee", voucherValidDays: YEAR, hint: "5 Tage mit Start in der ersten Stunde, wenn das Wasser noch spiegelglatt ist." },
   { key: "weekend-warrior", name: "Weekend Warrior", tier: "SILVER", metric: "WEEKENDS", threshold: 3, period: "SEASON", voucherLabel: "Ein alkoholfreies Kaltgetränk nach Wahl", voucherShort: "Kaltgetränk", voucherValidDays: YEAR },
-  { key: "day-one", name: "Day One", tier: "GOLD", metric: "EVENT_DAYS", threshold: 1, period: "SEASON", voucherLabel: "Opening-Wurst: Bratwurst oder Currywurst", voucherShort: "Opening-Wurst", voucherValidDays: YEAR, hint: "Start am Opening-Tag der Saison." },
-  { key: "ice-breaker", name: "Ice Breaker", tier: "GOLD", metric: "EVENT_DAYS", threshold: 1, period: "SEASON", voucherLabel: "Eine heiße Schokolade zum Aufwärmen", voucherShort: "Heiße Schokolade", voucherValidDays: YEAR, hint: "Start an einem Tag mit unter 15 °C Wassertemperatur." },
+  { key: "day-one", name: "Day One", tier: "GOLD", metric: "OPENING_DAY", threshold: 1, period: "SEASON", voucherLabel: "Opening-Wurst: Bratwurst oder Currywurst", voucherShort: "Opening-Wurst", voucherValidDays: YEAR, hint: "Start am ersten Tag der Saison." },
+  { key: "ice-breaker", name: "Ice Breaker", tier: "GOLD", metric: "COLD_DAYS", threshold: 1, period: "SEASON", tempBelow: 10, voucherLabel: "Eine heiße Schokolade zum Aufwärmen", voucherShort: "Heiße Schokolade", voucherValidDays: YEAR, hint: "Start an einem Tag mit unter 10 °C Wassertemperatur." },
 
   { key: "round-two", name: "Round Two", tier: "BRONZE", metric: "SEASONS", threshold: 2, period: "ALL_TIME", voucherLabel: "Die zweite Runde geht aufs Haus: ein Getränk", voucherShort: "Freigetränk", voucherValidDays: YEAR },
   { key: "og-rider", name: "OG Rider", tier: "SILVER", metric: "SEASONS", threshold: 3, period: "ALL_TIME", voucherLabel: "Bring a Friend: Aquapark-Stundenkarte für eine Begleitung", voucherShort: "Bring a Friend", voucherValidDays: YEAR },

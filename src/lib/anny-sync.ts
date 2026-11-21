@@ -116,6 +116,37 @@ interface AnnyMapping {
   };
 }
 
+/// Offene Rechnung: gestellt, aber nicht bezahlt.
+export function isOpenInvoiceStatus(status: string): boolean {
+  return status === "sent" || status === "overdue";
+}
+
+/// Mindestfrist ab Rechnungsdatum, wenn anny kein Fälligkeitsdatum liefert
+/// (fehlgeschlagene Abbuchung). Deckt die Laufzeit einer SEPA-Lastschrift ab.
+export const NO_DUE_DATE_MIN_DAYS = 14;
+
+/// Ist eine offene Rechnung überfällig? Mit `due_date` gilt sie nach
+/// graceDays als überfällig, ohne nach max(graceDays, 14) Tagen ab
+/// Rechnungsdatum; Status `overdue` von anny zählt immer. `dueDate` ist das
+/// Datum, ab dem der Verzug zählt (für die Anzeige).
+export function invoiceOverdue(
+  inv: { status: string; dueDate: unknown; issuedAt: unknown },
+  now: number,
+  graceDays: number,
+): { dueDate: string | null; overdue: boolean } {
+  const day = 24 * 60 * 60 * 1000;
+  const due = typeof inv.dueDate === "string" && inv.dueDate ? inv.dueDate : null;
+  const dueMs = due ? Date.parse(due) : NaN;
+  if (Number.isFinite(dueMs)) {
+    return { dueDate: due, overdue: inv.status === "overdue" || dueMs < now - Math.max(0, graceDays) * day };
+  }
+  const issued = typeof inv.issuedAt === "string" && inv.issuedAt ? inv.issuedAt : null;
+  const issuedMs = issued ? Date.parse(issued) : NaN;
+  if (!Number.isFinite(issuedMs)) return { dueDate: null, overdue: inv.status === "overdue" };
+  const wait = Math.max(Math.max(0, graceDays), NO_DUE_DATE_MIN_DAYS) * day;
+  return { dueDate: issued, overdue: inv.status === "overdue" || issuedMs < now - wait };
+}
+
 /// Infos zu einer offenen (unbezahlten) Abo-Rechnung, gemappt je Abo-ID.
 interface OpenSubInvoice {
   invoiceId: string;
@@ -654,22 +685,24 @@ export async function syncAnnyForAccount(
       }
     }
 
-    const graceMs = Math.max(0, graceDays) * 24 * 60 * 60 * 1000;
-    const cutoff = Date.now() - graceMs;
     const out = new Map<string, OpenSubInvoice>();
     for (const inv of all) {
       const a = (inv.attributes ?? {}) as Record<string, unknown>;
       const status = String(a.status ?? "").toLowerCase();
-      // Nur finalisierte, aber unbezahlte Rechnungen. `paid`/`refunded`/`void`
-      // sind erledigt, `draft` ist noch nicht gestellt.
-      if (status !== "sent") continue;
+      // Nur finalisierte, aber unbezahlte Rechnungen (`sent`, `overdue`).
+      // `paid`/`refunded`/`void` sind erledigt, `draft` ist noch nicht gestellt.
+      if (!isOpenInvoiceStatus(status)) continue;
       const rels = (inv.relationships ?? {}) as Record<string, { data?: { type?: string; id?: string } }>;
       const ref = rels.reference?.data;
       if (!ref || ref.type !== "plan-subscriptions" || !ref.id) continue;
       const subId = String(ref.id);
-      const dueRaw = a.due_date ? String(a.due_date) : null;
-      const dueMs = dueRaw ? Date.parse(dueRaw) : NaN;
-      const overdue = Number.isFinite(dueMs) ? dueMs < cutoff : false;
+      // Platzt die automatische Abbuchung, bleibt die Rechnung ohne due_date
+      // offen (anny-Doku). Dann zählt das Rechnungsdatum, mit Mindestfrist.
+      const { dueDate: dueRaw, overdue } = invoiceOverdue(
+        { status, dueDate: a.due_date, issuedAt: a.issued_at ?? a.created_at },
+        Date.now(),
+        graceDays,
+      );
       const entry: OpenSubInvoice = {
         invoiceId: inv.id != null ? String(inv.id) : "",
         number: (a.formatted_number as string) ?? (a.number as string) ?? null,

@@ -4,13 +4,18 @@
  * Abo mit der Kunden-App verknüpfen (Shop-Monitor). Der Kunde zeigt in der
  * App unter Profil › „Abo fehlt?“ einen QR-Code; das Personal scannt ihn und
  * die Abo-Karte (Reihenfolge egal) und wählt, wer mit dem Abo fährt.
+ * Öffnen: App-Code scannen, oder im Kunden-Dialog „Mit App verbinden“ (dann
+ * steht das Abo schon fest). Ohne Handscanner: Code eintippen oder mit der
+ * Kamera des Geräts scannen.
  * Server: POST /api/checkin/public/[token]/app-link, lib/rider-kasse-link.
  */
-import { useEffect, useRef, useState } from "react";
-import { Loader2, ScanLine, Smartphone, Ticket } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Html5Qrcode } from "html5-qrcode";
+import { Camera, CameraOff, Loader2, ScanLine, Smartphone, Ticket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import type { CheckinTicket } from "./checkin-types";
 import { personName } from "./checkin-utils";
@@ -52,16 +57,123 @@ function fmtDay(iso: string | null): string {
   return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+const CAMERA_ID = "app-link-camera";
+
+/**
+ * Code ohne Handscanner: eintippen (Ziffern unter dem QR-Code in der App) oder
+ * mit der Kamera dieses Geräts scannen. Jeder Code geht wie ein Scan an die
+ * Kasse; die erkennt App-Code oder Abo-Karte selbst.
+ */
+function CodeEntry({ placeholder, busy, onScan }: { placeholder: string; busy: boolean; onScan: (code: string) => void }) {
+  const [value, setValue] = useState("");
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const onScanRef = useRef(onScan);
+  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
+
+  const stopCamera = useCallback(async () => {
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+    if (!scanner) return;
+    try {
+      if (scanner.isScanning) await scanner.stop();
+    } catch {
+      /* schon gestoppt */
+    }
+    try {
+      scanner.clear();
+    } catch {
+      /* egal */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!cameraOn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import("html5-qrcode");
+        if (cancelled) return;
+        const scanner = new mod.Html5Qrcode(CAMERA_ID);
+        scannerRef.current = scanner;
+        await scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: (w: number, h: number) => { const n = Math.floor(Math.min(w, h) * 0.75); return { width: n, height: n }; } },
+          (decoded) => {
+            setCameraOn(false);
+            onScanRef.current(decoded);
+          },
+          () => {},
+        );
+      } catch (err) {
+        if (!cancelled) {
+          setCameraError(err instanceof Error && err.message ? err.message : "Die Kamera ließ sich nicht starten.");
+          setCameraOn(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      void stopCamera();
+    };
+  }, [cameraOn, stopCamera]);
+
+  function submit() {
+    const code = value.trim();
+    if (!code || busy) return;
+    setValue("");
+    onScan(code);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          inputMode="text"
+          autoCapitalize="characters"
+          autoComplete="off"
+          className="min-h-11 flex-1 font-mono sm:min-h-14"
+        />
+        <Button variant="secondary" className="min-h-11 sm:min-h-14" disabled={!value.trim() || busy} onClick={submit}>
+          {busy ? <Loader2 className="animate-spin" /> : null}
+          Übernehmen
+        </Button>
+      </div>
+      <Button
+        variant="outline"
+        className="min-h-11 w-full sm:min-h-14"
+        onClick={() => { setCameraError(null); setCameraOn((v) => !v); }}
+      >
+        {cameraOn ? <CameraOff /> : <Camera />}
+        {cameraOn ? "Kamera aus" : "Mit Kamera scannen"}
+      </Button>
+      {cameraOn && <div id={CAMERA_ID} className="mx-auto w-full max-w-xs overflow-hidden rounded-control bg-black" />}
+      {cameraError && <Notice tone="danger" compact title={`Kamera: ${cameraError}`} />}
+    </div>
+  );
+}
+
 export function AppLinkDialog({
   token,
   state,
   onClose,
   onLinked,
+  onScan,
+  scanning = false,
 }: {
   token: string;
   state: AppLinkState | null;
   onClose: () => void;
   onLinked: () => void;
+  /** Eingetippter oder per Kamera gelesener Code: geht wie ein Scan an die Kasse. */
+  onScan?: (code: string) => void;
+  scanning?: boolean;
 }) {
   const app = state?.app ?? null;
   const ticket = state?.ticket ?? null;
@@ -131,7 +243,7 @@ export function AppLinkDialog({
             <DialogTitle className="text-xl">Abo mit der App verknüpfen</DialogTitle>
             <DialogDescription>
               {waitingFor
-                ? `Jetzt ${waitingFor} scannen.`
+                ? `Jetzt ${waitingFor} scannen, eintippen oder mit der Kamera lesen.`
                 : "Danach steht das Abo in der App, die Adresse der App hängt am Kundenkonto des Abos."}
             </DialogDescription>
           </DialogHeader>
@@ -168,6 +280,15 @@ export function AppLinkDialog({
               </div>
             </div>
           </div>
+
+          {waitingFor && !done && onScan && (
+            <CodeEntry
+              key={waitingFor}
+              placeholder={!app ? "App-Code eingeben" : "Code der Abo-Karte eingeben"}
+              busy={scanning}
+              onScan={onScan}
+            />
+          )}
 
           {state?.notice && !done && <Notice tone="danger" compact title={state.notice} />}
           {app?.child && (

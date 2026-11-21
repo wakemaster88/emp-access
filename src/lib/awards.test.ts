@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   AWARD_DEFAULTS,
   awardCategory,
+  awardCountable,
   awardFace,
+  awardHowText,
   awardRemainingText,
   awardShape,
   awardText,
@@ -21,7 +23,7 @@ test("awardCategory und awardShape: Reihe und Form folgen der Kennzahl", () => {
   assert.equal(awardCategory("STARTS"), "starts");
   assert.equal(awardCategory("VISIT_DAYS"), "days");
   assert.equal(awardCategory("SEASONS"), "loyalty");
-  for (const m of ["STREAK_WEEKS", "EARLY_DAYS", "WEEKENDS", "EVENT_DAYS"] as const) assert.equal(awardCategory(m), "special");
+  for (const m of ["STREAK_WEEKS", "EARLY_DAYS", "WEEKENDS", "EVENT_DAYS", "OPENING_DAY", "COLD_DAYS"] as const) assert.equal(awardCategory(m), "special");
   assert.equal(awardShape("STARTS"), "hex");
   assert.equal(awardShape("VISIT_DAYS"), "circle");
   assert.equal(awardShape("WEEKENDS"), "star");
@@ -38,8 +40,9 @@ test("compactNumber und awardFace: Zahl mit Einheit oder Symbol", () => {
   assert.deepEqual(awardFace({ metric: "SEASONS", threshold: 10 }), { big: "10", sub: "SAISONS" });
   assert.deepEqual(awardFace({ metric: "EARLY_DAYS", threshold: 5 }), { icon: "sun" });
   assert.deepEqual(awardFace({ metric: "WEEKENDS", threshold: 3 }), { icon: "flame" });
-  assert.deepEqual(awardFace({ metric: "EVENT_DAYS", threshold: 1, key: "day-one" }), { icon: "flag", mark: "1" });
-  assert.deepEqual(awardFace({ metric: "EVENT_DAYS", threshold: 1, key: "ice-breaker" }), { icon: "snow" });
+  assert.deepEqual(awardFace({ metric: "EVENT_DAYS", threshold: 2 }), { icon: "flag", mark: "2" });
+  assert.deepEqual(awardFace({ metric: "OPENING_DAY", threshold: 1, key: "day-one" }), { icon: "flag", mark: "1" });
+  assert.deepEqual(awardFace({ metric: "COLD_DAYS", threshold: 1, key: "ice-breaker" }), { icon: "snow" });
 });
 
 test("awardText: eigene Beschreibung geht vor, sonst ein Satz aus Kennzahl und Zeitraum", () => {
@@ -49,6 +52,10 @@ test("awardText: eigene Beschreibung geht vor, sonst ein Satz aus Kennzahl und Z
   assert.equal(awardText({ metric: "VISIT_DAYS", threshold: 4, period: "MONTH" }), "4 Besuchstage in einem Monat.");
   assert.equal(awardText({ metric: "SEASONS", threshold: 3, period: "ALL_TIME" }), "3 Saisons mit mindestens einem Start.");
   assert.equal(awardText({ metric: "EVENT_DAYS", threshold: 1, period: "SEASON" }), "Start an einem Aktionstag.");
+  assert.equal(awardText({ metric: "OPENING_DAY", threshold: 1, period: "SEASON" }), "Start am ersten Tag der Saison.");
+  assert.equal(awardText({ metric: "COLD_DAYS", threshold: 1, period: "SEASON", tempBelow: 10 }), "Start an einem Tag mit unter 10 °C Wassertemperatur.");
+  assert.equal(awardText({ metric: "COLD_DAYS", threshold: 3, period: "SEASON", tempBelow: 9.5 }), "Start an 3 Tagen mit unter 9,5 °C Wassertemperatur.");
+  assert.equal(awardText({ metric: "COLD_DAYS", threshold: 1, period: "SEASON" }), "Start an einem Tag mit kaltem Wasser.");
   assert.equal(awardText({ metric: "STARTS", threshold: 1, period: "ALL_TIME", hint: " Dein allererster Start. " }), "Dein allererster Start.");
 });
 
@@ -58,6 +65,38 @@ test("awardRemainingText: was noch fehlt", () => {
   assert.equal(awardRemainingText({ metric: "SEASONS", threshold: 5, period: "ALL_TIME", value: 3 }), "Noch 2 Saisons.");
   assert.equal(awardRemainingText({ metric: "WEEKENDS", threshold: 3, period: "SEASON", value: 2 }), "Deine längste Serie in dieser Saison: 2 von 3.");
   assert.equal(awardRemainingText({ metric: "EVENT_DAYS", threshold: 1, period: "SEASON", value: 0 }), "Sei an einem Aktionstag am Start.");
+  assert.equal(awardRemainingText({ metric: "OPENING_DAY", threshold: 1, period: "SEASON", value: 0 }), "Sei am ersten Tag der Saison am Start.");
+  assert.equal(awardRemainingText({ metric: "COLD_DAYS", threshold: 3, period: "SEASON", value: 1 }), "Noch 2 kalte Tage in dieser Saison.");
+});
+
+test("awardCountable und awardHowText: Awards, bei denen ein einzelner Tag entscheidet", () => {
+  assert.equal(awardCountable({ metric: "STARTS", threshold: 25 }), true);
+  assert.equal(awardCountable({ metric: "STARTS", threshold: 0 }), false);
+  assert.equal(awardCountable({ metric: "EVENT_DAYS", threshold: 1 }), false);
+  assert.equal(awardCountable({ metric: "OPENING_DAY", threshold: 1 }), false);
+  assert.equal(awardCountable({ metric: "COLD_DAYS", threshold: 1 }), false);
+  assert.equal(awardCountable({ metric: "COLD_DAYS", threshold: 3 }), true);
+
+  const today = "2027-03-27";
+  assert.equal(
+    awardHowText({ metric: "OPENING_DAY" }, { today }),
+    "Sei am ersten Tag der Saison am Start. Es zählt der erste Tag im Jahr, an dem am Lift gefahren wird.",
+  );
+  assert.equal(awardHowText({ metric: "OPENING_DAY" }, { today, openingDay: today }), "Heute ist der erste Tag der Saison. Ein Start am Lift genügt.");
+  assert.equal(awardHowText({ metric: "OPENING_DAY" }, { today, openingDay: "2027-04-03" }), "Sei am ersten Tag der Saison am Start: am 3. April.");
+  assert.equal(
+    awardHowText({ metric: "OPENING_DAY" }, { today: "2026-11-21", openingDay: "2026-05-09" }),
+    "Der erste Tag dieser Saison war der 9. Mai. Die nächste Chance ist der erste Tag der nächsten Saison.",
+  );
+  assert.equal(
+    awardHowText({ metric: "COLD_DAYS", tempBelow: 10 }, { today, waterNow: 9.1 }),
+    "Starte an einem Tag mit unter 10 °C Wassertemperatur. Gemessen wird automatisch im See. Gerade hat das Wasser 9,1 °C.",
+  );
+  assert.equal(
+    awardHowText({ metric: "COLD_DAYS", tempBelow: 10 }, { today }),
+    "Starte an einem Tag mit unter 10 °C Wassertemperatur. Gemessen wird automatisch im See.",
+  );
+  assert.equal(awardHowText({ metric: "EVENT_DAYS" }, { today }), "Sei an dem Tag am Start, an dem er vergeben wird. Den Tag gibt das Team bekannt.");
 });
 
 test("voucherShortLabel und voucherHeadline", () => {
@@ -71,7 +110,7 @@ test("voucherShortLabel und voucherHeadline", () => {
 });
 
 test("nextAward: der gesperrte Award mit dem größten Anteil am Ziel, ohne Aktionstage", () => {
-  const a = (id: number, metric: "STARTS" | "VISIT_DAYS" | "EVENT_DAYS" | "SEASONS", threshold: number, value: number, unlocked = false) =>
+  const a = (id: number, metric: "STARTS" | "VISIT_DAYS" | "EVENT_DAYS" | "OPENING_DAY" | "COLD_DAYS" | "SEASONS", threshold: number, value: number, unlocked = false) =>
     ({ id, metric, threshold, value, unlocked });
   assert.equal(nextAward([]), null);
   assert.equal(nextAward([a(1, "STARTS", 25, 25, true)]), null);
@@ -80,6 +119,9 @@ test("nextAward: der gesperrte Award mit dem größten Anteil am Ziel, ohne Akti
   // Ohne jeden Fortschritt der erste offene der Liste.
   assert.equal(nextAward([a(2, "STARTS", 100, 0), a(3, "VISIT_DAYS", 5, 0)])?.id, 2);
   assert.equal(nextAward([a(4, "EVENT_DAYS", 1, 0)]), null);
+  // Erster Tag der Saison und ein einzelner kalter Tag haben auch keinen Weg.
+  assert.equal(nextAward([a(6, "OPENING_DAY", 1, 0), a(7, "COLD_DAYS", 1, 0)]), null);
+  assert.equal(nextAward([a(6, "OPENING_DAY", 1, 0), a(7, "COLD_DAYS", 3, 1)])?.id, 7);
   // Treue kommt erst dran, wenn sonst nichts mehr offen ist.
   assert.equal(nextAward([a(5, "SEASONS", 10, 7), a(2, "STARTS", 25, 13)])?.id, 2);
   assert.equal(nextAward([a(5, "SEASONS", 10, 7), a(2, "STARTS", 25, 25, true)])?.id, 5);
@@ -120,10 +162,16 @@ test("Vorlage: 20 Awards, eindeutig, mit Gutschein und in der Verwaltung speiche
       voucherValidDays: a.voucherValidDays,
       bonus: a.bonus ?? null,
       hint: a.hint ?? null,
+      tempBelow: a.tempBelow ?? null,
       active: true,
     });
     assert.ok(parsed.success, `${a.key}: ${parsed.success ? "" : parsed.error.message}`);
   }
+  // Day One und Ice Breaker werden von selbst vergeben: erster Tag der Saison, Wasser unter 10 Grad.
+  const byKey = new Map(AWARD_DEFAULTS.map((a) => [a.key, a]));
+  assert.equal(byKey.get("day-one")?.metric, "OPENING_DAY");
+  assert.equal(byKey.get("ice-breaker")?.metric, "COLD_DAYS");
+  assert.equal(byKey.get("ice-breaker")?.tempBelow, 10);
   // Die Ziele einer Reihe steigen mit der Seltenheit.
   for (const metric of ["STARTS", "VISIT_DAYS", "SEASONS"] as const) {
     const row = AWARD_DEFAULTS.filter((a) => a.metric === metric);
@@ -141,4 +189,19 @@ test("normalizeMilestone: Saisons zählen immer über alle Jahre, Aktionstage nu
   assert.deepEqual(seasons.eventDays, []);
   const event = normalizeMilestone(milestoneSchema.parse({ ...base, metric: "EVENT_DAYS", period: "SEASON", eventDays: ["2027-04-03", "2027-04-03", "2027-03-28"] }));
   assert.deepEqual((event.eventDays ?? []).map((d) => d.toISOString().slice(0, 10)), ["2027-03-28", "2027-04-03"]);
+  assert.equal(event.tempBelow, null);
+});
+
+test("normalizeMilestone: erster Tag der Saison ist genau ein Tag, kaltes Wasser braucht eine Grenze", () => {
+  const base = { name: "Test", threshold: 3, voucherLabel: null, voucherValidDays: null, active: true };
+  const opening = normalizeMilestone(milestoneSchema.parse({ ...base, metric: "OPENING_DAY", period: "SEASON", eventDays: ["2027-03-27"], tempBelow: 10 }));
+  assert.equal(opening.threshold, 1);
+  assert.deepEqual((opening.eventDays ?? []).map((d) => d.toISOString().slice(0, 10)), ["2027-03-27"]);
+  assert.equal(opening.tempBelow, null);
+  const cold = normalizeMilestone(milestoneSchema.parse({ ...base, metric: "COLD_DAYS", period: "SEASON", eventDays: ["2027-03-27"], tempBelow: 9.5 }));
+  assert.equal(cold.threshold, 3);
+  assert.equal(cold.tempBelow, 9.5);
+  assert.deepEqual(cold.eventDays, []);
+  assert.equal(milestoneSchema.safeParse({ ...base, metric: "COLD_DAYS", period: "SEASON" }).success, false);
+  assert.equal(milestoneSchema.safeParse({ ...base, metric: "COLD_DAYS", period: "SEASON", tempBelow: 80 }).success, false);
 });
