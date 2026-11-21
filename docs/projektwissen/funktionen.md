@@ -557,6 +557,12 @@ zur app bekommen“.
   nicht abgelaufen), Adresse nicht in der App, noch keine Einladung; Versand
   über `runInviteTick` im Cron tick-5min, 10 Mails je Lauf, 9–20 Uhr Berlin.
   Nach 3 Fehlversuchen an eine Adresse wird sie ausgelassen.
+- Einzeln einladen (Aaron: „kunden einzeln individuell zur kunden app
+  einladen können“): Abos › Kundenkonten › Konto öffnen, Abschnitt
+  „Kunden-App“ mit Stand (wer schon in der App ist, zuletzt eingeladen am)
+  und Taste „Zur App einladen“ bzw. „Erneut einladen“. `POST
+  /api/customers/[id]/invite` → `inviteCustomer`, nur Admins, unabhängig von
+  den beiden Schaltern; dieselbe Adresse höchstens alle 5 Minuten.
 
 ## Abos über die E-Mail, Familienkonten, Etappe 1 (20.11.2026)
 

@@ -137,7 +137,7 @@ async function sendInvite(
     .create({
       data: {
         accountId: ctx.accountId,
-        ticketId: abo.ticketId,
+        ticketId: abo.ticketId > 0 ? abo.ticketId : null,
         to: email,
         subject: INVITE_SUBJECT,
         status: result.ok ? "SENT" : "FAILED",
@@ -306,4 +306,82 @@ export async function runInviteTick(now: Date = new Date(), send: typeof sendEma
     }
   }
   return result;
+}
+
+/** Einzeln einladen: dieselbe Adresse höchstens alle paar Minuten (Doppelklick, Versehen). */
+export const SINGLE_PAUSE_MINUTES = 5;
+
+export type SingleInviteResult = { ok: true; sentAt: string } | { ok: false; error: string; status: number };
+
+/**
+ * Ein Kundenkonto einzeln zur App einladen (Abos › Kundenkonten). Gilt
+ * unabhängig von den Schaltern für neue Abos und Bestandskunden; braucht nur
+ * eingeschaltete Kunden-App und Mailversand. Geht an die Adresse des Kontos,
+ * auch erneut und auch, wenn schon jemand in der App ist (der Link meldet an).
+ */
+export async function inviteCustomer(
+  accountId: number,
+  customerId: number,
+  now: Date = new Date(),
+  send: typeof sendEmail = sendEmail,
+): Promise<SingleInviteResult> {
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, accountId },
+    select: {
+      email: true,
+      name: true,
+      persons: { select: { firstName: true }, orderBy: { id: "asc" }, take: 1 },
+      tickets: {
+        where: { subscriptionId: { not: null } },
+        select: { id: true, firstName: true, status: true, endDate: true, subscription: { select: { name: true } } },
+        orderBy: [{ endDate: { sort: "desc", nulls: "first" } }, { id: "desc" }],
+        take: 1,
+      },
+    },
+  });
+  if (!customer) return { ok: false, error: "Kundenkonto nicht gefunden.", status: 404 };
+  const email = normalizeEmail(customer.email);
+  if (!email) return { ok: false, error: "Das Konto hat keine gültige E-Mail-Adresse.", status: 400 };
+
+  const ctx = await inviteContext(accountId);
+  if (!ctx) {
+    const status = await inviteStatus(accountId, now);
+    return { ok: false, error: status.blocker ?? "Einladen ist gerade nicht möglich.", status: 409 };
+  }
+  const recent = await prisma.emailSend.count({
+    where: {
+      accountId,
+      subject: INVITE_SUBJECT,
+      to: { equals: email, mode: "insensitive" },
+      sentAt: { gte: new Date(now.getTime() - SINGLE_PAUSE_MINUTES * 60_000) },
+    },
+  });
+  if (recent > 0) return { ok: false, error: `Diese Adresse hat gerade erst eine Einladung bekommen. Bitte in ${SINGLE_PAUSE_MINUTES} Minuten noch einmal.`, status: 429 };
+
+  const abo = customer.tickets[0];
+  const firstName = customer.persons[0]?.firstName?.trim() || abo?.firstName?.trim() || customer.name?.trim().split(/\s+/)[0] || null;
+  const ok = await sendInvite(
+    ctx,
+    email,
+    { ticketId: abo?.id ?? 0, firstName, aboName: abo?.subscription?.name ?? null },
+    now,
+    send,
+  );
+  return ok ? { ok: true, sentAt: now.toISOString() } : { ok: false, error: "Die Mail konnte nicht verschickt werden.", status: 502 };
+}
+
+/** Letzte verschickte Einladung je Adresse (klein), für die Kundenkonten. */
+export async function lastInvites(accountId: number): Promise<Map<string, Date>> {
+  const rows = await prisma.emailSend.groupBy({
+    by: ["to"],
+    where: { accountId, subject: INVITE_SUBJECT, status: "SENT" },
+    _max: { sentAt: true },
+  });
+  const out = new Map<string, Date>();
+  for (const r of rows) {
+    const key = r.to.trim().toLowerCase();
+    const at = r._max.sentAt;
+    if (at && (!out.has(key) || out.get(key)! < at)) out.set(key, at);
+  }
+  return out;
 }
