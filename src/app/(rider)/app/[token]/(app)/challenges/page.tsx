@@ -1,5 +1,6 @@
 import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
+import { Gift } from "lucide-react";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { RiderChallengeVoting } from "@/components/rider/rider-challenge-voting";
 import { loadRiderChallengesCached, type RiderChallenge } from "@/lib/rider-challenges";
@@ -62,11 +63,19 @@ function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
         )}
       </div>
       {c.description && <div className="rd-soft">{c.description}</div>}
-      <div className="rd-muted">
-        {ruleText(c)}
-        {c.voucherLabel ? ` · Gewinn: ${c.voucherLabel}` : ""}
-        {c.skillLabel ? ` · Skill: ${c.skillLabel}` : ""}
-      </div>
+      {c.voucherLabel || c.skillLabel ? (
+        <div className="rd-prize">
+          <Gift className="rd-prize-icon" aria-hidden />
+          <div className="rd-grow">
+            <div className="rd-label">{c.won ? "Dein Gewinn" : "Gewinn"}</div>
+            {c.voucherLabel && <b>{c.voucherLabel}</b>}
+            {c.skillLabel && <b>Skill: {c.skillLabel}</b>}
+            <div className="rd-muted">{ruleText(c)}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="rd-muted">{ruleText(c)}</div>
+      )}
 
       {c.kind === "TASK" && c.phase !== "upcoming" && c.threshold != null && (
         <>
