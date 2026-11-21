@@ -316,8 +316,8 @@
 .rd-rank > div { display: flex; align-items: center; gap: 10px; min-height: 36px; }
 .rd-rank > div + div { border-top: 1px solid var(--rd-line); }
 .rd-rank .rd-pos { width: 26px; font-family: var(--font-barlow-condensed), inherit; font-style: italic; font-weight: 800; font-size: 20px; color: var(--rd-muted); }
-.rd-rank .rd-me { color: var(--rd-accent); font-weight: 700; }
-.rd-rank .rd-me .rd-pos { color: var(--rd-accent); }
+.rd-rank .rd-rank-me { color: var(--rd-accent); font-weight: 700; }
+.rd-rank .rd-rank-me .rd-pos { color: var(--rd-accent); }
 
 /* Foto-Challenge und Abstimmung */
 .rd-linkbtn { background: none; border: 0; padding: 0; min-height: 32px; font: inherit; font-weight: 600; color: var(--rd-link); cursor: pointer; }

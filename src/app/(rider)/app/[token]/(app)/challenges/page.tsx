@@ -22,7 +22,9 @@ function ruleText(c: RiderChallenge): string {
     case "TASK":
       return `Aufgabe: ${c.condition}`;
     case "TOP_X":
-      return `Die besten ${c.topCount} nach ${metric} gewinnen`;
+      return (c.topCount ?? 1) <= 1
+        ? `Platz 1 nach ${metric} gewinnt`
+        : `Die besten ${c.topCount} nach ${metric} gewinnen`;
     case "PHOTO":
       return (c.topCount ?? 1) === 1
         ? "Foto-Challenge: das Foto mit den meisten Stimmen gewinnt"
@@ -74,13 +76,15 @@ function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
       {c.kind === "TOP_X" && c.phase !== "upcoming" && (
         <>
           <div className="rd-between">
-            <b>{c.rank != null ? `Du bist auf Platz ${c.rank}` : "Du bist noch nicht dabei"}</b>
-            <span className="rd-muted">{c.participants} Fahrer · {c.value} {metric}</span>
+            <b>
+              {c.rank != null ? `Du bist auf Platz ${c.rank} · ${c.value} ${metric}` : "Du bist noch nicht dabei"}
+            </b>
+            <span className="rd-muted">{c.participants} Fahrer dabei</span>
           </div>
           {c.top.length > 0 && (
             <div className="rd-rank">
               {c.top.map((t, i) => (
-                <div key={i} className={t.me ? "rd-me" : undefined}>
+                <div key={i} className={t.me ? "rd-rank-me" : undefined}>
                   <span className="rd-pos">{t.rank}</span>
                   <span className="rd-grow">{t.name}</span>
                   <span>{t.value}</span>

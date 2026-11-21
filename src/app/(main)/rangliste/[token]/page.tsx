@@ -46,7 +46,7 @@ export default async function RankingPage({ params }: { params: Promise<{ token:
               ) : (
                 <div className="rd-rank rb-rank">
                   {b.rows.map((r, i) => (
-                    <div key={i} className={r.rank === 1 ? "rd-me" : undefined}>
+                    <div key={i} className={r.rank === 1 ? "rd-rank-me" : undefined}>
                       <span className="rd-pos">{r.rank}</span>
                       <span className="rd-grow">{r.name}</span>
                       <span>{r.value}</span>
