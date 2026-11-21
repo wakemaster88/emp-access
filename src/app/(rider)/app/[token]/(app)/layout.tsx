@@ -1,10 +1,10 @@
-import Link from "next/link";
-import { riderAppPath } from "@/lib/rider-app";
+import { riderBase } from "@/lib/rider-base";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { RiderNav } from "@/components/rider/rider-nav";
 import { RiderInstallHint } from "@/components/rider/rider-install-hint";
 import { RiderSync } from "@/components/rider/rider-sync";
 import { RiderIntro } from "@/components/rider/rider-intro";
+import { RiderViewing } from "@/components/rider/rider-switch";
 import { AwardBadgeDefs } from "@/components/rider/award-badge";
 import { RiderAwardUnlock } from "@/components/rider/rider-award-unlock";
 import { nextAward } from "@/lib/awards";
@@ -23,11 +23,9 @@ export default async function RiderAppLayout({
   // Zeitpunkt dieses Renderns: kommt die Seite später aus dem lokalen Cache, erkennt RiderSync das Alter.
   const renderedAt = riderRenderStamp();
   const family = await riderFamilyView(token);
-  // Die angemeldete Person steht vorn, danach Partner und Kinder.
-  const members =
-    family && family.members.length > 1
-      ? [...family.members].sort((a, b) => Number(b.token === family.viewerToken) - Number(a.token === family.viewerToken))
-      : [];
+  const base = await riderBase(token);
+  // Gewechselt wird am Gruß der Startseite; sonst nur ein Hinweis, wenn eine andere Person angezeigt wird.
+  const viewing = family && family.viewerToken !== token ? family.members.find((m) => m.token === token) : undefined;
   // Freischalt-Momente sieht die Person selbst, bei einem Kind auch die Eltern. Der Partner nicht.
   const unlocks = family?.relation === "view" ? [] : rider.unlocks;
   const next = nextAward(rider.awards);
@@ -35,23 +33,15 @@ export default async function RiderAppLayout({
     <>
       <AwardBadgeDefs />
       <main className="rd-main">
-        {members.length > 0 && (
-          <nav className="rd-family" aria-label="Familie">
-            {members.map((m) => (
-              <Link key={m.profileId} href={riderAppPath(m.token)} prefetch aria-current={m.token === token ? "true" : undefined}>
-                {m.token === family?.viewerToken ? "Ich" : m.name}
-              </Link>
-            ))}
-          </nav>
-        )}
+        {family && viewing && <RiderViewing base={base} name={viewing.name} selfToken={family.viewerToken} />}
         {children}
       </main>
-      <RiderNav base={riderAppPath(token)} />
+      <RiderNav base={base} />
       <RiderInstallHint />
       <RiderSync renderedAt={renderedAt} />
       <RiderAwardUnlock
         token={token}
-        base={riderAppPath(token)}
+        base={base}
         unlocks={unlocks}
         next={next ? { name: next.name, tier: next.tier, metric: next.metric, threshold: next.threshold, key: next.key, value: next.value } : null}
         stats={[

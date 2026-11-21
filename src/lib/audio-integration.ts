@@ -93,8 +93,10 @@ export type AudioControlInput = {
  * verwirft der Abspieler das Play stillschweigend.
  */
 async function setManualMusicOverride(db: Db, zoneId: number, play: boolean): Promise<void> {
+  // Personal hat gewählt: die Playlist-Abstimmung der Fahrer ruht eine Weile (lib/music-vote).
+  const staffChoiceAt = new Date();
   if (!play) {
-    await db.audioZone.update({ where: { id: zoneId }, data: { musicOverrideUntil: null } });
+    await db.audioZone.update({ where: { id: zoneId }, data: { musicOverrideUntil: null, staffChoiceAt } });
     return;
   }
   const zone = await db.audioZone.findFirst({
@@ -116,7 +118,7 @@ async function setManualMusicOverride(db: Db, zoneId: number, play: boolean): Pr
     new Date(),
     zone.account.timezone,
   );
-  await db.audioZone.update({ where: { id: zoneId }, data: { musicOverrideUntil: until } });
+  await db.audioZone.update({ where: { id: zoneId }, data: { musicOverrideUntil: until, staffChoiceAt } });
 }
 
 export type AudioControlResult =

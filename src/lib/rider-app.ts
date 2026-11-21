@@ -6,6 +6,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { cache } from "react";
+import { skillRewardText } from "./rider-skill-rules";
 import { prisma, tenantClient } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { adoptDayTickets } from "./day-guest";
@@ -43,6 +44,10 @@ import { paymentOpenInfo, paymentOpenSentence } from "@/lib/payment-open";
 
 export function newRiderToken(): string {
   return randomBytes(18).toString("base64url");
+}
+
+function milestoneSkillLabel(m: { skillUses: number; skill: { name: string; active: boolean } | null }): string | null {
+  return m.skill?.active ? skillRewardText(m.skill.name, m.skillUses) : null;
 }
 
 export function riderAppPath(token: string): string {
@@ -91,6 +96,8 @@ export interface RiderAward extends AwardBadgeData {
   openingDay: string | null;
   voucherLabel: string | null;
   voucherShort: string | null;
+  /** Skill als Belohnung, z. B. „Außendusche · 10×“. */
+  skillLabel: string | null;
   bonus: string | null;
   /** Gutschein aus diesem Award im laufenden Zeitraum. */
   voucher: { id: number; state: BenefitVoucherState; expiresAt: Date | null; redeemedAt: Date | null } | null;
@@ -103,6 +110,7 @@ export interface RiderUnlock extends AwardBadgeData {
   milestoneId: number;
   text: string;
   voucherLabel: string | null;
+  skillLabel: string | null;
   bonus: string | null;
   /** Offener Gutschein dazu, falls es einen gibt. */
   voucherId: number | null;
@@ -227,6 +235,7 @@ export async function loadRider(
     prisma.milestone.findMany({
       where: { accountId, active: true },
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      include: { skill: { select: { name: true, active: true } } },
     }),
     prisma.voucher.findMany({
       where: { accountId, kind: "BENEFIT", ownerTicketId: { in: ticketIds } },
@@ -349,6 +358,7 @@ export async function loadRider(
       openingDay: m.metric === "OPENING_DAY" ? openingDayOf(String(year), m.eventDays.map(dbDateToYmd), openingDays) : null,
       voucherLabel: m.voucherLabel,
       voucherShort: voucherShortLabel(m),
+      skillLabel: milestoneSkillLabel(m),
       bonus: m.bonus,
       voucher: v && !v.disabledAt
         ? { id: v.id, state: benefitVoucherState(v, now), expiresAt: v.expiresAt, redeemedAt: v.redeemedAt }
@@ -368,6 +378,7 @@ export async function loadRider(
         milestoneId: m.id,
         text: awardText({ metric: m.metric as GamiMetric, threshold: m.threshold, period: m.period as GamiPeriod, hint: m.hint, tempBelow: m.tempBelow }),
         voucherLabel: m.voucherLabel,
+        skillLabel: milestoneSkillLabel(m),
         bonus: m.bonus,
         voucherId: v && benefitVoucherState(v, now) === "open" ? v.id : null,
       };

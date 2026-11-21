@@ -1,6 +1,6 @@
 /**
  * Push an alle Kunden der App, wenn ein neues Angebot oder eine neue
- * Challenge veröffentlicht wird. Die Verwaltung setzt beim Anlegen den
+ * Challenge veröffentlicht wird oder ein Feiertag in der App erscheint. Die Verwaltung setzt beim Anlegen den
  * Schalter „Push senden“ (`pushPlanned`); gesendet wird genau einmal
  * (`pushedAt`), sobald der Eintrag für Kunden sichtbar ist und es Tag ist.
  * Läuft direkt nach dem Speichern und im 5-Minuten-Cron für geplante Einträge.
@@ -11,12 +11,16 @@
  */
 import { prisma } from "./prisma";
 import { berlinHour, berlinYmd } from "./berlin-day";
+import { currentHoliday } from "./holidays";
 import { dbDateToYmd, type ChallengeKind, type GamiMetric } from "./gamification";
 import { riderAppPath } from "./rider-app";
 import { deliverPush, isWebPushConfigured } from "./web-push";
+import { birthdayPushAccounts, runBirthdayPushes } from "./rider-birthday";
 import {
   challengeAnnounceBlock,
   challengePushText,
+  holidayAnnounceBlock,
+  holidayPushText,
   offerAnnounceBlock,
   offerPushText,
   type AnnounceText,
@@ -100,17 +104,38 @@ export async function runAccountAnnouncements(accountId: number, now: Date = new
     await prisma.challenge.update({ where: { id: c.id }, data: { pushSent: sent } });
     announced++;
   }
+
+  // Feiertage: jedes Jahr einmal, sobald der Feiertag in der App erscheint.
+  const holidays = await prisma.riderHoliday.findMany({ where: { accountId, pushPlanned: true, active: true } });
+  for (const h of holidays) {
+    if (holidayAnnounceBlock(h, today, hour) !== null) continue;
+    const year = currentHoliday([h], today)!.year;
+    const claimed = await prisma.riderHoliday.updateMany({
+      where: { id: h.id, accountId, OR: [{ pushedYear: null }, { pushedYear: { not: year } }] },
+      data: { pushedYear: year, pushedAt: now, pushSent: null },
+    });
+    if (claimed.count !== 1) continue;
+    const sent = await sendToAllRiders(accountId, holidayPushText(h), "", `rider-holiday-${h.key}-${year}`);
+    await prisma.riderHoliday.update({ where: { id: h.id }, data: { pushSent: sent } });
+    announced++;
+  }
+
+  // Geburtstage: an die Geräte des Geburtstagskinds, einmal je Jahr.
+  announced += await runBirthdayPushes(accountId, now);
   return announced;
 }
 
 /** Cron: alle Konten mit eingeschalteter Kunden-App und geplanten Meldungen. */
 export async function runAnnouncementTick(now: Date = new Date()): Promise<{ accounts: number; announced: number }> {
   if (!isWebPushConfigured()) return { accounts: 0, announced: 0 };
-  const [offers, challenges] = await Promise.all([
+  const [offers, challenges, holidays, birthdays] = await Promise.all([
     prisma.riderOffer.findMany({ where: { pushPlanned: true, pushedAt: null, active: true }, select: { accountId: true } }),
     prisma.challenge.findMany({ where: { pushPlanned: true, pushedAt: null, active: true }, select: { accountId: true } }),
+    // Feiertage melden jedes Jahr neu; ob gerade einer fällig ist, prüft runAccountAnnouncements.
+    prisma.riderHoliday.findMany({ where: { pushPlanned: true, active: true }, select: { accountId: true } }),
+    birthdayPushAccounts(),
   ]);
-  const accounts = [...new Set([...offers, ...challenges].map((r) => r.accountId))];
+  const accounts = [...new Set([...[...offers, ...challenges, ...holidays].map((r) => r.accountId), ...birthdays])];
   let announced = 0;
   for (const accountId of accounts) announced += await runAccountAnnouncements(accountId, now);
   return { accounts: accounts.length, announced };

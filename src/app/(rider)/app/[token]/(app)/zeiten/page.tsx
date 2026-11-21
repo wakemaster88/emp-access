@@ -1,5 +1,5 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
-import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { loadRiderSchedules } from "@/lib/rider-opening";
 import { calendarDayLabel, calendarMonth, calendarMonthKey } from "@/lib/rider-calendar";
@@ -27,7 +27,7 @@ export default async function RiderOpeningCalendar({
   const { token } = await params;
   const query = await searchParams;
   const rider = await requireRider(token);
-  const base = riderAppPath(token);
+  const base = await riderBase(token);
   const schedules = await loadRiderSchedules(rider.accountId);
   const today = berlinYmd(new Date());
   const schedule = schedules.find((s) => String(s.id) === query.bereich) ?? schedules[0] ?? null;

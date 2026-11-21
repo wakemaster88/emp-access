@@ -40,6 +40,7 @@ function reachText(r: PushReach): string {
  */
 export function PushAnnounceField({
   id, checked, onChange, disabled, preview, reach, status, block,
+  hint = "Einmalig, Bearbeiten danach meldet nichts erneut.",
 }: {
   id: string;
   checked: boolean;
@@ -50,6 +51,8 @@ export function PushAnnounceField({
   status: PushStatus | null;
   /** Grund nach dem Speichern, null = geht sofort raus. */
   block: AnnounceBlock | null;
+  /** Kleiner Text unter dem Schalter. */
+  hint?: string;
 }) {
   if (status?.pushedAt) {
     return <Notice tone="success" compact title={sentText(status)} />;
@@ -59,7 +62,7 @@ export function PushAnnounceField({
       <div className="flex items-center justify-between gap-3">
         <div>
           <Label htmlFor={id}>Push an Kunden senden</Label>
-          <p className="text-xs text-muted-foreground">Einmalig, Bearbeiten danach meldet nichts erneut.</p>
+          <p className="text-xs text-muted-foreground">{hint}</p>
         </div>
         <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
       </div>

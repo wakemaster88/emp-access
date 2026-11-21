@@ -1076,3 +1076,48 @@ Aaron wollte vorerst statt Inkasso einen eigenen Mahnlauf, vollautomatisch (Ents
 
 - **Tagesauswertung** („Dein Tag heute“): ganz oben auf der Startseite, sobald die Person heute einen Start hat (`RiderDayStat` von heute, Feld `today` in `RiderView`, `src/lib/rider-app.ts`). Zeigt Starts, Zeit am Lift (erster bis letzter Start; bei einem Start die Uhrzeit), Wasser (kältester Wert während der Fahrt, sonst aktueller Wert, sonst Luft), Besuchstag Nr., Saisonrekord, Hinweis für den Kälte-Award, heute freigeschaltete Awards, Fortschritt zum nächsten Award und zur laufenden Aufgaben-Challenge. Kostet eine kleine Abfrage über den eindeutigen Index (ticketId, day); alles andere ist schon geladen.
 - **Öffnungszeiten-Kalender** `/app/<token>/zeiten`: Tipp auf die Öffnungszeile in „Auslastung jetzt“. Monatsraster mit Zeiten je Tag, Sondertage (Ausnahmetage) mit gelbem Punkt, darunter die offenen Tage ab heute. Lift-Profil zuerst (`loadRiderSchedules`, `src/lib/rider-opening.ts`), andere Bereiche umschaltbar. Blättern ein Monat zurück, zwölf voraus (`?monat=YYYY-MM`, `?bereich=<id>`). Logik in `src/lib/rider-calendar.ts` (+ Test). Server-gerendert ohne Client-JS.
+
+## Feiertage in der Kunden-App (21.11.2026)
+
+Aaron: „feiertage noch in der kunden app hinzufügen. dafür im backend auswählen welche mit was angezeigt werden können. grußwort, angebot oder gutschein möglich“.
+
+- Verwaltung: Kunden App › Aktionen › Karte „Feiertage“. Je Feiertag Aus, Gruß, Angebot oder Gutschein, dazu Überschrift (Standardgruß, falls leer), Text, beim Gutschein Leistung und Gültigkeit, „Schon vorher zeigen“ (0–14 Tage). Gilt jedes Jahr; das Datum rechnet `src/lib/holidays.ts` (NRW plus Heiligabend, Silvester, Oster- und Pfingstsonntag).
+- Daten: `RiderHoliday` (je Mandant und `key` einmal), `RiderHolidayGift` (vergebener Gutschein, eindeutig je Feiertag, Jahr und Person). Speichern über `PUT /api/gamification/holidays/<key>`.
+- App: Karte oben auf der Startseite (nach „Dein Tag heute“), `src/lib/rider-holiday.ts`. Überschneiden sich zwei Feiertage, zeigt die App den nächstliegenden.
+- Gutschein: Leistungs-Gutschein wie bei Awards. Jede Person mit gültigem Abo bekommt ihn einmal, beim ersten Öffnen der App im Zeitraum; ohne Abo bleibt es beim Gruß.
+- Push (Aaron 21.11.2026: „ja“): Schalter „Push an Kunden senden“ im Dialog, beim ersten Einschalten an. Geht jedes Jahr einmal raus, sobald der Feiertag in der App erscheint (erster Tag von „Schon vorher zeigen“), nur 9–21 Uhr, über `runAccountAnnouncements` (`pushedYear`/`pushedAt`/`pushSent`). Empfänger wie bei Angeboten: alle Geräte mit Push-Erlaubnis; beim Gutschein heißt es deshalb „Mit Abo wartet ein Geschenk …“.
+
+## Playlist-Abstimmung der Fahrer (21.11.2026)
+
+Aaron: „in der kunden app soll optional aktiviert werden können, dass alle aktiven fahrer die playlist auswählen können. die mehrheit ist immer aktiv“.
+
+- Einschalten unter Kunden App › Einstellungen › „Playlist-Abstimmung“: Zonen (z. B. Insel), 2 bis 8 Playlists oder Webradios zur Wahl (seit 21.11.2026 abends auch Webradio, Aaron: „playlist abstimmung geht auch mit streams“; gespeichert als `musicVoteOptions` bzw. `RiderMusicVote.option` = "p<id>"/"s<id>"; Reihenfolge = Reihenfolge in der App), Ruhe nach Wahl des Teams (Vorgabe 60 Min, 0 = aus). Ab Werk aus.
+- Aktiv ist, wer heute am Lift gestartet ist und dessen letzter Start höchstens 2 Stunden her ist (`RiderDayStat.lastStartAt`). Je Person und Tag eine Stimme (`RiderMusicVote`), jederzeit änderbar oder zurücknehmbar. Stimmen inaktiver Fahrer zählen nicht mehr.
+- Mehrheit gewinnt; bei Gleichstand bleibt die laufende, sonst die vordere in der Auswahl. Ohne Stimme bleibt, was eingestellt ist.
+- Umsetzung `src/lib/music-vote.ts`, Regeln `music-vote-rules.ts`: gleich nach jeder Stimme und jede Minute im Cron `audio-schedules`. Sie wechselt nur laufende eigene Musik (nicht bei AirPlay/Bluetooth, nicht ohne Abspieler), startet nie selbst und schickt `manual: false`, das Musikfenster bleibt also unberührt. Der Wechsel setzt `AudioZone.playlistId` bzw. `streamId`/`streamUrl` (nach dem Ausschalten bleibt die zuletzt gewählte Playlist als Vorgabe der Zone).
+- Personal geht vor: Start/Stopp von Hand (Dashboard, Geräte-API, emp-control) setzt `AudioZone.staffChoiceAt`; danach ruht die Abstimmung für die eingestellte Zeit. Im Audio-Verlauf stehen Wechsel als „Fahrer-Abstimmung“ (`triggerKind = VOTE`).
+- Kunden-App: Karte „Musik · <Zone>“ auf der Startseite, für aktive Fahrer direkt unter „Dein Tag heute“, sonst unter der Auslastung (nur zum Ansehen).
+- Kunden-App (seit 21.11.2026 abends, Aaron: „die musik auswahl muss minimiert sein und oben bei betrieb … zu öffnen sein“): eingeklappte Zeile „Musik <läuft>“ in der Karte „Auslastung jetzt“ direkt unter den Öffnungszeiten (ohne Auslastung als eigene kleine Karte). Antippen klappt die Auswahl auf.
+- Runden (Aaron: „auch timer anzeigen bis wann abgestimmt werden kann für den wechsel“): `GamificationConfig.musicVoteRoundMinutes` (Vorgabe 15, Auswahl 0/5/10/15/20/30/60). Runden zählen ab Mitternacht (bei 15 also :00/:15/:30/:45); der Cron wertet einmal je Rundenbeginn aus (`musicVoteRoundAt` als Guard), gewechselt wird also nur am Rundenende. Die App zeigt den Countdown bis zum nächsten Wechsel und lädt danach den neuen Stand (`GET /api/rider/<token>/music-vote`). 0 = Wechsel sofort nach jeder Stimme wie vorher.
+
+## Skills in der Kunden-App (Geräte schalten als Belohnung)
+
+Seit 21.11.2026 (Aaron: „anstatt gutschein, kann man auch skills gewinnen wie geräte steuern, außenduschen, heizstrahler etc“). Ein Skill ist ein zeitlich begrenztes Recht, vor Ort selbst ein Gerät zu schalten oder die Musik zu bestimmen.
+
+- Anlegen, sperren, Protokoll: Kunden App › Gutscheine › Karte „Skills“ und „Geschaltet“. Ab Werk gibt es keinen Skill.
+- Arten: `DEVICE` (Shelly-Taster, -Schalter, -Licht oder Hue; Türen, Tore, Schlösser, Ventile nie, `isSkillDevice`) und `MUSIC` (Musik-Joker: eine Auswahl der Playlist-Abstimmung läuft `minutes` lang, die Abstimmung ruht über `AudioZone.riderChoiceUntil`).
+- Vergabe: an Award, Challenge und Feiertag (Feld „Skill freischalten“ mit Nutzungen und Gültigkeit), als `RiderSkillGrant` am Ticket wie ein Gutschein; Push „Neuer Skill“.
+- Grenzen (`src/lib/rider-skill-rules.ts`): Nutzungen und Ablauf, nur während der Betriebszeit am Lift, nur wer heute schon am Lift gestartet ist, Pause je Skill nach jeder Nutzung, Sperre durch das Personal.
+- Schalten (`src/lib/rider-skills.ts`, `POST /api/rider/[token]/skill`): Nutzung wird unter einer Sperre je Skill gebucht, dann geschaltet. Taster laufen ihre eigene Dauer, Schalter bekommen den Shelly-Auto-Off-Timer (`autoOffSec`), Hue schaltet der Minuten-Cron (`runSkillOffTick` im Audio-Cron) wieder aus. Klappt das Schalten nicht, gibt es die Nutzung zurück; das Protokoll (`RiderSkillUse`) zeigt den Fehler.
+
+## Geburtstag in der Kunden-App (21.11.2026)
+
+Aaron: „geburtstagsgrüße in die kunden app, im backend geschenk hinterlegen, grüße auch als push, geburtstagsoption in audio: wenn ein geburtstagskind scant kommt die ansage einmalig an dem tag“.
+
+- Einstellung je Mandant in `RiderBirthday` (eine Zeile), Vergaben je Person und Jahr in `RiderBirthdayGift` (Geschenk `giftAt`/`voucherId`, Push `pushedAt`/`pushSent`, Durchsage `announcedAt`). Regeln ohne DB in `src/lib/birthday.ts`, Ablauf in `src/lib/rider-birthday.ts`.
+- Geburtsdatum: `RiderProfile.birthDate` (die Person pflegt es im Profil). 29. Februar feiert ohne Schalttag am 28.
+- App: Karte oben auf der Startseite nur am Geburtstag („Dein 25. Geburtstag“). Geschenk wie bei Feiertagen: Gutschein für Personen mit gültigem Abo, einmal je Jahr, beim ersten Öffnen der App am Geburtstag. Ohne Abo nur der Gruß mit Hinweis.
+- Verwaltung: Kunden App › Aktionen › Karte „Geburtstag“ (Aus / Gruß / Mit Geschenk, Überschrift, Text, Push-Schalter mit Vorschau). `{vorname}` in Überschrift und Text wird ersetzt, sonst hängt der Vorname hinten an.
+- Push: einmal am Geburtstag 9–21 Uhr über den 5-Minuten-Cron (`runAccountAnnouncements`), nur an die Geräte des Geburtstagskinds; Kind ohne eigenes Gerät: an die Erwachsenen seiner Familie („Heute hat Mia Geburtstag“). Nie, wenn die Überschrift mit „TEST:“ beginnt.
+- Durchsage: Audio › Zeitpläne › Karte „Geburtstags-Ansage“ (Zonen, Text, Vorname ja/nein, Stimme, Gong, Probe nur im Browser). Beim ersten GRANTED-Scan am Gerät mit `countsAsStart` (Start-Drehkreuz) am Geburtstag rendert `announceBirthdayOnScan` den Text über xAI (gleicher Text aus dem Cache) und legt ANNOUNCE-Jobs mit `triggerKind = "BIRTHDAY"` an; läuft per `after()` hinter der Scan-Antwort. Einmal am Tag; schlägt die Sprachausgabe fehl, versucht es der nächste Scan erneut.
+- Datenschutz: nur Vorname, nie Nachname, im Verlauf „Geburtstag Mia“. Die Person kann die Durchsage auf ihrer Geburtstagskarte abschalten (`RiderProfile.birthdayAnnounce`, PATCH `/api/rider/<token>/birthday`). Alles ab Werk aus.

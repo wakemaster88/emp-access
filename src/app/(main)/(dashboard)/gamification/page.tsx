@@ -26,6 +26,10 @@ import { DayGuestMailsCard, type DayGuestMailRow } from "@/components/gamificati
 import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamification/challenges-card";
 import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
 import { riderPushReach } from "@/lib/rider-announce";
+import { HolidaysCard, type HolidayAdminRow } from "@/components/gamification/holidays-card";
+import { addDaysYmd, upcomingHolidays } from "@/lib/holidays";
+import { BirthdayCard, type BirthdayAdminData } from "@/components/gamification/birthday-card";
+import { isBirthdayOn } from "@/lib/birthday";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 import { AppShareCard } from "@/components/gamification/app-share-card";
 import { OccupancySettingsCard } from "@/components/gamification/occupancy-settings-card";
@@ -33,7 +37,11 @@ import { BeachSettingsCard } from "@/components/gamification/beach-settings-card
 import { normalizeBeachSettings } from "@/lib/beach-occupancy";
 import { normalizeThresholds } from "@/lib/rider-occupancy";
 import { AppInviteCard } from "@/components/gamification/app-invite-card";
+import { MusicVoteCard } from "@/components/gamification/music-vote-card";
+import { loadMusicVoteAdmin } from "@/lib/music-vote";
 import { inviteStatus } from "@/lib/rider-invite";
+import { SkillsCard, type SkillAdminRow, type SkillUseRow } from "@/components/gamification/skills-card";
+import { isSkillDevice } from "@/lib/rider-skill-rules";
 
 type Tab = "auswertung" | "fahrer" | "meilensteine" | "aktionen" | "gutscheine" | "einstellungen";
 const TABS: Tab[] = ["auswertung", "fahrer", "meilensteine", "aktionen", "gutscheine", "einstellungen"];
@@ -77,6 +85,17 @@ export default async function GamificationPage({ searchParams }: { searchParams:
   );
 
   let content: React.ReactNode = null;
+
+  // Skills zur Wahl als Belohnung (Awards, Challenges, Feiertage).
+  const skillChoices =
+    tab === "meilensteine" || tab === "aktionen"
+      ? await db.riderSkill.findMany({
+          where: { accountId, active: true },
+          select: { id: true, name: true },
+          orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+        })
+      : [];
+  const skillName = new Map(skillChoices.map((k) => [k.id, k.name]));
 
   if (tab === "auswertung") {
     const [perTicket, awards, openVouchers, redeemedVouchers] = await Promise.all([
@@ -287,6 +306,10 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       hint: m.hint,
       eventDays: m.eventDays.map(dbDateToYmd),
       tempBelow: m.tempBelow,
+      skillId: m.skillId,
+      skillUses: m.skillUses,
+      skillValidDays: m.skillValidDays,
+      skillName: m.skillId != null ? skillName.get(m.skillId) ?? null : null,
       active: m.active,
       awarded: awarded.get(m.id) ?? 0,
       redeemed: redeemed.get(m.id) ?? 0,
@@ -297,6 +320,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         today={berlinYmd(new Date())}
         openingDay={openingDays[String(year)] ?? null}
         waterSensor={sensor ? { name: sensor.name, now: waterNow } : null}
+        skills={skillChoices}
       />
     );
   }
@@ -338,6 +362,9 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         endDate,
         voucherLabel: c.voucherLabel,
         voucherValidDays: c.voucherValidDays,
+        skillId: c.skillId,
+        skillUses: c.skillUses,
+        skillValidDays: c.skillValidDays,
         active: c.active,
         settled: c.settledAt != null,
         phase,
@@ -354,14 +381,69 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         pushSent: c.pushSent,
       });
     }
-    const [offers, reach] = await Promise.all([
+    const [offers, reach, holidaySettings, holidayGifts, birthdaySetting, birthDates, birthdayYear] = await Promise.all([
       db.riderOffer.findMany({
         where: { accountId },
         orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
         take: 200,
       }),
       riderPushReach(accountId),
+      db.riderHoliday.findMany({ where: { accountId } }),
+      db.riderHolidayGift.groupBy({ by: ["holidayId"], where: { accountId }, _count: { _all: true } }),
+      db.riderBirthday.findUnique({ where: { accountId } }),
+      db.riderProfile.findMany({ where: { accountId, birthDate: { not: null } }, select: { birthDate: true } }),
+      db.riderBirthdayGift.findMany({
+        where: { accountId, year: Number(today.slice(0, 4)) },
+        select: { voucherId: true, pushedAt: true },
+      }),
     ]);
+    const weekDays = Array.from({ length: 7 }, (_, i) => addDaysYmd(today, i + 1));
+    const birthday: BirthdayAdminData = {
+      setting: birthdaySetting
+        ? {
+            active: birthdaySetting.active,
+            title: birthdaySetting.title,
+            text: birthdaySetting.text,
+            voucherLabel: birthdaySetting.voucherLabel,
+            voucherValidDays: birthdaySetting.voucherValidDays,
+            pushPlanned: birthdaySetting.pushPlanned,
+            announceActive: birthdaySetting.announceActive,
+          }
+        : null,
+      today: birthDates.filter((p) => isBirthdayOn(p.birthDate, today)).length,
+      week: birthDates.filter((p) => weekDays.some((d) => isBirthdayOn(p.birthDate, d))).length,
+      known: birthDates.length,
+      giftsYear: birthdayYear.filter((g) => g.voucherId != null).length,
+      pushesYear: birthdayYear.filter((g) => g.pushedAt != null).length,
+    };
+    const settingByKey = new Map(holidaySettings.map((h) => [h.key, h]));
+    const giftsById = new Map(holidayGifts.map((g) => [g.holidayId, g._count._all]));
+    const holidayRows: HolidayAdminRow[] = upcomingHolidays(today).map((h) => {
+      const s = settingByKey.get(h.key);
+      return {
+        ...h,
+        setting: s
+          ? {
+              show: s.show,
+              title: s.title,
+              text: s.text,
+              voucherLabel: s.voucherLabel,
+              voucherValidDays: s.voucherValidDays,
+              skillId: s.skillId,
+              skillUses: s.skillUses,
+              skillValidDays: s.skillValidDays,
+              daysBefore: s.daysBefore,
+              active: s.active,
+              pushPlanned: s.pushPlanned,
+            }
+          : null,
+        push:
+          s?.pushedAt && s.pushedYear === Number(h.ymd.slice(0, 4))
+            ? { pushedAt: s.pushedAt.toISOString(), pushSent: s.pushSent }
+            : null,
+        gifts: s ? giftsById.get(s.id) ?? 0 : 0,
+      };
+    });
     const rows: OfferAdminRow[] = offers.map((o) => {
       const validFrom = o.validFrom ? dbDateToYmd(o.validFrom) : null;
       const validTo = o.validTo ? dbDateToYmd(o.validTo) : null;
@@ -378,11 +460,13 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         pushSent: o.pushSent,
       };
     });
-    // Beides sind Meldungen in der App mit optionalem Push: ein Reiter, zwei Listen.
+    // Meldungen in der App: Challenges, Angebote und Feiertage in einem Reiter.
     content = (
       <>
-        <ChallengesCard challenges={challengeRows} today={today} reach={reach} />
+        <ChallengesCard challenges={challengeRows} today={today} reach={reach} skills={skillChoices} />
         <OffersCard offers={rows} reach={reach} />
+        <BirthdayCard data={birthday} />
+        <HolidaysCard rows={holidayRows} reach={reach} skills={skillChoices} />
       </>
     );
   }
@@ -414,11 +498,80 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       redeemedAt: v.redeemedAt ? v.redeemedAt.toISOString() : null,
       redeemedVia: v.redeemedVia,
     }));
-    content = <BenefitVouchersCard vouchers={rows} />;
+    const since30 = new Date(now.getTime() - 30 * 86_400_000);
+    const [skills, skillDevices, openGrants, uses30, useRows, voteConfig] = await Promise.all([
+      db.riderSkill.findMany({
+        where: { accountId },
+        orderBy: [{ active: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+        include: { device: { select: { name: true } } },
+      }),
+      db.device.findMany({
+        where: { accountId, OR: [{ type: "SHELLY", category: { in: ["TASTER", "SCHALTER", "BELEUCHTUNG"] } }, { type: "HUE_LIGHT" }] },
+        select: { id: true, name: true, type: true, category: true, pulseSeconds: true },
+        orderBy: [{ category: "desc" }, { name: "asc" }],
+      }),
+      db.riderSkillGrant.findMany({
+        where: { accountId, disabledAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+        select: { skillId: true, uses: true, usedCount: true },
+      }),
+      db.riderSkillUse.groupBy({ by: ["skillId"], where: { accountId, ok: true, createdAt: { gte: since30 } }, _count: { _all: true } }),
+      db.riderSkillUse.findMany({
+        where: { accountId },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+        select: {
+          id: true, createdAt: true, ok: true, error: true,
+          skill: { select: { name: true } },
+          profile: { select: { nickname: true, tickets: { select: { name: true, firstName: true, lastName: true }, take: 1, orderBy: { id: "desc" } } } },
+        },
+      }),
+      db.gamificationConfig.findUnique({ where: { accountId }, select: { musicVoteZoneIds: true, musicVoteOptions: true } }),
+    ]);
+    const openBySkill = new Map<number, number>();
+    for (const g of openGrants) openBySkill.set(g.skillId, (openBySkill.get(g.skillId) ?? 0) + Math.max(0, g.uses - g.usedCount));
+    const usesBySkill = new Map(uses30.map((u) => [u.skillId, u._count._all]));
+    const skillRows: SkillAdminRow[] = skills.map((k) => ({
+      id: k.id,
+      name: k.name,
+      description: k.description,
+      kind: k.kind,
+      deviceId: k.deviceId,
+      deviceName: k.device?.name ?? null,
+      minutes: k.minutes,
+      cooldownMinutes: k.cooldownMinutes,
+      onlyOperating: k.onlyOperating,
+      onlyOnSite: k.onlyOnSite,
+      paused: k.paused,
+      active: k.active,
+      openUses: openBySkill.get(k.id) ?? 0,
+      uses30: usesBySkill.get(k.id) ?? 0,
+    }));
+    const useList: SkillUseRow[] = useRows.map((u) => {
+      const t = u.profile?.tickets[0];
+      return {
+        id: u.id,
+        at: u.createdAt.toISOString(),
+        skill: u.skill.name,
+        who: t ? ticketLabel(t) : u.profile?.nickname ?? "unbekannt",
+        ok: u.ok,
+        error: u.error,
+      };
+    });
+    content = (
+      <>
+        <SkillsCard
+          skills={skillRows}
+          devices={skillDevices.filter(isSkillDevice).map((d) => ({ id: d.id, name: d.name, category: d.category, pulseSeconds: d.pulseSeconds }))}
+          uses={useList}
+          musicReady={(voteConfig?.musicVoteZoneIds.length ?? 0) > 0 && (voteConfig?.musicVoteOptions.length ?? 0) > 0}
+        />
+        <BenefitVouchersCard vouchers={rows} />
+      </>
+    );
   }
 
   if (tab === "einstellungen") {
-    const [subscriptions, services, devices, sensors, invites] = await Promise.all([
+    const [subscriptions, services, devices, sensors, invites, audioZones, playlists, streams, voteStanding] = await Promise.all([
       db.subscription.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.service.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.device.findMany({
@@ -432,6 +585,10 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         orderBy: { name: "asc" },
       }),
       inviteStatus(accountId),
+      db.audioZone.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
+      db.audioPlaylist.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      db.audioStream.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      loadMusicVoteAdmin(accountId),
     ]);
     const beachCapacity =
       (await db.accessArea.findMany({ where: { accountId }, select: { name: true, personLimit: true } }))
@@ -465,6 +622,19 @@ export default async function GamificationPage({ searchParams }: { searchParams:
           config ? { factor: config.beachGuestFactor, mediumFrom: config.beachMediumFrom, highFrom: config.beachHighFrom } : null,
         )}
         capacity={beachCapacity}
+      />
+      <MusicVoteCard
+        initial={{
+          enabled: config?.musicVoteEnabled ?? false,
+          zoneIds: config?.musicVoteZoneIds ?? [],
+          options: config?.musicVoteOptions ?? [],
+          holdMinutes: config?.musicVoteHoldMinutes ?? 60,
+          roundMinutes: config?.musicVoteRoundMinutes ?? 15,
+        }}
+        zones={audioZones}
+        playlists={playlists}
+        streams={streams}
+        standing={voteStanding}
       />
       <AppInviteCard initial={invites} />
       <AppShareCard

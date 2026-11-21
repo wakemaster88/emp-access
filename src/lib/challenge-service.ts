@@ -19,6 +19,7 @@ import {
   type Standing,
 } from "./gamification";
 import { createBenefitVoucher, isUniqueViolation } from "./gamification-service";
+import { grantSkill } from "./rider-skills";
 import { notifyVoucher } from "./rider-push";
 
 export interface ChallengeRow {
@@ -32,6 +33,10 @@ export interface ChallengeRow {
   endDate: Date;
   voucherLabel: string | null;
   voucherValidDays: number | null;
+  /** Skill als Belohnung (fehlt bei älteren Aufrufern = ohne Skill). */
+  skillId?: number | null;
+  skillUses?: number;
+  skillValidDays?: number | null;
 }
 
 export interface RiderUnit {
@@ -117,6 +122,16 @@ async function award(
       });
       await db.challengeAward.update({ where: { id: created.id }, data: { voucherId: voucher.id } });
       notifyVoucher(accountId, ticketId, c.voucherLabel);
+    }
+    if (c.skillId) {
+      await grantSkill(db, {
+        accountId,
+        ticketId,
+        skillId: c.skillId,
+        uses: c.skillUses ?? 1,
+        validDays: c.skillValidDays ?? null,
+        source: rank != null ? `Challenge ${c.name} (Platz ${rank})` : `Challenge ${c.name}`,
+      }).catch((e) => console.error("[challenge] Skill vergeben fehlgeschlagen:", e));
     }
     return true;
   } catch (e) {

@@ -1,7 +1,15 @@
 import { z } from "zod";
 import { POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from "./gamification";
+import { MAX_SKILL_COOLDOWN, MAX_SKILL_MINUTES, MAX_SKILL_USES, normalizeSkillReward } from "./rider-skill-rules";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** Skill als Belohnung; ältere Aufrufer lassen die Felder weg (bleibt, wie es ist). */
+const skillReward = {
+  skillId: z.number().int().positive().nullable().optional(),
+  skillUses: z.number().int().min(1).max(MAX_SKILL_USES).nullable().optional(),
+  skillValidDays: z.number().int().min(1).max(730).nullable().optional(),
+};
 
 /** Eingabe für das Anlegen und Ändern eines Meilensteins (Awards). */
 export const milestoneSchema = z.object({
@@ -21,6 +29,7 @@ export const milestoneSchema = z.object({
   eventDays: z.array(ymd).max(60).optional(),
   /** Grenze der Wassertemperatur in °C (Zählart „Tage mit kaltem Wasser“). */
   tempBelow: z.number().min(-5).max(40).nullable().optional(),
+  ...skillReward,
   active: z.boolean(),
 }).refine((m) => m.metric !== "COLD_DAYS" || m.tempBelow != null, { message: "Die Grenze der Wassertemperatur fehlt" });
 
@@ -56,6 +65,7 @@ export function normalizeMilestone(input: MilestoneInput) {
           : [],
     }),
     tempBelow: input.metric === "COLD_DAYS" ? input.tempBelow ?? null : null,
+    ...normalizeSkillReward(input),
     active: input.active,
   };
 }
@@ -73,6 +83,7 @@ export const challengeSchema = z
     endDate: ymd,
     voucherLabel: z.string().trim().max(80).nullable(),
     voucherValidDays: z.number().int().min(1).max(730).nullable(),
+    ...skillReward,
     active: z.boolean(),
     /** Abstimmung: die Antworten in der gezeigten Reihenfolge. */
     options: z.array(z.string().trim().max(60)).max(POLL_OPTIONS_MAX + 4).optional(),
@@ -122,6 +133,7 @@ export function normalizeChallenge(input: ChallengeInput) {
     endDate: new Date(`${input.endDate}T00:00:00.000Z`),
     voucherLabel,
     voucherValidDays: voucherLabel ? input.voucherValidDays : null,
+    ...(input.kind === "POLL" ? { skillId: null, skillUses: 1, skillValidDays: null } : normalizeSkillReward(input)),
     active: input.active,
   };
 }
@@ -158,4 +170,118 @@ export function normalizeOffer(input: OfferInput) {
 export function pushPlanPatch(push: boolean | undefined, pushedAt: Date | null): { pushPlanned?: boolean } {
   if (push === undefined || pushedAt) return {};
   return { pushPlanned: push };
+}
+
+/** Eingabe für einen Feiertag der Kunden-App (`key` steht im Pfad). */
+export const holidaySchema = z
+  .object({
+    show: z.enum(["GREETING", "OFFER", "VOUCHER"]),
+    title: z.string().trim().max(60).nullable(),
+    text: z.string().trim().max(300).nullable(),
+    voucherLabel: z.string().trim().max(80).nullable(),
+    voucherValidDays: z.number().int().min(1).max(730).nullable(),
+    daysBefore: z.number().int().min(0).max(14),
+    ...skillReward,
+    active: z.boolean(),
+    /** Push am Feiertag; fehlt der Wert, bleibt der Plan, wie er ist. */
+    push: z.boolean().optional(),
+  })
+  .refine((h) => h.show !== "OFFER" || !!h.text, { message: "Beim Angebot fehlt der Text" })
+  .refine((h) => h.show !== "VOUCHER" || !!h.voucherLabel || !!h.skillId, {
+    message: "Beim Gutschein fehlt die Leistung oder der Skill",
+  });
+
+export type HolidayInput = z.infer<typeof holidaySchema>;
+
+/** Leere Felder als NULL; Leistung und Gültigkeit gibt es nur beim Gutschein. */
+export function normalizeHoliday(input: HolidayInput) {
+  const voucher = input.show === "VOUCHER";
+  return {
+    show: input.show,
+    title: blank(input.title),
+    text: blank(input.text),
+    voucherLabel: voucher ? blank(input.voucherLabel) : null,
+    voucherValidDays: voucher ? input.voucherValidDays : null,
+    ...(voucher ? normalizeSkillReward(input) : { skillId: null, skillUses: 1, skillValidDays: null }),
+    daysBefore: input.daysBefore,
+    active: input.active,
+    ...(input.push !== undefined && { pushPlanned: input.push }),
+  };
+}
+
+/** Eingabe für einen Skill der Kunden-App (Gerät schalten oder Musik-Joker). */
+export const skillSchema = z
+  .object({
+    name: z.string().trim().min(1).max(40),
+    description: z.string().trim().max(160).nullable(),
+    kind: z.enum(["DEVICE", "MUSIC"]),
+    deviceId: z.number().int().positive().nullable(),
+    minutes: z.number().int().min(1).max(MAX_SKILL_MINUTES),
+    cooldownMinutes: z.number().int().min(0).max(MAX_SKILL_COOLDOWN),
+    onlyOperating: z.boolean(),
+    onlyOnSite: z.boolean(),
+    paused: z.boolean(),
+    active: z.boolean(),
+  })
+  .refine((s) => s.kind !== "DEVICE" || s.deviceId != null, { message: "Bitte ein Gerät wählen" });
+
+export type SkillInput = z.infer<typeof skillSchema>;
+
+export function normalizeSkill(input: SkillInput) {
+  return {
+    name: input.name,
+    description: blank(input.description),
+    kind: input.kind,
+    deviceId: input.kind === "DEVICE" ? input.deviceId : null,
+    minutes: input.minutes,
+    cooldownMinutes: input.cooldownMinutes,
+    onlyOperating: input.onlyOperating,
+    onlyOnSite: input.onlyOnSite,
+    paused: input.paused,
+    active: input.active,
+  };
+}
+
+/** Geburtstag in der Kunden-App (Kunden App › Aktionen): Gruß, Geschenk, Push. */
+export const birthdaySchema = z.object({
+  active: z.boolean(),
+  title: z.string().trim().max(60).nullable(),
+  text: z.string().trim().max(300).nullable(),
+  /** Leistung auf dem Geschenk-Gutschein; null = nur der Gruß. */
+  voucherLabel: z.string().trim().max(80).nullable(),
+  voucherValidDays: z.number().int().min(1).max(730).nullable(),
+  push: z.boolean(),
+});
+
+export function normalizeBirthday(input: z.infer<typeof birthdaySchema>) {
+  const voucherLabel = blank(input.voucherLabel);
+  return {
+    active: input.active,
+    title: blank(input.title),
+    text: blank(input.text),
+    voucherLabel,
+    voucherValidDays: voucherLabel ? input.voucherValidDays : null,
+    pushPlanned: input.push,
+  };
+}
+
+/** Geburtstags-Durchsage am Start-Drehkreuz (Audio › Zeitpläne). */
+export const birthdayAnnounceSchema = z
+  .object({
+    announceActive: z.boolean(),
+    announceText: z.string().trim().max(300).nullable(),
+    announceName: z.boolean(),
+    announceZoneIds: z.array(z.number().int().positive()).max(50),
+    announceVoice: z.string().trim().max(60).nullable(),
+    announceChime: z.boolean(),
+  })
+  .refine((a) => !a.announceActive || a.announceZoneIds.length > 0, { message: "Bitte mindestens eine Zone wählen" });
+
+export function normalizeBirthdayAnnounce(input: z.infer<typeof birthdayAnnounceSchema>) {
+  return {
+    ...input,
+    announceText: blank(input.announceText),
+    announceVoice: blank(input.announceVoice),
+    announceZoneIds: [...new Set(input.announceZoneIds)],
+  };
 }

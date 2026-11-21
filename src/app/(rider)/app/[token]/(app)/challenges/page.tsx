@@ -1,5 +1,5 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
-import { riderAppPath } from "@/lib/rider-app";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { RiderChallengeVoting } from "@/components/rider/rider-challenge-voting";
 import { loadRiderChallengesCached, type RiderChallenge } from "@/lib/rider-challenges";
@@ -56,6 +56,7 @@ function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
       <div className="rd-muted">
         {ruleText(c)}
         {c.voucherLabel ? ` · Gewinn: ${c.voucherLabel}` : ""}
+        {c.skillLabel ? ` · Skill: ${c.skillLabel}` : ""}
       </div>
 
       {c.kind === "TASK" && c.phase !== "upcoming" && c.threshold != null && (
@@ -132,7 +133,7 @@ export default async function RiderChallenges({ params }: { params: Promise<{ to
         <div className="rd-card rd-muted">
           <p style={{ margin: 0 }}>
             In Ranglisten und an deinen Fotos stehst du für andere als „Anonym“. Mit Spitzname und Zustimmung im{" "}
-            <Link href={`${riderAppPath(token)}/profil`}>Profil</Link> erscheinst du mit Spitznamen.
+            <Link href={`${(await riderBase(token))}/profil`}>Profil</Link> erscheinst du mit Spitznamen.
           </p>
         </div>
       )}

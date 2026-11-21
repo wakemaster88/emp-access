@@ -255,9 +255,10 @@
 .rd-nav-lens::before {
   content: "";
   position: absolute;
-  inset: 2px 8px;
+  /* Schmaler Rand und flache Schräge: „Gutscheine“ und „Challenges“ passen auch bei 320 px in die Linse. */
+  inset: 2px 3px;
   border-radius: 12px;
-  transform: skewX(-12deg);
+  transform: skewX(-8deg);
   background: rgb(251 191 36 / 0.14);
   box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(251 191 36 / 0.4);
 }
@@ -284,14 +285,19 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   font-weight: 600;
+  letter-spacing: -0.01em;
   max-height: 14px;
   opacity: 1;
   transition: max-height 0.5s var(--rd-spring), opacity 0.3s ease;
 }
-.rd-nav a[aria-current="page"] { color: var(--rd-accent); font-weight: 700; }
+/* Gleiche Schriftstärke wie inaktiv: fett wäre breiter als die Linse. */
+.rd-nav a[aria-current="page"] { color: var(--rd-accent); }
 /* Fünf Einträge: auf schmalen Geräten etwas kleiner, damit die Wörter nicht aneinanderstoßen. */
 @media (max-width: 389px) {
   .rd-nav { font-size: 10px; }
+}
+@media (max-width: 359px) {
+  .rd-nav { font-size: 9.5px; }
 }
 .rd-nav-wrap[data-compact] .rd-nav { height: 50px; }
 .rd-nav-wrap[data-compact] .rd-nav a > span { max-height: 0; opacity: 0; }
@@ -865,3 +871,132 @@ a.rd-cal-nav { border: 1px solid var(--rd-line-strong); }
 
 /* „alle ansehen“ neben Abschnittsüberschriften: volle Tippfläche */
 .rd-more { min-height: 44px; display: inline-flex; align-items: center; padding: 0 2px 0 12px; font-size: 13px; font-weight: 600; text-decoration: none; }
+
+/* Musik-Abstimmung: eingeklappte Zeile unter den Öffnungszeiten (lib/music-vote). */
+.rd-vote-toggle { width: 100%; min-height: 44px; padding: 8px 0 0; background: none; border: 0; border-top: 1px solid var(--rd-line); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.rd-vote-toggle > svg { color: var(--rd-accent-soft); }
+.rd-vote-sum { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-vote-toggle .rd-hours-more { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 600; color: var(--rd-link); }
+.rd-vote-chev { display: inline-flex; transition: transform 0.15s ease; }
+.rd-vote-chev-open { transform: rotate(180deg); }
+.rd-vote-panel { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; }
+.rd-vote-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rd-vote-opt {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid var(--rd-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rd-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rd-vote-opt:disabled { cursor: default; }
+.rd-vote-opt:disabled:not(.rd-vote-mine) { color: var(--rd-soft); }
+.rd-vote-mine { border-color: var(--rd-accent); background: var(--rd-accent-bg); }
+.rd-vote-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rd-vote-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-vote-mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1.5px solid var(--rd-line-strong);
+}
+.rd-vote-mark svg { width: 12px; height: 12px; }
+.rd-vote-mine .rd-vote-mark { background: var(--rd-accent); border-color: var(--rd-accent); color: var(--rd-on-accent); }
+.rd-vote-live { padding: 1px 8px; font-size: 11px; }
+.rd-vote-count { flex: none; min-width: 18px; text-align: right; font-weight: 700; color: var(--rd-accent); }
+.rd-vote-opt .rd-bar { height: 4px; }
+.rd-card > .rd-vote:first-child .rd-vote-toggle { border-top: 0; padding-top: 0; }
+
+/* Skills: Geräte schalten als Belohnung (lib/rider-skills). */
+.rd-skills { display: flex; flex-direction: column; gap: 10px; }
+.rd-skill { border-left: 4px solid var(--rd-accent); }
+.rd-skill-name { font-size: 22px; line-height: 1.1; }
+.rd-skill-go { display: inline-flex; align-items: center; gap: 8px; }
+.rd-skill .rd-chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--rd-line-strong);
+  background: transparent;
+  color: var(--rd-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.rd-skill .rd-chip-on { border-color: var(--rd-accent); background: var(--rd-accent-bg); color: var(--rd-accent-soft); font-weight: 600; }
+
+/* Gruß der Startseite; in einer Familie zugleich der Personen-Wechsel (klappt im Kopf auf, kein Dialog). */
+.rd-hero-hi { font-size: 48px; font-weight: 800; }
+.rd-switch { width: 100%; }
+.rd-switch summary { list-style: none; display: inline-flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; max-width: 100%; }
+.rd-switch summary::-webkit-details-marker { display: none; }
+.rd-switch summary .rd-hero-hi { min-width: 0; overflow-wrap: anywhere; }
+.rd-hero .rd-switch-chev svg { position: static; width: 16px; height: 16px; color: inherit; }
+/* Aufgeklappt: Kopf etwas höher, damit die Schräge unten keine Person abschneidet. */
+.rd-hero:has(.rd-switch[open]) { padding-bottom: 46px; }
+.rd-switch-chev {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.16);
+  color: #ffffff;
+  transition: transform 0.2s ease;
+}
+.rd-switch[open] .rd-switch-chev { transform: rotate(180deg); }
+/* Eine Zeile, bei vielen Personen seitlich wischen. */
+.rd-switch-list { display: flex; gap: 6px; margin: 2px -16px 0; padding: 4px 16px; overflow-x: auto; scrollbar-width: none; }
+.rd-switch-list::-webkit-scrollbar { display: none; }
+.rd-root .rd-switch-list a {
+  flex: none;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  border: 1px solid rgb(255 255 255 / 0.28);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+/* Sichtbar 36 px, Tippfläche 44 px (Design-Regel). */
+.rd-switch-list a { position: relative; }
+.rd-switch-list a::after { content: ""; position: absolute; inset: -4px 0; }
+.rd-switch-dot {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.22);
+  font-size: 13px;
+  font-weight: 700;
+}
+.rd-root .rd-switch-list a[aria-current] { background: var(--rd-accent); border-color: var(--rd-accent); color: var(--rd-on-accent); }
+.rd-switch-list a[aria-current] .rd-switch-dot { background: rgb(0 0 0 / 0.12); }
+@media (prefers-reduced-motion: reduce) { .rd-switch-chev { transition: none; } }
+
+/* Andere Person der Familie wird angezeigt (alle Seiten außer Start). */
+.rd-viewing { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 4px 0 12px; border-radius: 6px; background: var(--rd-accent-bg); color: var(--rd-soft); font-size: 14px; }
+.rd-viewing b { color: var(--rd-text); }
+.rd-viewing a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 10px; font-weight: 600; }

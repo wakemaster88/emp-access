@@ -33,6 +33,8 @@ export const TRIGGER_LABELS: Record<string, string> = {
   MANUAL: "Manuell",
   SCHEDULE: "Zeitplan",
   EMERGENCY: "Notfall",
+  VOTE: "Fahrer-Abstimmung",
+  BIRTHDAY: "Geburtstag",
 };
 
 export const TRACK_KIND_LABELS: Record<AudioTrackKind, string> = {
