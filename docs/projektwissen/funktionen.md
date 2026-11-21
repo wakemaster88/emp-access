@@ -1043,3 +1043,14 @@ Aaron wollte vorerst statt Inkasso einen eigenen Mahnlauf, vollautomatisch (Ents
 
 - **Tagesauswertung** („Dein Tag heute“): ganz oben auf der Startseite, sobald die Person heute einen Start hat (`RiderDayStat` von heute, Feld `today` in `RiderView`, `src/lib/rider-app.ts`). Zeigt Starts, Zeit am Lift (erster bis letzter Start; bei einem Start die Uhrzeit), Wasser (kältester Wert während der Fahrt, sonst aktueller Wert, sonst Luft), Besuchstag Nr., Saisonrekord, Hinweis für den Kälte-Award, heute freigeschaltete Awards, Fortschritt zum nächsten Award und zur laufenden Aufgaben-Challenge. Kostet eine kleine Abfrage über den eindeutigen Index (ticketId, day); alles andere ist schon geladen.
 - **Öffnungszeiten-Kalender** `/app/<token>/zeiten`: Tipp auf die Öffnungszeile in „Auslastung jetzt“. Monatsraster mit Zeiten je Tag, Sondertage (Ausnahmetage) mit gelbem Punkt, darunter die offenen Tage ab heute. Lift-Profil zuerst (`loadRiderSchedules`, `src/lib/rider-opening.ts`), andere Bereiche umschaltbar. Blättern ein Monat zurück, zwölf voraus (`?monat=YYYY-MM`, `?bereich=<id>`). Logik in `src/lib/rider-calendar.ts` (+ Test). Server-gerendert ohne Client-JS.
+
+## Playlist-Abstimmung der Fahrer (21.11.2026)
+
+Aaron: „in der kunden app soll optional aktiviert werden können, dass alle aktiven fahrer die playlist auswählen können. die mehrheit ist immer aktiv“.
+
+- Einschalten unter Kunden App › Einstellungen › „Playlist-Abstimmung“: Zonen (z. B. Insel), 2 bis 8 Playlists zur Wahl (Reihenfolge = Reihenfolge in der App), Ruhe nach Wahl des Teams (Vorgabe 60 Min, 0 = aus). Ab Werk aus.
+- Aktiv ist, wer heute am Lift gestartet ist und dessen letzter Start höchstens 2 Stunden her ist (`RiderDayStat.lastStartAt`). Je Person und Tag eine Stimme (`RiderMusicVote`), jederzeit änderbar oder zurücknehmbar. Stimmen inaktiver Fahrer zählen nicht mehr.
+- Mehrheit gewinnt; bei Gleichstand bleibt die laufende, sonst die vordere in der Auswahl. Ohne Stimme bleibt, was eingestellt ist.
+- Umsetzung `src/lib/music-vote.ts`, Regeln `music-vote-rules.ts`: gleich nach jeder Stimme und jede Minute im Cron `audio-schedules`. Sie wechselt nur laufende eigene Musik (nicht bei AirPlay/Bluetooth, nicht ohne Abspieler), startet nie selbst und schickt `manual: false`, das Musikfenster bleibt also unberührt. Der Wechsel setzt `AudioZone.playlistId` (nach dem Ausschalten bleibt die zuletzt gewählte Playlist als Vorgabe der Zone).
+- Personal geht vor: Start/Stopp von Hand (Dashboard, Geräte-API, emp-control) setzt `AudioZone.staffChoiceAt`; danach ruht die Abstimmung für die eingestellte Zeit. Im Audio-Verlauf stehen Wechsel als „Fahrer-Abstimmung“ (`triggerKind = VOTE`).
+- Kunden-App: Karte „Musik · <Zone>“ auf der Startseite, für aktive Fahrer direkt unter „Dein Tag heute“, sonst unter der Auslastung (nur zum Ansehen).

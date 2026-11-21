@@ -32,6 +32,8 @@ import { BeachSettingsCard } from "@/components/gamification/beach-settings-card
 import { normalizeBeachSettings } from "@/lib/beach-occupancy";
 import { normalizeThresholds } from "@/lib/rider-occupancy";
 import { AppInviteCard } from "@/components/gamification/app-invite-card";
+import { MusicVoteCard } from "@/components/gamification/music-vote-card";
+import { loadMusicVoteAdmin } from "@/lib/music-vote";
 import { inviteStatus } from "@/lib/rider-invite";
 
 type Tab = "auswertung" | "fahrer" | "meilensteine" | "aktionen" | "gutscheine" | "einstellungen";
@@ -402,7 +404,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
   }
 
   if (tab === "einstellungen") {
-    const [subscriptions, services, devices, sensors, invites] = await Promise.all([
+    const [subscriptions, services, devices, sensors, invites, audioZones, playlists, voteStanding] = await Promise.all([
       db.subscription.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.service.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       db.device.findMany({
@@ -416,6 +418,9 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         orderBy: { name: "asc" },
       }),
       inviteStatus(accountId),
+      db.audioZone.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
+      db.audioPlaylist.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      loadMusicVoteAdmin(accountId),
     ]);
     const beachCapacity =
       (await db.accessArea.findMany({ where: { accountId }, select: { name: true, personLimit: true } }))
@@ -449,6 +454,17 @@ export default async function GamificationPage({ searchParams }: { searchParams:
           config ? { factor: config.beachGuestFactor, mediumFrom: config.beachMediumFrom, highFrom: config.beachHighFrom } : null,
         )}
         capacity={beachCapacity}
+      />
+      <MusicVoteCard
+        initial={{
+          enabled: config?.musicVoteEnabled ?? false,
+          zoneIds: config?.musicVoteZoneIds ?? [],
+          playlistIds: config?.musicVotePlaylistIds ?? [],
+          holdMinutes: config?.musicVoteHoldMinutes ?? 60,
+        }}
+        zones={audioZones}
+        playlists={playlists}
+        standing={voteStanding}
       />
       <AppInviteCard initial={invites} />
       <AppShareCard

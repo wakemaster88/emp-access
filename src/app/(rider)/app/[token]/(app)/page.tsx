@@ -17,6 +17,8 @@ import { berlinYmd } from "@/lib/berlin-day";
 import type { RiderView } from "@/lib/rider-app";
 import { AwardBadge } from "@/components/rider/award-badge";
 import { NextAwardCard } from "@/components/rider/award-parts";
+import { RiderMusicVote } from "@/components/rider/rider-music-vote";
+import { loadMusicVoteView } from "@/lib/music-vote";
 
 export const dynamic = "force-dynamic";
 
@@ -178,7 +180,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { token } = await params;
   const rider = await requireRider(token);
   const base = riderAppPath(token);
-  const [offers, challenges, occupancy, opening, family, beach, air, water] = await Promise.all([
+  const [offers, challenges, occupancy, opening, family, beach, air, water, musicVote] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
@@ -188,6 +190,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
     // Luft und Wasser für den Kopf: zwei kleine Abfragen neben den anderen, kein Abruf nach außen.
     loadAirNow(rider.accountId).catch(() => null),
     loadWaterNow(rider.accountId).catch(() => null),
+    loadMusicVoteView(rider.accountId, rider.profileId).catch(() => null),
   ]);
   // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
   const konto = family?.relation === "self" ? await kontoRidersFor(rider.profileId) : null;
@@ -232,6 +235,9 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       </div>
 
       {rider.today && <TodayCard rider={rider} base={base} water={water} air={air} challenge={challenge} />}
+
+      {/* Wer gerade fährt, stimmt oben ab; sonst steht die Karte unter der Auslastung. */}
+      {musicVote?.canVote && <RiderMusicVote token={token} initial={musicVote} />}
 
       {konto && konto.abos.length > 0 && (
         <RiderForWhom
@@ -383,6 +389,8 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           )}
         </div>
       )}
+
+      {musicVote && !musicVote.canVote && <RiderMusicVote token={token} initial={musicVote} />}
 
       {beach && (
         <div className="rd-card">
