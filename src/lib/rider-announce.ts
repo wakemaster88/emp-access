@@ -15,6 +15,7 @@ import { currentHoliday } from "./holidays";
 import { dbDateToYmd, type ChallengeKind, type GamiMetric } from "./gamification";
 import { riderAppPath } from "./rider-app";
 import { deliverPush, isWebPushConfigured } from "./web-push";
+import { birthdayPushAccounts, runBirthdayPushes } from "./rider-birthday";
 import {
   challengeAnnounceBlock,
   challengePushText,
@@ -118,19 +119,23 @@ export async function runAccountAnnouncements(accountId: number, now: Date = new
     await prisma.riderHoliday.update({ where: { id: h.id }, data: { pushSent: sent } });
     announced++;
   }
+
+  // Geburtstage: an die Geräte des Geburtstagskinds, einmal je Jahr.
+  announced += await runBirthdayPushes(accountId, now);
   return announced;
 }
 
 /** Cron: alle Konten mit eingeschalteter Kunden-App und geplanten Meldungen. */
 export async function runAnnouncementTick(now: Date = new Date()): Promise<{ accounts: number; announced: number }> {
   if (!isWebPushConfigured()) return { accounts: 0, announced: 0 };
-  const [offers, challenges, holidays] = await Promise.all([
+  const [offers, challenges, holidays, birthdays] = await Promise.all([
     prisma.riderOffer.findMany({ where: { pushPlanned: true, pushedAt: null, active: true }, select: { accountId: true } }),
     prisma.challenge.findMany({ where: { pushPlanned: true, pushedAt: null, active: true }, select: { accountId: true } }),
     // Feiertage melden jedes Jahr neu; ob gerade einer fällig ist, prüft runAccountAnnouncements.
     prisma.riderHoliday.findMany({ where: { pushPlanned: true, active: true }, select: { accountId: true } }),
+    birthdayPushAccounts(),
   ]);
-  const accounts = [...new Set([...offers, ...challenges, ...holidays].map((r) => r.accountId))];
+  const accounts = [...new Set([...[...offers, ...challenges, ...holidays].map((r) => r.accountId), ...birthdays])];
   let announced = 0;
   for (const accountId of accounts) announced += await runAccountAnnouncements(accountId, now);
   return { accounts: accounts.length, announced };

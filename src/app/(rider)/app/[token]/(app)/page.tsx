@@ -9,6 +9,8 @@ import { loadAirNow } from "@/lib/weather-history";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
 import { loadRiderHoliday, type RiderHolidayView } from "@/lib/rider-holiday";
 import { holidayDayLabel } from "@/lib/holidays";
+import { loadRiderBirthday, type RiderBirthdayView } from "@/lib/rider-birthday";
+import { RiderBirthdayAnnounce } from "@/components/rider/rider-birthday-announce";
 import { fmtDay, voucherValidity } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
@@ -209,12 +211,41 @@ function HolidayCard({ holiday, base }: { holiday: RiderHolidayView; base: strin
   );
 }
 
+/**
+ * Geburtstag oben auf der Startseite: Gruß, Geschenk und der Hinweis auf die
+ * Durchsage am Lift, so wie in der Verwaltung eingestellt.
+ */
+function BirthdayCard({ birthday, base, token }: { birthday: RiderBirthdayView; base: string; token: string }) {
+  const v = birthday.voucher;
+  return (
+    <section className="rd-card rd-offer" style={{ gap: 4 }} aria-label="Geburtstag">
+      <div className="rd-label">Dein {birthday.age}. Geburtstag</div>
+      <span className="rd-display rd-h2">{birthday.title}</span>
+      {birthday.text && <span className="rd-soft">{birthday.text}</span>}
+      {v && !v.redeemed && (
+        <Link href={`${base}/gutscheine/${v.id}`} prefetch className="rd-today-row">
+          {QR_ICON}
+          <span className="rd-grow">
+            <b>Dein Geschenk: {v.label}</b>
+            <br />
+            <span className="rd-muted">Gültig {voucherValidity(v.expiresAt)}</span>
+          </span>
+          <span className="rd-btn rd-btn-sm"><span>Zeigen</span></span>
+        </Link>
+      )}
+      {v?.redeemed && <span className="rd-muted">Dein Geschenk {v.label} hast du schon eingelöst.</span>}
+      {!v && birthday.giftNeedsAbo && <span className="rd-muted">Mit Abo wartet hier ein Geschenk auf dich.</span>}
+      {birthday.announce && <RiderBirthdayAnnounce token={token} on={birthday.announce.on} />}
+    </section>
+  );
+}
+
 /** Dashboard: Abo, offene Gutscheine und die aktuelle Statistik. */
 export default async function RiderDashboard({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const rider = await requireRider(token);
   const base = riderAppPath(token);
-  const [offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills] = await Promise.all([
+  const [offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills, birthday] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
@@ -232,6 +263,10 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
     loadRiderSkills(rider).catch((e) => {
       console.error("[rider-skills]", e);
       return [];
+    }),
+    loadRiderBirthday(rider).catch((e) => {
+      console.error("[rider-birthday]", e);
+      return null;
     }),
   ]);
   // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
@@ -277,6 +312,8 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       </div>
 
       {rider.today && <TodayCard rider={rider} base={base} water={water} air={air} challenge={challenge} />}
+
+      {birthday && <BirthdayCard birthday={birthday} base={base} token={token} />}
 
       {holiday && <HolidayCard holiday={holiday} base={base} />}
 

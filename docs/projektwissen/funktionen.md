@@ -1076,3 +1076,15 @@ Seit 21.11.2026 (Aaron: „anstatt gutschein, kann man auch skills gewinnen wie 
 - Vergabe: an Award, Challenge und Feiertag (Feld „Skill freischalten“ mit Nutzungen und Gültigkeit), als `RiderSkillGrant` am Ticket wie ein Gutschein; Push „Neuer Skill“.
 - Grenzen (`src/lib/rider-skill-rules.ts`): Nutzungen und Ablauf, nur während der Betriebszeit am Lift, nur wer heute schon am Lift gestartet ist, Pause je Skill nach jeder Nutzung, Sperre durch das Personal.
 - Schalten (`src/lib/rider-skills.ts`, `POST /api/rider/[token]/skill`): Nutzung wird unter einer Sperre je Skill gebucht, dann geschaltet. Taster laufen ihre eigene Dauer, Schalter bekommen den Shelly-Auto-Off-Timer (`autoOffSec`), Hue schaltet der Minuten-Cron (`runSkillOffTick` im Audio-Cron) wieder aus. Klappt das Schalten nicht, gibt es die Nutzung zurück; das Protokoll (`RiderSkillUse`) zeigt den Fehler.
+
+## Geburtstag in der Kunden-App (21.11.2026)
+
+Aaron: „geburtstagsgrüße in die kunden app, im backend geschenk hinterlegen, grüße auch als push, geburtstagsoption in audio: wenn ein geburtstagskind scant kommt die ansage einmalig an dem tag“.
+
+- Einstellung je Mandant in `RiderBirthday` (eine Zeile), Vergaben je Person und Jahr in `RiderBirthdayGift` (Geschenk `giftAt`/`voucherId`, Push `pushedAt`/`pushSent`, Durchsage `announcedAt`). Regeln ohne DB in `src/lib/birthday.ts`, Ablauf in `src/lib/rider-birthday.ts`.
+- Geburtsdatum: `RiderProfile.birthDate` (die Person pflegt es im Profil). 29. Februar feiert ohne Schalttag am 28.
+- App: Karte oben auf der Startseite nur am Geburtstag („Dein 25. Geburtstag“). Geschenk wie bei Feiertagen: Gutschein für Personen mit gültigem Abo, einmal je Jahr, beim ersten Öffnen der App am Geburtstag. Ohne Abo nur der Gruß mit Hinweis.
+- Verwaltung: Kunden App › Aktionen › Karte „Geburtstag“ (Aus / Gruß / Mit Geschenk, Überschrift, Text, Push-Schalter mit Vorschau). `{vorname}` in Überschrift und Text wird ersetzt, sonst hängt der Vorname hinten an.
+- Push: einmal am Geburtstag 9–21 Uhr über den 5-Minuten-Cron (`runAccountAnnouncements`), nur an die Geräte des Geburtstagskinds; Kind ohne eigenes Gerät: an die Erwachsenen seiner Familie („Heute hat Mia Geburtstag“). Nie, wenn die Überschrift mit „TEST:“ beginnt.
+- Durchsage: Audio › Zeitpläne › Karte „Geburtstags-Ansage“ (Zonen, Text, Vorname ja/nein, Stimme, Gong, Probe nur im Browser). Beim ersten GRANTED-Scan am Gerät mit `countsAsStart` (Start-Drehkreuz) am Geburtstag rendert `announceBirthdayOnScan` den Text über xAI (gleicher Text aus dem Cache) und legt ANNOUNCE-Jobs mit `triggerKind = "BIRTHDAY"` an; läuft per `after()` hinter der Scan-Antwort. Einmal am Tag; schlägt die Sprachausgabe fehl, versucht es der nächste Scan erneut.
+- Datenschutz: nur Vorname, nie Nachname, im Verlauf „Geburtstag Mia“. Die Person kann die Durchsage auf ihrer Geburtstagskarte abschalten (`RiderProfile.birthdayAnnounce`, PATCH `/api/rider/<token>/birthday`). Alles ab Werk aus.
