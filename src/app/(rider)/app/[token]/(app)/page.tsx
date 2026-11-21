@@ -12,7 +12,9 @@ import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
 import { loadRiderOpening } from "@/lib/rider-opening";
 import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
-import { nextAward } from "@/lib/awards";
+import { awardRemainingText, nextAward } from "@/lib/awards";
+import { berlinYmd } from "@/lib/berlin-day";
+import type { RiderView } from "@/lib/rider-app";
 import { AwardBadge } from "@/components/rider/award-badge";
 import { NextAwardCard } from "@/components/rider/award-parts";
 
@@ -35,6 +37,138 @@ const PIN_ICON = (
     <path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" />
   </svg>
 );
+
+const CHEVRON_RIGHT = (
+  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+);
+
+function clock(at: Date): string {
+  return at.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+}
+
+/**
+ * Tagesauswertung oben auf der Startseite, sobald die Person heute am Lift
+ * gestartet ist. Alles kommt aus dem schon geladenen Fahrer (eine kleine
+ * Abfrage auf die Tageszeile), damit die Startseite nicht langsamer wird.
+ */
+function TodayCard({
+  rider,
+  base,
+  water,
+  air,
+  challenge,
+}: {
+  rider: RiderView;
+  base: string;
+  water: number | null;
+  air: number | null;
+  challenge: { name: string; value: number; threshold: number | null; kind: string } | null;
+}) {
+  const t = rider.today!;
+  const minutes = Math.max(0, Math.round((t.lastStartAt.getTime() - t.firstStartAt.getTime()) / 60_000));
+  const ymd = berlinYmd(new Date());
+  const unlockedToday = rider.awards.filter((a) => a.unlocked && a.awardedAt && berlinYmd(a.awardedAt) === ymd);
+  const upcoming = nextAward(rider.awards);
+  const cold = rider.awards.find((a) => a.metric === "COLD_DAYS" && a.tempBelow != null);
+  const waterNow = t.waterTemp ?? water;
+  const record = t.bestBefore > 0 && t.starts > t.bestBefore;
+  const task = challenge && challenge.kind === "TASK" && challenge.threshold != null ? challenge : null;
+
+  return (
+    <section className="rd-card rd-today" aria-label="Dein Tag heute">
+      <div className="rd-between">
+        <div className="rd-label">Dein Tag heute</div>
+        <span className="rd-muted" style={{ fontSize: 12 }}>Besuchstag {rider.visitDays} in {rider.year}</span>
+      </div>
+      <div className="rd-today-stats">
+        <div>
+          <span className="rd-display">{t.starts}</span>
+          <span className="rd-muted">{t.starts === 1 ? "Start" : "Starts"}</span>
+        </div>
+        {t.starts > 1 ? (
+          <div>
+            <span className="rd-display">
+              {minutes >= 60 ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : minutes}
+              <small>{minutes >= 60 ? " h" : " min"}</small>
+            </span>
+            <span className="rd-muted">am Lift</span>
+          </div>
+        ) : (
+          <div>
+            <span className="rd-display">{rider.dayGuest ? "–" : clock(t.firstStartAt)}</span>
+            <span className="rd-muted">erster Start</span>
+          </div>
+        )}
+        {waterNow != null ? (
+          <div>
+            <span className="rd-display">{formatDegrees(Math.round(waterNow * 10) / 10)}°</span>
+            <span className="rd-muted">Wasser</span>
+          </div>
+        ) : air != null ? (
+          <div>
+            <span className="rd-display">{formatDegrees(Math.round(air) || 0)}°</span>
+            <span className="rd-muted">Luft</span>
+          </div>
+        ) : (
+          <div>
+            <span className="rd-display">{rider.starts}</span>
+            <span className="rd-muted">Starts {rider.year}</span>
+          </div>
+        )}
+      </div>
+      <span className="rd-soft">
+        {t.starts > 1 && !rider.dayGuest ? `Am Lift von ${clock(t.firstStartAt)} bis ${clock(t.lastStartAt)} Uhr. ` : ""}
+        {record ? (
+          <span className="rd-today-rec">Neuer Saisonrekord! Bisher {t.bestBefore} Starts an einem Tag.</span>
+        ) : t.bestBefore > 0 ? (
+          `Dein Rekord ${rider.year}: ${t.bestBefore} Starts an einem Tag.`
+        ) : (
+          "Dein erster Tag am Lift in dieser Saison."
+        )}
+      </span>
+      {cold && t.waterTemp != null && t.waterTemp < cold.tempBelow! && (
+        <span className="rd-soft">
+          Wasser unter {formatDegrees(cold.tempBelow!)}°: heute zählt für {cold.name}.
+        </span>
+      )}
+      {unlockedToday.length > 0 && (
+        <Link href={`${base}/awards`} prefetch className="rd-today-row">
+          {unlockedToday.slice(0, 3).map((a) => <AwardBadge key={a.id} award={a} size={44} />)}
+          <span className="rd-grow">
+            <b>Heute freigeschaltet</b>
+            <br />
+            <span className="rd-muted">{unlockedToday.map((a) => a.name).join(", ")}</span>
+          </span>
+          {CHEVRON_RIGHT}
+        </Link>
+      )}
+      {upcoming && (
+        <Link href={`${base}/awards/${upcoming.id}`} prefetch={false} className="rd-today-row">
+          <span className="rd-grow">
+            <b>{upcoming.name}</b> <span className="rd-muted">· {awardRemainingText(upcoming)}</span>
+            <span className="rd-bar" style={{ display: "block" }}>
+              <i style={{ width: `${Math.min(100, (upcoming.value / upcoming.threshold) * 100)}%` }} />
+            </span>
+          </span>
+          {CHEVRON_RIGHT}
+        </Link>
+      )}
+      {task && (
+        <Link href={`${base}/challenges`} className="rd-today-row">
+          <span className="rd-grow">
+            <b>{task.name}</b> <span className="rd-muted">· {Math.min(task.value, task.threshold!)} von {task.threshold}</span>
+            <span className="rd-bar" style={{ display: "block" }}>
+              <i style={{ width: `${Math.min(100, Math.round((task.value / task.threshold!) * 100))}%` }} />
+            </span>
+          </span>
+          {CHEVRON_RIGHT}
+        </Link>
+      )}
+    </section>
+  );
+}
 
 /** Dashboard: Abo, offene Gutscheine und die aktuelle Statistik. */
 export default async function RiderDashboard({ params }: { params: Promise<{ token: string }> }) {
@@ -93,6 +227,8 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           <h1 className="rd-display" style={{ fontSize: 48, fontWeight: 800 }}>{rider.firstName ? `Hi ${rider.firstName}` : "Hi"}</h1>
         </div>
       </div>
+
+      {rider.today && <TodayCard rider={rider} base={base} water={water} air={air} challenge={challenge} />}
 
       {konto && konto.abos.length > 0 && (
         <RiderForWhom
@@ -207,13 +343,14 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             </>
           )}
           {opening && (
-            <div className={`rd-hours${opening.open ? " rd-hours-open" : ""}`}>
+            <Link href={`${base}/zeiten`} prefetch className={`rd-hours${opening.open ? " rd-hours-open" : ""}`}>
               {CLOCK_ICON}
-              <span>
+              <span className="rd-grow">
                 {opening.text}
                 {opening.note ? ` (${opening.note})` : ""}
               </span>
-            </div>
+              <span className="rd-hours-more">Kalender{CHEVRON_RIGHT}</span>
+            </Link>
           )}
         </div>
       )}
