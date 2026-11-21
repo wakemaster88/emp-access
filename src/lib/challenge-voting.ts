@@ -18,7 +18,7 @@ import { prisma, tenantClient } from "./prisma";
 import { deleteBlobs, resolveBinary, storeBlob } from "./blob-store";
 import { challengeOver, rankStandings, type ChallengeKind, type ChallengePhase } from "./gamification";
 import { berlinHm } from "./berlin-day";
-import { decodePhotoDataUrl, pollPercents, seededOrder } from "./challenge-voting-rules";
+import { CHALLENGE_THUMB_PX, decodePhotoDataUrl, pollPercents, seededOrder } from "./challenge-voting-rules";
 
 export interface PhotoEntryView {
   id: number;
@@ -65,6 +65,8 @@ export async function loadVoting(
   challenges: VotingChallenge[],
   profileId: number | null,
   staff = false,
+  /** Andere Mitglieder der eigenen Familie: stehen mit Namen statt „Anonym“ da. */
+  familyNames: Map<number, string> = new Map(),
 ): Promise<Map<number, VotingView>> {
   const out = new Map<number, VotingView>();
   const voting = challenges.filter((c) => c.kind === "PHOTO" || c.kind === "POLL");
@@ -132,7 +134,7 @@ export async function loadVoting(
       const p = e.profile;
       const name = staff
         ? [p.firstName, p.lastName].filter(Boolean).join(" ") || p.nickname || `Profil ${e.profileId}`
-        : isMine ? "Du" : (p.showInRanking && p.nickname) || "Anonym";
+        : isMine ? "Du" : familyNames.get(e.profileId) ?? ((p.showInRanking && p.nickname) || "Anonym");
       return {
         id: e.id,
         name,
@@ -263,11 +265,15 @@ export async function saveEntry(
   const photo = decodePhotoDataUrl(dataUrl);
   if (!photo) return { error: "Bitte ein Foto als JPG oder PNG wählen.", status: 400 };
 
+  // Vorschaubild rechnet der Server aus dem geprüften Foto; klappt das nicht, zeigt die App das Foto selbst.
+  const thumb = await makeThumb(photo.bytes);
+
   const db = tenantClient(accountId);
   const blob = await storeBlob("challenge-photos", accountId, photo.bytes, photo.contentType, photo.ext);
+  const thumbBlob = thumb ? await storeBlob("challenge-photos", accountId, thumb.bytes, thumb.contentType, thumb.ext) : null;
   const old = await db.challengeEntry.findFirst({
     where: { accountId, challengeId, profileId },
-    select: { id: true, imageBlob: true },
+    select: { id: true, imageBlob: true, thumbBlob: true },
   });
   const created = await db.$transaction(async (tx) => {
     if (old) await tx.challengeEntry.delete({ where: { id: old.id } });
@@ -277,12 +283,29 @@ export async function saveEntry(
         profileId,
         accountId,
         ...(blob ? { imageBlob: blob } : { image: photo.bytes }),
+        ...(thumb ? (thumbBlob ? { thumbBlob } : { thumb: thumb.bytes }) : {}),
       },
       select: { id: true },
     });
   });
-  if (old?.imageBlob) await deleteBlobs([old.imageBlob]);
+  if (old) await deleteBlobs([old.imageBlob, old.thumbBlob]);
   return { ok: true, id: created.id };
+}
+
+/** JPEG mit höchstens `CHALLENGE_THUMB_PX` an der längsten Kante, oder null. */
+async function makeThumb(bytes: Uint8Array): Promise<{ bytes: Uint8Array<ArrayBuffer>; contentType: "image/jpeg"; ext: "jpg" } | null> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const out = await sharp(bytes)
+      .rotate()
+      .resize(CHALLENGE_THUMB_PX, CHALLENGE_THUMB_PX, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 78, mozjpeg: true })
+      .toBuffer();
+    return { bytes: new Uint8Array(out), contentType: "image/jpeg", ext: "jpg" };
+  } catch (e) {
+    console.error("[challenge] Vorschaubild fehlgeschlagen:", e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
 /** Eigenes Foto zurückziehen, solange die Challenge läuft. */
@@ -297,15 +320,29 @@ export async function removeEntry(
   const db = tenantClient(accountId);
   const old = await db.challengeEntry.findFirst({
     where: { accountId, challengeId, profileId },
-    select: { id: true, imageBlob: true },
+    select: { id: true, imageBlob: true, thumbBlob: true },
   });
   if (!old) return { ok: true };
   await db.challengeEntry.delete({ where: { id: old.id } });
-  if (old.imageBlob) await deleteBlobs([old.imageBlob]);
+  await deleteBlobs([old.imageBlob, old.thumbBlob]);
   return { ok: true };
 }
 
 /** Bytes eines Fotos (Blob oder Spalte) oder null. */
 export async function entryImage(entry: { imageBlob: string | null; image: Uint8Array | null }): Promise<Buffer | null> {
   return resolveBinary({ blob: entry.imageBlob, bytes: entry.image });
+}
+
+/** Vorschaubild, sonst das Foto selbst (ältere Fotos haben keins). */
+export async function entryThumb(entry: {
+  imageBlob: string | null;
+  image: Uint8Array | null;
+  thumbBlob: string | null;
+  thumb: Uint8Array | null;
+}): Promise<Buffer | null> {
+  if (entry.thumbBlob || entry.thumb) {
+    const t = await resolveBinary({ blob: entry.thumbBlob, bytes: entry.thumb });
+    if (t) return t;
+  }
+  return entryImage(entry);
 }

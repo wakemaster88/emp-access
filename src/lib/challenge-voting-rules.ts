@@ -7,6 +7,8 @@
 export const CHALLENGE_PHOTO_MAX_CHARS = 2_000_000;
 /** Längste Kante, auf die die App ein Foto vor dem Hochladen verkleinert. */
 export const CHALLENGE_PHOTO_PX = 1600;
+/** Längste Kante des Vorschaubilds im Raster (2 Spalten, Retina). */
+export const CHALLENGE_THUMB_PX = 480;
 
 export interface DecodedPhoto {
   bytes: Uint8Array<ArrayBuffer>;

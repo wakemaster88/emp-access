@@ -15,6 +15,18 @@ interface Viewer {
   canUpload: boolean;
   /** Warum nicht abgestimmt werden kann (wenn `canVote` aus ist). */
   noVoteText: string;
+  /** Name der angezeigten Person, wenn Eltern oder Partner sie ansehen; sonst null („Du“). */
+  shownName: string | null;
+}
+
+/** In der Familienansicht steht statt „Du“ der Name der angezeigten Person. */
+function asShown(c: RiderChallenge, name: string | null): RiderChallenge {
+  if (!name) return c;
+  return {
+    ...c,
+    top: c.top.map((t) => (t.me ? { ...t, name } : t)),
+    voting: c.voting && { ...c.voting, entries: c.voting.entries.map((e) => (e.mine ? { ...e, name } : e)) },
+  };
 }
 
 function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
@@ -50,7 +62,9 @@ function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
         <>
           <div className="rd-between">
             <b>
-              {c.rank != null ? `Du bist auf Platz ${c.rank} · ${c.value} ${metric}` : "Du bist noch nicht dabei"}
+              {viewer.shownName
+                ? c.rank != null ? `${viewer.shownName} ist auf Platz ${c.rank} · ${c.value} ${metric}` : `${viewer.shownName} ist noch nicht dabei`
+                : c.rank != null ? `Du bist auf Platz ${c.rank} · ${c.value} ${metric}` : "Du bist noch nicht dabei"}
             </b>
             <span className="rd-muted">{c.participants} Fahrer dabei</span>
           </div>
@@ -89,7 +103,7 @@ function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
 export default async function RiderChallenges({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const rider = await requireRider(token);
-  const [challenges, family] = await Promise.all([loadRiderChallengesCached(rider), riderFamilyView(token)]);
+  const [loaded, family] = await Promise.all([loadRiderChallengesCached(rider), riderFamilyView(token)]);
   const self = family?.relation === "self";
   const profile = self ? await findRiderAuthProfile(token) : null;
   const eligible = profile ? await mayVote(profile) : false;
@@ -98,7 +112,9 @@ export default async function RiderChallenges({ params }: { params: Promise<{ to
     canVote: self && eligible,
     canUpload: family?.relation !== "view" && rider.ticketIds.length > 0,
     noVoteText: self ? "Abstimmen kann, wer ein Abo oder Ticket hat." : "Abstimmen kann jede Person nur selbst, in ihrem eigenen Zugang.",
+    shownName: family && !self ? rider.firstName || null : null,
   };
+  const challenges = loaded.map((c) => asShown(c, viewer.shownName));
   const running = challenges.filter((c) => c.phase === "running");
   const upcoming = challenges.filter((c) => c.phase === "upcoming");
   const ended = challenges.filter((c) => c.phase === "ended");

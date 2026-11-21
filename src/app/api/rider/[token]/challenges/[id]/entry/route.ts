@@ -5,6 +5,7 @@ import { berlinYmd } from "@/lib/berlin-day";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { riderApiManage } from "@/lib/rider-auth";
 import { checkChallengePhoto } from "@/lib/profile-photo-check";
+import { PHOTO_CHECKS_EXHAUSTED, takePhotoCheck } from "@/lib/photo-check-limit";
 import { removeEntry, saveEntry } from "@/lib/challenge-voting";
 import { CHALLENGE_PHOTO_MAX_CHARS } from "@/lib/challenge-voting-rules";
 
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "Mitmachen kannst du, sobald du ein Abo oder Ticket hast." }, { status: 409 });
   }
 
+  if (!(await takePhotoCheck(ctx.profile.id))) return NextResponse.json({ error: PHOTO_CHECKS_EXHAUSTED }, { status: 429 });
   const check = await checkChallengePhoto(parsed.data.photo);
   if (!check.ok) return NextResponse.json({ error: check.error }, { status: 422 });
 

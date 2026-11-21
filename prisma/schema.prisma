@@ -3856,6 +3856,9 @@ model ChallengeEntry {
   profile     RiderProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
   imageBlob   String?
   image       Bytes?
+  /// Vorschaubild (ca. 480 px) fuer das Raster der App; fehlt bei aelteren Fotos.
+  thumbBlob   String?
+  thumb       Bytes?
   /// Vom Personal ausgeblendet: fuer andere unsichtbar, zaehlt nicht.
   hidden      Boolean         @default(false)
   votes       ChallengeVote[]
@@ -4047,6 +4050,9 @@ model RiderBirthdayGift {
 /// `/app/<token>` ist die Berechtigung, wie bei der Mitarbeiter-App `/m/<token>`.
 model RiderProfile {
   id                Int                     @id @default(autoincrement())
+  /// Tag und Zahl der KI-Fotopruefungen (Tagesgrenze, lib/profile-photo-check).
+  photoCheckDay     DateTime?               @db.Date
+  photoChecks       Int                     @default(0)
   token             String                  @unique
   /// Fuer andere sichtbar (Rangliste), nie der echte Name.
   nickname          String?

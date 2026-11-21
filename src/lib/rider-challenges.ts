@@ -23,6 +23,7 @@ import {
 } from "./challenge-service";
 import type { RiderView } from "./rider-app";
 import { loadVoting, type VotingView } from "./challenge-voting";
+import { loadFamilyMembers } from "./rider-family";
 
 export interface RiderChallenge {
   id: number;
@@ -95,6 +96,8 @@ export async function loadRiderChallenges(
   });
   const wonIds = new Set(awards.map((a) => a.challengeId));
   const myKey = `p${rider.profileId}`;
+  // Die eigene Familie steht mit Namen da, auch ohne Spitznamen (Aaron, 21.11.2026).
+  const familyNames = await familyNamesOf(accountId, rider.profileId);
 
   const phases = new Map(
     challenges.map((c) => [c.id, challengePhase({ startYmd: dbDateToYmd(c.startDate), endYmd: dbDateToYmd(c.endDate), endTime: c.endTime }, today, berlinHm(now))]),
@@ -103,6 +106,8 @@ export async function loadRiderChallenges(
     accountId,
     challenges.map((c) => ({ id: c.id, kind: c.kind, phase: phases.get(c.id)!, topCount: c.topCount })),
     rider.profileId,
+    false,
+    familyNames,
   ).catch((e) => {
     console.error("[challenges] Abstimmungen nicht geladen:", e instanceof Error ? e.message : e);
     return new Map<number, VotingView>();
@@ -132,7 +137,10 @@ export async function loadRiderChallenges(
         rank: s.rank,
         value: s.value,
         me: s.key === myKey,
-        name: s.key === myKey ? "Du" : (s.unit.profileId != null && nick.get(s.unit.profileId)) || "Anonym",
+        name:
+          s.key === myKey
+            ? "Du"
+            : (s.unit.profileId != null && (familyNames.get(s.unit.profileId) ?? nick.get(s.unit.profileId))) || "Anonym",
       }));
     }
     out.push({
@@ -160,6 +168,14 @@ export async function loadRiderChallenges(
   }
   const order: Record<ChallengePhase, number> = { running: 0, upcoming: 1, ended: 2 };
   return out.sort((a, b) => order[a.phase] - order[b.phase]);
+}
+
+/** Namen der anderen Mitglieder der Familie dieser Person (Profil-ID → Name). */
+async function familyNamesOf(accountId: number, profileId: number): Promise<Map<number, string>> {
+  const p = await prisma.riderProfile.findFirst({ where: { id: profileId, accountId }, select: { familyId: true } });
+  if (p?.familyId == null) return new Map();
+  const members = await loadFamilyMembers(p.familyId, accountId);
+  return new Map(members.filter((m) => m.profileId !== profileId).map((m) => [m.profileId, m.name]));
 }
 
 export const loadRiderChallengesCached = cache((rider: RiderView) => loadRiderChallenges(rider));
