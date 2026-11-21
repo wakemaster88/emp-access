@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Mail, Merge, Pencil, Trash2, UserPen } from "lucide-react";
+import { Loader2, Mail, Merge, Pencil, Trash2, Trophy, UserPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import type { CustomerAccountRow, CustomerAccountsData, CustomerPersonRow } from "@/lib/customer-accounts";
 import { ageFrom, fmtDay, RiderForm, type RiderChoice } from "./rider-form";
+import { RidePassPanel } from "./ride-pass-panel";
 
 /** So viele Konten zeigt die Tabelle ohne Suche. */
 const PAGE = 100;
@@ -53,6 +54,7 @@ function plural(n: number, one: string, many: string): string {
 type Step =
   | { kind: "overview" }
   | { kind: "person"; personId: number }
+  | { kind: "ridepass"; personId: number }
   | { kind: "rider"; aboId: number }
   | { kind: "merge"; fromId: number | null };
 
@@ -263,6 +265,17 @@ function AccountDialogBody({
     );
   }
 
+  if (step.kind === "ridepass") {
+    const p = c.persons.find((x) => x.id === step.personId);
+    if (!p) return null;
+    return (
+      <>
+        {header(`Ride Pass · ${personName(p)}`, `${holderOf(c)} · ${c.email}`)}
+        <RidePassPanel personId={p.id} personName={personName(p)} onBack={back} />
+      </>
+    );
+  }
+
   if (step.kind === "rider") {
     const a = c.abos.find((x) => x.id === step.aboId);
     if (!a) return null;
@@ -334,6 +347,16 @@ function AccountDialogBody({
                         : ""}
                     </div>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Ride Pass von ${personName(p)}`}
+                    title="Ride Pass"
+                    className="max-sm:size-11"
+                    onClick={() => setStep({ kind: "ridepass", personId: p.id })}
+                  >
+                    <Trophy />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
