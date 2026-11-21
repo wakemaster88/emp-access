@@ -4,7 +4,7 @@ import { CheckIcon, GiftIcon, LockIcon, TierTag } from "@/components/rider/award
 import { awardCountable, awardRemainingText, voucherHeadline } from "@/lib/awards";
 import { riderAppPath, type RiderVoucher } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
-import { fmtDay, validityText } from "@/lib/rider-format";
+import { fmtDay, voucherValidity } from "@/lib/rider-format";
 
 export const dynamic = "force-dynamic";
 
@@ -20,14 +20,15 @@ function Ticket({ v, href }: { v: RiderVoucher; href: string }) {
   return (
     <Link href={href} prefetch className="rd-aw-vt">
       <span className="rd-aw-vt-b">
-        {v.award ? <AwardBadge award={v.award} size={70} /> : <span className="rd-aw-gift" style={{ margin: "0 8px" }}><GiftIcon size={22} /></span>}
+        {v.award ? <AwardBadge award={v.award} size={56} /> : <span className="rd-aw-gift" style={{ margin: "0 8px" }}><GiftIcon size={22} /></span>}
       </span>
       <span className="rd-aw-vt-t">
-        {v.award ? <TierTag tier={v.award.tier} /> : v.source ? <span className="rd-label">{v.source}</span> : null}
-        {v.award && <span className="rd-label" style={{ display: "block" }}>{v.award.name}</span>}
+        {v.award ? (
+          <span className="rd-label" style={{ display: "block" }}><TierTag tier={v.award.tier} inline /> · {v.award.name}</span>
+        ) : v.source ? <span className="rd-label">{v.source}</span> : null}
         <span className="rd-display rd-aw-vt-h" style={{ display: "block" }}>{head}</span>
         {detail && <span className="rd-aw-vt-d" style={{ display: "block" }}>{detail}</span>}
-        <span className="rd-aw-vt-v" style={{ display: "block" }}>{v.expiresAt ? `Gültig bis ${fmtDay(v.expiresAt)}, ${validityText(v.expiresAt)}` : "Ohne Ablauf"}</span>
+        <span className="rd-aw-vt-v" style={{ display: "block" }}>Gültig {voucherValidity(v.expiresAt)}</span>
       </span>
       <span className="rd-aw-vt-q">
         {QR_ICON}

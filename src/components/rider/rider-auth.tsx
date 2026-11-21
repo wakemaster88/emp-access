@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore } from "react";
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { passkeyErrorMessage, passkeySupportSnapshot } from "@/lib/passkey-client";
 import { clearRiderLocalData } from "@/lib/rider-local";
+import { RiderPasswordInput } from "./rider-password-input";
 
 async function post<T>(url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -93,12 +94,12 @@ export function RiderSetup({ token, resetKey }: { token: string; resetKey?: stri
         <b>{supported ? (resetKey ? "Oder neues Passwort" : "Oder mit Passwort") : resetKey ? "Neues Passwort festlegen" : "Passwort festlegen"}</b>
         <div className="rd-field">
           <label htmlFor="rd-pw">Passwort</label>
-          <input id="rd-pw" className="rd-input" type="password" autoComplete="new-password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} />
+          <RiderPasswordInput id="rd-pw" autoComplete="new-password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} />
           <span className="rd-muted">Mindestens 8 Zeichen.</span>
         </div>
         <div className="rd-field">
           <label htmlFor="rd-pw2">Passwort wiederholen</label>
-          <input id="rd-pw2" className="rd-input" type="password" autoComplete="new-password" minLength={8} required value={repeat} onChange={(e) => setRepeat(e.target.value)} />
+          <RiderPasswordInput id="rd-pw2" autoComplete="new-password" minLength={8} required value={repeat} onChange={(e) => setRepeat(e.target.value)} />
         </div>
         {error && <div className="rd-msg rd-msg-err" role="alert">{error}</div>}
         <button type="submit" className={`rd-btn rd-btn-wide${supported ? " rd-btn-ghost" : ""}`} disabled={busy || password.length < 8 || !repeat}>
@@ -155,7 +156,7 @@ export function RiderSignIn({ token, hasPassword, hasPasskey }: { token: string;
         <form className="rd-card" style={{ gap: 12 }} onSubmit={(e) => { e.preventDefault(); void run(async () => { await post(`${api}/login`, { password }); }); }}>
           <div className="rd-field">
             <label htmlFor="rd-pw">Passwort</label>
-            <input id="rd-pw" className="rd-input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+            <RiderPasswordInput id="rd-pw" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
           <button type="submit" className={`rd-btn rd-btn-wide${hasPasskey && supported ? " rd-btn-ghost" : ""}`} disabled={busy || !password}>
             <span>{busy ? "Einen Moment …" : "Anmelden"}</span>
@@ -339,12 +340,12 @@ export function RiderSecurity({ token, hasPassword, passkeys }: { token: string;
           {state.hasPassword && (
             <div className="rd-field">
               <label htmlFor="rd-cur">Bisheriges Passwort</label>
-              <input id="rd-cur" className="rd-input" type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
+              <RiderPasswordInput id="rd-cur" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
             </div>
           )}
           <div className="rd-field">
             <label htmlFor="rd-new">Neues Passwort</label>
-            <input id="rd-new" className="rd-input" type="password" autoComplete="new-password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} />
+            <RiderPasswordInput id="rd-new" autoComplete="new-password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} />
             <span className="rd-muted">Mindestens 8 Zeichen.</span>
           </div>
           <div className="rd-row">
