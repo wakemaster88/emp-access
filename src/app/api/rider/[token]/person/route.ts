@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { riderApiManage } from "@/lib/rider-auth";
 import { parsePersonInput, PHOTO_MAX_CHARS } from "@/lib/rider-person";
+import { checkProfilePhoto } from "@/lib/profile-photo-check";
 
 const schema = z.object({
   firstName: z.string().max(200).optional(),
@@ -14,7 +15,8 @@ const schema = z.object({
 
 /**
  * PATCH: Vorname, Nachname, Geburtsdatum und Profilbild der Person ändern.
- * Selbst oder Eltern für ihr Kind; der Partner sieht nur.
+ * Selbst oder Eltern für ihr Kind; der Partner sieht nur. Ein neues Profilbild
+ * prüft vorher die KI (`profile-photo-check.ts`).
  */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -27,6 +29,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!parsed.success) return NextResponse.json({ error: "Ungültige Eingabe" }, { status: 400 });
   const result = parsePersonInput(parsed.data);
   if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
+
+  // Neues Profilbild: die KI prüft, ob darauf eine Person mit erkennbarem Gesicht ist.
+  if (typeof result.data.photo === "string") {
+    const check = await checkProfilePhoto(result.data.photo);
+    if (!check.ok) return NextResponse.json({ error: check.error, verdict: check.verdict }, { status: 422 });
+  }
 
   await prisma.riderProfile.update({ where: { id: ctx.profile.id }, data: result.data });
   return NextResponse.json({ ok: true });
