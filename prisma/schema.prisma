@@ -3466,6 +3466,11 @@ model GamificationConfig {
   inviteNewAbos   Boolean  @default(true)
   /// Einladung an laufende Abos, die noch nicht in der App sind (in Etappen ueber tick-5min).
   inviteExistingAbos Boolean @default(false)
+  /// Auslastung am Lift (Fahrer der letzten 60 Min): ab hier „Gut besucht“.
+  /// Gilt fuer Kunden-App und Verwaltung gleich (lib/rider-occupancy).
+  occupancyMediumFrom Int @default(10)
+  /// Ab hier „Viel los“. Bewusst hoch, damit es selten erscheint.
+  occupancyHighFrom   Int @default(25)
   /// Fuehler fuer die Wassertemperatur (Device, z. B. Shelly): Grundlage fuer
   /// Awards mit `COLD_DAYS`. Messwerte stehen in `ClimateSample`.
   waterSensorDeviceId Int?
