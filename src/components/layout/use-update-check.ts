@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { clearRiderLocalData } from "@/lib/rider-local";
 import { BUILD_ID, BUILD_TIME, isKioskPath, isNewerBuild, showsReleaseNotes } from "@/lib/app-version";
 
 /** Wie oft im Vordergrund nach einer neuen Version gefragt wird. */
@@ -75,6 +76,10 @@ async function applyUpdate(target: string | null) {
   } catch {
     // Ohne Service Worker reicht das Neuladen.
   }
+  // Kunden-App: der Service Worker liefert Seiten zuerst aus dem lokalen Cache.
+  // Ohne Löschen käme beim Neuladen wieder die alte Seite mit dem alten Build,
+  // und „Aktualisieren“ sähe aus, als täte es nichts (21.11.2026, iPhone-PWA).
+  await clearRiderLocalData();
   window.location.reload();
 }
 

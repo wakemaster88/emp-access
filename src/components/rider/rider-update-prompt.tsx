@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useUpdateCheck } from "@/components/layout/use-update-check";
 
 /**
@@ -8,6 +9,7 @@ import { useUpdateCheck } from "@/components/layout/use-update-check";
  */
 export function RiderUpdatePrompt() {
   const { target, open, onOpenChange, apply } = useUpdateCheck();
+  const [busy, setBusy] = useState(false);
   if (!target || !open) return null;
   return (
     <div className="rd-install rd-update" role="region" aria-label="Neue Version">
@@ -21,8 +23,16 @@ export function RiderUpdatePrompt() {
           <b id="rd-update-title">Neue Version da</b>
           <p id="rd-update-text">Einmal aktualisieren, dann bist du auf dem neuesten Stand.</p>
           <div className="rd-update-actions">
-            <button type="button" className="rd-btn" onClick={() => void apply()}>
-              <span>Aktualisieren</span>
+            <button
+              type="button"
+              className="rd-btn"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void apply();
+              }}
+            >
+              <span>{busy ? "Lädt …" : "Aktualisieren"}</span>
             </button>
             <button type="button" className="rd-btn rd-btn-ghost" onClick={() => onOpenChange(false)}>
               <span>Später</span>
