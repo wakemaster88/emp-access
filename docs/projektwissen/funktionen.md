@@ -1003,3 +1003,17 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
   (51,756 / 8,043, dieselben Werte wie der Rückfall im Hub,
   `hub/src/weather.ts`). Ein Eingabefeld für den Standort gibt es in der
   Verwaltung nicht.
+
+## Mahnlauf für offene Abo-Zahlungen (21.11.2026)
+
+Aaron wollte vorerst statt Inkasso einen eigenen Mahnlauf, vollautomatisch (Entscheidung 21.11.2026). Grundlage ist „Zahlung offen“ (`src/lib/payment-open.ts`): Der anny-Abgleich pausiert Abos mit überfälliger Rechnung.
+
+- **Ablauf** (`src/lib/dunning.ts`, Stufenlogik in `src/lib/dunning-state.ts`): Cron `/api/cron/dunning` täglich 8:20 UTC (9:20 bzw. 10:20 Berlin), Mails nur 9–20 Uhr, höchstens 30 je Lauf. Je Abo höchstens eine Stufe pro Lauf, immer nacheinander:
+  1. **Zahlungserinnerung** 3 Tage nach Beginn der Pause, über anny (`POST /invoices/{id}/send-payment-reminder`); scheitert das oder fehlt die Rechnungs-id, geht eine eigene Mail.
+  2. **1. Mahnung** 14 Tage nach der Erinnerung, eigene Mail, Frist 14 Tage.
+  3. **Letzte Mahnung** 14 Tage nach der 1. Mahnung, Frist 7 Tage, Hinweis auf Inkasso.
+  4. **Bereit für Inkasso** nach Ablauf der Frist, ohne Mail. Hier soll die spätere Übergabe (Empfehlung Debtist) ansetzen.
+- Keine Mahngebühr, kein automatisches erneutes Abbuchen. Mailtexte in `src/lib/dunning-mail.ts`, Protokoll in `EmailSend`.
+- **Stand** in `extras.paymentPause.dunning` (Zeitpunkte, Fristen, Fehlversuche). Der Abgleich trägt ihn mit, solange die Pause besteht; nach Zahlung fällt der Vermerk weg und der Mahnlauf endet. Nach 3 Fehlversuchen einer Stufe (z. B. keine Adresse) wird nicht mehr versucht, die Abos-Seite zeigt den Grund.
+- **Schalter** „Mahnlauf“ in der Karte „Zahlung offen“ auf der Abos-Seite (nur Admins), gespeichert in `ApiConfig(ANNY).extraConfig.dunning.enabled`, Standard an. Die Karte zeigt je Abo die erreichte und die nächste Stufe.
+- Offen: Ob anny den Endpunkt der Zahlungserinnerung genau so erwartet, ist ungeprüft. Der Vercel-Log `[dunning] … anny-Erinnerung fehlgeschlagen` zeigt es, dann geht automatisch die eigene Mail.
