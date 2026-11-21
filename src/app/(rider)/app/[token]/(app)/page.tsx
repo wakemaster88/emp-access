@@ -3,7 +3,9 @@ import { riderAppPath } from "@/lib/rider-app";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { kontoRidersFor } from "@/lib/rider-konto";
 import { RiderForWhom } from "@/components/rider/rider-for-whom";
-import { METRIC_LABEL, RENEWAL_HINT_DAYS, formatEuro } from "@/lib/gamification";
+import { METRIC_LABEL, RENEWAL_HINT_DAYS, formatDegrees, formatEuro } from "@/lib/gamification";
+import { loadWaterNow } from "@/lib/gamification-service";
+import { loadAirNow } from "@/lib/weather-history";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
 import { fmtDay, validityText } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
@@ -39,13 +41,16 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { token } = await params;
   const rider = await requireRider(token);
   const base = riderAppPath(token);
-  const [offers, challenges, occupancy, opening, family, beach] = await Promise.all([
+  const [offers, challenges, occupancy, opening, family, beach, air, water] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
     loadRiderOpening(rider.accountId).catch(() => null),
     riderFamilyView(token),
     loadBeachOccupancy(rider.accountId).catch(() => null),
+    // Luft und Wasser für den Kopf: zwei kleine Abfragen neben den anderen, kein Abruf nach außen.
+    loadAirNow(rider.accountId).catch(() => null),
+    loadWaterNow(rider.accountId).catch(() => null),
   ]);
   // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
   const konto = family?.relation === "self" ? await kontoRidersFor(rider.profileId) : null;
@@ -76,7 +81,15 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           <path d="M-10 96 C 60 64, 120 128, 195 96 S 330 64, 400 96" opacity="0.15" />
         </svg>
         <div className="rd-hero-body">
-          <div className="rd-hero-line rd-loc">{PIN_ICON}{RIDER_LOCATION}</div>
+          <div className="rd-hero-top">
+            <div className="rd-hero-line rd-loc">{PIN_ICON}{RIDER_LOCATION}</div>
+            {(air != null || water != null) && (
+              <div className="rd-hero-temps">
+                {air != null && <span>Luft <b>{formatDegrees(Math.round(air) || 0)}°</b></span>}
+                {water != null && <span>Wasser <b>{formatDegrees(Math.round(water * 10) / 10)}°</b></span>}
+              </div>
+            )}
+          </div>
           <h1 className="rd-display" style={{ fontSize: 48, fontWeight: 800 }}>{rider.firstName ? `Hi ${rider.firstName}` : "Hi"}</h1>
         </div>
       </div>
