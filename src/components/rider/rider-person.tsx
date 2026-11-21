@@ -66,6 +66,7 @@ export function RiderPerson({ token, firstName, lastName, birthDate, photo, subt
   const [form, setForm] = useState({ firstName, lastName, birthDate: birthDate ?? "" });
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
   const url = `/api/rider/${encodeURIComponent(token)}/person`;
   const name = `${data.firstName} ${data.lastName}`.trim();
@@ -98,7 +99,10 @@ export function RiderPerson({ token, firstName, lastName, birthDate, photo, subt
       setMsg({ ok: false, text: "Das Bild lässt sich nicht öffnen. Bitte ein anderes wählen." });
       return;
     }
-    if (await send({ photo: small })) {
+    setChecking(true);
+    const saved = await send({ photo: small });
+    setChecking(false);
+    if (saved) {
       setData((d) => ({ ...d, photo: small }));
       setMsg({ ok: true, text: "Profilbild gespeichert." });
       router.refresh();
@@ -195,6 +199,7 @@ export function RiderPerson({ token, firstName, lastName, birthDate, photo, subt
               )}
             </div>
           )}
+          {checking && <div className="rd-msg rd-msg-ok" role="status">Bild wird geprüft …</div>}
           {msg && <div className={`rd-msg ${msg.ok ? "rd-msg-ok" : "rd-msg-err"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</div>}
         </div>
       )}
