@@ -46,6 +46,7 @@ export default async function EmailPage() {
         brandColor: emailConfig.brandColor,
         logoUrl: emailConfig.logoUrl,
         websiteUrl: emailConfig.websiteUrl,
+        legalFooter: emailConfig.legalFooter,
       }
     : null;
 

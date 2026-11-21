@@ -100,6 +100,7 @@ interface EmailConfigDTO {
   brandColor: string | null;
   logoUrl: string | null;
   websiteUrl: string | null;
+  legalFooter: string | null;
 }
 
 interface DiagnoseResult {
@@ -686,6 +687,7 @@ function EmailConfigCard({
   const [fromName, setFromName] = useState(config?.fromName ?? "");
   const [replyTo, setReplyTo] = useState(config?.replyTo ?? "");
   const [websiteUrl, setWebsiteUrl] = useState(config?.websiteUrl ?? "");
+  const [legalFooter, setLegalFooter] = useState(config?.legalFooter ?? "");
   const [brandColor, setBrandColor] = useState(config?.brandColor ?? "#4F46E5");
   const [isActive, setIsActive] = useState<boolean>(config?.isActive ?? true);
   const [saving, setSaving] = useState(false);
@@ -702,6 +704,7 @@ function EmailConfigCard({
       setFromName(config.fromName ?? "");
       setReplyTo(config.replyTo ?? "");
       setWebsiteUrl(config.websiteUrl ?? "");
+      setLegalFooter(config.legalFooter ?? "");
       setBrandColor(config.brandColor ?? "#4F46E5");
       setIsActive(config.isActive);
       setKeepKey(!!config.hasApiKey);
@@ -720,6 +723,7 @@ function EmailConfigCard({
         fromName: fromName || null,
         replyTo: replyTo || null,
         websiteUrl: websiteUrl || null,
+        legalFooter: legalFooter.trim() || null,
         brandColor: brandColor || null,
         isActive,
       };
@@ -815,6 +819,7 @@ function EmailConfigCard({
               {config.fromName && <Row label="Name" value={config.fromName} />}
               {config.replyTo && <Row label="Reply-To" value={config.replyTo} />}
               {config.websiteUrl && <Row label="Website" value={config.websiteUrl} />}
+              {config.legalFooter && <Row label="Pflichtangaben" value="hinterlegt" />}
               <Row
                 label="App-Passwort"
                 value={
@@ -1002,6 +1007,17 @@ function EmailConfigCard({
                 className={cn("font-mono", FIELD)}
               />
             </div>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="email-legal">Pflichtangaben (Signatur für Mahnungen)</Label>
+            <Textarea
+              id="email-legal"
+              rows={6}
+              placeholder={"Musterfirma GmbH · Musterstraße 1 · 12345 Musterstadt\nGeschäftsführer: …\nSitz: … · Amtsgericht … HRB …\nUSt-IdNr.: …"}
+              value={legalFooter}
+              onChange={(e) => setLegalFooter(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Eine Angabe je Zeile. Steht unter der Zahlungserinnerung und den Mahnungen.</p>
           </div>
           <div className="glass-tile flex items-center justify-between gap-3 px-3 py-2.5 sm:col-span-2">
             <div>

@@ -7,6 +7,10 @@
  * Kunden-App und formatiert ihn.
  */
 import type { PrismaClient } from "@prisma/client";
+import {
+  DUNNING_STAGE_LABEL, dunningStart, dunningState, dunningStuck, nextDunningStep, reachedDunningStage,
+  type DunningStage,
+} from "./dunning-state";
 
 export interface PaymentOpenInfo {
   /** Betrag der ältesten offenen Rechnung. */
@@ -19,6 +23,8 @@ export interface PaymentOpenInfo {
   /** Fälligkeit der ältesten offenen Rechnung, ISO. */
   dueDate: string | null;
   invoiceNumber: string | null;
+  /** anny-id der ältesten offenen Rechnung (für die Zahlungserinnerung). */
+  invoiceId: string | null;
   /** Seit wann das Abo deswegen pausiert ist, ISO. */
   since: string | null;
 }
@@ -39,6 +45,7 @@ export function paymentOpenInfo(extras: unknown): PaymentOpenInfo | null {
     currency: str(r.currency),
     dueDate: str(r.dueDate),
     invoiceNumber: str(r.invoiceNumber),
+    invoiceId: str(r.invoiceId),
     since: str(r.since),
   };
 }
@@ -106,6 +113,8 @@ export interface PaymentOpenRow {
   daysOverdue: number | null;
   invoiceNumber: string | null;
   openCount: number | null;
+  /** Mahnlauf: zuletzt erreichte Stufe und die nächste (lib/dunning). */
+  dunning: DunningSummary;
 }
 
 /** Abos mit „Zahlung offen“, älteste Schuld zuerst. */
@@ -137,6 +146,7 @@ export async function loadPaymentOpen(
       daysOverdue: daysOverdue(info, now),
       invoiceNumber: info.invoiceNumber,
       openCount: info.openCount,
+      dunning: dunningSummary(info, t.extras),
     });
   }
   return sortPaymentOpen(rows);
@@ -160,4 +170,33 @@ export function paymentOpenTotal(rows: Array<{ amount: number | null; currency: 
   }
   if (byCur.size === 0) return null;
   return [...byCur.entries()].map(([c, v]) => formatMoney(Math.round(v * 100) / 100, c)).join(" + ");
+}
+
+export interface DunningSummary {
+  /** Zuletzt erreichte Stufe, null vor der Erinnerung. */
+  stage: DunningStage | null;
+  label: string | null;
+  /** Wann sie erreicht wurde, ISO. */
+  at: string | null;
+  /** Nächste Stufe und Tag (YYYY-MM-DD). */
+  next: { label: string; on: string } | null;
+  /** Fehler der anstehenden Stufe (z. B. keine Adresse). */
+  error: string | null;
+  /** Nach mehreren Fehlversuchen wird nicht mehr versucht. */
+  stuck: boolean;
+}
+
+export function dunningSummary(info: PaymentOpenInfo, extras: unknown): DunningSummary {
+  const d = dunningState(extras);
+  const stage = reachedDunningStage(d);
+  const at = stage === "collection" ? d.collectionAt : stage === "final" ? d.finalAt : stage === "first" ? d.firstAt : d.reminderAt;
+  const next = nextDunningStep(dunningStart(info), d);
+  return {
+    stage,
+    label: stage ? DUNNING_STAGE_LABEL[stage] : null,
+    at: at ?? null,
+    next: next ? { label: DUNNING_STAGE_LABEL[next.stage], on: next.on } : null,
+    error: d.failedError ?? null,
+    stuck: next ? dunningStuck(d, next.stage) : false,
+  };
 }

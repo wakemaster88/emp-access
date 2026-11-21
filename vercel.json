@@ -82,6 +82,10 @@
       "schedule": "10 8 * * *"
     },
     {
+      "path": "/api/cron/dunning",
+      "schedule": "20 8 * * *"
+    },
+    {
       "path": "/api/cron/cleanup",
       "schedule": "30 1 * * *"
     }

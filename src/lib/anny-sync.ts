@@ -1741,6 +1741,9 @@ export async function syncAnnyForAccount(
               note: "Zahlung offen",
               dueDate: openInvoice?.dueDate ?? null,
               invoiceNumber: openInvoice?.number ?? null,
+              invoiceId: openInvoice?.invoiceId || null,
+              // Mahnstand (lib/dunning) bleibt, solange die Pause besteht.
+              ...(wasPaymentPaused && prevPay?.dunning ? { dunning: prevPay.dunning } : {}),
               amount: openInvoice?.amount ?? null,
               openTotal: openInvoice?.openTotal ?? null,
               openCount: openInvoice?.openCount ?? null,
@@ -1836,6 +1839,7 @@ export async function syncAnnyForAccount(
               note: "Zahlung offen",
               dueDate: openInvoice?.dueDate ?? null,
               invoiceNumber: openInvoice?.number ?? null,
+              invoiceId: openInvoice?.invoiceId || null,
               amount: openInvoice?.amount ?? null,
               openTotal: openInvoice?.openTotal ?? null,
               openCount: openInvoice?.openCount ?? null,
