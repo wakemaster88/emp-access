@@ -100,10 +100,15 @@ export interface TurnstileData {
   live?: {
     level: "none" | "low" | "medium" | "high";
     label: string;
-    riders: number;
-    starts: number;
     mediumFrom: number;
     highFrom: number;
+    /** Lift: Fahrer und Starts der letzten 60 Min. */
+    riders?: number;
+    starts?: number;
+    /** Strandbad: geschätzte Gäste vor Ort (Eintritte 3 h × Faktor). */
+    estimated?: number;
+    entries?: number;
+    factor?: number;
   } | null;
 }
 
@@ -273,9 +278,16 @@ export function TurnstileCard({ date }: { date: string }) {
                 <Badge
                   variant={LIVE_BADGE[data.live.level]}
                   className="tabular-nums"
-                  title={`Kunden-App zeigt gerade „${data.live.label}“: ${data.live.riders} Fahrer und ${data.live.starts} Starts in den letzten 60 Minuten. Grenzen ${data.live.mediumFrom} / ${data.live.highFrom}, einstellbar unter Kunden App › Einstellungen.`}
+                  title={
+                    data.live.estimated != null
+                      ? `Kunden-App zeigt gerade „${data.live.label}“: ${data.live.entries} Eintritte in den letzten 3 Stunden × ${String(data.live.factor).replace(".", ",")} ≈ ${data.live.estimated} Gäste. Grenzen ${data.live.mediumFrom} / ${data.live.highFrom}, einstellbar unter Kunden App › Einstellungen.`
+                      : `Kunden-App zeigt gerade „${data.live.label}“: ${data.live.riders} Fahrer und ${data.live.starts} Starts in den letzten 60 Minuten. Grenzen ${data.live.mediumFrom} / ${data.live.highFrom}, einstellbar unter Kunden App › Einstellungen.`
+                  }
                 >
-                  Jetzt: {data.live.label} · {data.live.riders} Fahrer
+                  Jetzt: {data.live.label} ·{" "}
+                  {data.live.estimated != null
+                    ? `ca. ${data.live.estimated.toLocaleString("de-DE")} Gäste`
+                    : `${data.live.riders} Fahrer`}
                 </Badge>
               )}
             </span>

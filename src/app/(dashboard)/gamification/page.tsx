@@ -28,6 +28,8 @@ import { riderPushReach } from "@/lib/rider-announce";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 import { AppShareCard } from "@/components/gamification/app-share-card";
 import { OccupancySettingsCard } from "@/components/gamification/occupancy-settings-card";
+import { BeachSettingsCard } from "@/components/gamification/beach-settings-card";
+import { normalizeBeachSettings } from "@/lib/beach-occupancy";
 import { normalizeThresholds } from "@/lib/rider-occupancy";
 import { AppInviteCard } from "@/components/gamification/app-invite-card";
 import { inviteStatus } from "@/lib/rider-invite";
@@ -415,6 +417,9 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       }),
       inviteStatus(accountId),
     ]);
+    const beachCapacity =
+      (await db.accessArea.findMany({ where: { accountId }, select: { name: true, personLimit: true } }))
+        .find((a) => /strandbad/i.test(a.name))?.personLimit ?? null;
     content = (
       <>
       <GamiSettingsCard
@@ -438,6 +443,12 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         initial={normalizeThresholds(
           config ? { mediumFrom: config.occupancyMediumFrom, highFrom: config.occupancyHighFrom } : null,
         )}
+      />
+      <BeachSettingsCard
+        initial={normalizeBeachSettings(
+          config ? { factor: config.beachGuestFactor, mediumFrom: config.beachMediumFrom, highFrom: config.beachHighFrom } : null,
+        )}
+        capacity={beachCapacity}
       />
       <AppInviteCard initial={invites} />
       <AppShareCard

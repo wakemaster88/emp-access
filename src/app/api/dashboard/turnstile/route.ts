@@ -3,6 +3,7 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { addCalendarDays, berlinDayRange, berlinYmd, isBerlinYmd } from "@/lib/berlin-day";
 import { summarizeTurnstileDay } from "@/lib/turnstile-stats";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
+import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
 
 /**
  * Bereich, der ohne explizite Auswahl ausgewertet wird. Das Drehkreuz an der
@@ -145,6 +146,11 @@ export async function GET(request: NextRequest) {
     isToday && accountId != null && area.devices.some((d) => d.countsAsStart)
       ? await loadRiderOccupancy(accountId).catch(() => null)
       : null;
+  // Strandbad: geschätzte Gäste vor Ort, gleiche Rechnung wie in der App.
+  const beach =
+    isToday && accountId != null && /strandbad/i.test(area.name)
+      ? await loadBeachOccupancy(accountId).catch(() => null)
+      : null;
 
   return NextResponse.json({
     date: dateStr,
@@ -180,6 +186,16 @@ export async function GET(request: NextRequest) {
           mediumFrom: occupancy.thresholds.mediumFrom,
           highFrom: occupancy.thresholds.highFrom,
         }
-      : null,
+      : beach
+        ? {
+            level: beach.level,
+            label: BEACH_LABEL[beach.level],
+            estimated: beach.estimated,
+            entries: beach.entries,
+            factor: beach.settings.factor,
+            mediumFrom: beach.settings.mediumFrom,
+            highFrom: beach.settings.highFrom,
+          }
+        : null,
   });
 }
