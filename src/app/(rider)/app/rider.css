@@ -352,6 +352,7 @@
 .rd-update { top: calc(env(safe-area-inset-top) + 12px); bottom: auto; z-index: 40; }
 .rd-update-actions { display: flex; gap: 10px; margin-top: 10px; }
 .rd-update .rd-update-actions .rd-btn { margin-top: 0; }
+.rd-expired-card { padding: 12px 14px; border-left-color: var(--rd-danger); color: var(--rd-text); }
 .rd-install-card b { font-size: 15px; }
 .rd-install-card p { margin: 4px 0 0; color: var(--rd-soft); line-height: 1.45; }
 .rd-install-card p svg { display: inline; vertical-align: -2px; color: var(--rd-text); }
