@@ -1,4 +1,4 @@
-import { riderAppPath } from "@/lib/rider-app";
+import { riderBase } from "@/lib/rider-base";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { RiderNav } from "@/components/rider/rider-nav";
 import { RiderInstallHint } from "@/components/rider/rider-install-hint";
@@ -23,6 +23,7 @@ export default async function RiderAppLayout({
   // Zeitpunkt dieses Renderns: kommt die Seite später aus dem lokalen Cache, erkennt RiderSync das Alter.
   const renderedAt = riderRenderStamp();
   const family = await riderFamilyView(token);
+  const base = await riderBase(token);
   // Gewechselt wird am Gruß der Startseite; sonst nur ein Hinweis, wenn eine andere Person angezeigt wird.
   const viewing = family && family.viewerToken !== token ? family.members.find((m) => m.token === token) : undefined;
   // Freischalt-Momente sieht die Person selbst, bei einem Kind auch die Eltern. Der Partner nicht.
@@ -32,15 +33,15 @@ export default async function RiderAppLayout({
     <>
       <AwardBadgeDefs />
       <main className="rd-main">
-        {family && viewing && <RiderViewing token={token} name={viewing.name} selfToken={family.viewerToken} />}
+        {family && viewing && <RiderViewing base={base} name={viewing.name} selfToken={family.viewerToken} />}
         {children}
       </main>
-      <RiderNav base={riderAppPath(token)} />
+      <RiderNav base={base} />
       <RiderInstallHint />
       <RiderSync renderedAt={renderedAt} />
       <RiderAwardUnlock
         token={token}
-        base={riderAppPath(token)}
+        base={base}
         unlocks={unlocks}
         next={next ? { name: next.name, tier: next.tier, metric: next.metric, threshold: next.threshold, key: next.key, value: next.value } : null}
         stats={[

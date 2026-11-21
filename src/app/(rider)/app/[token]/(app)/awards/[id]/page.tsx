@@ -1,3 +1,4 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AwardBadge } from "@/components/rider/award-badge";
@@ -7,7 +8,6 @@ import { CATEGORY_LABEL, awardCountable, awardFace, awardHowText, awardRemaining
 import { berlinYmd } from "@/lib/berlin-day";
 import { formatDegrees } from "@/lib/gamification";
 import { loadWaterNow } from "@/lib/gamification-service";
-import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay, validityText } from "@/lib/rider-format";
 import { RIDER_LOCATION } from "@/lib/rider-shop";
@@ -22,7 +22,7 @@ export default async function RiderAwardDetail({ params }: { params: Promise<{ t
   const rider = await requireRider(token);
   const a = rider.awards.find((x) => x.id === Number(id));
   if (!a) notFound();
-  const base = riderAppPath(token);
+  const base = await riderBase(token);
   const countable = awardCountable(a);
   // Die aktuelle Wassertemperatur zeigt, ob sich der Weg zum See heute lohnt.
   const waterNow = a.metric === "COLD_DAYS" && !a.unlocked ? await loadWaterNow(rider.accountId).catch(() => null) : null;

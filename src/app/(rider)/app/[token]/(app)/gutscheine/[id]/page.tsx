@@ -1,7 +1,7 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay } from "@/lib/rider-format";
 import { AwardBadge } from "@/components/rider/award-badge";
@@ -22,7 +22,7 @@ export default async function RiderVoucher({ params }: { params: Promise<{ token
 
   return (
     <>
-      <Link href={`${riderAppPath(token)}/gutscheine`} style={{ minHeight: 44, display: "flex", alignItems: "center", gap: 6, textDecoration: "none", fontWeight: 500 }}>
+      <Link href={`${(await riderBase(token))}/gutscheine`} style={{ minHeight: 44, display: "flex", alignItems: "center", gap: 6, textDecoration: "none", fontWeight: 500 }}>
         <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
         Zurück
       </Link>

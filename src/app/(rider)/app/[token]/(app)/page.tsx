@@ -1,5 +1,5 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
-import { riderAppPath } from "@/lib/rider-app";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { kontoRidersFor } from "@/lib/rider-konto";
 import { RiderForWhom } from "@/components/rider/rider-for-whom";
@@ -245,7 +245,7 @@ function BirthdayCard({ birthday, base, token }: { birthday: RiderBirthdayView; 
 export default async function RiderDashboard({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const rider = await requireRider(token);
-  const base = riderAppPath(token);
+  const base = await riderBase(token);
   const [offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills, birthday] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),

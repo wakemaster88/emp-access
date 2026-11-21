@@ -1,5 +1,5 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
-import { riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay } from "@/lib/rider-format";
 import { aboStatus, daysLeftText, RIDER_LOCATION } from "@/lib/rider-shop";
@@ -26,7 +26,7 @@ export default async function RiderAbos({ params }: { params: Promise<{ token: s
 
   return (
     <>
-      <Link href={riderAppPath(token)} style={{ fontSize: 13, textDecoration: "none" }}>
+      <Link href={(await riderBase(token))} style={{ fontSize: 13, textDecoration: "none" }}>
         Zurück zum Start
       </Link>
       <h1 className="rd-display rd-h1">Abos</h1>

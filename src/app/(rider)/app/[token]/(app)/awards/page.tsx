@@ -1,3 +1,4 @@
+import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
 import { AwardBadge } from "@/components/rider/award-badge";
 import { GiftIcon, NextAwardCard, RewardLine, TierTag } from "@/components/rider/award-parts";
@@ -5,7 +6,7 @@ import {
   AWARD_CATEGORIES, CATEGORY_LABEL, awardCountable, nextAward, tierRank, tileSpans, type AwardCategory,
 } from "@/lib/awards";
 import { GAMI_TIERS, TIER_LABEL } from "@/lib/gamification";
-import { riderAppPath, type RiderAward, type RiderView } from "@/lib/rider-app";
+import { type RiderAward, type RiderView } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay } from "@/lib/rider-format";
 
@@ -95,7 +96,7 @@ function statLine(cat: AwardCategory, rider: RiderView): React.ReactNode {
 export default async function RiderAwards({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const rider = await requireRider(token);
-  const base = riderAppPath(token);
+  const base = await riderBase(token);
   const { awards } = rider;
   const unlocked = awards.filter((a) => a.unlocked);
   const next = nextAward(awards);
