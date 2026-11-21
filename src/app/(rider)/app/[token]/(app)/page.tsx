@@ -243,28 +243,58 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         />
       )}
 
-      {abo.kind === "active" && rider.abo && (
-        <div className={`rd-card${soon ? " rd-abo-warn" : ""}`}>
-          <div className="rd-label">Dein Abo</div>
-          <b style={{ fontSize: 15 }}>{rider.abo.name}</b>
-          <div className="rd-abo-days">
-            {abo.daysLeft <= 0 ? (
-              <span>Gilt nur noch heute</span>
-            ) : (
+      {abo.kind === "active" && rider.abo && (() => {
+        // Laufzeit-Balken: wie viel vom Abo noch übrig ist (voll = gerade gekauft).
+        const start = rider.abo.startDate;
+        const total = start ? abo.endDate.getTime() - start.getTime() : 0;
+        const left = total > 0 ? Math.min(100, Math.max(2, Math.round(((abo.endDate.getTime() - Date.now()) / total) * 100))) : null;
+        return (
+          <div className={`rd-card rd-abo${soon ? " rd-abo-warn" : ""}`}>
+            <div className="rd-between">
+              <div className="rd-label">Dein Abo</div>
+              <span className={`rd-pill ${soon ? "rd-pill-soon" : "rd-pill-open"}`}>{soon ? "Läuft bald ab" : "Aktiv"}</span>
+            </div>
+            <b style={{ fontSize: 15 }}>{rider.abo.name}</b>
+            <div className="rd-abo-days">
+              {abo.daysLeft <= 0 ? (
+                <span>Gilt nur noch heute</span>
+              ) : (
+                <>
+                  <span className="rd-display">{abo.daysLeft}</span>
+                  <span>{abo.daysLeft === 1 ? "Tag gültig" : "Tage gültig"}</span>
+                </>
+              )}
+            </div>
+            {left != null && start ? (
               <>
-                <span className="rd-display">{abo.daysLeft}</span>
-                <span>{abo.daysLeft === 1 ? "Tag gültig" : "Tage gültig"}</span>
+                <div className="rd-bar" role="img" aria-label={`Noch ${left} Prozent der Laufzeit übrig`}>
+                  <i style={{ width: `${left}%` }} />
+                </div>
+                <div className="rd-between rd-muted" style={{ fontSize: 12 }}>
+                  <span>seit {fmtDay(start)}</span>
+                  <span>bis {fmtDay(abo.endDate)}</span>
+                </div>
               </>
+            ) : (
+              <span className="rd-muted">bis {fmtDay(abo.endDate)}</span>
+            )}
+            <div className="rd-abo-facts">
+              {rider.abo.areas.length > 0 && (
+                <span><span className="rd-muted">Gilt für</span> {[...new Set(rider.abo.areas)].join(", ")}</span>
+              )}
+              <span>
+                <span className="rd-muted">Damit {rider.year}:</span>{" "}
+                {rider.visitDays === 1 ? "1 Besuchstag" : `${rider.visitDays} Besuchstage`} · {rider.starts === 1 ? "1 Start" : `${rider.starts} Starts`}
+              </span>
+            </div>
+            {soon && (
+              <Link href={`${base}/abos`} className="rd-btn rd-btn-wide" style={{ marginTop: 4 }}>
+                <span>Abo verlängern</span>
+              </Link>
             )}
           </div>
-          <span className="rd-muted">bis {fmtDay(abo.endDate)}</span>
-          {soon && (
-            <Link href={`${base}/abos`} className="rd-btn rd-btn-wide" style={{ marginTop: 4 }}>
-              <span>Abo verlängern</span>
-            </Link>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {abo.kind === "unlimited" && rider.abo && (
         <div className="rd-card">
