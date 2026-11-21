@@ -495,8 +495,9 @@ html[data-rd-intro="skip"] .rd-intro { display: none; }
 
 /* Auslastung am Lift: Balkenfarbe je Stufe. */
 .rd-occ-low > i { background: var(--rd-accent-soft); }
-.rd-occ-medium > i { background: var(--rd-accent); }
-.rd-occ-high > i { background: var(--rd-danger); }
+.rd-occ-medium > i { background: var(--rd-offer); }
+/* Viel los bewusst nicht rot: soll niemanden abschrecken (21.11.2026). */
+.rd-occ-high > i { background: var(--rd-accent); }
 /* Öffnungszeiten unten in „Auslastung jetzt“. */
 .rd-hours { display: flex; align-items: center; gap: 8px; padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--rd-line); color: var(--rd-soft); font-weight: 600; font-size: 14px; }
 .rd-hours > svg { flex: none; color: var(--rd-muted); }

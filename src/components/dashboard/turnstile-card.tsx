@@ -96,7 +96,23 @@ export interface TurnstileData {
   ticketTypes?: { name: string; rides: number; guests: number }[];
   denyReasons?: { reason: string; count: number }[];
   weekTrend?: TrendDay[];
+  /** Auslastung jetzt (letzte 60 Min), wie in der Kunden-App; nur heute. */
+  live?: {
+    level: "none" | "low" | "medium" | "high";
+    label: string;
+    mediumFrom: number;
+    highFrom: number;
+    /** Lift: Fahrer und Starts der letzten 60 Min. */
+    riders?: number;
+    starts?: number;
+    /** Strandbad: geschätzte Gäste vor Ort (Eintritte 3 h × Faktor). */
+    estimated?: number;
+    entries?: number;
+    factor?: number;
+  } | null;
 }
+
+const LIVE_BADGE = { none: "neutral", low: "success", medium: "info", high: "warning" } as const;
 
 // Diagramm nur aus Tokens (docs/design-regeln.md, Abschnitt 15).
 const CHART_TOOLTIP_STYLE = {
@@ -255,7 +271,27 @@ export function TurnstileCard({ date }: { date: string }) {
         <SectionHeading
           title={`Drehkreuz ${area.name}`}
           icon={RotateCw}
-          aside={<Badge variant="secondary">echte Fahrten</Badge>}
+          aside={
+            <span className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="secondary">echte Fahrten</Badge>
+              {data.live && (
+                <Badge
+                  variant={LIVE_BADGE[data.live.level]}
+                  className="tabular-nums"
+                  title={
+                    data.live.estimated != null
+                      ? `Kunden-App zeigt gerade „${data.live.label}“: ${data.live.entries} Eintritte in den letzten 3 Stunden × ${String(data.live.factor).replace(".", ",")} ≈ ${data.live.estimated} Gäste. Grenzen ${data.live.mediumFrom} / ${data.live.highFrom}, einstellbar unter Kunden App › Einstellungen.`
+                      : `Kunden-App zeigt gerade „${data.live.label}“: ${data.live.riders} Fahrer und ${data.live.starts} Starts in den letzten 60 Minuten. Grenzen ${data.live.mediumFrom} / ${data.live.highFrom}, einstellbar unter Kunden App › Einstellungen.`
+                  }
+                >
+                  Jetzt: {data.live.label} ·{" "}
+                  {data.live.estimated != null
+                    ? `ca. ${data.live.estimated.toLocaleString("de-DE")} Gäste`
+                    : `${data.live.riders} Fahrer`}
+                </Badge>
+              )}
+            </span>
+          }
           className="min-w-0"
         />
         {/* Handy: die Auswahl steht unter der Überschrift in voller Breite; feste Breite erst ab sm. */}
