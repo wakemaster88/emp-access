@@ -52,15 +52,20 @@ function shiftYmd(ymd: string, days: number): string {
 }
 
 /** Laufende, kommende und kürzlich beendete Challenges mit dem Stand des Fahrers. */
-export async function loadRiderChallenges(rider: RiderView, now: Date = new Date()): Promise<RiderChallenge[]> {
+export async function loadRiderChallenges(
+  rider: RiderView,
+  now: Date = new Date(),
+  /** Ansicht für das Personal: nichts auswerten oder vergeben, nur lesen. */
+  readOnly = false,
+): Promise<RiderChallenge[]> {
   if (!rider.enabled) return [];
   const { accountId } = rider;
   const db = tenantClient(accountId);
   const today = berlinYmd(now);
   // Fällige Top-X-Challenges auswerten, damit das Ergebnis sofort sichtbar ist.
-  await settleDueChallenges(db, accountId, today, rider.startCapPerDay).catch(() => 0);
+  if (!readOnly) await settleDueChallenges(db, accountId, today, rider.startCapPerDay).catch(() => 0);
   // Aufgaben, die schon vor dem Anlegen der Challenge erfüllt waren, jetzt vergeben.
-  if (rider.ticketIds.length > 0) {
+  if (!readOnly && rider.ticketIds.length > 0) {
     await openChallenges(db, accountId)
       .then((open) =>
         awardTaskChallenges(db, accountId, Math.max(...rider.ticketIds), today, rider.startCapPerDay, open),
