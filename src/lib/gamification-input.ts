@@ -134,3 +134,33 @@ export function pushPlanPatch(push: boolean | undefined, pushedAt: Date | null):
   if (push === undefined || pushedAt) return {};
   return { pushPlanned: push };
 }
+
+/** Eingabe für einen Feiertag der Kunden-App (`key` steht im Pfad). */
+export const holidaySchema = z
+  .object({
+    show: z.enum(["GREETING", "OFFER", "VOUCHER"]),
+    title: z.string().trim().max(60).nullable(),
+    text: z.string().trim().max(300).nullable(),
+    voucherLabel: z.string().trim().max(80).nullable(),
+    voucherValidDays: z.number().int().min(1).max(730).nullable(),
+    daysBefore: z.number().int().min(0).max(14),
+    active: z.boolean(),
+  })
+  .refine((h) => h.show !== "OFFER" || !!h.text, { message: "Beim Angebot fehlt der Text" })
+  .refine((h) => h.show !== "VOUCHER" || !!h.voucherLabel, { message: "Beim Gutschein fehlt die Leistung" });
+
+export type HolidayInput = z.infer<typeof holidaySchema>;
+
+/** Leere Felder als NULL; Leistung und Gültigkeit gibt es nur beim Gutschein. */
+export function normalizeHoliday(input: HolidayInput) {
+  const voucher = input.show === "VOUCHER";
+  return {
+    show: input.show,
+    title: blank(input.title),
+    text: blank(input.text),
+    voucherLabel: voucher ? blank(input.voucherLabel) : null,
+    voucherValidDays: voucher ? input.voucherValidDays : null,
+    daysBefore: input.daysBefore,
+    active: input.active,
+  };
+}
