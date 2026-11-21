@@ -3471,6 +3471,14 @@ model GamificationConfig {
   occupancyMediumFrom Int @default(10)
   /// Ab hier „Viel los“. Bewusst hoch, damit es selten erscheint.
   occupancyHighFrom   Int @default(25)
+  /// Strandbad: geschaetzte Gaeste vor Ort = Eintritte der letzten 3 h am
+  /// Eingangs-Drehkreuz × Faktor (Tageskasse geht nicht uebers Drehkreuz;
+  /// Aaron 21.11.2026: Top-Tage 3000 Gaeste, 2/3 Tageskasse → 3).
+  beachGuestFactor    Float @default(3)
+  /// Ab so vielen geschaetzten Gaesten „Gut besucht“ (20 % von 3000).
+  beachMediumFrom     Int   @default(600)
+  /// Ab so vielen geschaetzten Gaesten „Viel los“ (40 % von 3000).
+  beachHighFrom       Int   @default(1200)
   /// Fuehler fuer die Wassertemperatur (Device, z. B. Shelly): Grundlage fuer
   /// Awards mit `COLD_DAYS`. Messwerte stehen in `ClimateSample`.
   waterSensorDeviceId Int?
