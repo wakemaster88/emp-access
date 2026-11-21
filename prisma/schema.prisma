@@ -225,6 +225,8 @@ model Account {
   challenges           Challenge[]
   challengeAwards      ChallengeAward[]
   riderOffers          RiderOffer[]
+  riderHolidays        RiderHoliday[]
+  riderHolidayGifts    RiderHolidayGift[]
   discoveredDevices    DiscoveredDevice[]
   knownNetworkDevices  KnownNetworkDevice[]
   blockedNetworkDevices BlockedNetworkDevice[]
@@ -1327,6 +1329,7 @@ model Voucher {
   emailSends              EmailSend[]
   milestoneAwards         MilestoneAward[]
   challengeAwards         ChallengeAward[]
+  holidayGifts            RiderHolidayGift[]
   createdAt               DateTime     @default(now())
 
   @@index([accountId])
@@ -3706,6 +3709,63 @@ model RiderOffer {
   @@index([accountId])
 }
 
+/// Was die Kunden-App an einem Feiertag zeigt.
+enum HolidayShow {
+  /// Nur ein Gruss (Ueberschrift und Text).
+  GREETING
+  /// Angebot wie `RiderOffer`, nur rund um den Feiertag sichtbar.
+  OFFER
+  /// Gruss plus Leistungs-Gutschein, einmal je Person und Jahr.
+  VOUCHER
+}
+
+/// Feiertag in der Kunden-App, je Mandant und Feiertag einmal eingestellt und
+/// jedes Jahr wieder gueltig. `key` ist der Schluessel aus `lib/holidays.ts`
+/// (z. B. "ostermontag"); das Datum rechnet die App jedes Jahr selbst aus.
+model RiderHoliday {
+  id               Int                @id @default(autoincrement())
+  key              String
+  show             HolidayShow        @default(GREETING)
+  /// Ueberschrift; NULL = Standardgruss des Feiertags.
+  title            String?
+  text             String?
+  /// VOUCHER: Leistung auf dem Gutschein.
+  voucherLabel     String?
+  /// VOUCHER: Gueltigkeit in Tagen; NULL = unbegrenzt.
+  voucherValidDays Int?
+  /// Schon so viele Tage vor dem Feiertag zeigen (0 = nur am Tag selbst).
+  daysBefore       Int                @default(0)
+  active           Boolean            @default(true)
+  gifts            RiderHolidayGift[]
+  accountId        Int
+  account          Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([accountId, key])
+  @@index([accountId])
+}
+
+/// Feiertags-Gutschein, der an eine Person ging: einmal je Feiertag und Jahr.
+model RiderHolidayGift {
+  id        Int          @id @default(autoincrement())
+  holidayId Int
+  holiday   RiderHoliday @relation(fields: [holidayId], references: [id], onDelete: Cascade)
+  year      Int
+  profileId Int
+  profile   RiderProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  voucherId Int?
+  voucher   Voucher?     @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  accountId Int
+  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@unique([holidayId, year, profileId])
+  @@index([accountId])
+  @@index([profileId])
+  @@index([voucherId])
+}
+
 /// Kunden-App (Gamification): ein Profil je Person. Der Token im Link
 /// `/app/<token>` ist die Berechtigung, wie bei der Mitarbeiter-App `/m/<token>`.
 model RiderProfile {
@@ -3751,6 +3811,7 @@ model RiderProfile {
   accountId     Int
   account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tickets       Ticket[]
+  holidayGifts  RiderHolidayGift[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

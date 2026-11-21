@@ -7,6 +7,8 @@ import { METRIC_LABEL, RENEWAL_HINT_DAYS, formatDegrees, formatEuro } from "@/li
 import { loadWaterNow } from "@/lib/gamification-service";
 import { loadAirNow } from "@/lib/weather-history";
 import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
+import { loadRiderHoliday, type RiderHolidayView } from "@/lib/rider-holiday";
+import { holidayDayLabel } from "@/lib/holidays";
 import { fmtDay, voucherValidity } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
@@ -175,12 +177,41 @@ function TodayCard({
   );
 }
 
+/**
+ * Feiertag oben auf der Startseite: Gruß, Angebot oder Gutschein, so wie in
+ * der Verwaltung (Kunden App › Aktionen › Feiertage) eingestellt.
+ */
+function HolidayCard({ holiday, base }: { holiday: RiderHolidayView; base: string }) {
+  const v = holiday.voucher;
+  return (
+    <section className="rd-card rd-offer" style={{ gap: 4 }} aria-label={holiday.name}>
+      <div className="rd-label">
+        {holiday.isToday ? holiday.name : `${holiday.name} · ${holidayDayLabel(holiday.ymd)}`}
+      </div>
+      <span className="rd-display rd-h2">{holiday.title}</span>
+      {holiday.text && <span className="rd-soft">{holiday.text}</span>}
+      {v && !v.redeemed && (
+        <Link href={`${base}/gutscheine/${v.id}`} prefetch className="rd-today-row">
+          {QR_ICON}
+          <span className="rd-grow">
+            <b>Dein Geschenk: {v.label}</b>
+            <br />
+            <span className="rd-muted">Gültig {voucherValidity(v.expiresAt)}</span>
+          </span>
+          <span className="rd-btn rd-btn-sm"><span>Zeigen</span></span>
+        </Link>
+      )}
+      {v?.redeemed && <span className="rd-muted">Dein Geschenk {v.label} hast du schon eingelöst.</span>}
+    </section>
+  );
+}
+
 /** Dashboard: Abo, offene Gutscheine und die aktuelle Statistik. */
 export default async function RiderDashboard({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const rider = await requireRider(token);
   const base = riderAppPath(token);
-  const [offers, challenges, occupancy, opening, family, beach, air, water, musicVote] = await Promise.all([
+  const [offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
@@ -190,6 +221,10 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
     // Luft und Wasser für den Kopf: zwei kleine Abfragen neben den anderen, kein Abruf nach außen.
     loadAirNow(rider.accountId).catch(() => null),
     loadWaterNow(rider.accountId).catch(() => null),
+    loadRiderHoliday(rider).catch((e) => {
+      console.error("[rider-holiday]", e);
+      return null;
+    }),
     loadMusicVoteView(rider.accountId, rider.profileId).catch(() => null),
   ]);
   // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
@@ -235,6 +270,8 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       </div>
 
       {rider.today && <TodayCard rider={rider} base={base} water={water} air={air} challenge={challenge} />}
+
+      {holiday && <HolidayCard holiday={holiday} base={base} />}
 
       {/* Wer gerade fährt, stimmt oben ab; sonst steht die Karte unter der Auslastung. */}
       {musicVote?.canVote && <RiderMusicVote token={token} initial={musicVote} />}

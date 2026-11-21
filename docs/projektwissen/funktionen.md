@@ -1044,6 +1044,15 @@ Aaron wollte vorerst statt Inkasso einen eigenen Mahnlauf, vollautomatisch (Ents
 - **Tagesauswertung** („Dein Tag heute“): ganz oben auf der Startseite, sobald die Person heute einen Start hat (`RiderDayStat` von heute, Feld `today` in `RiderView`, `src/lib/rider-app.ts`). Zeigt Starts, Zeit am Lift (erster bis letzter Start; bei einem Start die Uhrzeit), Wasser (kältester Wert während der Fahrt, sonst aktueller Wert, sonst Luft), Besuchstag Nr., Saisonrekord, Hinweis für den Kälte-Award, heute freigeschaltete Awards, Fortschritt zum nächsten Award und zur laufenden Aufgaben-Challenge. Kostet eine kleine Abfrage über den eindeutigen Index (ticketId, day); alles andere ist schon geladen.
 - **Öffnungszeiten-Kalender** `/app/<token>/zeiten`: Tipp auf die Öffnungszeile in „Auslastung jetzt“. Monatsraster mit Zeiten je Tag, Sondertage (Ausnahmetage) mit gelbem Punkt, darunter die offenen Tage ab heute. Lift-Profil zuerst (`loadRiderSchedules`, `src/lib/rider-opening.ts`), andere Bereiche umschaltbar. Blättern ein Monat zurück, zwölf voraus (`?monat=YYYY-MM`, `?bereich=<id>`). Logik in `src/lib/rider-calendar.ts` (+ Test). Server-gerendert ohne Client-JS.
 
+## Feiertage in der Kunden-App (21.11.2026)
+
+Aaron: „feiertage noch in der kunden app hinzufügen. dafür im backend auswählen welche mit was angezeigt werden können. grußwort, angebot oder gutschein möglich“.
+
+- Verwaltung: Kunden App › Aktionen › Karte „Feiertage“. Je Feiertag Aus, Gruß, Angebot oder Gutschein, dazu Überschrift (Standardgruß, falls leer), Text, beim Gutschein Leistung und Gültigkeit, „Schon vorher zeigen“ (0–14 Tage). Gilt jedes Jahr; das Datum rechnet `src/lib/holidays.ts` (NRW plus Heiligabend, Silvester, Oster- und Pfingstsonntag).
+- Daten: `RiderHoliday` (je Mandant und `key` einmal), `RiderHolidayGift` (vergebener Gutschein, eindeutig je Feiertag, Jahr und Person). Speichern über `PUT /api/gamification/holidays/<key>`.
+- App: Karte oben auf der Startseite (nach „Dein Tag heute“), `src/lib/rider-holiday.ts`. Überschneiden sich zwei Feiertage, zeigt die App den nächstliegenden.
+- Gutschein: Leistungs-Gutschein wie bei Awards. Jede Person mit gültigem Abo bekommt ihn einmal, beim ersten Öffnen der App im Zeitraum; ohne Abo bleibt es beim Gruß. Kein Push.
+
 ## Playlist-Abstimmung der Fahrer (21.11.2026)
 
 Aaron: „in der kunden app soll optional aktiviert werden können, dass alle aktiven fahrer die playlist auswählen können. die mehrheit ist immer aktiv“.

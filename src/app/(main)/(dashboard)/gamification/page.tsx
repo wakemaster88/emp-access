@@ -25,6 +25,8 @@ import { DayGuestMailsCard, type DayGuestMailRow } from "@/components/gamificati
 import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamification/challenges-card";
 import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
 import { riderPushReach } from "@/lib/rider-announce";
+import { HolidaysCard, type HolidayAdminRow } from "@/components/gamification/holidays-card";
+import { upcomingHolidays } from "@/lib/holidays";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 import { AppShareCard } from "@/components/gamification/app-share-card";
 import { OccupancySettingsCard } from "@/components/gamification/occupancy-settings-card";
@@ -340,14 +342,36 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         pushSent: c.pushSent,
       });
     }
-    const [offers, reach] = await Promise.all([
+    const [offers, reach, holidaySettings, holidayGifts] = await Promise.all([
       db.riderOffer.findMany({
         where: { accountId },
         orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
         take: 200,
       }),
       riderPushReach(accountId),
+      db.riderHoliday.findMany({ where: { accountId } }),
+      db.riderHolidayGift.groupBy({ by: ["holidayId"], where: { accountId }, _count: { _all: true } }),
     ]);
+    const settingByKey = new Map(holidaySettings.map((h) => [h.key, h]));
+    const giftsById = new Map(holidayGifts.map((g) => [g.holidayId, g._count._all]));
+    const holidayRows: HolidayAdminRow[] = upcomingHolidays(today).map((h) => {
+      const s = settingByKey.get(h.key);
+      return {
+        ...h,
+        setting: s
+          ? {
+              show: s.show,
+              title: s.title,
+              text: s.text,
+              voucherLabel: s.voucherLabel,
+              voucherValidDays: s.voucherValidDays,
+              daysBefore: s.daysBefore,
+              active: s.active,
+            }
+          : null,
+        gifts: s ? giftsById.get(s.id) ?? 0 : 0,
+      };
+    });
     const rows: OfferAdminRow[] = offers.map((o) => {
       const validFrom = o.validFrom ? dbDateToYmd(o.validFrom) : null;
       const validTo = o.validTo ? dbDateToYmd(o.validTo) : null;
@@ -364,11 +388,12 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         pushSent: o.pushSent,
       };
     });
-    // Beides sind Meldungen in der App mit optionalem Push: ein Reiter, zwei Listen.
+    // Meldungen in der App: Challenges, Angebote und Feiertage in einem Reiter.
     content = (
       <>
         <ChallengesCard challenges={challengeRows} today={today} reach={reach} />
         <OffersCard offers={rows} reach={reach} />
+        <HolidaysCard rows={holidayRows} />
       </>
     );
   }
