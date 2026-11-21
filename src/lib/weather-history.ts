@@ -8,7 +8,11 @@
  * fuellt er rueckwirkend ab dem ersten gezaehlten Besuchstag, hoechstens ab
  * dem Vorjahr (weiter zurueck reicht der Saisonrueckblick nicht).
  *
- * Die Vorhersage-API reicht 92 Tage zurueck, aelteres liefert das Archiv.
+ * Die Vorhersage-API liefert nur die letzten Tage verlaesslich: am
+ * 21.11.2026 kamen mit `past_days=92` nur 72 Tage zurueck. Deshalb kommt
+ * alles, was aelter ist als zehn Tage, aus dem Archiv (das haengt etwa fuenf
+ * Tage hinterher). Fehlen im Bestand Stunden, holt der Takt die erste Luecke
+ * einmal je Stunde nach.
  * Grundlage fuer "Luft im Schnitt" im Saisonrueckblick (loadRideTemps).
  */
 
@@ -18,8 +22,8 @@ const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
 const ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
-/** So viele Tage reicht die Vorhersage-API zurueck (`past_days`). */
-export const FORECAST_PAST_DAYS = 92;
+/** So viele Tage zurueck kommt die Vorhersage-API zum Einsatz (`past_days`), davor das Archiv. */
+export const FORECAST_PAST_DAYS = 10;
 /** Zeilen je INSERT (Parametergrenze von Postgres). */
 const STORE_CHUNK = 2000;
 
@@ -53,8 +57,8 @@ export function historyStart(firstDay: Date | null, now: Date): Date {
 
 /**
  * Abrufe fuer die Stunden von `from` bis `to` (volle Stunden, `to` nicht in
- * der Zukunft): das Archiv fuer alles, was aelter ist als die Reichweite der
- * Vorhersage-API, diese fuer den Rest.
+ * der Zukunft): das Archiv fuer alles, was aelter ist als `FORECAST_PAST_DAYS`,
+ * die Vorhersage-API fuer den Rest.
  */
 export function weatherRequests(from: Date, to: Date, now: Date): WeatherRequest[] {
   const out: WeatherRequest[] = [];
@@ -145,13 +149,47 @@ async function syncRange(
   return { written, ok };
 }
 
+/**
+ * Erste Luecke im Bestand ab `start`: vor der ersten gespeicherten Stunde oder
+ * mitten im Verlauf. Null, wenn von `start` bis zur letzten Stunde nichts fehlt.
+ */
+async function firstGap(
+  accountId: number,
+  start: Date,
+  edge: { first: Date; last: Date; count: number },
+): Promise<{ from: Date; to: Date } | null> {
+  if (edge.first.getTime() > start.getTime()) return { from: start, to: new Date(edge.first.getTime() - HOUR_MS) };
+  const expected = Math.round((edge.last.getTime() - start.getTime()) / HOUR_MS) + 1;
+  if (edge.count >= expected) return null;
+  const rows = await prisma.$queryRaw<Array<{ after: Date; before: Date }>>`
+    SELECT t."hour" AS "after", t."next" AS "before"
+    FROM (
+      SELECT w."hour", lead(w."hour") OVER (ORDER BY w."hour") AS "next"
+      FROM "WeatherHour" w
+      WHERE w."accountId" = ${accountId} AND w."hour" >= ${start}
+    ) t
+    WHERE t."next" - t."hour" > interval '1 hour'
+    ORDER BY t."hour"
+    LIMIT 1`;
+  const gap = rows[0];
+  if (!gap) return null;
+  return { from: new Date(gap.after.getTime() + HOUR_MS), to: new Date(gap.before.getTime() - HOUR_MS) };
+}
+
 async function syncAccount(account: { id: number; lat: number; lng: number }, now: Date): Promise<{ written: number; ok: boolean }> {
   const to = new Date(floorTo(now.getTime(), HOUR_MS));
-  const [edge, firstStat] = await Promise.all([
-    prisma.weatherHour.aggregate({ where: { accountId: account.id }, _min: { hour: true }, _max: { hour: true } }),
-    prisma.riderDayStat.findFirst({ where: { accountId: account.id }, orderBy: { day: "asc" }, select: { day: true } }),
-  ]);
+  const firstStat = await prisma.riderDayStat.findFirst({
+    where: { accountId: account.id },
+    orderBy: { day: "asc" },
+    select: { day: true },
+  });
   const start = historyStart(firstStat?.day ?? null, now);
+  const edge = await prisma.weatherHour.aggregate({
+    where: { accountId: account.id, hour: { gte: start } },
+    _min: { hour: true },
+    _max: { hour: true },
+    _count: true,
+  });
   const first = edge._min.hour;
   const last = edge._max.hour;
   let written = 0;
@@ -164,12 +202,15 @@ async function syncAccount(account: { id: number; lat: number; lng: number }, no
     written += res.written;
     ok = res.ok;
   }
-  // Luecke vor dem Bestand (Archiv war nicht erreichbar oder es kamen aeltere
-  // Besuchstage dazu): einmal je Stunde nachholen.
-  if (first && first.getTime() > start.getTime() && now.getUTCMinutes() < 5) {
-    const res = await syncRange(account, start, new Date(first.getTime() - HOUR_MS), now);
-    written += res.written;
-    ok = ok && res.ok;
+  // Luecke im Bestand (ein Abruf scheiterte, der Dienst lieferte Stunden ohne
+  // Wert oder es kamen aeltere Besuchstage dazu): einmal je Stunde nachholen.
+  if (first && last && now.getUTCMinutes() < 5) {
+    const gap = await firstGap(account.id, start, { first, last, count: edge._count });
+    if (gap) {
+      const res = await syncRange(account, gap.from, gap.to, now);
+      written += res.written;
+      ok = ok && res.ok;
+    }
   }
   return { written, ok };
 }
