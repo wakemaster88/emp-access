@@ -107,7 +107,8 @@ export function RiderMusicVote({ token, initial }: { token: string; initial: Mus
         ? `Gerade läuft ${view.playingName}.`
         : null;
 
-  const summary = view.playingName ?? "keine Musik";
+  // Eingeklappt: was läuft, sonst nur die Einladung zur Wahl (Aaron: „Musik keine Musik ist komisch“).
+  const summary = view.playingName ? `Läuft: ${view.playingName}` : "Musik wählen";
   const mineName = view.options.find((o) => o.key === view.myOption)?.name ?? null;
 
   return (
@@ -117,15 +118,14 @@ export function RiderMusicVote({ token, initial }: { token: string; initial: Mus
         className="rd-hours rd-vote-toggle"
         aria-expanded={open}
         aria-controls="rd-vote-panel"
-        aria-label={`Musik ${view.where}: ${summary}. ${view.canVote ? "Abstimmen" : "Ansehen"}`}
+        aria-label={`Musik ${view.where}. ${summary}. ${view.canVote ? "Abstimmen" : "Ansehen"}`}
         onClick={() => setOpen((v) => !v)}
       >
         {NOTE_ICON}
         <span className="rd-grow rd-vote-sum">
-          <span className="rd-vote-where">Musik</span> {summary}
+          {summary}
         </span>
         <span className="rd-hours-more">
-          {left != null && left > 0 && <span className="rd-vote-timer">{countdown(left)}</span>}
           {mineName ? "Deine Wahl" : view.canVote ? "Abstimmen" : "Ansehen"}
           <span className={`rd-vote-chev${open ? " rd-vote-chev-open" : ""}`}>{CHEVRON}</span>
         </span>
