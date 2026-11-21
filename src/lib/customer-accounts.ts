@@ -9,6 +9,7 @@
  */
 import type { PrismaClient, TicketStatus } from "@prisma/client";
 import { normalizeName } from "./ticket-predecessor";
+import { lastInvites } from "./rider-invite";
 
 const RUNNING: TicketStatus[] = ["VALID", "REDEEMED", "PAUSED"];
 const MAX_CUSTOMERS = 2000;
@@ -53,6 +54,8 @@ export interface CustomerAccountRow {
   name: string | null;
   persons: CustomerPersonRow[];
   abos: CustomerAboRow[];
+  /** Letzte Einladung zur Kunden-App an die Adresse, ISO; null = nie. */
+  invitedAt: string | null;
 }
 
 export interface DuplicateGroup {
@@ -140,12 +143,14 @@ export async function loadCustomerAccounts(db: PrismaClient, accountId: number, 
     orderBy: [{ name: { sort: "asc", nulls: "last" } }, { email: "asc" }],
     take: MAX_CUSTOMERS,
   });
+  const invites = await lastInvites(accountId);
 
   const rows: CustomerAccountRow[] = customers.map((c) => ({
     id: c.id,
     email: c.email,
     aliasEmails: c.aliasEmails,
     name: c.name,
+    invitedAt: invites.get(c.email.trim().toLowerCase())?.toISOString() ?? null,
     persons: c.persons.map((p) => ({
       id: p.id,
       firstName: p.firstName,

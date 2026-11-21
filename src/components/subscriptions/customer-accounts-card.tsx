@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Merge, Pencil, Trash2, UserPen } from "lucide-react";
+import { Loader2, Mail, Merge, Pencil, Trash2, UserPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -350,6 +350,8 @@ function AccountDialogBody({
         )}
       </div>
 
+      {canMerge && <AppInvite account={c} onDone={onDone} />}
+
       <div className="space-y-2">
         <SectionHeading title={`Abos (${c.abos.length})`} />
         {c.abos.length === 0 ? (
@@ -653,6 +655,51 @@ function MergeStep({
           Zurück
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** Kunden-App: Stand und Taste „Zur App einladen“ (lib/rider-invite, inviteCustomer). */
+function AppInvite({ account: c, onDone }: { account: CustomerAccountRow; onDone: (message?: string | null) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const inApp = c.persons.filter((p) => p.app);
+  const state = inApp.length > 0
+    ? `In der App: ${inApp.map(personName).join(", ")}.`
+    : "Noch niemand aus diesem Konto ist in der App.";
+  const invited = c.invitedAt ? ` Zuletzt eingeladen am ${fmtDay(c.invitedAt)}.` : "";
+
+  async function invite() {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/customers/${c.id}/invite`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Einladen fehlgeschlagen.");
+        return;
+      }
+      onDone(`Einladung an ${c.email} verschickt.`);
+    } catch {
+      setError("Netzwerkfehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <SectionHeading title="Kunden-App" />
+      <div className="glass-tile flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center">
+        <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+          {state}{invited} Die Einladung geht an {c.email}, der Link meldet direkt an.
+        </p>
+        <Button variant="outline" disabled={busy} className="shrink-0 max-sm:h-11" onClick={invite}>
+          {busy ? <Loader2 className="animate-spin" /> : <Mail />}
+          {c.invitedAt ? "Erneut einladen" : "Zur App einladen"}
+        </Button>
+      </div>
+      {error && <Notice tone="danger" compact role="alert" title={error} />}
     </div>
   );
 }
