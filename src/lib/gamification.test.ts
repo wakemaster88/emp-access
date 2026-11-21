@@ -355,6 +355,15 @@ test("challengePhase: Start- und Endtag zählen mit", () => {
   assert.equal(challengePhase(c, "2027-07-01"), "ended");
 });
 
+test("challengePhase: mit Uhrzeit endet die Challenge am Endtag um diese Zeit", () => {
+  const c = { startYmd: "2026-12-06", endYmd: "2026-12-06", endTime: "18:00" };
+  assert.equal(challengePhase(c, "2026-12-06", "09:00"), "running");
+  assert.equal(challengePhase(c, "2026-12-06", "17:59"), "running");
+  assert.equal(challengePhase(c, "2026-12-06", "18:00"), "ended");
+  assert.equal(challengePhase(c, "2026-12-07", "08:00"), "ended");
+  assert.equal(challengePhase({ ...c, endTime: null }, "2026-12-06", "23:59"), "running");
+});
+
 test("challengeValue zählt nur den Zeitraum und deckelt Starts", () => {
   const days = [
     { day: "2027-05-31", starts: 9 },

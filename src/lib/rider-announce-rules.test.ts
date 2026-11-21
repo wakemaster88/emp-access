@@ -60,6 +60,9 @@ test("Texte der Nachricht", () => {
   assert.equal(running.title, "Neue Challenge: November-Grind");
   assert.match(running.body, /Gewinn: Freigetränk\. Läuft bis 30\.11\.$/);
   assert.match(challengePushText({ ...base, startYmd: "2026-12-01" }, "2026-11-20").body, /Startet am 01\.12\.$/);
+  const oneDay = { ...base, startYmd: "2026-12-06", endYmd: "2026-12-06", endTime: "18:00" };
+  assert.match(challengePushText(oneDay, "2026-11-22").body, /Am 06\.12\. bis 18 Uhr$/);
+  assert.match(challengePushText({ ...base, endTime: "18:30" }, "2026-11-20").body, /Läuft bis 30\.11\., 18:30 Uhr$/);
 });
 
 test("Push-Plan: Bearbeiten ohne Schalter ändert nichts, gesendet bleibt gesendet", () => {

@@ -3778,6 +3778,9 @@ model Challenge {
   topCount         Int?
   startDate        DateTime         @db.Date
   endDate          DateTime         @db.Date
+  /// Uhrzeit am Endtag ("HH:MM", Europe/Berlin), zu der die Challenge endet;
+  /// NULL = mit dem Endtag (Mitternacht).
+  endTime          String?
   voucherLabel     String?
   voucherValidDays Int?
   /// Skill als Belohnung (Kunden-App): Recht, ein Geraet zu schalten.

@@ -81,6 +81,8 @@ export const challengeSchema = z
     topCount: z.number().int().min(1).max(100).nullable(),
     startDate: ymd,
     endDate: ymd,
+    /** Uhrzeit am Endtag ("HH:MM"); null = bis Mitternacht. */
+    endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
     voucherLabel: z.string().trim().max(80).nullable(),
     voucherValidDays: z.number().int().min(1).max(730).nullable(),
     ...skillReward,
@@ -131,6 +133,7 @@ export function normalizeChallenge(input: ChallengeInput) {
     topCount: input.kind === "TOP_X" || input.kind === "PHOTO" ? input.topCount : null,
     startDate: new Date(`${input.startDate}T00:00:00.000Z`),
     endDate: new Date(`${input.endDate}T00:00:00.000Z`),
+    endTime: input.endTime ?? null,
     voucherLabel,
     voucherValidDays: voucherLabel ? input.voucherValidDays : null,
     ...(input.kind === "POLL" ? { skillId: null, skillUses: 1, skillValidDays: null } : normalizeSkillReward(input)),

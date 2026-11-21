@@ -5,15 +5,22 @@ import { RiderChallengeVoting } from "@/components/rider/rider-challenge-voting"
 import { loadRiderChallengesCached, type RiderChallenge } from "@/lib/rider-challenges";
 import { METRIC_LABEL } from "@/lib/gamification";
 import { daysUntil, fmtDay } from "@/lib/rider-format";
+import { clockText } from "@/lib/rider-announce-rules";
 
 export const dynamic = "force-dynamic";
 
 function timeText(c: RiderChallenge): string {
-  if (c.phase === "upcoming") return `startet am ${fmtDay(c.startDate)}`;
+  const until = c.endTime ? ` bis ${clockText(c.endTime)}` : "";
+  if (c.phase === "upcoming") {
+    return c.endTime && c.startDate.getTime() === c.endDate.getTime()
+      ? `am ${fmtDay(c.startDate)}${until}`
+      : `startet am ${fmtDay(c.startDate)}`;
+  }
   if (c.phase === "ended") return `beendet am ${fmtDay(c.endDate)}`;
   // Der Endtag zählt mit: bis zum Ende des Tages.
   const days = daysUntil(new Date(c.endDate.getTime() + 86_400_000));
-  return days <= 1 ? "endet heute" : `noch ${days} Tage`;
+  if (days <= 1) return c.endTime ? `heute${until}` : "endet heute";
+  return `noch ${days} Tage`;
 }
 
 function ruleText(c: RiderChallenge): string {
