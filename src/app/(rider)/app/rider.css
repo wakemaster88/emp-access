@@ -930,7 +930,7 @@ a.rd-cal-nav { border: 1px solid var(--rd-line-strong); }
 }
 .rd-switch[open] .rd-switch-chev { transform: rotate(180deg); }
 /* Eine Zeile, bei vielen Personen seitlich wischen. */
-.rd-switch-list { display: flex; gap: 6px; margin: 6px -16px 0; padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
+.rd-switch-list { display: flex; gap: 6px; margin: 2px -16px 0; padding: 4px 16px; overflow-x: auto; scrollbar-width: none; }
 .rd-switch-list::-webkit-scrollbar { display: none; }
 .rd-root .rd-switch-list a {
   flex: none;
@@ -948,6 +948,9 @@ a.rd-cal-nav { border: 1px solid var(--rd-line-strong); }
   text-decoration: none;
   white-space: nowrap;
 }
+/* Sichtbar 36 px, Tippfläche 44 px (Design-Regel). */
+.rd-switch-list a { position: relative; }
+.rd-switch-list a::after { content: ""; position: absolute; inset: -4px 0; }
 .rd-switch-dot {
   width: 26px;
   height: 26px;
