@@ -1787,6 +1787,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             setSelectedTicket(null);
             setAddTicketOpen(true);
           }}
+          onAppLink={() => {
+            // Dialog öffnet mit diesem Abo und wartet auf den App-Code.
+            setAppLink({ app: null, ticket: selectedTicket, notice: null });
+            setSelectedTicket(null);
+            setEditMode(null);
+          }}
           onCancelVoucher={handleCancelVoucher}
           cancellingVoucher={cancellingVoucher}
           onSaveNotes={(notes) => handleUpdateTicket(selectedTicket.id, { notes })}
@@ -2018,6 +2024,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         state={appLink}
         onClose={() => setAppLink(null)}
         onLinked={() => refreshRef.current?.()}
+        onScan={(code) => void handleScan(code)}
+        scanning={scanLoading}
       />
 
       {/* Scan overlay */}

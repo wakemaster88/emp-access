@@ -759,6 +759,11 @@ Kasse), alte oder andere Adresse, anny-Adresse anders als die in der App
   oder ein Kind. Solange er offen ist, gehören Scans ihm. Enter vom Scanner
   löst darin keine Taste aus. Verknüpft wird über `POST …/app-link`
   (`linkAboToApp` in `src/lib/rider-kasse-link.ts`).
+- Seit 21.11.2026 (Aaron: „wo kann ich hier die app mit qr code verbinden?“):
+  Im Kunden-Dialog eines Abos öffnet „Mit App verbinden“ den Dialog mit
+  diesem Abo; dann fehlt nur der App-Code. Ohne Handscanner lässt er sich im
+  Dialog eintippen (Leerzeichen und Kleinschreibung egal) oder mit der Kamera
+  des Geräts lesen (`html5-qrcode`). Beides geht wie ein Scan an `POST …/scan`.
 - „Selbst“: Ein Abo ohne Adresse bekommt die der App. Sonst kommt die
   App-Person ins Kundenkonto des Abos und ihre Adresse wird eine weitere
   Adresse des Kontos (Alias), so überlebt sie den anny-Abgleich. Eine
