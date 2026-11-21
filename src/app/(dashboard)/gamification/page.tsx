@@ -26,6 +26,8 @@ import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers
 import { riderPushReach } from "@/lib/rider-announce";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 import { AppShareCard } from "@/components/gamification/app-share-card";
+import { OccupancySettingsCard } from "@/components/gamification/occupancy-settings-card";
+import { normalizeThresholds } from "@/lib/rider-occupancy";
 import { AppInviteCard } from "@/components/gamification/app-invite-card";
 import { inviteStatus } from "@/lib/rider-invite";
 
@@ -410,6 +412,11 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         services={services}
         devices={devices.map((d) => ({ id: d.id, name: d.name }))}
         year={year}
+      />
+      <OccupancySettingsCard
+        initial={normalizeThresholds(
+          config ? { mediumFrom: config.occupancyMediumFrom, highFrom: config.occupancyHighFrom } : null,
+        )}
       />
       <AppInviteCard initial={invites} />
       <AppShareCard

@@ -501,9 +501,13 @@ werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
   und Frames von `embed.anny.co`/`anny.co`.
 - Karte „Auslastung jetzt“ (`src/lib/rider-occupancy.ts`): verschiedene Fahrer
   und Starts an Start-Geräten (`countsAsStart`) in der letzten Stunde, nur als
-  Summen. Stufen nach Fahrern: 0 „Gerade ruhig“, 1–5 „Wenig los“, 6–14
-  „Mittel“, ab 15 „Viel los“ (aus den Daten 21.08.–15.11.2026: Median 7,
-  Spitze 34 je Stunde). Ohne Start-Gerät bleibt die Karte weg.
+  Summen. Stufen nach Fahrern: 0 „Gerade ruhig“, 1–9 „Freie Bahn“, 10–24
+  „Gut besucht“, ab 25 „Viel los“. Grenzen je Mandant unter Kunden App ›
+  Einstellungen (`GamificationConfig.occupancyMediumFrom/HighFrom`), gelten
+  auch für das Badge „Jetzt: …“ an der Drehkreuz-Karte im Dashboard.
+  „Viel los“ soll selten erscheinen (rund 5 % der Betriebszeit), damit niemand
+  wegbleibt (Aaron, 21.11.2026; Daten 21.08.–15.11.2026: Median 7, 90 % bis 18,
+  Spitze 38 Fahrer je 60 Min). Ohne Start-Gerät bleibt die Karte weg.
 
 ## Anmeldung per E-Mail, auch ohne Abo (20.11.2026)
 
