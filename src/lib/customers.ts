@@ -22,7 +22,7 @@
  */
 import { prisma } from "./prisma";
 import { cleanEmail } from "./abo-email";
-import { aboCategory, aboNamesRider, isKidsSubscriptionName, personDataKey, pickHolder, planPersons } from "./customer-person";
+import { aboCategory, aboNamesRider, isKidsSubscriptionName, offerAtLogin, personDataKey, pickHolder, planPersons } from "./customer-person";
 import { newRiderToken } from "./rider-app";
 import { FAMILY_MAX_MEMBERS } from "./rider-family";
 
@@ -293,7 +293,11 @@ export interface LoginPerson {
 
 export interface KontoLogin {
   customerId: number;
-  /** Personen ohne eigenen Zugang: eine davon ist vielleicht, wer sich anmeldet. */
+  /**
+   * Personen ohne bestätigte Adresse: eine davon ist vielleicht, wer sich
+   * anmeldet. Personen, die schon einen Zugang haben (Passkey oder Passwort
+   * über den App-Link), nur wenn sie den Namen des Kontoinhabers tragen.
+   */
   persons: LoginPerson[];
   /** Vorschlag, wer sich anmeldet (siehe `pickHolder`); null = „fahre selbst nicht“. */
   guess: number | null;
@@ -301,8 +305,11 @@ export interface KontoLogin {
 
 /**
  * Anmeldung mit der Adresse eines Kontos: Wer bist du? Zur Wahl stehen die
- * Personen des Kontos ohne eigenen Zugang. Null, wenn es zur Adresse kein
- * Konto gibt.
+ * Personen des Kontos ohne bestätigte Adresse. Hat eine davon schon einen
+ * Zugang über den App-Link (Passkey, Passwort), steht sie nur zur Wahl, wenn
+ * sie den Namen des Kontoinhabers trägt: Sonst bekäme der Kontoinhaber das
+ * Profil eines anderen, und ohne sie legte die Anmeldung ein zweites, leeres
+ * Profil ohne Namen und Abo an. Null, wenn es zur Adresse kein Konto gibt.
  */
 export async function kontoLogin(accountId: number, email: string, now: Date = new Date()): Promise<KontoLogin | null> {
   const customerId = await customerIdForEmail(accountId, email);
@@ -312,9 +319,10 @@ export async function kontoLogin(accountId: number, email: string, now: Date = n
     select: {
       name: true,
       persons: {
-        where: { email: null, passwordHash: null, passkeys: { none: {} } },
+        where: { email: null },
         select: {
-          id: true, firstName: true, lastName: true, birthDate: true,
+          id: true, firstName: true, lastName: true, birthDate: true, passwordHash: true,
+          _count: { select: { passkeys: true } },
           tickets: {
             where: { subscriptionId: { not: null } },
             select: { status: true, endDate: true, subscription: { select: { name: true } } },
@@ -329,7 +337,10 @@ export async function kontoLogin(accountId: number, email: string, now: Date = n
   if (!customer) return null;
   const running = (t: { status: string; endDate: Date | null }) =>
     ["VALID", "REDEEMED", "PAUSED"].includes(t.status) && (t.endDate == null || t.endDate.getTime() > now.getTime());
-  const persons = customer.persons.map((p) => ({
+  const offered = customer.persons.filter((p) =>
+    offerAtLogin({ ...p, hasAccess: p.passwordHash != null || p._count.passkeys > 0 }, customer.name),
+  );
+  const persons = offered.map((p) => ({
     id: p.id,
     firstName: p.firstName,
     lastName: p.lastName,

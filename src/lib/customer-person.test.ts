@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aboCategory, aboNamesRider, hasFollowUpAbo, isAdultAt, isKidsSubscriptionName, personDataKey, pickHolder, planPersons, riderDataEntered, riderView, withRiderView, type PlanTicket } from "./customer-person";
+import { aboCategory, aboNamesRider, hasFollowUpAbo, isAdultAt, isKidsSubscriptionName, offerAtLogin, personDataKey, pickHolder, planPersons, riderDataEntered, riderView, withRiderView, type PlanTicket } from "./customer-person";
 
 const NOW = new Date("2026-11-20T12:00:00Z");
 const d = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
@@ -183,4 +183,15 @@ test("planPersons: genaue Daten gehen vor früheren Daten einer anderen Person",
   // Person 7 heißt inzwischen anders, Person 8 trägt die Daten am Abo.
   const plan = planPersons([old, renewal], [{ id: 7, ...PARENT, firstName: "Evi" }, { id: 8, ...PARENT }], NOW);
   assert.deepEqual(plan.assign, [{ personId: 8, ticketIds: [renewal.id] }]);
+});
+
+test("offerAtLogin: ohne Zugang immer, mit Zugang nur der Kontoinhaber", () => {
+  const aaron = { firstName: "Aaron", lastName: "Armborst", hasAccess: true };
+  // Passkey über den App-Link, Adresse noch nie bestätigt: der Kontoinhaber selbst.
+  assert.equal(offerAtLogin(aaron, "Aaron Armborst"), true);
+  assert.equal(offerAtLogin(aaron, "aaron  ARMBORST"), true);
+  // Anderes Familienmitglied mit eigenem Zugang: nicht übernehmen.
+  assert.equal(offerAtLogin({ firstName: "Eva", lastName: "Armborst", hasAccess: true }, "Aaron Armborst"), false);
+  assert.equal(offerAtLogin(aaron, null), false);
+  assert.equal(offerAtLogin({ firstName: "Eva", lastName: "Armborst", hasAccess: false }, "Aaron Armborst"), true);
 });
