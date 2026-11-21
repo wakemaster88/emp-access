@@ -11,10 +11,11 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Html5Qrcode } from "html5-qrcode";
-import { Camera, CameraOff, Loader2, ScanLine, Smartphone, Ticket } from "lucide-react";
+import { Camera, CameraOff, Link2Off, Loader2, ScanLine, Smartphone, Ticket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmStep } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import type { CheckinTicket } from "./checkin-types";
@@ -181,6 +182,11 @@ export function AppLinkDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  /** Das Abo hängt schon an einer anderen Person: lösbar nach Rückfrage. */
+  const [linked, setLinked] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  /** Wo das Abo gerade in der App steht („Aaron, Kind in der Familie von Anna“); null: nirgends. */
+  const [owner, setOwner] = useState<{ ticketId: number; text: string | null } | null>(null);
   const focusRef = useRef<HTMLDivElement>(null);
 
   // Neues Abo oder neue App: Auswahl und Meldungen zurücksetzen.
@@ -191,7 +197,23 @@ export function AppLinkDialog({
     setRole(guessRole(app, ticket));
     setError(null);
     setDone(null);
+    setLinked(null);
+    setConfirming(false);
   }
+
+  const ticketId = ticket?.id ?? null;
+  useEffect(() => {
+    if (ticketId == null) return;
+    let cancelled = false;
+    fetch(`/api/checkin/public/${token}/app-link?ticketId=${ticketId}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json: { owner?: { text?: string } | null } | null) => {
+        if (!cancelled && json) setOwner({ ticketId, text: json.owner?.text ?? null });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token, ticketId, done]);
+  const ownerLine = owner && owner.ticketId === ticketId ? owner.text : undefined;
   useEffect(() => {
     if (state == null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Dialog zu: für das nächste Mal leeren
@@ -203,28 +225,46 @@ export function AppLinkDialog({
   const name = app?.name ?? "";
   const canLink = !!app && !app.child && !!ticket && ticket.subscriptionId != null && role != null && !busy && !done;
 
-  async function link() {
-    if (!canLink || !app || !ticket || !role) return;
-    setBusy(true);
-    setError(null);
+  async function post(replace: boolean): Promise<{ ok: true; message: string } | { ok: false; error: string; replaceable: boolean }> {
     try {
       const res = await fetch(`/api/checkin/public/${token}/app-link`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: app.code, ticketId: ticket.id, role }),
+        body: JSON.stringify({ code: app!.code, ticketId: ticket!.id, role, ...(replace && { replace: true }) }),
       });
-      const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-      if (!res.ok) {
-        setError(json.error ?? "Verknüpfen fehlgeschlagen. Bitte noch einmal versuchen.");
-        return;
-      }
-      setDone(json.message ?? "Verknüpft.");
-      onLinked();
+      const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string; replaceable?: boolean };
+      if (!res.ok) return { ok: false, error: json.error ?? "Verknüpfen fehlgeschlagen. Bitte noch einmal versuchen.", replaceable: json.replaceable === true };
+      return { ok: true, message: json.message ?? "Verknüpft." };
     } catch {
-      setError("Keine Verbindung. Bitte noch einmal versuchen.");
-    } finally {
-      setBusy(false);
+      return { ok: false, error: "Keine Verbindung. Bitte noch einmal versuchen.", replaceable: false };
     }
+  }
+
+  async function link() {
+    if (!canLink || !app || !ticket || !role) return;
+    setBusy(true);
+    setError(null);
+    setLinked(null);
+    const r = await post(false);
+    setBusy(false);
+    if (!r.ok) {
+      if (r.replaceable) setLinked(r.error);
+      else setError(r.error);
+      return;
+    }
+    setDone(r.message);
+    onLinked();
+  }
+
+  /** Nach Rückfrage: bisherige Verknüpfung lösen und neu verknüpfen. Fehler zeigt die Rückfrage. */
+  async function relink() {
+    if (!app || !ticket || !role) return;
+    const r = await post(true);
+    if (!r.ok) throw new Error(r.error);
+    setConfirming(false);
+    setLinked(null);
+    setDone(r.message);
+    onLinked();
   }
 
   const waitingFor = !app ? "den App-Code" : !ticket ? "die Abo-Karte" : null;
@@ -273,6 +313,11 @@ export function AppLinkDialog({
                     <div className="truncate text-xs text-muted-foreground">
                       {personName(ticket)} · bis {fmtDay(ticket.endDate)}
                     </div>
+                    {ownerLine !== undefined && (
+                      <div className="text-xs text-muted-foreground">
+                        {ownerLine ? `In der App: ${ownerLine}` : "Noch in keiner App"}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="flex items-center gap-1.5 text-muted-foreground"><ScanLine className="size-4" aria-hidden /> Karte scannen</div>
@@ -308,7 +353,7 @@ export function AppLinkDialog({
                     type="button"
                     role="radio"
                     aria-checked={role === value}
-                    onClick={() => setRole(value)}
+                    onClick={() => { setRole(value); setLinked(null); setConfirming(false); }}
                     className={cn(
                       "press min-h-14 rounded-control px-3 text-base font-medium ring-1 ring-inset transition-colors",
                       role === value
@@ -327,21 +372,47 @@ export function AppLinkDialog({
           )}
 
           {error && <Notice tone="danger" title={error} />}
+          {linked && !confirming && !done && (
+            <Notice tone="warning" title={linked}>
+              <Button variant="outline" className="mt-2 min-h-11 sm:min-h-14" onClick={() => setConfirming(true)}>
+                <Link2Off />
+                Bisherige Verknüpfung lösen
+              </Button>
+            </Notice>
+          )}
           {done && <Notice tone="success" title={done}>In der App auf „Fertig“ tippen, dann erscheint das Abo.</Notice>}
 
-          <DialogFooter>
-            {done ? (
-              <Button className="min-h-11 sm:min-h-14" onClick={onClose}>Fertig</Button>
-            ) : (
-              <>
-                <Button variant="outline" className="min-h-11 sm:min-h-14" disabled={busy} onClick={onClose}>Abbrechen</Button>
-                <Button className="min-h-11 sm:min-h-14" disabled={!canLink} onClick={() => void link()}>
-                  {busy && <Loader2 className="animate-spin" />}
-                  {error ? "Erneut versuchen" : "Verknüpfen"}
-                </Button>
-              </>
-            )}
-          </DialogFooter>
+          {confirming && linked && !done ? (
+            <ConfirmStep
+              title="Bisherige Verknüpfung lösen?"
+              description={
+                <>
+                  {ticket?.subscription?.name ?? "Das Abo"} verschwindet aus der bisherigen App
+                  {ownerLine ? ` (${ownerLine})` : ""} und steht danach{" "}
+                  {role === "child" ? `als Kind in der Familie von ${name}` : `in der App von ${name}`}. Besuche, Starts und
+                  Awards bleiben am Abo.
+                </>
+              }
+              confirmLabel="Lösen und verknüpfen"
+              icon={Link2Off}
+              onConfirm={relink}
+              onCancel={() => setConfirming(false)}
+            />
+          ) : (
+            <DialogFooter>
+              {done ? (
+                <Button className="min-h-11 sm:min-h-14" onClick={onClose}>Fertig</Button>
+              ) : (
+                <>
+                  <Button variant="outline" className="min-h-11 sm:min-h-14" disabled={busy} onClick={onClose}>Abbrechen</Button>
+                  <Button className="min-h-11 sm:min-h-14" disabled={!canLink} onClick={() => void link()}>
+                    {busy && <Loader2 className="animate-spin" />}
+                    {error ? "Erneut versuchen" : "Verknüpfen"}
+                  </Button>
+                </>
+              )}
+            </DialogFooter>
+          )}
         </div>
       </DialogContent>
     </Dialog>

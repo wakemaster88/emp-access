@@ -42,3 +42,12 @@ test("sameFirstName: gleich, Groß/klein egal, oder einer fehlt", async () => {
   assert.equal(sameFirstName("Lisa", ""), true);
   assert.equal(sameFirstName("Lisa", "Ben"), false);
 });
+
+test("ownerText: wo das Abo in der App steht", async () => {
+  const { ownerText } = await import("./rider-kasse-link");
+  const base = { profileId: 1, name: "Mia", ownApp: false, maskedEmail: null, familyOf: null };
+  assert.equal(ownerText({ ...base, familyOf: "Tom" }), "Mia, Kind in der Familie von Tom");
+  assert.equal(ownerText({ ...base, ownApp: true, maskedEmail: "mi•••@ex•••.org" }), "App von Mia (mi•••@ex•••.org)");
+  assert.equal(ownerText({ ...base, ownApp: true }), "App von Mia");
+  assert.equal(ownerText(base), "Mia, noch ohne eigenen Zugang");
+});
