@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import "./globals.css";
+import "../globals.css";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SwRegister } from "@/components/layout/sw-register";
@@ -9,7 +9,9 @@ import { appleStartupImages } from "@/lib/pwa-splash";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 // Codes, IP-Adressen, Tokens und Uhrzeiten laufen in einer Monospace-Schrift.
-const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono", display: "swap" });
+// Nicht vorab laden: Turbopack legt die Schriften beider Wurzelrahmen
+// zusammen, sonst lädt auch die Kunden-App die 40 KB vorab (Lighthouse 21.11.2026).
+const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono", display: "swap", preload: false });
 
 export const viewport: Viewport = {
   width: "device-width",

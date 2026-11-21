@@ -106,7 +106,12 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 ## Kunden-App für Abo-Fahrer, Etappe 2 (15.11.2026)
 
 - Eigene Oberfläche unter `/app` (dunkles Wassersport-Design in
-  `src/app/app/rider.css`, bewusst ohne die ui-Bausteine der Verwaltung).
+  `src/app/(rider)/app/rider.css`, bewusst ohne die ui-Bausteine der Verwaltung).
+  Seit 21.11.2026 eigener Wurzelrahmen `src/app/(rider)/layout.tsx` ohne
+  `globals.css` (nur Preflight in `rider-base.css`); alle anderen Seiten liegen
+  unter `src/app/(main)/`. Kunden-Seiten dürfen deshalb keine Tailwind-Klassen
+  oder ui-Bausteine nutzen. `/app` ist statisch, hat ein eigenes Manifest
+  (`/app/manifest.webmanifest`) und den Update-Hinweis `RiderUpdatePrompt`.
   Als PWA installierbar: Manifest je Fahrer, der globale Service Worker
   (`public/sw.js`) liefert Offline-Seite und Cache.
 - **Anmeldung** auf `/app` seit 20.11.2026 nur per E-Mail (Aaron: Karte und

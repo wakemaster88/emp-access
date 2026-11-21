@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Barlow_Condensed } from "next/font/google";
 import { loadRankingDisplay } from "@/lib/ranking-display";
 import { AutoRefresh } from "@/components/rider/auto-refresh";
-import "../../app/rider.css";
+import "../../../(rider)/app/rider.css";
 import "./board.css";
 
 const display = Barlow_Condensed({
