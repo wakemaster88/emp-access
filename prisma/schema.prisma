@@ -3522,6 +3522,11 @@ model GamificationConfig {
   musicVoteOptions     String[] @default([])
   /// So lange nach einer Wahl des Personals ruht die Abstimmung (0 = gar nicht).
   musicVoteHoldMinutes Int     @default(60)
+  /// Abstimmungsrunde in Minuten: gewechselt wird nur am Rundenende (volle
+  /// Viertelstunde bei 15), die App zeigt den Countdown. 0 = sofort.
+  musicVoteRoundMinutes Int    @default(15)
+  /// Ende der zuletzt ausgewerteten Runde (Cron-Guard).
+  musicVoteRoundAt     DateTime?
   accountId       Int      @unique
   account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())

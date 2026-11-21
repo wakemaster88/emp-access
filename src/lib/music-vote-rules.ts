@@ -21,6 +21,32 @@ export const VOTE_ACTIVE_MS = 2 * 60 * 60_000;
 export const VOTE_ACTIVE_HOURS = VOTE_ACTIVE_MS / 3_600_000;
 export const DEFAULT_HOLD_MINUTES = 60;
 export const MAX_HOLD_MINUTES = 8 * 60;
+/** Abstimmungsrunde: gewechselt wird am Rundenende (Aaron: Timer bis zum Wechsel). */
+export const DEFAULT_ROUND_MINUTES = 15;
+export const ROUND_CHOICES = [0, 5, 10, 15, 20, 30, 60] as const;
+
+/**
+ * Runde, in der `now` liegt. Runden zählen ab Mitternacht (Berlin), bei 15
+ * also :00, :15, :30, :45. Die letzte Runde endet spätestens um Mitternacht.
+ * 0 Minuten = keine Runden (Wechsel sofort): null.
+ */
+export function voteRound(now: Date, dayStart: Date, minutes: number): { start: Date; end: Date } | null {
+  if (!(minutes > 0)) return null;
+  const len = minutes * 60_000;
+  const since = Math.max(0, now.getTime() - dayStart.getTime());
+  const start = dayStart.getTime() + Math.floor(since / len) * len;
+  const end = Math.min(start + len, dayStart.getTime() + 24 * 3_600_000);
+  return { start: new Date(start), end: new Date(Math.max(end, start + 60_000)) };
+}
+
+/**
+ * Ist jetzt eine Auswertung fällig? Mit Runden einmal je Rundenbeginn (die
+ * gerade abgelaufene Runde wird ausgewertet), ohne Runden immer.
+ */
+export function roundDue(round: { start: Date } | null, lastRoundAt: Date | null): boolean {
+  if (!round) return true;
+  return !lastRoundAt || lastRoundAt.getTime() < round.start.getTime();
+}
 /** Mehr Auswahl macht die Karte in der App zu lang. */
 export const MAX_VOTE_OPTIONS = 8;
 
@@ -166,6 +192,8 @@ export interface MusicVoteView {
   playingName: string | null;
   /** Abstimmung ruht wegen einer Wahl des Personals bis … (ISO). */
   holdUntil: string | null;
+  /** Nächster Wechsel (Ende der laufenden Runde, ISO); null = sofort nach jeder Stimme. */
+  nextSwitchAt: string | null;
   /** Aktive Fahrer mit Stimme. */
   voters: number;
 }

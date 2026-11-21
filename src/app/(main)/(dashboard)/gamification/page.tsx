@@ -487,6 +487,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
           zoneIds: config?.musicVoteZoneIds ?? [],
           options: config?.musicVoteOptions ?? [],
           holdMinutes: config?.musicVoteHoldMinutes ?? 60,
+          roundMinutes: config?.musicVoteRoundMinutes ?? 15,
         }}
         zones={audioZones}
         playlists={playlists}

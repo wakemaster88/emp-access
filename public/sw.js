@@ -28,7 +28,7 @@
  * bindet die App per Skew Protection an das alte Deployment, das dann an
  * der neuen Datenbank scheitert (20.11.2026, Awards mit ALL_TIME).
  */
-const VERSION = "2026-11-21-feiertage-playlist";
+const VERSION = "2026-11-21-musik-eingeklappt";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 // Name muss zu RIDER_CACHE_PREFIX in src/lib/rider-local.ts passen (Abmelden loescht danach).
 const RIDER_CACHE = `emp-rider-${VERSION}`;

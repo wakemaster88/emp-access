@@ -2,9 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { riderApiManage } from "@/lib/rider-auth";
-import { castMusicVote } from "@/lib/music-vote";
+import { castMusicVote, loadMusicVoteView } from "@/lib/music-vote";
 
 const schema = z.object({ option: z.string().regex(/^[ps][1-9]\d{0,9}$/).nullable() });
+
+/** GET: aktueller Stand (nach Rundenende neu laden). */
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const limited = publicRateLimit(token, "rider-music-vote-get", { limit: 30, windowMs: 60_000 });
+  if (limited) return limited;
+  const ctx = await riderApiManage(token);
+  if ("error" in ctx) return ctx.error;
+  const view = await loadMusicVoteView(ctx.profile.accountId, ctx.profile.id);
+  return NextResponse.json({ view });
+}
 
 /** POST: Stimme für eine Playlist oder ein Webradio abgeben, ändern oder (null) zurücknehmen. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
