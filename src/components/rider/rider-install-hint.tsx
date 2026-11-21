@@ -29,20 +29,34 @@ export function RiderInstallHint() {
   return (
     <div className="rd-install" role="region" aria-label="Als App installieren">
       <div className="rd-install-card">
+        <span className="rd-hint-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="6" y="2.5" width="12" height="19" rx="2.5" />
+            <path d="M12 8v6M9 11h6M10.5 18.5h3" />
+          </svg>
+        </span>
         <div className="rd-grow">
           <b>Ride Pass als App</b>
           {info.ios ? (
-            <p>
-              Unten {SHARE} <strong>Teilen</strong> antippen, dann {PLUS} <strong>Zum Home-Bildschirm</strong>.
-              {!info.safari && " Dafür die Seite in Safari öffnen."} Dann kommen auch Push-Nachrichten an.
-            </p>
+            <>
+              <p>{!info.safari ? "Öffne die Seite in Safari, dann:" : "In zwei Schritten, mit Push-Nachrichten:"}</p>
+              <ol className="rd-hint-steps">
+                <li><span>1</span>Unten {SHARE} <strong>Teilen</strong> antippen</li>
+                <li><span>2</span>{PLUS} <strong>Zum Home-Bildschirm</strong></li>
+              </ol>
+            </>
           ) : (
             <p>Startet im Vollbild, liegt auf dem Startbildschirm und bekommt Push-Nachrichten.</p>
           )}
           {canPrompt && !info.ios && (
-            <button type="button" className="rd-btn rd-btn-sm" onClick={() => void install()}>
-              <span>Installieren</span>
-            </button>
+            <div className="rd-update-actions">
+              <button type="button" className="rd-btn" onClick={() => void install()}>
+                <span>Installieren</span>
+              </button>
+              <button type="button" className="rd-btn rd-btn-ghost" onClick={dismiss}>
+                <span>Später</span>
+              </button>
+            </div>
           )}
         </div>
         <button type="button" className="rd-install-close" onClick={dismiss} aria-label="Hinweis ausblenden">
