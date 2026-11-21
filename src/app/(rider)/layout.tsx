@@ -35,7 +35,8 @@ export const metadata: Metadata = {
 
 export default function RiderRootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de" className={`${inter.variable} ${mono.variable}`}>
+    // suppressHydrationWarning: das Intro-Skript setzt vor React `data-rd-intro` an <html>.
+    <html lang="de" className={`${inter.variable} ${mono.variable}`} suppressHydrationWarning>
       <body>
         {children}
         <SwRegister />
