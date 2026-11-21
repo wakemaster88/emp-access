@@ -173,6 +173,8 @@ export async function runDunningForAccount(
           brandColor: mail.brandColor,
           logoUrl: mail.logoUrl,
           websiteUrl: mail.websiteUrl,
+          legalFooter: mail.legalFooter,
+          date: now,
         });
         const r = await send({ config: mail, to: email, subject: content.subject, html: content.html, text: content.text });
         await logSend(db, accountId, t.id, email, content.subject, r.ok, r.error);

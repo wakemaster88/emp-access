@@ -65,6 +65,7 @@ export async function PUT(request: NextRequest) {
       brandColor: data.brandColor ?? null,
       logoUrl: data.logoUrl ?? null,
       websiteUrl: data.websiteUrl ?? null,
+      legalFooter: data.legalFooter?.trim() || null,
     },
     update: {
       provider: data.provider ?? existing?.provider ?? "GMAIL",
@@ -76,6 +77,7 @@ export async function PUT(request: NextRequest) {
       brandColor: data.brandColor ?? null,
       logoUrl: data.logoUrl ?? null,
       websiteUrl: data.websiteUrl ?? null,
+      legalFooter: data.legalFooter === undefined ? existing?.legalFooter ?? null : data.legalFooter?.trim() || null,
     },
   });
 

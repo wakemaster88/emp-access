@@ -349,6 +349,7 @@ export const emailConfigUpdateSchema = z.object({
     .optional(),
   logoUrl: z.string().url().max(500).nullable().optional(),
   websiteUrl: z.string().url().max(500).nullable().optional(),
+  legalFooter: z.string().max(1500).nullable().optional(),
 });
 
 const emailRuleTrigger = z.enum([

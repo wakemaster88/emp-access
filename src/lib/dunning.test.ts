@@ -74,22 +74,31 @@ test("Schalter: Standard an, nur false schaltet aus", () => {
   assert.equal(parseDunningConfig("kaputt").enabled, true);
 });
 
-test("Mails: Frist und Inkasso-Hinweis nur in der letzten Mahnung", () => {
+test("Mails: förmlich, Frist und Inkasso-Hinweis nur in der letzten Mahnung", () => {
   const base = {
     accountName: "Wakepark", firstName: "Lea", person: "Lea M", aboName: "Saisonabo",
-    amount: "24 €", invoiceNumber: "R-7", dueDate: "2026-10-21T00:00:00Z",
+    amount: "24 €", invoiceNumber: "R-7", dueDate: "2026-10-21T00:00:00Z", date: at("2026-11-21T09:00:00Z"),
+    legalFooter: "Muster GmbH · Weg 1 · 12345 Ort\n\nGeschäftsführer: A B\nAmtsgericht X HRB 1",
   };
   const r = dunningMail({ ...base, stage: "reminder", deadline: null });
-  assert.equal(r.subject, "Zahlungserinnerung zu deinem Abo");
-  assert.match(r.text, /Hallo Lea,/);
-  assert.match(r.text, /24 € \(Rechnung R-7\) offen, fällig seit 21\.10\.2026/);
+  assert.equal(r.subject, "Zahlungserinnerung zu Ihrem Abo");
+  assert.match(r.text, /Guten Tag Lea M,/);
+  assert.match(r.text, /Offener Betrag: 24 €/);
+  assert.match(r.text, /Rechnungsnummer: R-7/);
+  assert.match(r.text, /Fällig seit: 21\.10\.2026/);
+  assert.match(r.text, /^21\.11\.2026$/m);
+  assert.match(r.text, /Geschäftsführer: A B\nAmtsgericht X HRB 1/);
+  assert.match(r.html, /Muster GmbH · Weg 1 · 12345 Ort<br>Geschäftsführer/);
   assert.doesNotMatch(r.text, /Inkasso/);
+  const first = dunningMail({ ...base, stage: "first", deadline: "2026-12-05" });
+  assert.match(first.text, /Zahlungserinnerung zu Ihrem Abo „Saisonabo“/);
+  assert.match(first.text, /Zahlbar bis: 05\.12\.2026/);
   const f = dunningMail({ ...base, stage: "final", deadline: "2026-12-09" });
-  assert.equal(f.subject, "Letzte Mahnung zu deinem Abo");
-  assert.match(f.text, /bis 09\.12\.2026/);
+  assert.equal(f.subject, "Letzte Mahnung zu Ihrem Abo");
+  assert.match(f.text, /bis spätestens 09\.12\.2026/);
   assert.match(f.text, /Inkassounternehmen/);
   assert.doesNotMatch(f.text, /Gebühr/);
-  assert.match(dunningMail({ ...base, firstName: "<b>", stage: "first", deadline: "2026-12-02" }).html, /&lt;b&gt;/);
+  assert.match(dunningMail({ ...base, person: "<b>", stage: "first", deadline: "2026-12-02" }).html, /&lt;b&gt;/);
 });
 
 test("dunningSummary für die Abos-Seite", () => {
@@ -107,7 +116,7 @@ function fakeDb(tickets: Array<Record<string, unknown>>, opts: { extraConfig?: s
   const db = {
     apiConfig: { findFirst: async () => ({ token: "t", baseUrl: null, extraConfig: opts.extraConfig ?? null }) },
     account: { findUnique: async () => ({ name: "Wakepark", isActive: true }) },
-    emailConfig: { findUnique: async () => ({ isActive: true, apiKey: "k", fromEmail: "a@b.de", fromName: null, replyTo: null, provider: "GMAIL", brandColor: null, logoUrl: null, websiteUrl: null }) },
+    emailConfig: { findUnique: async () => ({ isActive: true, apiKey: "k", fromEmail: "a@b.de", fromName: null, replyTo: null, provider: "GMAIL", brandColor: null, logoUrl: null, websiteUrl: null, legalFooter: null }) },
     ticket: {
       findMany: async () => tickets,
       update: async ({ where, data }: { where: { id: number }; data: { extras: Record<string, unknown> } }) => {
@@ -142,7 +151,7 @@ test("Lauf: Erinnerung über anny, sonst eigene Mail; 1. Mahnung per Mail", asyn
   assert.equal(r.viaAnny, 1);
   assert.deepEqual(r.sent, { reminder: 3, first: 1 });
   assert.equal(r.noEmail, 1);
-  assert.deepEqual(mails.sort(), ["1. Mahnung zu deinem Abo", "Zahlungserinnerung zu deinem Abo", "Zahlungserinnerung zu deinem Abo"]);
+  assert.deepEqual(mails.sort(), ["1. Mahnung zu Ihrem Abo", "Zahlungserinnerung zu Ihrem Abo", "Zahlungserinnerung zu Ihrem Abo"]);
   const byId = new Map(updates.map((u) => [u.id, dunningState(u.extras)]));
   assert.equal(byId.get(1)!.reminderVia, "anny");
   assert.equal(byId.get(2)!.reminderVia, "mail");
