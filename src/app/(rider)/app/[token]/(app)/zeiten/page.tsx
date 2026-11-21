@@ -42,7 +42,8 @@ export default async function RiderOpeningCalendar({
 
   return (
     <>
-      <Link href={base} style={{ fontSize: 13, textDecoration: "none" }}>
+      <Link href={base} style={{ minHeight: 44, display: "flex", alignItems: "center", gap: 6, textDecoration: "none", fontWeight: 500 }}>
+        {CHEVRON("M15 5l-7 7 7 7")}
         Zurück zum Start
       </Link>
       <h1 className="rd-display rd-h1">Öffnungszeiten</h1>

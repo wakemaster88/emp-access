@@ -41,7 +41,9 @@ export default async function RiderRecapPage({
 
       {recap.visitDays === 0 ? (
         <div className="rd-card rd-muted">
-          In {year} ist noch kein Besuchstag gezählt. Sobald du am Drehkreuz startest, füllt sich dein Rückblick.
+          {year === rider.year
+            ? `In ${year} ist noch kein Besuchstag gezählt. Sobald du am Drehkreuz startest, füllt sich dein Rückblick.`
+            : `In ${year} ist für dich kein Besuchstag gezählt.`}
         </div>
       ) : (
         <div className="rd-recap-grid">

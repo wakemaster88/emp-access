@@ -49,7 +49,7 @@ export default async function RiderVoucher({ params }: { params: Promise<{ token
       {open && (
         <div className="rd-card">
           <b>So löst du ihn ein</b>
-          <div className="rd-soft">Zeig den Code an der Kasse. Das Personal scannt ihn, danach ist er entwertet und gilt nicht noch einmal.</div>
+          <div className="rd-soft">Zeig den Code am Imbiss oder an der Kasse. Das Personal scannt ihn, danach ist er entwertet und gilt nicht noch einmal.</div>
         </div>
       )}
     </>
