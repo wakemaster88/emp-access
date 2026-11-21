@@ -31,7 +31,9 @@ export async function PUT(
             ? "RESOURCE_MONITOR"
             : body.type === "SCANNER"
               ? "SCANNER"
-              : body.type === "MONITOR"
+              : body.type === "VOUCHER"
+                ? "VOUCHER"
+                : body.type === "MONITOR"
                 ? "MONITOR"
                 : existing.type,
       deviceIds: body.deviceIds ?? existing.deviceIds,

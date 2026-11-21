@@ -953,7 +953,7 @@ model MonitorConfig {
   id               Int      @id @default(autoincrement())
   name             String
   token            String   @unique
-  type             String   @default("MONITOR") // MONITOR | CHECKIN | RESOURCE_MONITOR | SCANNER
+  type             String   @default("MONITOR") // MONITOR | CHECKIN | RESOURCE_MONITOR | SCANNER | VOUCHER
   deviceIds        Json     @default("[]")
   // Optionale Bereichs-Eingrenzung fuer Scan-Monitore (Typ MONITOR), deren
   // Personenliste sonst nur ueber die Geraete-Bereiche gefiltert wird. Damit

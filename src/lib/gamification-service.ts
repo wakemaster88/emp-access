@@ -336,7 +336,7 @@ export async function redeemBenefitVoucher(
     disabledAt: Date | null;
     expiresAt: Date | null;
   },
-  via: "ADMIN" | "CHECKIN",
+  via: "ADMIN" | "CHECKIN" | "KASSE",
 ): Promise<RedeemResult> {
   const state = benefitVoucherState(voucher);
   if (state !== "open") return { ok: false, message: BENEFIT_STATE_MESSAGE[state] };

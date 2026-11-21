@@ -3,11 +3,11 @@ import { appleStartupImages } from "@/lib/pwa-splash";
 
 /**
  * PWA-Bausteine fuer die oeffentlichen Token-Seiten: Kiosk, Scan-Monitor,
- * Auslastungs-Monitor und Scanner bekommen jeweils ein eigenes Manifest,
+ * Auslastungs-Monitor, Scanner und Gutschein-Monitor bekommen jeweils ein eigenes Manifest,
  * damit ein iPad sie als eigenstaendige Vollbild-App auf den Home-Bildschirm
  * legen kann – mit dem Namen des Monitors statt "EMP Access".
  */
-export const PUBLIC_APP_KINDS = ["checkin", "monitor", "resource-monitor", "scanner"] as const;
+export const PUBLIC_APP_KINDS = ["checkin", "monitor", "resource-monitor", "scanner", "gutscheine"] as const;
 export type PublicAppKind = (typeof PUBLIC_APP_KINDS)[number];
 
 export const PUBLIC_APP_MONITOR_TYPE: Record<PublicAppKind, string> = {
@@ -15,6 +15,7 @@ export const PUBLIC_APP_MONITOR_TYPE: Record<PublicAppKind, string> = {
   monitor: "MONITOR",
   "resource-monitor": "RESOURCE_MONITOR",
   scanner: "SCANNER",
+  gutscheine: "VOUCHER",
 };
 
 const KIND_LABEL: Record<PublicAppKind, string> = {
@@ -22,6 +23,7 @@ const KIND_LABEL: Record<PublicAppKind, string> = {
   monitor: "Scan-Monitor",
   "resource-monitor": "Auslastung",
   scanner: "Scanner",
+  gutscheine: "Gutscheine",
 };
 
 const DARK_BG = "#020617";
