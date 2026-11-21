@@ -310,6 +310,12 @@
 .rd-offer::before { content: ""; position: absolute; left: -6px; top: 0; bottom: 0; width: 14px; background: var(--rd-offer); transform: skewX(-10deg); }
 .rd-offer > * { padding-left: 10px; }
 .rd-offer b { font-size: 15px; }
+/* Gewinn einer Challenge: eigener Kasten statt Fließtext. */
+.rd-prize { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--rd-accent); border-radius: 6px; background: color-mix(in srgb, var(--rd-accent) 10%, transparent); }
+.rd-prize-icon { flex: none; width: 28px; height: 28px; color: var(--rd-accent); }
+.rd-prize b { display: block; font-size: 17px; line-height: 22px; color: var(--rd-text); overflow-wrap: anywhere; }
+.rd-prize .rd-label { color: var(--rd-accent); }
+.rd-prize .rd-muted { font-size: 14px; margin-top: 2px; }
 .rd-pill-win { color: var(--rd-on-accent); background: var(--rd-accent); }
 .rd-pill-offer { color: var(--rd-on-brand); background: var(--rd-brand); }
 .rd-rank { display: flex; flex-direction: column; }
