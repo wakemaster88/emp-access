@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Users, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { paymentOpenInfo } from "@/lib/payment-open";
 import { PackageSearch } from "lucide-react";
 import type { CheckinTicket, TicketAddOn, TicketExtra } from "./checkin-types";
 import { calcAge, formatTicketTimeLabel, isRentalAddOn, personName } from "./checkin-utils";
@@ -203,7 +204,11 @@ export function TicketCard({
       </div>
       <div className="shrink-0 flex flex-col items-end gap-1">
         {ticket.status === "PAUSED" ? (
-          <Badge variant="warning" className="text-[11px] px-2 py-0.5 font-bold">Pausiert</Badge>
+          paymentOpenInfo(ticket.extras) ? (
+            <Badge variant="danger" className="text-[11px] px-2 py-0.5 font-bold">Zahlung offen</Badge>
+          ) : (
+            <Badge variant="warning" className="text-[11px] px-2 py-0.5 font-bold">Pausiert</Badge>
+          )
         ) : checked ? (
           <Badge variant="success" className="text-[11px] px-2 py-0.5 font-bold">Eingecheckt</Badge>
         ) : onCheckin ? (

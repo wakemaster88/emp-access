@@ -123,6 +123,17 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         </div>
       )}
 
+      {abo.kind === "paymentOpen" && rider.abo && (
+        <div className="rd-card rd-abo-warn" role="status" style={{ gap: 4 }}>
+          <div className="rd-label">Dein Abo</div>
+          <b style={{ fontSize: 15 }}>Zahlung offen, Abo pausiert</b>
+          <span className="rd-soft">
+            {rider.abo.name}: {abo.text} Bitte bezahl die Rechnung in deinem anny-Konto. Danach ist dein Abo
+            automatisch wieder aktiv{abo.endDate ? ` und gilt bis ${fmtDay(abo.endDate)}` : ""}.
+          </span>
+        </div>
+      )}
+
       {(abo.kind === "expired" || abo.kind === "none") && (
         <div className="rd-card rd-offer" style={{ gap: 4 }}>
           <b>

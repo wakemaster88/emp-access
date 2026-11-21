@@ -13,6 +13,7 @@ import { Notice } from "@/components/ui/notice";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckCircle2, XCircle, Clock, ScanLine, Users, Camera, Loader2, X, Package, Fingerprint, Pencil, Printer, TicketX, Plus, StickyNote, Pause, Play, ClipboardList, Mail, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { paymentOpenInfo, paymentOpenSentence } from "@/lib/payment-open";
 import { PackageSearch, Layers } from "lucide-react";
 import { printTicket } from "./checkin-print";
 import type { BundlePart, CheckinTicket, ScanEntry, SlotOverviewSlot, TicketAddOn, TicketExtra } from "./checkin-types";
@@ -129,6 +130,8 @@ export function TicketOverlay({
   };
 
   const isPaused = ticket.status === "PAUSED";
+  // Vom anny-Abgleich wegen überfälliger Abo-Rechnung pausiert.
+  const paymentOpen = isPaused ? paymentOpenInfo(ticket.extras) : null;
   const pauseInfo = (() => {
     const ext = (ticket.extras as unknown) as Record<string, unknown> | null;
     if (!ext || Array.isArray(ext)) return null;
@@ -220,10 +223,10 @@ export function TicketOverlay({
             {/* Zustand in seiner festen Farbe: Pause = Hinweis, eingecheckt = Erfolg. */}
             <div className="flex flex-wrap gap-1.5 mt-2">
               <Badge
-                variant={isPaused ? "warning" : isChecked ? "success" : "info"}
+                variant={paymentOpen ? "danger" : isPaused ? "warning" : isChecked ? "success" : "info"}
                 className="text-xs px-2 py-0.5 font-bold"
               >
-                {isPaused ? "Pausiert" : isChecked ? "Eingecheckt" : "Ausstehend"}
+                {paymentOpen ? "Zahlung offen" : isPaused ? "Pausiert" : isChecked ? "Eingecheckt" : "Ausstehend"}
               </Badge>
               {isSub && <Badge variant="secondary" className="text-xs px-2 py-0.5 font-bold">Abo</Badge>}
               {ticket.source && <Badge variant="neutral" className="text-xs px-2 py-0.5">{ticket.source}</Badge>}
@@ -739,7 +742,18 @@ export function TicketOverlay({
             pausiert ist. Zeigt Begruendung und (falls gesetzt) das Ende der
             Pause an. Das Aufheben der Pause passiert ueber den "Fortsetzen"-
             Button im Actions-Block weiter unten. */}
-        {isPaused && (
+        {paymentOpen && (
+          <div className="px-5 py-3 border-b border-border">
+            <Notice tone="danger" title="Zahlung offen, Abo pausiert" compact>
+              <p className="tabular-nums">{paymentOpenSentence(paymentOpen)}</p>
+              {paymentOpen.invoiceNumber && (
+                <p className="mt-1 tabular-nums">Rechnung {paymentOpen.invoiceNumber}</p>
+              )}
+              <p className="mt-1">Nach Zahlung in anny hebt der Abgleich die Pause selbst auf.</p>
+            </Notice>
+          </div>
+        )}
+        {isPaused && !paymentOpen && (
           <div className="px-5 py-3 border-b border-border">
             <Notice tone="warning" icon={Pause} title="Pausiert" compact>
               <p className="tabular-nums">

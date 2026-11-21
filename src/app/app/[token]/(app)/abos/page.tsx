@@ -16,6 +16,8 @@ export default async function RiderAbos({ params }: { params: Promise<{ token: s
   const intro =
     status.kind === "none"
       ? `Du hast noch kein Abo am ${RIDER_LOCATION}. Such dir hier eins aus und buch es direkt.`
+      : status.kind === "paymentOpen"
+        ? `${rider.abo?.name} ist pausiert: ${status.text} Bitte bezahl die Rechnung in deinem anny-Konto, dann ist es wieder aktiv.`
       : status.kind === "expired"
         ? `${rider.abo?.name} ist nicht mehr gültig${status.endDate ? ` (bis ${fmtDay(status.endDate)})` : ""}. Hier buchst du dein neues Abo.`
         : status.kind === "active"

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { paymentOpenInfo, paymentOpenScanMessage } from "@/lib/payment-open";
 import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { checkWakesys } from "@/lib/wakesys";
@@ -480,7 +481,12 @@ export async function POST(request: NextRequest) {
     await db.scan.create({
       data: { code, deviceId, result: "DENIED", note: "status_paused", ticketId: ticket.id, accountId },
     });
-    return NextResponse.json({ granted: false, message: "Abo pausiert", ticket: ticketInfo });
+    const payment = paymentOpenInfo(ticket.extras);
+    return NextResponse.json({
+      granted: false,
+      message: payment ? paymentOpenScanMessage(payment) : "Abo pausiert",
+      ticket: ticketInfo,
+    });
   }
 
   if (ticket.status === "CANCELED") {

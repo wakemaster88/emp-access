@@ -29,8 +29,9 @@ import { CheckCircle2, Clock, ScanLine, Users, Ticket, CreditCard, Loader2, Sear
 import { cn } from "@/lib/utils";
 import { LockerOverlay } from "@/components/checkin/locker-overlay";
 import { LostItemsOverlay } from "@/components/checkin/lost-items-overlay";
+import { PaymentOpenOverlay } from "@/components/checkin/payment-open-overlay";
 import { BulkOverlay } from "@/components/checkin/bulk-overlay";
-import { Lock, PackageSearch, Layers } from "lucide-react";
+import { Lock, PackageSearch, Layers, Wallet } from "lucide-react";
 import { bundleAnnyTickets, type TicketBundle } from "@/lib/anny-ticket-bundle";
 import { AddTicketOverlay } from "@/components/checkin/add-ticket-overlay";
 import { printVoucher } from "@/components/checkin/checkin-print";
@@ -96,6 +97,20 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
   const [lostItemsOverlayOpen, setLostItemsOverlayOpen] = useState(false);
+  const [paymentOpenOverlayOpen, setPaymentOpenOverlayOpen] = useState(false);
+  // Anzahl Abos mit „Zahlung offen“ für die Kopfzeile; leise, Fehler egal.
+  const [paymentOpenCount, setPaymentOpenCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const loadCount = () =>
+      fetch(`/api/checkin/public/${token}/payment-open`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { rows?: unknown[] } | null) => { if (!cancelled && d?.rows) setPaymentOpenCount(d.rows.length); })
+        .catch(() => {});
+    void loadCount();
+    const id = setInterval(loadCount, 10 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [token, paymentOpenOverlayOpen]);
   const [bulkOverlayOpen, setBulkOverlayOpen] = useState(false);
   const [addTicketPrefill, setAddTicketPrefill] = useState<{
     firstName?: string;
@@ -1286,6 +1301,18 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             <PackageSearch className="size-5 shrink-0" />
             <span className="hidden xl:inline">Fundsachen</span>
           </Button>
+          {paymentOpenCount > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => setPaymentOpenOverlayOpen(true)}
+              title="Abos mit offener Zahlung"
+              className={cn(headerButtonClass, "gap-1.5")}
+            >
+              <Wallet className="size-5 shrink-0 text-destructive" />
+              <span className="tabular-nums">{paymentOpenCount}</span>
+              <span className="hidden xl:inline">Zahlung offen</span>
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => setScanMode(true)}
@@ -1832,6 +1859,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           token={token}
           onClose={() => setLockerOverlayOpen(false)}
         />
+      )}
+
+      {paymentOpenOverlayOpen && (
+        <PaymentOpenOverlay token={token} onClose={() => setPaymentOpenOverlayOpen(false)} />
       )}
 
       {/* Fundsachen overlay */}

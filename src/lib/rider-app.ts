@@ -36,6 +36,7 @@ import {
   type MilestoneProgress,
   type SeasonRecap,
 } from "./gamification";
+import { paymentOpenInfo, paymentOpenSentence } from "@/lib/payment-open";
 
 export function newRiderToken(): string {
   return randomBytes(18).toString("base64url");
@@ -113,7 +114,14 @@ export interface RiderView {
   showInRanking: boolean;
   enabled: boolean;
   startCapPerDay: number;
-  abo: { name: string; endDate: Date | null; active: boolean; areas: string[] } | null;
+  abo: {
+    name: string;
+    endDate: Date | null;
+    active: boolean;
+    areas: string[];
+    /** „24 € offen, fällig seit …“, wenn der Abgleich das Abo wegen offener Rechnung pausiert hat. */
+    paymentOpen: string | null;
+  } | null;
   /** Tagesgast ohne Abo: sieht den Abo-Rechner. */
   dayGuest: boolean;
   /** Abo-Rechner; null, solange nicht jede Zahl dafür hinterlegt ist. */
@@ -162,6 +170,7 @@ export async function loadRider(
           createdAt: true,
           serviceId: true,
           email: true,
+          extras: true,
           subscription: { select: { name: true, areas: { select: { name: true }, orderBy: { name: "asc" } } } },
         },
       },
@@ -357,6 +366,10 @@ export async function loadRider(
           endDate: newest.endDate,
           active: !!usable && (!newest.endDate || newest.endDate.getTime() >= now.getTime()),
           areas: newest.subscription.areas.map((a) => a.name),
+          paymentOpen: (() => {
+            const info = newest.status === "PAUSED" ? paymentOpenInfo(newest.extras) : null;
+            return info ? paymentOpenSentence(info, now) : null;
+          })(),
         }
       : null,
     dayGuest,

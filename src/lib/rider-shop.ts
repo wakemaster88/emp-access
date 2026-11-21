@@ -20,6 +20,8 @@ export const ANNY_WIDGET = {
 export type AboStatus =
   | { kind: "none" }
   | { kind: "expired"; endDate: Date | null }
+  /** Vom anny-Abgleich pausiert, weil eine Abo-Rechnung überfällig ist. */
+  | { kind: "paymentOpen"; endDate: Date | null; text: string }
   | { kind: "active"; endDate: Date; daysLeft: number }
   | { kind: "unlimited" };
 
@@ -32,10 +34,11 @@ export function berlinDaysUntil(end: Date, now: Date): number {
 
 /** Zustand des aktuellen Abos für die Anzeige: keins, abgelaufen, noch X Tage oder ohne Ende. */
 export function aboStatus(
-  abo: { endDate: Date | null; active: boolean } | null,
+  abo: { endDate: Date | null; active: boolean; paymentOpen?: string | null } | null,
   now: Date = new Date(),
 ): AboStatus {
   if (!abo) return { kind: "none" };
+  if (abo.paymentOpen) return { kind: "paymentOpen", endDate: abo.endDate, text: abo.paymentOpen };
   if (!abo.active) return { kind: "expired", endDate: abo.endDate };
   if (!abo.endDate) return { kind: "unlimited" };
   return { kind: "active", endDate: abo.endDate, daysLeft: Math.max(0, berlinDaysUntil(abo.endDate, now)) };

@@ -125,6 +125,9 @@ interface OpenSubInvoice {
   dueDate: string | null;
   /// true, wenn `due_date` um >= graceDays ueberschritten ist.
   overdue: boolean;
+  /// Summe und Anzahl aller offenen Rechnungen dieses Abos.
+  openTotal: number | null;
+  openCount: number;
 }
 
 interface PlanSubscription {
@@ -295,6 +298,10 @@ function calcSubscriptionEndDate(
 
   if (ps.ends_at) return new Date(ps.ends_at);
   return null;
+}
+
+function entry0Total(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
 function ticketChanged(
@@ -670,8 +677,22 @@ export async function syncAnnyForAccount(
         currency: (a.currency as string) ?? null,
         dueDate: dueRaw,
         overdue,
+        openTotal: entry0Total(a.total),
+        openCount: 1,
       };
       const prev = out.get(subId);
+      if (prev) {
+        // Summe und Anzahl ueber alle offenen Rechnungen; ueberfaellig, sobald eine es ist.
+        const total = prev.openTotal != null || entry.openTotal != null
+          ? Math.round(((prev.openTotal ?? 0) + (entry.openTotal ?? 0)) * 100) / 100
+          : null;
+        entry.openTotal = total;
+        entry.openCount = prev.openCount + 1;
+        entry.overdue = entry.overdue || prev.overdue;
+        prev.openTotal = total;
+        prev.openCount = entry.openCount;
+        prev.overdue = entry.overdue;
+      }
       // Frueheste Faelligkeit gewinnt (aelteste offene Schuld).
       if (!prev || (entry.dueDate && prev.dueDate && entry.dueDate < prev.dueDate) || (entry.dueDate && !prev.dueDate)) {
         out.set(subId, entry);
@@ -1688,6 +1709,8 @@ export async function syncAnnyForAccount(
               dueDate: openInvoice?.dueDate ?? null,
               invoiceNumber: openInvoice?.number ?? null,
               amount: openInvoice?.amount ?? null,
+              openTotal: openInvoice?.openTotal ?? null,
+              openCount: openInvoice?.openCount ?? null,
               currency: openInvoice?.currency ?? null,
             };
           } else {
@@ -1781,6 +1804,8 @@ export async function syncAnnyForAccount(
               dueDate: openInvoice?.dueDate ?? null,
               invoiceNumber: openInvoice?.number ?? null,
               amount: openInvoice?.amount ?? null,
+              openTotal: openInvoice?.openTotal ?? null,
+              openCount: openInvoice?.openCount ?? null,
               currency: openInvoice?.currency ?? null,
             },
           };
