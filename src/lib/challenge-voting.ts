@@ -185,6 +185,24 @@ async function runningChallenge(
 }
 
 /**
+ * Darf diese Person abstimmen? Nur wer ein Abo oder Ticket hat, ein
+ * Kundenkonto (Kauf bei anny) oder zu einer Familie mit Abo gehört. Sonst
+ * könnte jede neue Mail-Adresse eine Stimme mehr abgeben, denn die App lässt
+ * sich auch ohne Abo einrichten.
+ */
+export async function mayVote(p: { id: number; accountId: number; customerId: number | null; familyId: number | null }): Promise<boolean> {
+  if (p.customerId != null) return true;
+  const ticket = await prisma.ticket.findFirst({
+    where: {
+      accountId: p.accountId,
+      OR: [{ riderProfileId: p.id }, ...(p.familyId != null ? [{ riderProfile: { familyId: p.familyId } }] : [])],
+    },
+    select: { id: true },
+  });
+  return ticket != null;
+}
+
+/**
  * Stimme abgeben oder ändern: für ein Foto (`entryId`) oder eine Antwort
  * (`optionId`). `null` für beides nimmt die Stimme zurück.
  */

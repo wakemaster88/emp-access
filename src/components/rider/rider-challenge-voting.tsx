@@ -17,6 +17,8 @@ interface Props {
   voting: VotingView;
   /** Die angemeldete Person selbst (Eltern stimmen nicht für ihr Kind ab). */
   canVote: boolean;
+  /** Hinweis, wenn `canVote` aus ist. */
+  noVoteText: string;
   /** Hat ein Ticket: darf ein Foto hochladen (selbst oder Eltern fürs Kind). */
   canUpload: boolean;
 }
@@ -52,7 +54,7 @@ function photoUrl(id: number): string {
 }
 
 /** Fotos, Stimmen und Antworten einer Foto-Challenge oder Abstimmung. */
-export function RiderChallengeVoting({ token, challengeId, kind, running, ended, voting, canVote, canUpload }: Props) {
+export function RiderChallengeVoting({ token, challengeId, kind, running, ended, voting, canVote, noVoteText, canUpload }: Props) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -160,7 +162,7 @@ export function RiderChallengeVoting({ token, challengeId, kind, running, ended,
             <button type="button" className="rd-linkbtn" onClick={() => setChanging(false)}>Ergebnis zeigen</button>
           )}
         </div>
-        {running && !canVote && <div className="rd-muted">Abstimmen kann jede Person nur selbst, in ihrem eigenen Zugang.</div>}
+        {running && !canVote && <div className="rd-muted">{noVoteText}</div>}
         {message}
       </>
     );
@@ -241,7 +243,7 @@ export function RiderChallengeVoting({ token, challengeId, kind, running, ended,
         <div className="rd-muted">
           {canVote
             ? voting.myVoted ? "Du hast abgestimmt. Bis zum Ende kannst du deine Stimme ändern." : "Eine Stimme pro Person. Die Stimmen siehst du nach dem Ende."
-            : "Abstimmen kann jede Person nur selbst, in ihrem eigenen Zugang."}
+            : noVoteText}
         </div>
       )}
 

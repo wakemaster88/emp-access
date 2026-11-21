@@ -336,6 +336,8 @@
 .rd-poll-option:disabled { cursor: default; opacity: 0.7; }
 .rd-poll-option-mine { border-color: var(--rd-accent); color: var(--rd-accent); }
 .rd-poll-row { display: flex; flex-direction: column; gap: 6px; }
+/* Prozent nie umbrechen, auch neben einer langen Antwort. */
+.rd-poll-row b { flex: none; white-space: nowrap; }
 .rd-poll-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
 .rd-poll-row .rd-bar > i { background: var(--rd-offer); }
 .rd-poll-mine .rd-poll-label, .rd-poll-mine b { color: var(--rd-accent); }

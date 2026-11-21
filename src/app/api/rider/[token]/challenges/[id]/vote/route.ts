@@ -3,7 +3,7 @@ import { z } from "zod";
 import { berlinYmd } from "@/lib/berlin-day";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { riderApiSession } from "@/lib/rider-auth";
-import { castVote } from "@/lib/challenge-voting";
+import { castVote, mayVote } from "@/lib/challenge-voting";
 
 const schema = z.object({
   entryId: z.number().int().positive().nullable().optional(),
@@ -26,6 +26,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success || (parsed.data.entryId != null && parsed.data.optionId != null)) {
     return NextResponse.json({ error: "Ungültige Eingabe" }, { status: 400 });
+  }
+  // Zurücknehmen geht immer; abgeben nur mit Abo, Ticket oder Kundenkonto.
+  const casting = parsed.data.entryId != null || parsed.data.optionId != null;
+  if (casting && !(await mayVote(ctx.profile))) {
+    return NextResponse.json({ error: "Abstimmen kann, wer ein Abo oder Ticket hat." }, { status: 403 });
   }
   const result = await castVote(ctx.profile.accountId, id, ctx.profile.id, parsed.data, berlinYmd(new Date()));
   if ("error" in result) return NextResponse.json({ error: result.error }, { status: result.status });

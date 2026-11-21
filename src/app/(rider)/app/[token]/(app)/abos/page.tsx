@@ -26,7 +26,7 @@ export default async function RiderAbos({ params }: { params: Promise<{ token: s
 
   return (
     <>
-      <Link href={(await riderBase(token))} style={{ fontSize: 13, textDecoration: "none" }}>
+      <Link href={(await riderBase(token))} style={{ fontSize: 13, textDecoration: "none", minHeight: 44, display: "inline-flex", alignItems: "center" }}>
         Zurück zum Start
       </Link>
       <h1 className="rd-display rd-h1">Abos</h1>

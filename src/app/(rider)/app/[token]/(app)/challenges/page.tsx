@@ -1,6 +1,7 @@
 import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
-import { requireRider, riderFamilyView } from "@/lib/rider-auth";
+import { findRiderAuthProfile, requireRider, riderFamilyView } from "@/lib/rider-auth";
+import { mayVote } from "@/lib/challenge-voting";
 import { RiderChallengeVoting } from "@/components/rider/rider-challenge-voting";
 import { loadRiderChallengesCached, type RiderChallenge } from "@/lib/rider-challenges";
 import { METRIC_LABEL } from "@/lib/gamification";
@@ -12,6 +13,8 @@ interface Viewer {
   token: string;
   canVote: boolean;
   canUpload: boolean;
+  /** Warum nicht abgestimmt werden kann (wenn `canVote` aus ist). */
+  noVoteText: string;
 }
 
 function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
@@ -75,6 +78,7 @@ function ChallengeCard({ c, viewer }: { c: RiderChallenge; viewer: Viewer }) {
           voting={c.voting}
           canVote={viewer.canVote}
           canUpload={viewer.canUpload}
+          noVoteText={viewer.noVoteText}
         />
       )}
     </div>
@@ -86,7 +90,15 @@ export default async function RiderChallenges({ params }: { params: Promise<{ to
   const { token } = await params;
   const rider = await requireRider(token);
   const [challenges, family] = await Promise.all([loadRiderChallengesCached(rider), riderFamilyView(token)]);
-  const viewer: Viewer = { token, canVote: family?.relation === "self", canUpload: family?.relation !== "view" && rider.ticketIds.length > 0 };
+  const self = family?.relation === "self";
+  const profile = self ? await findRiderAuthProfile(token) : null;
+  const eligible = profile ? await mayVote(profile) : false;
+  const viewer: Viewer = {
+    token,
+    canVote: self && eligible,
+    canUpload: family?.relation !== "view" && rider.ticketIds.length > 0,
+    noVoteText: self ? "Abstimmen kann, wer ein Abo oder Ticket hat." : "Abstimmen kann jede Person nur selbst, in ihrem eigenen Zugang.",
+  };
   const running = challenges.filter((c) => c.phase === "running");
   const upcoming = challenges.filter((c) => c.phase === "upcoming");
   const ended = challenges.filter((c) => c.phase === "ended");
