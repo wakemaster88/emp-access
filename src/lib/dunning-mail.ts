@@ -157,12 +157,12 @@ export function dunningMail(a: DunningMailArgs): DunningMail {
 <meta name="supported-color-schemes" content="light">
 <title>${esc(subject)}</title>
 </head>
-<body style="margin:0;padding:0;background:${BG};">
+<body bgcolor="${BG}" style="margin:0;padding:0;background-color:${BG};">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(`${title}: ${amount} offen${a.invoiceNumber ? `, Rechnung ${a.invoiceNumber}` : ""}`)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BG};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${BG}" style="background-color:${BG};">
 <tr><td align="center" style="padding:28px 12px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border:1px solid ${LINE};border-radius:8px;overflow:hidden;">
-  <tr><td style="height:5px;line-height:5px;font-size:0;background:${color};">&nbsp;</td></tr>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="max-width:600px;background-color:#ffffff;border:1px solid ${LINE};border-radius:8px;overflow:hidden;">
+  <tr><td bgcolor="${color}" style="height:5px;line-height:5px;font-size:0;background-color:${color};">&nbsp;</td></tr>
   <tr><td style="padding:22px 32px 18px;border-bottom:1px solid ${LINE};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
       <td style="vertical-align:middle;">${head}</td>
@@ -170,7 +170,7 @@ export function dunningMail(a: DunningMailArgs): DunningMail {
     </tr></table>
   </td></tr>
   <tr><td style="padding:30px 32px 8px;">
-    <span style="display:inline-block;font-family:${SANS};font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#ffffff;background:${badgeColor};border-radius:4px;padding:4px 9px;">${esc(title)}</span>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="${badgeColor}" style="background-color:${badgeColor};border-radius:4px;padding:4px 9px;font-family:${SANS};font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#ffffff;">${esc(title)}</td></tr></table>
     <div style="margin-top:14px;font-family:${SANS};font-size:22px;line-height:1.3;font-weight:700;color:${INK};">${esc(subject)}</div>
   </td></tr>
   <tr><td style="padding:14px 32px 0;font-family:${SANS};font-size:15px;line-height:1.65;color:${BODY};">
@@ -179,13 +179,13 @@ export function dunningMail(a: DunningMailArgs): DunningMail {
   </td></tr>
   <tr><td style="padding:6px 32px 6px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${LINE};border-radius:6px;border-collapse:separate;">
-      <tr><td style="padding:14px 16px;font-family:${SANS};font-size:14px;color:${INK};font-weight:600;background:#f8fafc;border-radius:6px 6px 0 0;">Offener Betrag</td><td align="right" style="padding:14px 16px;font-family:${SANS};font-size:22px;color:${a.stage === "final" ? DANGER : INK};font-weight:700;background:#f8fafc;border-radius:6px 6px 0 0;">${esc(amount)}</td></tr>
+      <tr><td bgcolor="#f8fafc" style="padding:14px 16px;font-family:${SANS};font-size:14px;color:${INK};font-weight:600;background-color:#f8fafc;border-radius:6px 6px 0 0;">Offener Betrag</td><td align="right" bgcolor="#f8fafc" style="padding:14px 16px;font-family:${SANS};font-size:22px;color:${a.stage === "final" ? DANGER : INK};font-weight:700;background-color:#f8fafc;border-radius:6px 6px 0 0;">${esc(amount)}</td></tr>
       ${factRows}
     </table>
   </td></tr>
   ${portal ? `<tr><td style="padding:20px 32px 4px;">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-radius:999px;background:${color};">
-      <a href="${esc(portal)}" style="display:inline-block;padding:12px 22px;font-family:${SANS};font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">Zum anny-Kundenkonto</a>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="${color}" style="border-radius:999px;background-color:${color};">
+      <a href="${esc(portal)}" style="display:inline-block;padding:12px 22px;font-family:${SANS};font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;border:1px solid ${color};background-color:${color};">Zum anny-Kundenkonto</a>
     </td></tr></table>
   </td></tr>` : ""}
   <tr><td style="padding:18px 32px 0;font-family:${SANS};font-size:15px;line-height:1.65;color:${BODY};">
@@ -193,7 +193,7 @@ export function dunningMail(a: DunningMailArgs): DunningMail {
     <p style="margin:22px 0 0;">Mit freundlichen Grüßen</p>
     <p style="margin:4px 0 0;font-weight:700;color:${INK};">${esc(signatureLine(a.accountName))}</p>
   </td></tr>
-  <tr><td style="padding:26px 32px 0;"><div style="height:2px;width:48px;background:${ACCENT};font-size:0;line-height:0;">&nbsp;</div></td></tr>
+  <tr><td style="padding:26px 32px 0;"><div style="height:2px;width:48px;border-top:2px solid ${ACCENT};background-color:${ACCENT};font-size:0;line-height:0;">&nbsp;</div></td></tr>
   <tr><td style="padding:14px 32px 26px;font-family:${SANS};font-size:12px;line-height:1.6;color:${MUTED};">
     ${legalHtml}${website}
   </td></tr>
