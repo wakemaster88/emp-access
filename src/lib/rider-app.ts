@@ -123,6 +123,8 @@ export interface RiderView {
   startCapPerDay: number;
   abo: {
     name: string;
+    /** Beginn der Laufzeit (für den Laufzeit-Balken); null, wenn unbekannt. */
+    startDate: Date | null;
     endDate: Date | null;
     active: boolean;
     areas: string[];
@@ -403,6 +405,7 @@ export async function loadRider(
     abo: newest?.subscription
       ? {
           name: newest.subscription.name,
+          startDate: newest.startDate,
           endDate: newest.endDate,
           active: !!usable && (!newest.endDate || newest.endDate.getTime() >= now.getTime()),
           areas: newest.subscription.areas.map((a) => a.name),

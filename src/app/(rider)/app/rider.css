@@ -810,3 +810,8 @@ a.rd-cal-nav { border: 1px solid var(--rd-line-strong); }
 .rd-today-row { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--rd-line); text-decoration: none; color: var(--rd-text) !important; }
 .rd-today-row .rd-bar { margin-top: 6px; }
 .rd-today-rec { color: var(--rd-accent); font-weight: 700; }
+
+/* Abo-Karte: Status, Laufzeit-Balken und was das Abo gebracht hat. */
+.rd-pill-soon { color: var(--rd-on-accent); background: var(--rd-accent); }
+.rd-abo .rd-bar { margin-top: 2px; }
+.rd-abo-facts { display: flex; flex-direction: column; gap: 2px; padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--rd-line); color: var(--rd-soft); font-size: 13px; }
