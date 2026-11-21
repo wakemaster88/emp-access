@@ -125,6 +125,9 @@ interface DeviceForAction {
 interface TriggerOptions {
   /// Laufzeit in Sekunden fuer GARDENA "open" (Bewässern). Default 30 min.
   seconds?: number;
+  /// Shelly "open": eigener Auto-Off-Timer in Sekunden statt des Standards der
+  /// Kategorie (Skills der Kunden-App schalten auch Schalter nur auf Zeit).
+  autoOffSec?: number;
 }
 
 /**
@@ -400,7 +403,7 @@ export async function triggerDeviceAction(
   }
 
   const turnOn = action === "open" || action === "emergency";
-  const timerSec = shellyAutoOffSec(device, action);
+  const timerSec = turnOn && options.autoOffSec ? options.autoOffSec : shellyAutoOffSec(device, action);
   const switchIdx = shellySwitchIndex(device.shellyId);
   const baseId = shellyBaseId(device.shellyId);
 

@@ -63,6 +63,7 @@ export function NextAwardCard({ award, href }: { award: RiderAward; href: string
         <span className="rd-muted" style={{ fontSize: 13 }}>
           {awardRemainingText(award)}
           {award.voucherLabel ? ` Dafür gibt es: ${award.voucherLabel}.` : ""}
+          {award.skillLabel ? ` Dazu der Skill: ${award.skillLabel}.` : ""}
         </span>
         <span className="rd-aw-bar"><i style={{ width: `${Math.min(100, (award.value / award.threshold) * 100)}%` }} /></span>
         <span className="rd-aw-next-n">{award.value.toLocaleString("de-DE")} / {award.threshold.toLocaleString("de-DE")}</span>

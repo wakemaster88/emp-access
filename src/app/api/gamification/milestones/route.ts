@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
+import { skillRewardAllowed } from "@/lib/rider-skills";
 import { milestoneSchema, normalizeMilestone } from "@/lib/gamification-input";
 
 /** POST: Meilenstein anlegen. */
@@ -11,6 +12,9 @@ export async function POST(request: NextRequest) {
   const parsed = milestoneSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Ungültige Eingabe" }, { status: 400 });
+  }
+  if (!(await skillRewardAllowed(db, accountId, parsed.data.skillId))) {
+    return NextResponse.json({ error: "Unbekannter Skill" }, { status: 400 });
   }
   const last = await db.milestone.findFirst({
     where: { accountId },

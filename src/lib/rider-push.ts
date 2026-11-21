@@ -113,6 +113,16 @@ export function notifyVoucher(accountId: number, ticketId: number, label: string
   });
 }
 
+/** Neuer Skill (Gerät schalten) aus Award, Challenge oder Feiertag. */
+export function notifySkill(accountId: number, ticketId: number, label: string): void {
+  pushToPerson(accountId, ticketId, "Skill-Meldung", {
+    path: "/gutscheine",
+    tag: "rider-skill",
+    own: { title: "Neuer Skill", body: `${label}: Du darfst jetzt selbst schalten. Schau in die App.` },
+    forChild: (who) => ({ title: "Neuer Skill", body: `${label} für ${who} wartet in der App.` }),
+  });
+}
+
 /** Text der Nachricht zu einem neuen Award, für die Person selbst oder für die Eltern (`who`). */
 export function awardPushText(name: string, voucherLabel: string | null, who?: string): { title: string; body: string } {
   const title = who ? `Award für ${who}: ${name}` : `Award freigeschaltet: ${name}`;

@@ -5,6 +5,8 @@ import { awardCountable, awardRemainingText, voucherHeadline } from "@/lib/award
 import { riderAppPath, type RiderVoucher } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay, voucherValidity } from "@/lib/rider-format";
+import { RiderSkills } from "@/components/rider/rider-skills";
+import { loadRiderSkills } from "@/lib/rider-skills";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +46,7 @@ export default async function RiderVouchers({ params }: { params: Promise<{ toke
   const rider = await requireRider(token);
   const base = riderAppPath(token);
   const open = rider.vouchers.filter((v) => v.state === "open");
+  const skills = await loadRiderSkills(rider).catch(() => []);
   const past = rider.vouchers.filter((v) => v.state !== "open");
   // Die zwei Awards mit Gutschein, denen am wenigsten fehlt.
   const soon = rider.awards
@@ -55,8 +58,12 @@ export default async function RiderVouchers({ params }: { params: Promise<{ toke
     <>
       <h1 className="rd-display rd-h1">Gutscheine</h1>
       <p className="rd-muted" style={{ margin: 0 }}>
-        Awards und Challenges bringen dir Gutscheine. Zeig den Code am Imbiss oder an der Kasse.
+        {skills.length > 0
+          ? "Awards und Challenges bringen dir Gutscheine und Skills. Gutscheine zeigst du am Imbiss oder an der Kasse, Skills schaltest du selbst."
+          : "Awards und Challenges bringen dir Gutscheine. Zeig den Code am Imbiss oder an der Kasse."}
       </p>
+
+      {skills.length > 0 && <RiderSkills token={token} initial={skills} />}
 
       <section>
         <div className="rd-aw-sec-h">

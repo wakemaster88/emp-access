@@ -6,6 +6,12 @@ import { AwardBadge } from "./award-badge";
 import { GiftIcon } from "./award-parts";
 import type { AwardBadgeData, RiderUnlock } from "@/lib/rider-app";
 
+const SKILL_ICON = (
+  <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M13 2L4 14h7l-1 8 9-12h-7z" />
+  </svg>
+);
+
 /** Auf diesem Gerät schon gezeigte Vergaben (die Seite kann aus dem lokalen Cache kommen). */
 const SEEN_KEY = "rd-awards-seen";
 const SEEN_MAX = 200;
@@ -161,6 +167,16 @@ export function RiderAwardUnlock({
               <small>Dein Gutschein</small>
               <b>{u.voucherLabel}</b>
               {u.bonus && <span>Dazu: {u.bonus}.</span>}
+            </span>
+          </div>
+        )}
+        {u.skillLabel && (
+          <div className="rd-ul-reward">
+            <span className="rd-aw-gift">{SKILL_ICON}</span>
+            <span>
+              <small>Dein Skill</small>
+              <b>{u.skillLabel}</b>
+              <span>Du darfst jetzt selbst schalten.</span>
             </span>
           </div>
         )}

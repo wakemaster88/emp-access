@@ -1,6 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
 import { challengeSchema, normalizeChallenge, pushPlanPatch } from "@/lib/gamification-input";
+import { skillRewardAllowed } from "@/lib/rider-skills";
 import { runAccountAnnouncements } from "@/lib/rider-announce";
 
 async function resolve(params: Promise<{ id: string }>) {
@@ -31,6 +32,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const parsed = challengeSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe" }, { status: 400 });
+  }
+  if (!(await skillRewardAllowed(ctx.db, ctx.accountId, parsed.data.skillId))) {
+    return NextResponse.json({ error: "Unbekannter Skill" }, { status: 400 });
   }
   const data = normalizeChallenge(parsed.data);
   const challenge = await ctx.db.challenge.update({
