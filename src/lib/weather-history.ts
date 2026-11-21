@@ -215,6 +215,16 @@ async function syncAccount(account: { id: number; lat: number; lng: number }, no
   return { written, ok };
 }
 
+/** Lufttemperatur der laufenden Stunde in °C (höchstens drei Stunden alt), sonst null. */
+export async function loadAirNow(accountId: number, now: Date = new Date()): Promise<number | null> {
+  const row = await prisma.weatherHour.findFirst({
+    where: { accountId, hour: { gte: new Date(now.getTime() - 3 * HOUR_MS), lte: now } },
+    orderBy: { hour: "desc" },
+    select: { temp: true },
+  });
+  return row?.temp ?? null;
+}
+
 export interface WeatherHistoryTickResult {
   accounts: number;
   written: number;

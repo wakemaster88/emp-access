@@ -483,6 +483,10 @@ html[data-rd-intro="skip"] .rd-intro { display: none; }
 .rd-hero-line.rd-loc { gap: 6px; font-size: 12px; color: #ffffff; }
 .rd-hero-line.rd-loc::before { display: none; }
 .rd-hero .rd-loc svg { position: static; flex: none; width: 16px; height: 16px; color: var(--rd-accent); }
+/* Luft und Wasser rechts neben dem Standort; auf sehr schmalen Geräten darunter. */
+.rd-hero-top { align-self: stretch; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
+.rd-hero-temps { display: flex; align-items: baseline; gap: 12px; font-size: 12px; font-weight: 500; line-height: 1.3; color: rgb(255 255 255 / 0.86); white-space: nowrap; }
+.rd-hero-temps b { font-size: 13px; font-weight: 700; color: #ffffff; }
 
 /* Abo-Karte: Restlaufzeit in Tagen. */
 .rd-abo-days { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }

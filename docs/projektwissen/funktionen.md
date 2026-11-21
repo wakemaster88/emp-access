@@ -1003,6 +1003,15 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
   (51,756 / 8,043, dieselben Werte wie der Rückfall im Hub,
   `hub/src/weather.ts`). Ein Eingabefeld für den Standort gibt es in der
   Verwaltung nicht.
+- **Aktuelle Werte im Kopf der Startseite** (Wunsch von Aaron am
+  21.11.2026, „ganz oben noch Luft und Wasser“): rechts neben dem Standort
+  steht „Luft 8° Wasser 9,6°“. Luft ist die jüngste Stunde aus `WeatherHour`
+  (`loadAirNow`, auf ganze Grad gerundet), Wasser der jüngste Messwert des
+  Fühlers (`loadWaterNow`, eine Nachkommastelle). Beide Werte dürfen höchstens
+  drei Stunden alt sein, sonst fehlt der jeweilige Wert; fehlen beide, bleibt
+  der Kopf wie vorher. Die Seite ruft dafür nichts von außen ab: es sind zwei
+  kleine Abfragen neben den übrigen der Startseite. Unter 328 px Inhaltsbreite
+  (Geräte mit 320 px) rutschen die Werte unter den Standort.
 
 ## Ride Pass im Kundenkonto (21.11.2026)
 
