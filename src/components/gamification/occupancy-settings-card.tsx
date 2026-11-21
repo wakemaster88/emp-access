@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
-import { DEFAULT_OCCUPANCY_THRESHOLDS, OCCUPANCY_LABEL, type OccupancyThresholds } from "@/lib/rider-occupancy";
+import { DEFAULT_OCCUPANCY_THRESHOLDS, OCCUPANCY_LABEL, type OccupancyThresholds } from "@/lib/rider-occupancy-labels";
 
 /**
  * Grenzen für „Auslastung jetzt“ (Fahrer am Lift in den letzten 60 Minuten).
