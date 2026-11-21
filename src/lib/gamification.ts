@@ -491,10 +491,27 @@ export const POLL_OPTIONS_MAX = 6;
 
 export type ChallengePhase = "upcoming" | "running" | "ended";
 
-/** Phase einer Challenge am Tag `todayYmd`; Start- und Endtag zählen mit. */
-export function challengePhase(c: { startYmd: string; endYmd: string }, todayYmd: string): ChallengePhase {
+/**
+ * Ist die Challenge vorbei? Ohne `endTime` endet sie mit dem Endtag, mit
+ * `endTime` ("HH:MM", Europe/Berlin) am Endtag zu dieser Uhrzeit.
+ */
+export function challengeOver(
+  c: { endYmd: string; endTime?: string | null },
+  todayYmd: string,
+  nowHm = "00:00",
+): boolean {
+  if (todayYmd > c.endYmd) return true;
+  return todayYmd === c.endYmd && !!c.endTime && nowHm >= c.endTime;
+}
+
+/** Phase einer Challenge am Tag `todayYmd` um `nowHm`; Start- und Endtag zählen mit. */
+export function challengePhase(
+  c: { startYmd: string; endYmd: string; endTime?: string | null },
+  todayYmd: string,
+  nowHm = "00:00",
+): ChallengePhase {
   if (todayYmd < c.startYmd) return "upcoming";
-  if (todayYmd > c.endYmd) return "ended";
+  if (challengeOver(c, todayYmd, nowHm)) return "ended";
   return "running";
 }
 

@@ -7,7 +7,7 @@
 import { cache } from "react";
 import { skillRewardText } from "./rider-skill-rules";
 import { prisma, tenantClient } from "./prisma";
-import { berlinYmd } from "./berlin-day";
+import { berlinHm, berlinYmd } from "./berlin-day";
 import {
   challengeConditionText,
   challengePhase,
@@ -34,6 +34,8 @@ export interface RiderChallenge {
   phase: ChallengePhase;
   startDate: Date;
   endDate: Date;
+  /** Uhrzeit am Endtag ("HH:MM"), sonst null. */
+  endTime: string | null;
   voucherLabel: string | null;
   /** Skill als Gewinn, z. B. „Außendusche · 10×“. */
   skillLabel: string | null;
@@ -95,7 +97,7 @@ export async function loadRiderChallenges(
   const myKey = `p${rider.profileId}`;
 
   const phases = new Map(
-    challenges.map((c) => [c.id, challengePhase({ startYmd: dbDateToYmd(c.startDate), endYmd: dbDateToYmd(c.endDate) }, today)]),
+    challenges.map((c) => [c.id, challengePhase({ startYmd: dbDateToYmd(c.startDate), endYmd: dbDateToYmd(c.endDate), endTime: c.endTime }, today, berlinHm(now))]),
   );
   const voting = await loadVoting(
     accountId,
@@ -143,6 +145,7 @@ export async function loadRiderChallenges(
       phase,
       startDate: c.startDate,
       endDate: c.endDate,
+      endTime: c.endTime,
       voucherLabel: c.voucherLabel,
       skillLabel: c.skill?.active ? skillRewardText(c.skill.name, c.skillUses) : null,
       value: mine?.value ?? 0,

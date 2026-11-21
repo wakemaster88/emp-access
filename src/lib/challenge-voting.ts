@@ -16,7 +16,8 @@
  */
 import { prisma, tenantClient } from "./prisma";
 import { deleteBlobs, resolveBinary, storeBlob } from "./blob-store";
-import { rankStandings, type ChallengeKind, type ChallengePhase } from "./gamification";
+import { challengeOver, rankStandings, type ChallengeKind, type ChallengePhase } from "./gamification";
+import { berlinHm } from "./berlin-day";
 import { decodePhotoDataUrl, pollPercents, seededOrder } from "./challenge-voting-rules";
 
 export interface PhotoEntryView {
@@ -171,13 +172,15 @@ async function runningChallenge(
 ): Promise<Fail | { challenge: { id: number } }> {
   const c = await prisma.challenge.findFirst({
     where: { id: challengeId, accountId, active: true, kind },
-    select: { id: true, startDate: true, endDate: true },
+    select: { id: true, startDate: true, endDate: true, endTime: true },
   });
   if (!c) return { error: "Diese Challenge gibt es nicht mehr.", status: 404 };
   const start = c.startDate.toISOString().slice(0, 10);
   const end = c.endDate.toISOString().slice(0, 10);
   if (todayYmd < start) return { error: "Die Challenge hat noch nicht begonnen.", status: 409 };
-  if (todayYmd > end) return { error: "Die Challenge ist schon zu Ende.", status: 409 };
+  if (challengeOver({ endYmd: end, endTime: c.endTime }, todayYmd, berlinHm())) {
+    return { error: "Die Challenge ist schon zu Ende.", status: 409 };
+  }
   return { challenge: c };
 }
 

@@ -276,6 +276,16 @@ weitere Arten, angelegt wie die anderen unter Kunden App › Aktionen:
   Tagen der Laufzeit und nach dem Ablauf eine Karte mit dem Enddatum
   (`renewalHint` in `src/lib/gamification.ts`). Es geht keine Nachricht raus.
 
+### Challenge-Ende mit Uhrzeit (22.11.2026)
+
+Aaron zur Nikolaus-Foto-Challenge am 6.12.: „bis 18 uhr“. Eine Challenge kann
+jetzt am Endtag zu einer Uhrzeit enden (`Challenge.endTime`, "HH:MM",
+Europe/Berlin; leer = Mitternacht, Feld „Ende um“ im Dialog). Ab dieser Zeit
+gilt sie als beendet (`challengeOver`/`challengePhase` in `gamification.ts`):
+kein Hochladen und Abstimmen mehr, Stimmen sichtbar, und Top X/Foto werden beim
+nächsten Aufruf der App oder Verwaltung bzw. beim nächsten Start ausgewertet.
+Die App zeigt „heute bis 18 Uhr“, der Push „Am 06.12. bis 18 Uhr“.
+
 ### Push bei neuen Angeboten und Challenges (20.11.2026)
 
 - Aaron: „bei neuen angeboten, challenges soll eine push nachricht an die

@@ -6,8 +6,10 @@
  * für sich. Der Gewinn hängt am jüngsten Ticket der Einheit.
  */
 import type { TenantDb } from "./prisma";
+import { berlinHm } from "./berlin-day";
 import {
   challengeCountsRides,
+  challengeOver,
   challengeSettlesAtEnd,
   challengeValue,
   dbDateToYmd,
@@ -31,6 +33,8 @@ export interface ChallengeRow {
   topCount: number | null;
   startDate: Date;
   endDate: Date;
+  /** Uhrzeit am Endtag ("HH:MM", Berlin); fehlt = Mitternacht. */
+  endTime?: string | null;
   voucherLabel: string | null;
   voucherValidDays: number | null;
   /** Skill als Belohnung (fehlt bei älteren Aufrufern = ohne Skill). */
@@ -237,7 +241,8 @@ export async function settleChallenges(
 ): Promise<number> {
   let settled = 0;
   for (const c of challenges) {
-    if (!challengeSettlesAtEnd(c.kind) || dbDateToYmd(c.endDate) >= todayYmd) continue;
+    if (!challengeSettlesAtEnd(c.kind)) continue;
+    if (!challengeOver({ endYmd: dbDateToYmd(c.endDate), endTime: c.endTime }, todayYmd, berlinHm())) continue;
     const claim = await db.challenge.updateMany({
       where: { id: c.id, accountId, settledAt: null },
       data: { settledAt: new Date() },

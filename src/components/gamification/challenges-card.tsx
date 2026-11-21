@@ -42,6 +42,8 @@ export interface ChallengeAdminRow {
   /** "YYYY-MM-DD" */
   startDate: string;
   endDate: string;
+  /** "HH:MM" am Endtag, sonst null. */
+  endTime: string | null;
   voucherLabel: string | null;
   voucherValidDays: number | null;
   skillId: number | null;
@@ -75,6 +77,8 @@ interface FormState {
   topCount: string;
   startDate: string;
   endDate: string;
+  /** "" = bis Mitternacht. */
+  endTime: string;
   withVoucher: boolean;
   voucherLabel: string;
   voucherValidDays: string;
@@ -95,6 +99,7 @@ function toForm(c: ChallengeAdminRow): FormState {
     topCount: c.topCount != null ? String(c.topCount) : "3",
     startDate: c.startDate,
     endDate: c.endDate,
+    endTime: c.endTime ?? "",
     withVoucher: c.voucherLabel != null,
     voucherLabel: c.voucherLabel ?? "",
     voucherValidDays: c.voucherValidDays != null ? String(c.voucherValidDays) : "",
@@ -140,7 +145,7 @@ export function ChallengesCard({
 
   const empty: FormState = {
     id: null, name: "", description: "", kind: "TASK", metric: "VISIT_DAYS", threshold: "5", topCount: "3",
-    startDate: today, endDate: today, withVoucher: true, voucherLabel: "", voucherValidDays: "30", skill: EMPTY_SKILL_REWARD, active: true,
+    startDate: today, endDate: today, endTime: "", withVoucher: true, voucherLabel: "", voucherValidDays: "30", skill: EMPTY_SKILL_REWARD, active: true,
     push: true, options: ["", ""],
   };
   const open = (f: FormState) => {
@@ -192,6 +197,7 @@ export function ChallengesCard({
             topCount: form.kind === "TOP_X" || form.kind === "PHOTO" ? topCount : null,
             startDate: form.startDate,
             endDate: form.endDate,
+            endTime: form.endTime || null,
             voucherLabel: form.withVoucher && form.kind !== "POLL" ? form.voucherLabel.trim() : null,
             voucherValidDays: form.withVoucher && form.kind !== "POLL" ? validDays : null,
             ...(form.kind === "POLL" ? skillRewardBody(EMPTY_SKILL_REWARD) : skillRewardBody(form.skill)),
@@ -298,11 +304,11 @@ export function ChallengesCard({
                   {c.pushedAt && <Bell className="ml-1.5 inline h-3.5 w-3.5 text-muted-foreground" aria-label="Push gesendet" />}
                   <div className="text-xs text-muted-foreground md:hidden">
                     <span className="sm:hidden">{challengeConditionText(c)} · </span>
-                    {fmt(c.startDate)} bis {fmt(c.endDate)}
+                    {fmt(c.startDate)} bis {fmt(c.endDate)}{c.endTime ? `, ${c.endTime}` : ""}
                   </div>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">{challengeConditionText(c)}</TableCell>
-                <TableCell className="hidden md:table-cell">{fmt(c.startDate)} bis {fmt(c.endDate)}</TableCell>
+                <TableCell className="hidden md:table-cell">{fmt(c.startDate)} bis {fmt(c.endDate)}{c.endTime ? `, ${c.endTime}` : ""}</TableCell>
                 <TableCell className="hidden sm:table-cell text-right tabular-nums">{participantsText(c)}</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {c.kind === "POLL" || ((c.kind === "TOP_X" || c.kind === "PHOTO") && !c.settled) ? "–" : c.winners}
@@ -375,12 +381,17 @@ export function ChallengesCard({
                   <Label htmlFor="ch-end">Ende</Label>
                   <Input id="ch-end" type="date" disabled={locked} value={form.endDate} min={form.startDate} onChange={(e) => set({ endDate: e.target.value })} className="max-sm:h-11" />
                 </div>
+                <div className="space-y-1.5 col-span-2 sm:col-span-1">
+                  <Label htmlFor="ch-end-time">Ende um (optional)</Label>
+                  <Input id="ch-end-time" type="time" disabled={locked} value={form.endTime} onChange={(e) => set({ endTime: e.target.value })} className="max-sm:h-11" />
+                  <p className="text-xs text-muted-foreground">Leer: bis Mitternacht am Endtag.</p>
+                </div>
               </div>
               {(form.kind === "TOP_X" || form.kind === "PHOTO") && !locked && (
                 <p className="text-xs text-muted-foreground">
                   {form.kind === "PHOTO"
-                    ? "Im Zeitraum lädt jeder Fahrer ein Foto hoch und hat eine Stimme (nicht fürs eigene Foto). Die Stimmen sieht man erst nach dem Ende. Ausgewertet wird nach dem Endtag; bei Gleichstand auf dem letzten Gewinnerplatz gewinnen alle."
-                    : "Ausgewertet wird nach dem Endtag. Liegen mehrere auf dem letzten Gewinnerplatz gleichauf, gewinnen alle."}
+                    ? "Im Zeitraum lädt jeder Fahrer ein Foto hoch und hat eine Stimme (nicht fürs eigene Foto). Die Stimmen sieht man erst nach dem Ende. Ausgewertet wird nach dem Ende; bei Gleichstand auf dem letzten Gewinnerplatz gewinnen alle."
+                    : "Ausgewertet wird nach dem Ende. Liegen mehrere auf dem letzten Gewinnerplatz gleichauf, gewinnen alle."}
                 </p>
               )}
 
@@ -529,6 +540,7 @@ export function ChallengesCard({
                       topCount: form.kind === "TOP_X" || form.kind === "PHOTO" ? topCount || 0 : null,
                       startYmd: form.startDate,
                       endYmd: form.endDate,
+                      endTime: form.endTime || null,
                       voucherLabel: form.kind !== "POLL" && form.withVoucher && form.voucherLabel.trim() ? form.voucherLabel.trim() : null,
                     },
                     today,

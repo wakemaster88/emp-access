@@ -3,7 +3,7 @@ import { Award, BarChart3, CalendarCheck, Gift, Megaphone, Play, Settings, Troph
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { isTenantAdminRole } from "@/lib/api-auth";
-import { berlinYmd } from "@/lib/berlin-day";
+import { berlinHm, berlinYmd } from "@/lib/berlin-day";
 import {
   benefitVoucherState, challengePhase, dbDateToYmd, offerVisible, parsePriceMap, ymdToDbDate,
   type GamiMetric, type GamiPeriod, type GamiTier,
@@ -335,8 +335,8 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       db.challengeAward.groupBy({ by: ["challengeId"], where: { accountId }, _count: { _all: true } }),
     ]);
     const winnersById = new Map(winners.map((w) => [w.challengeId, w._count._all]));
-    const phaseOf = (c: { startDate: Date; endDate: Date }) =>
-      challengePhase({ startYmd: dbDateToYmd(c.startDate), endYmd: dbDateToYmd(c.endDate) }, today);
+    const phaseOf = (c: { startDate: Date; endDate: Date; endTime: string | null }) =>
+      challengePhase({ startYmd: dbDateToYmd(c.startDate), endYmd: dbDateToYmd(c.endDate), endTime: c.endTime }, today, berlinHm());
     const voting = await loadVoting(
       accountId,
       challenges.map((c) => ({ id: c.id, kind: c.kind, phase: phaseOf(c), topCount: c.topCount })),
@@ -360,6 +360,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         topCount: c.topCount,
         startDate,
         endDate,
+        endTime: c.endTime,
         voucherLabel: c.voucherLabel,
         voucherValidDays: c.voucherValidDays,
         skillId: c.skillId,

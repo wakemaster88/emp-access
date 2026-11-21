@@ -68,6 +68,11 @@ export function challengeAnnounceBlock(c: ChallengeAnnounceInput, todayYmd: stri
   return inAnnounceHours(hour) ? null : "night";
 }
 
+/** "18:00" → "18 Uhr", "18:30" → "18:30 Uhr". */
+export function clockText(hm: string): string {
+  return hm.endsWith(":00") ? `${Number(hm.slice(0, 2))} Uhr` : `${hm} Uhr`;
+}
+
 /** Satzende ergänzen, damit angehängte Hinweise nicht am Text kleben. */
 function sentence(t: string): string {
   return /[.!?]$/.test(t) ? t : `${t}.`;
@@ -101,13 +106,18 @@ export function challengePushText(
     topCount: number | null;
     startYmd: string;
     endYmd: string;
+    /** Uhrzeit am Endtag ("HH:MM"), sonst null. */
+    endTime?: string | null;
     voucherLabel: string | null;
   },
   todayYmd: string,
 ): AnnounceText {
   const parts: string[] = [sentence(c.description?.trim() || challengeConditionText(c))];
   if (c.voucherLabel) parts.push(`Gewinn: ${sentence(c.voucherLabel)}`);
-  parts.push(todayYmd < c.startYmd ? `Startet am ${dm(c.startYmd)}` : `Läuft bis ${dm(c.endYmd)}`);
+  const until = c.endTime ? ` bis ${clockText(c.endTime)}` : "";
+  if (c.endTime && c.startYmd === c.endYmd) parts.push(`Am ${dm(c.startYmd)}${until}`);
+  else if (todayYmd < c.startYmd) parts.push(`Startet am ${dm(c.startYmd)}`);
+  else parts.push(`Läuft bis ${dm(c.endYmd)}${c.endTime ? `, ${clockText(c.endTime)}` : ""}`);
   return { title: `Neue Challenge: ${c.name}`, body: parts.join(" ") };
 }
 
