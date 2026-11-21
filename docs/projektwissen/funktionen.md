@@ -808,6 +808,26 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
   Erwachsene einer Familie bleiben ebenfalls. Doppelte Person mit Abo: erst
   beim Abo den Fahrer ändern, dann löschen.
 
+## Gutschein-Monitor für die Kasse (21.11.2026)
+
+- Neuer Monitor-Typ `VOUCHER` („Gutscheine“) unter Einstellungen › Monitore.
+  Seite `/gutscheine/[token]`, ohne Login, wie der Scanner immer dunkel und
+  als eigene App auf den Home-Bildschirm legbar (Manifest-Art `gutscheine`).
+- Ablauf: Code per Handscanner (Tastatur-Eingabe ins Scanfeld, das den Fokus
+  behält) oder per Kamera (Taste rechts, Wahl je Gerät gespeichert) lesen.
+  Der Monitor **prüft** erst nur (`POST /api/gutscheine/public/[token]`) und
+  zeigt Leistung, Fahrer, Herkunft (Award), Gültigkeit und Code. Erst die
+  Taste „Einlösen“ entwertet (`POST …/redeem`). Ein Scan zum Nachsehen
+  entwertet also nichts; der Check-in-Monitor entwertet weiter direkt beim Scan.
+- Einlösen läuft über `redeemBenefitVoucher` (atomar) mit `redeemedVia =
+  "KASSE"`; in Kunden App › Gutscheine steht dann „Gutschein-Monitor“.
+- Zutritts-Gutscheine (`GS-…`) zeigt der Monitor nur an und verweist an den
+  Check-in. Abgelaufene, deaktivierte und schon eingelöste Gutscheine werden
+  rot mit Datum angezeigt.
+- Rechts bzw. darunter: „Heute eingelöst“ (alle Leistungs-Gutscheine des
+  Berlin-Tages, egal wo eingelöst), lädt jede Minute und nach jedem Einlösen neu.
+- Code: `src/lib/voucher-monitor.ts`, `src/components/vouchers/voucher-scan-monitor.tsx`.
+
 ## Awards in der Kunden-App (20.11.2026)
 
 - Ein Award ist ein Meilenstein (`Milestone`) mit Seltenheit (`tier`: Bronze,

@@ -16,6 +16,7 @@ test("isKioskPath trennt Kiosk-Seiten von der App", () => {
   assert.equal(isKioskPath("/resource-monitor/abc"), true);
   assert.equal(isKioskPath("/scanner/abc"), true);
   assert.equal(isKioskPath("/checkin/abc"), true);
+  assert.equal(isKioskPath("/gutscheine/abc"), true);
   assert.equal(isKioskPath("/m/abc"), false);
   assert.equal(isKioskPath("/monitors"), false);
   assert.equal(isKioskPath("/"), false);

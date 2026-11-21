@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Plus, Trash2, Copy, Check, ExternalLink, Monitor,
-  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid, ScanLine, Power,
+  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid, ScanLine, Power, Gift,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DeviceCategory } from "@prisma/client";
@@ -155,7 +155,9 @@ function MonitorDialog({
         ? "resource-monitor"
         : type === "SCANNER"
           ? "scanner"
-          : "monitor";
+          : type === "VOUCHER"
+            ? "gutscheine"
+            : "monitor";
   const monitorUrl = monitor ? `${baseUrl}/${urlPath}/${monitor.token}` : "";
 
   return (
@@ -226,6 +228,18 @@ function MonitorDialog({
               <div>
                 <p className="text-sm font-medium text-foreground">Scanner</p>
                 <p className="text-xs text-muted-foreground">QR-Kamera, Token</p>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setType("VOUCHER")}
+              aria-pressed={type === "VOUCHER"}
+              className={typeTileClass(type === "VOUCHER")}
+            >
+              <Gift className={cn("h-4 w-4 shrink-0", type === "VOUCHER" ? "text-primary" : "text-muted-foreground")} />
+              <div>
+                <p className="text-sm font-medium text-foreground">Gutscheine</p>
+                <p className="text-xs text-muted-foreground">An der Kasse einlösen</p>
               </div>
             </button>
           </div>
@@ -577,13 +591,16 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
         const isCheckin = monitor.type === "CHECKIN";
         const isResource = monitor.type === "RESOURCE_MONITOR";
         const isScanner = monitor.type === "SCANNER";
+        const isVoucher = monitor.type === "VOUCHER";
         const urlPath = isCheckin
           ? "checkin"
           : isResource
             ? "resource-monitor"
             : isScanner
               ? "scanner"
-              : "monitor";
+              : isVoucher
+                ? "gutscheine"
+                : "monitor";
         const url = `${baseUrl}/${urlPath}/${monitor.token}`;
         const deviceNames = isResource
           ? accessAreas
@@ -608,14 +625,18 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
             ? LayoutGrid
             : isScanner
               ? ScanLine
-              : Monitor;
+              : isVoucher
+                ? Gift
+                : Monitor;
         const typeLabel = isCheckin
           ? "Check-in"
           : isResource
             ? "Ressourcen"
             : isScanner
               ? "Scanner"
-              : "Monitor";
+              : isVoucher
+                ? "Gutscheine"
+                : "Monitor";
 
         return (
           <Card key={monitor.id}>

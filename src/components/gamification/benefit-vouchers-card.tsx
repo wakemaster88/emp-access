@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { Gift, Loader2, ScanLine } from "lucide-react";
 import type { BenefitVoucherState } from "@/lib/gamification";
+import { REDEEMED_VIA_LABEL } from "@/lib/voucher-via";
 
 export interface BenefitVoucherRow {
   id: number;
@@ -113,7 +115,11 @@ export function BenefitVouchersCard({ vouchers }: { vouchers: BenefitVoucherRow[
               Entwerten
             </Button>
           </form>
-          <p className="text-xs text-muted-foreground">Am Check-in-Monitor reicht ebenfalls ein Scan.</p>
+          <p className="text-xs text-muted-foreground">
+            Am Check-in-Monitor reicht ebenfalls ein Scan. Für die Kasse gibt es den{" "}
+            <Link href="/monitors" className="text-primary underline-offset-4 hover:underline">Gutschein-Monitor</Link>{" "}
+            (unter Monitore anlegen).
+          </p>
           {result && <Notice tone={result.ok ? "success" : "danger"} compact title={result.text} role={result.ok ? "status" : "alert"} />}
         </CardContent>
       </Card>
@@ -181,7 +187,7 @@ export function BenefitVouchersCard({ vouchers }: { vouchers: BenefitVoucherRow[
                         <Badge variant={badge.variant} className="font-normal">{badge.label}</Badge>
                         {v.state === "redeemed" && (
                           <div className="text-xs text-muted-foreground tabular-nums">
-                            {fmtDate(v.redeemedAt)}{v.redeemedVia === "CHECKIN" ? " · Check-in" : v.redeemedVia === "ADMIN" ? " · Admin" : ""}
+                            {fmtDate(v.redeemedAt)}{v.redeemedVia && REDEEMED_VIA_LABEL[v.redeemedVia] ? ` · ${REDEEMED_VIA_LABEL[v.redeemedVia]}` : ""}
                           </div>
                         )}
                       </>

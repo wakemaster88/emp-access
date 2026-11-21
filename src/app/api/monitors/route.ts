@@ -31,7 +31,9 @@ export async function POST(request: NextRequest) {
         ? "RESOURCE_MONITOR"
         : body.type === "SCANNER"
           ? "SCANNER"
-          : "MONITOR";
+          : body.type === "VOUCHER"
+            ? "VOUCHER"
+            : "MONITOR";
   const monitor = await db.monitorConfig.create({
     data: {
       name: body.name.trim(),

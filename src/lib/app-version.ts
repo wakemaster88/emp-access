@@ -21,7 +21,7 @@ export function isNewerBuild(current: string, served: string | null | undefined)
  * neue Version selbst, sobald eine Minute lang niemand getippt hat. Alle
  * anderen Seiten fragen per Dialog.
  */
-const KIOSK_PREFIXES = ["/monitor/", "/resource-monitor/", "/scanner/", "/checkin/"];
+const KIOSK_PREFIXES = ["/monitor/", "/resource-monitor/", "/scanner/", "/checkin/", "/gutscheine/"];
 
 export function isKioskPath(pathname: string): boolean {
   return KIOSK_PREFIXES.some((p) => pathname.startsWith(p));
@@ -32,7 +32,7 @@ export function isKioskPath(pathname: string): boolean {
  * Update-Hinweis keine Neuerungen, denn die Liste stammt aus den PR-Titeln
  * und richtet sich an das Team.
  */
-const PUBLIC_PREFIXES = ["/app/", "/zaehlen/", "/m/", "/info/", "/verein/", "/schluessel/", "/checkin/", "/monitor/", "/resource-monitor/", "/scanner/"];
+const PUBLIC_PREFIXES = ["/app/", "/zaehlen/", "/m/", "/info/", "/verein/", "/schluessel/", "/checkin/", "/monitor/", "/resource-monitor/", "/scanner/", "/gutscheine/"];
 
 export function showsReleaseNotes(pathname: string): boolean {
   return !PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
