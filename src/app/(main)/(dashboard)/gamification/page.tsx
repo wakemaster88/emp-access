@@ -367,8 +367,13 @@ export default async function GamificationPage({ searchParams }: { searchParams:
               voucherValidDays: s.voucherValidDays,
               daysBefore: s.daysBefore,
               active: s.active,
+              pushPlanned: s.pushPlanned,
             }
           : null,
+        push:
+          s?.pushedAt && s.pushedYear === Number(h.ymd.slice(0, 4))
+            ? { pushedAt: s.pushedAt.toISOString(), pushSent: s.pushSent }
+            : null,
         gifts: s ? giftsById.get(s.id) ?? 0 : 0,
       };
     });
@@ -393,7 +398,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       <>
         <ChallengesCard challenges={challengeRows} today={today} reach={reach} />
         <OffersCard offers={rows} reach={reach} />
-        <HolidaysCard rows={holidayRows} />
+        <HolidaysCard rows={holidayRows} reach={reach} />
       </>
     );
   }
