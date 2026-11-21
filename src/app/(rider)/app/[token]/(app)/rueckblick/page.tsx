@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadRiderRecap, riderAppPath } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
-import { ymdToDbDate } from "@/lib/gamification";
+import { formatDegrees, tempStatNote, ymdToDbDate } from "@/lib/gamification";
 import { fmtDay } from "@/lib/rider-format";
 
 export const dynamic = "force-dynamic";
@@ -69,6 +69,22 @@ export default async function RiderRecapPage({
               <div className="rd-display rd-recap-word">{recap.bestWeekday.name}</div>
               <b>Dein Tag</b>
               <div className="rd-muted">{recap.bestWeekday.visitDays} von {recap.visitDays} Besuchen</div>
+            </div>
+          )}
+          {data.air && (
+            <div className="rd-stat">
+              <div className="rd-display">{formatDegrees(data.air.avg)}°</div>
+              <b>Luft im Schnitt</b>
+              <div className="rd-muted">{tempStatNote(data.air, recap.visitDays)}</div>
+            </div>
+          )}
+          {(data.water || data.waterSensor) && (
+            <div className="rd-stat">
+              <div className="rd-display">{data.water ? `${formatDegrees(data.water.avg)}°` : "–"}</div>
+              <b>Wasser im Schnitt</b>
+              <div className="rd-muted">
+                {data.water ? tempStatNote(data.water, recap.visitDays) : "an deinen Tagen noch nicht gemessen"}
+              </div>
             </div>
           )}
         </div>

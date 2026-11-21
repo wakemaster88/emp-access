@@ -251,6 +251,7 @@ model Account {
   roomRuleRuns         RoomRuleRun[]
   roomClimates         RoomClimate[]
   climateSamples       ClimateSample[]
+  weatherHours         WeatherHour[]
   roomMotionEvents     RoomMotionEvent[]
   keyDoors             KeyDoor[]
   keyLocks             KeyLock[]
@@ -3404,6 +3405,21 @@ model ClimateSample {
   @@unique([deviceId, resolution, bucketStart])
   @@index([accountId, roomId, resolution, bucketStart])
   @@index([accountId, resolution, bucketStart])
+}
+
+/// Lufttemperatur am Standort des Betriebs je Stunde, vom Wetterdienst
+/// Open-Meteo (src/lib/weather-history.ts). Grundlage fuer "Luft im Schnitt"
+/// im Saisonrueckblick der Kunden-App; einen Fuehler fuer draussen gibt es nicht.
+model WeatherHour {
+  id        Int      @id @default(autoincrement())
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Volle Stunde (UTC); `temp` gilt fuer diesen Zeitpunkt.
+  hour      DateTime
+  /// Lufttemperatur in 2 m Hoehe, Grad Celsius.
+  temp      Float
+
+  @@unique([accountId, hour])
 }
 
 /// Bewegung, gemeldet von einem Bewegungsmelder (Shelly) in einem Raum. Wird

@@ -98,4 +98,5 @@ export const TENANT_MODELS = new Set<string>([
   "Verein",
   "VereinSlotBooking",
   "Voucher",
+  "WeatherHour",
 ]);

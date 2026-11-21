@@ -12,7 +12,7 @@ import { adoptDayTickets } from "./day-guest";
 import { samePersonAbos } from "./abo-person";
 import { aboNamesRider, isKidsSubscriptionName } from "./customer-person";
 import { awardCategory, awardText, voucherShortLabel, type AwardCategory } from "./awards";
-import { awardMilestones, loadRuleData, toMilestoneRule } from "./gamification-service";
+import { awardMilestones, loadGamiConfig, loadRideTemps, loadRuleData, toMilestoneRule } from "./gamification-service";
 import {
   benefitVoucherState,
   computeMetrics,
@@ -28,6 +28,7 @@ import {
   seasonsCount,
   milestoneProgress,
   seasonLevel,
+  tempStat,
   ymdToDbDate,
   type AboCalculation,
   type BenefitVoucherState,
@@ -36,6 +37,7 @@ import {
   type GamiTier,
   type MilestoneProgress,
   type SeasonRecap,
+  type TempStat,
 } from "./gamification";
 import { paymentOpenInfo, paymentOpenSentence } from "@/lib/payment-open";
 
@@ -503,6 +505,12 @@ export interface RiderRecap {
   recap: SeasonRecap;
   /** Anteil der anderen Abo-Fahrer, die seltener da waren; null bei zu wenig Vergleich. */
   aheadOf: number | null;
+  /** Lufttemperatur an den Besuchstagen (Wetterdienst); null ohne Messwert. */
+  air: TempStat | null;
+  /** Wassertemperatur an den Besuchstagen (Fühler der Kunden-App); null ohne Messwert. */
+  water: TempStat | null;
+  /** Die Kunden-App hat einen Fühler für das Wasser. */
+  waterSensor: boolean;
 }
 
 /**
@@ -512,7 +520,8 @@ export interface RiderRecap {
 export async function loadRiderRecap(rider: RiderView, year: number): Promise<RiderRecap | null> {
   if (year !== rider.year && year !== rider.year - 1) return null;
   const range = { gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) };
-  const [own, others] = await Promise.all([
+  const config = await loadGamiConfig(tenantClient(rider.accountId), rider.accountId);
+  const [own, others, temps] = await Promise.all([
     prisma.riderDayStat.findMany({
       where: { accountId: rider.accountId, ticketId: { in: rider.ticketIds }, day: range },
       select: { day: true, starts: true },
@@ -522,11 +531,19 @@ export async function loadRiderRecap(rider: RiderView, year: number): Promise<Ri
       where: { accountId: rider.accountId, ticketId: { notIn: rider.ticketIds }, day: range },
       _count: { _all: true },
     }),
+    // Die Temperaturen sind Beiwerk: scheitert die Abfrage, bleibt der Rückblick ohne sie stehen.
+    loadRideTemps(rider.accountId, rider.ticketIds, year, config.waterSensorDeviceId).catch((e) => {
+      console.error("[rider-recap] Temperaturen:", e instanceof Error ? e.message : e);
+      return [];
+    }),
   ]);
   const recap = seasonRecap(mergeDayStats(own.map((s) => ({ day: dbDateToYmd(s.day), starts: s.starts }))));
   return {
     year,
     recap,
     aheadOf: recap.visitDays > 0 ? aheadOfPercent(recap.visitDays, others.map((o) => o._count._all)) : null,
+    air: tempStat(temps.map((t) => t.air)),
+    water: tempStat(temps.map((t) => t.water)),
+    waterSensor: config.waterSensorDeviceId != null,
   };
 }
