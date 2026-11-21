@@ -160,7 +160,7 @@ export default function LoginPage() {
         <section className="hidden lg:flex flex-col gap-8 animate-fade-up">
           <div className="flex items-center gap-3">
             <Image src="/logo.png" alt="EMP Access" width={44} height={44} className="dark:hidden" priority />
-            <Image src="/logo-dark.png" alt="EMP Access" width={44} height={44} className="hidden dark:block" priority />
+            <Image src="/logo-dark.png" alt="EMP Access" width={44} height={44} className="hidden dark:block" />
             <div className="leading-none">
               <p className="text-xl font-semibold tracking-tight">EMP Access</p>
               <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Leitstand</p>
@@ -194,7 +194,7 @@ export default function LoginPage() {
             <CardHeader className="gap-1 px-6 sm:px-8">
               <div className="mb-3 flex items-center gap-3 lg:hidden">
                 <Image src="/logo.png" alt="EMP Access" width={40} height={40} className="dark:hidden" priority />
-                <Image src="/logo-dark.png" alt="EMP Access" width={40} height={40} className="hidden dark:block" priority />
+                <Image src="/logo-dark.png" alt="EMP Access" width={40} height={40} className="hidden dark:block" />
                 <div className="leading-none">
                   <p className="text-lg font-semibold tracking-tight">EMP Access</p>
                   <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Leitstand</p>

@@ -16,16 +16,9 @@ import { prisma } from "./prisma";
  */
 export const OCCUPANCY_WINDOW_MIN = 60;
 
-export interface OccupancyThresholds {
-  /** Ab so vielen Fahrern „Gut besucht“. */
-  mediumFrom: number;
-  /** Ab so vielen Fahrern „Viel los“. */
-  highFrom: number;
-}
+import { DEFAULT_OCCUPANCY_THRESHOLDS, type OccupancyLevel, type OccupancyThresholds } from "./rider-occupancy-labels";
 
-export const DEFAULT_OCCUPANCY_THRESHOLDS: OccupancyThresholds = { mediumFrom: 10, highFrom: 25 };
-
-export type OccupancyLevel = "none" | "low" | "medium" | "high";
+export { DEFAULT_OCCUPANCY_THRESHOLDS, OCCUPANCY_LABEL, type OccupancyLevel, type OccupancyThresholds } from "./rider-occupancy-labels";
 
 export interface RiderOccupancy {
   riders: number;
@@ -37,12 +30,6 @@ export interface RiderOccupancy {
   thresholds: OccupancyThresholds;
 }
 
-export const OCCUPANCY_LABEL: Record<OccupancyLevel, string> = {
-  none: "Gerade ruhig",
-  low: "Freie Bahn",
-  medium: "Gut besucht",
-  high: "Viel los",
-};
 
 /** Ungültige oder vertauschte Werte auf brauchbare Grenzen bringen. */
 export function normalizeThresholds(t: Partial<OccupancyThresholds> | null | undefined): OccupancyThresholds {

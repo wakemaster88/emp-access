@@ -18,21 +18,9 @@ export const BEACH_WINDOW_MIN = 180;
 /** Bereich, wenn nichts anderes passt: Name enthält „Strandbad“. */
 const BEACH_AREA_NAME = /strandbad/i;
 
-export interface BeachSettings {
-  factor: number;
-  mediumFrom: number;
-  highFrom: number;
-}
+import { DEFAULT_BEACH_SETTINGS, type BeachLevel, type BeachSettings } from "./beach-occupancy-labels";
 
-export const DEFAULT_BEACH_SETTINGS: BeachSettings = { factor: 3, mediumFrom: 600, highFrom: 1200 };
-
-export type BeachLevel = "low" | "medium" | "high";
-
-export const BEACH_LABEL: Record<BeachLevel, string> = {
-  low: "Viel Platz",
-  medium: "Gut besucht",
-  high: "Viel los",
-};
+export { BEACH_LABEL, DEFAULT_BEACH_SETTINGS, type BeachLevel, type BeachSettings } from "./beach-occupancy-labels";
 
 export interface BeachOccupancy {
   areaName: string;

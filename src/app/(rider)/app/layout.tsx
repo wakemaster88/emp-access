@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Barlow_Condensed } from "next/font/google";
 import "./rider.css";
+import { RiderUpdatePrompt } from "@/components/rider/rider-update-prompt";
 
 const display = Barlow_Condensed({
   subsets: ["latin"],
@@ -32,6 +33,7 @@ export default function RiderRootLayout({ children }: { children: React.ReactNod
   return (
     <div className={`rd-root ${display.variable}`}>
       <div className="rd-shell">{children}</div>
+      <RiderUpdatePrompt />
     </div>
   );
 }

@@ -348,6 +348,10 @@
   border-radius: 10px;
   box-shadow: 0 14px 36px -10px rgb(0 0 0 / 0.7);
 }
+/* Hinweis „Neue Version“: gleiche Karte wie der Installationshinweis, oben. */
+.rd-update { top: calc(env(safe-area-inset-top) + 12px); bottom: auto; z-index: 40; }
+.rd-update-actions { display: flex; gap: 10px; margin-top: 10px; }
+.rd-update .rd-update-actions .rd-btn { margin-top: 0; }
 .rd-install-card b { font-size: 15px; }
 .rd-install-card p { margin: 4px 0 0; color: var(--rd-soft); line-height: 1.45; }
 .rd-install-card p svg { display: inline; vertical-align: -2px; color: var(--rd-text); }

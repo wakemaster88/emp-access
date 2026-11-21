@@ -1,0 +1,57 @@
+/*
+ * Grundstil der Kunden-App ohne das Tailwind-CSS der Verwaltung: nur der
+ * Browser-Reset (Preflight) und die wenigen Basisregeln aus globals.css, auf
+ * die sich app/rider.css verlässt. Das eigentliche Design steht in rider.css.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/preflight.css" layer(base);
+
+@layer base {
+  html {
+    touch-action: manipulation;
+    color-scheme: dark;
+    background: #0b1214;
+  }
+  body {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    min-height: 100dvh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+  }
+  /* 16 px auf iOS, sonst zoomt Safari beim Antippen eines Felds. */
+  input[type="text"], input[type="email"], input[type="password"], input[type="search"],
+  input[type="tel"], input[type="number"], input[type="url"], input[type="date"],
+  input[type="time"], input[type="datetime-local"], select, textarea {
+    font-size: max(16px, 1rem);
+  }
+  /* Datums- und Zeitfelder halten sich an die Spaltenbreite (wie globals.css, PR #175). */
+  input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"], input[type="week"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
+  }
+  input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value,
+  input[type="datetime-local"]::-webkit-date-and-time-value, input[type="month"]::-webkit-date-and-time-value,
+  input[type="week"]::-webkit-date-and-time-value {
+    text-align: left;
+    min-width: 0;
+    min-height: 1.5em;
+  }
+  @media (display-mode: standalone), (display-mode: fullscreen) {
+    html, body { overscroll-behavior-y: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

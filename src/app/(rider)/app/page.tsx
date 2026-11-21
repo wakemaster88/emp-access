@@ -4,8 +4,8 @@ import { RiderMailLink } from "@/components/rider/rider-mail-link";
 import { RiderPasskeyLogin } from "@/components/rider/rider-auth";
 import { AWARD_DEFAULTS } from "@/lib/awards";
 import { RIDER_LOCATION } from "@/lib/rider-shop";
-
-export const dynamic = "force-dynamic";
+import { RiderLinkExpired } from "@/components/rider/rider-link-expired";
+import { Suspense } from "react";
 
 const PIN_ICON = (
   <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -43,8 +43,7 @@ const PERKS = [
 ];
 
 /** Einstieg in die Kunden-App: Anmeldung per E-Mail-Link, mit oder ohne Abo. */
-export default async function RiderLoginPage({ searchParams }: { searchParams: Promise<{ link?: string }> }) {
-  const expired = (await searchParams).link === "abgelaufen";
+export default function RiderLoginPage() {
   return (
     <main className="rd-main">
       <AwardBadgeDefs />
@@ -67,9 +66,9 @@ export default async function RiderLoginPage({ searchParams }: { searchParams: P
         ))}
       </div>
 
-      {expired && (
-        <div className="rd-msg rd-msg-err" role="alert">Dieser Link gilt nicht mehr. Fordere unten einfach einen neuen an.</div>
-      )}
+      <Suspense fallback={null}>
+        <RiderLinkExpired />
+      </Suspense>
 
       <ul className="rd-wl-perks">
         {PERKS.map((p) => (

@@ -1,7 +1,7 @@
 /**
  * Anmelde-Mail der Kunden-App im Look der App: dunkler Grund, Kopf in Petrol,
  * kursive Versalschrift, gelber Akzent (CI tuttenbrocksee.com, wie
- * `src/app/app/rider.css`). Bewusst ohne `wrapEmailHtml`, weil die Verwaltungs-
+ * `src/app/(rider)/app/rider.css`). Bewusst ohne `wrapEmailHtml`, weil die Verwaltungs-
  * Mails hell und schlicht sind. Nur Tabellen und Inline-Stile, damit es auch in
  * Outlook und Gmail hält.
  */

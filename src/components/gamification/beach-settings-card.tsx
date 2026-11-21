@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
-import { BEACH_LABEL, DEFAULT_BEACH_SETTINGS, type BeachSettings } from "@/lib/beach-occupancy";
+import { BEACH_LABEL, DEFAULT_BEACH_SETTINGS, type BeachSettings } from "@/lib/beach-occupancy-labels";
 
 /**
  * Grenzen für „Strandbad jetzt“: geschätzte Gäste vor Ort = Eintritte der
