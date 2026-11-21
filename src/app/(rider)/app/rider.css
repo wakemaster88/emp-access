@@ -316,8 +316,8 @@
 .rd-rank > div { display: flex; align-items: center; gap: 10px; min-height: 36px; }
 .rd-rank > div + div { border-top: 1px solid var(--rd-line); }
 .rd-rank .rd-pos { width: 26px; font-family: var(--font-barlow-condensed), inherit; font-style: italic; font-weight: 800; font-size: 20px; color: var(--rd-muted); }
-.rd-rank .rd-me { color: var(--rd-accent); font-weight: 700; }
-.rd-rank .rd-me .rd-pos { color: var(--rd-accent); }
+.rd-rank .rd-rank-me { color: var(--rd-accent); font-weight: 700; }
+.rd-rank .rd-rank-me .rd-pos { color: var(--rd-accent); }
 
 /* Saisonrückblick */
 .rd-recap { background: var(--rd-accent); color: var(--rd-on-accent); clip-path: polygon(0 0, 100% 0, 100% 86%, 0 100%); margin: -20px -16px 0; padding: 28px 20px 48px; display: flex; flex-direction: column; gap: 6px; }

@@ -15,6 +15,12 @@ function timeText(c: RiderChallenge): string {
   return days <= 1 ? "endet heute" : `noch ${days} Tage`;
 }
 
+/** „Platz 1 nach Starts gewinnt“ / „Die besten 3 nach Starts gewinnen“. */
+function topText(topCount: number | null, metric: string): string {
+  const n = topCount ?? 1;
+  return n <= 1 ? `Platz 1 nach ${metric} gewinnt` : `Die besten ${n} nach ${metric} gewinnen`;
+}
+
 function ChallengeCard({ c }: { c: RiderChallenge }) {
   const metric = METRIC_LABEL[c.metric];
   return (
@@ -29,7 +35,7 @@ function ChallengeCard({ c }: { c: RiderChallenge }) {
       </div>
       {c.description && <div className="rd-soft">{c.description}</div>}
       <div className="rd-muted">
-        {c.kind === "TASK" ? `Aufgabe: ${c.condition}` : `Die besten ${c.topCount} nach ${metric} gewinnen`}
+        {c.kind === "TASK" ? `Aufgabe: ${c.condition}` : topText(c.topCount, metric)}
         {c.voucherLabel ? ` · Gewinn: ${c.voucherLabel}` : ""}
         {c.skillLabel ? ` · Skill: ${c.skillLabel}` : ""}
       </div>
@@ -49,13 +55,15 @@ function ChallengeCard({ c }: { c: RiderChallenge }) {
       {c.kind === "TOP_X" && c.phase !== "upcoming" && (
         <>
           <div className="rd-between">
-            <b>{c.rank != null ? `Du bist auf Platz ${c.rank}` : "Du bist noch nicht dabei"}</b>
-            <span className="rd-muted">{c.participants} Fahrer · {c.value} {metric}</span>
+            <b>
+              {c.rank != null ? `Du bist auf Platz ${c.rank} · ${c.value} ${metric}` : "Du bist noch nicht dabei"}
+            </b>
+            <span className="rd-muted">{c.participants} Fahrer dabei</span>
           </div>
           {c.top.length > 0 && (
             <div className="rd-rank">
               {c.top.map((t, i) => (
-                <div key={i} className={t.me ? "rd-me" : undefined}>
+                <div key={i} className={t.me ? "rd-rank-me" : undefined}>
                   <span className="rd-pos">{t.rank}</span>
                   <span className="rd-grow">{t.name}</span>
                   <span>{t.value}</span>
