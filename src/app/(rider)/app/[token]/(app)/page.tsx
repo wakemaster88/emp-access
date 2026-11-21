@@ -24,6 +24,7 @@ import { NextAwardCard } from "@/components/rider/award-parts";
 import { RiderMusicVote } from "@/components/rider/rider-music-vote";
 import { loadMusicVoteView } from "@/lib/music-vote";
 import { RiderSkills } from "@/components/rider/rider-skills";
+import { RiderHeroName } from "@/components/rider/rider-switch";
 import { loadRiderSkills } from "@/lib/rider-skills";
 
 export const dynamic = "force-dynamic";
@@ -270,6 +271,12 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
     }),
   ]);
   // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
+  // Familie: die angemeldete Person zuerst, dann Partner und Kinder (Wechsel am Gruß).
+  const switchPersons = family && family.members.length > 1
+    ? [...family.members]
+      .sort((a, b) => Number(b.token === family.viewerToken) - Number(a.token === family.viewerToken))
+      .map((m) => ({ token: m.token, name: m.name, self: m.token === family.viewerToken }))
+    : [];
   const konto = family?.relation === "self" ? await kontoRidersFor(rider.profileId) : null;
   const challenge = challenges.find((c) => c.phase === "running" && !c.won) ?? null;
   const open = rider.vouchers.filter((v) => v.state === "open");
@@ -307,7 +314,11 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
               </div>
             )}
           </div>
-          <h1 className="rd-display" style={{ fontSize: 48, fontWeight: 800 }}>{rider.firstName ? `Hi ${rider.firstName}` : "Hi"}</h1>
+          <RiderHeroName
+            greeting={rider.firstName ? `Hi ${rider.firstName}` : "Hi"}
+            current={token}
+            persons={switchPersons}
+          />
         </div>
       </div>
 
