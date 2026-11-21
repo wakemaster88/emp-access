@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
 import { holidaySchema, normalizeHoliday } from "@/lib/gamification-input";
 import { HOLIDAY_BY_KEY } from "@/lib/holidays";
+import { runAccountAnnouncements } from "@/lib/rider-announce";
 
 /** PUT: Einstellung eines Feiertags speichern (anlegen oder ändern). Gilt jedes Jahr. */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ key: string }> }) {
@@ -21,5 +22,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     create: { ...data, key, accountId },
     update: data,
   });
+  // Liegt der Feiertag schon im Zeitraum, geht ein geplanter Push gleich raus (sonst im 5-Minuten-Cron).
+  if (holiday.pushPlanned && holiday.active) {
+    after(() => runAccountAnnouncements(accountId).catch((e) => console.error("[announce]", e)));
+  }
   return NextResponse.json(holiday);
 }

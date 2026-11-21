@@ -1051,7 +1051,8 @@ Aaron: „feiertage noch in der kunden app hinzufügen. dafür im backend auswä
 - Verwaltung: Kunden App › Aktionen › Karte „Feiertage“. Je Feiertag Aus, Gruß, Angebot oder Gutschein, dazu Überschrift (Standardgruß, falls leer), Text, beim Gutschein Leistung und Gültigkeit, „Schon vorher zeigen“ (0–14 Tage). Gilt jedes Jahr; das Datum rechnet `src/lib/holidays.ts` (NRW plus Heiligabend, Silvester, Oster- und Pfingstsonntag).
 - Daten: `RiderHoliday` (je Mandant und `key` einmal), `RiderHolidayGift` (vergebener Gutschein, eindeutig je Feiertag, Jahr und Person). Speichern über `PUT /api/gamification/holidays/<key>`.
 - App: Karte oben auf der Startseite (nach „Dein Tag heute“), `src/lib/rider-holiday.ts`. Überschneiden sich zwei Feiertage, zeigt die App den nächstliegenden.
-- Gutschein: Leistungs-Gutschein wie bei Awards. Jede Person mit gültigem Abo bekommt ihn einmal, beim ersten Öffnen der App im Zeitraum; ohne Abo bleibt es beim Gruß. Kein Push.
+- Gutschein: Leistungs-Gutschein wie bei Awards. Jede Person mit gültigem Abo bekommt ihn einmal, beim ersten Öffnen der App im Zeitraum; ohne Abo bleibt es beim Gruß.
+- Push (Aaron 21.11.2026: „ja“): Schalter „Push an Kunden senden“ im Dialog, beim ersten Einschalten an. Geht jedes Jahr einmal raus, sobald der Feiertag in der App erscheint (erster Tag von „Schon vorher zeigen“), nur 9–21 Uhr, über `runAccountAnnouncements` (`pushedYear`/`pushedAt`/`pushSent`). Empfänger wie bei Angeboten: alle Geräte mit Push-Erlaubnis; beim Gutschein heißt es deshalb „Mit Abo wartet ein Geschenk …“.
 
 ## Playlist-Abstimmung der Fahrer (21.11.2026)
 

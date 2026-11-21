@@ -17,6 +17,9 @@ import {
 } from "@/components/ui/table";
 import { CalendarHeart, Loader2, Save } from "lucide-react";
 import { HOLIDAY_MAX_DAYS_BEFORE, HOLIDAY_SHOW_LABEL, holidayDayLabel, type HolidayShowKind } from "@/lib/holidays";
+import { berlinHour, berlinYmd } from "@/lib/berlin-day";
+import { holidayAnnounceBlock, holidayPushText } from "@/lib/rider-announce-rules";
+import { PushAnnounceField, type PushReach, type PushStatus } from "./push-announce-field";
 
 export interface HolidayAdminRow {
   key: string;
@@ -35,7 +38,10 @@ export interface HolidayAdminRow {
     voucherValidDays: number | null;
     daysBefore: number;
     active: boolean;
+    pushPlanned: boolean;
   } | null;
+  /** Push für den nächsten Termin schon gesendet, sonst null. */
+  push: PushStatus | null;
   /** Vergebene Feiertags-Gutscheine (alle Jahre). */
   gifts: number;
 }
@@ -50,6 +56,7 @@ interface FormState {
   voucherLabel: string;
   voucherValidDays: string;
   daysBefore: string;
+  push: boolean;
 }
 
 const CHOICES: { value: Choice; label: string }[] = [
@@ -69,6 +76,8 @@ function formFor(row: HolidayAdminRow): FormState {
     voucherLabel: s?.voucherLabel ?? "",
     voucherValidDays: s?.voucherValidDays != null ? String(s.voucherValidDays) : s ? "" : "30",
     daysBefore: String(s?.daysBefore ?? 0),
+    // Wie bei Angeboten: beim ersten Einschalten standardmäßig mit Push.
+    push: s ? s.pushPlanned : true,
   };
 }
 
@@ -82,7 +91,7 @@ function statusOf(row: HolidayAdminRow): { label: string; on: boolean } {
  * Feiertage in der Kunden-App: je Feiertag Aus, Gruß, Angebot oder Gutschein.
  * Die Einstellung gilt jedes Jahr wieder; das Datum rechnet die App selbst.
  */
-export function HolidaysCard({ rows }: { rows: HolidayAdminRow[] }) {
+export function HolidaysCard({ rows, reach }: { rows: HolidayAdminRow[]; reach: PushReach }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -115,6 +124,7 @@ export function HolidaysCard({ rows }: { rows: HolidayAdminRow[] }) {
           voucherValidDays: validDays,
           daysBefore: days,
           active: !off,
+          push: form.push,
         }),
       });
       if (!res.ok) {
@@ -233,6 +243,26 @@ export function HolidaysCard({ rows }: { rows: HolidayAdminRow[] }) {
                     <Input id="ho-before" type="number" min={0} max={HOLIDAY_MAX_DAYS_BEFORE} inputMode="numeric" value={form.daysBefore} onChange={(e) => set({ daysBefore: e.target.value })} className="max-sm:h-11" />
                     <p className="text-xs text-muted-foreground">0 heißt nur am Feiertag selbst, höchstens {HOLIDAY_MAX_DAYS_BEFORE}.</p>
                   </div>
+                  <PushAnnounceField
+                    id="ho-push"
+                    checked={form.push}
+                    onChange={(v) => set({ push: v })}
+                    preview={holidayPushText({
+                      key: form.row.key,
+                      show: form.choice,
+                      title: form.title,
+                      text: form.text,
+                      voucherLabel: form.voucherLabel,
+                    })}
+                    reach={reach}
+                    status={form.row.push}
+                    hint="Jedes Jahr einmal, sobald der Feiertag in der App erscheint (ab 9 Uhr)."
+                    block={holidayAnnounceBlock(
+                      { key: form.row.key, active: true, daysBefore: days, pushPlanned: form.push, pushedYear: null },
+                      berlinYmd(new Date()),
+                      berlinHour(new Date()),
+                    )}
+                  />
                   {form.choice === "VOUCHER" && (
                     <Notice
                       tone="info"

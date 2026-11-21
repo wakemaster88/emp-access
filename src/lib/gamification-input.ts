@@ -145,6 +145,8 @@ export const holidaySchema = z
     voucherValidDays: z.number().int().min(1).max(730).nullable(),
     daysBefore: z.number().int().min(0).max(14),
     active: z.boolean(),
+    /** Push am Feiertag; fehlt der Wert, bleibt der Plan, wie er ist. */
+    push: z.boolean().optional(),
   })
   .refine((h) => h.show !== "OFFER" || !!h.text, { message: "Beim Angebot fehlt der Text" })
   .refine((h) => h.show !== "VOUCHER" || !!h.voucherLabel, { message: "Beim Gutschein fehlt die Leistung" });
@@ -162,5 +164,6 @@ export function normalizeHoliday(input: HolidayInput) {
     voucherValidDays: voucher ? input.voucherValidDays : null,
     daysBefore: input.daysBefore,
     active: input.active,
+    ...(input.push !== undefined && { pushPlanned: input.push }),
   };
 }
