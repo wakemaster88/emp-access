@@ -452,3 +452,19 @@ test("parsePriceMap und aboCalculation: nur echte Zahlen", async () => {
   assert.equal(formatEuro(39000).replace(/\s/g, " "), "390 €");
   assert.equal(formatEuro(2450).replace(/\s/g, " "), "24,50 €");
 });
+
+test("tempStat und tempStatNote: Mittel über die Tage mit Messwert", async () => {
+  const { tempStat, tempStatNote } = await import("./gamification");
+  assert.equal(tempStat([]), null);
+  assert.equal(tempStat([null, undefined, Number.NaN]), null);
+
+  const air = tempStat([9.82, 24.52, 21.04, null]);
+  assert.deepEqual(air, { avg: 18.5, min: 9.8, max: 24.5, days: 3 });
+  // Alle Besuchstage gemessen: die Spanne. Sonst steht da, wie viele Tage fehlen.
+  assert.equal(tempStatNote(air!, 3), "zwischen 10 und 25 °C");
+  assert.equal(tempStatNote(air!, 4), "gemessen an 3 von 4 Tagen");
+
+  assert.equal(tempStatNote(tempStat([10.2, 10.4])!, 2), "an allen 2 Tagen");
+  assert.equal(tempStatNote(tempStat([24.4])!, 1), "an deinem Tag am Lift");
+  assert.equal(tempStatNote(tempStat([-0.3, 4.6])!, 2), "zwischen 0 und 5 °C");
+});

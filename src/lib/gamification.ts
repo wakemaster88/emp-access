@@ -583,6 +583,48 @@ export function seasonRecap(days: DayStat[]): SeasonRecap {
   };
 }
 
+/** Temperaturen eines Besuchstags, gemittelt über die Zeit am Lift; null = kein Messwert. */
+export interface RideTempDay {
+  day: string;
+  air: number | null;
+  water: number | null;
+}
+
+export interface TempStat {
+  /** Mittel über die Tage mit Messwert, auf eine Nachkommastelle. */
+  avg: number;
+  /** Kältester und wärmster Tag. */
+  min: number;
+  max: number;
+  /** Tage mit Messwert. */
+  days: number;
+}
+
+/** Mittel, kältester und wärmster Tag aus Tageswerten; jeder Tag zählt gleich. Null ohne Messwert. */
+export function tempStat(values: Array<number | null | undefined>): TempStat | null {
+  const list = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (list.length === 0) return null;
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  return {
+    avg: round1(list.reduce((sum, v) => sum + v, 0) / list.length),
+    min: round1(Math.min(...list)),
+    max: round1(Math.max(...list)),
+    days: list.length,
+  };
+}
+
+/**
+ * Unterzeile zur Temperatur im Saisonrückblick: die Spanne der Tage, oder wie
+ * viele der Besuchstage einen Messwert haben, wenn nicht alle gemessen sind.
+ */
+export function tempStatNote(stat: TempStat, visitDays: number): string {
+  if (stat.days < visitDays) return `gemessen an ${stat.days} von ${visitDays} Tagen`;
+  const low = Math.round(stat.min) || 0;
+  const high = Math.round(stat.max) || 0;
+  if (low !== high) return `zwischen ${formatDegrees(low)} und ${formatDegrees(high)}\u00a0°C`;
+  return stat.days === 1 ? "an deinem Tag am Lift" : `an allen ${stat.days} Tagen`;
+}
+
 /**
  * Anteil der anderen Fahrer (in Prozent, abgerundet), die seltener da waren.
  * Null, wenn es zu wenige Vergleichswerte gibt.

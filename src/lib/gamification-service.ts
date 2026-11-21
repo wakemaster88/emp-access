@@ -27,6 +27,7 @@ import {
   type GamiPeriod,
   type MilestoneRule,
   type OpeningDays,
+  type RideTempDay,
 } from "./gamification";
 
 export interface GamiConfig {
@@ -290,6 +291,51 @@ export async function loadOpeningDays(db: TenantDb, accountId: number, years: st
 }
 
 /** Was die Zählregeln einer Person brauchen: ihre Tagessummen und der erste Tag der Saison je Jahr. */
+/**
+ * Luft- und Wassertemperatur je Besuchstag eines Jahres, gemittelt über die
+ * Zeit am Lift (erster bis letzter Start der Person). Luft: Stundenwerte des
+ * Wetterdienstes (`WeatherHour`, lib/weather-history.ts). Wasser: der Fühler
+ * der Kunden-App (`ClimateSample`, je nach Alter 5 Minuten, Stunden oder
+ * Tage). Ein Tag ohne Messwert trägt null.
+ */
+export async function loadRideTemps(
+  accountId: number,
+  ticketIds: number[],
+  year: number,
+  waterDeviceId: number | null,
+): Promise<RideTempDay[]> {
+  if (ticketIds.length === 0) return [];
+  const rows = await prisma.$queryRaw<Array<{ day: Date; air: number | null; water: number | null }>>`
+    WITH d AS (
+      SELECT r."day" AS day, min(r."firstStartAt") AS first, max(r."lastStartAt") AS last
+      FROM "RiderDayStat" r
+      WHERE r."accountId" = ${accountId}
+        AND r."ticketId" IN (${Prisma.join(ticketIds)})
+        AND r."starts" > 0
+        AND r."day" >= ${`${year}-01-01`}::date
+        AND r."day" <= ${`${year}-12-31`}::date
+      GROUP BY r."day"
+    )
+    SELECT d.day,
+      (SELECT avg(w."temp")
+         FROM "WeatherHour" w
+        WHERE w."accountId" = ${accountId}
+          AND w."hour" > d.first - interval '1 hour'
+          AND w."hour" <= d.last) AS air,
+      (SELECT sum(s."tempAvg" * b.seconds) / sum(b.seconds)
+         FROM (VALUES ('MIN5', 300), ('HOUR', 3600), ('DAY', 86400)) AS b(resolution, seconds)
+         JOIN "ClimateSample" s
+           ON s."deviceId" = ${waterDeviceId ?? -1}
+          AND s."accountId" = ${accountId}
+          AND s."resolution" = b.resolution::"ClimateResolution"
+          AND s."bucketStart" > d.first - make_interval(secs => b.seconds)
+          AND s."bucketStart" <= d.last
+        WHERE s."tempAvg" IS NOT NULL) AS water
+    FROM d
+    ORDER BY d.day`;
+  return rows.map((r) => ({ day: dbDateToYmd(r.day), air: r.air, water: r.water }));
+}
+
 export interface RuleData {
   days: DayStat[];
   openingDays: OpeningDays;
