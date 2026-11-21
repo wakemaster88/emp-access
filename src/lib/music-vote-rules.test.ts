@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   cleanVoteIds,
+  currentOption,
+  optionKey,
+  parseOptionKey,
   clampHoldMinutes,
   decideZone,
   isActiveRider,
@@ -14,9 +17,9 @@ import {
 const now = new Date("2026-07-12T14:00:00Z");
 const ago = (min: number) => new Date(now.getTime() - min * 60_000);
 const options = [
-  { id: 1, name: "Chill" },
-  { id: 2, name: "Party" },
-  { id: 3, name: "Rock" },
+  { key: "p1", name: "Chill" },
+  { key: "p2", name: "Party" },
+  { key: "s3", name: "Radio Wave" },
 ];
 
 test("aktiv ist, wer in den letzten 2 Stunden gestartet ist", () => {
@@ -27,17 +30,18 @@ test("aktiv ist, wer in den letzten 2 Stunden gestartet ist", () => {
 });
 
 test("tallyVotes zählt je Playlist und lässt fremde Stimmen weg", () => {
-  const tally = tallyVotes(options, [{ playlistId: 2 }, { playlistId: 2 }, { playlistId: 3 }, { playlistId: 99 }]);
+  const tally = tallyVotes(options, [{ option: "p2" }, { option: "p2" }, { option: "s3" }, { option: "p99" }]);
   assert.deepEqual(tally.map((t) => t.votes), [0, 2, 1]);
+  assert.deepEqual(tally.map((t) => t.kind), ["PLAYLIST", "PLAYLIST", "STREAM"]);
 });
 
 test("pickWinner: Mehrheit gewinnt, Gleichstand behält die laufende, sonst die vordere", () => {
-  assert.equal(pickWinner(tallyVotes(options, []), 1), null);
-  assert.equal(pickWinner(tallyVotes(options, [{ playlistId: 3 }, { playlistId: 3 }, { playlistId: 1 }]), 1), 3);
-  const tie = tallyVotes(options, [{ playlistId: 2 }, { playlistId: 3 }]);
-  assert.equal(pickWinner(tie, 3), 3);
-  assert.equal(pickWinner(tie, 1), 2);
-  assert.equal(pickWinner(tie, null), 2);
+  assert.equal(pickWinner(tallyVotes(options, []), "p1"), null);
+  assert.equal(pickWinner(tallyVotes(options, [{ option: "s3" }, { option: "s3" }, { option: "p1" }]), "p1"), "s3");
+  const tie = tallyVotes(options, [{ option: "p2" }, { option: "s3" }]);
+  assert.equal(pickWinner(tie, "s3"), "s3");
+  assert.equal(pickWinner(tie, "p1"), "p2");
+  assert.equal(pickWinner(tie, null), "p2");
 });
 
 test("staffHoldUntil: Ruhezeit nach Wahl des Teams", () => {
@@ -54,24 +58,27 @@ const zone = (over: Partial<ZoneForVote> = {}): ZoneForVote => ({
   externalActive: null,
   sourceKind: "PLAYLIST",
   playlistId: 1,
+  streamId: null,
   staffChoiceAt: null,
   ...over,
 });
 
 test("decideZone wechselt nur laufende eigene Musik", () => {
-  assert.deepEqual(decideZone(zone(), 2, 60, now), { kind: "switch", playlistId: 2 });
-  assert.deepEqual(decideZone(zone(), 1, 60, now), { kind: "keep" });
-  assert.deepEqual(decideZone(zone({ sourceKind: "STREAM" }), 1, 60, now), { kind: "switch", playlistId: 1 });
+  assert.deepEqual(decideZone(zone(), "p2", 60, now), { kind: "switch", option: "p2" });
+  assert.deepEqual(decideZone(zone(), "p1", 60, now), { kind: "keep" });
+  assert.deepEqual(decideZone(zone(), "s3", 60, now), { kind: "switch", option: "s3" });
+  assert.deepEqual(decideZone(zone({ sourceKind: "STREAM", streamId: 3 }), "s3", 60, now), { kind: "keep" });
+  assert.deepEqual(decideZone(zone({ sourceKind: "STREAM", streamId: 3 }), "p1", 60, now), { kind: "switch", option: "p1" });
   assert.deepEqual(decideZone(zone(), null, 60, now), { kind: "idle", reason: "no-votes" });
-  assert.deepEqual(decideZone(zone({ isPlaying: false }), 2, 60, now), { kind: "idle", reason: "not-playing" });
-  assert.deepEqual(decideZone(zone({ externalActive: "AIRPLAY" }), 2, 60, now), { kind: "idle", reason: "external" });
-  assert.deepEqual(decideZone(zone({ deviceId: null }), 2, 60, now), { kind: "idle", reason: "no-player" });
+  assert.deepEqual(decideZone(zone({ isPlaying: false }), "p2", 60, now), { kind: "idle", reason: "not-playing" });
+  assert.deepEqual(decideZone(zone({ externalActive: "AIRPLAY" }), "p2", 60, now), { kind: "idle", reason: "external" });
+  assert.deepEqual(decideZone(zone({ deviceId: null }), "p2", 60, now), { kind: "idle", reason: "no-player" });
 });
 
 test("decideZone: Personal geht vor, danach gilt wieder die Mehrheit", () => {
-  assert.deepEqual(decideZone(zone({ staffChoiceAt: ago(30) }), 2, 60, now), { kind: "idle", reason: "staff-hold" });
-  assert.deepEqual(decideZone(zone({ staffChoiceAt: ago(90) }), 2, 60, now), { kind: "switch", playlistId: 2 });
-  assert.deepEqual(decideZone(zone({ staffChoiceAt: ago(1) }), 2, 0, now), { kind: "switch", playlistId: 2 });
+  assert.deepEqual(decideZone(zone({ staffChoiceAt: ago(30) }), "p2", 60, now), { kind: "idle", reason: "staff-hold" });
+  assert.deepEqual(decideZone(zone({ staffChoiceAt: ago(90) }), "p2", 60, now), { kind: "switch", option: "p2" });
+  assert.deepEqual(decideZone(zone({ staffChoiceAt: ago(1) }), "p2", 0, now), { kind: "switch", option: "p2" });
 });
 
 test("cleanVoteIds und clampHoldMinutes", () => {
@@ -80,4 +87,15 @@ test("cleanVoteIds und clampHoldMinutes", () => {
   assert.equal(clampHoldMinutes("abc"), 60);
   assert.equal(clampHoldMinutes(-5), 0);
   assert.equal(clampHoldMinutes(9999), 480);
+});
+
+test("Optionen: Playlist und Webradio als Text", () => {
+  assert.equal(optionKey("PLAYLIST", 4), "p4");
+  assert.equal(optionKey("STREAM", 12), "s12");
+  assert.deepEqual(parseOptionKey("s12"), { kind: "STREAM", id: 12 });
+  assert.equal(parseOptionKey("x1"), null);
+  assert.equal(parseOptionKey("p0"), null);
+  assert.equal(currentOption({ isPlaying: true, sourceKind: "STREAM", playlistId: 1, streamId: 5 }), "s5");
+  assert.equal(currentOption({ isPlaying: false, sourceKind: "PLAYLIST", playlistId: 1, streamId: null }), null);
+  assert.deepEqual(cleanVoteIds(["s2", "p9", "p1"], ["p1", "s2"]), ["s2", "p1"]);
 });

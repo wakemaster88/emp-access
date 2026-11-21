@@ -1,5 +1,5 @@
 /**
- * Playlist-Abstimmung der Fahrer: reine Regeln ohne Datenbank, damit sie sich
+ * Playlist-Abstimmung der Fahrer (Playlists und Webradio): reine Regeln ohne Datenbank, damit sie sich
  * prüfen lassen und auch im Browser (Kunden-App, Verwaltung) nutzbar sind.
  *
  * Aaron, 21.11.2026: „in der kunden app soll optional aktiviert werden können,
@@ -8,7 +8,7 @@
  * - Abstimmen darf, wer heute am Lift gestartet ist. Die Stimme zählt, solange
  *   der letzte Start höchstens `VOTE_ACTIVE_MS` her ist („gerade da“).
  * - Je Person und Tag eine Stimme, jederzeit änderbar.
- * - Die Playlist mit den meisten Stimmen läuft. Bei Gleichstand bleibt die
+ * - Die Option (Playlist oder Webradio) mit den meisten Stimmen läuft. Bei Gleichstand bleibt die
  *   laufende, sonst gewinnt die weiter vorn in der Auswahl.
  * - Die Abstimmung startet nie selbst Musik und hält das Musikfenster ein:
  *   sie wechselt nur, was ohnehin läuft.
@@ -21,16 +21,33 @@ export const VOTE_ACTIVE_MS = 2 * 60 * 60_000;
 export const VOTE_ACTIVE_HOURS = VOTE_ACTIVE_MS / 3_600_000;
 export const DEFAULT_HOLD_MINUTES = 60;
 export const MAX_HOLD_MINUTES = 8 * 60;
-/** Mehr Playlists machen die Karte in der App zu lang. */
-export const MAX_VOTE_PLAYLISTS = 8;
+/** Mehr Auswahl macht die Karte in der App zu lang. */
+export const MAX_VOTE_OPTIONS = 8;
+
+/**
+ * Eine Option ist eine Playlist ("p<id>") oder ein Webradio-Sender ("s<id>").
+ * Als Text, damit beide Arten in einer Liste und einer Stimme Platz haben.
+ */
+export type VoteKind = "PLAYLIST" | "STREAM";
+
+export function optionKey(kind: VoteKind, id: number): string {
+  return `${kind === "PLAYLIST" ? "p" : "s"}${id}`;
+}
+
+export function parseOptionKey(key: string): { kind: VoteKind; id: number } | null {
+  const m = /^([ps])([1-9]\d{0,9})$/.exec(key);
+  if (!m) return null;
+  return { kind: m[1] === "p" ? "PLAYLIST" : "STREAM", id: Number(m[2]) };
+}
 
 export interface VoteOption {
-  id: number;
+  key: string;
   name: string;
 }
 
 export interface VoteTally {
-  playlistId: number;
+  key: string;
+  kind: VoteKind;
   name: string;
   votes: number;
 }
@@ -46,10 +63,15 @@ export function isActiveRider(lastStartAt: Date | null | undefined, now: Date): 
  * Stimmen je Playlist zählen, in der Reihenfolge der Auswahl. Stimmen für
  * Playlists, die nicht mehr zur Wahl stehen, fallen weg.
  */
-export function tallyVotes(options: VoteOption[], votes: { playlistId: number }[]): VoteTally[] {
-  const counts = new Map<number, number>();
-  for (const v of votes) counts.set(v.playlistId, (counts.get(v.playlistId) ?? 0) + 1);
-  return options.map((o) => ({ playlistId: o.id, name: o.name, votes: counts.get(o.id) ?? 0 }));
+export function tallyVotes(options: VoteOption[], votes: { option: string }[]): VoteTally[] {
+  const counts = new Map<string, number>();
+  for (const v of votes) counts.set(v.option, (counts.get(v.option) ?? 0) + 1);
+  return options.map((o) => ({
+    key: o.key,
+    kind: o.key.startsWith("s") ? "STREAM" : "PLAYLIST",
+    name: o.name,
+    votes: counts.get(o.key) ?? 0,
+  }));
 }
 
 /**
@@ -57,12 +79,12 @@ export function tallyVotes(options: VoteOption[], votes: { playlistId: number }[
  * weiter vorn in der Auswahl. Ohne eine einzige Stimme gibt es keinen
  * Gewinner (dann läuft, was das Personal eingestellt hat).
  */
-export function pickWinner(tally: VoteTally[], currentPlaylistId: number | null): number | null {
+export function pickWinner(tally: VoteTally[], current: string | null): string | null {
   const top = Math.max(0, ...tally.map((t) => t.votes));
   if (top === 0) return null;
   const leaders = tally.filter((t) => t.votes === top);
-  if (currentPlaylistId != null && leaders.some((t) => t.playlistId === currentPlaylistId)) return currentPlaylistId;
-  return leaders[0].playlistId;
+  if (current != null && leaders.some((t) => t.key === current)) return current;
+  return leaders[0].key;
 }
 
 /** Bis wann ruht die Abstimmung nach einer Wahl des Personals? null = sie ruht nicht. */
@@ -79,11 +101,20 @@ export interface ZoneForVote {
   externalActive: string | null;
   sourceKind: string;
   playlistId: number | null;
+  streamId: number | null;
   staffChoiceAt: Date | null;
 }
 
+/** Was in der Zone gerade läuft, als Option ("p…"/"s…"); null = nichts Wählbares. */
+export function currentOption(zone: Pick<ZoneForVote, "isPlaying" | "sourceKind" | "playlistId" | "streamId">): string | null {
+  if (!zone.isPlaying) return null;
+  if (zone.sourceKind === "PLAYLIST" && zone.playlistId != null) return optionKey("PLAYLIST", zone.playlistId);
+  if (zone.sourceKind === "STREAM" && zone.streamId != null) return optionKey("STREAM", zone.streamId);
+  return null;
+}
+
 export type VoteDecision =
-  | { kind: "switch"; playlistId: number }
+  | { kind: "switch"; option: string }
   | { kind: "keep" }
   | { kind: "idle"; reason: "no-votes" | "not-playing" | "external" | "no-player" | "staff-hold" };
 
@@ -94,7 +125,7 @@ export type VoteDecision =
  */
 export function decideZone(
   zone: ZoneForVote,
-  winner: number | null,
+  winner: string | null,
   holdMinutes: number,
   now: Date,
 ): VoteDecision {
@@ -103,14 +134,14 @@ export function decideZone(
   if (!zone.isPlaying) return { kind: "idle", reason: "not-playing" };
   if (zone.externalActive) return { kind: "idle", reason: "external" };
   if (winner == null) return { kind: "idle", reason: "no-votes" };
-  if (zone.sourceKind === "PLAYLIST" && zone.playlistId === winner) return { kind: "keep" };
-  return { kind: "switch", playlistId: winner };
+  if (currentOption(zone) === winner) return { kind: "keep" };
+  return { kind: "switch", option: winner };
 }
 
-/** Auswahl bereinigen: nur bekannte IDs, ohne Doppelte, Reihenfolge bleibt. */
-export function cleanVoteIds(ids: number[], known: number[], max = MAX_VOTE_PLAYLISTS): number[] {
+/** Auswahl bereinigen: nur bekannte Einträge, ohne Doppelte, Reihenfolge bleibt. */
+export function cleanVoteIds<T extends number | string>(ids: T[], known: T[], max = MAX_VOTE_OPTIONS): T[] {
   const allowed = new Set(known);
-  const out: number[] = [];
+  const out: T[] = [];
   for (const id of ids) if (allowed.has(id) && !out.includes(id)) out.push(id);
   return out.slice(0, max);
 }
@@ -126,12 +157,12 @@ export interface MusicVoteView {
   /** Zonennamen, z. B. „Insel“. */
   where: string;
   options: VoteTally[];
-  /** Eigene Stimme heute (nur wenn sie zählt oder die Person aktiv ist). */
-  myPlaylistId: number | null;
+  /** Eigene Stimme heute ("p…"/"s…"). */
+  myOption: string | null;
   /** Darf die Person gerade abstimmen? */
   canVote: boolean;
-  /** Playlist, die gerade läuft (null = keine Musik). */
-  playingPlaylistId: number | null;
+  /** Option, die gerade läuft (null = keine Musik oder nichts aus der Auswahl). */
+  playingOption: string | null;
   playingName: string | null;
   /** Abstimmung ruht wegen einer Wahl des Personals bis … (ISO). */
   holdUntil: string | null;

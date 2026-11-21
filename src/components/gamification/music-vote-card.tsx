@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Music } from "lucide-react";
+import { Check, Music, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,8 +12,9 @@ import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import {
   DEFAULT_HOLD_MINUTES,
   MAX_HOLD_MINUTES,
-  MAX_VOTE_PLAYLISTS,
+  MAX_VOTE_OPTIONS,
   VOTE_ACTIVE_HOURS,
+  optionKey,
   type VoteTally,
 } from "@/lib/music-vote-rules";
 
@@ -22,7 +23,8 @@ type Option = { id: number; name: string };
 export interface MusicVoteSettings {
   enabled: boolean;
   zoneIds: number[];
-  playlistIds: number[];
+  /** "p<id>" Playlist, "s<id>" Webradio, in App-Reihenfolge. */
+  options: string[];
   holdMinutes: number;
 }
 
@@ -32,7 +34,7 @@ export interface MusicVoteStanding {
   zones: { id: number; name: string; isPlaying: boolean; playing: string | null; holdUntil: string | null }[];
 }
 
-function toggle(list: number[], id: number, on: boolean): number[] {
+function toggle<T>(list: T[], id: T, on: boolean): T[] {
   return on ? (list.includes(id) ? list : [...list, id]) : list.filter((x) => x !== id);
 }
 
@@ -49,11 +51,13 @@ export function MusicVoteCard({
   initial,
   zones,
   playlists,
+  streams,
   standing: initialStanding,
 }: {
   initial: MusicVoteSettings;
   zones: Option[];
   playlists: Option[];
+  streams: Option[];
   standing: MusicVoteStanding | null;
 }) {
   const [saved, setSaved] = useState(initial);
@@ -69,10 +73,14 @@ export function MusicVoteCard({
   const dirty =
     form.enabled !== saved.enabled ||
     form.zoneIds.join() !== saved.zoneIds.join() ||
-    form.playlistIds.join() !== saved.playlistIds.join() ||
+    form.options.join() !== saved.options.join() ||
     holdNum !== saved.holdMinutes;
-  const tooMany = form.playlistIds.length > MAX_VOTE_PLAYLISTS;
-  const ready = !form.enabled || (form.zoneIds.length > 0 && form.playlistIds.length >= 2 && !tooMany);
+  const tooMany = form.options.length > MAX_VOTE_OPTIONS;
+  const ready = !form.enabled || (form.zoneIds.length > 0 && form.options.length >= 2 && !tooMany);
+  const choices = [
+    ...playlists.map((p) => ({ key: optionKey("PLAYLIST", p.id), name: p.name, stream: false })),
+    ...streams.map((s) => ({ key: optionKey("STREAM", s.id), name: s.name, stream: true })),
+  ];
 
   async function save() {
     setBusy(true);
@@ -90,7 +98,7 @@ export function MusicVoteCard({
         setError(typeof json.error === "string" ? json.error : "Speichern fehlgeschlagen");
         return;
       }
-      const next = { ...body, zoneIds: json.zoneIds as number[], playlistIds: json.playlistIds as number[] };
+      const next = { ...body, zoneIds: json.zoneIds as number[], options: json.options as string[] };
       setSaved(next);
       setForm(next);
       setStanding(json.standing ?? null);
@@ -112,8 +120,8 @@ export function MusicVoteCard({
           Playlist-Abstimmung
         </CardTitle>
         <CardDescription>
-          Wer in den letzten {VOTE_ACTIVE_HOURS} Stunden am Lift gestartet ist, wählt in der Kunden-App eine Playlist. Die
-          mit den meisten Stimmen läuft. Die Abstimmung wechselt nur laufende Musik und startet nie selbst.
+          Wer in den letzten {VOTE_ACTIVE_HOURS} Stunden am Lift gestartet ist, wählt in der Kunden-App eine Playlist oder
+          ein Webradio. Was die meisten Stimmen hat, läuft. Die Abstimmung wechselt nur laufende Musik und startet nie selbst.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -156,28 +164,29 @@ export function MusicVoteCard({
 
         <div className="space-y-2">
           <div className="space-y-0.5">
-            <p id="vote-playlists" className="text-sm font-medium">Playlists zur Wahl</p>
+            <p id="vote-playlists" className="text-sm font-medium">Zur Wahl</p>
             <p className="text-xs text-muted-foreground">
-              2 bis {MAX_VOTE_PLAYLISTS}. In der App stehen sie in der Reihenfolge, in der du sie antippst. Bei Gleichstand
+              Playlists und Webradios, 2 bis {MAX_VOTE_OPTIONS}. In der App stehen sie in der Reihenfolge, in der du sie antippst. Bei Gleichstand
               bleibt die laufende.
             </p>
           </div>
-          {playlists.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Noch keine Playlist angelegt (Audio › Inhalte).</p>
+          {choices.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Noch keine Playlist und kein Webradio angelegt (Audio › Inhalte).</p>
           ) : (
             <ToggleChipGroup aria-labelledby="vote-playlists">
-              {playlists.map((p) => {
-                const pos = form.playlistIds.indexOf(p.id);
+              {choices.map((c) => {
+                const pos = form.options.indexOf(c.key);
                 const on = pos >= 0;
                 return (
                   <ToggleChip
-                    key={p.id}
+                    key={c.key}
                     pressed={on}
-                    onPressedChange={(v) => { setForm((f) => ({ ...f, playlistIds: toggle(f.playlistIds, p.id, v) })); setDone(false); }}
+                    onPressedChange={(v) => { setForm((f) => ({ ...f, options: toggle(f.options, c.key, v) })); setDone(false); }}
                     className="max-w-full"
+                    aria-label={c.stream ? `Webradio ${c.name}` : `Playlist ${c.name}`}
                   >
-                    {on && <span className="tabular-nums font-semibold">{pos + 1}</span>}
-                    <span className="truncate">{p.name}</span>
+                    {on ? <span className="tabular-nums font-semibold">{pos + 1}</span> : c.stream ? <Radio /> : null}
+                    <span className="truncate">{c.name}</span>
                   </ToggleChip>
                 );
               })}
@@ -209,9 +218,9 @@ export function MusicVoteCard({
             </p>
             <ul className="space-y-1.5">
               {standing.tally.map((t) => (
-                <li key={t.playlistId} className="space-y-1">
+                <li key={t.key} className="space-y-1">
                   <div className="flex items-baseline justify-between gap-3 text-sm">
-                    <span className="truncate">{t.name}</span>
+                    <span className="truncate">{t.name}{t.kind === "STREAM" ? " (Webradio)" : ""}</span>
                     <span className="tabular-nums text-muted-foreground">{t.votes}</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden">
@@ -232,7 +241,7 @@ export function MusicVoteCard({
           </div>
         )}
 
-        {tooMany && <Notice tone="warning" compact title={`Höchstens ${MAX_VOTE_PLAYLISTS} Playlists.`} />}
+        {tooMany && <Notice tone="warning" compact title={`Höchstens ${MAX_VOTE_OPTIONS} zur Wahl.`} />}
         {error && <Notice tone="danger" compact title={error} />}
         {done && !dirty && (
           <Notice tone="success" compact title={saved.enabled ? "Gespeichert. Die Abstimmung ist in der App." : "Gespeichert. Die Abstimmung ist aus."} />

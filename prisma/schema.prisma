@@ -3517,8 +3517,9 @@ model GamificationConfig {
   musicVoteEnabled     Boolean @default(false)
   /// Zonen, in denen die Mehrheit spielt (AudioZone-IDs).
   musicVoteZoneIds     Int[]   @default([])
-  /// Playlists, zwischen denen die Fahrer waehlen (AudioPlaylist-IDs).
-  musicVotePlaylistIds Int[]   @default([])
+  /// Auswahl, zwischen der die Fahrer waehlen, in App-Reihenfolge:
+  /// "p<id>" = AudioPlaylist, "s<id>" = AudioStream (Webradio).
+  musicVoteOptions     String[] @default([])
   /// So lange nach einer Wahl des Personals ruht die Abstimmung (0 = gar nicht).
   musicVoteHoldMinutes Int     @default(60)
   accountId       Int      @unique
@@ -3545,7 +3546,7 @@ model RiderDayStat {
   @@index([accountId, day])
 }
 
-/// Stimme einer Person fuer eine Playlist, je Kalendertag (Europe/Berlin)
+/// Stimme einer Person fuer eine Playlist oder ein Webradio, je Kalendertag (Europe/Berlin)
 /// hoechstens eine. Sie zaehlt nur, solange die Person aktiv ist (zuletzt
 /// am Lift gestartet vor hoechstens 2 Stunden, lib/music-vote-rules).
 model RiderMusicVote {
@@ -3553,7 +3554,8 @@ model RiderMusicVote {
   profileId  Int
   profile    RiderProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   day        DateTime     @db.Date
-  playlistId Int
+  /// Gewaehlte Option: "p<id>" Playlist oder "s<id>" Webradio.
+  option     String
   accountId  Int
   account    Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt  DateTime     @default(now())
