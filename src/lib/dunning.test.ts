@@ -72,6 +72,9 @@ test("Schalter: Standard an, nur false schaltet aus", () => {
   assert.equal(parseDunningConfig("{}").enabled, true);
   assert.equal(parseDunningConfig('{"dunning":{"enabled":false}}').enabled, false);
   assert.equal(parseDunningConfig("kaputt").enabled, true);
+  assert.equal(parseDunningConfig(null).portalUrl, "https://anny.co/de/explore/tuttenbrocksee");
+  assert.equal(parseDunningConfig('{"dunning":{"portalUrl":"https://x.example/k"}}').portalUrl, "https://x.example/k");
+  assert.equal(parseDunningConfig('{"dunning":{"portalUrl":"javascript:1"}}').portalUrl, "https://anny.co/de/explore/tuttenbrocksee");
 });
 
 test("Mails: förmlich, Frist und Inkasso-Hinweis nur in der letzten Mahnung", () => {
@@ -80,7 +83,10 @@ test("Mails: förmlich, Frist und Inkasso-Hinweis nur in der letzten Mahnung", (
     amount: "24 €", invoiceNumber: "R-7", dueDate: "2026-10-21T00:00:00Z", date: at("2026-11-21T09:00:00Z"),
     legalFooter: "Muster GmbH · Weg 1 · 12345 Ort\n\nGeschäftsführer: A B\nAmtsgericht X HRB 1",
   };
-  const r = dunningMail({ ...base, stage: "reminder", deadline: null });
+  const r = dunningMail({ ...base, stage: "reminder", deadline: null, portalUrl: "https://anny.co/de/explore/x" });
+  assert.match(r.html, /href="https:\/\/anny\.co\/de\/explore\/x"[^>]*>Zum anny-Kundenkonto/);
+  assert.match(r.text, /Zum anny-Kundenkonto: https:\/\/anny\.co\/de\/explore\/x/);
+  assert.doesNotMatch(dunningMail({ ...base, stage: "reminder", deadline: null }).html, /Zum anny-Kundenkonto/);
   assert.equal(r.subject, "Zahlungserinnerung zu Ihrem Abo");
   assert.match(r.text, /Guten Tag Lea M,/);
   assert.match(r.text, /Offener Betrag: 24 €/);
