@@ -86,6 +86,7 @@ import { useAudioStatus } from "./use-audio-status";
 import { useZoneMonitor, zoneSource } from "./use-zone-monitor";
 import { useZoneCommands, type ZoneCommandState } from "./use-zone-commands";
 import { ZoneDialog } from "./zone-dialog";
+import { BirthdayAnnounceCard, type BirthdayAnnounceSetting } from "./birthday-announce-card";
 import { ZoneStatusBar } from "./zone-status-bar";
 import type {
   AnnouncementRow,
@@ -122,6 +123,10 @@ interface Props {
   soundwebDevices: SoundwebDeviceRow[];
   /** Meldet sich der lokale Hub? Er hält die Soundweb-Verbindungen. */
   hubOnline: boolean;
+  /** Geburtstags-Ansage am Start-Drehkreuz (Reiter Zeitpläne). */
+  birthdayAnnounce: BirthdayAnnounceSetting | null;
+  /** Kunden-App eingeschaltet (Geburtsdaten kommen aus ihrem Profil). */
+  riderAppEnabled: boolean;
   /** Reiter aus der Adresse (`?tab=zonen`), sonst „Durchsage“. */
   initialTab?: string;
   /** Bereich unter „Inhalte“ aus der Adresse (`?bereich=playlists`). */
@@ -217,6 +222,8 @@ export function AudioClient({
   timeZone,
   soundwebDevices,
   hubOnline,
+  birthdayAnnounce,
+  riderAppEnabled,
   initialTab,
   initialContentTab,
 }: Props) {
@@ -998,6 +1005,13 @@ export function AudioClient({
               ))}
             </Card>
           )}
+
+          <BirthdayAnnounceCard
+            setting={birthdayAnnounce}
+            zones={zones}
+            voices={ttsVoices}
+            appEnabled={riderAppEnabled}
+          />
         </TabsContent>
 
         {/* ── VERLAUF ──────────────────────────────────────────────────────── */}

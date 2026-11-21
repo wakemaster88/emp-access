@@ -167,3 +167,47 @@ export function normalizeHoliday(input: HolidayInput) {
     ...(input.push !== undefined && { pushPlanned: input.push }),
   };
 }
+
+/** Geburtstag in der Kunden-App (Kunden App › Aktionen): Gruß, Geschenk, Push. */
+export const birthdaySchema = z.object({
+  active: z.boolean(),
+  title: z.string().trim().max(60).nullable(),
+  text: z.string().trim().max(300).nullable(),
+  /** Leistung auf dem Geschenk-Gutschein; null = nur der Gruß. */
+  voucherLabel: z.string().trim().max(80).nullable(),
+  voucherValidDays: z.number().int().min(1).max(730).nullable(),
+  push: z.boolean(),
+});
+
+export function normalizeBirthday(input: z.infer<typeof birthdaySchema>) {
+  const voucherLabel = blank(input.voucherLabel);
+  return {
+    active: input.active,
+    title: blank(input.title),
+    text: blank(input.text),
+    voucherLabel,
+    voucherValidDays: voucherLabel ? input.voucherValidDays : null,
+    pushPlanned: input.push,
+  };
+}
+
+/** Geburtstags-Durchsage am Start-Drehkreuz (Audio › Zeitpläne). */
+export const birthdayAnnounceSchema = z
+  .object({
+    announceActive: z.boolean(),
+    announceText: z.string().trim().max(300).nullable(),
+    announceName: z.boolean(),
+    announceZoneIds: z.array(z.number().int().positive()).max(50),
+    announceVoice: z.string().trim().max(60).nullable(),
+    announceChime: z.boolean(),
+  })
+  .refine((a) => !a.announceActive || a.announceZoneIds.length > 0, { message: "Bitte mindestens eine Zone wählen" });
+
+export function normalizeBirthdayAnnounce(input: z.infer<typeof birthdayAnnounceSchema>) {
+  return {
+    ...input,
+    announceText: blank(input.announceText),
+    announceVoice: blank(input.announceVoice),
+    announceZoneIds: [...new Set(input.announceZoneIds)],
+  };
+}

@@ -154,120 +154,122 @@ enum ApiProvider {
 }
 
 model Account {
-  id                   Int                   @id @default(autoincrement())
-  subdomain            String                @unique
-  name                 String
-  apiToken             String                @unique
-  isActive             Boolean               @default(true)
+  id                     Int                     @id @default(autoincrement())
+  subdomain              String                  @unique
+  name                   String
+  apiToken               String                  @unique
+  isActive               Boolean                 @default(true)
   // Standort für Sonnenauf-/-untergangs-Automationen (Default: Berlin).
-  latitude             Float?
-  longitude            Float?
-  timezone             String? // IANA TZ, z.B. "Europe/Berlin"; null = Europe/Berlin
+  latitude               Float?
+  longitude              Float?
+  timezone               String? // IANA TZ, z.B. "Europe/Berlin"; null = Europe/Berlin
   /// JSON: Löschfristen in Tagen pro Bereich, null = unbegrenzt.
   /// Keys: vehicleSightings, personSightings, cameraEvents, scans,
   /// irrigationRuns, automationRuns, emailSends, hubTasks, discoveredDevices
-  dataRetention        Json?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  admins               Admin[]
-  devices              Device[]
-  tickets              Ticket[]
-  scans                Scan[]
-  scanSnapshots        ScanSnapshot[]
-  areas                AccessArea[]
-  apiConfigs           ApiConfig[]
-  monitors             MonitorConfig[]
-  subscriptions        Subscription[]
-  services             Service[]
-  vouchers             Voucher[]
-  telegramConfigs      TelegramConfig[]
-  vereine              Verein[]
-  vereinSlotBookings   VereinSlotBooking[]
-  lockers              Locker[]
-  emailConfig          EmailConfig?
-  emailRules           EmailRule[]
-  emailSends           EmailSend[]
-  announcements        MonitorAnnouncement[]
-  monitorAlerts        MonitorAlert[]
-  slotBlocks           SlotBlock[]
-  lostItems            LostItem[]
-  articles             Article[]
-  stocktakes           Stocktake[]
-  stocktakeLines       StocktakeLine[]
-  stocktakeSignatures  StocktakeSignature[]
-  stocktakeEvents      StocktakeEvent[]
-  inventoryAssets      InventoryAsset[]
-  inventoryAssetCounts InventoryAssetCount[]
-  inventoryCountLinks  InventoryCountLink[]
-  irrigationSchedules  IrrigationSchedule[]
-  irrigationRuns       IrrigationRun[]
-  pushSubscriptions    PushSubscription[]
-  infoFormTemplates    InfoFormTemplate[]
-  infoRequests         InfoRequest[]
-  networkVlans         NetworkVlan[]
-  networkDevices       NetworkDevice[]
-  networkOutlets       NetworkOutlet[]
-  networkClients       NetworkClient[]
-  networkAreas         NetworkArea[]
-  hubAgents            HubAgent[]
-  hubAlerts            HubAlert[]
-  hubTasks             HubTask[]
-  gamificationConfig   GamificationConfig?
-  riderProfiles        RiderProfile[]
-  riderFamilies        RiderFamily[]
-  customers            Customer[]
-  riderPasskeys        RiderPasskey[]
+  dataRetention          Json?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  admins                 Admin[]
+  devices                Device[]
+  tickets                Ticket[]
+  scans                  Scan[]
+  scanSnapshots          ScanSnapshot[]
+  areas                  AccessArea[]
+  apiConfigs             ApiConfig[]
+  monitors               MonitorConfig[]
+  subscriptions          Subscription[]
+  services               Service[]
+  vouchers               Voucher[]
+  telegramConfigs        TelegramConfig[]
+  vereine                Verein[]
+  vereinSlotBookings     VereinSlotBooking[]
+  lockers                Locker[]
+  emailConfig            EmailConfig?
+  emailRules             EmailRule[]
+  emailSends             EmailSend[]
+  announcements          MonitorAnnouncement[]
+  monitorAlerts          MonitorAlert[]
+  slotBlocks             SlotBlock[]
+  lostItems              LostItem[]
+  articles               Article[]
+  stocktakes             Stocktake[]
+  stocktakeLines         StocktakeLine[]
+  stocktakeSignatures    StocktakeSignature[]
+  stocktakeEvents        StocktakeEvent[]
+  inventoryAssets        InventoryAsset[]
+  inventoryAssetCounts   InventoryAssetCount[]
+  inventoryCountLinks    InventoryCountLink[]
+  irrigationSchedules    IrrigationSchedule[]
+  irrigationRuns         IrrigationRun[]
+  pushSubscriptions      PushSubscription[]
+  infoFormTemplates      InfoFormTemplate[]
+  infoRequests           InfoRequest[]
+  networkVlans           NetworkVlan[]
+  networkDevices         NetworkDevice[]
+  networkOutlets         NetworkOutlet[]
+  networkClients         NetworkClient[]
+  networkAreas           NetworkArea[]
+  hubAgents              HubAgent[]
+  hubAlerts              HubAlert[]
+  hubTasks               HubTask[]
+  gamificationConfig     GamificationConfig?
+  riderProfiles          RiderProfile[]
+  riderFamilies          RiderFamily[]
+  customers              Customer[]
+  riderPasskeys          RiderPasskey[]
   riderPushSubscriptions RiderPushSubscription[]
-  riderDayStats        RiderDayStat[]
-  riderMusicVotes      RiderMusicVote[]
-  milestones           Milestone[]
-  milestoneAwards      MilestoneAward[]
-  challenges           Challenge[]
-  challengeAwards      ChallengeAward[]
-  riderOffers          RiderOffer[]
-  riderHolidays        RiderHoliday[]
-  riderHolidayGifts    RiderHolidayGift[]
-  discoveredDevices    DiscoveredDevice[]
-  knownNetworkDevices  KnownNetworkDevice[]
-  blockedNetworkDevices BlockedNetworkDevice[]
-  cameras              Camera[]
-  cameraEvents         CameraEvent[]
-  allowedVehicles      AllowedVehicle[]
-  vehicleSightings     VehicleSighting[]
-  listedPersons        ListedPerson[]
-  personSightings      PersonSighting[]
-  personFaceEmbeddings PersonFaceEmbedding[]
-  surveillanceConfig   SurveillanceConfig?
-  audioZones           AudioZone[]
-  audioTracks          AudioTrack[]
-  audioPlaylists       AudioPlaylist[]
-  audioStreams         AudioStream[]
-  audioAnnouncements   AudioAnnouncement[]
-  audioSchedules       AudioSchedule[]
-  audioJobs            AudioJob[]
-  audioLiveSessions    AudioLiveSession[]
-  soundwebDevices      SoundwebDevice[]
-  soundwebControls     SoundwebControl[]
-  keyRooms             KeyRoom[]
-  operatingSchedules   OperatingSchedule[]
-  roomRules            RoomRule[]
-  roomRuleRuns         RoomRuleRun[]
-  roomClimates         RoomClimate[]
-  climateSamples       ClimateSample[]
-  weatherHours         WeatherHour[]
-  roomMotionEvents     RoomMotionEvent[]
-  keyDoors             KeyDoor[]
-  keyLocks             KeyLock[]
-  keyItems             KeyItem[]
-  keyHolders           KeyHolder[]
-  keyHandovers         KeyHandover[]
-  keyPolicyTemplates   KeyPolicyTemplate[]
-  keySignatures        KeySignature[]
-  mcpTokens            McpToken[]
-  eventPartners        EventPartner[]
-  venueExtras          VenueExtra[]
-  venueEvents          VenueEvent[]
-  venueEventDocuments  VenueEventDocument[]
+  riderDayStats          RiderDayStat[]
+  riderMusicVotes        RiderMusicVote[]
+  milestones             Milestone[]
+  milestoneAwards        MilestoneAward[]
+  challenges             Challenge[]
+  challengeAwards        ChallengeAward[]
+  riderOffers            RiderOffer[]
+  riderHolidays          RiderHoliday[]
+  riderHolidayGifts      RiderHolidayGift[]
+  riderBirthday          RiderBirthday?
+  riderBirthdayGifts     RiderBirthdayGift[]
+  discoveredDevices      DiscoveredDevice[]
+  knownNetworkDevices    KnownNetworkDevice[]
+  blockedNetworkDevices  BlockedNetworkDevice[]
+  cameras                Camera[]
+  cameraEvents           CameraEvent[]
+  allowedVehicles        AllowedVehicle[]
+  vehicleSightings       VehicleSighting[]
+  listedPersons          ListedPerson[]
+  personSightings        PersonSighting[]
+  personFaceEmbeddings   PersonFaceEmbedding[]
+  surveillanceConfig     SurveillanceConfig?
+  audioZones             AudioZone[]
+  audioTracks            AudioTrack[]
+  audioPlaylists         AudioPlaylist[]
+  audioStreams           AudioStream[]
+  audioAnnouncements     AudioAnnouncement[]
+  audioSchedules         AudioSchedule[]
+  audioJobs              AudioJob[]
+  audioLiveSessions      AudioLiveSession[]
+  soundwebDevices        SoundwebDevice[]
+  soundwebControls       SoundwebControl[]
+  keyRooms               KeyRoom[]
+  operatingSchedules     OperatingSchedule[]
+  roomRules              RoomRule[]
+  roomRuleRuns           RoomRuleRun[]
+  roomClimates           RoomClimate[]
+  climateSamples         ClimateSample[]
+  weatherHours           WeatherHour[]
+  roomMotionEvents       RoomMotionEvent[]
+  keyDoors               KeyDoor[]
+  keyLocks               KeyLock[]
+  keyItems               KeyItem[]
+  keyHolders             KeyHolder[]
+  keyHandovers           KeyHandover[]
+  keyPolicyTemplates     KeyPolicyTemplate[]
+  keySignatures          KeySignature[]
+  mcpTokens              McpToken[]
+  eventPartners          EventPartner[]
+  venueExtras            VenueExtra[]
+  venueEvents            VenueEvent[]
+  venueEventDocuments    VenueEventDocument[]
 }
 
 model Admin {
@@ -592,16 +594,17 @@ model Ticket {
 
   /// Kunden-App: Profil, das mehrere Abo-Tickets derselben Person buendelt.
   /// Bei Abos die Person, die damit faehrt; NULL = „Fahrer offen“.
-  riderProfileId          Int?
-  riderProfile            RiderProfile?        @relation(fields: [riderProfileId], references: [id], onDelete: SetNull)
+  riderProfileId     Int?
+  riderProfile       RiderProfile?    @relation(fields: [riderProfileId], references: [id], onDelete: SetNull)
   /// Kundenkonto (E-Mail-Adresse), dem das Abo gehoert. Siehe `Customer`.
-  customerId              Int?
-  customer                Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerId         Int?
+  customer           Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
   /// Fahrer ist aus der Gamification ausgestiegen: es wird nichts gezaehlt.
-  gamificationOptOut      Boolean              @default(false)
-  riderDayStats           RiderDayStat[]
-  milestoneAwards         MilestoneAward[]
-  challengeAwards         ChallengeAward[]
+  gamificationOptOut Boolean          @default(false)
+  riderDayStats      RiderDayStat[]
+  milestoneAwards    MilestoneAward[]
+  challengeAwards    ChallengeAward[]
+
   @@index([riderProfileId])
   @@index([customerId])
   @@index([accountId])
@@ -678,11 +681,11 @@ model ScanSnapshot {
 }
 
 model AccessArea {
-  id              Int                @id @default(autoincrement())
-  name            String
-  parentId        Int?
-  allowReentry    Boolean            @default(false)
-  personLimit     Int?
+  id                 Int                @id @default(autoincrement())
+  name               String
+  parentId           Int?
+  allowReentry       Boolean            @default(false)
+  personLimit        Int?
   /// Sperrzeit in Sekunden fuer dasselbe Ticket, bereichsweit ueber ALLE
   /// Eingaenge dieses Bereichs. Anders als `Device.scanLockSeconds` (gilt nur
   /// pro Leser) laesst sich diese Sperre nicht dadurch umgehen, dass man den
@@ -695,31 +698,31 @@ model AccessArea {
   /// durch.
   ///
   /// NULL oder 0 = keine bereichsweite Sperre.
-  scanLockSeconds Int?
-  showOnDashboard Boolean            @default(true)
-  openingHours    String?
+  scanLockSeconds    Int?
+  showOnDashboard    Boolean            @default(true)
+  openingHours       String?
   /// Veranstaltungsraum (z. B. Rooftop Lounge): Belegung ueber
   /// /veranstaltungen, Partner tragen Termine ueber ihren Link ein.
-  eventVenue         Boolean         @default(false)
+  eventVenue         Boolean            @default(false)
   /// Puffer in Minuten zwischen zwei Veranstaltungen (Auf- und Abbau).
-  eventBufferMinutes Int             @default(60)
+  eventBufferMinutes Int                @default(60)
   /// Hoechstens so viele Gaeste je Veranstaltung. NULL = ohne Grenze.
   eventCapacity      Int?
   venueEvents        VenueEvent[]
   venueExtras        VenueExtra[]
-  accountId       Int
-  account         Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  parent          AccessArea?        @relation("AreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children        AccessArea[]       @relation("AreaHierarchy")
-  tickets         Ticket[]
-  ticketAreas     TicketArea[]
-  subscriptions   Subscription[]
-  serviceAreas    ServiceArea[]
-  servicesAsMain  Service[]          @relation("ServiceMainArea")
-  annyLinks       AnnyResourceLink[]
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  scanRules       RoomRule[]
+  accountId          Int
+  account            Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  parent             AccessArea?        @relation("AreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children           AccessArea[]       @relation("AreaHierarchy")
+  tickets            Ticket[]
+  ticketAreas        TicketArea[]
+  subscriptions      Subscription[]
+  serviceAreas       ServiceArea[]
+  servicesAsMain     Service[]          @relation("ServiceMainArea")
+  annyLinks          AnnyResourceLink[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  scanRules          RoomRule[]
 
   @@index([accountId])
   @@index([parentId])
@@ -871,7 +874,7 @@ model ServiceArea {
 }
 
 model Service {
-  id                             Int           @id @default(autoincrement())
+  id                             Int                     @id @default(autoincrement())
   name                           String
   annyNames                      String?
   defaultValidityType            ValidityType?
@@ -880,10 +883,10 @@ model Service {
   defaultSlotStart               String? // HH:mm
   defaultSlotEnd                 String? // HH:mm
   defaultValidityDurationMinutes Int?
-  allowReentry                   Boolean       @default(false)
-  allowManualCheckin             Boolean       @default(true)
-  requiresPhoto                  Boolean       @default(false)
-  requiresRfid                   Boolean       @default(false)
+  allowReentry                   Boolean                 @default(false)
+  allowManualCheckin             Boolean                 @default(true)
+  requiresPhoto                  Boolean                 @default(false)
+  requiresRfid                   Boolean                 @default(false)
   /// Hauptressource des Service. Wenn gesetzt, wird sie beim Verkauf als
   /// `Ticket.accessAreaId` (Hauptressource) verwendet - die anderen
   /// `serviceAreas` werden als Transit/Nebenressourcen behandelt. Beispiel
@@ -894,7 +897,7 @@ model Service {
   /// NULL = Service hat keine eindeutige Hauptressource (Fallback: erste
   /// `serviceArea` nach ID).
   mainAccessAreaId               Int?
-  mainAccessArea                 AccessArea?   @relation("ServiceMainArea", fields: [mainAccessAreaId], references: [id], onDelete: SetNull)
+  mainAccessArea                 AccessArea?             @relation("ServiceMainArea", fields: [mainAccessAreaId], references: [id], onDelete: SetNull)
   /// Plaetze pro Slot, die EMP selbst verwaltet. Wenn gesetzt, ignorieren wir
   /// ANNYs `number_available` und rechnen die Belegung selbst aus den
   /// ANNY-Buchungen DIESES Service plus den EMP-Tickets.
@@ -908,14 +911,14 @@ model Service {
   /// NULL = ANNYs Verfuegbarkeit ist maßgeblich (Normalfall).
   slotCapacity                   Int?
   accountId                      Int
-  account                        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account                        Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
   serviceAreas                   ServiceArea[]
   tickets                        Ticket[]
   slotBlocks                     SlotBlock[]
   vereinBookableServices         VereinBookableService[]
   vereinSlotBookings             VereinSlotBooking[]
-  createdAt                      DateTime      @default(now())
-  updatedAt                      DateTime      @updatedAt
+  createdAt                      DateTime                @default(now())
+  updatedAt                      DateTime                @updatedAt
 
   @@index([accountId])
   @@index([mainAccessAreaId])
@@ -926,11 +929,11 @@ model Service {
 /// (`annyBookingIds`), damit der Slot auch in ANNY nicht mehr buchbar ist.
 /// Beim Aufheben werden diese ANNY-Buchungen storniert.
 model SlotBlock {
-  id             Int      @id @default(autoincrement())
+  id             Int                 @id @default(autoincrement())
   accountId      Int
-  account        Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account        Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
   serviceId      Int?
-  service        Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  service        Service?            @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   /// Snapshot des Service-Namens fuer die Anzeige (falls Service spaeter
   /// umbenannt/geloescht wird).
   serviceName    String
@@ -943,7 +946,7 @@ model SlotBlock {
   startDate      DateTime
   endDate        DateTime
   /// Wieviele Plaetze in ANNY belegt wurden (= Restkapazitaet beim Sperren).
-  quantity       Int      @default(1)
+  quantity       Int                 @default(1)
   /// Optionaler Sperrgrund (Anzeige + ANNY-Beschreibung).
   reason         String?
   /// JSON-Array der in ANNY angelegten Booking-UUIDs (fuer Storno beim
@@ -953,8 +956,8 @@ model SlotBlock {
   annyOrderId    String?
   /// Vereinsbuchung, zu der diese Sperre gehoert (leer = manuelle Sperre).
   vereinBookings VereinSlotBooking[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([accountId, date])
   @@index([serviceId, date, slotStart])
@@ -1061,31 +1064,31 @@ model MonitorAlertImage {
 /// Provider unterstützt – das Feld `provider` ist als Erweiterungspunkt für
 /// SMTP o. ä. vorbereitet.
 model EmailConfig {
-  id         Int      @id @default(autoincrement())
-  accountId  Int      @unique
-  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id          Int      @id @default(autoincrement())
+  accountId   Int      @unique
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   /// "GMAIL" (default, SMTP via App-Passwort). Erweiterungspunkt fuer weitere
   /// Provider in Zukunft.
-  provider   String   @default("GMAIL")
+  provider    String   @default("GMAIL")
   /// Provider-Credential. Bei GMAIL: das Google-App-Passwort. Wir behandeln
   /// es analog zum Telegram-Bot-Token (Klartext-Spalte, RLS-isoliert).
-  apiKey     String?
+  apiKey      String?
   /// Optionaler Bot-Mail-Absender, z. B. "no-reply@deindomain.de".
-  fromEmail  String
-  fromName   String?
-  replyTo    String?
-  isActive   Boolean  @default(true)
+  fromEmail   String
+  fromName    String?
+  replyTo     String?
+  isActive    Boolean  @default(true)
   /// Branding-Farbe für HTML-Templates (Hex, z. B. "#4F46E5").
-  brandColor String?
+  brandColor  String?
   /// Optionale Logo-URL und Website (für Footer/Header in HTML).
-  logoUrl    String?
-  websiteUrl String?
+  logoUrl     String?
+  websiteUrl  String?
   /// Pflichtangaben des Absenders (Firma, Anschrift, Geschäftsführung,
   /// Registergericht, USt-IdNr.), eine Angabe je Zeile. Steht unter förmlichen
   /// Mails wie den Mahnungen (lib/dunning-mail).
   legalFooter String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([accountId])
 }
@@ -1293,12 +1296,12 @@ model AnnyResourceLink {
 }
 
 model Voucher {
-  id                      Int          @id @default(autoincrement())
-  code                    String       @unique
+  id                      Int                 @id @default(autoincrement())
+  code                    String              @unique
   ticketTypeName          String?
   serviceId               Int?
   accessAreaId            Int?
-  validityType            ValidityType @default(DATE_RANGE)
+  validityType            ValidityType        @default(DATE_RANGE)
   validityDurationMinutes Int?
   sourceTicketId          Int?
   redeemedAt              DateTime?
@@ -1317,7 +1320,7 @@ model Voucher {
   /// ACCESS: Scan am Drehkreuz/Check-in erzeugt ein Ticket (bisheriges Verhalten).
   /// BENEFIT: Leistungs-Gutschein (z. B. Freigetraenk) – wird nur entwertet,
   /// es entsteht kein Ticket und kein Zutritt.
-  kind                    VoucherKind  @default(ACCESS)
+  kind                    VoucherKind         @default(ACCESS)
   /// BENEFIT: was der Gast bekommt, z. B. "Freigetränk".
   label                   String?
   /// BENEFIT: Abo-Ticket, dem der Gutschein gehoert (Gamification).
@@ -1325,12 +1328,13 @@ model Voucher {
   /// BENEFIT: wo entwertet wurde ("ADMIN" oder "CHECKIN").
   redeemedVia             String?
   accountId               Int
-  account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account                 Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
   emailSends              EmailSend[]
   milestoneAwards         MilestoneAward[]
   challengeAwards         ChallengeAward[]
   holidayGifts            RiderHolidayGift[]
-  createdAt               DateTime     @default(now())
+  birthdayGifts           RiderBirthdayGift[]
+  createdAt               DateTime            @default(now())
 
   @@index([accountId])
   @@index([code])
@@ -1381,39 +1385,39 @@ enum ShellyAction {
 /// – alle Mitglieder erben beim Scan automatisch die Areas dieser Tickets.
 /// Mitglieder bleiben eigenständige Tickets (eigener QR/RFID).
 model Verein {
-  id                Int                     @id @default(autoincrement())
-  name              String
-  description       String?
-  accountId         Int
-  account           Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  members           Ticket[] // Mitglieds-Tickets via Ticket.vereinId
-  accessTickets     VereinAccessTicket[] // Zutritts-Tickets, deren Areas alle Mitglieder erben
+  id                 Int                     @id @default(autoincrement())
+  name               String
+  description        String?
+  accountId          Int
+  account            Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  members            Ticket[] // Mitglieds-Tickets via Ticket.vereinId
+  accessTickets      VereinAccessTicket[] // Zutritts-Tickets, deren Areas alle Mitglieder erben
   /// Vereinsportal: geheimer Link `/verein/<portalToken>`, ueber den der
   /// Verein selbst Slots bucht. NULL = noch kein Link erzeugt.
-  portalToken       String?                 @unique
+  portalToken        String?                 @unique
   /// Portal an/aus. Aus = Link liefert 404, bestehende Buchungen bleiben.
-  portalEnabled     Boolean                 @default(false)
+  portalEnabled      Boolean                 @default(false)
   /// Bis wie viele Stunden vor Slot-Beginn der Verein selbst kostenlos
   /// stornieren darf. Danach nur noch ueber das Backoffice.
-  portalCancelHours Int                     @default(48)
+  portalCancelHours  Int                     @default(48)
   /// Wie viele Tage im Voraus der Verein buchen darf.
-  portalHorizonDays Int                     @default(60)
+  portalHorizonDays  Int                     @default(60)
   /// Zugang ausserhalb des Betriebs: Minuten vor Slot-Beginn (Vorbereitung)
   /// und nach Slot-Ende (Nachbereitung), in denen Mitglieder rein-/rauskommen
   /// und das Portal die freigegebenen Tueren oeffnen darf.
-  portalLeadMinutes   Int                     @default(30)
-  portalTrailMinutes  Int                     @default(30)
+  portalLeadMinutes  Int                     @default(30)
+  portalTrailMinutes Int                     @default(30)
   /// Geraete (Device.id, z. B. Shelly-Tuer Technikraum), die der Verein im
   /// Zugangsfenster seiner Buchung ueber das Portal oeffnen darf.
-  portalDeviceIds     Int[]                   @default([])
+  portalDeviceIds    Int[]                   @default([])
   /// DoorBird-Tore (Camera.id, kind DOORBIRD), ebenso.
-  portalDoorbirdIds   Int[]                   @default([])
+  portalDoorbirdIds  Int[]                   @default([])
   /// Ansprechpartner/Rechnungsadresse fuer die Abrechnung (Freitext).
-  billingContact    String?
-  bookableServices  VereinBookableService[]
-  slotBookings      VereinSlotBooking[]
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  billingContact     String?
+  bookableServices   VereinBookableService[]
+  slotBookings       VereinSlotBooking[]
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
   @@unique([accountId, name])
   @@index([accountId])
@@ -2200,22 +2204,22 @@ model KnownNetworkDevice {
 /// offizielle Schnittstelle hat. Der Hub-Scan meldet per Telegram, wenn eine
 /// gesperrte MAC trotzdem wieder im Netz auftaucht. Freigeben = Eintrag loeschen.
 model BlockedNetworkDevice {
-  id          Int       @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   /// Normalisiert (AA:BB:CC:DD:EE:FF).
-  macAddress  String
-  name        String
-  reason      String?
+  macAddress String
+  name       String
+  reason     String?
   /// Wann die Sperre in Insight eingetragen wurde (null = nur in der Liste).
-  enforcedAt  DateTime?
+  enforcedAt DateTime?
   /// Zuletzt trotz Sperre vom Hub-Scan gesehen.
-  lastSeenAt  DateTime?
-  lastSeenIp  String?
+  lastSeenAt DateTime?
+  lastSeenIp String?
   /// Letzte Telegram-Meldung "gesperrtes Geraet wieder im Netz" (Drossel).
-  notifiedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  accountId   Int
-  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  notifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  accountId  Int
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@unique([accountId, macAddress])
 }
@@ -3476,61 +3480,61 @@ model McpToken {
 
 /// Gamification je Mandant. Ohne Zeile oder mit enabled=false wird nichts gezaehlt.
 model GamificationConfig {
-  id              Int      @id @default(autoincrement())
-  enabled         Boolean  @default(false)
+  id                    Int       @id @default(autoincrement())
+  enabled               Boolean   @default(false)
   /// Abos, deren Tickets mitzaehlen (IDs aus Subscription).
-  subscriptionIds Int[]    @default([])
+  subscriptionIds       Int[]     @default([])
   /// Obergrenze: so viele Starts pro Tag zaehlen hoechstens fuer Meilensteine.
-  startCapPerDay  Int      @default(10)
+  startCapPerDay        Int       @default(10)
   /// Schluessel der oeffentlichen Rangliste `/rangliste/<token>`; NULL = aus.
-  displayToken    String?  @unique
+  displayToken          String?   @unique
   /// Tagestickets (IDs aus Service), deren Gaeste die App nutzen duerfen.
-  dayServiceIds   Int[]    @default([])
+  dayServiceIds         Int[]     @default([])
   /// Preise fuer den Abo-Rechner in Cent: {"<serviceId>": 2500}.
-  servicePrices   Json?
+  servicePrices         Json?
   /// Abo-Preise fuer den Abo-Rechner in Cent: {"<subscriptionId>": 39000}.
-  subscriptionPrices Json?
+  subscriptionPrices    Json?
   /// Einladung zur App, wenn ueber anny ein neues Abo gebucht wird (lib/rider-invite).
-  inviteNewAbos   Boolean  @default(true)
+  inviteNewAbos         Boolean   @default(true)
   /// Einladung an laufende Abos, die noch nicht in der App sind (in Etappen ueber tick-5min).
-  inviteExistingAbos Boolean @default(false)
+  inviteExistingAbos    Boolean   @default(false)
   /// Auslastung am Lift (Fahrer der letzten 60 Min): ab hier „Gut besucht“.
   /// Gilt fuer Kunden-App und Verwaltung gleich (lib/rider-occupancy).
-  occupancyMediumFrom Int @default(10)
+  occupancyMediumFrom   Int       @default(10)
   /// Ab hier „Viel los“. Bewusst hoch, damit es selten erscheint.
-  occupancyHighFrom   Int @default(25)
+  occupancyHighFrom     Int       @default(25)
   /// Strandbad: geschaetzte Gaeste vor Ort = Eintritte der letzten 3 h am
   /// Eingangs-Drehkreuz × Faktor (Tageskasse geht nicht uebers Drehkreuz;
   /// Aaron 21.11.2026: Top-Tage 3000 Gaeste, 2/3 Tageskasse → 3).
-  beachGuestFactor    Float @default(3)
+  beachGuestFactor      Float     @default(3)
   /// Ab so vielen geschaetzten Gaesten „Gut besucht“ (20 % von 3000).
-  beachMediumFrom     Int   @default(600)
+  beachMediumFrom       Int       @default(600)
   /// Ab so vielen geschaetzten Gaesten „Viel los“ (40 % von 3000).
-  beachHighFrom       Int   @default(1200)
+  beachHighFrom         Int       @default(1200)
   /// Fuehler fuer die Wassertemperatur (Device, z. B. Shelly): Grundlage fuer
   /// Awards mit `COLD_DAYS`. Messwerte stehen in `ClimateSample`.
-  waterSensorDeviceId Int?
-  waterSensorDevice   Device?  @relation("GamificationWaterSensor", fields: [waterSensorDeviceId], references: [id], onDelete: SetNull)
+  waterSensorDeviceId   Int?
+  waterSensorDevice     Device?   @relation("GamificationWaterSensor", fields: [waterSensorDeviceId], references: [id], onDelete: SetNull)
   /// Playlist-Abstimmung: aktive Fahrer waehlen in der Kunden-App, die
   /// Playlist mit den meisten Stimmen laeuft in den gewaehlten Zonen
   /// (lib/music-vote). Ab Werk aus.
-  musicVoteEnabled     Boolean @default(false)
+  musicVoteEnabled      Boolean   @default(false)
   /// Zonen, in denen die Mehrheit spielt (AudioZone-IDs).
-  musicVoteZoneIds     Int[]   @default([])
+  musicVoteZoneIds      Int[]     @default([])
   /// Auswahl, zwischen der die Fahrer waehlen, in App-Reihenfolge:
   /// "p<id>" = AudioPlaylist, "s<id>" = AudioStream (Webradio).
-  musicVoteOptions     String[] @default([])
+  musicVoteOptions      String[]  @default([])
   /// So lange nach einer Wahl des Personals ruht die Abstimmung (0 = gar nicht).
-  musicVoteHoldMinutes Int     @default(60)
+  musicVoteHoldMinutes  Int       @default(60)
   /// Abstimmungsrunde in Minuten: gewechselt wird nur am Rundenende (volle
   /// Viertelstunde bei 15), die App zeigt den Countdown. 0 = sofort.
-  musicVoteRoundMinutes Int    @default(15)
+  musicVoteRoundMinutes Int       @default(15)
   /// Ende der zuletzt ausgewerteten Runde (Cron-Guard).
-  musicVoteRoundAt     DateTime?
-  accountId       Int      @unique
-  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  musicVoteRoundAt      DateTime?
+  accountId             Int       @unique
+  account               Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 }
 
 /// Tagessumme je Abo-Ticket: ein Besuchstag mit seinen Starts. Bewusst keine
@@ -3555,16 +3559,16 @@ model RiderDayStat {
 /// hoechstens eine. Sie zaehlt nur, solange die Person aktiv ist (zuletzt
 /// am Lift gestartet vor hoechstens 2 Stunden, lib/music-vote-rules).
 model RiderMusicVote {
-  id         Int          @id @default(autoincrement())
-  profileId  Int
-  profile    RiderProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  day        DateTime     @db.Date
+  id        Int          @id @default(autoincrement())
+  profileId Int
+  profile   RiderProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  day       DateTime     @db.Date
   /// Gewaehlte Option: "p<id>" Playlist oder "s<id>" Webradio.
-  option     String
-  accountId  Int
-  account    Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  option    String
+  accountId Int
+  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   @@unique([profileId, day])
   @@index([accountId, day])
@@ -3694,24 +3698,24 @@ model ChallengeAward {
 
 /// Angebot auf dem Dashboard der Kunden-App.
 model RiderOffer {
-  id        Int       @id @default(autoincrement())
-  title     String
-  text      String?
+  id          Int       @id @default(autoincrement())
+  title       String
+  text        String?
   /// Sichtbar ab/bis (Kalendertag, einschliesslich); NULL = offen.
-  validFrom DateTime? @db.Date
-  validTo   DateTime? @db.Date
-  active    Boolean   @default(true)
-  sortOrder Int       @default(0)
+  validFrom   DateTime? @db.Date
+  validTo     DateTime? @db.Date
+  active      Boolean   @default(true)
+  sortOrder   Int       @default(0)
   /// Push an die Kunden-App gewünscht; gesendet wird einmal, sobald das
   /// Angebot sichtbar ist (siehe `rider-announce.ts`).
   pushPlanned Boolean   @default(false)
   pushedAt    DateTime?
   /// Erreichte Geräte beim Versand.
   pushSent    Int?
-  accountId Int
-  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  accountId   Int
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([accountId])
 }
@@ -3781,54 +3785,111 @@ model RiderHolidayGift {
   @@index([voucherId])
 }
 
+/// Geburtstag in der Kunden-App, eine Einstellung je Mandant: Gruß und
+/// Geschenk in der App (Kunden App › Aktionen), Push am Morgen und die
+/// Durchsage beim Scan am Start-Drehkreuz (Audio › Zeitpläne).
+model RiderBirthday {
+  id               Int      @id @default(autoincrement())
+  accountId        Int      @unique
+  account          Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Gruß in der App am Geburtstag.
+  active           Boolean  @default(false)
+  /// Ueberschrift; NULL = „Alles Gute zum Geburtstag“.
+  title            String?
+  text             String?
+  /// Geschenk: Leistung auf dem Gutschein; NULL = nur der Gruß.
+  voucherLabel     String?
+  /// Gueltigkeit des Geschenks in Tagen; NULL = unbegrenzt.
+  voucherValidDays Int?
+  /// Push an die Geraete der Person am Geburtstag (9–21 Uhr, einmal).
+  pushPlanned      Boolean  @default(false)
+  /// Durchsage, wenn das Geburtstagskind am Start-Drehkreuz scannt (einmal am Tag).
+  announceActive   Boolean  @default(false)
+  /// Ansagetext; `{vorname}` wird ersetzt. NULL = Standardtext.
+  announceText     String?
+  /// Vorname in der Durchsage nennen (sonst ohne Namen).
+  announceName     Boolean  @default(true)
+  /// Zielzonen als AudioZone-ID-Array (leer = keine Durchsage).
+  announceZoneIds  Json     @default("[]")
+  announceVoice    String?
+  announceChime    Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+/// Geburtstag einer Person in einem Jahr: Geschenk, Push und Durchsage je einmal.
+model RiderBirthdayGift {
+  id          Int          @id @default(autoincrement())
+  year        Int
+  profileId   Int
+  profile     RiderProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// Geschenk beansprucht (vor dem Anlegen des Gutscheins, gegen doppelte Vergabe).
+  giftAt      DateTime?
+  voucherId   Int?
+  voucher     Voucher?     @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  pushedAt    DateTime?
+  pushSent    Int?
+  announcedAt DateTime?
+  accountId   Int
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+
+  @@unique([profileId, year])
+  @@index([accountId])
+  @@index([voucherId])
+}
+
 /// Kunden-App (Gamification): ein Profil je Person. Der Token im Link
 /// `/app/<token>` ist die Berechtigung, wie bei der Mitarbeiter-App `/m/<token>`.
 model RiderProfile {
-  id            Int       @id @default(autoincrement())
-  token         String    @unique
+  id                Int                     @id @default(autoincrement())
+  token             String                  @unique
   /// Fuer andere sichtbar (Rangliste), nie der echte Name.
-  nickname      String?
+  nickname          String?
   /// Einwilligung: mit Spitznamen in Ranglisten erscheinen.
-  showInRanking Boolean   @default(false)
-  lastSeenAt    DateTime?
+  showInRanking     Boolean                 @default(false)
+  lastSeenAt        DateTime?
   /// Bestätigte E-Mail-Adresse (Anmeldung per Mail-Link, klein geschrieben).
   /// Ein Profil mit Adresse gilt auch ohne Ticket (Kunde noch ohne Abo).
-  email         String?
+  email             String?
   /// bcrypt-Hash; NULL = kein Passwort gesetzt.
-  passwordHash     String?
+  passwordHash      String?
   /// Wird beim Zuruecksetzen erhoeht: alle bisherigen Sitzungen enden.
-  sessionVersion   Int       @default(0)
-  loginFailures    Int       @default(0)
-  loginLockedUntil DateTime?
-  passkeys         RiderPasskey[]
+  sessionVersion    Int                     @default(0)
+  loginFailures     Int                     @default(0)
+  loginLockedUntil  DateTime?
+  passkeys          RiderPasskey[]
   pushSubscriptions RiderPushSubscription[]
   musicVotes        RiderMusicVote[]
   /// Familie: Erwachsene (eigener Login) sehen alle Mitglieder, Kinder haben
   /// keinen eigenen Zugang und werden von den Erwachsenen mitverwaltet.
-  familyId      Int?
-  family        RiderFamily? @relation(fields: [familyId], references: [id], onDelete: SetNull)
-  familyAdult   Boolean   @default(false)
+  familyId          Int?
+  family            RiderFamily?            @relation(fields: [familyId], references: [id], onDelete: SetNull)
+  familyAdult       Boolean                 @default(false)
   /// Person eines Kundenkontos: wer mit den Abos faehrt. Name und
   /// Geburtsdatum gehoeren der Person; der anny-Sync ueberschreibt nur die
   /// Rohdaten am Ticket (dort steht bei Familienkonten der Kontoinhaber).
-  customerId    Int?
-  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  firstName     String?
-  lastName      String?
-  birthDate     DateTime?
+  customerId        Int?
+  customer          Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  firstName         String?
+  lastName          String?
+  birthDate         DateTime?
   /// Jahr der ersten Saison am Lift (traegt das Personal ein). Fuer die
   /// Treue-Awards: Saisons vor der ersten gezaehlten zaehlen so mit.
-  ridingSince   Int?
+  ridingSince       Int?
   /// Profilbild, das die Person in der App selbst waehlt (Data-URL, auf
   /// 320 px verkleinert). Nur fuer die App; das Foto zum Abgleich an der
   /// Kasse bleibt `Ticket.profileImage`.
-  photo         String?   @db.Text
-  accountId     Int
-  account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  tickets       Ticket[]
-  holidayGifts  RiderHolidayGift[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  photo             String?                 @db.Text
+  accountId         Int
+  account           Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tickets           Ticket[]
+  holidayGifts      RiderHolidayGift[]
+  birthdayGifts     RiderBirthdayGift[]
+  /// Geburtstags-Durchsage am Lift: die Person kann sie in der App abschalten.
+  birthdayAnnounce  Boolean                 @default(true)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
 
   @@index([accountId])
   @@index([familyId])
@@ -3961,26 +4022,26 @@ enum StocktakeStatus {
 /// daten, damit eine festgeschriebene Inventur später gleich bleibt, auch
 /// wenn sich Preis oder Name des Artikels ändern.
 model Stocktake {
-  id        Int             @id @default(autoincrement())
-  accountId Int
-  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  kind      StocktakeKind
-  status    StocktakeStatus @default(OPEN)
-  title     String
+  id                  Int                  @id @default(autoincrement())
+  accountId           Int
+  account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  kind                StocktakeKind
+  status              StocktakeStatus      @default(OPEN)
+  title               String
   /// Stichtag bzw. Zähltag (Datum, 00:00 UTC).
-  date      DateTime
-  note      String?
-  closedAt  DateTime?
-  closedBy  String?
+  date                DateTime
+  note                String?
+  closedAt            DateTime?
+  closedBy            String?
   /// Geheimnis des Zähl-Links `/zaehlen/<token>` fürs Handy (ohne Login).
   /// null = kein Link oder gesperrt. Gilt nur, solange die Inventur offen ist.
-  countToken          String?   @unique
+  countToken          String?              @unique
   countTokenExpiresAt DateTime?
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-  lines     StocktakeLine[]
-  signatures StocktakeSignature[]
-  events     StocktakeEvent[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  lines               StocktakeLine[]
+  signatures          StocktakeSignature[]
+  events              StocktakeEvent[]
 
   @@index([accountId, kind, date])
 }

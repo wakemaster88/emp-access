@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { announceBirthdayOnScan } from "@/lib/rider-birthday";
 import { paymentOpenInfo, paymentOpenScanMessage } from "@/lib/payment-open";
 import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
@@ -955,6 +956,18 @@ export async function POST(request: NextRequest) {
     void adoptDayTickets(accountId, ticket.email, now).catch((err) => {
       console.error("[scan] adopt day ticket failed:", err);
     });
+  }
+
+  // Geburtstag: einmal am Tag eine Durchsage, wenn das Geburtstagskind am
+  // Start-Drehkreuz scannt (Audio › Zeitpläne › Geburtstag). Ohne zu warten.
+  if (device.countsAsStart && !isExitScan && ticket.riderProfileId != null) {
+    const profileId = ticket.riderProfileId;
+    // `after`: Sprachausgabe dauert ein paar Sekunden, die Antwort ans Drehkreuz nicht.
+    after(() =>
+      announceBirthdayOnScan(accountId, profileId, now).catch((err) => {
+        console.error("[scan] birthday announcement failed:", err);
+      }),
+    );
   }
 
   return NextResponse.json({

@@ -26,7 +26,9 @@ import { ChallengesCard, type ChallengeAdminRow } from "@/components/gamificatio
 import { OffersCard, type OfferAdminRow } from "@/components/gamification/offers-card";
 import { riderPushReach } from "@/lib/rider-announce";
 import { HolidaysCard, type HolidayAdminRow } from "@/components/gamification/holidays-card";
-import { upcomingHolidays } from "@/lib/holidays";
+import { addDaysYmd, upcomingHolidays } from "@/lib/holidays";
+import { BirthdayCard, type BirthdayAdminData } from "@/components/gamification/birthday-card";
+import { isBirthdayOn } from "@/lib/birthday";
 import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 import { AppShareCard } from "@/components/gamification/app-share-card";
 import { OccupancySettingsCard } from "@/components/gamification/occupancy-settings-card";
@@ -342,7 +344,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         pushSent: c.pushSent,
       });
     }
-    const [offers, reach, holidaySettings, holidayGifts] = await Promise.all([
+    const [offers, reach, holidaySettings, holidayGifts, birthdaySetting, birthDates, birthdayYear] = await Promise.all([
       db.riderOffer.findMany({
         where: { accountId },
         orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
@@ -351,7 +353,32 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       riderPushReach(accountId),
       db.riderHoliday.findMany({ where: { accountId } }),
       db.riderHolidayGift.groupBy({ by: ["holidayId"], where: { accountId }, _count: { _all: true } }),
+      db.riderBirthday.findUnique({ where: { accountId } }),
+      db.riderProfile.findMany({ where: { accountId, birthDate: { not: null } }, select: { birthDate: true } }),
+      db.riderBirthdayGift.findMany({
+        where: { accountId, year: Number(today.slice(0, 4)) },
+        select: { voucherId: true, pushedAt: true },
+      }),
     ]);
+    const weekDays = Array.from({ length: 7 }, (_, i) => addDaysYmd(today, i + 1));
+    const birthday: BirthdayAdminData = {
+      setting: birthdaySetting
+        ? {
+            active: birthdaySetting.active,
+            title: birthdaySetting.title,
+            text: birthdaySetting.text,
+            voucherLabel: birthdaySetting.voucherLabel,
+            voucherValidDays: birthdaySetting.voucherValidDays,
+            pushPlanned: birthdaySetting.pushPlanned,
+            announceActive: birthdaySetting.announceActive,
+          }
+        : null,
+      today: birthDates.filter((p) => isBirthdayOn(p.birthDate, today)).length,
+      week: birthDates.filter((p) => weekDays.some((d) => isBirthdayOn(p.birthDate, d))).length,
+      known: birthDates.length,
+      giftsYear: birthdayYear.filter((g) => g.voucherId != null).length,
+      pushesYear: birthdayYear.filter((g) => g.pushedAt != null).length,
+    };
     const settingByKey = new Map(holidaySettings.map((h) => [h.key, h]));
     const giftsById = new Map(holidayGifts.map((g) => [g.holidayId, g._count._all]));
     const holidayRows: HolidayAdminRow[] = upcomingHolidays(today).map((h) => {
@@ -398,6 +425,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       <>
         <ChallengesCard challenges={challengeRows} today={today} reach={reach} />
         <OffersCard offers={rows} reach={reach} />
+        <BirthdayCard data={birthday} />
         <HolidaysCard rows={holidayRows} reach={reach} />
       </>
     );

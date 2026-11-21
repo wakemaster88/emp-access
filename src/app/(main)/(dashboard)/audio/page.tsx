@@ -11,6 +11,7 @@ import {
   parseMusicTimes,
   parseZoneIds,
 } from "@/lib/audio";
+import { parseBirthdayZoneIds } from "@/lib/birthday";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { hubOnline, serializeSoundwebDevice, soundwebDeviceInclude } from "@/lib/soundweb-server";
 
@@ -44,6 +45,8 @@ export default async function AudioPage({
     operatingSchedules,
     soundwebDevices,
     hubIsOnline,
+    birthday,
+    gamiConfig,
   ] =
     await Promise.all([
       db.account.findUnique({ where: { id: accountId }, select: { timezone: true } }),
@@ -124,6 +127,8 @@ export default async function AudioPage({
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
       hubOnline(db, accountId),
+      db.riderBirthday.findUnique({ where: { accountId } }),
+      db.gamificationConfig.findUnique({ where: { accountId }, select: { enabled: true } }),
     ]);
 
   return (
@@ -263,6 +268,19 @@ export default async function AudioPage({
           timeZone={account?.timezone || "Europe/Berlin"}
           soundwebDevices={soundwebDevices.map(serializeSoundwebDevice)}
           hubOnline={hubIsOnline}
+          birthdayAnnounce={
+            birthday
+              ? {
+                  announceActive: birthday.announceActive,
+                  announceText: birthday.announceText,
+                  announceName: birthday.announceName,
+                  announceZoneIds: parseBirthdayZoneIds(birthday.announceZoneIds),
+                  announceVoice: birthday.announceVoice,
+                  announceChime: birthday.announceChime,
+                }
+              : null
+          }
+          riderAppEnabled={gamiConfig?.enabled ?? false}
         />
       </div>
     </>
