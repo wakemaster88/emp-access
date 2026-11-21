@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from "./gamification";
 import { MAX_SKILL_COOLDOWN, MAX_SKILL_MINUTES, MAX_SKILL_USES, normalizeSkillReward } from "./rider-skill-rules";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -74,7 +75,7 @@ export const challengeSchema = z
   .object({
     name: z.string().trim().min(1).max(60),
     description: z.string().trim().max(300).nullable(),
-    kind: z.enum(["TASK", "TOP_X"]),
+    kind: z.enum(["TASK", "TOP_X", "PHOTO", "POLL"]),
     metric: z.enum(["VISIT_DAYS", "STARTS", "STREAK_WEEKS"]),
     threshold: z.number().int().min(1).max(10_000).nullable(),
     topCount: z.number().int().min(1).max(100).nullable(),
@@ -84,31 +85,55 @@ export const challengeSchema = z
     voucherValidDays: z.number().int().min(1).max(730).nullable(),
     ...skillReward,
     active: z.boolean(),
+    /** Abstimmung: die Antworten in der gezeigten Reihenfolge. */
+    options: z.array(z.string().trim().max(60)).max(POLL_OPTIONS_MAX + 4).optional(),
     /** Push an die Kunden-App senden; fehlt der Wert, bleibt der Plan, wie er ist. */
     push: z.boolean().optional(),
   })
   .refine((c) => c.startDate <= c.endDate, { message: "Das Ende liegt vor dem Start" })
-  .refine((c) => (c.kind === "TASK" ? c.threshold != null : c.topCount != null), {
+  .refine((c) => (c.kind === "TASK" ? c.threshold != null : c.kind === "POLL" || c.topCount != null), {
     message: "Schwelle oder Anzahl der Gewinner fehlt",
+  })
+  .refine((c) => c.kind !== "POLL" || pollOptions(c.options).length >= POLL_OPTIONS_MIN, {
+    message: `Eine Abstimmung braucht mindestens ${POLL_OPTIONS_MIN} Antworten`,
+  })
+  .refine((c) => c.kind !== "POLL" || pollOptions(c.options).length <= POLL_OPTIONS_MAX, {
+    message: `Höchstens ${POLL_OPTIONS_MAX} Antworten`,
   });
 
 export type ChallengeInput = z.infer<typeof challengeSchema>;
 
-/** Nur die zur Art passende Zahl behalten; leere Leistung heißt ohne Gutschein. */
+/** Antworten einer Abstimmung: leere weg, doppelte (ohne Groß/klein) nur einmal. */
+export function pollOptions(raw: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const o of raw ?? []) {
+    const label = o.replace(/\s+/g, " ").trim();
+    const key = label.toLocaleLowerCase("de");
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+  return out;
+}
+
+/** Nur die zur Art passenden Werte behalten; leere Leistung heißt ohne Gutschein. */
 export function normalizeChallenge(input: ChallengeInput) {
-  const voucherLabel = input.voucherLabel && input.voucherLabel.length > 0 ? input.voucherLabel : null;
+  // Eine Abstimmung vergibt nichts.
+  const voucherLabel = input.kind !== "POLL" && input.voucherLabel && input.voucherLabel.length > 0 ? input.voucherLabel : null;
   return {
     name: input.name,
     description: input.description && input.description.length > 0 ? input.description : null,
     kind: input.kind,
-    metric: input.metric,
+    // Foto und Abstimmung zählen keine Starts; die Spalte braucht trotzdem einen Wert.
+    metric: input.kind === "TASK" || input.kind === "TOP_X" ? input.metric : ("VISIT_DAYS" as const),
     threshold: input.kind === "TASK" ? input.threshold : null,
-    topCount: input.kind === "TOP_X" ? input.topCount : null,
+    topCount: input.kind === "TOP_X" || input.kind === "PHOTO" ? input.topCount : null,
     startDate: new Date(`${input.startDate}T00:00:00.000Z`),
     endDate: new Date(`${input.endDate}T00:00:00.000Z`),
     voucherLabel,
     voucherValidDays: voucherLabel ? input.voucherValidDays : null,
-    ...normalizeSkillReward(input),
+    ...(input.kind === "POLL" ? { skillId: null, skillUses: 1, skillValidDays: null } : normalizeSkillReward(input)),
     active: input.active,
   };
 }

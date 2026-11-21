@@ -21,6 +21,7 @@ export const BLOB_PREFIXES = [
   "alert-images",
   "key-pdfs",
   "event-docs",
+  "challenge-photos",
 ] as const;
 export type BlobPrefix = (typeof BLOB_PREFIXES)[number];
 
@@ -132,6 +133,10 @@ async function existingPaths(prefix: BlobPrefix, paths: string[]): Promise<Set<s
     case "event-docs": {
       const rows = await prisma.venueEventDocument.findMany({ where: { pdfBlob: where }, select: { pdfBlob: true } });
       return new Set(rows.map((r) => r.pdfBlob!));
+    }
+    case "challenge-photos": {
+      const rows = await prisma.challengeEntry.findMany({ where: { imageBlob: where }, select: { imageBlob: true } });
+      return new Set(rows.map((r) => r.imageBlob!));
     }
   }
 }

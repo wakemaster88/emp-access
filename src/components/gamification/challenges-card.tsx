@@ -16,14 +16,16 @@ import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Bell, Loader2, Plus, Save, Swords, Trash2 } from "lucide-react";
+import { Bell, Eye, EyeOff, Loader2, Plus, Save, Swords, Trash2, X } from "lucide-react";
 import { berlinHour } from "@/lib/berlin-day";
 import { challengeAnnounceBlock, challengePushText } from "@/lib/rider-announce-rules";
 import { PushAnnounceField, type PushReach } from "./push-announce-field";
 import {
-  CHALLENGE_KIND_LABEL, CHALLENGE_METRICS, METRIC_LABEL, challengeConditionText,
+  CHALLENGE_KINDS, CHALLENGE_KIND_LABEL, CHALLENGE_METRICS, METRIC_LABEL, POLL_OPTIONS_MAX, POLL_OPTIONS_MIN,
+  challengeConditionText, challengeCountsRides,
   type ChallengeKind, type ChallengePhase, type GamiMetric,
 } from "@/lib/gamification";
+import { votesText } from "@/lib/challenge-voting-rules";
 import {
   EMPTY_SKILL_REWARD, SkillRewardField, skillRewardBody, skillRewardState, skillRewardValid,
   type SkillChoice, type SkillRewardState,
@@ -55,6 +57,12 @@ export interface ChallengeAdminRow {
   /** ISO-Zeit des Push-Versands oder null. */
   pushedAt: string | null;
   pushSent: number | null;
+  /** Abstimmung: Antworten mit Stand. */
+  options: Array<{ label: string; votes: number; percent: number }>;
+  /** Foto-Challenge: alle Fotos, auch ausgeblendete, meiste Stimmen zuerst. */
+  entries: Array<{ id: number; name: string; votes: number; rank: number | null; hidden: boolean }>;
+  /** Schon Stimmen oder Fotos: Art und Antworten bleiben fest. */
+  started: boolean;
 }
 
 interface FormState {
@@ -73,6 +81,7 @@ interface FormState {
   skill: SkillRewardState;
   active: boolean;
   push: boolean;
+  options: string[];
 }
 
 function toForm(c: ChallengeAdminRow): FormState {
@@ -92,7 +101,15 @@ function toForm(c: ChallengeAdminRow): FormState {
     skill: skillRewardState(c),
     active: c.active,
     push: c.pushPlanned,
+    options: c.options.length > 0 ? c.options.map((o) => o.label) : ["", ""],
   };
+}
+
+/** Spalte „Dabei“: Fahrer mit Start, Fotos oder Stimmen. */
+function participantsText(c: ChallengeAdminRow): string {
+  if (c.kind === "PHOTO") return c.participants === 1 ? "1 Foto" : `${c.participants} Fotos`;
+  if (c.kind === "POLL") return votesText(c.participants);
+  return String(c.participants);
 }
 
 function fmt(ymd: string): string {
@@ -106,7 +123,11 @@ const PHASE: Record<ChallengePhase, { label: string; variant: "info" | "success"
   ended: { label: "beendet", variant: "neutral" },
 };
 
-/** Challenges anlegen und ändern: „Aufgabe erfüllt“ oder „Top X“, je mit Zeitraum und optionalem Gutschein. */
+/**
+ * Challenges anlegen und ändern: „Aufgabe erfüllt“, „Top X“, Foto-Challenge
+ * (Fotos hochladen, die Fahrer stimmen ab) oder Abstimmung, je mit Zeitraum
+ * und (außer der Abstimmung) optionalem Gutschein.
+ */
 export function ChallengesCard({
   challenges, today, reach, skills = [],
 }: { challenges: ChallengeAdminRow[]; today: string; reach: PushReach; skills?: SkillChoice[] }) {
@@ -115,11 +136,12 @@ export function ChallengesCard({
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
+  const [hiding, setHiding] = useState<number | null>(null);
 
   const empty: FormState = {
     id: null, name: "", description: "", kind: "TASK", metric: "VISIT_DAYS", threshold: "5", topCount: "3",
     startDate: today, endDate: today, withVoucher: true, voucherLabel: "", voucherValidDays: "30", skill: EMPTY_SKILL_REWARD, active: true,
-    push: true,
+    push: true, options: ["", ""],
   };
   const open = (f: FormState) => {
     setForm(f);
@@ -130,6 +152,9 @@ export function ChallengesCard({
 
   const selected = form?.id != null ? challenges.find((c) => c.id === form.id) : undefined;
   const locked = !!selected?.settled;
+  const started = !!selected?.started;
+  const rides = form ? challengeCountsRides(form.kind) : true;
+  const filledOptions = form ? form.options.map((o) => o.trim()).filter(Boolean) : [];
   const threshold = Number(form?.threshold);
   const topCount = Number(form?.topCount);
   const validDays = form?.voucherValidDays.trim() ? Number(form.voucherValidDays) : null;
@@ -138,13 +163,15 @@ export function ChallengesCard({
     form.name.trim().length > 0 &&
     (form.kind === "TASK"
       ? Number.isInteger(threshold) && threshold >= 1
-      : Number.isInteger(topCount) && topCount >= 1 && topCount <= 100) &&
+      : form.kind === "POLL"
+        ? filledOptions.length >= POLL_OPTIONS_MIN && new Set(filledOptions.map((o) => o.toLowerCase())).size === filledOptions.length
+        : Number.isInteger(topCount) && topCount >= 1 && topCount <= 100) &&
     /^\d{4}-\d{2}-\d{2}$/.test(form.startDate) &&
     /^\d{4}-\d{2}-\d{2}$/.test(form.endDate) &&
     form.startDate <= form.endDate &&
-    (!form.withVoucher || form.voucherLabel.trim().length > 0) &&
+    (form.kind === "POLL" || !form.withVoucher || form.voucherLabel.trim().length > 0) &&
     (validDays == null || (Number.isInteger(validDays) && validDays >= 1)) &&
-    skillRewardValid(form.skill);
+    (form.kind === "POLL" || skillRewardValid(form.skill));
 
   async function save() {
     if (!form || !valid) return;
@@ -162,13 +189,14 @@ export function ChallengesCard({
             kind: form.kind,
             metric: form.metric,
             threshold: form.kind === "TASK" ? threshold : null,
-            topCount: form.kind === "TOP_X" ? topCount : null,
+            topCount: form.kind === "TOP_X" || form.kind === "PHOTO" ? topCount : null,
             startDate: form.startDate,
             endDate: form.endDate,
-            voucherLabel: form.withVoucher ? form.voucherLabel.trim() : null,
-            voucherValidDays: form.withVoucher ? validDays : null,
-            ...skillRewardBody(form.skill),
+            voucherLabel: form.withVoucher && form.kind !== "POLL" ? form.voucherLabel.trim() : null,
+            voucherValidDays: form.withVoucher && form.kind !== "POLL" ? validDays : null,
+            ...(form.kind === "POLL" ? skillRewardBody(EMPTY_SKILL_REWARD) : skillRewardBody(form.skill)),
             active: form.active,
+            options: form.kind === "POLL" ? filledOptions : undefined,
             push: form.push,
           }),
         },
@@ -184,6 +212,24 @@ export function ChallengesCard({
       setError("Netzwerkfehler");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function toggleHidden(entryId: number, hidden: boolean) {
+    setHiding(entryId);
+    setError("");
+    try {
+      const res = await fetch(`/api/gamification/challenges/entries/${entryId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden }),
+      });
+      if (!res.ok) setError("Ändern fehlgeschlagen");
+      else router.refresh();
+    } catch {
+      setError("Netzwerkfehler");
+    } finally {
+      setHiding(null);
     }
   }
 
@@ -215,7 +261,7 @@ export function ChallengesCard({
             Challenges ({challenges.length})
           </CardTitle>
           <CardDescription>
-            Aufgabe: jeder, der das Ziel schafft, gewinnt. Top X: die Besten nach dem Ende.
+            Aufgabe: jeder, der das Ziel schafft, gewinnt. Top X: die Besten nach dem Ende. Foto: die Fahrer stimmen über die Fotos ab. Abstimmung: Frage mit Antworten.
           </CardDescription>
           <CardAction>
             <Button onClick={() => open(empty)} className="max-sm:h-11" aria-label="Challenge anlegen">
@@ -241,7 +287,7 @@ export function ChallengesCard({
                 colSpan={6}
                 icon={Swords}
                 title="Noch keine Challenges"
-                description="Lege zum Beispiel „5 Besuchstage im Mai“ als Aufgabe an."
+                description="Lege zum Beispiel „5 Besuchstage im Mai“ als Aufgabe oder „Bester Sprung im Juli“ als Foto-Challenge an."
                 compact={false}
               />
             )}
@@ -257,9 +303,9 @@ export function ChallengesCard({
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">{challengeConditionText(c)}</TableCell>
                 <TableCell className="hidden md:table-cell">{fmt(c.startDate)} bis {fmt(c.endDate)}</TableCell>
-                <TableCell className="hidden sm:table-cell text-right tabular-nums">{c.participants}</TableCell>
+                <TableCell className="hidden sm:table-cell text-right tabular-nums">{participantsText(c)}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {c.kind === "TOP_X" && !c.settled ? "–" : c.winners}
+                  {c.kind === "POLL" || ((c.kind === "TOP_X" || c.kind === "PHOTO") && !c.settled) ? "–" : c.winners}
                 </TableCell>
                 <TableCell className="text-right">
                   <Badge variant={c.active ? PHASE[c.phase].variant : "neutral"} className="font-normal">
@@ -277,7 +323,7 @@ export function ChallengesCard({
           <DialogHeader>
             <DialogTitle>{form?.id == null ? "Challenge anlegen" : "Challenge bearbeiten"}</DialogTitle>
             <DialogDescription>
-              Gezählt wird je Fahrer im Zeitraum, Start- und Endtag eingeschlossen.
+              Der Zeitraum schließt Start- und Endtag ein.
             </DialogDescription>
           </DialogHeader>
           {form && (
@@ -293,27 +339,29 @@ export function ChallengesCard({
                 <Label htmlFor="ch-desc">Beschreibung (optional)</Label>
                 <Input id="ch-desc" value={form.description} maxLength={300} placeholder="Kurzer Satz für die App" onChange={(e) => set({ description: e.target.value })} className="max-sm:h-11" />
               </div>
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className={`grid gap-4 ${rides ? "sm:grid-cols-3" : form.kind === "PHOTO" ? "sm:grid-cols-2" : ""}`}>
                 <div className="space-y-1.5">
                   <Label htmlFor="ch-kind">Art</Label>
-                  <NativeSelect id="ch-kind" value={form.kind} disabled={locked} onChange={(e) => set({ kind: e.target.value as ChallengeKind })}>
-                    {(["TASK", "TOP_X"] as const).map((k) => <option key={k} value={k}>{CHALLENGE_KIND_LABEL[k]}</option>)}
+                  <NativeSelect id="ch-kind" value={form.kind} disabled={locked || started} onChange={(e) => set({ kind: e.target.value as ChallengeKind })}>
+                    {CHALLENGE_KINDS.map((k) => <option key={k} value={k}>{CHALLENGE_KIND_LABEL[k]}</option>)}
                   </NativeSelect>
                 </div>
+                {rides && (
                 <div className="space-y-1.5">
                   <Label htmlFor="ch-metric">Zählt</Label>
                   <NativeSelect id="ch-metric" value={form.metric} disabled={locked} onChange={(e) => set({ metric: e.target.value as GamiMetric })}>
                     {CHALLENGE_METRICS.map((m) => <option key={m} value={m}>{METRIC_LABEL[m]}</option>)}
                   </NativeSelect>
                 </div>
-                {form.kind === "TASK" ? (
+                )}
+                {form.kind === "POLL" ? null : form.kind === "TASK" ? (
                   <div className="space-y-1.5">
                     <Label htmlFor="ch-threshold">Schwelle</Label>
                     <Input id="ch-threshold" type="number" min={1} inputMode="numeric" disabled={locked} value={form.threshold} onChange={(e) => set({ threshold: e.target.value })} className="max-sm:h-11" />
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    <Label htmlFor="ch-top">Gewinner (Top X)</Label>
+                    <Label htmlFor="ch-top">{form.kind === "PHOTO" ? "Gewinner (beste Fotos)" : "Gewinner (Top X)"}</Label>
                     <Input id="ch-top" type="number" min={1} max={100} inputMode="numeric" disabled={locked} value={form.topCount} onChange={(e) => set({ topCount: e.target.value })} className="max-sm:h-11" />
                   </div>
                 )}
@@ -328,17 +376,123 @@ export function ChallengesCard({
                   <Input id="ch-end" type="date" disabled={locked} value={form.endDate} min={form.startDate} onChange={(e) => set({ endDate: e.target.value })} className="max-sm:h-11" />
                 </div>
               </div>
-              {form.kind === "TOP_X" && !locked && (
+              {(form.kind === "TOP_X" || form.kind === "PHOTO") && !locked && (
                 <p className="text-xs text-muted-foreground">
-                  Ausgewertet wird nach dem Endtag. Liegen mehrere auf dem letzten Gewinnerplatz gleichauf, gewinnen alle.
+                  {form.kind === "PHOTO"
+                    ? "Im Zeitraum lädt jeder Fahrer ein Foto hoch und hat eine Stimme (nicht fürs eigene Foto). Die Stimmen sieht man erst nach dem Ende. Ausgewertet wird nach dem Endtag; bei Gleichstand auf dem letzten Gewinnerplatz gewinnen alle."
+                    : "Ausgewertet wird nach dem Endtag. Liegen mehrere auf dem letzten Gewinnerplatz gleichauf, gewinnen alle."}
                 </p>
               )}
 
+              {form.kind === "POLL" && (
+                <div className="space-y-2">
+                  <Label>Antworten</Label>
+                  {started && (
+                    <Notice tone="info" compact title="Es gibt schon Stimmen, die Antworten bleiben deshalb, wie sie sind." />
+                  )}
+                  {form.options.map((o, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Input
+                        aria-label={`Antwort ${i + 1}`}
+                        value={o}
+                        maxLength={60}
+                        disabled={started}
+                        placeholder={`Antwort ${i + 1}`}
+                        onChange={(e) => set({ options: form.options.map((x, j) => (j === i ? e.target.value : x)) })}
+                        className="max-sm:h-11"
+                      />
+                      {form.options.length > POLL_OPTIONS_MIN && !started && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Antwort ${i + 1} entfernen`}
+                          onClick={() => set({ options: form.options.filter((_, j) => j !== i) })}
+                          className="shrink-0 max-sm:h-11 max-sm:w-11"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  {form.options.length < POLL_OPTIONS_MAX && !started && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => set({ options: [...form.options, ""] })} className="max-sm:h-11">
+                      <Plus className="h-3.5 w-3.5" />
+                      Antwort
+                    </Button>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Der Name ist die Frage. Eine Stimme je Person, bis zum Ende änderbar; das Ergebnis sieht, wer abgestimmt hat.
+                  </p>
+                </div>
+              )}
+
+              {selected && selected.kind === "POLL" && form.kind === "POLL" && selected.options.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Stand ({votesText(selected.participants)})</Label>
+                  <div className="space-y-2">
+                    {selected.options.map((o, i) => (
+                      <div key={i} className="space-y-1">
+                        <div className="flex items-baseline justify-between gap-3 text-sm">
+                          <span className="min-w-0 break-words">{o.label}</span>
+                          <span className="tabular-nums text-muted-foreground">{o.votes} · {o.percent} %</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden" aria-hidden>
+                          <div className="h-full bg-primary" style={{ width: `${o.percent}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selected && selected.kind === "PHOTO" && form.kind === "PHOTO" && (
+                <div className="space-y-2">
+                  <Label>Fotos ({selected.entries.length})</Label>
+                  {selected.entries.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Noch keine Fotos.</p>
+                  ) : (
+                    <ul className="divide-y divide-border rounded-[12px] border border-border">
+                      {selected.entries.map((e) => (
+                        <li key={e.id} className="flex items-center gap-3 p-2">
+                          <a href={`/api/gamification/challenges/entries/${e.id}/photo`} target="_blank" rel="noreferrer" className="shrink-0" aria-label={`Foto von ${e.name} öffnen`}>
+                            {/* eslint-disable-next-line @next/next/no-img-element -- Foto aus der eigenen Schnittstelle */}
+                            <img src={`/api/gamification/challenges/entries/${e.id}/photo`} alt="" className={`h-12 w-12 rounded-[10px] object-cover ${e.hidden ? "opacity-40" : ""}`} />
+                          </a>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-foreground">{e.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {e.hidden ? "ausgeblendet" : `${votesText(e.votes)}${e.rank != null ? ` · Platz ${e.rank}` : ""}`}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={hiding === e.id || locked}
+                            onClick={() => toggleHidden(e.id, !e.hidden)}
+                            className="shrink-0 max-sm:h-11"
+                          >
+                            {hiding === e.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : e.hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                            {e.hidden ? "Einblenden" : "Ausblenden"}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Die KI prüft jedes Foto vor dem Hochladen. Ausgeblendete Fotos sieht nur die Person selbst, sie zählen nicht mit.
+                  </p>
+                </div>
+              )}
+
+              {form.kind !== "POLL" && (
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="ch-voucher">Gutschein ausgeben</Label>
                 <Switch id="ch-voucher" checked={form.withVoucher} disabled={locked} onCheckedChange={(v) => set({ withVoucher: v })} />
               </div>
-              {form.withVoucher && (
+              )}
+              {form.withVoucher && form.kind !== "POLL" && (
                 <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
                   <div className="space-y-1.5">
                     <Label htmlFor="ch-label">Leistung auf dem Gutschein</Label>
@@ -351,7 +505,9 @@ export function ChallengesCard({
                 </div>
               )}
 
-              <SkillRewardField id="ch-skill" value={form.skill} onChange={(v) => set({ skill: v })} skills={skills} disabled={locked} />
+              {form.kind !== "POLL" && (
+                <SkillRewardField id="ch-skill" value={form.skill} onChange={(v) => set({ skill: v })} skills={skills} disabled={locked} />
+              )}
 
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="ch-active">Aktiv</Label>
@@ -370,10 +526,10 @@ export function ChallengesCard({
                       kind: form.kind,
                       metric: form.metric,
                       threshold: form.kind === "TASK" ? threshold || 0 : null,
-                      topCount: form.kind === "TOP_X" ? topCount || 0 : null,
+                      topCount: form.kind === "TOP_X" || form.kind === "PHOTO" ? topCount || 0 : null,
                       startYmd: form.startDate,
                       endYmd: form.endDate,
-                      voucherLabel: form.withVoucher && form.voucherLabel.trim() ? form.voucherLabel.trim() : null,
+                      voucherLabel: form.kind !== "POLL" && form.withVoucher && form.voucherLabel.trim() ? form.voucherLabel.trim() : null,
                     },
                     today,
                   )}

@@ -464,12 +464,30 @@ export function cleanNickname(raw: string | null | undefined): string | null {
   return s.length > 0 ? s : null;
 }
 
-export type ChallengeKind = "TASK" | "TOP_X";
+export type ChallengeKind = "TASK" | "TOP_X" | "PHOTO" | "POLL";
+
+export const CHALLENGE_KINDS: ChallengeKind[] = ["TASK", "TOP_X", "PHOTO", "POLL"];
 
 export const CHALLENGE_KIND_LABEL: Record<ChallengeKind, string> = {
   TASK: "Aufgabe erfüllt",
   TOP_X: "Top X",
+  PHOTO: "Foto-Challenge",
+  POLL: "Abstimmung",
 };
+
+/** Arten, die nach Starts zählen (Kennzahl, Schwelle bzw. Rangliste). */
+export function challengeCountsRides(kind: ChallengeKind): boolean {
+  return kind === "TASK" || kind === "TOP_X";
+}
+
+/** Arten mit Gewinnern nach dem Ende (Auswertung über `settledAt`). */
+export function challengeSettlesAtEnd(kind: ChallengeKind): boolean {
+  return kind === "TOP_X" || kind === "PHOTO";
+}
+
+/** Abstimmung: so viele Antworten mindestens und höchstens. */
+export const POLL_OPTIONS_MIN = 2;
+export const POLL_OPTIONS_MAX = 6;
 
 export type ChallengePhase = "upcoming" | "running" | "ended";
 
@@ -519,9 +537,16 @@ export function challengeConditionText(c: {
   threshold: number | null;
   topCount: number | null;
 }): string {
-  return c.kind === "TASK"
-    ? `${c.threshold ?? 0} ${METRIC_LABEL[c.metric]}`
-    : `Top ${c.topCount ?? 0} nach ${METRIC_LABEL[c.metric]}`;
+  switch (c.kind) {
+    case "TASK":
+      return `${c.threshold ?? 0} ${METRIC_LABEL[c.metric]}`;
+    case "TOP_X":
+      return `Top ${c.topCount ?? 0} nach ${METRIC_LABEL[c.metric]}`;
+    case "PHOTO":
+      return (c.topCount ?? 1) === 1 ? "Foto hochladen, das beliebteste gewinnt" : `Foto hochladen, die ${c.topCount} beliebtesten gewinnen`;
+    case "POLL":
+      return "Abstimmung, eine Stimme je Person";
+  }
 }
 
 /** Ist ein Angebot am Tag `todayYmd` sichtbar? */

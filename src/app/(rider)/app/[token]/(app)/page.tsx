@@ -544,7 +544,11 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
               <span className="rd-muted">
                 {challenge.kind === "TASK" && challenge.threshold != null
                   ? `${Math.min(challenge.value, challenge.threshold)} von ${challenge.threshold}`
-                  : challenge.rank != null ? `Platz ${challenge.rank}` : "noch offen"}
+                  : challenge.kind === "PHOTO"
+                    ? challenge.voting?.myEntry ? "Foto ist dabei" : "Foto hochladen"
+                    : challenge.kind === "POLL"
+                      ? challenge.voting?.myVoted ? "abgestimmt" : "stimm ab"
+                      : challenge.rank != null ? `Platz ${challenge.rank}` : "noch offen"}
               </span>
             </div>
             {challenge.kind === "TASK" && challenge.threshold != null && (

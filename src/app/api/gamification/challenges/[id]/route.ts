@@ -1,6 +1,6 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
-import { challengeSchema, normalizeChallenge, pushPlanPatch } from "@/lib/gamification-input";
+import { challengeSchema, normalizeChallenge, pollOptions, pushPlanPatch } from "@/lib/gamification-input";
 import { skillRewardAllowed } from "@/lib/rider-skills";
 import { runAccountAnnouncements } from "@/lib/rider-announce";
 
@@ -13,17 +13,26 @@ async function resolve(params: Promise<{ id: string }>) {
   }
   const existing = await session.db.challenge.findFirst({
     where: { id, accountId: session.accountId },
-    select: { id: true, settledAt: true, pushedAt: true },
+    select: { id: true, kind: true, settledAt: true, pushedAt: true, _count: { select: { votes: true, entries: true } } },
   });
   if (!existing) {
     return { error: NextResponse.json({ error: "Nicht gefunden" }, { status: 404 }) };
   }
-  return { ...session, id, settledAt: existing.settledAt, pushedAt: existing.pushedAt };
+  return {
+    ...session,
+    id,
+    kind: existing.kind,
+    settledAt: existing.settledAt,
+    pushedAt: existing.pushedAt,
+    /** Schon Stimmen oder Fotos: Art und Antworten bleiben, wie sie sind. */
+    started: existing._count.votes + existing._count.entries > 0,
+  };
 }
 
 /**
  * PATCH: Challenge ändern. Nach der Auswertung lassen sich nur noch Name,
- * Beschreibung und der Schalter ändern – die Gewinner stehen fest.
+ * Beschreibung und der Schalter ändern – die Gewinner stehen fest. Gibt es
+ * schon Stimmen oder Fotos, bleiben Art und Antworten fest.
  */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await resolve(params);
@@ -37,12 +46,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: "Unbekannter Skill" }, { status: 400 });
   }
   const data = normalizeChallenge(parsed.data);
+  if (ctx.started && data.kind !== ctx.kind) {
+    return NextResponse.json({ error: "Es gibt schon Stimmen oder Fotos, die Art lässt sich nicht mehr ändern." }, { status: 409 });
+  }
   const challenge = await ctx.db.challenge.update({
     where: { id: ctx.id },
     data: ctx.settledAt
       ? { name: data.name, description: data.description, active: data.active }
       : { ...data, ...pushPlanPatch(parsed.data.push, ctx.pushedAt) },
   });
+  // Antworten einer Abstimmung: nur bis zur ersten Stimme änderbar.
+  if (!ctx.started) {
+    await ctx.db.challengeOption.deleteMany({ where: { challengeId: ctx.id, accountId: ctx.accountId } });
+    if (challenge.kind === "POLL") {
+      const accountId = ctx.accountId;
+      await ctx.db.challengeOption.createMany({
+        data: pollOptions(parsed.data.options).map((label, i) => ({ challengeId: ctx.id, label, sortOrder: i, accountId })),
+      });
+    }
+  }
   // Bearbeiten allein meldet nichts; nur ein geplanter, noch offener Push geht jetzt raus.
   if (challenge.pushPlanned && !challenge.pushedAt) {
     const accountId = ctx.accountId;
