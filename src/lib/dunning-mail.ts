@@ -33,6 +33,8 @@ export interface DunningMailArgs {
   websiteUrl?: string | null;
   /** Pflichtangaben, eine je Zeile. */
   legalFooter?: string | null;
+  /** anny-Kundenportal für den Knopf „Zum anny-Kundenkonto“. */
+  portalUrl?: string | null;
 }
 
 export interface DunningMail {
@@ -103,7 +105,7 @@ export function dunningParagraphs(a: Pick<DunningMailArgs, "stage" | "aboName" |
       `Wir fordern Sie hiermit letztmalig auf, den Betrag bis spätestens ${deadline ?? "zum Ablauf von 7 Tagen"} zu begleichen. Geht bis dahin keine Zahlung ein, übergeben wir die Forderung ohne weitere Ankündigung an ein Inkassounternehmen. Die dadurch entstehenden Kosten gehen zu Ihren Lasten.`,
     );
   }
-  paras.push("Bezahlen können Sie über den Zahlungslink in der Zahlungserinnerung von anny, in Ihrem anny-Kundenkonto oder bei uns an der Kasse.");
+  paras.push("Bezahlen können Sie bequem in Ihrem anny-Kundenkonto, über den Zahlungslink in der Zahlungserinnerung von anny oder bei uns an der Kasse.");
   paras.push("Sollten Sie die Zahlung in den letzten Tagen bereits veranlasst haben, betrachten Sie dieses Schreiben bitte als gegenstandslos. Bei Fragen antworten Sie einfach auf diese E-Mail.");
   return paras;
 }
@@ -120,6 +122,7 @@ export function dunningMail(a: DunningMailArgs): DunningMail {
   const color = brand(a.brandColor);
   const title = TITLE[a.stage];
   const subject = DUNNING_SUBJECT[a.stage];
+  const portal = a.portalUrl && /^https:\/\//.test(a.portalUrl) ? a.portalUrl : null;
 
   const facts: Array<[string, string]> = [];
   if (a.aboName?.trim()) facts.push(["Leistung", a.aboName.trim()]);
@@ -180,6 +183,11 @@ export function dunningMail(a: DunningMailArgs): DunningMail {
       ${factRows}
     </table>
   </td></tr>
+  ${portal ? `<tr><td style="padding:20px 32px 4px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-radius:999px;background:${color};">
+      <a href="${esc(portal)}" style="display:inline-block;padding:12px 22px;font-family:${SANS};font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">Zum anny-Kundenkonto</a>
+    </td></tr></table>
+  </td></tr>` : ""}
   <tr><td style="padding:18px 32px 0;font-family:${SANS};font-size:15px;line-height:1.65;color:${BODY};">
     ${paras.slice(2).map((p) => `<p style="margin:0 0 14px;">${esc(p)}</p>`).join("")}
     <p style="margin:22px 0 0;">Mit freundlichen Grüßen</p>
@@ -206,6 +214,7 @@ export function dunningMail(a: DunningMailArgs): DunningMail {
     ...paras.slice(0, 2).flatMap((p) => [p, ""]),
     ...factText,
     "",
+    ...(portal ? [`Zum anny-Kundenkonto: ${portal}`, ""] : []),
     ...paras.slice(2).flatMap((p) => [p, ""]),
     "Mit freundlichen Grüßen",
     signatureLine(a.accountName),

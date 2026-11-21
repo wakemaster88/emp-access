@@ -4,6 +4,7 @@
  * Ablauf und Versand: lib/dunning.
  */
 import { addCalendarDays, berlinYmd } from "./berlin-day";
+import { ANNY_WIDGET } from "./rider-shop";
 import type { PaymentOpenInfo } from "./payment-open";
 
 export const DUNNING_REMINDER_DAYS = 3;
@@ -154,15 +155,25 @@ export function dunningStuck(d: DunningState, stage: DunningStage): boolean {
 
 export interface DunningConfig {
   enabled: boolean;
+  /** Link zum anny-Kundenportal für den Knopf in den Mails. */
+  portalUrl: string;
 }
 
+/** Standard: Seite der anny-Organisation, dort „Einloggen“ führt ins Kundenkonto. */
+export const DEFAULT_ANNY_PORTAL_URL = `${ANNY_WIDGET.baseUrl}/de/explore/${ANNY_WIDGET.organization}`;
+
 export function parseDunningConfig(extraConfig: string | null | undefined): DunningConfig {
-  if (!extraConfig) return { enabled: true };
+  const fallback = { enabled: true, portalUrl: DEFAULT_ANNY_PORTAL_URL };
+  if (!extraConfig) return fallback;
   try {
-    const parsed = JSON.parse(extraConfig) as { dunning?: { enabled?: unknown } };
-    return { enabled: parsed?.dunning?.enabled !== false };
+    const parsed = JSON.parse(extraConfig) as { dunning?: { enabled?: unknown; portalUrl?: unknown } };
+    const url = parsed?.dunning?.portalUrl;
+    return {
+      enabled: parsed?.dunning?.enabled !== false,
+      portalUrl: typeof url === "string" && /^https:\/\//.test(url) ? url : DEFAULT_ANNY_PORTAL_URL,
+    };
   } catch {
-    return { enabled: true };
+    return fallback;
   }
 }
 

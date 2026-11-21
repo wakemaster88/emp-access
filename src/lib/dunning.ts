@@ -108,7 +108,8 @@ export async function runDunningForAccount(
   ]);
   if (!anny) return { ...result, skipped: "anny nicht eingerichtet" };
   if (!account?.isActive) return { ...result, skipped: "Konto inaktiv" };
-  if (!parseDunningConfig(anny.extraConfig).enabled) return { ...result, skipped: "Mahnlauf ausgeschaltet" };
+  const config = parseDunningConfig(anny.extraConfig);
+  if (!config.enabled) return { ...result, skipped: "Mahnlauf ausgeschaltet" };
   if (!mail?.isActive || !mail.apiKey) return { ...result, skipped: "Mailversand nicht eingerichtet" };
 
   const send = deps.send ?? sendEmail;
@@ -174,6 +175,7 @@ export async function runDunningForAccount(
           logoUrl: mail.logoUrl,
           websiteUrl: mail.websiteUrl,
           legalFooter: mail.legalFooter,
+          portalUrl: config.portalUrl,
           date: now,
         });
         const r = await send({ config: mail, to: email, subject: content.subject, html: content.html, text: content.text });
