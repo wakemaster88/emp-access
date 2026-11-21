@@ -917,7 +917,8 @@ a.rd-cal-nav { border: 1px solid var(--rd-line-strong); }
 .rd-vote-live { padding: 1px 8px; font-size: 11px; }
 .rd-vote-count { flex: none; min-width: 18px; text-align: right; font-weight: 700; color: var(--rd-accent); }
 .rd-vote-opt .rd-bar { height: 4px; }
-.rd-card > .rd-vote:first-child .rd-vote-toggle { border-top: 0; padding-top: 0; }
+.rd-card > .rd-mvote:first-child .rd-vote-toggle { border-top: 0; padding-top: 0; }
+.rd-mvote { display: block; min-width: 0; }
 
 /* Skills: Geräte schalten als Belohnung (lib/rider-skills). */
 .rd-skills { display: flex; flex-direction: column; gap: 10px; }

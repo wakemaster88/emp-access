@@ -112,7 +112,7 @@ export function RiderMusicVote({ token, initial }: { token: string; initial: Mus
   const mineName = view.options.find((o) => o.key === view.myOption)?.name ?? null;
 
   return (
-    <div className="rd-vote">
+    <div className="rd-mvote">
       <button
         type="button"
         className="rd-hours rd-vote-toggle"
