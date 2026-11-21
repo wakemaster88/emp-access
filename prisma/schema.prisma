@@ -219,6 +219,7 @@ model Account {
   riderPasskeys        RiderPasskey[]
   riderPushSubscriptions RiderPushSubscription[]
   riderDayStats        RiderDayStat[]
+  riderMusicVotes      RiderMusicVote[]
   milestones           Milestone[]
   milestoneAwards      MilestoneAward[]
   challenges           Challenge[]
@@ -2394,6 +2395,10 @@ model AudioZone {
   /// als "Musik erlaubt" (naechster Fensterbeginn, laengstens Tagesende).
   /// Ein manueller Stopp loescht den Wert. Manuell geht vor Automatik.
   musicOverrideUntil DateTime?
+  /// Letzte Quellenwahl des Personals (Start/Stopp von Hand, auch ueber
+  /// emp-control). Die Playlist-Abstimmung der Fahrer pausiert danach fuer
+  /// `GamificationConfig.musicVoteHoldMinutes`: Personal geht vor.
+  staffChoiceAt      DateTime?
   /// AirPlay-Empfaenger aktiv: ein Sender im WLAN darf die Zone uebernehmen.
   airplayEnabled     Boolean            @default(false)
   /// Bluetooth-Empfaenger (A2DP-Sink) aktiv.
@@ -3506,6 +3511,16 @@ model GamificationConfig {
   /// Awards mit `COLD_DAYS`. Messwerte stehen in `ClimateSample`.
   waterSensorDeviceId Int?
   waterSensorDevice   Device?  @relation("GamificationWaterSensor", fields: [waterSensorDeviceId], references: [id], onDelete: SetNull)
+  /// Playlist-Abstimmung: aktive Fahrer waehlen in der Kunden-App, die
+  /// Playlist mit den meisten Stimmen laeuft in den gewaehlten Zonen
+  /// (lib/music-vote). Ab Werk aus.
+  musicVoteEnabled     Boolean @default(false)
+  /// Zonen, in denen die Mehrheit spielt (AudioZone-IDs).
+  musicVoteZoneIds     Int[]   @default([])
+  /// Playlists, zwischen denen die Fahrer waehlen (AudioPlaylist-IDs).
+  musicVotePlaylistIds Int[]   @default([])
+  /// So lange nach einer Wahl des Personals ruht die Abstimmung (0 = gar nicht).
+  musicVoteHoldMinutes Int     @default(60)
   accountId       Int      @unique
   account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())
@@ -3527,6 +3542,24 @@ model RiderDayStat {
   account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@unique([ticketId, day])
+  @@index([accountId, day])
+}
+
+/// Stimme einer Person fuer eine Playlist, je Kalendertag (Europe/Berlin)
+/// hoechstens eine. Sie zaehlt nur, solange die Person aktiv ist (zuletzt
+/// am Lift gestartet vor hoechstens 2 Stunden, lib/music-vote-rules).
+model RiderMusicVote {
+  id         Int          @id @default(autoincrement())
+  profileId  Int
+  profile    RiderProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  day        DateTime     @db.Date
+  playlistId Int
+  accountId  Int
+  account    Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([profileId, day])
   @@index([accountId, day])
 }
 
@@ -3754,6 +3787,7 @@ model RiderProfile {
   loginLockedUntil DateTime?
   passkeys         RiderPasskey[]
   pushSubscriptions RiderPushSubscription[]
+  musicVotes        RiderMusicVote[]
   /// Familie: Erwachsene (eigener Login) sehen alle Mitglieder, Kinder haben
   /// keinen eigenen Zugang und werden von den Erwachsenen mitverwaltet.
   familyId      Int?
