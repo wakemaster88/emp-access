@@ -170,7 +170,7 @@ export async function runDunningForAccount(
           deadline: stage === "first"
             ? addCalendarDays(berlinYmd(now), DUNNING_STEP_DAYS)
             : stage === "final" ? addCalendarDays(berlinYmd(now), DUNNING_FINAL_DAYS) : null,
-          brandColor: mail.brandColor,
+          // Mahnungen bewusst in Petrol (CI), nicht in der allgemeinen Mail-Farbe.
           logoUrl: mail.logoUrl,
           websiteUrl: mail.websiteUrl,
           legalFooter: mail.legalFooter,

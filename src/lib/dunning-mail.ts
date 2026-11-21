@@ -71,6 +71,12 @@ function brand(color: string | null | undefined): string {
   return c && /^#?[0-9a-f]{6}$/i.test(c) ? (c.startsWith("#") ? c : `#${c}`) : "#1a6d73";
 }
 
+/** Grußzeile (Aaron, 21.11.2026: „Ihr Team vom Tuttenbrocksee“). */
+export function signatureLine(accountName: string): string {
+  const name = accountName.trim();
+  return name ? `Ihr Team vom ${name}` : "Ihr Team";
+}
+
 /** Pflichtangaben: Zeilen ohne Leerzeilen. */
 export function legalLines(footer: string | null | undefined): string[] {
   return (footer ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -177,7 +183,7 @@ export function dunningMail(a: DunningMailArgs): DunningMail {
   <tr><td style="padding:18px 32px 0;font-family:${SANS};font-size:15px;line-height:1.65;color:${BODY};">
     ${paras.slice(2).map((p) => `<p style="margin:0 0 14px;">${esc(p)}</p>`).join("")}
     <p style="margin:22px 0 0;">Mit freundlichen Grüßen</p>
-    <p style="margin:4px 0 0;font-weight:700;color:${INK};">${esc(a.accountName)}</p>
+    <p style="margin:4px 0 0;font-weight:700;color:${INK};">${esc(signatureLine(a.accountName))}</p>
   </td></tr>
   <tr><td style="padding:26px 32px 0;"><div style="height:2px;width:48px;background:${ACCENT};font-size:0;line-height:0;">&nbsp;</div></td></tr>
   <tr><td style="padding:14px 32px 26px;font-family:${SANS};font-size:12px;line-height:1.6;color:${MUTED};">
@@ -202,7 +208,7 @@ export function dunningMail(a: DunningMailArgs): DunningMail {
     "",
     ...paras.slice(2).flatMap((p) => [p, ""]),
     "Mit freundlichen Grüßen",
-    a.accountName,
+    signatureLine(a.accountName),
     "",
     "--",
     ...(legal.length ? legal : [a.accountName]),

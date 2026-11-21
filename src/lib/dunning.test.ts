@@ -88,6 +88,7 @@ test("Mails: förmlich, Frist und Inkasso-Hinweis nur in der letzten Mahnung", (
   assert.match(r.text, /Fällig seit: 21\.10\.2026/);
   assert.match(r.text, /^21\.11\.2026$/m);
   assert.match(r.text, /Geschäftsführer: A B\nAmtsgericht X HRB 1/);
+  assert.match(r.text, /Mit freundlichen Grüßen\nIhr Team vom Wakepark/);
   assert.match(r.html, /Muster GmbH · Weg 1 · 12345 Ort<br>Geschäftsführer/);
   assert.doesNotMatch(r.text, /Inkasso/);
   const first = dunningMail({ ...base, stage: "first", deadline: "2026-12-05" });
