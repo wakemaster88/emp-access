@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
+import { skillRewardAllowed } from "@/lib/rider-skills";
 import { milestoneSchema, normalizeMilestone } from "@/lib/gamification-input";
 
 async function resolve(params: Promise<{ id: string }>) {
@@ -27,6 +28,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const parsed = milestoneSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Ungültige Eingabe" }, { status: 400 });
+  }
+  if (!(await skillRewardAllowed(ctx.db, ctx.accountId, parsed.data.skillId))) {
+    return NextResponse.json({ error: "Unbekannter Skill" }, { status: 400 });
   }
   const milestone = await ctx.db.milestone.update({
     where: { id: ctx.id },

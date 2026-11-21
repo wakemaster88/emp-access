@@ -23,6 +23,8 @@ import { AwardBadge } from "@/components/rider/award-badge";
 import { NextAwardCard } from "@/components/rider/award-parts";
 import { RiderMusicVote } from "@/components/rider/rider-music-vote";
 import { loadMusicVoteView } from "@/lib/music-vote";
+import { RiderSkills } from "@/components/rider/rider-skills";
+import { loadRiderSkills } from "@/lib/rider-skills";
 
 export const dynamic = "force-dynamic";
 
@@ -204,6 +206,7 @@ function HolidayCard({ holiday, base }: { holiday: RiderHolidayView; base: strin
         </Link>
       )}
       {v?.redeemed && <span className="rd-muted">Dein Geschenk {v.label} hast du schon eingelöst.</span>}
+      {holiday.skill && <span className="rd-soft">Dazu als Skill: {holiday.skill}. Die Taste findest du unter „Deine Skills“.</span>}
     </section>
   );
 }
@@ -242,7 +245,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { token } = await params;
   const rider = await requireRider(token);
   const base = riderAppPath(token);
-  const [offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, birthday] = await Promise.all([
+  const [offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills, birthday] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
@@ -257,6 +260,10 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       return null;
     }),
     loadMusicVoteView(rider.accountId, rider.profileId).catch(() => null),
+    loadRiderSkills(rider).catch((e) => {
+      console.error("[rider-skills]", e);
+      return [];
+    }),
     loadRiderBirthday(rider).catch((e) => {
       console.error("[rider-birthday]", e);
       return null;
@@ -309,6 +316,8 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       {birthday && <BirthdayCard birthday={birthday} base={base} token={token} />}
 
       {holiday && <HolidayCard holiday={holiday} base={base} />}
+
+      {skills.length > 0 && <RiderSkills token={token} initial={skills} />}
 
       {konto && konto.abos.length > 0 && (
         <RiderForWhom
@@ -531,6 +540,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
               <div className="rd-bar"><i style={{ width: `${Math.min(100, Math.round((challenge.value / challenge.threshold) * 100))}%` }} /></div>
             )}
             {challenge.voucherLabel && <span className="rd-muted">Gewinn: {challenge.voucherLabel}</span>}
+            {challenge.skillLabel && <span className="rd-muted">Skill: {challenge.skillLabel}</span>}
           </Link>
         </>
       )}

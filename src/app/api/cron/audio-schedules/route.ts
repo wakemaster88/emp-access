@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { runAudioScheduleTick } from "@/lib/audio-schedule-tick";
 import { runMusicVoteTick } from "@/lib/music-vote";
+import { runSkillOffTick } from "@/lib/rider-skills";
 
 export const maxDuration = 60;
 
@@ -20,10 +21,15 @@ export async function GET(request: NextRequest) {
       switched: 0,
       errors: [e instanceof Error ? e.message : String(e)],
     }));
+    // Skills der Kunden-App: Hue-Lampen nach Ablauf wieder ausschalten.
+    const skills = await runSkillOffTick().catch((e) => ({
+      off: 0,
+      errors: [e instanceof Error ? e.message : String(e)],
+    }));
     console.log(
-      `[cron audio-schedules] checked=${tick.checked} triggered=${tick.triggered} vote=${vote.switched}`
+      `[cron audio-schedules] checked=${tick.checked} triggered=${tick.triggered} vote=${vote.switched} skillsOff=${skills.off}`
     );
-    return NextResponse.json({ ...tick, vote });
+    return NextResponse.json({ ...tick, vote, skills });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[cron audio-schedules] failed:`, msg);

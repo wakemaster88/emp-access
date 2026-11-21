@@ -20,6 +20,10 @@ import { HOLIDAY_MAX_DAYS_BEFORE, HOLIDAY_SHOW_LABEL, holidayDayLabel, type Holi
 import { berlinHour, berlinYmd } from "@/lib/berlin-day";
 import { holidayAnnounceBlock, holidayPushText } from "@/lib/rider-announce-rules";
 import { PushAnnounceField, type PushReach, type PushStatus } from "./push-announce-field";
+import {
+  EMPTY_SKILL_REWARD, SkillRewardField, skillRewardBody, skillRewardState, skillRewardValid,
+  type SkillChoice, type SkillRewardState,
+} from "./skill-reward-field";
 
 export interface HolidayAdminRow {
   key: string;
@@ -36,6 +40,9 @@ export interface HolidayAdminRow {
     text: string | null;
     voucherLabel: string | null;
     voucherValidDays: number | null;
+    skillId: number | null;
+    skillUses: number;
+    skillValidDays: number | null;
     daysBefore: number;
     active: boolean;
     pushPlanned: boolean;
@@ -55,6 +62,7 @@ interface FormState {
   text: string;
   voucherLabel: string;
   voucherValidDays: string;
+  skill: SkillRewardState;
   daysBefore: string;
   push: boolean;
 }
@@ -75,6 +83,7 @@ function formFor(row: HolidayAdminRow): FormState {
     text: s?.text ?? "",
     voucherLabel: s?.voucherLabel ?? "",
     voucherValidDays: s?.voucherValidDays != null ? String(s.voucherValidDays) : s ? "" : "30",
+    skill: s ? skillRewardState(s) : EMPTY_SKILL_REWARD,
     daysBefore: String(s?.daysBefore ?? 0),
     // Wie bei Angeboten: beim ersten Einschalten standardmäßig mit Push.
     push: s ? s.pushPlanned : true,
@@ -91,7 +100,7 @@ function statusOf(row: HolidayAdminRow): { label: string; on: boolean } {
  * Feiertage in der Kunden-App: je Feiertag Aus, Gruß, Angebot oder Gutschein.
  * Die Einstellung gilt jedes Jahr wieder; das Datum rechnet die App selbst.
  */
-export function HolidaysCard({ rows, reach }: { rows: HolidayAdminRow[]; reach: PushReach }) {
+export function HolidaysCard({ rows, reach, skills = [] }: { rows: HolidayAdminRow[]; reach: PushReach; skills?: SkillChoice[] }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -103,7 +112,8 @@ export function HolidaysCard({ rows, reach }: { rows: HolidayAdminRow[]; reach: 
     !!form &&
     Number.isInteger(days) && days >= 0 && days <= HOLIDAY_MAX_DAYS_BEFORE &&
     (form.choice !== "OFFER" || form.text.trim().length > 0) &&
-    (form.choice !== "VOUCHER" || form.voucherLabel.trim().length > 0);
+    (form.choice !== "VOUCHER" || form.voucherLabel.trim().length > 0 || form.skill.skillId !== "") &&
+    skillRewardValid(form.skill);
 
   async function save() {
     if (!form) return;
@@ -122,6 +132,7 @@ export function HolidaysCard({ rows, reach }: { rows: HolidayAdminRow[]; reach: 
           text: form.text.trim() || null,
           voucherLabel: form.voucherLabel.trim() || null,
           voucherValidDays: validDays,
+          ...skillRewardBody(form.skill),
           daysBefore: days,
           active: !off,
           push: form.push,
@@ -237,6 +248,9 @@ export function HolidaysCard({ rows, reach }: { rows: HolidayAdminRow[]; reach: 
                         <Input id="ho-valid" type="number" min={1} max={730} inputMode="numeric" value={form.voucherValidDays} placeholder="unbegrenzt" onChange={(e) => set({ voucherValidDays: e.target.value })} className="max-sm:h-11" />
                       </div>
                     </div>
+                  )}
+                  {form.choice === "VOUCHER" && (
+                    <SkillRewardField id="ho-skill" value={form.skill} onChange={(v) => set({ skill: v })} skills={skills} />
                   )}
                   <div className="space-y-1.5">
                     <Label htmlFor="ho-before">Schon vorher zeigen (Tage)</Label>

@@ -9,6 +9,7 @@ import { prisma, tenantClient, type TenantDb } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { runChallenges } from "./challenge-service";
 import { notifyAward } from "./rider-push";
+import { grantSkill } from "./rider-skills";
 import {
   aggregateScans,
   awardKey,
@@ -501,6 +502,16 @@ export async function awardMilestones(
           validDays: milestone.voucherValidDays,
         });
         await db.milestoneAward.update({ where: { id: awardId }, data: { voucherId: voucher.id } });
+      }
+      if (milestone.skillId) {
+        await grantSkill(db, {
+          accountId,
+          ticketId,
+          skillId: milestone.skillId,
+          uses: milestone.skillUses,
+          validDays: milestone.skillValidDays,
+          source: awardVoucherNote(milestone.name, r.periodKey),
+        }).catch((e) => console.error("[awards] Skill vergeben fehlgeschlagen:", e));
       }
       if (opts.notify !== false) notifyAward(accountId, ticketId, milestone.name, milestone.voucherLabel);
     } catch (e) {

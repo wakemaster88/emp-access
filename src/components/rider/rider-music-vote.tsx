@@ -98,7 +98,9 @@ export function RiderMusicVote({ token, initial }: { token: string; initial: Mus
   }
 
   const status = view.holdUntil
-    ? `Das Team hat gerade selbst gewählt. Eure Wahl gilt wieder ab ${clock(view.holdUntil)} Uhr.`
+    ? view.holdBy === "rider"
+      ? `Gerade läuft ein Musik-Joker. Eure Wahl gilt wieder ab ${clock(view.holdUntil)} Uhr.`
+      : `Das Team hat gerade selbst gewählt. Eure Wahl gilt wieder ab ${clock(view.holdUntil)} Uhr.`
     : !view.playingName
       ? "Gerade läuft keine Musik. Eure Wahl gilt, sobald sie startet."
       : view.playingOption == null

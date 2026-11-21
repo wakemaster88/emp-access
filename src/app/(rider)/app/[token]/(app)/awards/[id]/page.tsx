@@ -115,6 +115,23 @@ export default async function RiderAwardDetail({ params }: { params: Promise<{ t
         </div>
       )}
 
+      {a.skillLabel && (
+        <div className="rd-card rd-skill">
+          <span className="rd-label">Dein Skill</span>
+          <div className="rd-aw-rw">{a.skillLabel}</div>
+          <div className="rd-muted" style={{ fontSize: 12.5 }}>
+            {a.unlocked
+              ? "Du schaltest selbst: Die Taste findest du auf der Startseite und unter „Gutscheine“."
+              : "Mit dem Award darfst du das Gerät selbst schalten, vor Ort und während der Öffnungszeit."}
+          </div>
+          {a.unlocked && (
+            <Link href={`${base}/gutscheine`} className="rd-btn rd-btn-sm" style={{ alignSelf: "flex-start" }}>
+              <span>Zum Skill</span>
+            </Link>
+          )}
+        </div>
+      )}
+
       {!a.voucherLabel && a.bonus && (
         <div className="rd-card">
           <span className="rd-label">Dazu gibt es</span>

@@ -1,6 +1,7 @@
 import { prisma, tenantClient } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { createBenefitVoucher, isUniqueViolation } from "./gamification-service";
+import { grantSkill } from "./rider-skills";
 import { currentHoliday, type HolidayShowKind } from "./holidays";
 import { aboStatus } from "./rider-shop";
 import type { RiderView } from "./rider-app";
@@ -17,6 +18,8 @@ export interface RiderHolidayView {
   text: string | null;
   /** VOUCHER: der Gutschein dieser Person, sobald er vergeben ist. */
   voucher: { id: number; label: string; expiresAt: Date | null; redeemed: boolean } | null;
+  /** VOUCHER mit Skill: Name des Skills, sobald er an die Person ging. */
+  skill: string | null;
 }
 
 /**
@@ -43,16 +46,21 @@ export async function loadRiderHoliday(rider: RiderView, now: Date = new Date())
     title: s.title?.trim() || hit.def.greeting,
     text: s.text?.trim() || null,
     voucher: null,
+    skill: null,
   };
-  if (s.show !== "VOUCHER" || !s.voucherLabel) return view;
+  if (s.show !== "VOUCHER" || (!s.voucherLabel && !s.skillId)) return view;
 
   const existing = await prisma.riderHolidayGift.findUnique({
     where: { holidayId_year_profileId: { holidayId: s.id, year: hit.year, profileId } },
     select: { voucher: { select: { id: true, label: true, expiresAt: true, redeemedAt: true } } },
   });
+  const skillName = s.skillId
+    ? (await prisma.riderSkill.findFirst({ where: { id: s.skillId, accountId, active: true }, select: { name: true } }))?.name ?? null
+    : null;
   if (existing) {
     const v = existing.voucher;
-    view.voucher = v ? { id: v.id, label: v.label ?? s.voucherLabel, expiresAt: v.expiresAt, redeemed: v.redeemedAt != null } : null;
+    view.voucher = v ? { id: v.id, label: v.label ?? s.voucherLabel ?? "", expiresAt: v.expiresAt, redeemed: v.redeemedAt != null } : null;
+    view.skill = skillName;
     return view;
   }
 
@@ -73,10 +81,24 @@ export async function loadRiderHoliday(rider: RiderView, now: Date = new Date())
     const gift = await db.riderHolidayGift.create({
       data: { holidayId: s.id, year: hit.year, profileId, accountId },
     });
+    if (s.skillId) {
+      await grantSkill(db, {
+        accountId,
+        ticketId: ticket.id,
+        skillId: s.skillId,
+        uses: s.skillUses,
+        validDays: s.skillValidDays,
+        source: `Feiertag ${hit.def.name} ${hit.year}`,
+      })
+        .then((id) => { if (id != null) view.skill = skillName; })
+        .catch((e) => console.error("[rider-holiday] Skill vergeben fehlgeschlagen:", e));
+    }
+    if (!s.voucherLabel) return view;
+    const label = s.voucherLabel;
     const voucher = await createBenefitVoucher(db, {
       accountId,
       ticketId: ticket.id,
-      label: s.voucherLabel,
+      label,
       notes: `Feiertag ${hit.def.name} ${hit.year}`,
       validDays: s.voucherValidDays,
     }).catch(async (e) => {
@@ -85,7 +107,7 @@ export async function loadRiderHoliday(rider: RiderView, now: Date = new Date())
       throw e;
     });
     await db.riderHolidayGift.update({ where: { id: gift.id }, data: { voucherId: voucher.id } });
-    view.voucher = { id: voucher.id, label: s.voucherLabel, expiresAt: voucher.expiresAt, redeemed: false };
+    view.voucher = { id: voucher.id, label, expiresAt: voucher.expiresAt, redeemed: false };
   } catch (e) {
     if (!isUniqueViolation(e)) console.error("[rider-holiday] Gutschein vergeben fehlgeschlagen:", e);
   }
