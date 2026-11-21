@@ -14,7 +14,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       short_name: "Ride Pass",
       description: "Abo, Gutscheine und Statistik",
       start_url: path,
-      scope: path,
+      // Ganz /app, nicht nur der eigene Pfad: sonst öffnet iOS den Wechsel zu
+      // einer anderen Person der Familie (/app/<anderer Token>) in einem
+      // eigenen Browserfenster statt in der App (Aaron, 21.11.2026).
+      scope: "/app",
       display: "standalone",
       display_override: ["standalone"],
       orientation: "portrait",
