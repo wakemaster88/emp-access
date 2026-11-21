@@ -944,3 +944,40 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
   JPEG verkleinert, höchstens 400 000 Zeichen). Nur für die App. Das Foto zum
   Abgleich an der Kasse (`Ticket.profileImage`) ändert der Kunde nicht, damit
   niemand sein Abo mit fremdem Foto weitergeben kann.
+
+## Temperaturen im Saisonrückblick (21.11.2026)
+
+- Wunsch von Aaron: in den Stats der Kunden-App steht, bei welchen
+  Temperaturen man im Schnitt gefahren ist, Luft und Wasser. Der
+  Saisonrückblick (`/app/<token>/rueckblick`) zeigt dafür zwei Kacheln:
+  „Luft im Schnitt“ und „Wasser im Schnitt“.
+- **Rechenweg** (`loadRideTemps` in `src/lib/gamification-service.ts`,
+  `tempStat` und `tempStatNote` in `src/lib/gamification.ts`): je Besuchstag
+  das Mittel über die Zeit am Lift (erster bis letzter Start der Person),
+  danach das Mittel über die Tage. Jeder Tag zählt gleich, egal wie viele
+  Starts er hatte. Die Unterzeile nennt die Spanne vom kältesten zum
+  wärmsten Tag, oder „gemessen an x von y Tagen“, solange nicht jeder
+  Besuchstag einen Messwert hat.
+- **Wasser**: der Fühler der Kunden-App (derselbe wie für Ice Breaker,
+  `GamificationConfig.waterSensorDeviceId`, Werte aus `ClimateSample`).
+  Messwerte gibt es seit 05.11.2026, für die Saison 2026 also nur für die
+  letzten Tage. Ohne Messwert an den eigenen Tagen steht ein Strich mit
+  Hinweis; ohne Fühler erscheint die Kachel nicht.
+- **Luft**: draußen hängt kein Fühler (die beiden Shelly-Fühler messen die
+  Umkleiden). Die Werte kommen deshalb von Open-Meteo, je Stunde für den
+  Standort des Kontos, und stehen in `WeatherHour`. Der 5-Minuten-Cron
+  (`runWeatherHistoryTick`, `src/lib/weather-history.ts`) holt einmal je
+  Stunde die neuen Stunden für jedes Konto mit eingeschalteter Kunden-App
+  und Standort. Beim ersten Lauf füllt er rückwirkend ab dem ersten
+  gezählten Besuchstag, höchstens ab dem Vorjahr: die letzten 92 Tage über
+  die Vorhersage-API, Älteres über das Archiv
+  (`archive-api.open-meteo.com`). Scheitert ein Abruf, holt ein späterer
+  Takt die Lücke nach. Ohne Standort gibt es keine Luftwerte und die Kachel
+  erscheint nicht.
+- **Standort des Kontos** (`Account.latitude`, `Account.longitude`): war bis
+  21.11.2026 leer. Die Cloud rechnete das Wetter für Bewässerung und
+  Tagesvorschau sowie Sonnenauf- und -untergang für Regeln deshalb für
+  Berlin. Seit 21.11.2026 steht dort mit Aarons OK der Tuttenbrocksee
+  (51,756 / 8,043, dieselben Werte wie der Rückfall im Hub,
+  `hub/src/weather.ts`). Ein Eingabefeld für den Standort gibt es in der
+  Verwaltung nicht.

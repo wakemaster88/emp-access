@@ -195,7 +195,9 @@ export function GamiSettingsCard({ initial, subscriptions, services, devices, se
             {sensors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </NativeSelect>
           <p className="text-xs text-muted-foreground">
-            Für Awards mit der Zählart „Tage mit kaltem Wasser“, zum Beispiel Ice Breaker. Die Grad-Grenze stellst du am Award ein.
+            Für Awards mit der Zählart „Tage mit kaltem Wasser“, zum Beispiel Ice Breaker, und für die Wassertemperatur im
+            Saisonrückblick. Die Grad-Grenze stellst du am Award ein. Die Lufttemperatur im Rückblick kommt vom Wetterdienst für
+            den Standort des Betriebs.
           </p>
         </div>
 

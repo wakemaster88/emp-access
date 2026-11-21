@@ -3,6 +3,7 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 import { runRuleTick } from "@/lib/room-rules";
 import { runClimateTick } from "@/lib/room-climate";
 import { runClimateHistoryTick } from "@/lib/climate-history";
+import { runWeatherHistoryTick } from "@/lib/weather-history";
 import { runMotionTick } from "@/lib/room-motion";
 import { runIrrigationTick } from "@/lib/irrigation";
 import { runOfflineCheckTick } from "@/lib/device-offline";
@@ -15,7 +16,8 @@ import { runAnnouncementTick } from "@/lib/rider-announce";
 export const maxDuration = 120;
 
 /**
- * Ein Cron alle fuenf Minuten statt einzelner: Raumregeln, Raumklima, Klimaverlauf verdichten, Bewegungsmelder, Bewaesserung,
+ * Ein Cron alle fuenf Minuten statt einzelner: Raumregeln, Raumklima, Klimaverlauf verdichten, Lufttemperatur am Standort
+ * fortschreiben (Kunden-App), Bewegungsmelder, Bewaesserung,
  * Geraete-Offline-Check, der Telegram-Tagesbericht, die Bildsuche fuer Artikel ohne Foto und Kundenkonten fuer Abos mit
  * Adresse ohne Konto, Einladungen zur App an Bestandskunden sowie geplante Pushes zu neuen Angeboten und Challenges der
  * Kunden-App. Jeder Job laeuft in
@@ -32,6 +34,7 @@ export async function GET(request: NextRequest) {
     roomRules: runRuleTick,
     climate: runClimateTick,
     climateHistory: runClimateHistoryTick,
+    weatherHistory: () => runWeatherHistoryTick(),
     motion: runMotionTick,
     irrigation: runIrrigationTick,
     deviceOffline: runOfflineCheckTick,
