@@ -1063,3 +1063,13 @@ Aaron: „in der kunden app soll optional aktiviert werden können, dass alle ak
 - Umsetzung `src/lib/music-vote.ts`, Regeln `music-vote-rules.ts`: gleich nach jeder Stimme und jede Minute im Cron `audio-schedules`. Sie wechselt nur laufende eigene Musik (nicht bei AirPlay/Bluetooth, nicht ohne Abspieler), startet nie selbst und schickt `manual: false`, das Musikfenster bleibt also unberührt. Der Wechsel setzt `AudioZone.playlistId` bzw. `streamId`/`streamUrl` (nach dem Ausschalten bleibt die zuletzt gewählte Playlist als Vorgabe der Zone).
 - Personal geht vor: Start/Stopp von Hand (Dashboard, Geräte-API, emp-control) setzt `AudioZone.staffChoiceAt`; danach ruht die Abstimmung für die eingestellte Zeit. Im Audio-Verlauf stehen Wechsel als „Fahrer-Abstimmung“ (`triggerKind = VOTE`).
 - Kunden-App: Karte „Musik · <Zone>“ auf der Startseite, für aktive Fahrer direkt unter „Dein Tag heute“, sonst unter der Auslastung (nur zum Ansehen).
+
+## Skills in der Kunden-App (Geräte schalten als Belohnung)
+
+Seit 21.11.2026 (Aaron: „anstatt gutschein, kann man auch skills gewinnen wie geräte steuern, außenduschen, heizstrahler etc“). Ein Skill ist ein zeitlich begrenztes Recht, vor Ort selbst ein Gerät zu schalten oder die Musik zu bestimmen.
+
+- Anlegen, sperren, Protokoll: Kunden App › Gutscheine › Karte „Skills“ und „Geschaltet“. Ab Werk gibt es keinen Skill.
+- Arten: `DEVICE` (Shelly-Taster, -Schalter, -Licht oder Hue; Türen, Tore, Schlösser, Ventile nie, `isSkillDevice`) und `MUSIC` (Musik-Joker: eine Auswahl der Playlist-Abstimmung läuft `minutes` lang, die Abstimmung ruht über `AudioZone.riderChoiceUntil`).
+- Vergabe: an Award, Challenge und Feiertag (Feld „Skill freischalten“ mit Nutzungen und Gültigkeit), als `RiderSkillGrant` am Ticket wie ein Gutschein; Push „Neuer Skill“.
+- Grenzen (`src/lib/rider-skill-rules.ts`): Nutzungen und Ablauf, nur während der Betriebszeit am Lift, nur wer heute schon am Lift gestartet ist, Pause je Skill nach jeder Nutzung, Sperre durch das Personal.
+- Schalten (`src/lib/rider-skills.ts`, `POST /api/rider/[token]/skill`): Nutzung wird unter einer Sperre je Skill gebucht, dann geschaltet. Taster laufen ihre eigene Dauer, Schalter bekommen den Shelly-Auto-Off-Timer (`autoOffSec`), Hue schaltet der Minuten-Cron (`runSkillOffTick` im Audio-Cron) wieder aus. Klappt das Schalten nicht, gibt es die Nutzung zurück; das Protokoll (`RiderSkillUse`) zeigt den Fehler.

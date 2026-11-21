@@ -103,6 +103,8 @@ export interface ZoneForVote {
   playlistId: number | null;
   streamId: number | null;
   staffChoiceAt: Date | null;
+  /** Musik-Skill eines Fahrers läuft bis hier (lib/rider-skills). */
+  riderChoiceUntil?: Date | null;
 }
 
 /** Was in der Zone gerade läuft, als Option ("p…"/"s…"); null = nichts Wählbares. */
@@ -116,7 +118,7 @@ export function currentOption(zone: Pick<ZoneForVote, "isPlaying" | "sourceKind"
 export type VoteDecision =
   | { kind: "switch"; option: string }
   | { kind: "keep" }
-  | { kind: "idle"; reason: "no-votes" | "not-playing" | "external" | "no-player" | "staff-hold" };
+  | { kind: "idle"; reason: "no-votes" | "not-playing" | "external" | "no-player" | "staff-hold" | "rider-skill" };
 
 /**
  * Was die Abstimmung an einer Zone jetzt tut. Sie wechselt nur laufende Musik,
@@ -131,6 +133,7 @@ export function decideZone(
 ): VoteDecision {
   if (!zone.isActive || zone.deviceId == null) return { kind: "idle", reason: "no-player" };
   if (staffHoldUntil(zone.staffChoiceAt, holdMinutes, now)) return { kind: "idle", reason: "staff-hold" };
+  if (zone.riderChoiceUntil && zone.riderChoiceUntil > now) return { kind: "idle", reason: "rider-skill" };
   if (!zone.isPlaying) return { kind: "idle", reason: "not-playing" };
   if (zone.externalActive) return { kind: "idle", reason: "external" };
   if (winner == null) return { kind: "idle", reason: "no-votes" };
@@ -166,6 +169,8 @@ export interface MusicVoteView {
   playingName: string | null;
   /** Abstimmung ruht wegen einer Wahl des Personals bis … (ISO). */
   holdUntil: string | null;
+  /** Wer gerade gewählt hat: das Team oder ein Fahrer mit Musik-Skill. */
+  holdBy?: "staff" | "rider" | null;
   /** Aktive Fahrer mit Stimme. */
   voters: number;
 }

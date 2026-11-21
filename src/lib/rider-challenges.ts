@@ -5,6 +5,7 @@
  * haben (`RiderProfile.showInRanking`). Alle anderen erscheinen als „Anonym“.
  */
 import { cache } from "react";
+import { skillRewardText } from "./rider-skill-rules";
 import { prisma, tenantClient } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import {
@@ -33,6 +34,8 @@ export interface RiderChallenge {
   startDate: Date;
   endDate: Date;
   voucherLabel: string | null;
+  /** Skill als Gewinn, z. B. „Außendusche · 10×“. */
+  skillLabel: string | null;
   /** Eigener Wert im Zeitraum. */
   value: number;
   threshold: number | null;
@@ -77,6 +80,7 @@ export async function loadRiderChallenges(
     where: { accountId, active: true, endDate: { gte: ymdToDbDate(shiftYmd(today, -KEEP_ENDED_DAYS)) } },
     orderBy: [{ endDate: "asc" }, { id: "asc" }],
     take: 30,
+    include: { skill: { select: { name: true, active: true } } },
   });
   if (challenges.length === 0) return [];
 
@@ -125,6 +129,7 @@ export async function loadRiderChallenges(
       startDate: c.startDate,
       endDate: c.endDate,
       voucherLabel: c.voucherLabel,
+      skillLabel: c.skill?.active ? skillRewardText(c.skill.name, c.skillUses) : null,
       value: mine?.value ?? 0,
       threshold: c.threshold,
       topCount: c.topCount,

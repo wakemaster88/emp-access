@@ -877,3 +877,20 @@ a.rd-cal-nav { border: 1px solid var(--rd-line-strong); }
 .rd-vote-live { display: inline-flex; align-items: center; gap: 4px; }
 .rd-vote-count { flex: none; min-width: 20px; text-align: right; font-weight: 700; color: var(--rd-accent); }
 .rd-vote-opt .rd-bar { height: 6px; }
+
+/* Skills: Geräte schalten als Belohnung (lib/rider-skills). */
+.rd-skills { display: flex; flex-direction: column; gap: 10px; }
+.rd-skill { border-left: 4px solid var(--rd-accent); }
+.rd-skill-name { font-size: 22px; line-height: 1.1; }
+.rd-skill-go { display: inline-flex; align-items: center; gap: 8px; }
+.rd-skill .rd-chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--rd-line-strong);
+  background: transparent;
+  color: var(--rd-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.rd-skill .rd-chip-on { border-color: var(--rd-accent); background: var(--rd-accent-bg); color: var(--rd-accent-soft); font-weight: 600; }

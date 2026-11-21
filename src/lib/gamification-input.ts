@@ -1,6 +1,14 @@
 import { z } from "zod";
+import { MAX_SKILL_COOLDOWN, MAX_SKILL_MINUTES, MAX_SKILL_USES, normalizeSkillReward } from "./rider-skill-rules";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** Skill als Belohnung; ältere Aufrufer lassen die Felder weg (bleibt, wie es ist). */
+const skillReward = {
+  skillId: z.number().int().positive().nullable().optional(),
+  skillUses: z.number().int().min(1).max(MAX_SKILL_USES).nullable().optional(),
+  skillValidDays: z.number().int().min(1).max(730).nullable().optional(),
+};
 
 /** Eingabe für das Anlegen und Ändern eines Meilensteins (Awards). */
 export const milestoneSchema = z.object({
@@ -20,6 +28,7 @@ export const milestoneSchema = z.object({
   eventDays: z.array(ymd).max(60).optional(),
   /** Grenze der Wassertemperatur in °C (Zählart „Tage mit kaltem Wasser“). */
   tempBelow: z.number().min(-5).max(40).nullable().optional(),
+  ...skillReward,
   active: z.boolean(),
 }).refine((m) => m.metric !== "COLD_DAYS" || m.tempBelow != null, { message: "Die Grenze der Wassertemperatur fehlt" });
 
@@ -55,6 +64,7 @@ export function normalizeMilestone(input: MilestoneInput) {
           : [],
     }),
     tempBelow: input.metric === "COLD_DAYS" ? input.tempBelow ?? null : null,
+    ...normalizeSkillReward(input),
     active: input.active,
   };
 }
@@ -72,6 +82,7 @@ export const challengeSchema = z
     endDate: ymd,
     voucherLabel: z.string().trim().max(80).nullable(),
     voucherValidDays: z.number().int().min(1).max(730).nullable(),
+    ...skillReward,
     active: z.boolean(),
     /** Push an die Kunden-App senden; fehlt der Wert, bleibt der Plan, wie er ist. */
     push: z.boolean().optional(),
@@ -97,6 +108,7 @@ export function normalizeChallenge(input: ChallengeInput) {
     endDate: new Date(`${input.endDate}T00:00:00.000Z`),
     voucherLabel,
     voucherValidDays: voucherLabel ? input.voucherValidDays : null,
+    ...normalizeSkillReward(input),
     active: input.active,
   };
 }
@@ -144,10 +156,13 @@ export const holidaySchema = z
     voucherLabel: z.string().trim().max(80).nullable(),
     voucherValidDays: z.number().int().min(1).max(730).nullable(),
     daysBefore: z.number().int().min(0).max(14),
+    ...skillReward,
     active: z.boolean(),
   })
   .refine((h) => h.show !== "OFFER" || !!h.text, { message: "Beim Angebot fehlt der Text" })
-  .refine((h) => h.show !== "VOUCHER" || !!h.voucherLabel, { message: "Beim Gutschein fehlt die Leistung" });
+  .refine((h) => h.show !== "VOUCHER" || !!h.voucherLabel || !!h.skillId, {
+    message: "Beim Gutschein fehlt die Leistung oder der Skill",
+  });
 
 export type HolidayInput = z.infer<typeof holidaySchema>;
 
@@ -160,7 +175,41 @@ export function normalizeHoliday(input: HolidayInput) {
     text: blank(input.text),
     voucherLabel: voucher ? blank(input.voucherLabel) : null,
     voucherValidDays: voucher ? input.voucherValidDays : null,
+    ...(voucher ? normalizeSkillReward(input) : { skillId: null, skillUses: 1, skillValidDays: null }),
     daysBefore: input.daysBefore,
+    active: input.active,
+  };
+}
+
+/** Eingabe für einen Skill der Kunden-App (Gerät schalten oder Musik-Joker). */
+export const skillSchema = z
+  .object({
+    name: z.string().trim().min(1).max(40),
+    description: z.string().trim().max(160).nullable(),
+    kind: z.enum(["DEVICE", "MUSIC"]),
+    deviceId: z.number().int().positive().nullable(),
+    minutes: z.number().int().min(1).max(MAX_SKILL_MINUTES),
+    cooldownMinutes: z.number().int().min(0).max(MAX_SKILL_COOLDOWN),
+    onlyOperating: z.boolean(),
+    onlyOnSite: z.boolean(),
+    paused: z.boolean(),
+    active: z.boolean(),
+  })
+  .refine((s) => s.kind !== "DEVICE" || s.deviceId != null, { message: "Bitte ein Gerät wählen" });
+
+export type SkillInput = z.infer<typeof skillSchema>;
+
+export function normalizeSkill(input: SkillInput) {
+  return {
+    name: input.name,
+    description: blank(input.description),
+    kind: input.kind,
+    deviceId: input.kind === "DEVICE" ? input.deviceId : null,
+    minutes: input.minutes,
+    cooldownMinutes: input.cooldownMinutes,
+    onlyOperating: input.onlyOperating,
+    onlyOnSite: input.onlyOnSite,
+    paused: input.paused,
     active: input.active,
   };
 }

@@ -24,6 +24,10 @@ import {
   CHALLENGE_KIND_LABEL, CHALLENGE_METRICS, METRIC_LABEL, challengeConditionText,
   type ChallengeKind, type ChallengePhase, type GamiMetric,
 } from "@/lib/gamification";
+import {
+  EMPTY_SKILL_REWARD, SkillRewardField, skillRewardBody, skillRewardState, skillRewardValid,
+  type SkillChoice, type SkillRewardState,
+} from "./skill-reward-field";
 
 export interface ChallengeAdminRow {
   id: number;
@@ -38,6 +42,9 @@ export interface ChallengeAdminRow {
   endDate: string;
   voucherLabel: string | null;
   voucherValidDays: number | null;
+  skillId: number | null;
+  skillUses: number;
+  skillValidDays: number | null;
   active: boolean;
   settled: boolean;
   phase: ChallengePhase;
@@ -63,6 +70,7 @@ interface FormState {
   withVoucher: boolean;
   voucherLabel: string;
   voucherValidDays: string;
+  skill: SkillRewardState;
   active: boolean;
   push: boolean;
 }
@@ -81,6 +89,7 @@ function toForm(c: ChallengeAdminRow): FormState {
     withVoucher: c.voucherLabel != null,
     voucherLabel: c.voucherLabel ?? "",
     voucherValidDays: c.voucherValidDays != null ? String(c.voucherValidDays) : "",
+    skill: skillRewardState(c),
     active: c.active,
     push: c.pushPlanned,
   };
@@ -99,8 +108,8 @@ const PHASE: Record<ChallengePhase, { label: string; variant: "info" | "success"
 
 /** Challenges anlegen und ändern: „Aufgabe erfüllt“ oder „Top X“, je mit Zeitraum und optionalem Gutschein. */
 export function ChallengesCard({
-  challenges, today, reach,
-}: { challenges: ChallengeAdminRow[]; today: string; reach: PushReach }) {
+  challenges, today, reach, skills = [],
+}: { challenges: ChallengeAdminRow[]; today: string; reach: PushReach; skills?: SkillChoice[] }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -109,7 +118,7 @@ export function ChallengesCard({
 
   const empty: FormState = {
     id: null, name: "", description: "", kind: "TASK", metric: "VISIT_DAYS", threshold: "5", topCount: "3",
-    startDate: today, endDate: today, withVoucher: true, voucherLabel: "", voucherValidDays: "30", active: true,
+    startDate: today, endDate: today, withVoucher: true, voucherLabel: "", voucherValidDays: "30", skill: EMPTY_SKILL_REWARD, active: true,
     push: true,
   };
   const open = (f: FormState) => {
@@ -134,7 +143,8 @@ export function ChallengesCard({
     /^\d{4}-\d{2}-\d{2}$/.test(form.endDate) &&
     form.startDate <= form.endDate &&
     (!form.withVoucher || form.voucherLabel.trim().length > 0) &&
-    (validDays == null || (Number.isInteger(validDays) && validDays >= 1));
+    (validDays == null || (Number.isInteger(validDays) && validDays >= 1)) &&
+    skillRewardValid(form.skill);
 
   async function save() {
     if (!form || !valid) return;
@@ -157,6 +167,7 @@ export function ChallengesCard({
             endDate: form.endDate,
             voucherLabel: form.withVoucher ? form.voucherLabel.trim() : null,
             voucherValidDays: form.withVoucher ? validDays : null,
+            ...skillRewardBody(form.skill),
             active: form.active,
             push: form.push,
           }),
@@ -339,6 +350,8 @@ export function ChallengesCard({
                   </div>
                 </div>
               )}
+
+              <SkillRewardField id="ch-skill" value={form.skill} onChange={(v) => set({ skill: v })} skills={skills} disabled={locked} />
 
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="ch-active">Aktiv</Label>

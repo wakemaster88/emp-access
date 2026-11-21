@@ -20,6 +20,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Award, CalendarPlus, Loader2, Plus, Save, Trash2, X } from "lucide-react";
 import { awardText } from "@/lib/awards";
 import {
+  EMPTY_SKILL_REWARD, SkillRewardField, skillRewardBody, skillRewardState, skillRewardValid,
+  type SkillChoice, type SkillRewardState,
+} from "./skill-reward-field";
+import {
   GAMI_METRICS, GAMI_PERIODS, GAMI_TIERS, METRIC_LABEL, PERIOD_LABEL, TIER_LABEL, formatDegrees, milestoneConditionText,
   openingDayOf,
   type GamiMetric, type GamiPeriod, type GamiTier,
@@ -41,6 +45,11 @@ export interface MilestoneRow {
   eventDays: string[];
   /** Grenze der Wassertemperatur in °C (Zählart „Tage mit kaltem Wasser“). */
   tempBelow: number | null;
+  skillId: number | null;
+  skillUses: number;
+  skillValidDays: number | null;
+  /** Name des Skills für die Liste. */
+  skillName: string | null;
   active: boolean;
   awarded: number;
   redeemed: number;
@@ -62,6 +71,7 @@ interface FormState {
   eventDays: string[];
   newEventDay: string;
   tempBelow: string;
+  skill: SkillRewardState;
   active: boolean;
 }
 
@@ -81,6 +91,7 @@ const EMPTY: FormState = {
   eventDays: [],
   newEventDay: "",
   tempBelow: "10",
+  skill: EMPTY_SKILL_REWARD,
   active: true,
 };
 
@@ -101,6 +112,7 @@ function toForm(m: MilestoneRow): FormState {
     eventDays: m.eventDays,
     newEventDay: "",
     tempBelow: m.tempBelow != null ? String(m.tempBelow) : "10",
+    skill: skillRewardState(m),
     active: m.active,
   };
 }
@@ -134,9 +146,11 @@ function parseDegrees(text: string): number | null {
  * `waterSensor` der gewählte Fühler (null = keiner gewählt).
  */
 export function MilestonesCard({
-  milestones, today, openingDay, waterSensor,
+  milestones, today, openingDay, waterSensor, skills = [],
 }: {
   milestones: MilestoneRow[];
+  /** Skills, die als Belohnung zur Wahl stehen. */
+  skills?: SkillChoice[];
   today: string;
   openingDay: string | null;
   waterSensor: WaterSensorInfo | null;
@@ -164,7 +178,8 @@ export function MilestonesCard({
     Number.isInteger(threshold) && threshold >= 1 &&
     (form.metric !== "COLD_DAYS" || tempBelow != null) &&
     (!form.withVoucher || form.voucherLabel.trim().length > 0) &&
-    (validDays == null || (Number.isInteger(validDays) && validDays >= 1));
+    (validDays == null || (Number.isInteger(validDays) && validDays >= 1)) &&
+    skillRewardValid(form.skill);
 
   async function save() {
     if (!form || !valid) return;
@@ -189,6 +204,7 @@ export function MilestonesCard({
             hint: form.hint.trim(),
             eventDays: form.metric === "EVENT_DAYS" || form.metric === "OPENING_DAY" ? form.eventDays : [],
             tempBelow,
+            ...skillRewardBody(form.skill),
             active: form.active,
           }),
         },
@@ -297,6 +313,7 @@ export function MilestonesCard({
                   ) : (
                     <span className="text-muted-foreground">kein Gutschein</span>
                   )}
+                  {m.skillName && <div className="text-xs text-muted-foreground">Skill: {m.skillName} · {m.skillUses}×</div>}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{m.awarded}</TableCell>
                 <TableCell className="hidden sm:table-cell text-right tabular-nums">
@@ -489,6 +506,8 @@ export function MilestonesCard({
                   </div>
                 </div>
               )}
+
+              <SkillRewardField id="ms-skill" value={form.skill} onChange={(v) => set({ skill: v })} skills={skills} />
 
               <div className="space-y-1.5">
                 <Label htmlFor="ms-bonus">Zugabe ohne Gutschein</Label>

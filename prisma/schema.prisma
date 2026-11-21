@@ -220,6 +220,9 @@ model Account {
   riderPushSubscriptions RiderPushSubscription[]
   riderDayStats        RiderDayStat[]
   riderMusicVotes      RiderMusicVote[]
+  riderSkills            RiderSkill[]
+  riderSkillGrants       RiderSkillGrant[]
+  riderSkillUses         RiderSkillUse[]
   milestones           Milestone[]
   milestoneAwards      MilestoneAward[]
   challenges           Challenge[]
@@ -354,6 +357,8 @@ model Device {
   /// Geraete-eigenes Token fuer Scanner- und Audio-Pis. Gilt nur fuer die
   /// Geraete-Endpunkte (/api/devices/pi, /api/devices/audio) und nur fuer
   /// dieses Geraet. Null = Geraet nutzt noch das Account-Token.
+  /// Skills der Kunden-App, die dieses Geraet schalten.
+  riderSkills          RiderSkill[]
   apiToken             String?              @unique
   category             DeviceCategory?
   ipAddress            String?
@@ -601,7 +606,9 @@ model Ticket {
   gamificationOptOut      Boolean              @default(false)
   riderDayStats           RiderDayStat[]
   milestoneAwards         MilestoneAward[]
+  skillGrants        RiderSkillGrant[]
   challengeAwards         ChallengeAward[]
+
   @@index([riderProfileId])
   @@index([customerId])
   @@index([accountId])
@@ -2399,6 +2406,9 @@ model AudioZone {
   /// emp-control). Die Playlist-Abstimmung der Fahrer pausiert danach fuer
   /// `GamificationConfig.musicVoteHoldMinutes`: Personal geht vor.
   staffChoiceAt      DateTime?
+  /// Musik-Skill der Kunden-App: bis hierhin spielt die Wahl eines Fahrers,
+  /// die Abstimmung ruht so lange (lib/rider-skills).
+  riderChoiceUntil   DateTime?
   /// AirPlay-Empfaenger aktiv: ein Sender im WLAN darf die Zone uebernehmen.
   airplayEnabled     Boolean            @default(false)
   /// Bluetooth-Empfaenger (A2DP-Sink) aktiv.
@@ -3475,6 +3485,103 @@ model McpToken {
 }
 
 /// Gamification je Mandant. Ohne Zeile oder mit enabled=false wird nichts gezaehlt.
+/// Was ein Skill der Kunden-App tut.
+enum RiderSkillKind {
+  /// Ein Geraet einschalten: Taster (Aussendusche) fuer seine eigene Dauer,
+  /// Schalter und Licht fuer `minutes`, danach wieder aus.
+  DEVICE
+  /// Musik-Joker: die Wahl des Fahrers laeuft `minutes` lang in den Zonen
+  /// der Playlist-Abstimmung.
+  MUSIC
+}
+
+/// Skill der Kunden-App: zeitlich begrenztes Recht, vor Ort ein Geraet zu
+/// schalten. Wird wie ein Gutschein ueber Awards, Challenges und Feiertage
+/// vergeben (`RiderSkillGrant`). Regeln in `lib/rider-skill-rules.ts`.
+model RiderSkill {
+  id              Int               @id @default(autoincrement())
+  /// Name in der App, z. B. "Außendusche".
+  name            String
+  description     String?
+  kind            RiderSkillKind
+  /// DEVICE: das Geraet (nur Taster, Schalter, Licht).
+  deviceId        Int?
+  device          Device?           @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  /// DEVICE Schalter/Licht und MUSIC: so lange laeuft es je Nutzung.
+  minutes         Int               @default(5)
+  /// Pause nach einer Nutzung, bevor jemand den Skill wieder ausloesen kann.
+  cooldownMinutes Int               @default(2)
+  /// Nur waehrend der Betriebszeit am Lift.
+  onlyOperating   Boolean           @default(true)
+  /// Nur, wer heute schon am Lift gestartet ist (vor Ort).
+  onlyOnSite      Boolean           @default(true)
+  /// Vom Personal gesperrt: in der App sichtbar, aber nicht ausloesbar.
+  paused          Boolean           @default(false)
+  active          Boolean           @default(true)
+  sortOrder       Int               @default(0)
+  accountId       Int
+  account         Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  grants          RiderSkillGrant[]
+  uses            RiderSkillUse[]
+  milestones      Milestone[]       @relation("MilestoneSkill")
+  challenges      Challenge[]       @relation("ChallengeSkill")
+  holidays        RiderHoliday[]    @relation("HolidaySkill")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([accountId])
+}
+
+/// Gewonnener Skill eines Tickets (wie `Voucher.ownerTicketId`): so viele
+/// Nutzungen bis zum Ablauf.
+model RiderSkillGrant {
+  id         Int             @id @default(autoincrement())
+  skillId    Int
+  skill      RiderSkill      @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  ticketId   Int
+  ticket     Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uses       Int
+  usedCount  Int             @default(0)
+  expiresAt  DateTime?
+  /// Herkunft, z. B. "Award Day One (2027)".
+  source     String
+  /// Vom Personal zurueckgenommen.
+  disabledAt DateTime?
+  accountId  Int
+  account    Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  usesLog    RiderSkillUse[]
+  createdAt  DateTime        @default(now())
+
+  @@index([accountId])
+  @@index([ticketId])
+  @@index([skillId])
+}
+
+/// Protokoll: wer wann einen Skill ausgeloest hat und ob es geklappt hat.
+model RiderSkillUse {
+  id        Int              @id @default(autoincrement())
+  skillId   Int
+  skill     RiderSkill       @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  grantId   Int?
+  grant     RiderSkillGrant? @relation(fields: [grantId], references: [id], onDelete: SetNull)
+  profileId Int?
+  profile   RiderProfile?    @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  ok        Boolean
+  error     String?
+  /// MUSIC: gewaehlte Option ("p<id>"/"s<id>").
+  option    String?
+  /// Bis hierhin laeuft das Geraet bzw. die Musik.
+  until     DateTime?
+  /// Hue-Licht: Ausschalten erledigt (der Minuten-Cron schaltet ab).
+  offDone   Boolean          @default(false)
+  accountId Int
+  account   Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([skillId, createdAt])
+}
+
 model GamificationConfig {
   id              Int      @id @default(autoincrement())
   enabled         Boolean  @default(false)
@@ -3592,6 +3699,13 @@ model Milestone {
   tempBelow        Float?
   /// Schluessel der Vorlage ("first-splash"); NULL = selbst angelegt.
   key              String?
+  /// Skill als Belohnung (Kunden-App): Recht, ein Geraet zu schalten.
+  skillId          Int?
+  skill            RiderSkill?      @relation("MilestoneSkill", fields: [skillId], references: [id], onDelete: SetNull)
+  /// So oft darf der Skill genutzt werden.
+  skillUses        Int              @default(1)
+  /// Gueltigkeit in Tagen; NULL = unbegrenzt.
+  skillValidDays   Int?
   active           Boolean          @default(true)
   sortOrder        Int              @default(0)
   accountId        Int
@@ -3649,6 +3763,13 @@ model Challenge {
   endDate          DateTime         @db.Date
   voucherLabel     String?
   voucherValidDays Int?
+  /// Skill als Belohnung (Kunden-App): Recht, ein Geraet zu schalten.
+  skillId          Int?
+  skill            RiderSkill?      @relation("ChallengeSkill", fields: [skillId], references: [id], onDelete: SetNull)
+  /// So oft darf der Skill genutzt werden.
+  skillUses        Int              @default(1)
+  /// Gueltigkeit in Tagen; NULL = unbegrenzt.
+  skillValidDays   Int?
   active           Boolean          @default(true)
   /// TOP_X: Zeitpunkt der Auswertung; NULL = noch nicht ausgewertet.
   settledAt        DateTime?
@@ -3737,6 +3858,13 @@ model RiderHoliday {
   voucherValidDays Int?
   /// Schon so viele Tage vor dem Feiertag zeigen (0 = nur am Tag selbst).
   daysBefore       Int                @default(0)
+  /// Skill als Belohnung (Kunden-App): Recht, ein Geraet zu schalten.
+  skillId          Int?
+  skill            RiderSkill?        @relation("HolidaySkill", fields: [skillId], references: [id], onDelete: SetNull)
+  /// So oft darf der Skill genutzt werden.
+  skillUses        Int                @default(1)
+  /// Gueltigkeit in Tagen; NULL = unbegrenzt.
+  skillValidDays   Int?
   active           Boolean            @default(true)
   gifts            RiderHolidayGift[]
   accountId        Int
@@ -3790,6 +3918,7 @@ model RiderProfile {
   passkeys         RiderPasskey[]
   pushSubscriptions RiderPushSubscription[]
   musicVotes        RiderMusicVote[]
+  skillUses         RiderSkillUse[]
   /// Familie: Erwachsene (eigener Login) sehen alle Mitglieder, Kinder haben
   /// keinen eigenen Zugang und werden von den Erwachsenen mitverwaltet.
   familyId      Int?

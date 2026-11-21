@@ -31,6 +31,7 @@ function ChallengeCard({ c }: { c: RiderChallenge }) {
       <div className="rd-muted">
         {c.kind === "TASK" ? `Aufgabe: ${c.condition}` : `Die besten ${c.topCount} nach ${metric} gewinnen`}
         {c.voucherLabel ? ` · Gewinn: ${c.voucherLabel}` : ""}
+        {c.skillLabel ? ` · Skill: ${c.skillLabel}` : ""}
       </div>
 
       {c.kind === "TASK" && c.phase !== "upcoming" && c.threshold != null && (

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gamiAdminSession } from "@/lib/gamification-session";
 import { holidaySchema, normalizeHoliday } from "@/lib/gamification-input";
+import { skillRewardAllowed } from "@/lib/rider-skills";
 import { HOLIDAY_BY_KEY } from "@/lib/holidays";
 
 /** PUT: Einstellung eines Feiertags speichern (anlegen oder ändern). Gilt jedes Jahr. */
@@ -14,6 +15,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const parsed = holidaySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe" }, { status: 400 });
+  }
+  if (!(await skillRewardAllowed(db, accountId, parsed.data.skillId))) {
+    return NextResponse.json({ error: "Unbekannter Skill" }, { status: 400 });
   }
   const data = normalizeHoliday(parsed.data);
   const holiday = await db.riderHoliday.upsert({
