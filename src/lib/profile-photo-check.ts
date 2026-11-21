@@ -1,5 +1,5 @@
 /**
- * Prüft ein neues Profilbild der Kunden-App mit der KI von xAI (derselbe
+ * Prüft ein neues Profilbild der Kunden-App (und Fotos für Foto-Challenges, siehe `checkChallengePhoto`) mit der KI von xAI (derselbe
  * Schlüssel `XAI_API_KEY` wie die Sprachausgabe in `audio.ts`): Ist darauf
  * genau eine echte Person mit erkennbarem Gesicht zu sehen?
  *
@@ -119,14 +119,11 @@ function responseText(data: unknown): string {
   return parts.join("\n");
 }
 
-/** Prüft eine Data-URL (JPEG oder PNG). */
-export async function checkProfilePhoto(dataUrl: string): Promise<PhotoCheckResult> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) return { ok: true, checked: false };
-  if (!/^data:image\/(jpeg|png);base64,/i.test(dataUrl)) {
-    return { ok: false, verdict: "not_a_photo", error: "Bitte ein Foto als JPG oder PNG wählen." };
-  }
-
+/**
+ * Fragt die KI mit Bild und Text; liefert die Antwort oder null, wenn die KI
+ * ausfällt (Fehler landet im Log unter `[tag]`).
+ */
+async function askVision(apiKey: string, dataUrl: string, prompt: string, tag: string): Promise<string | null> {
   try {
     const model = await visionModel(apiKey);
     const res = await fetch(RESPONSES_ENDPOINT, {
@@ -141,7 +138,7 @@ export async function checkProfilePhoto(dataUrl: string): Promise<PhotoCheckResu
             role: "user",
             content: [
               { type: "input_image", image_url: dataUrl, detail: "low" },
-              { type: "input_text", text: PROMPT },
+              { type: "input_text", text: prompt },
             ],
           },
         ],
@@ -152,18 +149,56 @@ export async function checkProfilePhoto(dataUrl: string): Promise<PhotoCheckResu
       const detail = await res.text().catch(() => "");
       // Modell gibt es nicht mehr: beim nächsten Mal neu suchen.
       if (res.status === 404 || /model/i.test(detail)) cachedModel = null;
-      console.error(`[profilbild] KI-Prüfung fehlgeschlagen (${res.status}, ${model}): ${detail.slice(0, 200)}`);
-      return { ok: true, checked: false };
+      console.error(`[${tag}] KI-Prüfung fehlgeschlagen (${res.status}, ${model}): ${detail.slice(0, 200)}`);
+      return null;
     }
-    const verdict = parseVerdict(responseText(await res.json()));
-    if (!verdict) {
-      console.error("[profilbild] KI-Antwort ohne lesbares Urteil");
-      return { ok: true, checked: false };
-    }
-    if (verdict === "ok") return { ok: true, checked: true };
-    return { ok: false, verdict, error: PHOTO_VERDICT_MESSAGES[verdict] };
+    return responseText(await res.json());
   } catch (e) {
-    console.error("[profilbild] KI-Prüfung nicht erreichbar:", e instanceof Error ? e.message : e);
+    console.error(`[${tag}] KI-Prüfung nicht erreichbar:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/** Prüft eine Data-URL (JPEG oder PNG). */
+export async function checkProfilePhoto(dataUrl: string): Promise<PhotoCheckResult> {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) return { ok: true, checked: false };
+  if (!/^data:image\/(jpeg|png);base64,/i.test(dataUrl)) {
+    return { ok: false, verdict: "not_a_photo", error: "Bitte ein Foto als JPG oder PNG wählen." };
+  }
+  const text = await askVision(apiKey, dataUrl, PROMPT, "profilbild");
+  if (text == null) return { ok: true, checked: false };
+  const verdict = parseVerdict(text);
+  if (!verdict) {
+    console.error("[profilbild] KI-Antwort ohne lesbares Urteil");
     return { ok: true, checked: false };
   }
+  if (verdict === "ok") return { ok: true, checked: true };
+  return { ok: false, verdict, error: PHOTO_VERDICT_MESSAGES[verdict] };
+}
+
+const CHALLENGE_PROMPT = `Du prüfst Fotos, die Kunden einer Wakeboard-Anlage für einen Foto-Wettbewerb in der App hochladen. Alle Kunden der App sehen die Fotos, auch Kinder. Erlaubt ist fast alles: Fahrer, Tricks, Wasser, Landschaft, Freunde, Gruppen, Tiere, Essen, auch Kinder in Badekleidung beim Sport. Nicht erlaubt ist: Nacktheit oder sexuelle Darstellung, Gewalt oder Verletzungen, Waffen, Drogen, beleidigende Gesten, Symbole oder Texte, Werbung, gut lesbare persönliche Daten (Ausweis, Kennzeichen in Großaufnahme, Adresse).
+
+Antworte nur mit JSON in der Form {"verdict": "..."} und genau einem dieser Werte:
+- "ok": darf in den Wettbewerb
+- "inappropriate": nicht erlaubt (siehe oben)`;
+
+export const CHALLENGE_PHOTO_REJECTED = "Dieses Foto können wir für die Challenge nicht nehmen. Bitte wähl ein anderes.";
+
+/**
+ * Prüft ein Foto für eine Foto-Challenge: alles außer Unpassendem ist
+ * erlaubt. Fällt die KI aus, wird das Foto angenommen (das Personal kann es
+ * in der Verwaltung ausblenden).
+ */
+export async function checkChallengePhoto(dataUrl: string): Promise<{ ok: true; checked: boolean } | { ok: false; error: string }> {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) return { ok: true, checked: false };
+  if (!/^data:image\/(jpeg|png);base64,/i.test(dataUrl)) return { ok: false, error: "Bitte ein Foto als JPG oder PNG wählen." };
+  const text = await askVision(apiKey, dataUrl, CHALLENGE_PROMPT, "challenge-foto");
+  if (text == null) return { ok: true, checked: false };
+  const verdict = parseVerdict(text);
+  if (verdict === "ok") return { ok: true, checked: true };
+  if (verdict === "inappropriate") return { ok: false, error: CHALLENGE_PHOTO_REJECTED };
+  console.error("[challenge-foto] KI-Antwort ohne lesbares Urteil");
+  return { ok: true, checked: false };
 }

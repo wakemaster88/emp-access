@@ -131,6 +131,15 @@ export async function loadRidePassForStaff(
         if (c.kind === "TASK") {
           const goal = c.threshold ?? 0;
           standing = `${Math.min(c.value, goal)} von ${goal} ${metric}`;
+        } else if (c.kind === "PHOTO") {
+          const own = c.voting?.entries.find((e) => e.mine);
+          standing = own
+            ? `${own.hidden ? "Foto ausgeblendet" : "Foto eingereicht"}${own.rank != null ? ` · Platz ${own.rank}` : ""}`
+            : "kein Foto eingereicht";
+          if (c.voting?.myVoted) standing += " · hat abgestimmt";
+        } else if (c.kind === "POLL") {
+          const choice = c.voting?.options.find((o) => o.voted);
+          standing = choice ? `gestimmt für „${choice.label}“` : "noch nicht abgestimmt";
         } else {
           standing = c.rank != null
             ? `Platz ${c.rank} von ${c.participants} · ${c.value} ${metric}`
@@ -141,7 +150,7 @@ export async function loadRidePassForStaff(
           name: c.name,
           running: c.phase === "running",
           won: c.won,
-          kind: c.kind === "TASK" ? "Aufgabe" : `Top ${c.topCount ?? ""}`.trim(),
+          kind: c.kind === "TASK" ? "Aufgabe" : c.kind === "PHOTO" ? "Foto" : c.kind === "POLL" ? "Abstimmung" : `Top ${c.topCount ?? ""}`.trim(),
           standing,
           endDate: iso(c.endDate)!,
           voucherLabel: c.voucherLabel,
