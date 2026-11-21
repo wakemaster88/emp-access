@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AwardBadge } from "@/components/rider/award-badge";
 import { GiftIcon, NextAwardCard, RewardLine, TierTag } from "@/components/rider/award-parts";
 import {
-  AWARD_CATEGORIES, CATEGORY_LABEL, nextAward, tierRank, tileSpans, type AwardCategory,
+  AWARD_CATEGORIES, CATEGORY_LABEL, awardCountable, nextAward, tierRank, tileSpans, type AwardCategory,
 } from "@/lib/awards";
 import { GAMI_TIERS, TIER_LABEL } from "@/lib/gamification";
 import { riderAppPath, type RiderAward, type RiderView } from "@/lib/rider-app";
@@ -19,7 +19,7 @@ function progressText(a: RiderAward): string {
 
 /** Unterzeile einer gesperrten Kachel: Fortschritt, der letzte Erfolg oder „noch offen“. */
 function LockedFoot({ a, wide }: { a: RiderAward; wide?: boolean }) {
-  if (a.metric === "EVENT_DAYS" || a.threshold <= 0) {
+  if (!awardCountable(a)) {
     return <span className="rd-aw-pr">{a.lastPeriod ? `${a.lastPeriod} geschafft` : "noch offen"}</span>;
   }
   const bar = (

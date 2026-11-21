@@ -21,10 +21,12 @@ import {
   ALL_TIME_KEY,
   BENEFIT_STATE_MESSAGE,
   EARLY_WINDOW_MS,
+  WATER_WINDOW_MS,
   type DayStat,
   type GamiMetric,
   type GamiPeriod,
   type MilestoneRule,
+  type OpeningDays,
 } from "./gamification";
 
 export interface GamiConfig {
@@ -33,9 +35,17 @@ export interface GamiConfig {
   /** Tagestickets (Service-IDs), deren Gäste die App nutzen dürfen. */
   dayServiceIds: number[];
   startCapPerDay: number;
+  /** Fühler (Gerät), der die Wassertemperatur misst; null = keiner gewählt. */
+  waterSensorDeviceId: number | null;
 }
 
-const DEFAULT_CONFIG: GamiConfig = { enabled: false, subscriptionIds: [], dayServiceIds: [], startCapPerDay: 10 };
+const DEFAULT_CONFIG: GamiConfig = {
+  enabled: false,
+  subscriptionIds: [],
+  dayServiceIds: [],
+  startCapPerDay: 10,
+  waterSensorDeviceId: null,
+};
 
 // Das Drehkreuz fragt bei jedem Scan: Einstellung kurz im Speicher halten.
 const CONFIG_TTL_MS = 60_000;
@@ -55,6 +65,7 @@ export async function loadGamiConfig(db: TenantDb, accountId: number): Promise<G
         subscriptionIds: row.subscriptionIds,
         dayServiceIds: row.dayServiceIds,
         startCapPerDay: row.startCapPerDay,
+        waterSensorDeviceId: row.waterSensorDeviceId,
       }
     : DEFAULT_CONFIG;
   configCache.set(accountId, { config, expiresAt: Date.now() + CONFIG_TTL_MS });
@@ -149,6 +160,7 @@ export function toMilestoneRule(m: {
   threshold: number;
   period: string;
   eventDays: Date[];
+  tempBelow: number | null;
 }): MilestoneRule {
   return {
     id: m.id,
@@ -156,27 +168,70 @@ export function toMilestoneRule(m: {
     threshold: m.threshold,
     period: m.period as GamiPeriod,
     eventDays: m.eventDays.map(dbDateToYmd),
+    tempBelow: m.tempBelow,
   };
 }
 
 /**
+ * Kälteste Wassertemperatur je Besuchstag: der kleinste Mittelwert des
+ * Fühlers von einer Stunde vor dem ersten bis eine Stunde nach dem letzten
+ * Start der Person. Je nach Alter liegen die Messwerte als 5-Minuten-,
+ * Stunden- oder Tagesfenster vor (`climate-history.ts`); ein Tag ohne
+ * Messwert fehlt im Ergebnis.
+ */
+async function loadWaterTemps(
+  accountId: number,
+  deviceId: number,
+  ticketIds: number[],
+  sinceYmd: string | null,
+): Promise<Map<string, number>> {
+  const windowSeconds = Math.round(WATER_WINDOW_MS / 1000);
+  const rows = await prisma.$queryRaw<Array<{ day: Date; temp: number | null }>>`
+    SELECT r."day" AS day, min(s."tempAvg") AS temp
+    FROM "RiderDayStat" r
+    CROSS JOIN (VALUES ('MIN5', 300), ('HOUR', 3600), ('DAY', 86400)) AS b(resolution, seconds)
+    JOIN "ClimateSample" s
+      ON s."deviceId" = ${deviceId}
+     AND s."accountId" = ${accountId}
+     AND s."resolution" = b.resolution::"ClimateResolution"
+     AND s."bucketStart" > r."firstStartAt" - make_interval(secs => ${windowSeconds}::int + b.seconds)
+     AND s."bucketStart" <= r."lastStartAt" + make_interval(secs => ${windowSeconds}::int)
+    WHERE r."accountId" = ${accountId}
+      AND r."ticketId" IN (${Prisma.join(ticketIds)})
+      AND r."starts" > 0
+      AND r."day" >= ${sinceYmd ?? "1970-01-01"}::date
+      AND s."tempAvg" IS NOT NULL
+    GROUP BY r."day"`;
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    if (r.temp != null) out.set(dbDateToYmd(r.day), Number(r.temp));
+  }
+  return out;
+}
+
+/**
  * Tagessummen einer Person über alle Jahre, je Kalendertag zusammengelegt.
- * Mit `withEarly` wird je Tag gemerkt, ob der erste Start in der ersten
- * Stunde nach dem ersten Abo-Start des Tages am Lift lag (Award „früh am
- * Lift“). Das kostet eine zweite Abfrage und läuft nur, wenn ein Meilenstein
- * es braucht.
+ * Mit `early` wird je Tag gemerkt, ob der erste Start in der ersten Stunde
+ * nach dem ersten Abo-Start des Tages am Lift lag (Award „früh am Lift“), mit
+ * `water` die Wassertemperatur während der Fahrt (ab dem Tag `since`). Beides
+ * kostet je eine weitere Abfrage und läuft nur, wenn ein Meilenstein es
+ * braucht.
  */
 export async function loadPersonDays(
   db: TenantDb,
   accountId: number,
   ticketIds: number[],
-  withEarly: boolean,
+  opts: { early?: boolean; water?: { deviceId: number; since: string | null } } = {},
 ): Promise<DayStat[]> {
   if (ticketIds.length === 0) return [];
-  const stats = await db.riderDayStat.findMany({
-    where: { accountId, ticketId: { in: ticketIds } },
-    select: { day: true, starts: true, firstStartAt: true },
-  });
+  const withEarly = opts.early === true;
+  const [stats, water] = await Promise.all([
+    db.riderDayStat.findMany({
+      where: { accountId, ticketId: { in: ticketIds } },
+      select: { day: true, starts: true, firstStartAt: true },
+    }),
+    opts.water ? loadWaterTemps(accountId, opts.water.deviceId, ticketIds, opts.water.since) : null,
+  ]);
   const firstOfDay = new Map<string, number>();
   if (withEarly && stats.length > 0) {
     const days = [...new Set(stats.map((s) => s.day.getTime()))].map((t) => new Date(t));
@@ -195,9 +250,101 @@ export async function loadPersonDays(
       const day = dbDateToYmd(s.day);
       const first = firstOfDay.get(day);
       const delay = first == null ? null : s.firstStartAt.getTime() - first;
-      return { day, starts: s.starts, early: delay != null && delay >= 0 && delay <= EARLY_WINDOW_MS };
+      return {
+        day,
+        starts: s.starts,
+        early: delay != null && delay >= 0 && delay <= EARLY_WINDOW_MS,
+        waterTemp: water?.get(day),
+      };
     }),
   );
+}
+
+/**
+ * Erster Tag der Saison je Jahr: der erste Tag, an dem ein Abo-Ticket
+ * gestartet ist. Tagestickets zählen nicht mit, weil ein Ticket ohne Scan als
+ * Tag den Beginn des Tickets trägt. Für das Jahr, in dem die Zählung begonnen
+ * hat, gibt es keinen Tag: die Saison lief da schon, der erste gezählte Tag
+ * ist nicht der erste Tag der Saison (2026 beginnt die Zählung am 09.05.).
+ */
+export async function loadOpeningDays(db: TenantDb, accountId: number, years: string[]): Promise<OpeningDays> {
+  const firstStart = (day?: { gte: Date; lte: Date }) =>
+    db.riderDayStat.findFirst({
+      where: { accountId, starts: { gt: 0 }, ...(day && { day }), ticket: { subscriptionId: { not: null } } },
+      orderBy: { day: "asc" },
+      select: { day: true },
+    });
+  const out: Record<string, string> = {};
+  const counted = await firstStart();
+  if (!counted) return out;
+  const countedSince = dbDateToYmd(counted.day).slice(0, 4);
+  await Promise.all(
+    years
+      .filter((year) => year > countedSince)
+      .map(async (year) => {
+        const first = await firstStart({ gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) });
+        if (first) out[year] = dbDateToYmd(first.day);
+      }),
+  );
+  return out;
+}
+
+/** Was die Zählregeln einer Person brauchen: ihre Tagessummen und der erste Tag der Saison je Jahr. */
+export interface RuleData {
+  days: DayStat[];
+  openingDays: OpeningDays;
+}
+
+/**
+ * Tagessummen und Zusatzdaten für die aktiven Meilensteine laden. Frühstart,
+ * Wassertemperatur und erster Tag der Saison werden nur abgefragt, wenn ein
+ * Meilenstein danach zählt; die Wassertemperatur nur für den Zeitraum, den
+ * diese Meilensteine ansehen.
+ */
+export async function loadRuleData(
+  db: TenantDb,
+  accountId: number,
+  ticketIds: number[],
+  milestones: Array<{ metric: string; period: string }>,
+  refYmd: string,
+): Promise<RuleData> {
+  const year = refYmd.slice(0, 4);
+  const cold = milestones.filter((m) => m.metric === "COLD_DAYS");
+  const opening = milestones.filter((m) => m.metric === "OPENING_DAY");
+  const sensorId = cold.length > 0 ? (await loadGamiConfig(db, accountId)).waterSensorDeviceId : null;
+  const since = cold.some((m) => m.period === "ALL_TIME")
+    ? null
+    : cold.some((m) => m.period === "SEASON")
+      ? `${year}-01-01`
+      : `${refYmd.slice(0, 7)}-01`;
+  const days = await loadPersonDays(db, accountId, ticketIds, {
+    early: milestones.some((m) => m.metric === "EARLY_DAYS"),
+    water: sensorId != null ? { deviceId: sensorId, since } : undefined,
+  });
+  if (opening.length === 0) return { days, openingDays: {} };
+  const years = new Set([year]);
+  if (opening.some((m) => m.period === "ALL_TIME")) {
+    for (const d of days) years.add(d.day.slice(0, 4));
+  }
+  return { days, openingDays: await loadOpeningDays(db, accountId, [...years]) };
+}
+
+/** Zuletzt gemessene Wassertemperatur in °C (höchstens drei Stunden alt), sonst null. */
+export async function loadWaterNow(accountId: number, now: Date = new Date()): Promise<number | null> {
+  const config = await loadGamiConfig(tenantClient(accountId), accountId);
+  if (config.waterSensorDeviceId == null) return null;
+  const sample = await prisma.climateSample.findFirst({
+    where: {
+      accountId,
+      deviceId: config.waterSensorDeviceId,
+      resolution: "MIN5",
+      tempAvg: { not: null },
+      bucketStart: { gte: new Date(now.getTime() - 3 * 3_600_000) },
+    },
+    orderBy: { bucketStart: "desc" },
+    select: { tempAvg: true },
+  });
+  return sample?.tempAvg ?? null;
 }
 
 /** Herkunft eines Gutscheins aus einem Award, so steht sie am Gutschein. */
@@ -270,8 +417,8 @@ export async function awardMilestones(
     ? (await db.ticket.findMany({ where: { accountId, riderProfileId: owner.riderProfileId }, select: { id: true } })).map((t) => t.id)
     : [ticketId];
 
-  const [days, awards] = await Promise.all([
-    loadPersonDays(db, accountId, ticketIds, milestones.some((m) => m.metric === "EARLY_DAYS")),
+  const [{ days, openingDays }, awards] = await Promise.all([
+    loadRuleData(db, accountId, ticketIds, milestones, refYmd),
     db.milestoneAward.findMany({
       where: { accountId, ticketId: { in: ticketIds } },
       select: { milestoneId: true, periodKey: true },
@@ -280,7 +427,7 @@ export async function awardMilestones(
 
   const awarded = new Set(awards.map((a) => awardKey(a.milestoneId, a.periodKey)));
   const seasons = seasonsCount(days, owner?.riderProfile?.ridingSince ?? null, refYmd);
-  const reached = reachedMilestones(milestones.map(toMilestoneRule), days, refYmd, capPerDay, awarded, seasons);
+  const reached = reachedMilestones(milestones.map(toMilestoneRule), days, refYmd, capPerDay, awarded, seasons, openingDays);
 
   let created = 0;
   for (const r of reached) {

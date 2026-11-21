@@ -15,13 +15,15 @@ export type GamiMetric =
   | "EARLY_DAYS"
   | "WEEKENDS"
   | "EVENT_DAYS"
+  | "OPENING_DAY"
+  | "COLD_DAYS"
   | "SEASONS";
 export type GamiPeriod = "SEASON" | "MONTH" | "ALL_TIME";
 /** Seltenheit eines Awards: bestimmt das Metall des Abzeichens. */
 export type GamiTier = "BRONZE" | "SILVER" | "GOLD" | "LEGENDARY";
 
 export const GAMI_METRICS: GamiMetric[] = [
-  "VISIT_DAYS", "STARTS", "STREAK_WEEKS", "EARLY_DAYS", "WEEKENDS", "EVENT_DAYS", "SEASONS",
+  "VISIT_DAYS", "STARTS", "STREAK_WEEKS", "EARLY_DAYS", "WEEKENDS", "OPENING_DAY", "COLD_DAYS", "EVENT_DAYS", "SEASONS",
 ];
 /** Challenges haben einen festen Zeitraum: dort zählen nur diese drei. */
 export const CHALLENGE_METRICS: GamiMetric[] = ["VISIT_DAYS", "STARTS", "STREAK_WEEKS"];
@@ -35,6 +37,8 @@ export const METRIC_LABEL: Record<GamiMetric, string> = {
   EARLY_DAYS: "Tage mit Start in der ersten Stunde",
   WEEKENDS: "Wochenenden in Folge",
   EVENT_DAYS: "Aktionstage",
+  OPENING_DAY: "Erster Tag der Saison",
+  COLD_DAYS: "Tage mit kaltem Wasser",
   SEASONS: "Saisons",
 };
 
@@ -54,12 +58,20 @@ export const TIER_LABEL: Record<GamiTier, string> = {
 /** So lange nach dem ersten Start des Tages gilt ein Start als früh. */
 export const EARLY_WINDOW_MS = 60 * 60_000;
 
+/**
+ * Wassertemperatur eines Besuchstags: gemessen wird von so lange vor dem
+ * ersten bis so lange nach dem letzten Start der Person.
+ */
+export const WATER_WINDOW_MS = 60 * 60_000;
+
 /** Tagessumme: Kalendertag als "YYYY-MM-DD" und die Starts an diesem Tag. */
 export interface DayStat {
   day: string;
   starts: number;
   /** Erster Start lag in der ersten Stunde nach dem ersten Start des Tages am Lift. */
   early?: boolean;
+  /** Kälteste Wassertemperatur (°C), während die Person an dem Tag am Lift war; fehlt ohne Messwert. */
+  waterTemp?: number;
 }
 
 export interface MilestoneRule {
@@ -67,8 +79,13 @@ export interface MilestoneRule {
   metric: GamiMetric;
   threshold: number;
   period: GamiPeriod;
-  /** Aktionstage als "YYYY-MM-DD" (nur für `EVENT_DAYS`). */
+  /**
+   * Aktionstage als "YYYY-MM-DD" (`EVENT_DAYS`). Bei `OPENING_DAY` ersetzt ein
+   * hier eingetragener Tag den automatisch ermittelten ersten Tag seines Jahres.
+   */
   eventDays?: string[];
+  /** Grenze in °C: das Wasser muss kälter sein (nur für `COLD_DAYS`). */
+  tempBelow?: number | null;
 }
 
 export interface Metrics {
@@ -162,7 +179,7 @@ export function computeMetrics(days: DayStat[], capPerDay: number): Metrics {
   };
 }
 
-/** Wert einer Kennzahl. Aktionstage und Saisons brauchen mehr als Tagessummen: siehe `ruleValue`. */
+/** Wert einer Kennzahl. Aktionstage, erster Tag, kaltes Wasser und Saisons brauchen mehr als Tagessummen: siehe `ruleValue`. */
 export function metricValue(metrics: Metrics, metric: GamiMetric): number {
   switch (metric) {
     case "VISIT_DAYS": return metrics.visitDays;
@@ -192,16 +209,35 @@ export function seasonsCount(days: DayStat[], ridingSince: number | null | undef
   return years.size + before;
 }
 
+/** Erster Tag der Saison je Jahr: {"2027": "2027-03-27"}. */
+export type OpeningDays = Readonly<Record<string, string>>;
+
 /** Was außer den Tagessummen in die Zählung eingeht. */
 export interface RuleContext {
   capPerDay: number;
   /** Saisons dabei (`seasonsCount`); ohne Angabe aus den Tagessummen. */
   seasons?: number;
+  /** Automatisch ermittelter erster Tag der Saison je Jahr (für `OPENING_DAY`). */
+  openingDays?: OpeningDays;
+}
+
+/**
+ * Erster Tag der Saison eines Jahres: ein von Hand eingetragener Tag (bei
+ * mehreren der früheste) geht vor dem automatisch ermittelten. Null, solange
+ * in dem Jahr noch niemand gefahren ist und nichts eingetragen wurde.
+ */
+export function openingDayOf(
+  year: string,
+  eventDays: readonly string[] | undefined,
+  auto: OpeningDays | undefined,
+): string | null {
+  const manual = (eventDays ?? []).filter((d) => d.startsWith(`${year}-`)).sort();
+  return manual[0] ?? auto?.[year] ?? null;
 }
 
 /** Wert eines Meilensteins zum Stichtag, im Zeitraum, in den der Stichtag fällt. */
 export function ruleValue(
-  rule: Pick<MilestoneRule, "metric" | "period" | "eventDays">,
+  rule: Pick<MilestoneRule, "metric" | "period" | "eventDays" | "tempBelow">,
   days: DayStat[],
   refYmd: string,
   ctx: RuleContext,
@@ -211,6 +247,16 @@ export function ruleValue(
   if (rule.metric === "EVENT_DAYS") {
     const events = new Set(rule.eventDays ?? []);
     return scoped.filter((d) => d.starts > 0 && events.has(d.day)).length;
+  }
+  if (rule.metric === "OPENING_DAY") {
+    return scoped.filter(
+      (d) => d.starts > 0 && d.day === openingDayOf(d.day.slice(0, 4), rule.eventDays, ctx.openingDays),
+    ).length;
+  }
+  if (rule.metric === "COLD_DAYS") {
+    const limit = rule.tempBelow;
+    if (limit == null) return 0;
+    return scoped.filter((d) => d.starts > 0 && d.waterTemp != null && d.waterTemp < limit).length;
   }
   return metricValue(computeMetrics(scoped, ctx.capPerDay), rule.metric);
 }
@@ -226,7 +272,7 @@ export function awardKey(milestoneId: number, key: string): string {
  * `days` enthält die Tagessummen der Person (für Awards ohne Zeitraum alle
  * Jahre); gezählt wird je Meilenstein nur der Zeitraum, in dem der Stichtag
  * liegt. `seasons` sind die Saisons dabei, wenn sie nicht allein aus den
- * Tagessummen folgen.
+ * Tagessummen folgen, `openingDays` der erste Tag der Saison je Jahr.
  */
 export function reachedMilestones(
   milestones: MilestoneRule[],
@@ -235,13 +281,14 @@ export function reachedMilestones(
   capPerDay: number,
   awarded: ReadonlySet<string>,
   seasons?: number,
+  openingDays?: OpeningDays,
 ): Array<{ milestoneId: number; periodKey: string }> {
   const out: Array<{ milestoneId: number; periodKey: string }> = [];
   for (const m of milestones) {
     if (m.threshold <= 0) continue;
     const key = periodKey(m.period, refYmd);
     if (awarded.has(awardKey(m.id, key))) continue;
-    if (ruleValue(m, days, refYmd, { capPerDay, seasons }) >= m.threshold) {
+    if (ruleValue(m, days, refYmd, { capPerDay, seasons, openingDays }) >= m.threshold) {
       out.push({ milestoneId: m.id, periodKey: key });
     }
   }
@@ -284,8 +331,24 @@ export function dbDateToYmd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Grad-Zahl für Texte: "10" oder "9,5". */
+export function formatDegrees(value: number): string {
+  return value.toLocaleString("de-DE", { maximumFractionDigits: 1 });
+}
+
 /** Bedingung eines Meilensteins in Worten, z. B. "10 Besuchstage · Saison". */
-export function milestoneConditionText(m: { metric: GamiMetric; threshold: number; period: GamiPeriod }): string {
+export function milestoneConditionText(m: {
+  metric: GamiMetric;
+  threshold: number;
+  period: GamiPeriod;
+  tempBelow?: number | null;
+}): string {
+  if (m.metric === "OPENING_DAY") return `${METRIC_LABEL.OPENING_DAY} · ${PERIOD_LABEL[m.period]}`;
+  if (m.metric === "COLD_DAYS") {
+    const days = m.threshold === 1 ? "1 Tag" : `${m.threshold.toLocaleString("de-DE")} Tage`;
+    const water = m.tempBelow != null ? `Wasser unter ${formatDegrees(m.tempBelow)} °C` : "kaltem Wasser";
+    return `${days} mit ${water} · ${PERIOD_LABEL[m.period]}`;
+  }
   return `${m.threshold.toLocaleString("de-DE")} ${METRIC_LABEL[m.metric]} · ${PERIOD_LABEL[m.period]}`;
 }
 
@@ -311,21 +374,27 @@ export const BENEFIT_STATE_MESSAGE: Record<Exclude<BenefitVoucherState, "open">,
 /**
  * Tagessummen mehrerer Tickets derselben Person zusammenlegen (Kunden-App):
  * derselbe Kalendertag zählt einmal, die Starts werden addiert. Früh war der
- * Tag, wenn es eines der Tickets war.
+ * Tag, wenn es eines der Tickets war; beim Wasser gilt der kälteste Wert.
  */
 export function mergeDayStats(days: DayStat[]): DayStat[] {
-  const byDay = new Map<string, { starts: number; early: boolean }>();
+  const byDay = new Map<string, { starts: number; early: boolean; waterTemp: number | undefined }>();
   for (const d of days) {
     const cur = byDay.get(d.day);
     if (cur) {
       cur.starts += d.starts;
       cur.early = cur.early || !!d.early;
+      if (d.waterTemp != null) cur.waterTemp = cur.waterTemp == null ? d.waterTemp : Math.min(cur.waterTemp, d.waterTemp);
     } else {
-      byDay.set(d.day, { starts: d.starts, early: !!d.early });
+      byDay.set(d.day, { starts: d.starts, early: !!d.early, waterTemp: d.waterTemp });
     }
   }
   return [...byDay.entries()]
-    .map(([day, v]) => (v.early ? { day, starts: v.starts, early: true } : { day, starts: v.starts }))
+    .map(([day, v]) => ({
+      day,
+      starts: v.starts,
+      ...(v.early && { early: true }),
+      ...(v.waterTemp != null && { waterTemp: v.waterTemp }),
+    }))
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 
@@ -347,9 +416,10 @@ export function milestoneProgress(
   refYmd: string,
   capPerDay: number,
   seasons?: number,
+  openingDays?: OpeningDays,
 ): MilestoneProgress[] {
   return milestones.map((m) => {
-    const value = ruleValue(m, days, refYmd, { capPerDay, seasons });
+    const value = ruleValue(m, days, refYmd, { capPerDay, seasons, openingDays });
     return {
       id: m.id,
       name: m.name,

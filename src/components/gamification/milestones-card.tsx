@@ -20,7 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Award, CalendarPlus, Loader2, Plus, Save, Trash2, X } from "lucide-react";
 import { awardText } from "@/lib/awards";
 import {
-  GAMI_METRICS, GAMI_PERIODS, GAMI_TIERS, METRIC_LABEL, PERIOD_LABEL, TIER_LABEL, milestoneConditionText,
+  GAMI_METRICS, GAMI_PERIODS, GAMI_TIERS, METRIC_LABEL, PERIOD_LABEL, TIER_LABEL, formatDegrees, milestoneConditionText,
+  openingDayOf,
   type GamiMetric, type GamiPeriod, type GamiTier,
 } from "@/lib/gamification";
 
@@ -36,8 +37,10 @@ export interface MilestoneRow {
   bonus: string | null;
   tier: GamiTier;
   hint: string | null;
-  /** Aktionstage als "YYYY-MM-DD" (nur Zählart „Aktionstage“). */
+  /** Eingetragene Tage als "YYYY-MM-DD" (Zählarten „Aktionstage“ und „Erster Tag der Saison“). */
   eventDays: string[];
+  /** Grenze der Wassertemperatur in °C (Zählart „Tage mit kaltem Wasser“). */
+  tempBelow: number | null;
   active: boolean;
   awarded: number;
   redeemed: number;
@@ -58,6 +61,7 @@ interface FormState {
   hint: string;
   eventDays: string[];
   newEventDay: string;
+  tempBelow: string;
   active: boolean;
 }
 
@@ -76,6 +80,7 @@ const EMPTY: FormState = {
   hint: "",
   eventDays: [],
   newEventDay: "",
+  tempBelow: "10",
   active: true,
 };
 
@@ -95,6 +100,7 @@ function toForm(m: MilestoneRow): FormState {
     hint: m.hint ?? "",
     eventDays: m.eventDays,
     newEventDay: "",
+    tempBelow: m.tempBelow != null ? String(m.tempBelow) : "10",
     active: m.active,
   };
 }
@@ -106,11 +112,35 @@ function missingEventDay(m: { metric: GamiMetric; eventDays: string[] }, today: 
   return m.metric === "EVENT_DAYS" && !m.eventDays.some((d) => d.startsWith(today.slice(0, 4)));
 }
 
+/** Der Fühler für die Wassertemperatur aus den Einstellungen. */
+export interface WaterSensorInfo {
+  name: string;
+  /** Zuletzt gemessene Temperatur in °C, wenn es einen frischen Wert gibt. */
+  now: number | null;
+}
+
+/** Eingabe der Grad-Grenze lesen; null bei leer oder Unsinn. */
+function parseDegrees(text: string): number | null {
+  const t = text.trim().replace(",", ".");
+  if (!/^-?\d{1,2}(\.\d)?$/.test(t)) return null;
+  const n = Number(t);
+  return n >= -5 && n <= 40 ? n : null;
+}
+
 /**
  * Awards (Meilensteine) anlegen und ändern: Ziel, Seltenheit und optional ein
- * Leistungs-Gutschein. `today` ist der heutige Tag in Europe/Berlin.
+ * Leistungs-Gutschein. `today` ist der heutige Tag in Europe/Berlin,
+ * `openingDay` der automatisch ermittelte erste Tag der laufenden Saison und
+ * `waterSensor` der gewählte Fühler (null = keiner gewählt).
  */
-export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow[]; today: string }) {
+export function MilestonesCard({
+  milestones, today, openingDay, waterSensor,
+}: {
+  milestones: MilestoneRow[];
+  today: string;
+  openingDay: string | null;
+  waterSensor: WaterSensorInfo | null;
+}) {
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -124,12 +154,15 @@ export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow
   };
   const set = (patch: Partial<FormState>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
-  const threshold = Number(form?.threshold);
+  const year = today.slice(0, 4);
+  const threshold = form?.metric === "OPENING_DAY" ? 1 : Number(form?.threshold);
+  const tempBelow = form?.metric === "COLD_DAYS" ? parseDegrees(form.tempBelow) : null;
   const validDays = form?.voucherValidDays.trim() ? Number(form.voucherValidDays) : null;
   const valid =
     !!form &&
     form.name.trim().length > 0 &&
     Number.isInteger(threshold) && threshold >= 1 &&
+    (form.metric !== "COLD_DAYS" || tempBelow != null) &&
     (!form.withVoucher || form.voucherLabel.trim().length > 0) &&
     (validDays == null || (Number.isInteger(validDays) && validDays >= 1));
 
@@ -154,7 +187,8 @@ export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow
             bonus: form.bonus.trim(),
             tier: form.tier,
             hint: form.hint.trim(),
-            eventDays: form.metric === "EVENT_DAYS" ? form.eventDays : [],
+            eventDays: form.metric === "EVENT_DAYS" || form.metric === "OPENING_DAY" ? form.eventDays : [],
+            tempBelow,
             active: form.active,
           }),
         },
@@ -245,7 +279,10 @@ export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow
                   <span className="text-muted-foreground"> · {TIER_LABEL[m.tier]}</span>
                   <div className="sm:hidden text-xs text-muted-foreground">{milestoneConditionText(m)}</div>
                   {m.active && missingEventDay(m, today) && (
-                    <div className="text-xs text-warning">Kein Aktionstag für {today.slice(0, 4)} eingetragen</div>
+                    <div className="text-xs text-warning">Kein Aktionstag für {year} eingetragen</div>
+                  )}
+                  {m.active && m.metric === "COLD_DAYS" && !waterSensor && (
+                    <div className="text-xs text-warning">Kein Fühler für die Wassertemperatur gewählt</div>
                   )}
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">{milestoneConditionText(m)}</TableCell>
@@ -307,7 +344,16 @@ export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="ms-threshold">Schwelle</Label>
-                  <Input id="ms-threshold" type="number" min={1} inputMode="numeric" value={form.threshold} onChange={(e) => set({ threshold: e.target.value })} className="max-sm:h-11" />
+                  <Input
+                    id="ms-threshold"
+                    type="number"
+                    min={1}
+                    inputMode="numeric"
+                    value={form.metric === "OPENING_DAY" ? "1" : form.threshold}
+                    disabled={form.metric === "OPENING_DAY"}
+                    onChange={(e) => set({ threshold: e.target.value })}
+                    className="max-sm:h-11"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="ms-period">Zeitraum</Label>
@@ -332,9 +378,40 @@ export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow
                   Eine Saison zählt mit mindestens einem Besuchstag. Für Jahre vor der Zählung trägst du bei der Person unter Abos › Kundenkonten „Fährt seit“ ein.
                 </p>
               )}
-              {form.metric === "EVENT_DAYS" && (
+              {form.metric === "COLD_DAYS" && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="ms-eventday">Aktionstage</Label>
+                  <Label htmlFor="ms-temp">Wasser kälter als (°C)</Label>
+                  <Input
+                    id="ms-temp"
+                    inputMode="decimal"
+                    value={form.tempBelow}
+                    onChange={(e) => set({ tempBelow: e.target.value })}
+                    aria-invalid={tempBelow == null}
+                    className="w-28 max-sm:h-11"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Ein Tag zählt, wenn das Wasser kälter war, während die Person am Lift war: von einer Stunde vor ihrem ersten bis eine Stunde nach ihrem letzten Start. Der Award wird dann von selbst vergeben.
+                    {waterSensor ? ` Gemessen wird mit dem Fühler „${waterSensor.name}“${waterSensor.now != null ? `, gerade ${formatDegrees(waterSensor.now)} °C` : ""}.` : ""}
+                  </p>
+                  {!waterSensor && (
+                    <Notice tone="warning" compact title="Kein Fühler für die Wassertemperatur gewählt. Wähle ihn unter Einstellungen, sonst wird der Award nicht vergeben." />
+                  )}
+                </div>
+              )}
+              {form.metric === "OPENING_DAY" && (
+                <p className="text-xs text-muted-foreground">
+                  Den Award bekommt von selbst, wer am ersten Tag des Jahres startet, an dem ein Abo-Fahrer am Lift fährt.
+                  {(() => {
+                    const day = openingDayOf(year, form.eventDays, openingDay ? { [year]: openingDay } : undefined);
+                    return day
+                      ? ` ${year} ist das der ${fmtYmd(day)}.`
+                      : ` Für ${year} steht kein Tag fest: Es ist noch niemand gefahren, oder die Zählung hat erst im Lauf der Saison begonnen.`;
+                  })()}
+                </p>
+              )}
+              {(form.metric === "EVENT_DAYS" || form.metric === "OPENING_DAY") && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="ms-eventday">{form.metric === "OPENING_DAY" ? "Ersten Tag selbst festlegen (optional)" : "Aktionstage"}</Label>
                   <div className="flex flex-wrap gap-2">
                     <Input
                       id="ms-eventday"
@@ -369,10 +446,12 @@ export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow
                     </div>
                   ) : null}
                   <p className="text-xs text-muted-foreground">
-                    Wer an einem dieser Tage startet, bekommt den Award, je Saison einmal. Trag den Opening-Tag oder einen kalten Tag hier ein, auch am Tag selbst.
+                    {form.metric === "OPENING_DAY"
+                      ? "Trägst du einen Tag ein, gilt er für sein Jahr anstelle des automatisch ermittelten Tags, zum Beispiel wenn vor dem Opening schon jemand zur Probe gefahren ist."
+                      : "Wer an einem dieser Tage startet, bekommt den Award, je Saison einmal. Trag den Tag hier ein, auch am Tag selbst."}
                   </p>
                   {missingEventDay(form, today) && (
-                    <Notice tone="warning" compact title={`Für ${today.slice(0, 4)} ist noch kein Aktionstag eingetragen.`} />
+                    <Notice tone="warning" compact title={`Für ${year} ist noch kein Aktionstag eingetragen.`} />
                   )}
                 </div>
               )}
@@ -384,7 +463,7 @@ export function MilestonesCard({ milestones, today }: { milestones: MilestoneRow
                   rows={2}
                   value={form.hint}
                   maxLength={160}
-                  placeholder={Number.isInteger(threshold) && threshold >= 1 ? awardText({ metric: form.metric, threshold, period: form.metric === "SEASONS" ? "ALL_TIME" : form.period }) : undefined}
+                  placeholder={Number.isInteger(threshold) && threshold >= 1 ? awardText({ metric: form.metric, threshold, period: form.metric === "SEASONS" ? "ALL_TIME" : form.period, tempBelow }) : undefined}
                   onChange={(e) => set({ hint: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">Leer lassen, dann steht dort der Text aus dem Ziel.</p>

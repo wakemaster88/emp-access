@@ -81,6 +81,12 @@ enum GamiMetric {
   EVENT_DAYS
   /// Saisons mit mindestens einem Besuchstag (nur mit Zeitraum ALL_TIME).
   SEASONS
+  /// Start am ersten Tag des Jahres, an dem ueberhaupt ein Abo gestartet ist
+  /// (automatisch). Ein in `Milestone.eventDays` eingetragener Tag geht vor.
+  OPENING_DAY
+  /// Besuchstage, an denen das Wasser kaelter war als `Milestone.tempBelow`
+  /// (Fuehler aus `GamificationConfig.waterSensorDeviceId`).
+  COLD_DAYS
 }
 
 /// Gamification: Zeitraum, in dem gezaehlt wird (Saison = Kalenderjahr).
@@ -465,6 +471,7 @@ model Device {
   ruleActions          RoomRuleAction[]     @relation("RoomRuleActionDevice")
   climateSensors       RoomClimate[]        @relation("RoomClimateSensor")
   climateSamples       ClimateSample[]
+  gamificationWater    GamificationConfig[] @relation("GamificationWaterSensor")
   motionEvents         RoomMotionEvent[]
 
   @@index([accountId])
@@ -3459,6 +3466,10 @@ model GamificationConfig {
   inviteNewAbos   Boolean  @default(true)
   /// Einladung an laufende Abos, die noch nicht in der App sind (in Etappen ueber tick-5min).
   inviteExistingAbos Boolean @default(false)
+  /// Fuehler fuer die Wassertemperatur (Device, z. B. Shelly): Grundlage fuer
+  /// Awards mit `COLD_DAYS`. Messwerte stehen in `ClimateSample`.
+  waterSensorDeviceId Int?
+  waterSensorDevice   Device?  @relation("GamificationWaterSensor", fields: [waterSensorDeviceId], references: [id], onDelete: SetNull)
   accountId       Int      @unique
   account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())
@@ -3502,8 +3513,12 @@ model Milestone {
   tier             GamiTier         @default(BRONZE)
   /// Beschreibung in der Kunden-App; NULL = aus Bedingung erzeugt.
   hint             String?
-  /// Aktionstage (Europe/Berlin) fuer `EVENT_DAYS`, z. B. der Opening-Tag.
+  /// Aktionstage (Europe/Berlin) fuer `EVENT_DAYS`; bei `OPENING_DAY` der von
+  /// Hand festgelegte Opening-Tag eines Jahres (sonst automatisch).
   eventDays        DateTime[]       @default([]) @db.Date
+  /// Grenze in Grad Celsius fuer `COLD_DAYS`: der Tag zaehlt, wenn das Wasser
+  /// waehrend der Starts kaelter war.
+  tempBelow        Float?
   /// Schluessel der Vorlage ("first-splash"); NULL = selbst angelegt.
   key              String?
   active           Boolean          @default(true)

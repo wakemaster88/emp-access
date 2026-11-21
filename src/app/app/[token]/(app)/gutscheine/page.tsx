@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AwardBadge } from "@/components/rider/award-badge";
 import { CheckIcon, GiftIcon, LockIcon, TierTag } from "@/components/rider/award-parts";
-import { awardRemainingText, voucherHeadline } from "@/lib/awards";
+import { awardCountable, awardRemainingText, voucherHeadline } from "@/lib/awards";
 import { riderAppPath, type RiderVoucher } from "@/lib/rider-app";
 import { requireRider } from "@/lib/rider-auth";
 import { fmtDay, validityText } from "@/lib/rider-format";
@@ -46,7 +46,7 @@ export default async function RiderVouchers({ params }: { params: Promise<{ toke
   const past = rider.vouchers.filter((v) => v.state !== "open");
   // Die zwei Awards mit Gutschein, denen am wenigsten fehlt.
   const soon = rider.awards
-    .filter((a) => !a.unlocked && a.voucherLabel && a.metric !== "EVENT_DAYS" && a.threshold > 0)
+    .filter((a) => !a.unlocked && a.voucherLabel && awardCountable(a))
     .sort((a, b) => b.value / b.threshold - a.value / a.threshold)
     .slice(0, 2);
 

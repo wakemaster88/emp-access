@@ -11,6 +11,8 @@ import {
   isWeekendDay,
   longestWeekStreak,
   longestWeekendStreak,
+  milestoneConditionText,
+  openingDayOf,
   periodKey,
   reachedMilestones,
   ruleValue,
@@ -108,6 +110,75 @@ test("ruleValue: Starts über alle Jahre, Aktionstage und Saisons", () => {
   assert.equal(ruleValue({ metric: "SEASONS", period: "ALL_TIME" }, days, "2027-11-20", { capPerDay: 30, seasons: 6 }), 6);
 });
 
+test("ruleValue: erster Tag der Saison automatisch, ein eingetragener Tag geht vor", () => {
+  const days: DayStat[] = [
+    { day: "2026-05-09", starts: 4 },
+    { day: "2027-03-27", starts: 3 },
+    { day: "2027-04-03", starts: 0 },
+    { day: "2027-06-01", starts: 2 },
+  ];
+  const openingDays = { "2026": "2026-05-09", "2027": "2027-03-27" };
+  const rule = { metric: "OPENING_DAY" as const, period: "SEASON" as const };
+  // Am ersten Tag 2027 gestartet: zählt in der Saison 2027, die Vorsaison zählt dort nicht mit.
+  assert.equal(ruleValue(rule, days, "2027-06-01", { capPerDay: 10, openingDays }), 1);
+  assert.equal(ruleValue({ ...rule, period: "ALL_TIME" }, days, "2027-06-01", { capPerDay: 10, openingDays }), 2);
+  // Ohne ermittelten Tag (noch niemand gefahren) gibt es nichts.
+  assert.equal(ruleValue(rule, days, "2027-06-01", { capPerDay: 10 }), 0);
+  // Am ersten Tag nur ein Eintrag ohne Start: zählt nicht.
+  assert.equal(ruleValue(rule, days, "2027-06-01", { capPerDay: 10, openingDays: { "2027": "2027-04-03" } }), 0);
+  // Das Personal legt den Tag fest: der eingetragene Tag ersetzt den automatischen seines Jahres.
+  assert.equal(ruleValue({ ...rule, eventDays: ["2027-06-01"] }, days, "2027-06-01", { capPerDay: 10, openingDays }), 1);
+  assert.equal(ruleValue({ ...rule, eventDays: ["2027-05-01"] }, days, "2027-06-01", { capPerDay: 10, openingDays }), 0);
+  // Ein Eintrag für ein anderes Jahr lässt den automatischen Tag stehen.
+  assert.equal(ruleValue({ ...rule, eventDays: ["2026-04-01"] }, days, "2027-06-01", { capPerDay: 10, openingDays }), 1);
+  assert.equal(openingDayOf("2027", ["2027-04-10", "2027-04-02", "2026-03-01"], openingDays), "2027-04-02");
+  assert.equal(openingDayOf("2027", [], openingDays), "2027-03-27");
+  assert.equal(openingDayOf("2028", undefined, openingDays), null);
+});
+
+test("ruleValue: Tage mit kaltem Wasser zählen nur mit Messwert unter der Grenze", () => {
+  const days: DayStat[] = [
+    { day: "2026-11-07", starts: 3, waterTemp: 10.4 },
+    { day: "2026-11-14", starts: 2, waterTemp: 9.6 },
+    { day: "2026-11-15", starts: 0, waterTemp: 9.1 },
+    { day: "2026-11-20", starts: 5 },
+    { day: "2026-11-21", starts: 1, waterTemp: 10 },
+    { day: "2025-11-30", starts: 4, waterTemp: 6.5 },
+  ];
+  const ctx = { capPerDay: 10 };
+  const rule = { metric: "COLD_DAYS" as const, period: "SEASON" as const, tempBelow: 10 };
+  // Genau 10 Grad ist nicht kälter als 10, ein Tag ohne Messwert oder ohne Start zählt nicht.
+  assert.equal(ruleValue(rule, days, "2026-11-21", ctx), 1);
+  assert.equal(ruleValue({ ...rule, tempBelow: 10.5 }, days, "2026-11-21", ctx), 3);
+  assert.equal(ruleValue({ ...rule, period: "ALL_TIME" }, days, "2026-11-21", ctx), 2);
+  // Ohne Grenze wird nichts vergeben.
+  assert.equal(ruleValue({ metric: "COLD_DAYS", period: "SEASON" }, days, "2026-11-21", ctx), 0);
+  assert.equal(ruleValue({ ...rule, tempBelow: null }, days, "2026-11-21", ctx), 0);
+});
+
+test("mergeDayStats: Starts addieren, beim Wasser gilt der kälteste Wert", () => {
+  assert.deepEqual(
+    mergeDayStats([
+      { day: "2026-11-14", starts: 2, waterTemp: 9.8 },
+      { day: "2026-11-07", starts: 1 },
+      { day: "2026-11-14", starts: 3, early: true, waterTemp: 9.4 },
+      { day: "2026-11-07", starts: 1, waterTemp: 10.2 },
+    ]),
+    [
+      { day: "2026-11-07", starts: 2, waterTemp: 10.2 },
+      { day: "2026-11-14", starts: 5, early: true, waterTemp: 9.4 },
+    ],
+  );
+  assert.deepEqual(mergeDayStats([{ day: "2026-11-07", starts: 1, early: false }]), [{ day: "2026-11-07", starts: 1 }]);
+});
+
+test("milestoneConditionText: Bedingung in Worten", () => {
+  assert.equal(milestoneConditionText({ metric: "VISIT_DAYS", threshold: 10, period: "SEASON" }), "10 Besuchstage · Saison");
+  assert.equal(milestoneConditionText({ metric: "OPENING_DAY", threshold: 1, period: "SEASON" }), "Erster Tag der Saison · Saison");
+  assert.equal(milestoneConditionText({ metric: "COLD_DAYS", threshold: 1, period: "SEASON", tempBelow: 10 }), "1 Tag mit Wasser unter 10 °C · Saison");
+  assert.equal(milestoneConditionText({ metric: "COLD_DAYS", threshold: 3, period: "SEASON", tempBelow: 9.5 }), "3 Tage mit Wasser unter 9,5 °C · Saison");
+});
+
 test("seasonsCount: Jahre mit Start, dazu die Jahre seit „Fährt seit“", () => {
   const days: DayStat[] = [
     { day: "2026-08-01", starts: 3 },
@@ -132,16 +203,24 @@ test("reachedMilestones: Awards über alle Jahre werden nur einmal vergeben", ()
     { id: 3, metric: "SEASONS", threshold: 5, period: "ALL_TIME" },
     { id: 4, metric: "EVENT_DAYS", threshold: 1, period: "SEASON", eventDays: ["2027-04-03"] },
     { id: 5, metric: "EARLY_DAYS", threshold: 1, period: "SEASON" },
+    { id: 6, metric: "OPENING_DAY", threshold: 1, period: "SEASON" },
+    { id: 7, metric: "COLD_DAYS", threshold: 1, period: "SEASON", tempBelow: 10 },
   ];
   const days: DayStat[] = [
     { day: "2026-08-01", starts: 20, early: true },
-    { day: "2027-04-03", starts: 6 },
+    { day: "2027-04-03", starts: 6, waterTemp: 8.7 },
   ];
   assert.deepEqual(reachedMilestones(milestones, days, "2027-04-03", 100, new Set()), [
     { milestoneId: 1, periodKey: ALL_TIME_KEY },
     { milestoneId: 2, periodKey: ALL_TIME_KEY },
     { milestoneId: 4, periodKey: "2027" },
+    { milestoneId: 7, periodKey: "2027" },
   ]);
+  // Mit dem ersten Tag der Saison kommt Day One dazu.
+  assert.deepEqual(
+    reachedMilestones(milestones, days, "2027-04-03", 100, new Set(), undefined, { "2027": "2027-04-03" }).map((r) => r.milestoneId),
+    [1, 2, 4, 6, 7],
+  );
   // Im Jahr darauf: der Award über alle Jahre ist schon vergeben, der Aktionstag der Vorsaison zählt nicht neu.
   const awarded = new Set([awardKey(1, ALL_TIME_KEY), awardKey(2, ALL_TIME_KEY), awardKey(4, "2027")]);
   const later = [...days, { day: "2028-05-01", starts: 1 }];
