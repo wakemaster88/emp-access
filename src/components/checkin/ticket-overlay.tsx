@@ -11,7 +11,7 @@ import { IconChip } from "@/components/ui/icon-chip";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Textarea } from "@/components/ui/textarea";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Camera, Loader2, X, Package, Fingerprint, Pencil, Printer, TicketX, Plus, StickyNote, Pause, Play, ClipboardList, Mail, UserPlus } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Camera, Loader2, X, Package, Fingerprint, Pencil, Printer, TicketX, Plus, StickyNote, Pause, Play, ClipboardList, Mail, UserPlus, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { paymentOpenInfo, paymentOpenSentence } from "@/lib/payment-open";
 import { PackageSearch, Layers } from "lucide-react";
@@ -42,6 +42,7 @@ export function TicketOverlay({
   onCancelRfid,
   ticketScans,
   onAddTicket,
+  onAppLink,
   onCancelVoucher,
   cancellingVoucher,
   onSaveNotes,
@@ -71,6 +72,8 @@ export function TicketOverlay({
   onCancelRfid: () => void;
   ticketScans: ScanEntry[];
   onAddTicket: () => void;
+  /** Abo mit der Kunden-App verknüpfen (App-Code scannen); nur bei Abos. */
+  onAppLink?: () => void;
   onCancelVoucher: () => void;
   cancellingVoucher: boolean;
   onSaveNotes: (notes: string | null) => void;
@@ -979,6 +982,19 @@ export function TicketOverlay({
                 </Notice>
               )}
             </div>
+          )}
+
+          {/* Abo mit der Kunden-App verknüpfen: öffnet den Dialog, der auf den App-Code wartet. */}
+          {onAppLink && ticket.subscriptionId != null && ticket.status !== "CANCELED" && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onAppLink}
+              className="w-full h-12 font-semibold sm:h-14"
+            >
+              <Smartphone />
+              Mit App verbinden
+            </Button>
           )}
 
           {/* Pause / Resume - bei VALID/REDEEMED zeigt sich der Pause-

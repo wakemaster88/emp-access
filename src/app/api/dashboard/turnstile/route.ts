@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { addCalendarDays, berlinDayRange, berlinYmd, isBerlinYmd } from "@/lib/berlin-day";
 import { summarizeTurnstileDay } from "@/lib/turnstile-stats";
+import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
+import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
 
 /**
  * Bereich, der ohne explizite Auswahl ausgewertet wird. Das Drehkreuz an der
@@ -45,7 +47,7 @@ export async function GET(request: NextRequest) {
       category: "DREHKREUZ",
       OR: [{ accessIn: { not: null } }, { accessOut: { not: null } }],
     },
-    select: { id: true, name: true, accessIn: true, accessOut: true, isActive: true, lastUpdate: true },
+    select: { id: true, name: true, accessIn: true, accessOut: true, isActive: true, lastUpdate: true, countsAsStart: true },
     orderBy: { name: "asc" },
   });
 
@@ -137,6 +139,19 @@ export async function GET(request: NextRequest) {
 
   const onlineSince = new Date(Date.now() - ONLINE_WINDOW_MS);
 
+  // Auslastung jetzt: dieselbe Stufe wie in der Kunden-App, nur für heute und
+  // nur am Bereich mit dem Start-Drehkreuz.
+  const isToday = dateStr === berlinYmd(new Date());
+  const occupancy =
+    isToday && accountId != null && area.devices.some((d) => d.countsAsStart)
+      ? await loadRiderOccupancy(accountId).catch(() => null)
+      : null;
+  // Strandbad: geschätzte Gäste vor Ort, gleiche Rechnung wie in der App.
+  const beach =
+    isToday && accountId != null && /strandbad/i.test(area.name)
+      ? await loadBeachOccupancy(accountId).catch(() => null)
+      : null;
+
   return NextResponse.json({
     date: dateStr,
     areas: areaOptions,
@@ -162,5 +177,25 @@ export async function GET(request: NextRequest) {
     ticketTypes: summary.ticketTypes,
     denyReasons: summary.denyReasons,
     weekTrend: summary.weekTrend,
+    live: occupancy
+      ? {
+          level: occupancy.level,
+          label: OCCUPANCY_LABEL[occupancy.level],
+          riders: occupancy.riders,
+          starts: occupancy.starts,
+          mediumFrom: occupancy.thresholds.mediumFrom,
+          highFrom: occupancy.thresholds.highFrom,
+        }
+      : beach
+        ? {
+            level: beach.level,
+            label: BEACH_LABEL[beach.level],
+            estimated: beach.estimated,
+            entries: beach.entries,
+            factor: beach.settings.factor,
+            mediumFrom: beach.settings.mediumFrom,
+            highFrom: beach.settings.highFrom,
+          }
+        : null,
   });
 }

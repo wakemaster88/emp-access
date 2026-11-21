@@ -9,6 +9,7 @@ import { fmtDay, validityText } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
 import { loadRiderOpening } from "@/lib/rider-opening";
+import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
 import { nextAward } from "@/lib/awards";
 import { AwardBadge } from "@/components/rider/award-badge";
 import { NextAwardCard } from "@/components/rider/award-parts";
@@ -38,12 +39,13 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { token } = await params;
   const rider = await requireRider(token);
   const base = riderAppPath(token);
-  const [offers, challenges, occupancy, opening, family] = await Promise.all([
+  const [offers, challenges, occupancy, opening, family, beach] = await Promise.all([
     loadRiderOffers(rider.accountId),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
     loadRiderOpening(rider.accountId).catch(() => null),
     riderFamilyView(token),
+    loadBeachOccupancy(rider.accountId).catch(() => null),
   ]);
   // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
   const konto = family?.relation === "self" ? await kontoRidersFor(rider.profileId) : null;
@@ -200,6 +202,26 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
               </span>
             </div>
           )}
+        </div>
+      )}
+
+      {beach && (
+        <div className="rd-card">
+          <div className="rd-between">
+            <div className="rd-label">{beach.areaName} jetzt</div>
+            <span className="rd-muted" style={{ fontSize: 12 }}>
+              Stand {beach.at.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" })} Uhr
+            </span>
+          </div>
+          <div className="rd-display rd-h2">{BEACH_LABEL[beach.level]}</div>
+          <div
+            className={`rd-bar rd-occ-${beach.level}`}
+            role="img"
+            aria-label={`${beach.areaName}: ${BEACH_LABEL[beach.level]}`}
+          >
+            <i style={{ width: `${Math.max(beach.percent, 3)}%` }} />
+          </div>
+          <span className="rd-muted">Geschätzt aus den Eintritten der letzten 3 Stunden.</span>
         </div>
       )}
 

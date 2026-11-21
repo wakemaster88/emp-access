@@ -46,6 +46,14 @@ import { TicketOverlay } from "@/components/checkin/ticket-overlay";
 
 /** Kopfbalken-Tasten: 44 px auf dem Handy, 56 px am Kiosk-Tablet (docs/design-regeln.md, Abschnitt 20). */
 const headerButtonClass = "h-11 min-w-11 font-semibold sm:h-14 sm:min-w-14";
+/**
+ * Beschriftung der Kopftasten. Ab `lg` steht der Kopf in einer Zeile: Die
+ * häufigen Tasten (Ticket, Zahlung offen, Scannen) tragen ab `xl` ihren Text,
+ * die selteneren (Serie, Hinweis, Schließfächer, Fundsachen) erst auf breiten
+ * Schirmen; darunter nur Symbol mit Tooltip.
+ */
+const headerLabelMain = "hidden xl:inline";
+const headerLabelMore = "hidden min-[1800px]:inline";
 /** Zustand „geöffnet“ bzw. „gesendet“: die Taste füllt sich kurz in der Erfolgsfarbe. */
 const headerButtonDoneClass = "border-transparent bg-success text-success-foreground hover:bg-success/90";
 /** Kopfzeile einer aufklappbaren Gruppenkarte (Service, Verein, Abo) mit Pfeil; Fokus als Ring (Abschnitt 12). */
@@ -1093,22 +1101,18 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   return (
     <div className={cn("dark page-ambient text-foreground [color-scheme:dark] flex flex-col kiosk-surface", kioskMinHeightClass)}>
       {/* Kopfbalken als Glasleiste; `relative z-30`, damit das Türen-Menü über
-          den Glaskarten des Inhalts liegt. Auf schmalen Schirmen bricht die
-          Tastengruppe unter den Titel um, statt waagerecht überzulaufen. Die
-          Safe-Area oben paddet der Rahmen (layout.tsx). */}
-      <header className="relative z-30 glass-bar border-b border-border px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div className="flex items-center gap-3 min-w-0 max-w-full">
+          den Glaskarten des Inhalts liegt. Ab `lg` eine Zeile: Logo, Name und
+          alle Tasten nebeneinander, der Name kürzt sich. Auf schmalen Schirmen
+          bricht die Tastengruppe unter den Namen um, statt waagerecht
+          überzulaufen. Die Safe-Area oben paddet der Rahmen (layout.tsx). */}
+      <header className="relative z-30 glass-bar border-b border-border px-4 sm:px-6 py-2 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex items-center gap-2.5 min-w-0 max-w-full lg:flex-1" title="EMP Access · Check-in Monitor">
           <img src="/logo-dark.png" alt="EMP Access" className="h-9 w-9 shrink-0" />
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold sm:text-xl tracking-tight leading-tight truncate">
-              {data?.monitorName ?? "Check-in"}
-            </h1>
-            <p className="text-[11px] text-muted-foreground whitespace-nowrap leading-tight">
-              EMP Access · Check-in Monitor
-            </p>
-          </div>
+          <h1 className="text-lg font-semibold sm:text-xl tracking-tight leading-tight truncate">
+            {data?.monitorName ?? "Check-in"}
+          </h1>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-1.5 min-w-0 lg:shrink-0">
           {scanBubble && (
             <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/15 px-3 py-1.5 font-mono text-xs text-foreground">
               <ScanLine className="h-3.5 w-3.5 text-primary" />
@@ -1145,7 +1149,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   ) : (
                     <DoorOpen className="size-5 shrink-0" />
                   )}
-                  <span className="hidden 2xl:inline max-w-[12rem] truncate">{d.name}</span>
+                  <span className="hidden min-[2200px]:inline max-w-[12rem] truncate">{d.name}</span>
                 </Button>
               );
             };
@@ -1261,7 +1265,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             className={headerButtonClass}
           >
             <Plus className="size-5 shrink-0" />
-            <span className="hidden xl:inline">Ticket</span>
+            <span className={headerLabelMain}>Ticket</span>
           </Button>
           <Button
             variant="outline"
@@ -1270,7 +1274,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             className={headerButtonClass}
           >
             <Layers className="size-5 shrink-0" />
-            <span className="hidden xl:inline">Serie</span>
+            <span className={headerLabelMore}>Serie</span>
           </Button>
           <Button
             variant="outline"
@@ -1279,7 +1283,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             className={cn(headerButtonClass, announcementSentAt && headerButtonDoneClass)}
           >
             {announcementSentAt ? <Check className="size-5 shrink-0" /> : <Megaphone className="size-5 shrink-0" />}
-            <span className="hidden xl:inline">
+            <span className={headerLabelMore}>
               {announcementSentAt ? "Gesendet" : "Hinweis"}
             </span>
           </Button>
@@ -1290,7 +1294,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             className={headerButtonClass}
           >
             <Lock className="size-5 shrink-0" />
-            <span className="hidden xl:inline">Schließfächer</span>
+            <span className={headerLabelMore}>Schließfächer</span>
           </Button>
           <Button
             variant="outline"
@@ -1299,7 +1303,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             className={headerButtonClass}
           >
             <PackageSearch className="size-5 shrink-0" />
-            <span className="hidden xl:inline">Fundsachen</span>
+            <span className={headerLabelMore}>Fundsachen</span>
           </Button>
           {paymentOpenCount > 0 && (
             <Button
@@ -1310,7 +1314,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             >
               <Wallet className="size-5 shrink-0 text-destructive" />
               <span className="tabular-nums">{paymentOpenCount}</span>
-              <span className="hidden xl:inline">Zahlung offen</span>
+              <span className={headerLabelMain}>Zahlung offen</span>
             </Button>
           )}
           <Button
@@ -1320,7 +1324,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             className={headerButtonClass}
           >
             <ScanLine className="size-5 shrink-0" />
-            <span className="hidden xl:inline">Scannen</span>
+            <span className={headerLabelMain}>Scannen</span>
           </Button>
           <span className="hidden md:block h-7 w-px bg-border mx-0.5" aria-hidden />
           <LiveClock />
@@ -1510,7 +1514,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         {filteredUpcoming.length > 0 && (
           <Section title="Nächste Gäste" icon={Clock} count={filteredUpcoming.length} color="amber">
             <Card>
-              <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2">
                 {filteredUpcoming.map(({ primary: t, members }) => (
                   <TicketCard
                     key={t.id}
@@ -1584,7 +1588,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                             />
                           ) : null;
                         })()}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2">
                           {bundles.map(({ primary: t, members }) => (
                             <TicketCard
                               key={t.id}
@@ -1642,7 +1646,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                     </button>
                     {isExpanded && (
                       <div className="border-t border-border p-3 sm:p-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2">
                           {g.tickets.map((t) => (
                             <TicketCard
                               key={t.id}
@@ -1667,7 +1671,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         {filteredCheckedIn.length > 0 && (
           <Section title="Eingecheckt" icon={CheckCircle2} count={filteredCheckedIn.length} color="emerald">
             <Card>
-              <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2">
                 {filteredCheckedIn.map(({ primary: t, members }) => (
                   <TicketCard
                     key={t.id}
@@ -1726,7 +1730,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                     </button>
                     {isExpanded && (
                       <div className="border-t border-border p-3 sm:p-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2">
                           {sub.tickets.map((t) => (
                             <TicketCard
                               key={t.id}
@@ -1786,6 +1790,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             });
             setSelectedTicket(null);
             setAddTicketOpen(true);
+          }}
+          onAppLink={() => {
+            // Dialog öffnet mit diesem Abo und wartet auf den App-Code.
+            setAppLink({ app: null, ticket: selectedTicket, notice: null });
+            setSelectedTicket(null);
+            setEditMode(null);
           }}
           onCancelVoucher={handleCancelVoucher}
           cancellingVoucher={cancellingVoucher}
@@ -2018,6 +2028,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         state={appLink}
         onClose={() => setAppLink(null)}
         onLinked={() => refreshRef.current?.()}
+        onScan={(code) => void handleScan(code)}
+        scanning={scanLoading}
       />
 
       {/* Scan overlay */}
