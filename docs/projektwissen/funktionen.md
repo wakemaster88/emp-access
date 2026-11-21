@@ -793,6 +793,20 @@ Kasse), alte oder andere Adresse, anny-Adresse anders als die in der App
   Kids-Abos mit den Daten der Eltern lehnt der Server mit Text ab.
 - Zwei verschiedene Kundenkonten legt der Monitor nicht zusammen, er
   verweist auf Abos › Kundenkonten (nur Admins).
+- Seit 21.11.2026 (Aaron: „das sollte man verwalten und auch wieder lösen
+  können“): Die Abo-Kachel im Dialog zeigt, wo das Abo in der App steht
+  („In der App: App von X“, „X, Kind in der Familie von Y“, „X, noch ohne
+  eigenen Zugang“ oder „Noch in keiner App“), über `GET
+  …/app-link?ticketId=` (`aboAppOwner`, `ownerText`). Steht es schon in einer
+  anderen App oder Familie, kommt statt der Sperre ein Hinweis mit „Bisherige
+  Verknüpfung lösen“; nach der Rückfrage („Lösen und verknüpfen“) geht
+  `POST …/app-link` mit `replace: true`. Dann zieht nur dieses Abo um,
+  Besuche, Starts und Awards hängen am Abo und kommen mit. Bleibt die
+  bisherige Person ohne Abo, Adresse, Passwort und Passkey zurück, fällt sie
+  weg; eine Familie mit nur noch einer Person löst sich auf (`tidyFamily`).
+  Wer selbst eine Familie verwaltet, wird nicht zum Kind gemacht. Lösen ohne
+  neue Verknüpfung gibt es nicht: Der Kundenkonto-Abgleich würde das Abo
+  gleich wieder einer Person des Kundenkontos zuordnen.
 
 ## Per E-Mail in App und Familie einladen (20.11.2026)
 
