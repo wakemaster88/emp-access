@@ -304,6 +304,30 @@ export interface AggregatedDay {
 }
 
 /** Start-Scans zu Tagessummen je Ticket verdichten (für die Rückrechnung). */
+/** Start-Gerät für die Rückrechnung: heute (`countsAsStart`) oder früher (`legacyStartsUntil`). */
+export interface StartDeviceRow {
+  id: number;
+  countsAsStart: boolean;
+  legacyStartsUntil: Date | null;
+}
+
+/**
+ * Scan-Bedingung „ist ein Start“ für die Rückrechnung: alle Scans an heutigen
+ * Start-Geräten, an früheren nur die vor ihrem Stichtag (der alte Scanner an
+ * Seilbahn A vor dem Drehkreuz). Null = kein Start-Gerät.
+ */
+export function startScanWhere(
+  devices: StartDeviceRow[],
+): { OR: Array<{ deviceId: number | { in: number[] }; scanTime?: { lt: Date } }> } | null {
+  const now = devices.filter((d) => d.countsAsStart).map((d) => d.id);
+  const or: Array<{ deviceId: number | { in: number[] }; scanTime?: { lt: Date } }> = [];
+  if (now.length > 0) or.push({ deviceId: { in: now } });
+  for (const d of devices) {
+    if (!d.countsAsStart && d.legacyStartsUntil) or.push({ deviceId: d.id, scanTime: { lt: d.legacyStartsUntil } });
+  }
+  return or.length > 0 ? { OR: or } : null;
+}
+
 export function aggregateScans(scans: Array<{ ticketId: number; scanTime: Date }>): AggregatedDay[] {
   const map = new Map<string, AggregatedDay>();
   for (const s of scans) {

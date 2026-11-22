@@ -100,6 +100,11 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 - „Statistik neu berechnen“ baut die Tagessummen des laufenden Jahres aus den
   Scans neu auf und vergibt dabei nichts. Verlässliche Starts gibt es erst seit
   dem Drehkreuz (21.08.2026).
+- Frühere Start-Geräte (`Device.legacyStartsUntil`): ihre GRANTED-Scans vor dem
+  Stichtag zählen in der Rückrechnung als Starts, live nie (`startScanWhere`).
+  Gesetzt für den alten Scanner an Seilbahn A (Gerät 6) bis 20.08.2026: bringt
+  die Besuchstage ab 21.03.2026. Dort scannten Abo-Fahrer nur etwa jeden
+  vierten Start, die Starts sind also eine Untergrenze. Setzen nur per SQL.
 - Rechenlogik mit Tests in `src/lib/gamification.ts`, Datenbank-Seite in
   `src/lib/gamification-service.ts`.
 

@@ -20,6 +20,7 @@ import {
   mergeDayStats,
   reachedMilestones,
   seasonsCount,
+  startScanWhere,
   ymdToDbDate,
   ALL_TIME_KEY,
   BENEFIT_STATE_MESSAGE,
@@ -580,6 +581,15 @@ export async function redeemBenefitVoucher(
   return { ok: true, label: voucher.label ?? "Gutschein", code: voucher.code };
 }
 
+/** Scan-Bedingung „ist ein Start“ des Kontos, siehe `startScanWhere`. */
+async function loadStartScanWhere(db: TenantDb, accountId: number) {
+  const devices = await db.device.findMany({
+    where: { accountId, OR: [{ countsAsStart: true }, { legacyStartsUntil: { not: null } }] },
+    select: { id: true, countsAsStart: true, legacyStartsUntil: true },
+  });
+  return startScanWhere(devices);
+}
+
 /**
  * Tagessummen eines Jahres aus den vorhandenen Scans neu berechnen. Vergibt
  * keine Meilensteine und keine Gutscheine – das passiert erst beim nächsten
@@ -591,16 +601,13 @@ export async function backfillYear(
   year: number,
 ): Promise<{ scans: number; days: number; tickets: number }> {
   const config = await db.gamificationConfig.findUnique({ where: { accountId } });
-  const devices = await db.device.findMany({
-    where: { accountId, countsAsStart: true },
-    select: { id: true },
-  });
+  const startWhere = await loadStartScanWhere(db, accountId);
   const subscriptionIds = config?.subscriptionIds ?? [];
   const from = new Date(`${year}-01-01T00:00:00+01:00`);
   const to = new Date(`${year + 1}-01-01T00:00:00+01:00`);
 
   const scans: Array<{ ticketId: number; scanTime: Date }> = [];
-  if (devices.length > 0 && subscriptionIds.length > 0) {
+  if (startWhere && subscriptionIds.length > 0) {
     const PAGE = 5000;
     let cursor = 0;
     for (;;) {
@@ -609,7 +616,7 @@ export async function backfillYear(
           accountId,
           id: { gt: cursor },
           result: "GRANTED",
-          deviceId: { in: devices.map((d) => d.id) },
+          AND: [startWhere],
           scanTime: { gte: from, lt: to },
           ticket: { subscriptionId: { in: subscriptionIds } },
         },
@@ -685,8 +692,9 @@ export async function syncDayTicketStat(db: TenantDb, accountId: number, ticketI
     select: { id: true, startDate: true, createdAt: true },
   });
   if (!ticket) return;
-  const scans = await db.scan.findMany({
-    where: { accountId, ticketId, result: "GRANTED", device: { countsAsStart: true } },
+  const startWhere = await loadStartScanWhere(db, accountId);
+  const scans = !startWhere ? [] : await db.scan.findMany({
+    where: { accountId, ticketId, result: "GRANTED", AND: [startWhere] },
     select: { scanTime: true },
     take: 2000,
   });
