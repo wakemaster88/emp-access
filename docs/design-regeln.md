@@ -386,6 +386,10 @@ bereit.
   laufen dunkel (`dark`), Schrift größer (Zahlen 48 bis 96 px), Touch-Ziele mindestens 56 px.
 - Ergebnis eines Scans als volle Fläche in der Zustandsfarbe (grün erlaubt, rot abgelehnt),
   sonst ruhige Flächen.
+- Ausnahme wie die Kunden-App: Das **Vereinsportal** (`/verein/<token>`) nutzt seit 22.11.2026 den
+  Look der Kunden-App (`rider.css`: dunkel, Petrol und Gelb, kursive Versalschrift) mit eigenem
+  Wurzelrahmen `src/app/(verein)` und eigenen `vp-`-Klassen in `verein.css`, keine ui-Bausteine.
+  Aaron: „soll mobil richtig sexy sein“. Buchen, Wunschzeit und Storno laufen als Blatt von unten.
 
 ## 21. Hub-Dashboard
 

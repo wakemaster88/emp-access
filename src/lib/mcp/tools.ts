@@ -454,6 +454,7 @@ const cloudTools: Tool[] = [
           status: true,
           priceCents: true,
           bookedBy: true,
+          bookedFor: true,
           note: true,
           verein: { select: { name: true } },
         },
@@ -473,6 +474,7 @@ const cloudTools: Tool[] = [
           status: b.status,
           priceEur: b.priceCents / 100,
           bookedBy: b.bookedBy,
+          bookedFor: b.bookedFor,
           note: b.note,
         })),
       };

@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
     priceCents: r.priceCents,
     status: r.status as "BOOKED" | "CANCELED",
     bookedBy: r.bookedBy,
+    bookedFor: r.bookedFor,
     note: r.note,
     canceledBy: r.canceledBy,
     billedAt: r.billedAt,

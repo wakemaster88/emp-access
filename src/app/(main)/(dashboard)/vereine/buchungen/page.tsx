@@ -89,6 +89,7 @@ export default async function VereinsBuchungenPage({ searchParams }: PageProps) 
             slotEnd: r.slotEnd,
             priceCents: r.priceCents,
             bookedBy: r.bookedBy,
+            bookedFor: r.bookedFor,
             note: r.note,
           }))}
         />
@@ -106,6 +107,7 @@ export default async function VereinsBuchungenPage({ searchParams }: PageProps) 
             priceCents: b.priceCents,
             status: b.status as "BOOKED" | "CANCELED",
             bookedBy: b.bookedBy,
+            bookedFor: b.bookedFor,
             note: b.note,
             canceledBy: b.canceledBy,
             billedAt: b.billedAt ? b.billedAt.toISOString() : null,

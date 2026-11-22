@@ -84,6 +84,7 @@ export interface BillingRow {
   priceCents: number;
   status: "BOOKED" | "CANCELED";
   bookedBy: string | null;
+  bookedFor?: string | null;
   billedAt: Date | string | null;
   invoiceRef: string | null;
 }
@@ -116,7 +117,7 @@ function csvCell(v: string): string {
  * Enthaelt nur gebuchte Slots; Stornos werden nicht abgerechnet.
  */
 export function billingCsv(rows: BillingRow[]): string {
-  const head = ["Verein", "Datum", "Von", "Bis", "Service", "Preis (EUR)", "Gebucht von", "Abgerechnet am", "Rechnung"];
+  const head = ["Verein", "Datum", "Von", "Bis", "Service", "Preis (EUR)", "Für wen", "Gebucht von", "Abgerechnet am", "Rechnung"];
   const lines = rows
     .filter((r) => r.status === "BOOKED")
     .map((r) => {
@@ -129,6 +130,7 @@ export function billingCsv(rows: BillingRow[]): string {
         r.slotEnd,
         r.serviceName,
         (r.priceCents / 100).toFixed(2).replace(".", ","),
+        r.bookedFor ?? "",
         r.bookedBy ?? "",
         billed,
         r.invoiceRef ?? "",

@@ -257,3 +257,70 @@ export function applyOwnSlotCapacity(
     return next;
   });
 }
+
+/**
+ * Belegte Zeiträume einer ANNY-Resource an einem Berlin-Tag: alle Buchungen
+ * mit belegendem Status, Blocker eingeschlossen, als [start, end) in ms.
+ * Für das Vereinsportal (Slots bei Tageslicht), das unabhängig von den
+ * ANNY-Zeiten Slots anbietet und deshalb jede Überschneidung selbst prüft.
+ * `ok: false`, wenn eine Abfrage scheiterte: Dann darf niemand buchen, weil
+ * die Belegung unbekannt ist.
+ */
+export async function fetchAnnyResourceBusy(
+  baseUrl: string,
+  token: string,
+  resourceId: string,
+  dateStr: string,
+  organizationId?: string | null,
+): Promise<{ ok: boolean; intervals: { start: number; end: number }[] }> {
+  if (!resourceId || !dateStr) return { ok: false, intervals: [] };
+  const tz = berlinOffset(dateStr);
+  const dayStartMs = new Date(`${dateStr}T00:00:00${tz}`).getTime();
+  const dayEndMs = dayStartMs + 86400000;
+  // Vortag mit abfragen: eine Buchung kann vor Mitternacht beginnen und in den Tag reichen.
+  const dates = [
+    new Date(dayStartMs - 86400000).toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" }),
+    dateStr,
+  ];
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.api+json, application/json" };
+
+  const pages = await Promise.all(
+    dates.map(async (d) => {
+      const params = new URLSearchParams({
+        "filter[resources]": resourceId,
+        "filter[start_date]": d,
+        "page[size]": "200",
+        "page[number]": "1",
+      });
+      if (organizationId) params.set("o", organizationId);
+      try {
+        const res = await fetch(`${cleanBase}/api/v1/bookings?${params}`, { headers, signal: AbortSignal.timeout(10000) });
+        if (!res.ok) return null;
+        const json = (await res.json()) as { data?: JsonApiBooking[] };
+        return Array.isArray(json?.data) ? json.data : [];
+      } catch {
+        return null;
+      }
+    }),
+  );
+  if (pages.some((p) => p === null)) return { ok: false, intervals: [] };
+
+  const intervals: { start: number; end: number }[] = [];
+  const seen = new Set<string>();
+  for (const booking of pages.flat()) {
+    if (!booking) continue;
+    if (booking.id) {
+      if (seen.has(booking.id)) continue;
+      seen.add(booking.id);
+    }
+    const attrs = booking.attributes ?? {};
+    if (!OCCUPYING_STATUSES.has((attrs.status ?? "").toLowerCase())) continue;
+    const start = attrs.start_date ? new Date(attrs.start_date).getTime() : NaN;
+    const end = attrs.end_date ? new Date(attrs.end_date).getTime() : NaN;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+    if (end <= dayStartMs || start >= dayEndMs) continue;
+    intervals.push({ start, end });
+  }
+  return { ok: true, intervals };
+}

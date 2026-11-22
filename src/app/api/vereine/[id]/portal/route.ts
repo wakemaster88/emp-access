@@ -17,6 +17,7 @@ const putSchema = z.object({
     .array(z.object({
       serviceId: z.coerce.number().int().positive(),
       priceCents: z.coerce.number().int().min(0).max(10_000_000),
+      daylight: z.boolean().optional().default(false),
     }))
     .max(100),
 });
@@ -49,7 +50,7 @@ async function serialize(vereinId: number, accountId: number) {
         portalTrailMinutes: true,
         portalDeviceIds: true,
         portalDoorbirdIds: true,
-        bookableServices: { select: { serviceId: true, priceCents: true } },
+        bookableServices: { select: { serviceId: true, priceCents: true, daylight: true } },
       },
     }),
     prisma.service.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -126,7 +127,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     await tx.vereinBookableService.deleteMany({ where: { vereinId: verein.id } });
     if (services.length > 0) {
       await tx.vereinBookableService.createMany({
-        data: services.map((s) => ({ vereinId: verein.id, serviceId: s.serviceId, priceCents: s.priceCents })),
+        data: services.map((s) => ({ vereinId: verein.id, serviceId: s.serviceId, priceCents: s.priceCents, daylight: s.daylight })),
       });
     }
   });

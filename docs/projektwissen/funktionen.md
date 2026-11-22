@@ -549,6 +549,19 @@ Aaron: „sowas wie neue öffnungszeiten als news abschnitt und nicht angebote�
 - „Gebucht von“ ist Pflicht, „Bemerkung“ für Teilnehmer und Hinweise.
 - Slot-Logik geteilt in `src/lib/service-slots.ts` und
   `src/lib/slot-blocks.ts`.
+- Seit 22.11.2026 (Little Bro für die Cable Crew): je freigegebenem Service
+  „Bei Tageslicht buchbar“ (`VereinBookableService.daylight`). Dann bietet das
+  Portal eigene Slots von der ersten vollen Stunde nach Sonnenaufgang bis
+  Sonnenuntergang (Konto-Standort, `src/lib/verein-daylight.ts`), auch wenn
+  anny an dem Tag keine Zeiten hat. Belegt ist, was sich überschneidet: alle
+  Buchungen und Sperren der anny-Ressource (`fetchAnnyResourceBusy`), Sperren
+  und Vereinsbuchungen in EMP. Ist anny nicht erreichbar, bietet das Portal
+  nichts an. Anfängerkurse am Übungslift liegen in anny auf einer anderen
+  Ressource und werden dabei nicht gesehen.
+- „Für wen“ (`bookedFor`) ist bei Buchung und Anfrage Pflicht und steht in
+  Backoffice, Telegram und CSV.
+- Optik: eigener Wurzelrahmen `src/app/(verein)` im Look der Kunden-App
+  (siehe docs/design-regeln.md, Abschnitt 20).
 
 ## Räume-Seite (PR #44–#50, #63, #67)
 
