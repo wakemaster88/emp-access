@@ -40,6 +40,9 @@ export default async function BetriebszeitenPage() {
       description: s.description,
       isDefault: s.isDefault,
       sortOrder: s.sortOrder,
+      parentId: s.parentId,
+      facilities: s.facilities,
+      annyResourceId: s.annyResourceId,
       roomCount: s._count.rooms,
       roomNames: s.rooms.map((r) => r.name),
       seasons: s.seasons.map((season) => ({

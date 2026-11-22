@@ -10,7 +10,7 @@ import type { DiffGroup } from "@/lib/opening-compare";
 import type { SyncReport, SyncRow, SyncSide } from "@/lib/opening-sync";
 import { cn } from "@/lib/utils";
 import { DayStrip, MonthAxis, TRACK } from "@/components/betriebszeiten/charts";
-import { seriesColor } from "@/components/betriebszeiten/series";
+import { scheduleTree } from "@/components/betriebszeiten/series";
 
 type SideKey = "anny" | "website";
 const SIDE_LABEL: Record<SideKey, string> = { anny: "anny", website: "Website" };
@@ -38,7 +38,7 @@ const TONE: Record<SyncSide["state"], StatusTone> = {
   error: "danger",
 };
 
-function headline(side: SyncSide, key: SideKey): string {
+function headline(side: SyncSide, key: SideKey, sub = false): string {
   switch (side.state) {
     case "same":
       return "gleich";
@@ -49,7 +49,8 @@ function headline(side: SyncSide, key: SideKey): string {
     case "empty":
       return "keine Zeiten eingetragen";
     case "unlinked":
-      return key === "anny" ? "nicht in anny" : "keine Seite";
+      if (key === "anny") return "nicht in anny";
+      return sub ? "nicht auf der Website" : "keine Seite";
     case "error":
       return "nicht erreichbar";
   }
@@ -91,9 +92,23 @@ function Legend() {
   );
 }
 
-function SideCell({ side, sideKey, from, to, name }: { side: SyncSide; sideKey: SideKey; from: string; to: string; name: string }) {
+function SideCell({
+  side,
+  sideKey,
+  from,
+  to,
+  name,
+  isSub,
+}: {
+  side: SyncSide;
+  sideKey: SideKey;
+  from: string;
+  to: string;
+  name: string;
+  isSub: boolean;
+}) {
   const sub = hint(side, sideKey, to);
-  const text = headline(side, sideKey);
+  const text = headline(side, sideKey, isSub);
   return (
     <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 sm:grid-cols-1">
       <span className="text-[11px] text-muted-foreground sm:hidden">{SIDE_LABEL[sideKey]}</span>
@@ -157,14 +172,17 @@ const GRID = "sm:grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_minmax(0,1fr)_1rem]";
 
 function RowView({
   row,
-  index,
+  color,
+  isSub,
   from,
   to,
   expanded,
   onToggle,
 }: {
   row: SyncRow;
-  index: number;
+  color: string;
+  /** Unterprofil: eingerückt unter seinem Bereich. */
+  isSub: boolean;
   from: string;
   to: string;
   expanded: boolean;
@@ -183,9 +201,9 @@ function RowView({
           GRID,
         )}
       >
-        <span className="flex min-w-0 items-center gap-1.5 sm:pt-0.5">
-          <span aria-hidden className={cn("size-2 shrink-0 rounded-full", seriesColor(index))} />
-          <span className="truncate font-medium">{row.name}</span>
+        <span className={cn("flex min-w-0 items-center gap-1.5 sm:pt-0.5", isSub && "pl-3.5")}>
+          <span aria-hidden className={cn("size-2 shrink-0 rounded-full", color)} />
+          <span className={cn("truncate", isSub ? "text-muted-foreground" : "font-medium")}>{row.name}</span>
           {attention && (
             <ChevronDown
               aria-hidden
@@ -193,8 +211,8 @@ function RowView({
             />
           )}
         </span>
-        <SideCell side={row.anny} sideKey="anny" from={from} to={to} name={row.name} />
-        <SideCell side={row.website} sideKey="website" from={from} to={to} name={row.name} />
+        <SideCell side={row.anny} sideKey="anny" from={from} to={to} name={row.name} isSub={isSub} />
+        <SideCell side={row.website} sideKey="website" from={from} to={to} name={row.name} isSub={isSub} />
         <span className="hidden sm:block" aria-hidden>
           {attention && (
             <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", expanded && "rotate-180")} />
@@ -271,7 +289,7 @@ export function SyncStatus() {
             <Badge variant="success">alles gleich</Badge>
           ) : (
             <Badge variant="warning">
-              {attention} {attention === 1 ? "Bereich weicht" : "Bereiche weichen"} ab
+              {attention} {attention === 1 ? "Profil weicht" : "Profile weichen"} ab
             </Badge>
           )}
         </div>
@@ -313,11 +331,12 @@ export function SyncStatus() {
               <MonthAxis from={report.from} days={report.days} compact />
             </div>
             <ul>
-              {report.rows.map((row, i) => (
+              {scheduleTree(report.rows.map((r) => ({ ...r, id: r.scheduleId }))).map(({ item: row, sub, color }) => (
                 <RowView
                   key={row.scheduleId}
                   row={row}
-                  index={i}
+                  color={color}
+                  isSub={sub}
                   from={report.from}
                   to={report.to}
                   expanded={expanded === row.scheduleId}

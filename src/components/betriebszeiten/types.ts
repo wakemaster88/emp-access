@@ -11,6 +11,12 @@ export interface ScheduleRow {
   description: string | null;
   isDefault: boolean;
   sortOrder: number;
+  /** Unterprofil von (z. B. Bahnmiete A unter Wasserski). */
+  parentId: number | null;
+  /** Belegte Anlagen für die Überschneidungsprüfung. */
+  facilities: string[];
+  /** Feste anny-Ressource für den Abgleich. */
+  annyResourceId: string | null;
   roomCount: number;
   /** Räume, die diesem Profil folgen (für die Profilkarte). */
   roomNames: string[];

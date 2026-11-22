@@ -742,6 +742,17 @@ export const operatingScheduleCreateSchema = z.object({
   description: z.string().max(500).nullable().optional(),
   isDefault: z.boolean().optional(),
   sortOrder: z.coerce.number().int().min(0).optional(),
+  /// Unterprofil von (z. B. Bahnmiete A unter Wasserski); null = eigener Bereich.
+  parentId: z.coerce.number().int().positive().nullable().optional(),
+  /// Belegte Anlagen für die Überschneidungsprüfung.
+  facilities: z.array(z.string().trim().min(1).max(40)).max(6).optional(),
+  /// anny-Ressource für den Abgleich (nur Ziffern).
+  annyResourceId: z
+    .preprocess(
+      (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+      z.string().trim().regex(/^\d{1,12}$/, "anny-Ressource ist eine Zahl").nullable(),
+    )
+    .optional(),
   /// Saisons samt Öffnungszeiten (Vollersetzung, wenn angegeben).
   seasons: z.array(operatingSeasonSchema).max(12).optional(),
   /// Ausnahmetage (Vollersetzung, wenn angegeben).

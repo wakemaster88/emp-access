@@ -74,7 +74,8 @@ export async function grantSkill(
 /** Ist der Lift jetzt geöffnet (Betriebszeiten, wie die Karte „Auslastung jetzt“)? Ohne Profil: nein. */
 export async function liftOpenNow(accountId: number, now: Date = new Date()): Promise<boolean> {
   const schedules = await prisma.operatingSchedule.findMany({
-    where: { accountId },
+    // Unterprofile (Bahnmieten, Kurse) sind keine eigenen Bereiche.
+    where: { accountId, parentId: null },
     orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
     include: scheduleSpecInclude,
   });

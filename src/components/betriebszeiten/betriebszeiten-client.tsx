@@ -46,15 +46,16 @@ import { addDaysToYmd, formatHhmm, tzMinutesOfDay, tzYmd, weekdayBitOfYmd } from
 import { cn } from "@/lib/utils";
 import { StatusDot } from "@/components/ui/status-dot";
 import { DayStrip, MonthAxis, OPEN_FILL_SOFT, WeekColumns, type WeekColumn } from "@/components/betriebszeiten/charts";
-import { seriesColor } from "@/components/betriebszeiten/series";
+import { scheduleTree } from "@/components/betriebszeiten/series";
 import { SyncStatus } from "@/components/betriebszeiten/sync-status";
+import { FacilityUsage } from "@/components/betriebszeiten/facility-usage";
 
 function toSpec(row: ScheduleRow): ScheduleSpec {
   return { name: row.name, seasons: row.seasons, exceptions: row.exceptions };
 }
 
-/** So weit voraus sucht die Karte die nächste Öffnung (Winterpause). */
-const LOOKAHEAD_DAYS = 200;
+/** So weit voraus sucht die Karte die nächste Öffnung (Winterpause, Ferienkurs erst im Sommer). */
+const LOOKAHEAD_DAYS = 370;
 
 /** "in 25 Min." bzw. "in 3 Std." – nur für Wechsel in den nächsten 24 Stunden. */
 function untilLabel(target: Date, nowMs: number): string | null {
@@ -104,7 +105,8 @@ const YEAR_DAYS = 365;
 
 function ScheduleCard({
   schedule,
-  index,
+  color,
+  childCount,
   timezone,
   nowMs,
   range,
@@ -113,7 +115,10 @@ function ScheduleCard({
   onDelete,
 }: {
   schedule: ScheduleRow;
-  index: number;
+  /** Farbe wie im Kalender (Unterprofile aufgehellt). */
+  color: string;
+  /** Anzahl Unterprofile (nur bei Bereichen). */
+  childCount: number;
   timezone: string;
   nowMs: number;
   range: { from: number; to: number };
@@ -167,7 +172,7 @@ function ScheduleCard({
       <CardHeader>
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {/* Farbe wie im Kalender: der Bereich als Datenreihe. */}
-          <span aria-hidden className={cn("size-2.5 shrink-0 rounded-full", seriesColor(index))} />
+          <span aria-hidden className={cn("size-2.5 shrink-0 rounded-full", color)} />
           <CardTitle className="min-w-0">
             <h3 className="truncate">{schedule.name}</h3>
           </CardTitle>
@@ -216,6 +221,14 @@ function ScheduleCard({
             <p className="text-xs text-warning">
               Heute Ausnahme{today.label ? `: ${today.label}` : ""}
               {today.closed ? " (geschlossen)" : ""}
+            </p>
+          )}
+          {(schedule.facilities.length > 0 || schedule.annyResourceId) && (
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {schedule.facilities.length > 0 &&
+                `${schedule.facilities.length === 1 ? "Anlage" : "Anlagen"}: ${schedule.facilities.join(", ")}`}
+              {schedule.facilities.length > 0 && schedule.annyResourceId && " · "}
+              {schedule.annyResourceId && `anny ${schedule.annyResourceId}`}
             </p>
           )}
         </div>
@@ -280,6 +293,7 @@ function ScheduleCard({
         <span className="shrink-0">
           {schedule.seasons.length} {schedule.seasons.length === 1 ? "Saison" : "Saisons"} ·{" "}
           {schedule.exceptions.length} {schedule.exceptions.length === 1 ? "Ausnahmetag" : "Ausnahmetage"} ·
+          {childCount > 0 && ` ${childCount} ${childCount === 1 ? "Unterprofil" : "Unterprofile"} ·`}
         </span>
         <span className="min-w-0 truncate" title={schedule.roomNames.join(", ")}>
           {schedule.roomNames.length === 0
@@ -295,7 +309,8 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
   const router = useRouter();
   const nowMs = useNow(new Date(data.renderedAt).getTime());
   const [editing, setEditing] = useState<ScheduleRow | null>(null);
-  const [creating, setCreating] = useState(false);
+  // Neues Profil; mit Zahl gleich als Unterprofil dieses Bereichs.
+  const [creating, setCreating] = useState<{ parentId: number | null } | null>(null);
   // Rückfrage vor dem Löschen; das Profil bleibt gesetzt, solange der Dialog ausblendet.
   const [toDelete, setToDelete] = useState<ScheduleRow | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -304,11 +319,15 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
   // Gemeinsamer Stundenbereich für alle Wochengrafiken, damit die Karten vergleichbar sind.
   const range = useMemo(() => hourRange(data.schedules.flatMap((s) => planSegments(toSpec(s)))), [data.schedules]);
 
-  const openCount = useMemo(
-    () =>
-      data.schedules.filter((s) => isOperatingAt(toSpec(s), new Date(nowMs), data.timezone)).length,
-    [data.schedules, data.timezone, nowMs],
-  );
+  // Bereiche in ihrer Reihenfolge; Unterprofile (Bahnmieten, Kurse) gesammelt unter ihrem Bereich.
+  const tree = useMemo(() => scheduleTree(data.schedules), [data.schedules]);
+  const areas = tree.filter((e) => !e.sub);
+  const subGroups = areas
+    .map((area) => ({ area, subs: tree.filter((e) => e.parent?.id === area.item.id) }))
+    .filter((g) => g.subs.length > 0);
+  const todayYmd = tzYmd(new Date(nowMs), data.timezone);
+
+  const openCount = areas.filter((e) => isOperatingAt(toSpec(e.item), new Date(nowMs), data.timezone)).length;
 
   function askRemove(schedule: ScheduleRow) {
     setToDelete(schedule);
@@ -332,8 +351,8 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
       <div className="flex items-center justify-between gap-3">
         {/* Ohne Profil sagt das der leere Zustand darunter; hier steht es nicht ein zweites Mal (docs/design-regeln.md, Abschnitt 1). */}
         <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-          {data.schedules.length > 0 &&
-            `${openCount} von ${data.schedules.length} ${data.schedules.length === 1 ? "Profil" : "Profilen"} gerade geöffnet.`}
+          {areas.length > 0 &&
+            `${openCount} von ${areas.length} ${areas.length === 1 ? "Bereich" : "Bereichen"} gerade geöffnet.`}
           {data.roomsWithoutSchedule > 0 && (
             <>
               {" "}
@@ -344,7 +363,7 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
           )}
         </p>
         {!data.readonly && (
-          <Button className="shrink-0 max-sm:h-11" onClick={() => setCreating(true)}>
+          <Button className="shrink-0 max-sm:h-11" onClick={() => setCreating({ parentId: null })}>
             <Plus className="h-4 w-4" />
             Betriebszeit
           </Button>
@@ -370,22 +389,23 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
           <TabsList className="w-full sm:w-fit">
             <TabsTrigger value="profile" className="gap-1.5">
               <LayoutGrid className="h-3.5 w-3.5" />
-              Profile ({data.schedules.length})
+              Profile ({areas.length})
             </TabsTrigger>
             <TabsTrigger value="kalender" className="gap-1.5">
               <CalendarDays className="h-3.5 w-3.5" />
               Kalender
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="profile">
+          <TabsContent value="profile" className="space-y-6 sm:space-y-8">
             {/* `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte macht ein langer Profilname
                 (`truncate`) die Spalte breiter als das Handy, dann scrollt die Seite seitlich. */}
             <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
-              {data.schedules.map((schedule, i) => (
+              {areas.map(({ item: schedule, color }) => (
                 <ScheduleCard
                   key={schedule.id}
                   schedule={schedule}
-                  index={i}
+                  color={color}
+                  childCount={tree.filter((e) => e.parent?.id === schedule.id).length}
                   timezone={data.timezone}
                   nowMs={nowMs}
                   range={range}
@@ -395,6 +415,51 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
                 />
               ))}
             </div>
+
+            {subGroups.map(({ area, subs }) => (
+              <section key={area.item.id} className="space-y-3" aria-labelledby={`sub-${area.item.id}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 id={`sub-${area.item.id}`} className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+                      <span aria-hidden className={cn("size-2.5 shrink-0 rounded-full", area.color)} />
+                      <span className="truncate">{area.item.name}: Angebote</span>
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Unterprofile mit eigenen Zeiten; nicht in der Kunden-App.
+                    </p>
+                  </div>
+                  {!data.readonly && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 max-sm:h-11"
+                      onClick={() => setCreating({ parentId: area.item.id })}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Angebot
+                    </Button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
+                  {subs.map(({ item: schedule, color }) => (
+                    <ScheduleCard
+                      key={schedule.id}
+                      schedule={schedule}
+                      color={color}
+                      childCount={0}
+                      timezone={data.timezone}
+                      nowMs={nowMs}
+                      range={range}
+                      readonly={data.readonly}
+                      onEdit={() => setEditing(schedule)}
+                      onDelete={() => askRemove(schedule)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+
+            <FacilityUsage tree={tree} todayYmd={todayYmd} />
           </TabsContent>
           <TabsContent value="kalender">
             <OperatingCalendar schedules={data.schedules} timezone={data.timezone} nowMs={nowMs} />
@@ -430,12 +495,19 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
       </AlertDialog>
 
       {creating && (
-        <ScheduleDialog schedule={null} open onClose={() => setCreating(false)} />
+        <ScheduleDialog
+          schedule={null}
+          schedules={data.schedules}
+          initialParentId={creating.parentId}
+          open
+          onClose={() => setCreating(null)}
+        />
       )}
       {editing && (
         <ScheduleDialog
           key={editing.id}
           schedule={editing}
+          schedules={data.schedules}
           open
           onClose={() => setEditing(null)}
         />
