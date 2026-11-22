@@ -4,6 +4,7 @@
  * In Ranglisten steht nur der Spitzname von Fahrern, die dem zugestimmt
  * haben (`RiderProfile.showInRanking`). Alle anderen erscheinen als „Anonym“.
  */
+import { audiencesFor, type PassKind } from "./rider-pass";
 import { cache } from "react";
 import { skillRewardText } from "./rider-skill-rules";
 import { prisma, tenantClient } from "./prisma";
@@ -83,7 +84,12 @@ export async function loadRiderChallenges(
   }
 
   const challenges = await prisma.challenge.findMany({
-    where: { accountId, active: true, endDate: { gte: ymdToDbDate(shiftYmd(today, -KEEP_ENDED_DAYS)) } },
+    where: {
+      accountId,
+      active: true,
+      audience: { in: audiencesFor(rider.pass) },
+      endDate: { gte: ymdToDbDate(shiftYmd(today, -KEEP_ENDED_DAYS)) },
+    },
     orderBy: [{ endDate: "asc" }, { id: "asc" }],
     take: 30,
     include: { skill: { select: { name: true, active: true } } },
@@ -188,10 +194,10 @@ export interface RiderOfferView {
 }
 
 /** Angebote, die heute sichtbar sind. */
-export async function loadRiderOffers(accountId: number, now: Date = new Date()): Promise<RiderOfferView[]> {
+export async function loadRiderOffers(accountId: number, pass: PassKind = "RIDE", now: Date = new Date()): Promise<RiderOfferView[]> {
   const today = berlinYmd(now);
   const offers = await prisma.riderOffer.findMany({
-    where: { accountId, active: true },
+    where: { accountId, active: true, audience: { in: audiencesFor(pass) } },
     orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
     take: 20,
   });

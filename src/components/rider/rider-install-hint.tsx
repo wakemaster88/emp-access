@@ -22,7 +22,7 @@ const PLUS = (
  * App und lässt sich 14 Tage lang wegklicken (eigener Schlüssel, unabhängig
  * vom Hinweis der Verwaltung).
  */
-export function RiderInstallHint() {
+export function RiderInstallHint({ name = "Ride Pass" }: { name?: string }) {
   const { info, canPrompt, install, dismiss, showBanner } = useInstallState("rd-install-dismissed-at");
   if (!info || !showBanner) return null;
 
@@ -36,7 +36,7 @@ export function RiderInstallHint() {
           </svg>
         </span>
         <div className="rd-grow">
-          <b>Ride Pass als App</b>
+          <b>{name} als App</b>
           {info.ios ? (
             <>
               <p>{!info.safari ? "Öffne die Seite in Safari, dann:" : "In zwei Schritten, mit Push-Nachrichten:"}</p>

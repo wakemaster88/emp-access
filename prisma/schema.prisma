@@ -3640,6 +3640,13 @@ model GamificationConfig {
   musicVoteRoundMinutes Int       @default(15)
   /// Ende der zuletzt ausgewerteten Runde (Cron-Guard).
   musicVoteRoundAt      DateTime?
+  /// Beach Pass: dieselbe Kunden-App fuer Strandbad-Kunden (lib/rider-pass).
+  /// Ab Werk aus. Gezaehlt wird ein Besuchstag je Tag mit Eintritt am
+  /// Strandbad-Eingang, nicht am Lift.
+  beachEnabled          Boolean   @default(false)
+  /// Abos, deren Tickets den Beach Pass bekommen (z. B. „Beach Abo“). Ein Abo
+  /// aus `subscriptionIds` geht vor: wer am Lift faehrt, behaelt den Ride Pass.
+  beachSubscriptionIds  Int[]     @default([])
   accountId             Int       @unique
   account               Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt             DateTime  @default(now())
@@ -3683,6 +3690,14 @@ model RiderMusicVote {
   @@index([accountId, day])
 }
 
+/// Zielgruppe in der Kunden-App: Ride Pass (Lift-Abos), Beach Pass
+/// (Strandbad-Kunden) oder beide.
+enum PassAudience {
+  RIDE
+  BEACH
+  ALL
+}
+
 /// Meilenstein (Award), im Admin einstellbar. Optional mit Leistungs-Gutschein.
 model Milestone {
   id               Int              @id @default(autoincrement())
@@ -3698,6 +3713,8 @@ model Milestone {
   voucherShort     String?
   /// Zugabe ohne Gutschein, z. B. "Hall-of-Fame-Wand".
   bonus            String?
+  /// Fuer welchen Pass der Award gilt (Ride Pass, Beach Pass oder beide).
+  audience         PassAudience     @default(RIDE)
   /// Seltenheit: bestimmt das Metall des Abzeichens in der Kunden-App.
   tier             GamiTier         @default(BRONZE)
   /// Beschreibung in der Kunden-App; NULL = aus Bedingung erzeugt.
@@ -3793,6 +3810,8 @@ model Challenge {
   active           Boolean          @default(true)
   /// TOP_X: Zeitpunkt der Auswertung; NULL = noch nicht ausgewertet.
   settledAt        DateTime?
+  /// Fuer welchen Pass die Challenge gilt (Ride Pass, Beach Pass oder beide).
+  audience         PassAudience     @default(RIDE)
   /// Push an die Kunden-App gewünscht (Schalter beim Anlegen). Gesendet wird
   /// einmal, sobald die Challenge aktiv ist (siehe `rider-announce.ts`).
   pushPlanned      Boolean          @default(false)
@@ -3906,6 +3925,8 @@ model RiderOffer {
   validTo     DateTime? @db.Date
   active      Boolean   @default(true)
   sortOrder   Int       @default(0)
+  /// Fuer welchen Pass das Angebot gilt (Ride Pass, Beach Pass oder beide).
+  audience    PassAudience @default(RIDE)
   /// Push an die Kunden-App gewünscht; gesendet wird einmal, sobald das
   /// Angebot sichtbar ist (siehe `rider-announce.ts`).
   pushPlanned Boolean   @default(false)

@@ -26,6 +26,8 @@ import {
   type ChallengeKind, type ChallengePhase, type GamiMetric,
 } from "@/lib/gamification";
 import { votesText } from "@/lib/challenge-voting-rules";
+import type { PassAudience } from "@/lib/rider-pass";
+import { AudienceField, audienceBadgeText } from "./audience-field";
 import {
   EMPTY_SKILL_REWARD, SkillRewardField, skillRewardBody, skillRewardState, skillRewardValid,
   type SkillChoice, type SkillRewardState,
@@ -50,6 +52,7 @@ export interface ChallengeAdminRow {
   skillUses: number;
   skillValidDays: number | null;
   active: boolean;
+  audience: PassAudience;
   settled: boolean;
   phase: ChallengePhase;
   /** Fahrer mit mindestens einem Start im Zeitraum. */
@@ -86,6 +89,7 @@ interface FormState {
   active: boolean;
   push: boolean;
   options: string[];
+  audience: PassAudience;
 }
 
 function toForm(c: ChallengeAdminRow): FormState {
@@ -107,6 +111,7 @@ function toForm(c: ChallengeAdminRow): FormState {
     active: c.active,
     push: c.pushPlanned,
     options: c.options.length > 0 ? c.options.map((o) => o.label) : ["", ""],
+    audience: c.audience,
   };
 }
 
@@ -134,8 +139,15 @@ const PHASE: Record<ChallengePhase, { label: string; variant: "info" | "success"
  * und (außer der Abstimmung) optionalem Gutschein.
  */
 export function ChallengesCard({
-  challenges, today, reach, skills = [],
-}: { challenges: ChallengeAdminRow[]; today: string; reach: PushReach; skills?: SkillChoice[] }) {
+  challenges, today, reach, skills = [], beachEnabled = false,
+}: {
+  challenges: ChallengeAdminRow[];
+  today: string;
+  reach: PushReach;
+  skills?: SkillChoice[];
+  /** Beach Pass an: Feld „Für“ zeigen. */
+  beachEnabled?: boolean;
+}) {
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -146,7 +158,7 @@ export function ChallengesCard({
   const empty: FormState = {
     id: null, name: "", description: "", kind: "TASK", metric: "VISIT_DAYS", threshold: "5", topCount: "3",
     startDate: today, endDate: today, endTime: "", withVoucher: true, voucherLabel: "", voucherValidDays: "30", skill: EMPTY_SKILL_REWARD, active: true,
-    push: true, options: ["", ""],
+    push: true, options: ["", ""], audience: "RIDE",
   };
   const open = (f: FormState) => {
     setForm(f);
@@ -204,6 +216,7 @@ export function ChallengesCard({
             active: form.active,
             options: form.kind === "POLL" ? filledOptions : undefined,
             push: form.push,
+            ...(beachEnabled && { audience: form.audience }),
           }),
         },
       );
@@ -302,6 +315,9 @@ export function ChallengesCard({
                 <TableCell className="max-sm:whitespace-normal">
                   <span className="font-medium text-foreground">{c.name}</span>
                   {c.pushedAt && <Bell className="ml-1.5 inline h-3.5 w-3.5 text-muted-foreground" aria-label="Push gesendet" />}
+                  {beachEnabled && audienceBadgeText(c.audience) && (
+                    <Badge variant="neutral" className="ml-1.5 font-normal">{audienceBadgeText(c.audience)}</Badge>
+                  )}
                   <div className="text-xs text-muted-foreground md:hidden">
                     <span className="sm:hidden">{challengeConditionText(c)} · </span>
                     {fmt(c.startDate)} bis {fmt(c.endDate)}{c.endTime ? `, ${c.endTime}` : ""}
@@ -520,6 +536,9 @@ export function ChallengesCard({
                 <SkillRewardField id="ch-skill" value={form.skill} onChange={(v) => set({ skill: v })} skills={skills} disabled={locked} />
               )}
 
+              {beachEnabled && (
+                <AudienceField id="ch-audience" value={form.audience} onChange={(v) => set({ audience: v })} />
+              )}
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="ch-active">Aktiv</Label>
                 <Switch id="ch-active" checked={form.active} onCheckedChange={(v) => set({ active: v })} />

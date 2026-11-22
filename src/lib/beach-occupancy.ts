@@ -87,6 +87,22 @@ async function findBeachArea(accountId: number) {
   return { ...area, entranceIds: entrances.map((d) => d.id) };
 }
 
+const ENTRANCE_TTL_MS = 10 * 60_000;
+const entranceCache = new Map<number, { ids: number[]; expiresAt: number }>();
+
+/**
+ * Eingangs-Drehkreuze des Strandbads (für den Beach Pass: ein Eintritt dort
+ * ist ein Besuchstag). Kurz im Speicher, weil jeder Scan danach fragt.
+ */
+export async function beachEntranceIds(accountId: number): Promise<number[]> {
+  const hit = entranceCache.get(accountId);
+  if (hit && hit.expiresAt > Date.now()) return hit.ids;
+  const area = await findBeachArea(accountId);
+  const ids = area?.entranceIds ?? [];
+  entranceCache.set(accountId, { ids, expiresAt: Date.now() + ENTRANCE_TTL_MS });
+  return ids;
+}
+
 /**
  * Auslastung Strandbad jetzt. null, wenn es kein Strandbad mit Eingang gibt
  * oder heute noch niemand hineingegangen ist (außerhalb der Saison bleibt die

@@ -1013,3 +1013,17 @@ a.rd-cal-nav { border: 1px solid var(--rd-line-strong); }
 .rd-viewing { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 4px 0 12px; border-radius: 6px; background: var(--rd-accent-bg); color: var(--rd-soft); font-size: 14px; }
 .rd-viewing b { color: var(--rd-text); }
 .rd-viewing a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 10px; font-weight: 600; }
+
+/*
+ * Beach Pass (Strandbad-Kunden): gleiche App, Meerblau statt Petrol für Kopf,
+ * Tasten und Angebote. Gelb bleibt der Akzent (Sonne). Weiß auf #0e7490 hat
+ * 5,4 : 1 Kontrast.
+ */
+.rd-pass-beach {
+  --rd-brand: #0e7490;
+  --rd-brand-dark: #0b5d73;
+  --rd-offer: #1690ad;
+  --rd-link: #7dd3ea;
+  --rd-accent-soft: #a5e3f2;
+  --rd-accent-bg: #0f3440;
+}
