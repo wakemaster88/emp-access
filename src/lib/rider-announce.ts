@@ -16,6 +16,7 @@ import { dbDateToYmd, type ChallengeKind, type GamiMetric } from "./gamification
 import { riderAppPath } from "./rider-app";
 import { deliverPush, isWebPushConfigured } from "./web-push";
 import { birthdayPushAccounts, runBirthdayPushes } from "./rider-birthday";
+import { audienceMatches, passKindOf, type PassConfig } from "./rider-pass";
 import {
   challengeAnnounceBlock,
   challengePushText,
@@ -32,12 +33,31 @@ export async function riderPushReach(accountId: number): Promise<{ devices: numb
   return { devices: subs.length, riders: new Set(subs.map((s) => s.profileId)).size };
 }
 
-/** Eine Nachricht an jedes Gerät mit Push-Erlaubnis; der Link führt in die eigene App. */
-async function sendToAllRiders(accountId: number, text: AnnounceText, path: string, tag: string): Promise<number> {
-  const subs = await prisma.riderPushSubscription.findMany({
+/**
+ * Eine Nachricht an jedes Gerät mit Push-Erlaubnis; der Link führt in die
+ * eigene App. Mit `audience` nur an Personen mit dem passenden Pass (Ride
+ * Pass, Beach Pass oder beide).
+ */
+async function sendToAllRiders(
+  accountId: number,
+  text: AnnounceText,
+  path: string,
+  tag: string,
+  audience?: { audience: string; config: PassConfig },
+): Promise<number> {
+  const all = await prisma.riderPushSubscription.findMany({
     where: { accountId },
-    select: { id: true, endpoint: true, p256dh: true, auth: true, profile: { select: { token: true } } },
+    select: {
+      id: true,
+      endpoint: true,
+      p256dh: true,
+      auth: true,
+      profile: { select: { token: true, tickets: { select: { subscriptionId: true, status: true, endDate: true } } } },
+    },
   });
+  const subs = audience
+    ? all.filter((s) => audienceMatches(audience.audience, passKindOf(s.profile.tickets, audience.config)))
+    : all;
   const byToken = new Map<string, typeof subs>();
   for (const s of subs) {
     const list = byToken.get(s.profile.token) ?? [];
@@ -61,7 +81,10 @@ async function sendToAllRiders(accountId: number, text: AnnounceText, path: stri
  */
 export async function runAccountAnnouncements(accountId: number, now: Date = new Date()): Promise<number> {
   if (!isWebPushConfigured()) return 0;
-  const config = await prisma.gamificationConfig.findUnique({ where: { accountId }, select: { enabled: true } });
+  const config = await prisma.gamificationConfig.findUnique({
+    where: { accountId },
+    select: { enabled: true, beachEnabled: true, subscriptionIds: true, beachSubscriptionIds: true },
+  });
   if (!config?.enabled) return 0;
   const today = berlinYmd(now);
   const hour = berlinHour(now);
@@ -79,7 +102,10 @@ export async function runAccountAnnouncements(accountId: number, now: Date = new
       data: { pushedAt: now },
     });
     if (claimed.count !== 1) continue;
-    const sent = await sendToAllRiders(accountId, offerPushText({ title: o.title, text: o.text, toYmd }), "", `rider-offer-${o.id}`);
+    const sent = await sendToAllRiders(accountId, offerPushText({ title: o.title, text: o.text, toYmd }), "", `rider-offer-${o.id}`, {
+      audience: o.audience,
+      config,
+    });
     await prisma.riderOffer.update({ where: { id: o.id }, data: { pushSent: sent } });
     announced++;
   }
@@ -100,7 +126,7 @@ export async function runAccountAnnouncements(accountId: number, now: Date = new
       { ...c, kind: c.kind as ChallengeKind, metric: c.metric as GamiMetric, startYmd, endYmd },
       today,
     );
-    const sent = await sendToAllRiders(accountId, text, "/challenges", `rider-challenge-${c.id}`);
+    const sent = await sendToAllRiders(accountId, text, "/challenges", `rider-challenge-${c.id}`, { audience: c.audience, config });
     await prisma.challenge.update({ where: { id: c.id }, data: { pushSent: sent } });
     announced++;
   }

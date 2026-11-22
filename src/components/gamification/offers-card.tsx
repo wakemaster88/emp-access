@@ -19,6 +19,8 @@ import { Bell, Loader2, Megaphone, Plus, Save, Trash2 } from "lucide-react";
 import { berlinHour, berlinYmd } from "@/lib/berlin-day";
 import { offerAnnounceBlock, offerPushText } from "@/lib/rider-announce-rules";
 import { PushAnnounceField, type PushReach } from "./push-announce-field";
+import { AudienceField, audienceBadgeText } from "./audience-field";
+import type { PassAudience } from "@/lib/rider-pass";
 
 export interface OfferAdminRow {
   id: number;
@@ -34,6 +36,7 @@ export interface OfferAdminRow {
   /** ISO-Zeit des Push-Versands oder null. */
   pushedAt: string | null;
   pushSent: number | null;
+  audience: PassAudience;
 }
 
 interface FormState {
@@ -44,10 +47,11 @@ interface FormState {
   validTo: string;
   active: boolean;
   push: boolean;
+  audience: PassAudience;
 }
 
 /** Neue Angebote melden wir standardmäßig per Push; abschalten geht im Dialog. */
-const EMPTY: FormState = { id: null, title: "", text: "", validFrom: "", validTo: "", active: true, push: true };
+const EMPTY: FormState = { id: null, title: "", text: "", validFrom: "", validTo: "", active: true, push: true, audience: "RIDE" };
 
 function fmt(ymd: string | null): string {
   if (!ymd) return "";
@@ -63,7 +67,16 @@ function rangeText(o: { validFrom: string | null; validTo: string | null }): str
 }
 
 /** Angebote, die Abo-Fahrer auf der Startseite der Kunden-App sehen. */
-export function OffersCard({ offers, reach }: { offers: OfferAdminRow[]; reach: PushReach }) {
+export function OffersCard({
+  offers,
+  reach,
+  beachEnabled = false,
+}: {
+  offers: OfferAdminRow[];
+  reach: PushReach;
+  /** Beach Pass an: Feld „Für“ zeigen. */
+  beachEnabled?: boolean;
+}) {
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -101,6 +114,7 @@ export function OffersCard({ offers, reach }: { offers: OfferAdminRow[]; reach: 
                 validTo: form.validTo || null,
                 active: form.active,
                 push: form.push,
+                ...(beachEnabled && { audience: form.audience }),
               }),
             },
       );
@@ -158,11 +172,14 @@ export function OffersCard({ offers, reach }: { offers: OfferAdminRow[]; reach: 
               <TableRow
                 key={o.id}
                 className="cursor-pointer max-sm:h-11"
-                onClick={() => open({ id: o.id, title: o.title, text: o.text ?? "", validFrom: o.validFrom ?? "", validTo: o.validTo ?? "", active: o.active, push: o.pushPlanned })}
+                onClick={() => open({ id: o.id, title: o.title, text: o.text ?? "", validFrom: o.validFrom ?? "", validTo: o.validTo ?? "", active: o.active, push: o.pushPlanned, audience: o.audience })}
               >
                 <TableCell className="whitespace-normal">
                   <span className="font-medium text-foreground">{o.title}</span>
                   {o.pushedAt && <Bell className="ml-1.5 inline h-3.5 w-3.5 text-muted-foreground" aria-label="Push gesendet" />}
+                  {beachEnabled && audienceBadgeText(o.audience) && (
+                    <Badge variant="neutral" className="ml-1.5 font-normal">{audienceBadgeText(o.audience)}</Badge>
+                  )}
                   {o.text && <div className="text-xs text-muted-foreground">{o.text}</div>}
                   <div className="text-xs text-muted-foreground sm:hidden">{rangeText(o)}</div>
                 </TableCell>
@@ -204,6 +221,7 @@ export function OffersCard({ offers, reach }: { offers: OfferAdminRow[]; reach: 
                   <Input id="of-to" type="date" value={form.validTo} min={form.validFrom || undefined} onChange={(e) => set({ validTo: e.target.value })} className="max-sm:h-11" />
                 </div>
               </div>
+              {beachEnabled && <AudienceField id="of-audience" value={form.audience} onChange={(v) => set({ audience: v })} />}
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="of-active">Aktiv</Label>
                 <Switch id="of-active" checked={form.active} onCheckedChange={(v) => set({ active: v })} />

@@ -22,7 +22,7 @@ const EARLY = `try{var d=document.documentElement;if(sessionStorage.getItem("${S
  * (die Seite darunter ist schon fertig) und entfällt bei „Bewegung
  * reduzieren“.
  */
-export function RiderIntro() {
+export function RiderIntro({ word = "Ride" }: { word?: string }) {
   useEffect(() => {
     const id = setTimeout(() => document.documentElement.setAttribute(SKIP_ATTR, "skip"), 1400);
     return () => clearTimeout(id);
@@ -39,7 +39,7 @@ export function RiderIntro() {
           <path d="M-10 96 C 60 64, 120 128, 195 96 S 330 64, 400 96" opacity="0.15" />
         </svg>
         <span className="rd-intro-mark">
-          <span className="rd-intro-word">Ride</span>
+          <span className="rd-intro-word">{word}</span>
           <span className="rd-intro-word rd-intro-word-accent">Pass</span>
           <span className="rd-intro-bar" />
         </span>

@@ -85,6 +85,8 @@ function TodayCard({
   const waterNow = t.waterTemp ?? water;
   const record = t.bestBefore > 0 && t.starts > t.bestBefore;
   const task = challenge && challenge.kind === "TASK" && challenge.threshold != null ? challenge : null;
+  // Beach Pass: ein Eintritt im Strandbad ist der Tag, Starts gibt es nicht.
+  const beach = rider.pass === "BEACH";
 
   return (
     <section className="rd-card rd-today" aria-label="Dein Tag heute">
@@ -92,6 +94,29 @@ function TodayCard({
         <div className="rd-label">Dein Tag heute</div>
         <span className="rd-muted" style={{ fontSize: 12 }}>Besuchstag {rider.visitDays} in {rider.year}</span>
       </div>
+      {beach ? (
+        <div className="rd-today-stats">
+          <div>
+            <span className="rd-display">{rider.visitDays}</span>
+            <span className="rd-muted">Besuchstag</span>
+          </div>
+          <div>
+            <span className="rd-display">{clock(t.firstStartAt)}</span>
+            <span className="rd-muted">da seit</span>
+          </div>
+          {waterNow != null ? (
+            <div>
+              <span className="rd-display">{formatDegrees(Math.round(waterNow * 10) / 10)}°</span>
+              <span className="rd-muted">Wasser</span>
+            </div>
+          ) : (
+            <div>
+              <span className="rd-display">{air != null ? `${formatDegrees(Math.round(air) || 0)}°` : rider.streakWeeks}</span>
+              <span className="rd-muted">{air != null ? "Luft" : rider.streakWeeks === 1 ? "Woche in Serie" : "Wochen in Serie"}</span>
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="rd-today-stats">
         <div>
           <span className="rd-display">{t.starts}</span>
@@ -128,6 +153,14 @@ function TodayCard({
           </div>
         )}
       </div>
+      )}
+      {beach ? (
+        <span className="rd-soft">
+          {rider.visitDays === 1
+            ? "Dein erster Strandtag in dieser Saison. Schön, dass du da bist!"
+            : `Schön, dass du da bist. Dein ${rider.visitDays}. Strandtag ${rider.year}.`}
+        </span>
+      ) : (
       <span className="rd-soft">
         {t.starts > 1 && !rider.dayGuest ? `Am Lift von ${clock(t.firstStartAt)} bis ${clock(t.lastStartAt)} Uhr. ` : ""}
         {record ? (
@@ -138,6 +171,7 @@ function TodayCard({
           "Dein erster Tag am Lift in dieser Saison."
         )}
       </span>
+      )}
       {cold && t.waterTemp != null && t.waterTemp < cold.tempBelow! && (
         <span className="rd-soft">
           Wasser unter {formatDegrees(cold.tempBelow!)}°: heute zählt für {cold.name}.
@@ -248,7 +282,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const rider = await requireRider(token);
   const base = await riderBase(token);
   const [offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills, birthday] = await Promise.all([
-    loadRiderOffers(rider.accountId),
+    loadRiderOffers(rider.accountId, rider.pass),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
     loadRiderOpening(rider.accountId).catch(() => null),
@@ -286,6 +320,10 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const soon = abo.kind === "active" && abo.daysLeft <= RENEWAL_HINT_DAYS;
   // Lift zu und niemand gefahren: „Geschlossen“ statt „Gerade ruhig“ und leerem Balken.
   const closedQuiet = opening != null && !opening.open && occupancy?.riders === 0;
+  // Beach Pass: kein Lift (Auslastung, Playlist), dafür das Strandbad.
+  const beachPass = rider.pass === "BEACH";
+  const lift = beachPass ? null : occupancy;
+  const vote = beachPass ? null : musicVote;
   const upcoming = nextAward(rider.awards);
   const earned = rider.awards
     .filter((a) => a.unlocked)
@@ -423,7 +461,9 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           </b>
           <span className="rd-soft">
             {abo.kind === "none"
-              ? `Mit einem Abo fährst du am ${RIDER_LOCATION} so oft du willst.`
+              ? beachPass
+                ? `Mit einem Beach Abo kommst du die ganze Saison an den ${RIDER_LOCATION}.`
+                : `Mit einem Abo fährst du am ${RIDER_LOCATION} so oft du willst.`
               : `${rider.abo?.name ?? "Dein Abo"}${abo.endDate ? ` galt bis ${fmtDay(abo.endDate)}` : " ist nicht aktiv"}. Buch dir direkt hier ein neues.`}
           </span>
           <Link href={`${base}/abos`} className="rd-btn rd-btn-wide" style={{ marginTop: 8 }}>
@@ -437,13 +477,13 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         </div>
       )}
 
-      {!occupancy && musicVote && (
+      {!lift && vote && (
         <div className="rd-card">
-          <RiderMusicVote token={token} initial={musicVote} />
+          <RiderMusicVote token={token} initial={vote} />
         </div>
       )}
 
-      {occupancy && (
+      {lift && occupancy && (
         <div className="rd-card">
           <div className="rd-between">
             <div className="rd-label">Auslastung jetzt</div>
@@ -486,7 +526,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             </Link>
           )}
           {/* Musik-Abstimmung eingeklappt direkt unter dem Betrieb. */}
-          {musicVote && <RiderMusicVote token={token} initial={musicVote} />}
+          {vote && <RiderMusicVote token={token} initial={vote} />}
         </div>
       )}
 
@@ -609,7 +649,8 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           </>
         )}
         <span className="rd-soft">
-          {rider.visitDays === 1 ? "1 Besuchstag" : `${rider.visitDays} Besuchstage`} · {rider.starts === 1 ? "1 Start" : `${rider.starts} Starts`}
+          {rider.visitDays === 1 ? "1 Besuchstag" : `${rider.visitDays} Besuchstage`}
+          {beachPass ? "" : ` · ${rider.starts === 1 ? "1 Start" : `${rider.starts} Starts`}`}
           {rider.streakWeeks > 0 ? ` · ${rider.streakWeeks} ${rider.streakWeeks === 1 ? "Woche" : "Wochen"} in Serie` : ""}
         </span>
       </div>

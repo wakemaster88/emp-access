@@ -41,6 +41,7 @@ import {
   type TempStat,
 } from "./gamification";
 import { paymentOpenInfo, paymentOpenSentence } from "@/lib/payment-open";
+import { audienceMatches, beachOnlySubscriptionIds, passKindOf, type PassKind } from "./rider-pass";
 
 export function newRiderToken(): string {
   return randomBytes(18).toString("base64url");
@@ -128,6 +129,8 @@ export interface RiderView {
   nickname: string | null;
   showInRanking: boolean;
   enabled: boolean;
+  /** Ride Pass (Lift-Abo) oder Beach Pass (nur Strandbad), lib/rider-pass. */
+  pass: PassKind;
   startCapPerDay: number;
   abo: {
     name: string;
@@ -200,6 +203,7 @@ export async function loadRider(
           endDate: true,
           createdAt: true,
           serviceId: true,
+          subscriptionId: true,
           email: true,
           extras: true,
           subscription: { select: { name: true, areas: { select: { name: true }, orderBy: { name: "asc" } } } },
@@ -230,7 +234,7 @@ export async function loadRider(
   const ymd = berlinYmd(now);
   const year = Number(ymd.slice(0, 4));
 
-  const [config, milestones, vouchers, awardRows, todayRows] = await Promise.all([
+  const [config, allMilestones, vouchers, awardRows, todayRows] = await Promise.all([
     prisma.gamificationConfig.findUnique({ where: { accountId } }),
     prisma.milestone.findMany({
       where: { accountId, active: true },
@@ -254,6 +258,13 @@ export async function loadRider(
       select: { starts: true, firstStartAt: true, lastStartAt: true },
     }),
   ]);
+  // Ride Pass oder Beach Pass: nur die Awards für den eigenen Pass.
+  const pass = passKindOf(profile.tickets, {
+    beachEnabled: config?.beachEnabled ?? false,
+    subscriptionIds: config?.subscriptionIds ?? [],
+    beachSubscriptionIds: config?.beachSubscriptionIds ?? [],
+  }, now);
+  const milestones = allMilestones.filter((m) => audienceMatches(m.audience, pass));
   // Awards ohne Zeitraum zählen über alle Jahre; die Saisonwerte unten nur das laufende.
   const { days: allDays, openingDays } = await loadRuleData(prisma, accountId, ticketIds, milestones, ymd);
 
@@ -412,6 +423,7 @@ export async function loadRider(
     firstName: profile.firstName?.trim() || first?.firstName?.trim() || (dayGuest ? profile.nickname ?? "" : first?.name ?? ""),
     nickname: profile.nickname,
     showInRanking: profile.showInRanking,
+    pass,
     enabled: config?.enabled ?? false,
     abo: newest?.subscription
       ? {
@@ -566,6 +578,14 @@ export async function loadRiderRecap(rider: RiderView, year: number): Promise<Ri
   if (year !== rider.year && year !== rider.year - 1) return null;
   const range = { gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) };
   const config = await loadGamiConfig(tenantClient(rider.accountId), rider.accountId);
+  // Verglichen wird nur mit dem eigenen Pass: Strandgäste mit Strandgästen, Fahrer mit Fahrern.
+  const beachSubs = beachOnlySubscriptionIds(config);
+  const samePass =
+    rider.pass === "BEACH"
+      ? { ticket: { subscriptionId: { in: beachSubs } } }
+      : beachSubs.length > 0
+        ? { ticket: { OR: [{ subscriptionId: null }, { subscriptionId: { notIn: beachSubs } }] } }
+        : {};
   const [own, others, temps] = await Promise.all([
     prisma.riderDayStat.findMany({
       where: { accountId: rider.accountId, ticketId: { in: rider.ticketIds }, day: range },
@@ -573,7 +593,7 @@ export async function loadRiderRecap(rider: RiderView, year: number): Promise<Ri
     }),
     prisma.riderDayStat.groupBy({
       by: ["ticketId"],
-      where: { accountId: rider.accountId, ticketId: { notIn: rider.ticketIds }, day: range },
+      where: { accountId: rider.accountId, ticketId: { notIn: rider.ticketIds }, day: range, ...samePass },
       _count: { _all: true },
     }),
     // Die Temperaturen sind Beiwerk: scheitert die Abfrage, bleibt der Rückblick ohne sie stehen.

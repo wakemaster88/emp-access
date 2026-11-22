@@ -20,7 +20,8 @@ import {
   type GamiMetric,
   type Standing,
 } from "./gamification";
-import { createBenefitVoucher, isUniqueViolation } from "./gamification-service";
+import { createBenefitVoucher, isUniqueViolation, loadGamiConfig } from "./gamification-service";
+import { audienceMatches, beachOnlySubscriptionIds, passKindOf } from "./rider-pass";
 import { grantSkill } from "./rider-skills";
 import { notifyVoucher } from "./rider-push";
 
@@ -41,6 +42,8 @@ export interface ChallengeRow {
   skillId?: number | null;
   skillUses?: number;
   skillValidDays?: number | null;
+  /** Ride Pass, Beach Pass oder beide (fehlt = Ride Pass). */
+  audience?: string | null;
 }
 
 export interface RiderUnit {
@@ -66,8 +69,16 @@ export async function challengeUnits(
 ): Promise<RiderUnit[]> {
   // Foto und Abstimmung zählen keine Starts.
   if (!challengeCountsRides(c.kind)) return [];
+  // Nur Tickets des passenden Passes: Strandbad-Besuche zählen nicht für Lift-Challenges und umgekehrt.
+  const beachSubs = c.audience === "ALL" ? [] : beachOnlySubscriptionIds(await loadGamiConfig(db, accountId));
+  const passFilter =
+    c.audience === "BEACH"
+      ? { subscriptionId: { in: beachSubs } }
+      : beachSubs.length > 0
+        ? { OR: [{ subscriptionId: null }, { subscriptionId: { notIn: beachSubs } }] }
+        : {};
   const stats = await db.riderDayStat.findMany({
-    where: { accountId, day: { gte: c.startDate, lte: c.endDate }, ticket: { gamificationOptOut: false } },
+    where: { accountId, day: { gte: c.startDate, lte: c.endDate }, ticket: { gamificationOptOut: false, ...passFilter } },
     select: { ticketId: true, day: true, starts: true, ticket: { select: { riderProfileId: true } } },
   });
   const units = new Map<string, { profileId: number | null; ticketIds: Set<number>; days: DayStat[] }>();
@@ -162,18 +173,25 @@ export async function awardTaskChallenges(
   });
   if (running.length === 0) return 0;
 
-  const ticket = await db.ticket.findFirst({ where: { id: ticketId, accountId }, select: { riderProfileId: true } });
+  const ticket = await db.ticket.findFirst({
+    where: { id: ticketId, accountId },
+    select: { riderProfileId: true, subscriptionId: true, status: true, endDate: true },
+  });
   if (!ticket) return 0;
   const siblings =
     ticket.riderProfileId != null
       ? await db.ticket.findMany({
           where: { accountId, riderProfileId: ticket.riderProfileId },
-          select: { id: true },
+          select: { id: true, subscriptionId: true, status: true, endDate: true },
         })
       : [];
   const ticketIds = [...new Set([ticketId, ...siblings.map((t) => t.id)])];
-  const first = running.reduce((min, c) => (c.startDate < min ? c.startDate : min), running[0].startDate);
-  const last = running.reduce((max, c) => (c.endDate > max ? c.endDate : max), running[0].endDate);
+  // Nur Challenges für den Pass der Person.
+  const kind = passKindOf(siblings.length > 0 ? siblings : [ticket], await loadGamiConfig(db, accountId));
+  const mine = running.filter((c) => audienceMatches(c.audience, kind));
+  if (mine.length === 0) return 0;
+  const first = mine.reduce((min, c) => (c.startDate < min ? c.startDate : min), mine[0].startDate);
+  const last = mine.reduce((max, c) => (c.endDate > max ? c.endDate : max), mine[0].endDate);
 
   const [stats, awards] = await Promise.all([
     db.riderDayStat.findMany({
@@ -181,7 +199,7 @@ export async function awardTaskChallenges(
       select: { day: true, starts: true },
     }),
     db.challengeAward.findMany({
-      where: { accountId, ticketId: { in: ticketIds }, challengeId: { in: running.map((c) => c.id) } },
+      where: { accountId, ticketId: { in: ticketIds }, challengeId: { in: mine.map((c) => c.id) } },
       select: { challengeId: true },
     }),
   ]);
@@ -189,7 +207,7 @@ export async function awardTaskChallenges(
   const done = new Set(awards.map((a) => a.challengeId));
 
   let created = 0;
-  for (const c of running) {
+  for (const c of mine) {
     if (done.has(c.id)) continue;
     if (challengeValue(days, range(c), capPerDay) < (c.threshold ?? 0)) continue;
     if (await award(db, accountId, c, ticketId, null)) created += 1;

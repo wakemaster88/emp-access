@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadRider, riderAppPath } from "@/lib/rider-app";
+import { PASS_NAME } from "@/lib/rider-pass";
 
 /** Web-App-Manifest je Fahrer, damit die App mit eigenem Namen auf dem Home-Bildschirm liegt. */
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
@@ -10,8 +11,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   return NextResponse.json(
     {
       id: path,
-      name: `Ride Pass · ${rider.accountName}`,
-      short_name: "Ride Pass",
+      name: `${PASS_NAME[rider.pass]} · ${rider.accountName}`,
+      short_name: PASS_NAME[rider.pass],
       description: "Abo, Gutscheine und Statistik",
       start_url: path,
       // Ganz /app, nicht nur der eigene Pfad: sonst öffnet iOS den Wechsel zu

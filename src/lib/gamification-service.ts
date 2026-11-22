@@ -10,6 +10,8 @@ import { berlinYmd } from "./berlin-day";
 import { runChallenges } from "./challenge-service";
 import { notifyAward } from "./rider-push";
 import { grantSkill } from "./rider-skills";
+import { beachEntranceIds } from "./beach-occupancy";
+import { audiencesFor, beachOnlySubscriptionIds, isBeachSubscription, passKindOf } from "./rider-pass";
 import {
   aggregateScans,
   awardKey,
@@ -39,6 +41,9 @@ export interface GamiConfig {
   startCapPerDay: number;
   /** Fühler (Gerät), der die Wassertemperatur misst; null = keiner gewählt. */
   waterSensorDeviceId: number | null;
+  /** Beach Pass für Strandbad-Kunden (lib/rider-pass). */
+  beachEnabled: boolean;
+  beachSubscriptionIds: number[];
 }
 
 const DEFAULT_CONFIG: GamiConfig = {
@@ -47,6 +52,8 @@ const DEFAULT_CONFIG: GamiConfig = {
   dayServiceIds: [],
   startCapPerDay: 10,
   waterSensorDeviceId: null,
+  beachEnabled: false,
+  beachSubscriptionIds: [],
 };
 
 // Das Drehkreuz fragt bei jedem Scan: Einstellung kurz im Speicher halten.
@@ -68,6 +75,8 @@ export async function loadGamiConfig(db: TenantDb, accountId: number): Promise<G
         dayServiceIds: row.dayServiceIds,
         startCapPerDay: row.startCapPerDay,
         waterSensorDeviceId: row.waterSensorDeviceId,
+        beachEnabled: row.beachEnabled,
+        beachSubscriptionIds: row.beachSubscriptionIds,
       }
     : DEFAULT_CONFIG;
   configCache.set(accountId, { config, expiresAt: Date.now() + CONFIG_TTL_MS });
@@ -115,6 +124,10 @@ export async function recordStart(input: {
   /** Fahrer ist ausgestiegen (`Ticket.gamificationOptOut`): nichts zählen. */
   optOut?: boolean;
   at: Date;
+  /** Gerät zählt Starts am Lift (`Device.countsAsStart`); fehlt = ja. */
+  countsAsStart?: boolean;
+  /** Gerät des Scans: für den Beach Pass zählt ein Eintritt am Strandbad-Eingang. */
+  deviceId?: number;
 }): Promise<void> {
   const { accountId, ticketId, subscriptionId, at } = input;
   if (input.optOut) return;
@@ -123,6 +136,14 @@ export async function recordStart(input: {
   const db = tenantClient(accountId);
   const config = await loadGamiConfig(db, accountId);
   if (!config.enabled) return;
+
+  // Beach Pass: Strandbad-Abo, Eintritt am Strandbad-Eingang. Lift-Geräte zählen dafür nicht.
+  const beach = isBeachSubscription(config, subscriptionId);
+  if (beach) {
+    if (input.deviceId == null || !(await beachEntranceIds(accountId)).includes(input.deviceId)) return;
+  } else if (input.countsAsStart === false) {
+    return;
+  }
 
   if (dayGuest) {
     if (!config.dayServiceIds.includes(input.serviceId!)) return;
@@ -133,7 +154,7 @@ export async function recordStart(input: {
     await runChallenges(db, accountId, ticketId, ymd, config.startCapPerDay);
     return;
   }
-  if (!config.subscriptionIds.includes(subscriptionId!)) return;
+  if (!beach && !config.subscriptionIds.includes(subscriptionId!)) return;
 
   const ymd = berlinYmd(at);
   const day = ymdToDbDate(ymd);
@@ -452,17 +473,24 @@ export async function awardMilestones(
   capPerDay: number,
   opts: { notify?: boolean } = {},
 ): Promise<number> {
-  const milestones = await db.milestone.findMany({ where: { accountId, active: true } });
-  if (milestones.length === 0) return 0;
-
   // Meilensteine gelten je Person: alle Tickets desselben Profils zählen zusammen.
   const owner = await db.ticket.findFirst({
     where: { id: ticketId, accountId },
-    select: { riderProfileId: true, riderProfile: { select: { ridingSince: true } } },
+    select: { riderProfileId: true, subscriptionId: true, status: true, endDate: true, riderProfile: { select: { ridingSince: true } } },
   });
-  const ticketIds = owner?.riderProfileId
-    ? (await db.ticket.findMany({ where: { accountId, riderProfileId: owner.riderProfileId }, select: { id: true } })).map((t) => t.id)
-    : [ticketId];
+  const siblings = owner?.riderProfileId
+    ? await db.ticket.findMany({
+        where: { accountId, riderProfileId: owner.riderProfileId },
+        select: { id: true, subscriptionId: true, status: true, endDate: true },
+      })
+    : [];
+  const ticketIds = siblings.length > 0 ? siblings.map((t) => t.id) : [ticketId];
+
+  // Nur Awards für den Pass der Person (Ride Pass oder Beach Pass).
+  const config = await loadGamiConfig(db, accountId);
+  const kind = passKindOf(siblings.length > 0 ? siblings : owner ? [owner] : [], config);
+  const milestones = await db.milestone.findMany({ where: { accountId, active: true, audience: { in: audiencesFor(kind) } } });
+  if (milestones.length === 0) return 0;
 
   const [{ days, openingDays }, awards] = await Promise.all([
     loadRuleData(db, accountId, ticketIds, milestones, refYmd),
@@ -584,6 +612,36 @@ export async function backfillYear(
           deviceId: { in: devices.map((d) => d.id) },
           scanTime: { gte: from, lt: to },
           ticket: { subscriptionId: { in: subscriptionIds } },
+        },
+        select: { id: true, ticketId: true, scanTime: true },
+        orderBy: { id: "asc" },
+        take: PAGE,
+      });
+      for (const s of page) {
+        if (s.ticketId != null) scans.push({ ticketId: s.ticketId, scanTime: s.scanTime });
+      }
+      if (page.length < PAGE) break;
+      cursor = page[page.length - 1].id;
+    }
+  }
+
+  // Beach Pass: Eintritte am Strandbad-Eingang mit einem Strandbad-Abo.
+  const beachSubs = config?.beachEnabled
+    ? beachOnlySubscriptionIds({ beachEnabled: true, subscriptionIds, beachSubscriptionIds: config.beachSubscriptionIds })
+    : [];
+  const entrances = beachSubs.length > 0 ? await beachEntranceIds(accountId) : [];
+  if (beachSubs.length > 0 && entrances.length > 0) {
+    const PAGE = 5000;
+    let cursor = 0;
+    for (;;) {
+      const page = await db.scan.findMany({
+        where: {
+          accountId,
+          id: { gt: cursor },
+          result: "GRANTED",
+          deviceId: { in: entrances },
+          scanTime: { gte: from, lt: to },
+          ticket: { subscriptionId: { in: beachSubs } },
         },
         select: { id: true, ticketId: true, scanTime: true },
         orderBy: { id: "asc" },

@@ -939,7 +939,14 @@ export async function POST(request: NextRequest) {
   });
 
   // Gamification: Start am Start-Gerät verbuchen, ebenfalls ohne zu warten.
-  if (device.countsAsStart && !isExitScan && (ticket.subscriptionId != null || ticket.riderProfileId != null)) {
+  // Abo-Tickets auch an anderen Eingängen: für den Beach Pass zählt der
+  // Eintritt am Strandbad (recordStart prüft das Gerät).
+  if (
+    !isExitScan &&
+    (device.countsAsStart
+      ? ticket.subscriptionId != null || ticket.riderProfileId != null
+      : ticket.subscriptionId != null && device.accessIn != null)
+  ) {
     void recordStart({
       accountId,
       ticketId: ticket.id,
@@ -948,6 +955,8 @@ export async function POST(request: NextRequest) {
       riderProfileId: ticket.riderProfileId,
       optOut: ticket.gamificationOptOut,
       at: now,
+      countsAsStart: device.countsAsStart,
+      deviceId: device.id,
     }).catch((err) => {
       console.error("[scan] gamification failed:", err);
     });

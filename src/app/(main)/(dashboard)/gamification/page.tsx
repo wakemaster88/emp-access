@@ -34,6 +34,8 @@ import { GamiSettingsCard } from "@/components/gamification/gami-settings-card";
 import { AppShareCard } from "@/components/gamification/app-share-card";
 import { OccupancySettingsCard } from "@/components/gamification/occupancy-settings-card";
 import { BeachSettingsCard } from "@/components/gamification/beach-settings-card";
+import { BeachPassCard } from "@/components/gamification/beach-pass-card";
+import { beachEntranceIds } from "@/lib/beach-occupancy";
 import { normalizeBeachSettings } from "@/lib/beach-occupancy";
 import { normalizeThresholds } from "@/lib/rider-occupancy";
 import { AppInviteCard } from "@/components/gamification/app-invite-card";
@@ -311,6 +313,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       skillValidDays: m.skillValidDays,
       skillName: m.skillId != null ? skillName.get(m.skillId) ?? null : null,
       active: m.active,
+      audience: m.audience,
       awarded: awarded.get(m.id) ?? 0,
       redeemed: redeemed.get(m.id) ?? 0,
     }));
@@ -321,6 +324,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         openingDay={openingDays[String(year)] ?? null}
         waterSensor={sensor ? { name: sensor.name, now: waterNow } : null}
         skills={skillChoices}
+        beachEnabled={config?.beachEnabled ?? false}
       />
     );
   }
@@ -367,6 +371,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         skillUses: c.skillUses,
         skillValidDays: c.skillValidDays,
         active: c.active,
+        audience: c.audience,
         settled: c.settledAt != null,
         phase,
         participants:
@@ -459,13 +464,20 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         pushPlanned: o.pushPlanned,
         pushedAt: o.pushedAt?.toISOString() ?? null,
         pushSent: o.pushSent,
+        audience: o.audience,
       };
     });
     // Meldungen in der App: Challenges, Angebote und Feiertage in einem Reiter.
     content = (
       <>
-        <ChallengesCard challenges={challengeRows} today={today} reach={reach} skills={skillChoices} />
-        <OffersCard offers={rows} reach={reach} />
+        <ChallengesCard
+          challenges={challengeRows}
+          today={today}
+          reach={reach}
+          skills={skillChoices}
+          beachEnabled={config?.beachEnabled ?? false}
+        />
+        <OffersCard offers={rows} reach={reach} beachEnabled={config?.beachEnabled ?? false} />
         <BirthdayCard data={birthday} />
         <HolidaysCard rows={holidayRows} reach={reach} skills={skillChoices} />
       </>
@@ -591,6 +603,10 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       db.audioStream.findMany({ where: { accountId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       loadMusicVoteAdmin(accountId),
     ]);
+    const entranceIds = await beachEntranceIds(accountId).catch(() => [] as number[]);
+    const beachEntrances = entranceIds.length
+      ? (await db.device.findMany({ where: { accountId, id: { in: entranceIds } }, select: { name: true }, orderBy: { name: "asc" } })).map((d) => d.name)
+      : [];
     const beachCapacity =
       (await db.accessArea.findMany({ where: { accountId }, select: { name: true, personLimit: true } }))
         .find((a) => /strandbad/i.test(a.name))?.personLimit ?? null;
@@ -612,6 +628,12 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         devices={devices.map((d) => ({ id: d.id, name: d.name }))}
         sensors={sensors}
         year={year}
+      />
+      <BeachPassCard
+        initial={{ enabled: config?.beachEnabled ?? false, subscriptionIds: config?.beachSubscriptionIds ?? [] }}
+        subscriptions={subscriptions}
+        rideSubscriptionIds={config?.subscriptionIds ?? []}
+        entrances={beachEntrances}
       />
       <OccupancySettingsCard
         initial={normalizeThresholds(

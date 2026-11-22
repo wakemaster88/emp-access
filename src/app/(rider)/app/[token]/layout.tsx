@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { loadRiderCached, riderAppPath } from "@/lib/rider-app";
 import { appleStartupImages } from "@/lib/pwa-splash";
+import { PASS_NAME } from "@/lib/rider-pass";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -17,7 +18,7 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
     appleWebApp: {
       capable: true,
       statusBarStyle: "black-translucent",
-      title: "Ride Pass",
+      title: PASS_NAME[rider?.pass ?? "RIDE"],
       startupImage: appleStartupImages(),
     },
     robots: { index: false, follow: false },

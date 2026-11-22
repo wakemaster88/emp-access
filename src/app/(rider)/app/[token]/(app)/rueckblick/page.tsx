@@ -26,6 +26,8 @@ export default async function RiderRecapPage({
   const { recap, year } = data;
   const other = year === rider.year ? rider.year - 1 : rider.year;
   const level = year === rider.year ? rider.level : null;
+  // Beach Pass: Tage am Strand, keine Starts.
+  const beach = rider.pass === "BEACH";
   // Knopf zur anderen Saison nur, wenn es dort Besuchstage gibt (sonst führt er auf eine leere Seite).
   const otherDays =
     other === rider.year
@@ -43,9 +45,13 @@ export default async function RiderRecapPage({
       <div className="rd-recap">
         <div className="rd-recap-eyebrow">Deine Saison {year}</div>
         <div className="rd-display rd-recap-num">{recap.visitDays}</div>
-        <div className="rd-recap-unit">{recap.visitDays === 1 ? "Tag auf dem Wasser" : "Tage auf dem Wasser"}</div>
+        <div className="rd-recap-unit">
+          {beach
+            ? recap.visitDays === 1 ? "Tag am Strand" : "Tage am Strand"
+            : recap.visitDays === 1 ? "Tag auf dem Wasser" : "Tage auf dem Wasser"}
+        </div>
         {data.aheadOf != null && data.aheadOf >= 50 && (
-          <div>Damit warst du öfter da als {data.aheadOf} % der Abo-Fahrer.</div>
+          <div>Damit warst du öfter da als {data.aheadOf} % der {beach ? "Beach-Abo-Kunden" : "Abo-Fahrer"}.</div>
         )}
         {recap.firstDay && recap.lastDay && recap.firstDay !== recap.lastDay && (
           <div>Vom {fmtDay(ymdToDbDate(recap.firstDay))} bis {fmtDay(ymdToDbDate(recap.lastDay))}.</div>
@@ -55,18 +61,20 @@ export default async function RiderRecapPage({
       {recap.visitDays === 0 ? (
         <div className="rd-card rd-muted">
           {year === rider.year
-            ? `In ${year} ist noch kein Besuchstag gezählt. Sobald du am Drehkreuz startest, füllt sich dein Rückblick.`
+            ? `In ${year} ist noch kein Besuchstag gezählt. Sobald du ${beach ? "am Eingang zum Strandbad scannst" : "am Drehkreuz startest"}, füllt sich dein Rückblick.`
             : `In ${year} ist für dich kein Besuchstag gezählt.`}
         </div>
       ) : (
         <div className="rd-recap-grid">
-          <div className="rd-stat">
-            <div className="rd-display">{recap.starts}</div>
-            <b>Starts</b>
-            {recap.bestDay && (
-              <div className="rd-muted">Rekord: {recap.bestDay.starts} am {fmtDay(ymdToDbDate(recap.bestDay.day)).slice(0, 6)}</div>
-            )}
-          </div>
+          {!beach && (
+            <div className="rd-stat">
+              <div className="rd-display">{recap.starts}</div>
+              <b>Starts</b>
+              {recap.bestDay && (
+                <div className="rd-muted">Rekord: {recap.bestDay.starts} am {fmtDay(ymdToDbDate(recap.bestDay.day)).slice(0, 6)}</div>
+              )}
+            </div>
+          )}
           <div className="rd-stat">
             <div className="rd-display">{recap.streakWeeks}</div>
             <b>{recap.streakWeeks === 1 ? "Woche am Stück" : "Wochen am Stück"}</b>

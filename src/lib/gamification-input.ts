@@ -31,6 +31,8 @@ export const milestoneSchema = z.object({
   tempBelow: z.number().min(-5).max(40).nullable().optional(),
   ...skillReward,
   active: z.boolean(),
+  /** Für welchen Pass (Ride Pass, Beach Pass, beide); fehlt der Wert, bleibt er, wie er ist. */
+  audience: z.enum(["RIDE", "BEACH", "ALL"]).optional(),
 }).refine((m) => m.metric !== "COLD_DAYS" || m.tempBelow != null, { message: "Die Grenze der Wassertemperatur fehlt" });
 
 export type MilestoneInput = z.infer<typeof milestoneSchema>;
@@ -67,6 +69,7 @@ export function normalizeMilestone(input: MilestoneInput) {
     tempBelow: input.metric === "COLD_DAYS" ? input.tempBelow ?? null : null,
     ...normalizeSkillReward(input),
     active: input.active,
+    ...(input.audience !== undefined && { audience: input.audience }),
   };
 }
 
@@ -91,6 +94,8 @@ export const challengeSchema = z
     options: z.array(z.string().trim().max(60)).max(POLL_OPTIONS_MAX + 4).optional(),
     /** Push an die Kunden-App senden; fehlt der Wert, bleibt der Plan, wie er ist. */
     push: z.boolean().optional(),
+    /** Für welchen Pass (Ride Pass, Beach Pass, beide); fehlt der Wert, bleibt er, wie er ist. */
+    audience: z.enum(["RIDE", "BEACH", "ALL"]).optional(),
   })
   .refine((c) => c.startDate <= c.endDate, { message: "Das Ende liegt vor dem Start" })
   .refine((c) => (c.kind === "TASK" ? c.threshold != null : c.kind === "POLL" || c.topCount != null), {
@@ -138,6 +143,7 @@ export function normalizeChallenge(input: ChallengeInput) {
     voucherValidDays: voucherLabel ? input.voucherValidDays : null,
     ...(input.kind === "POLL" ? { skillId: null, skillUses: 1, skillValidDays: null } : normalizeSkillReward(input)),
     active: input.active,
+    ...(input.audience !== undefined && { audience: input.audience }),
   };
 }
 
@@ -151,6 +157,8 @@ export const offerSchema = z
     active: z.boolean(),
     /** Push an die Kunden-App senden; fehlt der Wert, bleibt der Plan, wie er ist. */
     push: z.boolean().optional(),
+    /** Für welchen Pass (Ride Pass, Beach Pass, beide); fehlt der Wert, bleibt er, wie er ist. */
+    audience: z.enum(["RIDE", "BEACH", "ALL"]).optional(),
   })
   .refine((o) => !o.validFrom || !o.validTo || o.validFrom <= o.validTo, { message: "Das Ende liegt vor dem Start" });
 
@@ -163,6 +171,7 @@ export function normalizeOffer(input: OfferInput) {
     validFrom: input.validFrom ? new Date(`${input.validFrom}T00:00:00.000Z`) : null,
     validTo: input.validTo ? new Date(`${input.validTo}T00:00:00.000Z`) : null,
     active: input.active,
+    ...(input.audience !== undefined && { audience: input.audience }),
   };
 }
 

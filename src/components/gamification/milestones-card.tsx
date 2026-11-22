@@ -19,6 +19,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Award, CalendarPlus, Loader2, Plus, Save, Trash2, X } from "lucide-react";
 import { awardText } from "@/lib/awards";
+import type { PassAudience } from "@/lib/rider-pass";
+import { AudienceField, audienceBadgeText } from "./audience-field";
 import {
   EMPTY_SKILL_REWARD, SkillRewardField, skillRewardBody, skillRewardState, skillRewardValid,
   type SkillChoice, type SkillRewardState,
@@ -51,6 +53,7 @@ export interface MilestoneRow {
   /** Name des Skills für die Liste. */
   skillName: string | null;
   active: boolean;
+  audience: PassAudience;
   awarded: number;
   redeemed: number;
 }
@@ -73,6 +76,7 @@ interface FormState {
   tempBelow: string;
   skill: SkillRewardState;
   active: boolean;
+  audience: PassAudience;
 }
 
 const EMPTY: FormState = {
@@ -93,6 +97,7 @@ const EMPTY: FormState = {
   tempBelow: "10",
   skill: EMPTY_SKILL_REWARD,
   active: true,
+  audience: "RIDE",
 };
 
 function toForm(m: MilestoneRow): FormState {
@@ -114,6 +119,7 @@ function toForm(m: MilestoneRow): FormState {
     tempBelow: m.tempBelow != null ? String(m.tempBelow) : "10",
     skill: skillRewardState(m),
     active: m.active,
+    audience: m.audience,
   };
 }
 
@@ -146,9 +152,11 @@ function parseDegrees(text: string): number | null {
  * `waterSensor` der gewählte Fühler (null = keiner gewählt).
  */
 export function MilestonesCard({
-  milestones, today, openingDay, waterSensor, skills = [],
+  milestones, today, openingDay, waterSensor, skills = [], beachEnabled = false,
 }: {
   milestones: MilestoneRow[];
+  /** Beach Pass an: Feld „Für“ zeigen. */
+  beachEnabled?: boolean;
   /** Skills, die als Belohnung zur Wahl stehen. */
   skills?: SkillChoice[];
   today: string;
@@ -206,6 +214,7 @@ export function MilestonesCard({
             tempBelow,
             ...skillRewardBody(form.skill),
             active: form.active,
+            ...(beachEnabled && { audience: form.audience }),
           }),
         },
       );
@@ -293,6 +302,9 @@ export function MilestonesCard({
                 <TableCell className="max-sm:whitespace-normal">
                   <span className="font-medium text-foreground">{m.name}</span>
                   <span className="text-muted-foreground"> · {TIER_LABEL[m.tier]}</span>
+                  {beachEnabled && audienceBadgeText(m.audience) && (
+                    <Badge variant="neutral" className="ml-1.5 font-normal">{audienceBadgeText(m.audience)}</Badge>
+                  )}
                   <div className="sm:hidden text-xs text-muted-foreground">{milestoneConditionText(m)}</div>
                   {m.active && missingEventDay(m, today) && (
                     <div className="text-xs text-warning">Kein Aktionstag für {year} eingetragen</div>
@@ -514,6 +526,7 @@ export function MilestonesCard({
                 <Input id="ms-bonus" value={form.bonus} maxLength={80} placeholder="z. B. Hall-of-Fame-Wand" onChange={(e) => set({ bonus: e.target.value })} className="max-sm:h-11" />
               </div>
 
+              {beachEnabled && <AudienceField id="ms-audience" value={form.audience} onChange={(v) => set({ audience: v })} />}
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="ms-active">Aktiv</Label>
                 <Switch id="ms-active" checked={form.active} onCheckedChange={(v) => set({ active: v })} />
