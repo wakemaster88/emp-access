@@ -40,7 +40,7 @@ interface PortalSettings {
   doorbirdIds: number[];
   allDevices: { id: number; name: string }[];
   allDoorbirds: { id: number; name: string }[];
-  services: { serviceId: number; priceCents: number; daylight: boolean }[];
+  services: { serviceId: number; priceCents: number; daylight: boolean; inclusive: boolean }[];
   allServices: { id: number; name: string }[];
 }
 
@@ -88,6 +88,7 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
   const [access, setAccess] = useState<Set<string>>(new Set());
   const [prices, setPrices] = useState<Record<number, string>>({});
   const [daylight, setDaylight] = useState<Set<number>>(new Set());
+  const [inclusive, setInclusive] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -104,6 +105,7 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
     setAccess(new Set([...s.doorbirdIds.map((id) => `doorbird:${id}`), ...s.deviceIds.map((id) => `device:${id}`)]));
     setPrices(Object.fromEntries(s.services.map((x) => [x.serviceId, (x.priceCents / 100).toFixed(2).replace(".", ",")])));
     setDaylight(new Set(s.services.filter((x) => x.daylight).map((x) => x.serviceId)));
+    setInclusive(new Set(s.services.filter((x) => x.inclusive).map((x) => x.serviceId)));
   }
 
   useEffect(() => {
@@ -121,7 +123,7 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
 
   async function save() {
     if (!verein) return;
-    const services: { serviceId: number; priceCents: number; daylight: boolean }[] = [];
+    const services: { serviceId: number; priceCents: number; daylight: boolean; inclusive: boolean }[] = [];
     for (const [id, value] of Object.entries(prices)) {
       const cents = parseEuroToCents(value);
       if (cents == null) {
@@ -129,7 +131,7 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
         setError(`Preis bei ${name} ist keine Zahl.`);
         return;
       }
-      services.push({ serviceId: Number(id), priceCents: cents, daylight: daylight.has(Number(id)) });
+      services.push({ serviceId: Number(id), priceCents: cents, daylight: daylight.has(Number(id)), inclusive: inclusive.has(Number(id)) });
     }
     setBusy(true);
     setError(null);
@@ -269,6 +271,22 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
                           />
                           <Label htmlFor={`vp-day-${s.id}`} className="min-w-0 flex-1 text-xs font-normal text-muted-foreground">
                             Bei Tageslicht buchbar (Sonnenaufgang bis -untergang, auch ohne ANNY-Zeiten)
+                          </Label>
+                        </div>
+                      )}
+                      {checked && (
+                        <div className="flex min-h-11 items-center gap-3 pl-7">
+                          <Switch
+                            id={`vp-incl-${s.id}`}
+                            checked={inclusive.has(s.id)}
+                            onCheckedChange={(v) => setInclusive((prev) => {
+                              const next = new Set(prev);
+                              if (v) next.add(s.id); else next.delete(s.id);
+                              return next;
+                            })}
+                          />
+                          <Label htmlFor={`vp-incl-${s.id}`} className="min-w-0 flex-1 text-xs font-normal text-muted-foreground">
+                            Inklusivmiete 0 € wählbar (Vorstand, Trainer und Familie 1. Grades, über die Jahrespauschale)
                           </Label>
                         </div>
                       )}

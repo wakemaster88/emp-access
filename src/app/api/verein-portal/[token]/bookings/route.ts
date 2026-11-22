@@ -11,6 +11,7 @@ const bodySchema = z.object({
   bookedBy: z.string().trim().min(1, "Bitte gebt euren Namen an.").max(120),
   bookedFor: z.string().trim().min(1, "Bitte gebt an, für wen ihr bucht.").max(200),
   note: z.string().trim().max(500).optional().nullable(),
+  inclusive: z.boolean().optional().default(false),
 });
 
 /** Bucht einen Slot fuer den Verein. */
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     bookedBy: parsed.data.bookedBy || null,
     bookedFor: parsed.data.bookedFor || null,
     note: parsed.data.note || null,
+    inclusive: parsed.data.inclusive,
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true, bookingId: result.bookingId }, { status: 201 });

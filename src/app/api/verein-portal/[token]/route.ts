@@ -32,6 +32,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       status: true,
       bookedBy: true,
       bookedFor: true,
+      inclusive: true,
       note: true,
       canceledBy: true,
       rejectReason: true,
@@ -68,6 +69,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       name: s.service.name,
       priceCents: s.priceCents,
       daylight: s.daylight,
+      inclusive: s.inclusive,
     })),
     bookings: bookings.map((b) => ({
       id: b.id,
@@ -79,6 +81,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       status: b.status,
       bookedBy: b.bookedBy,
       bookedFor: b.bookedFor,
+      inclusive: b.inclusive,
       note: b.note,
       canceledBy: b.canceledBy,
       rejectReason: b.rejectReason,

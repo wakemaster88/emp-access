@@ -10,6 +10,7 @@ const bodySchema = z.object({
   bookedBy: z.string().trim().min(1, "Bitte gebt euren Namen an.").max(120),
   bookedFor: z.string().trim().min(1, "Bitte gebt an, für wen ihr bucht.").max(200),
   note: z.string().trim().max(500).optional().nullable(),
+  inclusive: z.boolean().optional().default(false),
 });
 
 /** Wunschzeit anfragen: wartet auf Freigabe im Backoffice. */

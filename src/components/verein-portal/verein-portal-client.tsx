@@ -12,6 +12,8 @@ interface PortalService {
   name: string;
   priceCents: number;
   daylight?: boolean;
+  /** Inklusivmiete (0 €) für Vorstand und Trainer wählbar. */
+  inclusive?: boolean;
 }
 
 interface PortalBooking {
@@ -24,6 +26,7 @@ interface PortalBooking {
   status: "BOOKED" | "CANCELED" | "REQUESTED" | "REJECTED";
   bookedBy: string | null;
   bookedFor?: string | null;
+  inclusive?: boolean;
   note: string | null;
   canceledBy: string | null;
   rejectReason: string | null;
@@ -148,6 +151,8 @@ export function VereinPortalClient({
   const [bookedBy, setBookedBy] = useState("");
   const [bookedFor, setBookedFor] = useState("");
   const [note, setNote] = useState("");
+  // Inklusivmiete bewusst je Buchung wählen, Standard ist die Miete.
+  const [inclusiveChoice, setInclusiveChoice] = useState(false);
   const [reqStart, setReqStart] = useState("10:00");
   const [reqEnd, setReqEnd] = useState("11:00");
   const [busy, setBusy] = useState(false);
@@ -195,6 +200,8 @@ export function VereinPortalClient({
   }, [loadSlots]);
 
   const service = data?.services.find((s) => s.id === serviceId) ?? null;
+  const inclusive = !!service?.inclusive && inclusiveChoice;
+  const priceLabel = formatCents(inclusive ? 0 : service?.priceCents ?? 0).replace(",00", "");
   const upcoming = useMemo(
     () => (data?.bookings ?? []).filter((b) => (b.status === "BOOKED" || b.status === "REQUESTED") && !b.past),
     [data],
@@ -206,6 +213,7 @@ export function VereinPortalClient({
 
   function openSheet(next: NonNullable<typeof sheet>) {
     setSheetError(null);
+    if (next.kind === "book" || next.kind === "request") setInclusiveChoice(false);
     setSheet(next);
   }
 
@@ -228,6 +236,7 @@ export function VereinPortalClient({
           bookedBy: bookedBy.trim(),
           bookedFor: bookedFor.trim(),
           note: note.trim() || null,
+          inclusive,
         }),
       });
       const payload = (await res.json().catch(() => ({}))) as { error?: string };
@@ -238,7 +247,7 @@ export function VereinPortalClient({
       setSheet({
         kind: "done",
         title: "Gebucht",
-        text: `${service?.name ?? "Slot"} am ${fmtDay(date)} von ${slot.startTime} bis ${slot.endTime} Uhr für ${bookedFor.trim()}.`,
+        text: `${service?.name ?? "Slot"} am ${fmtDay(date)} von ${slot.startTime} bis ${slot.endTime} Uhr für ${bookedFor.trim()}${inclusive ? ", inklusive (0 €)" : ""}.`,
       });
       await Promise.all([load(), loadSlots()]);
     } catch (e) {
@@ -265,6 +274,7 @@ export function VereinPortalClient({
           bookedBy: bookedBy.trim(),
           bookedFor: bookedFor.trim(),
           note: note.trim() || null,
+          inclusive,
         }),
       });
       const payload = (await res.json().catch(() => ({}))) as { error?: string };
@@ -379,6 +389,7 @@ export function VereinPortalClient({
                           <span className="rd-grow vp-offer-text">
                             <span className="vp-offer-name">{s.name}</span>
                             <span className="vp-offer-sub">{s.daylight ? "Täglich, solange es hell ist" : "In den Buchungszeiten"}</span>
+                            {s.inclusive && <span className="vp-offer-incl">Vorstand und Trainer: 0 € inklusive</span>}
                           </span>
                           <span className="vp-price">
                             <span className="rd-display">{formatCents(s.priceCents).replace(",00", "")}</span>
@@ -392,6 +403,7 @@ export function VereinPortalClient({
                       <span className="rd-grow vp-offer-text">
                         <span className="vp-offer-name">{service.name}</span>
                         <span className="vp-offer-sub">{service.daylight ? "Täglich, solange es hell ist" : "In den Buchungszeiten"}</span>
+                        {service.inclusive && <span className="vp-offer-incl">Vorstand und Trainer: 0 € inklusive</span>}
                       </span>
                       <span className="vp-price">
                         <span className="rd-display">{formatCents(service.priceCents).replace(",00", "")}</span>
@@ -552,22 +564,31 @@ export function VereinPortalClient({
                 <span className="rd-label">{service?.name}</span>
                 <h2 className="rd-display">{fmtDay(date)} · {sheet.slot.startTime}–{sheet.slot.endTime}</h2>
               </div>
-              <div className="vp-sum">
-                <div className="vp-sum-what">
-                  <b>1 Slot, verbindlich</b>
-                  <span>Kostenlos stornierbar bis {cancelHours} Std. vorher</span>
+              {service?.inclusive ? (
+                <>
+                  <KindChoice priceCents={service.priceCents} inclusive={inclusive} onChange={setInclusiveChoice} />
+                  <p className="vp-small">1 Slot, verbindlich. Kostenlos stornierbar bis {cancelHours} Std. vorher.</p>
+                </>
+              ) : (
+                <div className="vp-sum">
+                  <div className="vp-sum-what">
+                    <b>1 Slot, verbindlich</b>
+                    <span>Kostenlos stornierbar bis {cancelHours} Std. vorher</span>
+                  </div>
+                  <span className="rd-display">{priceLabel}</span>
                 </div>
-                <span className="rd-display">{formatCents(service?.priceCents ?? 0).replace(",00", "")}</span>
-              </div>
+              )}
               <WhoFields bookedFor={bookedFor} setBookedFor={setBookedFor} bookedBy={bookedBy} setBookedBy={setBookedBy} note={note} setNote={setNote} />
               {sheetError && <p className="rd-msg rd-msg-err" role="alert">{sheetError}</p>}
               <div className="vp-actions">
                 <button type="submit" className="rd-btn rd-btn-accent rd-btn-wide" disabled={busy || !bookedFor.trim() || !bookedBy.trim()}>
-                  <span>{busy ? "Bucht …" : `Verbindlich buchen · ${formatCents(service?.priceCents ?? 0).replace(",00", "")}`}</span>
+                  <span>{busy ? "Bucht …" : `${inclusive ? "Inklusiv buchen" : "Verbindlich buchen"} · ${priceLabel}`}</span>
                 </button>
                 <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={closeSheet} disabled={busy}><span>Abbrechen</span></button>
               </div>
-              <p className="vp-small">Abgerechnet wird gesammelt am Monatsende an den Verein.</p>
+              <p className="vp-small">
+                {inclusive ? "Läuft über eure Jahrespauschale, es wird nichts zusätzlich berechnet." : "Abgerechnet wird gesammelt am Monatsende an den Verein."}
+              </p>
             </form>
           )}
 
@@ -584,6 +605,7 @@ export function VereinPortalClient({
                 <h2 className="rd-display">{fmtDay(date, true)}</h2>
               </div>
               <p className="vp-small">Wir prüfen die Anfrage und geben sie frei. Erst dann ist sie gebucht.</p>
+              {service?.inclusive && <KindChoice priceCents={service.priceCents} inclusive={inclusive} onChange={setInclusiveChoice} />}
               <div className="vp-times">
                 <div className="rd-field">
                   <label htmlFor="vp-req-start">Von</label>
@@ -637,6 +659,41 @@ export function VereinPortalClient({
         </Sheet>
       )}
     </main>
+  );
+}
+
+/** Miete oder Inklusivmiete (0 €, Vorstand und Trainer über die Jahrespauschale). */
+function KindChoice({
+  priceCents, inclusive, onChange,
+}: {
+  priceCents: number;
+  inclusive: boolean;
+  onChange: (inclusive: boolean) => void;
+}) {
+  const options = [
+    { value: false, title: "Miete", text: "Für Mitglieder, wird monatlich abgerechnet", price: priceCents },
+    { value: true, title: "Inklusiv", text: "Vorstand, Trainer und Familie 1. Grades", price: 0 },
+  ];
+  return (
+    <div className="vp-kinds" role="radiogroup" aria-label="Wer fährt?">
+      {options.map((o) => (
+        <button
+          key={o.title}
+          type="button"
+          role="radio"
+          aria-checked={inclusive === o.value}
+          className="vp-kind"
+          onClick={() => onChange(o.value)}
+        >
+          <span className="vp-kind-dot" aria-hidden="true" />
+          <span className="vp-kind-text">
+            <b>{o.title}</b>
+            <small>{o.text}</small>
+          </span>
+          <span className="rd-display">{formatCents(o.price).replace(",00", "")}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -764,7 +821,7 @@ function BookingRow({ booking: b, onCancel }: { booking: PortalBooking; onCancel
           <b>{b.slotStart}–{b.slotEnd}</b>
           {pill}
         </div>
-        <span>{b.serviceName} · {formatCents(b.priceCents).replace(",00", "")}</span>
+        <span>{b.serviceName} · {b.inclusive ? "Inklusiv, 0 €" : formatCents(b.priceCents).replace(",00", "")}</span>
         {b.bookedFor && <span>Für {b.bookedFor}</span>}
         {b.bookedBy && <span>Gebucht von {b.bookedBy}</span>}
         {b.status === "REJECTED" && b.rejectReason && <span>Abgelehnt: {b.rejectReason}</span>}

@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
     status: r.status as "BOOKED" | "CANCELED",
     bookedBy: r.bookedBy,
     bookedFor: r.bookedFor,
+    inclusive: r.inclusive,
     note: r.note,
     canceledBy: r.canceledBy,
     billedAt: r.billedAt,
