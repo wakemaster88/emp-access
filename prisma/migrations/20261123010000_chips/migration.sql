@@ -1,6 +1,6 @@
 -- Bändchen am Kunden: Chip (Code, Eigentum, Person) und sein Verlauf.
--- Nur neue Tabellen; Ticket.rfidCode bleibt, wie er ist. Die Übernahme der
--- Bestandschips macht scripts/chips-altbestand.ts.
+-- Nur neue Tabellen; Ticket.rfidCode bleibt, wie er ist. Den Altbestand
+-- übernimmt eine einmalige Abfrage (docs/projektwissen/funktionen.md).
 CREATE TYPE "ChipOwner" AS ENUM ('KUNDE', 'BETRIEB', 'MITARBEITER');
 
 CREATE TABLE "Chip" (
