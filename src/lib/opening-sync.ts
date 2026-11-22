@@ -352,7 +352,12 @@ export async function buildSyncReport(options: {
       const lastOwn = lastOf(days, (d) => own.get(d) != null);
       const lastAnny = viaAnny ? lastOf(days, (d) => viaAnny.has(d)) : null;
       const lastDay = [lastOwn, lastAnny].filter((d): d is string => d != null).sort().at(-1) ?? null;
-      site = { ...finish(days, ours, theirs, `Website /${page.slug}`, lastDay), fromAnny };
+      // Seite ohne eigene Zeiten und ohne anny (z. B. /shop = Ticketshop): Der Bereich
+      // steht nicht mit Öffnungszeiten auf der Website – wie „nicht in anny“.
+      site =
+        lastDay == null
+          ? side("unlinked")
+          : { ...finish(days, ours, theirs, `Website /${page.slug}`, lastDay), fromAnny };
     }
 
     return { scheduleId: schedule.id, name: schedule.name, parentId: schedule.parentId ?? null, anny, website: site };

@@ -57,3 +57,15 @@ test("Abgleich: ohne Übernahme zählen die eigenen Tabellen der Website", async
   assert.ok((site.result?.differing ?? 0) > 300);
   assert.equal(site.viaEmp, undefined);
 });
+
+test("Abgleich: Seite ohne eigene Zeiten und ohne anny gilt als nicht auf der Website", async () => {
+  const report = await buildSyncReport({
+    ...base,
+    schedules: [{ id: 7, name: "Shop", spec }],
+    loaders: {
+      website: async () => ({ pages: [{ id: 8, slug: "shop", annyResourceId: null }], periods: new Map(), dates: new Map() }),
+      websiteLive: async () => new Set(),
+    },
+  });
+  assert.equal(report.rows[0].website.state, "unlinked");
+});
