@@ -38,7 +38,7 @@ const TONE: Record<SyncSide["state"], StatusTone> = {
   error: "danger",
 };
 
-function headline(side: SyncSide, key: SideKey, sub = false): string {
+function headline(side: SyncSide, key: SideKey): string {
   switch (side.state) {
     case "same":
       return side.viaEmp ? "gleich · übernimmt emp-access" : "gleich";
@@ -49,8 +49,7 @@ function headline(side: SyncSide, key: SideKey, sub = false): string {
     case "empty":
       return "keine Zeiten eingetragen";
     case "unlinked":
-      if (key === "anny") return "nicht in anny";
-      return sub ? "nicht auf der Website" : "keine Seite";
+      return key === "anny" ? "nicht in anny" : "nicht auf der Website";
     case "error":
       return "nicht erreichbar";
   }
@@ -98,17 +97,15 @@ function SideCell({
   from,
   to,
   name,
-  isSub,
 }: {
   side: SyncSide;
   sideKey: SideKey;
   from: string;
   to: string;
   name: string;
-  isSub: boolean;
 }) {
   const sub = hint(side, sideKey, to);
-  const text = headline(side, sideKey, isSub);
+  const text = headline(side, sideKey);
   return (
     <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 sm:grid-cols-1">
       <span className="text-[11px] text-muted-foreground sm:hidden">{SIDE_LABEL[sideKey]}</span>
@@ -211,8 +208,8 @@ function RowView({
             />
           )}
         </span>
-        <SideCell side={row.anny} sideKey="anny" from={from} to={to} name={row.name} isSub={isSub} />
-        <SideCell side={row.website} sideKey="website" from={from} to={to} name={row.name} isSub={isSub} />
+        <SideCell side={row.anny} sideKey="anny" from={from} to={to} name={row.name} />
+        <SideCell side={row.website} sideKey="website" from={from} to={to} name={row.name} />
         <span className="hidden sm:block" aria-hidden>
           {attention && (
             <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", expanded && "rotate-180")} />
