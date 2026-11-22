@@ -1,3 +1,4 @@
+import { startGo2rtcMonitor } from "./go2rtc-status.js";
 import { writeSync } from "node:fs";
 import { CONFIG, api, log } from "./config.js";
 import { executeTask, type HubTask } from "./tasks.js";
@@ -252,6 +253,8 @@ async function pollTasks() {
 // Lokales Dashboard starten, sofort melden, dann in Intervallen weiterarbeiten.
 startImproveLog();
 startSystemMetrics();
+// go2rtc beobachten: Streams ohne Daten oder in H.265 landen im Hub-Log.
+startGo2rtcMonitor();
 // Ruhezustand verhindern, pmset nachziehen (falls sudoers-Regel), Auto-Login melden.
 startSystemSetup();
 // ffmpeg fuer go2rtc-Standbilder: bei Bedarf per Homebrew nachinstallieren.

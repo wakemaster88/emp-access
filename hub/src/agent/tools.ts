@@ -20,6 +20,7 @@ import { executeTask } from "../tasks.js";
 import { captureSnapshot, findCameraByRef, listCameraStatus } from "../cameras.js";
 import { captureDoorbirdSnapshot, isDoorbird, listDoorbirdStatus } from "../doorbird.js";
 import { systemMetrics } from "../system-metrics.js";
+import { go2rtcSummary } from "../go2rtc-status.js";
 import { deviceAction, liveStates, roomsPayload } from "../rooms.js";
 import { climatePayload } from "../climate.js";
 import { rulesStatus } from "../rules.js";
@@ -140,6 +141,8 @@ export const TOOLS: AgentTool[] = [
           unreachable: cams.filter((c) => !c.reachable).map((c) => `${c.name} (${c.host}): ${c.lastError ?? "keine Antwort"}`),
         },
         doorbirds: listDoorbirdStatus().map((d) => ({ name: d.name, host: d.host, connected: d.connected })),
+        // Livebilder der Zentrale (go2rtc): Streams ohne Daten, Formate, gescheiterte WebRTC-Anfragen.
+        live: go2rtcSummary(),
         face: STATE.face,
         alpr: STATE.alpr,
         parking: STATE.parking,

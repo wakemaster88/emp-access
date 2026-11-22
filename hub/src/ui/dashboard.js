@@ -1275,6 +1275,33 @@ function markWide(id, w, h) {
   layoutGrid();
 }
 
+/** go2rtc-Zustand eines Streams (aus /api/go2rtc/streams). */
+function streamInfo(name) {
+  return name ? live.streams.find((s) => s.name === name) || null : null;
+}
+
+/*
+ * Warum eine Kachel kein Bild hat, statt endlos "Verbindung wird aufgebaut".
+ * Erst nach dem ersten Fehlversuch, damit ein normaler Aufbau (1–3 s)
+ * nicht mit Fehlertext beginnt.
+ */
+function tileWaitText(c, rtc) {
+  const src = streamFor(c, "sub");
+  if (!src || c.kind === "MOWER") return null;
+  const info = streamInfo(src);
+  if (info && info.video === "H265") return "Stream ist H.265 – Browser spielt ihn nicht ab";
+  if (rtc !== "error" && rtc !== "failed") return "Verbindung wird aufgebaut …";
+  if (!c.reachable) return "Kamera nicht erreichbar – neuer Versuch …";
+  if (info && info.consumers > 0 && !info.bytes) return "Kamera liefert kein Video an go2rtc – neuer Versuch …";
+  return "Keine Verbindung zu go2rtc – neuer Versuch …";
+}
+
+function updateTileHint(tile, c) {
+  const text = tileWaitText(c, tile.dataset.rtc || "");
+  const el = tile.querySelector(".live-empty span");
+  if (text && el && el.textContent !== text) el.textContent = text;
+}
+
 function ensureTileStream(tile, c) {
   // Maeher-Kameras nur auf Wunsch in der Grossansicht (kein Dauer-Livebild, kein Standbild).
   if (c.kind === "MOWER") return;
@@ -1289,6 +1316,7 @@ function ensureTileStream(tile, c) {
       tile.dataset.rtc = st;
       tile.classList.toggle("is-live", st === "live");
       setTileMode(tile);
+      updateTileHint(tile, c);
     });
     live.peers.set(c.id, stop);
   }
@@ -1445,6 +1473,7 @@ function renderZentrale(d) {
     tile.querySelector(".live-ago").textContent =
       c.kind === "MOWER" ? mowerTileNote(c) : c.lastEventAt ? `Signal ${ago(c.lastEventAt)}` : "";
     ensureTileStream(tile, c);
+    updateTileHint(tile, c);
   }
 
   const liveCount = grid.querySelectorAll(".live-tile.is-live").length;

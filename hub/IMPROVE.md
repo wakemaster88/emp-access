@@ -1080,3 +1080,28 @@ Snapshot über Log-Abruf (HUB_LOG, Hub `imac-technikraum`, Stand b7992b4): `alpr
 - Nach einem Tag: Anteil `alpr.plate` an den Uploads gegen heute (2 von 16) vergleichen; Log-Zeilen „auf N Bildern … → Frame“ und „Kennzeichen sicher – fertig nach“ ansehen. Bildabstand im Log prüfen (Ziel ≤ 0,8 s); verträgt die Kamera die gleichzeitigen Anfragen nicht (Fehler „Re-Check fehlgeschlagen“), zurück auf nacheinander.
 - `alpr.spotlight_mute` in der Dämmerung beobachten. Bleibt es bei Fehlalarmen ohne Licht, die KI-Erkennungszone der Kamera Eingang verkleinern (nur mit Aarons OK).
 - `hub/plate/PlateOCR.swift` hat noch die alte Kreisliste; im Burst ist Vision jetzt aus, bei Bedarf nachziehen.
+
+## 2026-11-22 (Zentrale ohne Livebilder: go2rtc sichtbar machen)
+
+Snapshot über Log-Abruf (HUB_LOG, Hub `imac-technikraum`, Stand 5a63527, läuft seit 20.11. ~13:54): Offene Hinweise unverändert (Gallery knapp unter Schwelle, Halteverbot-Prüfung schlägt fehl, DoorBird-Monitor bricht ab), nicht Teil dieser Änderung.
+
+### Befund
+
+- Zentrale 22.11. 11:54: 5 von 13 Kacheln „LIVE“, aber schwarz; die übrigen 7 hängen auf „Verbindung wird aufgebaut …“. Seilbahn A offline (seit 14.11. kein Signal).
+- Alle anderen 11 Kameras melden sich laut Cloud im Takt beim Hub (`lastSeenAt` aktuell), Schnappschüsse laufen (KI-Verlauf mit Bildern). Es klemmt also nur der Weg über go2rtc.
+- Code der Zentrale seit 11.11. unverändert. Im Hub-Log (1 MB, 13 182 Zeilen) steht zu go2rtc **keine einzige Zeile**: Aus der Ferne war nicht zu sehen, ob go2rtc von der Kamera nichts bekommt, der Stream H.265 ist oder nur WebRTC zum Fenster scheitert.
+- Kamera-Uhren: Gastro −2071 s, Übungslift −32 379 s (≈ −9 h, sieht nach falscher Zeitzone/Werksreset aus). Nicht angefasst (Kamera-Einstellung, nur mit Aarons OK).
+
+### Änderung
+
+- `go2rtc-status-rules.ts` (neu, rein, 5 Tests): wertet `/api/streams` aus (Host ohne Zugangsdaten, Videoformat, empfangene Bytes, Zuschauer), erkennt Streams mit Zuschauern ohne Daten und H.265 im Sub-Stream.
+- `go2rtc-status.ts` (neu): Hub schaut alle 2 min auf go2rtc und schreibt bei Änderung eine Zeile ins Hub-Log („go2rtc: 7/26 ohne Daten von der Kamera: …“, „Format nicht abspielbar: …“, „go2rtc nicht erreichbar“). Zähler `camera.live_problem`, `camera.go2rtc_down`, `camera.webrtc_fail`.
+- `dashboard.ts`: gescheiterte WebRTC-Anfragen an go2rtc (HTTP-Fehler mit Antworttext, Timeout) landen im Log, je Stream höchstens alle 5 min. `/api/go2rtc/streams` liefert zusätzlich Format, Bytes, Zuschauer (weiter ohne RTSP-URLs).
+- `hub_status` (Assistent/MCP) hat jetzt `live`: Streams ohne Daten, Formate, WebRTC-Fehler der letzten 10 min.
+- Zentrale: Kachel sagt nach dem ersten Fehlversuch, woran es liegt (H.265, Kamera liefert kein Video an go2rtc, keine Verbindung zu go2rtc, Kamera nicht erreichbar) statt endlos „Verbindung wird aufgebaut“.
+- Geprüft: `tsc -p hub` 0 Fehler, `npm test` 781/781. Nicht am Hub geprüft.
+
+### Nächster Schritt
+
+- Nach dem Update (Hub zieht main selbst) Log-Abruf mit `grep: "go2rtc"`; je nach Zeile: go2rtc neu starten, H.265-Sub-Stream an der Kamera auf H.264 stellen (nur mit Aarons OK) oder WebRTC-Kandidaten in `go2rtc.yaml` prüfen.
+- Uhren Gastro und Übungslift (NTP/Zeitzone) mit Aaron klären.
