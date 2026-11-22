@@ -46,6 +46,7 @@ import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
 import { buildAllowedHosts, checkDashboardRequest } from "./dashboard-guard.js";
 import { personBoxes, seenPeople } from "./live-people.js";
 import { getFrame, startFrameWarmer } from "./frame-cache.js";
+import { GO2RTC_URL, fetchGo2rtcStreams, noteWebrtcFailure } from "./go2rtc-status.js";
 import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
 import { isMowerStream } from "./mower-streams.js";
 import { assistantHealth } from "./agent/agent.js";
@@ -151,7 +152,6 @@ async function readRaw(req: http.IncomingMessage, limit = 256 * 1024): Promise<s
  * Video selbst kommt per WebRTC direkt von go2rtc.
  * ------------------------------------------------------------------------- */
 
-const GO2RTC_URL = (process.env.HUB_GO2RTC_URL || "http://127.0.0.1:1984").replace(/\/$/, "");
 
 async function proxyGo2rtc(
   req: http.IncomingMessage,
@@ -161,15 +161,17 @@ async function proxyGo2rtc(
   const sub = url.pathname.slice("/api/go2rtc".length);
   try {
     if (req.method === "GET" && sub === "/streams") {
-      // Nur Name + Kamera-Host weitergeben – die RTSP-URLs enthalten Passwoerter.
-      const r = await fetch(`${GO2RTC_URL}/api/streams`, { signal: AbortSignal.timeout(4000) });
-      if (!r.ok) return json(res, 200, { reachable: false, streams: [] });
-      const data = (await r.json()) as Record<string, { producers?: Array<{ url?: string }> } | null>;
-      const streams = Object.entries(data ?? {}).map(([name, info]) => {
-        const producer = info?.producers?.[0]?.url ?? "";
-        const m = producer.match(/@([^:/@]+)[:/]/) ?? producer.match(/^\w+:\/\/([^:/@]+)[:/]/);
-        return { name, host: m ? m[1] : null };
-      });
+      // Nur Name, Kamera-Host und Zustand weitergeben – die RTSP-URLs enthalten Passwoerter.
+      const st = await fetchGo2rtcStreams();
+      if (!st.reachable) return json(res, 200, { reachable: false, streams: [] });
+      const streams = st.streams.map((x) => ({
+        name: x.name,
+        host: x.host,
+        video: x.video,
+        active: x.active,
+        bytes: x.bytes,
+        consumers: x.consumers,
+      }));
       return json(res, 200, { reachable: true, streams });
     }
     const src = url.searchParams.get("src") ?? "";
@@ -184,6 +186,7 @@ async function proxyGo2rtc(
         signal: AbortSignal.timeout(isMowerStream(src) ? 40_000 : 10_000),
       });
       const answer = await r.text();
+      if (!r.ok) noteWebrtcFailure(src, `HTTP ${r.status} ${answer.replace(/\s+/g, " ").trim().slice(0, 160)}`);
       res.writeHead(r.status, { "Content-Type": "application/sdp", "Cache-Control": "no-store" });
       res.end(answer);
       return;
@@ -205,7 +208,9 @@ async function proxyGo2rtc(
     }
     return json(res, 404, { error: "unbekannt" });
   } catch (e) {
-    return json(res, 502, { error: `go2rtc nicht erreichbar: ${e instanceof Error ? e.message : e}` });
+    const msg = e instanceof Error ? e.message : String(e);
+    if (sub === "/webrtc") noteWebrtcFailure(url.searchParams.get("src") ?? "?", `keine Antwort (${msg})`);
+    return json(res, 502, { error: `go2rtc nicht erreichbar: ${msg}` });
   }
 }
 
