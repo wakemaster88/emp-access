@@ -9,6 +9,8 @@ import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import type { DiffGroup } from "@/lib/opening-compare";
 import type { SyncReport, SyncRow, SyncSide } from "@/lib/opening-sync";
 import { cn } from "@/lib/utils";
+import { DayStrip, MonthAxis, TRACK } from "@/components/betriebszeiten/charts";
+import { seriesColor } from "@/components/betriebszeiten/series";
 
 type SideKey = "anny" | "website";
 const SIDE_LABEL: Record<SideKey, string> = { anny: "anny", website: "Website" };
@@ -62,18 +64,59 @@ function hint(side: SyncSide, key: SideKey, to: string): string | null {
   return `ab ${date(first.first)}: hier ${hours(first.ours)}, ${SIDE_LABEL[key]} ${hours(first.theirs)}`;
 }
 
-function SideCell({ side, sideKey, to }: { side: SyncSide; sideKey: SideKey; to: string }) {
-  const sub = hint(side, sideKey, to);
+/** Farbband im Abgleich: gleich ruhig, anders deutlich, nicht eingetragen bleibt Spur. */
+const MARK_STYLES: Record<string, string> = { g: "bg-success/45", a: "bg-warning" };
+const MARK_LABELS: Record<string, string> = {
+  g: "gleich",
+  a: "anders",
+  l: "nicht eingetragen, hier geschlossen",
+};
+
+function Legend() {
   return (
-    <div className="min-w-0">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <StatusDot tone={TONE[side.state]} />
-        <span className="sm:hidden text-muted-foreground">{SIDE_LABEL[sideKey]}:</span>
-        <span className={cn("truncate", side.state === "unlinked" && "text-muted-foreground")}>
-          {headline(side, sideKey)}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={cn("h-2 w-4 rounded-full", MARK_STYLES.g)} />
+        gleich
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={cn("h-2 w-4 rounded-full", MARK_STYLES.a)} />
+        anders
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={cn("h-2 w-4 rounded-full", TRACK)} />
+        nicht eingetragen (hier zu)
+      </span>
+    </div>
+  );
+}
+
+function SideCell({ side, sideKey, from, to, name }: { side: SyncSide; sideKey: SideKey; from: string; to: string; name: string }) {
+  const sub = hint(side, sideKey, to);
+  const text = headline(side, sideKey);
+  return (
+    <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 sm:grid-cols-1">
+      <span className="text-[11px] text-muted-foreground sm:hidden">{SIDE_LABEL[sideKey]}</span>
+      {side.marks ? (
+        <DayStrip
+          marks={side.marks}
+          from={from}
+          styles={MARK_STYLES}
+          labels={MARK_LABELS}
+          ariaLabel={`${name}, ${SIDE_LABEL[sideKey]}: ${text}`}
+        />
+      ) : (
+        <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+          <StatusDot tone={TONE[side.state]} size="xs" />
+          <span className="truncate">{text}</span>
         </span>
-      </div>
-      {sub && <p className="truncate pl-3.5 text-[11px] text-muted-foreground tabular-nums">{sub}</p>}
+      )}
+      {side.marks && (
+        <p className="col-start-2 min-w-0 truncate text-[11px] tabular-nums sm:col-start-1">
+          <span className={cn(side.state === "same" ? "text-muted-foreground" : "font-medium")}>{text}</span>
+          {sub && <span className="text-muted-foreground"> · {sub}</span>}
+        </p>
+      )}
     </div>
   );
 }
@@ -110,7 +153,23 @@ function GroupList({ side, sideKey }: { side: SyncSide; sideKey: SideKey }) {
   );
 }
 
-function RowView({ row, to, expanded, onToggle }: { row: SyncRow; to: string; expanded: boolean; onToggle: () => void }) {
+const GRID = "sm:grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_minmax(0,1fr)_1rem]";
+
+function RowView({
+  row,
+  index,
+  from,
+  to,
+  expanded,
+  onToggle,
+}: {
+  row: SyncRow;
+  index: number;
+  from: string;
+  to: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const attention = needsAttention(row.anny) || needsAttention(row.website);
   return (
     <li className="border-t first:border-t-0">
@@ -119,11 +178,23 @@ function RowView({ row, to, expanded, onToggle }: { row: SyncRow; to: string; ex
         onClick={onToggle}
         disabled={!attention}
         aria-expanded={attention ? expanded : undefined}
-        className="grid w-full min-w-0 grid-cols-1 gap-1 py-2 text-left text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 enabled:cursor-pointer sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)_minmax(0,1fr)_1rem] sm:items-start sm:gap-3"
+        className={cn(
+          "grid w-full min-w-0 grid-cols-1 gap-1.5 py-2.5 text-left text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 enabled:cursor-pointer sm:items-start sm:gap-x-4",
+          GRID,
+        )}
       >
-        <span className="truncate font-medium">{row.name}</span>
-        <SideCell side={row.anny} sideKey="anny" to={to} />
-        <SideCell side={row.website} sideKey="website" to={to} />
+        <span className="flex min-w-0 items-center gap-1.5 sm:pt-0.5">
+          <span aria-hidden className={cn("size-2 shrink-0 rounded-full", seriesColor(index))} />
+          <span className="truncate font-medium">{row.name}</span>
+          {attention && (
+            <ChevronDown
+              aria-hidden
+              className={cn("ml-auto size-4 shrink-0 text-muted-foreground transition-transform sm:hidden", expanded && "rotate-180")}
+            />
+          )}
+        </span>
+        <SideCell side={row.anny} sideKey="anny" from={from} to={to} name={row.name} />
+        <SideCell side={row.website} sideKey="website" from={from} to={to} name={row.name} />
         <span className="hidden sm:block" aria-hidden>
           {attention && (
             <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", expanded && "rotate-180")} />
@@ -131,7 +202,7 @@ function RowView({ row, to, expanded, onToggle }: { row: SyncRow; to: string; ex
         </span>
       </button>
       {expanded && attention && (
-        <div className="grid min-w-0 grid-cols-1 gap-3 pb-3 sm:grid-cols-2 sm:pl-[calc(9rem+0.75rem)]">
+        <div className="grid min-w-0 grid-cols-1 gap-3 pb-3 sm:grid-cols-2 sm:pr-8 sm:pl-[calc(8.5rem+1rem)]">
           <GroupList side={row.anny} sideKey="anny" />
           <GroupList side={row.website} sideKey="website" />
         </div>
@@ -206,8 +277,8 @@ export function SyncStatus() {
         </div>
         <CardDescription className="text-xs">
           {report
-            ? `Tag für Tag bis ${date(report.to)}, geprüft um ${checked} Uhr. Nur lesen, gepflegt wird in anny und auf der Website.`
-            : "Vergleicht die nächsten 12 Monate Tag für Tag mit anny und der Website."}
+            ? `Heute bis ${date(report.to)}, Tag für Tag; vergangene Tage zählen nicht. Geprüft um ${checked} Uhr, nur lesend.`
+            : "Vergleicht heute und die nächsten 12 Monate Tag für Tag mit anny und der Website."}
         </CardDescription>
         <CardAction>
           <Button variant="outline" size="sm" className="max-sm:h-11" onClick={load} disabled={loading}>
@@ -225,20 +296,29 @@ export function SyncStatus() {
           <p className="text-xs text-muted-foreground">anny und Website werden gelesen …</p>
         ) : (
           <>
-            <div
-              aria-hidden
-              className="hidden grid-cols-[minmax(0,9rem)_minmax(0,1fr)_minmax(0,1fr)_1rem] gap-3 pb-1 text-label text-muted-foreground sm:grid"
-            >
+            <Legend />
+            {/* Spaltenköpfe mit Monatsachse; auf dem Handy eine Achse über allen Bändern. */}
+            <div aria-hidden className={cn("mt-3 hidden gap-x-4 text-label text-muted-foreground sm:grid", GRID)}>
               <span>Bereich</span>
               <span>anny</span>
               <span>Website</span>
               <span />
+              <span />
+              <MonthAxis from={report.from} days={report.days} compact />
+              <MonthAxis from={report.from} days={report.days} compact />
+              <span />
+            </div>
+            <div aria-hidden className="mt-3 grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-2 sm:hidden">
+              <span />
+              <MonthAxis from={report.from} days={report.days} compact />
             </div>
             <ul>
-              {report.rows.map((row) => (
+              {report.rows.map((row, i) => (
                 <RowView
                   key={row.scheduleId}
                   row={row}
+                  index={i}
+                  from={report.from}
                   to={report.to}
                   expanded={expanded === row.scheduleId}
                   onToggle={() => setExpanded((cur) => (cur === row.scheduleId ? null : row.scheduleId))}

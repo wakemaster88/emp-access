@@ -13,6 +13,7 @@ import type { ScheduleSpec } from "./operating-hours";
 import {
   annyDayValues,
   compareDays,
+  dayMarks,
   daysBetween,
   matchWebsiteSlug,
   normalizeName,
@@ -39,6 +40,8 @@ export interface SyncSide {
   /** Nur Website: Tage, an denen sie die anny-Zeiten zeigt. */
   fromAnny?: number;
   result: CompareResult | null;
+  /** Ein Zeichen je Tag ab `from` für das Farbband (siehe `dayMarks`). */
+  marks: string | null;
 }
 
 export interface SyncRow {
@@ -50,8 +53,11 @@ export interface SyncRow {
 
 export interface SyncReport {
   checkedAt: string;
+  /** Erster geprüfter Tag = heute; vergangene Tage zählen nicht. */
   from: string;
   to: string;
+  /** Anzahl Tage von `from` bis `to`. */
+  days: number;
   anny: { configured: boolean; error: string | null };
   website: { configured: boolean; error: string | null };
   rows: SyncRow[];
@@ -84,7 +90,7 @@ export interface WebsiteData {
 const LIFT_NAME = /wasserski|wakeboard|seilbahn|lift/i;
 
 function side(state: SyncState, source: string | null = null): SyncSide {
-  return { state, source, lastDay: null, result: null };
+  return { state, source, lastDay: null, result: null, marks: null };
 }
 
 async function loadWebsite(url: string, from: string, to: string): Promise<WebsiteData> {
@@ -190,9 +196,16 @@ function lastOf(days: string[], has: (ymd: string) => boolean): string | null {
   return null;
 }
 
-function finish(result: CompareResult, source: string, lastDay: string | null): SyncSide {
+function finish(
+  days: string[],
+  ours: (ymd: string) => DayValue,
+  theirs: (ymd: string) => DayValue | null,
+  source: string,
+  lastDay: string | null,
+): SyncSide {
+  const result = compareDays(days, ours, theirs);
   const state: SyncState = result.differing === 0 ? "same" : lastDay == null ? "empty" : "diff";
-  return { state, source, lastDay, result };
+  return { state, source, lastDay, result, marks: dayMarks(days, ours, theirs, lastDay) };
 }
 
 export async function buildSyncReport(options: {
@@ -253,7 +266,8 @@ export async function buildSyncReport(options: {
   for (const [rid, periods] of annyPeriods ?? []) annyValues.set(rid, annyDayValues(periods, options.timezone));
 
   const rows: SyncRow[] = plan.map(({ schedule, page, resourceId }) => {
-    const ours = (ymd: string) => scheduleDayValue(schedule.spec, ymd);
+    const ourValues = new Map(days.map((d) => [d, scheduleDayValue(schedule.spec, d)]));
+    const ours = (ymd: string) => ourValues.get(ymd) ?? scheduleDayValue(schedule.spec, ymd);
 
     let anny: SyncSide;
     if (!options.anny) anny = side("unlinked");
@@ -261,8 +275,7 @@ export async function buildSyncReport(options: {
     else if (annyError || !annyPeriods) anny = side("error", `anny ${resourceId}`);
     else {
       const values = annyValues.get(resourceId) ?? new Map<string, DayValue>();
-      const result = compareDays(days, ours, (ymd) => values.get(ymd) ?? "zu");
-      anny = finish(result, `anny ${resourceId}`, lastOf(days, (d) => values.has(d)));
+      anny = finish(days, ours, (ymd) => values.get(ymd) ?? "zu", `anny ${resourceId}`, lastOf(days, (d) => values.has(d)));
     }
 
     let site: SyncSide;
@@ -272,22 +285,15 @@ export async function buildSyncReport(options: {
     else {
       const periods = website.periods.get(page.id) ?? [];
       const dates = website.dates.get(page.id) ?? [];
+      const own = new Map(days.map((d) => [d, websiteDayValue(periods, dates, d)]));
       const viaAnny = page.annyResourceId ? annyValues.get(page.annyResourceId) : undefined;
-      let fromAnny = 0;
-      const theirs = (ymd: string): DayValue | null => {
-        const own = websiteDayValue(periods, dates, ymd);
-        if (own != null) return own;
-        if (viaAnny) {
-          fromAnny += 1;
-          return viaAnny.get(ymd) ?? "zu";
-        }
-        return null;
-      };
-      const result = compareDays(days, ours, theirs);
-      const lastOwn = lastOf(days, (d) => websiteDayValue(periods, dates, d) != null);
+      // Ohne eigenen Eintrag zeigt die Website die anny-Zeiten der verknüpften Ressource.
+      const theirs = (ymd: string): DayValue | null => own.get(ymd) ?? (viaAnny ? (viaAnny.get(ymd) ?? "zu") : null);
+      const fromAnny = viaAnny ? days.filter((d) => own.get(d) == null).length : 0;
+      const lastOwn = lastOf(days, (d) => own.get(d) != null);
       const lastAnny = viaAnny ? lastOf(days, (d) => viaAnny.has(d)) : null;
       const lastDay = [lastOwn, lastAnny].filter((d): d is string => d != null).sort().at(-1) ?? null;
-      site = { ...finish(result, `Website /${page.slug}`, lastDay), fromAnny };
+      site = { ...finish(days, ours, theirs, `Website /${page.slug}`, lastDay), fromAnny };
     }
 
     return { scheduleId: schedule.id, name: schedule.name, anny, website: site };
@@ -297,6 +303,7 @@ export async function buildSyncReport(options: {
     checkedAt: now.toISOString(),
     from,
     to,
+    days: days.length,
     anny: { configured: Boolean(options.anny), error: annyError },
     website: { configured: Boolean(options.websiteUrl), error: websiteError },
     rows,

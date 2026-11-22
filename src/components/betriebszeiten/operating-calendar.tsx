@@ -26,15 +26,9 @@ import {
 } from "@/lib/operating-calendar";
 import { addDaysToYmd, tzYmd } from "@/lib/tz-time";
 import { cn } from "@/lib/utils";
+import { seriesColor } from "@/components/betriebszeiten/series";
 
 type View = "monat" | "woche";
-
-/**
- * Eine Farbe je Bereich aus der Diagramm-Reihe (docs/design-regeln.md, Abschnitt 15):
- * die Bereiche sind Datenreihen, keine Zustände. Bis sieben Profile wiederholt sich
- * keine Farbe; danach bleiben Name und Reihenfolge eindeutig.
- */
-const SERIES = ["bg-chart-1", "bg-chart-2", "bg-chart-3", "bg-chart-4", "bg-chart-5", "bg-chart-6", "bg-chart-7"];
 
 const WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
@@ -332,7 +326,7 @@ export function OperatingCalendar({
       schedules.map((s, i) => ({
         id: s.id,
         name: s.name,
-        color: SERIES[i % SERIES.length],
+        color: seriesColor(i),
         spec: { name: s.name, seasons: s.seasons, exceptions: s.exceptions },
       })),
     [schedules],

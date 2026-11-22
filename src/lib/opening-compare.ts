@@ -191,6 +191,28 @@ export function compareDays(
   };
 }
 
+/**
+ * Tageskette für das Farbband im Abgleich, ein Zeichen je Tag:
+ * "g" gleich, "a" anders, "l" dort nichts eingetragen und hier geschlossen.
+ * Nach `lastDay` (letzter Tag, für den die Gegenseite selbst Zeiten hat) gilt
+ * die Gegenseite als leer. Die Zahl der "a" entspricht `compareDays().differing`.
+ */
+export function dayMarks(
+  days: string[],
+  ours: (ymd: string) => DayValue,
+  theirs: (ymd: string) => DayValue | null,
+  lastDay: string | null,
+): string {
+  let out = "";
+  for (const ymd of days) {
+    const a = ours(ymd);
+    const b = lastDay != null && ymd <= lastDay ? theirs(ymd) : null;
+    if (b == null) out += a === CLOSED ? "l" : "a";
+    else out += a === b ? "g" : "a";
+  }
+  return out;
+}
+
 /** Kleinbuchstaben ohne Umlaute und Sonderzeichen, für den Namensvergleich. */
 export function normalizeName(name: string): string {
   return name
