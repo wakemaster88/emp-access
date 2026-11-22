@@ -141,3 +141,41 @@ export function liveProblemLine(p: { stalled: string[]; unplayable: string[] }, 
   if (p.unplayable.length) parts.push(`Format nicht abspielbar: ${p.unplayable.join(", ")}`);
   return parts.length ? `go2rtc: ${parts.join(" · ")}` : null;
 }
+
+export interface ClientReport {
+  src: string;
+  event: string;
+  line: string;
+}
+
+/** Browser-Name grob aus dem User-Agent (fuers Log, ohne Versionen). */
+export function browserName(ua: string): string {
+  if (/Edg\//.test(ua)) return "Edge";
+  if (/Chrome\//.test(ua)) return "Chrome";
+  if (/Firefox\//.test(ua)) return "Firefox";
+  if (/Safari\//.test(ua)) return "Safari";
+  return "Browser";
+}
+
+/**
+ * Zustandsmeldung einer Kachel pruefen und als Log-Zeile formulieren; null,
+ * wenn die Meldung unbrauchbar ist. Nur feste, kurze Felder – die Route ist
+ * ohne Anmeldung vom Hub-Rechner erreichbar.
+ */
+export function clientReport(body: Record<string, unknown>, ua: string): ClientReport | null {
+  const src = String(body.src ?? "");
+  const event = String(body.event ?? "").slice(0, 60);
+  if (!/^[^\s/?#&]{1,80}$/.test(src) || !/^[\w :.-]{1,60}$/.test(event)) return null;
+  const word = (v: unknown) => (typeof v === "string" && /^[a-z]{1,16}$/.test(v) ? v : "-");
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
+  const parts = [
+    `Verbindung ${word(body.conn)}`,
+    `ICE ${word(body.ice)}`,
+    `Bilder ${n(body.frames)}`,
+    `Größe ${n(body.w)}×${n(body.h)}`,
+    `Versuch ${n(body.attempts)}`,
+  ];
+  if (body.paused === true) parts.push("pausiert");
+  if (body.hidden === true) parts.push("Fenster verdeckt");
+  return { src, event, line: `Zentrale (${browserName(ua)}) ${src}: ${event} – ${parts.join(", ")}` };
+}

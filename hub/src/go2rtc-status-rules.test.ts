@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { browserPlayable, hostFromUrl, liveProblemLine, liveProblems, summarizeStreams } from "./go2rtc-status-rules.js";
+import { browserName, browserPlayable, clientReport, hostFromUrl, liveProblemLine, liveProblems, summarizeStreams } from "./go2rtc-status-rules.js";
 
 test("Host ohne Zugangsdaten aus der Quell-URL", () => {
   assert.equal(hostFromUrl("rtsp://admin:geheim@192.168.30.19:554/h264Preview_01_sub"), "192.168.30.19");
@@ -59,4 +59,17 @@ test("Probleme: Zuschauer ohne Daten, stehende Bytes, H.265 im Sub-Stream", () =
   assert.deepEqual(p.unplayable, ["c_sub (H265)"]);
   assert.match(liveProblemLine(p, streams.length) ?? "", /2\/4 ohne Daten.*a_sub, b_sub.*c_sub \(H265\)/);
   assert.equal(liveProblemLine({ stalled: [], unplayable: [] }, 4), null);
+});
+
+test("Kachel-Meldung aus dem Browser: nur feste Felder, sonst verworfen", () => {
+  const safari = "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+  assert.equal(browserName(safari), "Safari");
+  const r = clientReport(
+    { src: "cam-gastro_sub", event: "ice-timeout", conn: "connecting", ice: "checking", frames: 0, w: 0, h: 0, attempts: 2 },
+    safari
+  );
+  assert.equal(r?.line, "Zentrale (Safari) cam-gastro_sub: ice-timeout – Verbindung connecting, ICE checking, Bilder 0, Größe 0×0, Versuch 2");
+  assert.equal(clientReport({ src: "a/../b", event: "x" }, safari), null);
+  assert.equal(clientReport({ src: "ok_sub", event: "<script>" }, safari), null);
+  assert.match(clientReport({ src: "ok_sub", event: "schwarz", conn: "<b>", paused: true }, "")?.line ?? "", /Verbindung -, .*pausiert$/);
 });

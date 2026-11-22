@@ -1017,6 +1017,24 @@ function mowerTileNote(c) {
   return [m.online ? (m.active ? "" : m.statusLabel) : "", batt].filter(Boolean).join(" · ");
 }
 
+/** true, wenn das aktuelle Videobild (fast) komplett schwarz ist; null = nicht pruefbar. */
+function videoIsBlack(video) {
+  try {
+    if (!video.videoWidth) return null;
+    const c = document.createElement("canvas");
+    c.width = 16;
+    c.height = 9;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, c.width, c.height);
+    const px = ctx.getImageData(0, 0, c.width, c.height).data;
+    let max = 0;
+    for (let i = 0; i < px.length; i += 4) max = Math.max(max, px[i], px[i + 1], px[i + 2]);
+    return max < 12;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Minimaler WebRTC-Client fuer go2rtc; verbindet bei Abbruch neu.
  * maxAttempts begrenzt die Fehlversuche in Folge (Maeher: jeder Versuch
@@ -1095,11 +1113,19 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
       lastFrameAt = now;
       if (!isLive) {
         isLive = true;
+        if (attempts > 0) report("live");
         attempts = 0;
         onState("live");
+        // Bild da, aber schwarz? Einmal je Verbindung nach 4 s pruefen.
+        const thisPc = pc;
+        setTimeout(() => {
+          if (stopped || pc !== thisPc) return;
+          const dark = videoIsBlack(video);
+          if (dark) report("schwarz");
+        }, 4000);
       }
     } else if (now - lastFrameAt > 12000) {
-      retry();
+      retry(false, isLive ? "bild-steht" : "keine-bilder");
       return;
     }
     if (!cur) return;
@@ -1134,8 +1160,39 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
     }
     pc = null;
   };
-  const retry = (resync = false) => {
+  /*
+   * Zustand an den Hub melden (landet gedrosselt im Hub-Log): Ohne das war
+   * aus der Ferne nicht zu sehen, ob ICE scheitert, ob Bilder ankommen, aber
+   * nicht dekodiert werden, oder ob das Video nur schwarz bleibt.
+   */
+  const report = (event) => {
+    try {
+      const body = {
+        src,
+        event,
+        attempts,
+        conn: pc ? pc.connectionState : null,
+        ice: pc ? pc.iceConnectionState : null,
+        frames: lastFrames,
+        w: video.videoWidth || 0,
+        h: video.videoHeight || 0,
+        paused: !!video.paused,
+        hidden: document.visibilityState === "hidden",
+      };
+      fetch("/api/go2rtc/client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      // nur Diagnose
+    }
+  };
+
+  const retry = (resync = false, why = "abbruch") => {
     if (stopped) return;
+    if (!resync) report(why);
     cleanup();
     clearTimeout(timer);
     // Neu verbinden wegen Verzoegerung: sofort und ohne Fehlversuch zu zaehlen.
@@ -1181,7 +1238,7 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
             if (pc && pc.connectionState === "disconnected") retry();
           }, 8000);
         } else if (st === "failed" || st === "closed") {
-          retry();
+          retry(false, `verbindung-${st}`);
         }
       };
       const offer = await pc.createOffer();
@@ -1196,8 +1253,15 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
       if (stopped || !pc) return;
       await pc.setRemoteDescription({ type: "answer", sdp: answer });
       lowLatency();
-    } catch {
-      retry();
+      // Bleibt die Verbindung danach in "new"/"connecting" haengen (ICE findet
+      // keinen Weg), gab es bisher nie einen neuen Versuch: Die Kachel stand
+      // ewig auf "Verbindung wird aufgebaut". Nach 15 s ohne "connected" neu.
+      const thisPc = pc;
+      setTimeout(() => {
+        if (!stopped && pc === thisPc && pc.connectionState !== "connected") retry(false, "ice-timeout");
+      }, 15000);
+    } catch (e) {
+      retry(false, `signal: ${e && e.message ? e.message : "fehler"}`);
     }
   }
 
