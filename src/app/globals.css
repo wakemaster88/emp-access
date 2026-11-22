@@ -33,6 +33,8 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar: var(--sidebar);
+  --color-chart-7: var(--chart-7);
+  --color-chart-6: var(--chart-6);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -158,6 +160,8 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.685 0.169 237.323);
   --chart-5: oklch(0.606 0.25 292.717);
+  --chart-6: oklch(0.656 0.241 354.308);
+  --chart-7: oklch(0.768 0.233 130.85);
 
   /* Seitenleiste: weiß, mit Haarlinie zum Inhalt. */
   --sidebar: oklch(1 0 0);
@@ -243,6 +247,8 @@
   --chart-3: oklch(0.828 0.189 84.429);
   --chart-4: oklch(0.746 0.16 232.661);
   --chart-5: oklch(0.714 0.203 305.504);
+  --chart-6: oklch(0.718 0.202 349.761);
+  --chart-7: oklch(0.841 0.238 128.85);
 
   --sidebar: oklch(0.175 0.0045 265);
   --sidebar-solid: oklch(0.175 0.0045 265);

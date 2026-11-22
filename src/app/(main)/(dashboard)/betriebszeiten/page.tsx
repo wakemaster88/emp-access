@@ -26,7 +26,7 @@ export default async function BetriebszeitenPage() {
   const [schedules, account, roomsWithoutSchedule] = await Promise.all([
     db.operatingSchedule.findMany({
       where: { accountId },
-      include: scheduleInclude,
+      include: { ...scheduleInclude, rooms: { select: { name: true }, orderBy: { name: "asc" } } },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
     db.account.findUnique({ where: { id: accountId }, select: { timezone: true } }),
@@ -41,6 +41,7 @@ export default async function BetriebszeitenPage() {
       isDefault: s.isDefault,
       sortOrder: s.sortOrder,
       roomCount: s._count.rooms,
+      roomNames: s.rooms.map((r) => r.name),
       seasons: s.seasons.map((season) => ({
         name: season.name,
         startMmDd: season.startMmDd,
