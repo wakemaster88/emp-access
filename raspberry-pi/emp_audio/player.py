@@ -71,6 +71,50 @@ SPEECH_FILTERS = (
     "lavfi=[dynaudnorm=f=150:g=15:p=0.9:m=20]",
 )
 
+# Musik unter einer Durchsage (z. B. „Happy Birthday“ zur Geburtstags-Ansage):
+# Die Musik beginnt, nach BED_SPEECH_DELAY setzt die Sprache ein und drückt die
+# Musik per Sidechain herunter, danach kommt die Musik wieder hoch und blendet
+# zum vorgegebenen Ende aus. Alles in einem mpv-Lauf (`--lavfi-complex`).
+BED_SPEECH_DELAY = 1.5
+BED_FADE_OUT = 2.5
+BED_MIN_SECONDS = 4.0
+BED_MAX_SECONDS = 60.0
+
+
+def bed_filter(until: float, level: float, speech_filter: Optional[str]) -> str:
+    """
+    Filtergraph für Sprache (aid1) über Musik (aid2).
+
+    `until` ist das Ende in Sekunden ab Beginn der Musik, `level` der Pegel
+    der Musik (0–1) vor dem Absenken. Die Sprache wird auf `until` aufgefüllt,
+    weil der Sidechain-Kompressor sonst mit ihr endet und die Musik abschneidet.
+    """
+    until = max(BED_MIN_SECONDS, min(BED_MAX_SECONDS, float(until)))
+    level = max(0.05, min(1.0, float(level)))
+    fade_start = max(0.0, until - BED_FADE_OUT)
+    fmt = "aformat=sample_rates=44100:channel_layouts=stereo"
+    speech = [f"adelay=delays={int(BED_SPEECH_DELAY * 1000)}:all=1"]
+    if speech_filter:
+        speech.append(speech_filter)
+    speech += [fmt, f"apad=whole_dur={until:.2f}", "asplit=2[sc][sp]"]
+    return ";".join(
+        [
+            f"[aid2]atrim=end={until:.2f},afade=t=in:d=0.3,"
+            f"afade=t=out:st={fade_start:.2f}:d={BED_FADE_OUT},{fmt},volume={level:.2f}[bed]",
+            "[aid1]" + ",".join(speech),
+            "[bed][sc]sidechaincompress=threshold=0.015:ratio=10:attack=15:release=700[duck]",
+            "[duck][sp]amix=inputs=2:duration=shortest:normalize=0[ao]",
+        ]
+    )
+
+
+def _lavfi_inner(af: str) -> str:
+    """`lavfi=[speechnorm=…]` → `speechnorm=…` für den eigenen Filtergraphen."""
+    if af.startswith("lavfi=[") and af.endswith("]"):
+        return af[len("lavfi=[") : -1]
+    return af
+
+
 # Woran eine mpv-Meldung zu erkennen gibt, dass der Filter das Problem ist und
 # nicht die Audiodatei. Nur dann lohnt der naechste Kandidat.
 FILTER_PROBLEM_WORDS = ("no such filter", "lavfi", "--af", "filter graph")
@@ -472,9 +516,13 @@ class SpeechPlayer:
         duck_volume: int,
         chime_path: Optional[str] = None,
         repeat: int = 1,
+        bed_path: Optional[str] = None,
+        bed_until: float = 0.0,
+        bed_level: float = 0.8,
     ) -> bool:
         """
         Blockiert bis die Ansage durch ist und meldet, ob sie vollständig lief.
+        Mit `bed_path` läuft beim ersten Durchgang Musik unter der Sprache.
         False bedeutet: durch eine höher priorisierte Ansage abgebrochen.
         Bei echten Wiedergabefehlern wird PlaybackError geworfen.
 
@@ -505,12 +553,42 @@ class SpeechPlayer:
                     return False
                 if index > 0:
                     time.sleep(0.6)
+                if index == 0 and bed_path and os.path.exists(bed_path):
+                    if self._play_with_bed(path, bed_path, volume, bed_until, bed_level):
+                        continue
                 self._play_file(path, volume, normalize=True)
 
             return not self._interrupted
         finally:
             for target in self.targets:
                 target.unduck()
+
+    def _play_with_bed(self, path: str, bed_path: str, volume: int, until: float, level: float) -> bool:
+        """
+        Sprache über Musik in einem mpv-Lauf. False heißt: hat nicht geklappt
+        (z. B. altes ffmpeg ohne Filter), die Ansage läuft dann ohne Musik.
+        """
+        speech_filter = (
+            _lavfi_inner(SPEECH_FILTERS[self._filter_index])
+            if self._filter_index < len(SPEECH_FILTERS)
+            else None
+        )
+        cmd = [
+            "mpv", "--no-video", "--no-input-terminal", f"--msg-level={MSG_LEVEL}",
+            f"--volume={volume}",
+            f"--audio-device={self.audio_device}",
+            path,
+            f"--external-file={bed_path}",
+            f"--lavfi-complex={bed_filter(until, level, speech_filter)}",
+        ]
+        returncode, output = self._run(cmd)
+        if returncode < 0 or self._interrupted:
+            # Abgebrochen: play() meldet das, nicht noch einmal ohne Musik.
+            return True
+        if returncode > 0 or any(word in output.lower() for word in FILTER_PROBLEM_WORDS):
+            logger.warning("Musik unter der Durchsage ging nicht – Ansage läuft ohne Musik")
+            return False
+        return True
 
     def play_live(
         self,

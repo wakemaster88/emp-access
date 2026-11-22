@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  birthdayBedUntil,
+  isBuiltinBirthdayMusic,
+  ttsSeconds,
   ageOn,
   birthdayAnnounceText,
   birthdayInYear,
@@ -73,4 +76,32 @@ test("Eingaben: Zonen nötig, Gültigkeit nur mit Geschenk", () => {
   assert.equal(n.voucherLabel, null);
   assert.equal(n.voucherValidDays, null);
   assert.equal(n.title, null);
+});
+
+test("Dauer der Sprachausgabe aus der Dateigröße (128 kbit/s)", () => {
+  assert.equal(ttsSeconds({ durationSec: null, sizeBytes: 112_000 }), 7);
+  assert.equal(ttsSeconds({ durationSec: 9, sizeBytes: 112_000 }), 9);
+  assert.equal(ttsSeconds({ durationSec: null, sizeBytes: null }), null);
+});
+
+test("Musik unter der Ansage endet 10 s nach ihr, höchstens mit dem Titel", () => {
+  assert.equal(birthdayBedUntil(7, null), 18.5);
+  assert.equal(birthdayBedUntil(7, 200), 18.5);
+  assert.equal(birthdayBedUntil(7, 15), 15);
+  // Ein kurzer Titel kürzt nie die Ansage selbst.
+  assert.equal(birthdayBedUntil(12, 10), 14);
+  assert.equal(birthdayBedUntil(null, null), 19.5);
+});
+
+test("erkennt den mitgelieferten Happy-Birthday-Titel", () => {
+  assert.equal(isBuiltinBirthdayMusic("https://x.de/audio/geburtstag/happy-birthday.mp3"), true);
+  assert.equal(isBuiltinBirthdayMusic("https://blob/audio/song.mp3"), false);
+});
+
+test("Musik-Auswahl im Schema", () => {
+  const base = { announceActive: true, announceText: null, announceName: true, announceZoneIds: [1], announceVoice: null, announceChime: true };
+  assert.equal(birthdayAnnounceSchema.safeParse({ ...base, announceMusic: "builtin" }).success, true);
+  assert.equal(birthdayAnnounceSchema.safeParse({ ...base, announceMusic: 5 }).success, true);
+  assert.equal(birthdayAnnounceSchema.safeParse({ ...base, announceMusic: null }).success, true);
+  assert.equal(birthdayAnnounceSchema.safeParse({ ...base, announceMusic: "x" }).success, false);
 });

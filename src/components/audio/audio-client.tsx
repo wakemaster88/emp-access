@@ -1010,6 +1010,7 @@ export function AudioClient({
             setting={birthdayAnnounce}
             zones={zones}
             voices={ttsVoices}
+            tracks={tracks}
             appEnabled={riderAppEnabled}
           />
         </TabsContent>

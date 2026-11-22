@@ -277,6 +277,7 @@ export default async function AudioPage({
                   announceZoneIds: parseBirthdayZoneIds(birthday.announceZoneIds),
                   announceVoice: birthday.announceVoice,
                   announceChime: birthday.announceChime,
+                  announceMusicTrackId: birthday.announceMusicTrackId,
                 }
               : null
           }

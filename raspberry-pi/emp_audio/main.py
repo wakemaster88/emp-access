@@ -441,16 +441,37 @@ class EmpAudio:
 
         volume = zone.get("announcementVolume")
         duck = zone.get("duckVolume")
-        logger.info("Durchsage wird abgespielt")
+        bed_path, bed_until, bed_level = self._announce_bed(payload.get("bed"))
+        logger.info("Durchsage wird abgespielt%s", " mit Musik" if bed_path else "")
         completed = self.speech.play(
             path=path,
             volume=volume if isinstance(volume, int) else 80,
             duck_volume=duck if isinstance(duck, int) else 20,
             chime_path=self.chime_path if payload.get("chime") else None,
             repeat=payload.get("repeat") if isinstance(payload.get("repeat"), int) else 1,
+            bed_path=bed_path,
+            bed_until=bed_until,
+            bed_level=bed_level,
         )
         if not completed:
             raise RuntimeError("Durch höher priorisierte Durchsage unterbrochen")
+
+    def _announce_bed(self, bed) -> tuple:
+        """
+        Musik unter der Durchsage aus dem Job: {url, untilSec, level}. Fehlt
+        etwas oder lädt die Datei nicht, läuft die Ansage ohne Musik.
+        """
+        if not isinstance(bed, dict) or not isinstance(bed.get("url"), str):
+            return None, 0.0, 0.8
+        until = bed.get("untilSec")
+        if not isinstance(until, (int, float)) or until <= 0:
+            return None, 0.0, 0.8
+        level = bed.get("level")
+        path = self.cache.ensure(bed["url"])
+        if not path:
+            logger.warning("Musik zur Durchsage konnte nicht geladen werden – Ansage ohne Musik")
+            return None, 0.0, 0.8
+        return path, float(until), float(level) if isinstance(level, (int, float)) else 0.8
 
     def _do_live(self, job_id, payload: dict, zone: dict):
         session_id = payload.get("sessionId")

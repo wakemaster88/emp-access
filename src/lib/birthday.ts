@@ -13,6 +13,46 @@ export const BIRTHDAY_DEFAULT_ANNOUNCE =
   "Herzlichen Glückwunsch zum Geburtstag, {vorname}! Das ganze Team wünscht dir einen tollen Tag auf dem Wasser.";
 export const BIRTHDAY_ANNOUNCE_MAX = 300;
 
+/** Mitgelieferte Musik für die Ansage: „Happy Birthday“ als Instrumental (Melodie gemeinfrei). */
+export const BIRTHDAY_BUILTIN_MUSIC_PATH = "/audio/geburtstag/happy-birthday.mp3";
+export const BIRTHDAY_BUILTIN_MUSIC_TITLE = "Happy Birthday (Instrumental)";
+export const BIRTHDAY_BUILTIN_MUSIC_SECONDS = 20;
+export const BIRTHDAY_BUILTIN_MUSIC_BYTES = 358_967;
+
+/** So lange läuft die Musik, bevor die Sprache einsetzt (gleicher Wert wie im Audio-Pi). */
+export const BIRTHDAY_BED_SPEECH_DELAY = 1.5;
+/** So lange läuft die Musik nach der Ansage noch weiter, dann blendet sie aus. */
+export const BIRTHDAY_BED_TAIL = 10;
+/** Pegel der Musik vor dem Absenken unter der Sprache (0–1). */
+export const BIRTHDAY_BED_LEVEL = 0.8;
+
+/**
+ * Dauer einer Ansage aus der Sprachausgabe in Sekunden. Die Dateien sind MP3
+ * mit fester Bitrate 128 kbit/s, daher reicht die Dateigröße.
+ */
+export function ttsSeconds(track: { durationSec: number | null; sizeBytes: number | null }): number | null {
+  if (track.durationSec && track.durationSec > 0) return track.durationSec;
+  if (track.sizeBytes && track.sizeBytes > 0) return (track.sizeBytes * 8) / 128_000;
+  return null;
+}
+
+/**
+ * Ende der Musik ab ihrem Beginn: Vorlauf + Ansage + Nachlauf, höchstens so
+ * lang wie der Titel selbst (unbekannt: Ansage + Nachlauf).
+ */
+export function birthdayBedUntil(speechSec: number | null, musicSec: number | null): number {
+  const speech = speechSec && speechSec > 0 ? speechSec : 8;
+  const wanted = BIRTHDAY_BED_SPEECH_DELAY + speech + BIRTHDAY_BED_TAIL;
+  const until = musicSec && musicSec > 0 ? Math.min(wanted, musicSec) : wanted;
+  // Nie vor dem Ende der Sprache: die Ansage selbst wird nicht gekürzt.
+  return Math.round(Math.max(until, BIRTHDAY_BED_SPEECH_DELAY + speech + 0.5) * 10) / 10;
+}
+
+/** Ist das der mitgelieferte Titel (URL endet auf den festen Pfad)? */
+export function isBuiltinBirthdayMusic(url: string): boolean {
+  return url.split("?")[0].endsWith(BIRTHDAY_BUILTIN_MUSIC_PATH);
+}
+
 const pad = (n: number) => String(n).padStart(2, "0");
 
 function isLeapYear(y: number): boolean {

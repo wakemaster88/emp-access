@@ -286,12 +286,16 @@ export const birthdayAnnounceSchema = z
     announceZoneIds: z.array(z.number().int().positive()).max(50),
     announceVoice: z.string().trim().max(60).nullable(),
     announceChime: z.boolean(),
+    /** Musik unter der Ansage: Mediathek-Titel, „builtin“ = mitgeliefertes Happy Birthday, null = ohne. */
+    announceMusic: z.union([z.literal("builtin"), z.number().int().positive(), z.null()]).optional(),
   })
   .refine((a) => !a.announceActive || a.announceZoneIds.length > 0, { message: "Bitte mindestens eine Zone wählen" });
 
 export function normalizeBirthdayAnnounce(input: z.infer<typeof birthdayAnnounceSchema>) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { announceMusic, ...rest } = input;
   return {
-    ...input,
+    ...rest,
     announceText: blank(input.announceText),
     announceVoice: blank(input.announceVoice),
     announceZoneIds: [...new Set(input.announceZoneIds)],
