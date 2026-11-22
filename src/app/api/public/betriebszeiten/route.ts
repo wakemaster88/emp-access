@@ -41,7 +41,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const schedules = await prisma.operatingSchedule.findMany({
-      where: { accountId: websiteAccountId() },
+      // Nur Bereiche; Unterprofile (Bahnmieten, Kurse) bucht man über anny.
+      where: { accountId: websiteAccountId(), parentId: null },
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
       include: scheduleSpecInclude,
     });
