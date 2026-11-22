@@ -87,6 +87,7 @@ div.vp-offer::before { background: var(--rd-offer); }
 .vp-offer-text { display: flex; flex-direction: column; gap: 2px; }
 .vp-offer-name { font-weight: 700; font-size: 16px; line-height: 1.25; }
 .vp-offer-sub { font-size: 12px; color: var(--rd-muted); }
+.vp-offer-incl { font-size: 12px; font-weight: 600; color: var(--rd-accent); }
 .vp-price { flex: none; text-align: right; }
 .vp-price .rd-display { font-size: 32px; color: var(--rd-accent); }
 .vp-price small { display: block; font-size: 11px; color: var(--rd-muted); }
@@ -292,6 +293,39 @@ div.vp-offer::before { background: var(--rd-offer); }
 .vp-sum-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .vp-sum-what b { font-size: 15px; }
 .vp-sum-what span { font-size: 13px; color: var(--rd-accent-soft); }
+/* Miete oder Inklusivmiete im Blatt */
+.vp-kinds { display: grid; gap: 8px; }
+.vp-kind {
+  width: 100%;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--rd-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rd-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vp-kind[aria-checked="true"] { border-color: var(--rd-accent); background: var(--rd-accent-bg); }
+.vp-kind-dot {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--rd-line-strong);
+  border-radius: 50%;
+}
+.vp-kind[aria-checked="true"] .vp-kind-dot { border-color: var(--rd-accent); }
+.vp-kind[aria-checked="true"] .vp-kind-dot::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--rd-accent); }
+.vp-kind-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.vp-kind-text b { font-size: 15px; }
+.vp-kind-text small { font-size: 12px; color: var(--rd-muted); }
+.vp-kind .rd-display { flex: none; font-size: 28px; color: var(--rd-accent); }
 .vp-field-hint { font-size: 12px; color: var(--rd-muted); }
 .vp-field-hint-err { color: var(--rd-danger); }
 .vp-textarea { height: auto; min-height: 76px; padding: 10px 12px; resize: vertical; line-height: 1.4; }

@@ -23,6 +23,7 @@ export interface RequestRowData {
   priceCents: number;
   bookedBy: string | null;
   bookedFor?: string | null;
+  inclusive?: boolean;
   note: string | null;
 }
 
@@ -108,7 +109,7 @@ export function VereinRequestsCard({ rows }: { rows: RequestRowData[] }) {
                     {r.vereinName} · {fmtDay(r.date)} <span className="tabular-nums">{r.slotStart}–{r.slotEnd}</span>
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {r.serviceName}{r.bookedFor ? ` · für ${r.bookedFor}` : ""}{r.bookedBy ? ` · ${r.bookedBy}` : ""}{r.note ? ` · „${r.note}“` : ""}
+                    {r.serviceName}{r.inclusive ? " · Inklusiv" : ""}{r.bookedFor ? ` · für ${r.bookedFor}` : ""}{r.bookedBy ? ` · ${r.bookedBy}` : ""}{r.note ? ` · „${r.note}“` : ""}
                   </p>
                 </div>
               </div>

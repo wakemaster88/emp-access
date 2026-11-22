@@ -90,6 +90,7 @@ export default async function VereinsBuchungenPage({ searchParams }: PageProps) 
             priceCents: r.priceCents,
             bookedBy: r.bookedBy,
             bookedFor: r.bookedFor,
+            inclusive: r.inclusive,
             note: r.note,
           }))}
         />
@@ -108,6 +109,7 @@ export default async function VereinsBuchungenPage({ searchParams }: PageProps) 
             status: b.status as "BOOKED" | "CANCELED",
             bookedBy: b.bookedBy,
             bookedFor: b.bookedFor,
+            inclusive: b.inclusive,
             note: b.note,
             canceledBy: b.canceledBy,
             billedAt: b.billedAt ? b.billedAt.toISOString() : null,

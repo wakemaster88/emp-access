@@ -11,6 +11,7 @@ import { prisma, tenantClient } from "@/lib/prisma";
 import { deviceSendsRemoteCommand, isActionAllowedForDevice, triggerDeviceAction } from "@/lib/device-open";
 import {
   accessWindow,
+  bookingPrice,
   canVereinCancel,
   clampedBerlinHm,
   isDateBookable,
@@ -55,6 +56,7 @@ export async function loadPortalVerein(token: string) {
           serviceId: true,
           priceCents: true,
           daylight: true,
+          inclusive: true,
           service: { select: { id: true, name: true, defaultValidityDurationMinutes: true } },
         },
         orderBy: { service: { name: "asc" } },
@@ -164,10 +166,20 @@ export type BookingOutcome =
 /** Bucht einen Slot fuer den Verein. Prueft Freigabe, Fenster und Verfuegbarkeit selbst. */
 export async function createVereinBooking(
   verein: PortalVerein,
-  input: { serviceId: number; date: string; slotStart: string; bookedBy: string | null; bookedFor: string | null; note: string | null },
+  input: {
+    serviceId: number;
+    date: string;
+    slotStart: string;
+    bookedBy: string | null;
+    bookedFor: string | null;
+    note: string | null;
+    inclusive?: boolean;
+  },
 ): Promise<BookingOutcome> {
   const bookable = verein.bookableServices.find((s) => s.serviceId === input.serviceId);
   if (!bookable) return { ok: false, status: 403, error: "Dieser Service ist für euren Verein nicht freigegeben." };
+  const price = bookingPrice(bookable, input.inclusive);
+  if (!price.ok) return { ok: false, status: 403, error: price.error };
   if (!isDateBookable(input.date, verein.portalHorizonDays)) {
     return { ok: false, status: 400, error: `Buchbar sind nur die nächsten ${verein.portalHorizonDays} Tage.` };
   }
@@ -189,7 +201,8 @@ export async function createVereinBooking(
       slotEnd: slot.endTime,
       startIso: slot.startIso,
       endIso: slot.endIso,
-      priceCents: bookable.priceCents,
+      priceCents: price.priceCents,
+      inclusive: price.inclusive,
       bookedBy: input.bookedBy,
       bookedFor: input.bookedFor,
       note: input.note,
@@ -232,7 +245,8 @@ export async function createVereinBooking(
     slotEnd: slot.endTime,
     startIso: slot.startIso,
     endIso: slot.endIso,
-    priceCents: bookable.priceCents,
+    priceCents: price.priceCents,
+    inclusive: price.inclusive,
     bookedBy: input.bookedBy,
     bookedFor: input.bookedFor,
     note: input.note,
@@ -257,6 +271,7 @@ interface FinalizeInput {
   startIso: string;
   endIso: string;
   priceCents: number;
+  inclusive: boolean;
   bookedBy: string | null;
   bookedFor: string | null;
   note: string | null;
@@ -315,6 +330,7 @@ async function finalizeVereinBooking(
           notes: [
             input.bookedBy ? `Gebucht im Vereinsportal von ${input.bookedBy}` : "Gebucht im Vereinsportal",
             input.bookedFor ? `für ${input.bookedFor}` : null,
+            input.inclusive ? "Inklusivmiete" : null,
           ].filter(Boolean).join(", "),
           ...(areaIds.length > 0 && {
             ticketAreas: { create: areaIds.map((accessAreaId) => ({ accessAreaId })) },
@@ -330,6 +346,7 @@ async function finalizeVereinBooking(
         startDate: new Date(input.startIso),
         endDate: new Date(input.endIso),
         priceCents: input.priceCents,
+        inclusive: input.inclusive,
         slotBlockId: blockId,
         accessTicketId: ticket.id,
       };
@@ -372,10 +389,21 @@ const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
  */
 export async function createVereinRequest(
   verein: PortalVerein,
-  input: { serviceId: number; date: string; start: string; end: string; bookedBy: string | null; bookedFor: string | null; note: string | null },
+  input: {
+    serviceId: number;
+    date: string;
+    start: string;
+    end: string;
+    bookedBy: string | null;
+    bookedFor: string | null;
+    note: string | null;
+    inclusive?: boolean;
+  },
 ): Promise<BookingOutcome> {
   const bookable = verein.bookableServices.find((s) => s.serviceId === input.serviceId);
   if (!bookable) return { ok: false, status: 403, error: "Dieser Service ist für euren Verein nicht freigegeben." };
+  const price = bookingPrice(bookable, input.inclusive);
+  if (!price.ok) return { ok: false, status: 403, error: price.error };
   if (!isDateBookable(input.date, verein.portalHorizonDays)) {
     return { ok: false, status: 400, error: `Anfragen gehen nur für die nächsten ${verein.portalHorizonDays} Tage.` };
   }
@@ -403,7 +431,8 @@ export async function createVereinRequest(
       slotEnd: input.end,
       startDate,
       endDate,
-      priceCents: bookable.priceCents,
+      priceCents: price.priceCents,
+      inclusive: price.inclusive,
       status: "REQUESTED",
       bookedBy: input.bookedBy,
       bookedFor: input.bookedFor,
@@ -425,7 +454,8 @@ export async function createVereinRequest(
     date: input.date,
     slotStart: input.start,
     slotEnd: input.end,
-    priceCents: bookable.priceCents,
+    priceCents: price.priceCents,
+    inclusive: price.inclusive,
     bookedBy: input.bookedBy,
     bookedFor: input.bookedFor,
     note: input.note,
@@ -481,6 +511,8 @@ export async function approveVereinRequest(
       startIso: request.startDate.toISOString(),
       endIso: request.endDate.toISOString(),
       priceCents: opts.priceCents ?? request.priceCents,
+      // Setzt das Backoffice beim Freigeben einen Preis, ist es keine Inklusivmiete mehr.
+      inclusive: request.inclusive && (opts.priceCents ?? request.priceCents) === 0,
       bookedBy: request.bookedBy,
       bookedFor: request.bookedFor,
       note: request.note,

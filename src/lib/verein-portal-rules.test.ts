@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   billingCsv,
   billingTotals,
+  bookingPrice,
   canVereinCancel,
   isDateBookable,
   monthBounds,
@@ -62,12 +63,22 @@ test("Summen und CSV zaehlen nur gebuchte Slots", () => {
     { id: 1, vereinName: "WSC; Nord", serviceName: "Bahnmiete A", date: "2026-11-12", slotStart: "18:00", slotEnd: "19:00", priceCents: 12000, status: "BOOKED" as const, bookedBy: "Jan", bookedFor: "Jugend", billedAt: null, invoiceRef: null },
     { id: 2, vereinName: "WSC; Nord", serviceName: "Bahnmiete A", date: "2026-11-13", slotStart: "18:00", slotEnd: "19:00", priceCents: 12000, status: "CANCELED" as const, bookedBy: "Jan", billedAt: null, invoiceRef: null },
     { id: 3, vereinName: "WSC; Nord", serviceName: "Bahnmiete B", date: "2026-11-14", slotStart: "10:00", slotEnd: "11:00", priceCents: 9950, status: "BOOKED" as const, bookedBy: null, billedAt: new Date("2026-11-30T12:00:00Z"), invoiceRef: "R-17" },
+    { id: 4, vereinName: "WSC; Nord", serviceName: "Übungslift", date: "2026-11-15", slotStart: "09:00", slotEnd: "10:00", priceCents: 0, status: "BOOKED" as const, bookedBy: "Jan", bookedFor: "Vorstand", inclusive: true, billedAt: null, invoiceRef: null },
   ];
-  assert.deepEqual(billingTotals(rows), { openCents: 12000, billedCents: 9950, openCount: 1, billedCount: 1 });
+  assert.deepEqual(billingTotals(rows), { openCents: 12000, billedCents: 9950, openCount: 2, billedCount: 1 });
   const csv = billingCsv(rows).replace("﻿", "").trim().split("\r\n");
-  assert.equal(csv.length, 3);
-  assert.equal(csv[1], '"WSC; Nord";12.11.2026;18:00;19:00;Bahnmiete A;120,00;Jugend;Jan;;');
-  assert.equal(csv[2], '"WSC; Nord";14.11.2026;10:00;11:00;Bahnmiete B;99,50;;;30.11.2026;R-17');
+  assert.equal(csv.length, 4);
+  assert.equal(csv[0].split(";")[5], "Art");
+  assert.equal(csv[1], '"WSC; Nord";12.11.2026;18:00;19:00;Bahnmiete A;Miete;120,00;Jugend;Jan;;');
+  assert.equal(csv[2], '"WSC; Nord";14.11.2026;10:00;11:00;Bahnmiete B;Miete;99,50;;;30.11.2026;R-17');
+  assert.equal(csv[3], '"WSC; Nord";15.11.2026;09:00;10:00;Übungslift;Inklusiv;0,00;Vorstand;Jan;;');
+});
+
+test("Inklusivmiete kostet 0 € und nur, wenn freigeschaltet", () => {
+  assert.deepEqual(bookingPrice({ priceCents: 7500, inclusive: true }, false), { ok: true, priceCents: 7500, inclusive: false });
+  assert.deepEqual(bookingPrice({ priceCents: 7500, inclusive: true }, undefined), { ok: true, priceCents: 7500, inclusive: false });
+  assert.deepEqual(bookingPrice({ priceCents: 7500, inclusive: true }, true), { ok: true, priceCents: 0, inclusive: true });
+  assert.equal(bookingPrice({ priceCents: 12500, inclusive: false }, true).ok, false);
 });
 
 test("Zugangsfenster mit Vor- und Nachbereitung", async () => {

@@ -560,6 +560,14 @@ Aaron: „sowas wie neue öffnungszeiten als news abschnitt und nicht angebote�
   Ressource und werden dabei nicht gesehen.
 - „Für wen“ (`bookedFor`) ist bei Buchung und Anfrage Pflicht und steht in
   Backoffice, Telegram und CSV.
+- Inklusivmiete (22.11.2026, Aaron): je freigegebenem Service schaltbar
+  (`VereinBookableService.inclusive`). Dann wählt der Verein im Buchungsblatt
+  „Miete“ (Preis laut Freigabe) oder „Inklusiv“ (0 €, Vorstand, Trainer und
+  Familie 1. Grades über die Jahrespauschale). Standard ist jedes Mal Miete.
+  Die Buchung merkt sich `VereinSlotBooking.inclusive`; Backoffice, Telegram,
+  MCP und CSV (Spalte „Art“) zeigen es. Setzt das Backoffice beim Freigeben
+  einer inklusiven Anfrage einen Preis, ist sie keine Inklusivmiete mehr.
+  Preisregel: `bookingPrice` in `src/lib/verein-portal-rules.ts`.
 - Optik: eigener Wurzelrahmen `src/app/(verein)` im Look der Kunden-App
   (siehe docs/design-regeln.md, Abschnitt 20).
 

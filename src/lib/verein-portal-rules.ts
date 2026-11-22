@@ -85,8 +85,22 @@ export interface BillingRow {
   status: "BOOKED" | "CANCELED";
   bookedBy: string | null;
   bookedFor?: string | null;
+  inclusive?: boolean;
   billedAt: Date | string | null;
   invoiceRef: string | null;
+}
+
+/**
+ * Preis einer Portal-Buchung: Miete laut Freigabe oder, wenn der Verein die
+ * Inklusivmiete waehlt und sie fuer den Service freigeschaltet ist, 0 EUR.
+ */
+export function bookingPrice(
+  bookable: { priceCents: number; inclusive: boolean },
+  wantsInclusive: boolean | undefined,
+): { ok: true; priceCents: number; inclusive: boolean } | { ok: false; error: string } {
+  if (!wantsInclusive) return { ok: true, priceCents: bookable.priceCents, inclusive: false };
+  if (!bookable.inclusive) return { ok: false, error: "Für dieses Angebot gibt es keine Inklusivmiete." };
+  return { ok: true, priceCents: 0, inclusive: true };
 }
 
 /** Summen fuer die Abrechnung: nur gebuchte (nicht stornierte) Slots zaehlen. */
@@ -117,7 +131,7 @@ function csvCell(v: string): string {
  * Enthaelt nur gebuchte Slots; Stornos werden nicht abgerechnet.
  */
 export function billingCsv(rows: BillingRow[]): string {
-  const head = ["Verein", "Datum", "Von", "Bis", "Service", "Preis (EUR)", "Für wen", "Gebucht von", "Abgerechnet am", "Rechnung"];
+  const head = ["Verein", "Datum", "Von", "Bis", "Service", "Art", "Preis (EUR)", "Für wen", "Gebucht von", "Abgerechnet am", "Rechnung"];
   const lines = rows
     .filter((r) => r.status === "BOOKED")
     .map((r) => {
@@ -129,6 +143,7 @@ export function billingCsv(rows: BillingRow[]): string {
         r.slotStart,
         r.slotEnd,
         r.serviceName,
+        r.inclusive ? "Inklusiv" : "Miete",
         (r.priceCents / 100).toFixed(2).replace(".", ","),
         r.bookedFor ?? "",
         r.bookedBy ?? "",

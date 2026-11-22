@@ -1448,6 +1448,9 @@ model VereinBookableService {
   /// Sonnenuntergang (Konto-Standort), unabhaengig von den anny-Zeiten.
   /// Belegt ist, was in anny auf der Resource liegt oder schon gebucht ist.
   daylight   Boolean @default(false)
+  /// Inklusivmiete waehlbar: der Verein kann je Buchung statt des Preises
+  /// 0 EUR waehlen (Vorstand, Trainer, Familie 1. Grades; Jahrespauschale).
+  inclusive  Boolean @default(false)
   verein     Verein  @relation(fields: [vereinId], references: [id], onDelete: Cascade)
   service    Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
@@ -1491,6 +1494,8 @@ model VereinSlotBooking {
   bookedBy       String?
   /// Fuer wen gebucht wurde (Fahrer, Gruppe), Pflicht im Portal seit 22.11.2026.
   bookedFor      String?
+  /// Inklusivmiete (0 EUR, ueber die Jahrespauschale des Vereins).
+  inclusive      Boolean             @default(false)
   note           String?
   canceledAt     DateTime?
   /// "VEREIN" (selbst storniert) oder "ADMIN" (vom Backoffice).
