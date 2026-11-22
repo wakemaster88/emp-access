@@ -263,7 +263,103 @@ export function LiveClock() {
   );
 }
 
-export function DaySelector({ date, onChange }: { date: string; onChange: (d: string) => void }) {
+/**
+ * Sichtbare Tage einer Tagesleiste. `centered`: der gewählte Tag steht immer in
+ * der Mitte (Handy, drei Tage – die Nachbartage ersetzen dort die Pfeile).
+ * Sonst bleibt das Fenster stehen, solange der gewählte Tag darin liegt, damit
+ * die Pille zum neuen Tag gleiten kann; erst beim Verlassen rückt es nach.
+ */
+function useDayWindow(date: string, count: number, centered: boolean): string[] {
+  const half = Math.floor(count / 2);
+  const [start, setStart] = useState(() => shiftDay(date, -half));
+  let first = start;
+  if (centered) {
+    first = shiftDay(date, -half);
+  } else if (date < start || date > shiftDay(start, count - 1)) {
+    // Gewählter Tag liegt außerhalb: einen Tag weiter rücken, wenn er direkt
+    // daneben liegt (Pfeiltaste), sonst neu um ihn zentrieren (Kalender).
+    first =
+      date === shiftDay(start, -1)
+        ? date
+        : date === shiftDay(start, count)
+          ? shiftDay(date, -(count - 1))
+          : shiftDay(date, -half);
+    setStart(first);
+  }
+  return useMemo(() => Array.from({ length: count }, (_, i) => shiftDay(first, i)), [first, count]);
+}
+
+function shiftDay(ymd: string, delta: number): string {
+  const d = new Date(ymd + "T12:00:00");
+  d.setDate(d.getDate() + delta);
+  return toDateStr(d);
+}
+
+/** Zweizeilige Beschriftung: Wochentag (heute: „Heute“) über dem Datum. */
+function DayLabel({ ymd, isToday }: { ymd: string; isToday: boolean }) {
+  const d = new Date(ymd + "T12:00:00");
+  const weekday = d.toLocaleDateString("de-DE", { weekday: "short" });
+  const dayMonth = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  return (
+    <span className="flex flex-col items-center leading-tight">
+      <span className={cn("text-[11px]", isToday ? "font-semibold text-foreground" : "font-medium")}>
+        {isToday ? "Heute" : weekday}
+      </span>
+      <span className="tabular-nums">{dayMonth}</span>
+    </span>
+  );
+}
+
+function DayStrip({
+  date,
+  onChange,
+  today,
+  count,
+  centered = false,
+  className,
+}: {
+  date: string;
+  onChange: (d: string) => void;
+  today: string;
+  count: number;
+  centered?: boolean;
+  className?: string;
+}) {
+  const days = useDayWindow(date, count, centered);
+  return (
+    <Segmented
+      aria-label="Tag"
+      value={date}
+      onValueChange={onChange}
+      glide
+      stretch={centered}
+      options={days.map((ymd) => ({
+        value: ymd,
+        label: <DayLabel ymd={ymd} isToday={ymd === today} />,
+        // Heute ist auch ungewählt sichtbar: flache Akzent-Tönung mit Rand, wie im Kalender.
+        className:
+          ymd === today && ymd !== date
+            ? "bg-primary/15 text-foreground ring-1 ring-inset ring-primary/50"
+            : undefined,
+      }))}
+      className={cn(daySegmentClass, className)}
+    />
+  );
+}
+
+export function DaySelector({
+  date,
+  onChange,
+  start,
+  end,
+}: {
+  date: string;
+  onChange: (d: string) => void;
+  /** Links neben den Tagen (ab lg), darunter auf schmalen Bildschirmen: ANNY-Sync. */
+  start?: React.ReactNode;
+  /** Rechts neben den Tagen, vor dem Kalender: Öffnungszeit des Tages. */
+  end?: React.ReactNode;
+}) {
   const [calOpen, setCalOpen] = useState(false);
   const [calMonth, setCalMonth] = useState(() => {
     const d = new Date(date);
@@ -271,22 +367,6 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
   });
 
   const todayStrGlobal = toDateStr(new Date());
-
-  const days = useMemo(() => {
-    const result: { date: string; label: string; isToday: boolean }[] = [];
-    const center = new Date(date + "T12:00:00");
-    for (let i = -3; i <= 3; i++) {
-      const d = new Date(center);
-      d.setDate(d.getDate() + i);
-      const ds = toDateStr(d);
-      result.push({
-        date: ds,
-        label: d.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" }),
-        isToday: ds === todayStrGlobal,
-      });
-    }
-    return result;
-  }, [date, todayStrGlobal]);
 
   const calDays = useMemo(() => {
     const { year, month } = calMonth;
@@ -310,80 +390,53 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
   const selectedDate = new Date(date);
   const monthLabel = new Date(calMonth.year, calMonth.month).toLocaleDateString("de-DE", { month: "long", year: "numeric" });
 
-  // Tage als Segmentwahl (docs/design-regeln.md, Abschnitt 6). Heute trägt einen
-  // Punkt in Akzentfarbe, der gewählte Tag die helle Pille.
-  const dayOptions = days.map((d) => ({
-    value: d.date,
-    label: d.isToday ? (
-      <span className="inline-flex items-center gap-1.5">
-        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
-        {d.label}
-      </span>
-    ) : (
-      d.label
-    ),
-  }));
-
   return (
     <>
-      {/* Bis md nur Vortag, gewählter Tag und Folgetag (auf dem Handy ersetzen die
-          Nachbartage die Pfeile), bis lg fünf Tage, ab lg alle sieben – sonst lief
-          der siebte Tag im Hochformat-Tablet aus dem Streifen. Tasten und Tage
-          sind 44 px, am Kiosk ab sm 56 px hoch (docs/design-regeln.md, Abschnitt 20). */}
-      <div className="px-4 sm:px-6 pt-3 flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon-lg"
-          onClick={() => { const d = new Date(date); d.setDate(d.getDate() - 1); onChange(toDateStr(d)); }}
-          className="hidden text-muted-foreground sm:inline-flex sm:size-14"
-          aria-label="Vorheriger Tag"
-        >
-          <ChevronLeft />
-        </Button>
-        <div className="flex min-w-0 flex-1 justify-center">
-          {/* Handy: drei Tage; mit dem engeren Innenabstand der Kapsel (10 px) stehen sie auch bei
-              360 px in einer Zeile. Höhe und Schrift bleiben (Abschnitte 5 und 20). */}
-          <Segmented
-            aria-label="Tag"
-            value={date}
-            onValueChange={onChange}
-            options={dayOptions.slice(2, 5)}
-            stretch
-            className={cn(daySegmentClass, "md:hidden")}
-          />
-          <Segmented
-            aria-label="Tag"
-            value={date}
-            onValueChange={onChange}
-            options={dayOptions.slice(1, 6)}
-            className={cn(daySegmentClass, "hidden md:inline-flex lg:hidden")}
-          />
-          <Segmented
-            aria-label="Tag"
-            value={date}
-            onValueChange={onChange}
-            options={dayOptions}
-            className={cn(daySegmentClass, "hidden lg:inline-flex")}
-          />
+      {/* Eine Zeile ab lg: Sync links, Tage mit Pfeilen in der Mitte, Öffnungszeit
+          und Kalender rechts. Schmaler stehen Sync, Öffnungszeit und Kalender in
+          einer zweiten Zeile unter den Tagen. Bis md drei Tage (der gewählte in der
+          Mitte), bis xl fünf (sonst fehlt bei 1024 px der Platz für Sync und
+          Öffnungszeit), ab xl sieben. Tasten und Tage sind 44 px, am Kiosk
+          ab sm 56 px hoch (docs/design-regeln.md, Abschnitt 20). */}
+      <div className="px-4 sm:px-6 pt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <div className="col-span-2 flex min-w-0 items-center justify-center gap-2 lg:col-span-1 lg:col-start-2 lg:row-start-1">
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            onClick={() => onChange(shiftDay(date, -1))}
+            className="hidden text-muted-foreground sm:inline-flex sm:size-14"
+            aria-label="Vorheriger Tag"
+          >
+            <ChevronLeft />
+          </Button>
+          <div className="flex min-w-0 flex-1 justify-center lg:flex-none">
+            <DayStrip date={date} onChange={onChange} today={todayStrGlobal} count={3} centered className="md:hidden" />
+            <DayStrip date={date} onChange={onChange} today={todayStrGlobal} count={5} className="hidden md:inline-flex xl:hidden" />
+            <DayStrip date={date} onChange={onChange} today={todayStrGlobal} count={7} className="hidden xl:inline-flex" />
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            onClick={() => onChange(shiftDay(date, 1))}
+            className="hidden text-muted-foreground sm:inline-flex sm:size-14"
+            aria-label="Nächster Tag"
+          >
+            <ChevronRight />
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="icon-lg"
-          onClick={() => { setCalMonth({ year: selectedDate.getFullYear(), month: selectedDate.getMonth() }); setCalOpen(true); }}
-          className="size-11 text-muted-foreground sm:size-14"
-          aria-label="Kalender öffnen"
-        >
-          <CalendarDays />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-lg"
-          onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); onChange(toDateStr(d)); }}
-          className="hidden text-muted-foreground sm:inline-flex sm:size-14"
-          aria-label="Nächster Tag"
-        >
-          <ChevronRight />
-        </Button>
+        <div className="flex min-w-0 items-center lg:col-start-1 lg:row-start-1">{start}</div>
+        <div className="flex min-w-0 items-center justify-end gap-2 lg:col-start-3 lg:row-start-1">
+          {end}
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            onClick={() => { setCalMonth({ year: selectedDate.getFullYear(), month: selectedDate.getMonth() }); setCalOpen(true); }}
+            className="size-11 shrink-0 text-muted-foreground sm:size-14"
+            aria-label="Kalender öffnen"
+          >
+            <CalendarDays />
+          </Button>
+        </div>
       </div>
 
       {calOpen && (

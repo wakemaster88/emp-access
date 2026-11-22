@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { berlinOffset } from "@/lib/anny-availability";
 import { checkinPhotoUrl } from "@/lib/photo-url";
 import { withRiderView } from "@/lib/customer-person";
+import { checkinDayOpening, pickShopSchedule, type CheckinDayOpening } from "@/lib/checkin-opening";
+import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 
 export async function GET(
   request: NextRequest,
@@ -458,6 +460,19 @@ export async function GET(
     }
   } catch { /* non-critical */ }
 
+  // Öffnungszeit des gewählten Tages für die Tagesauswahl (Profil „Shop“,
+  // sonst das des Lifts). Fehlt ein Profil, zeigt der Monitor einfach nichts.
+  let opening: CheckinDayOpening | null = null;
+  try {
+    const schedules = await prisma.operatingSchedule.findMany({
+      where: { accountId },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      include: scheduleSpecInclude,
+    });
+    const schedule = pickShopSchedule(schedules);
+    if (schedule) opening = checkinDayOpening(toScheduleSpec(schedule), berlinDate);
+  } catch { /* non-critical */ }
+
   return NextResponse.json(
     {
       monitorName: monitor.name,
@@ -474,6 +489,7 @@ export async function GET(
       allSubscriptions: subsWithAreas,
       recentScans,
       annySyncStatus,
+      opening,
       openableDevices,
       // IDs der "Tür-Schnellzugriff"-Geraete (= MonitorConfig.deviceIds, sofern
       // gesetzt). Werden im Frontend als direkter Button im Header gerendert.
