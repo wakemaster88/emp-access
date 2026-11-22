@@ -5,6 +5,7 @@
  * vergeben in `gamification-service.ts`.
  */
 import { formatDegrees, type GamiMetric, type GamiPeriod, type GamiTier } from "./gamification";
+import type { PassKind } from "./rider-pass";
 
 /** Reihe, in der ein Award im Trophy Case steht. */
 export type AwardCategory = "starts" | "days" | "special" | "loyalty";
@@ -93,36 +94,48 @@ function coldWater(tempBelow: number | null | undefined): string {
   return tempBelow != null ? `unter ${formatDegrees(tempBelow)} °C Wassertemperatur` : "kaltem Wasser";
 }
 
-/** Wofür es den Award gibt, als Satz für die Kunden-App. Eine eigene Beschreibung geht vor. */
-export function awardText(m: {
-  metric: GamiMetric;
-  threshold: number;
-  period: GamiPeriod;
-  hint?: string | null;
-  tempBelow?: number | null;
-}): string {
+/** Wofür es den Award gibt, als Satz für die Kunden-App. Eine eigene Beschreibung geht vor. Im Beach Pass ohne Lift. */
+export function awardText(
+  m: {
+    metric: GamiMetric;
+    threshold: number;
+    period: GamiPeriod;
+    hint?: string | null;
+    tempBelow?: number | null;
+  },
+  pass: PassKind = "RIDE",
+): string {
   if (m.hint?.trim()) return m.hint.trim();
   const n = m.threshold;
+  const beach = pass === "BEACH";
   const where = m.period === "MONTH" ? "in einem Monat" : m.period === "SEASON" ? "in einer Saison" : "";
   switch (m.metric) {
     case "STARTS":
+      if (beach) return `${fmt(n)} ${n === 1 ? "Eintritt" : "Eintritte"} ${where || "am Strand"}.`;
       return n === 1 && !where ? "Dein erster Start am Lift." : `${fmt(n)} ${awardUnit("STARTS", n)} ${where || "am Lift"}.`;
     case "VISIT_DAYS":
+      if (beach) return n === 1 && !where ? "Dein erster Tag am Strand." : `${fmt(n)} ${n === 1 ? "Tag" : "Tage"} am Strand ${where || "insgesamt"}.`;
       return `${fmt(n)} ${awardUnit("VISIT_DAYS", n)} ${where || "insgesamt"}.`;
     case "STREAK_WEEKS":
-      return `${fmt(n)} ${n === 1 ? "Woche" : "Wochen"} in Folge am Lift.`;
+      return `${fmt(n)} ${n === 1 ? "Woche" : "Wochen"} in Folge ${beach ? "am Strand" : "am Lift"}.`;
     case "EARLY_DAYS":
-      return `${fmt(n)} ${n === 1 ? "Tag" : "Tage"} mit Start in der ersten Stunde.`;
+      return beach
+        ? `${fmt(n)} ${n === 1 ? "Tag" : "Tage"} unter den Ersten am Strand.`
+        : `${fmt(n)} ${n === 1 ? "Tag" : "Tage"} mit Start in der ersten Stunde.`;
     case "WEEKENDS":
-      return `${fmt(n)} ${n === 1 ? "Wochenende" : "Wochenenden in Folge"} am Lift.`;
-    case "EVENT_DAYS":
-      return n === 1 ? "Start an einem Aktionstag." : `Start an ${fmt(n)} Aktionstagen.`;
+      return `${fmt(n)} ${n === 1 ? "Wochenende" : "Wochenenden in Folge"} ${beach ? "am Strand" : "am Lift"}.`;
+    case "EVENT_DAYS": {
+      const verb = beach ? "Am Strand" : "Start";
+      return n === 1 ? `${verb} an einem Aktionstag.` : `${verb} an ${fmt(n)} Aktionstagen.`;
+    }
     case "OPENING_DAY":
-      return "Start am ersten Tag der Saison.";
-    case "COLD_DAYS":
-      return n === 1 ? `Start an einem Tag mit ${coldWater(m.tempBelow)}.` : `Start an ${fmt(n)} Tagen mit ${coldWater(m.tempBelow)}.`;
+      return beach ? "Am Strand am ersten Tag der Saison." : "Start am ersten Tag der Saison.";
+    case "COLD_DAYS": {
+      const verb = beach ? "Am Strand" : "Start";
+      return n === 1 ? `${verb} an einem Tag mit ${coldWater(m.tempBelow)}.` : `${verb} an ${fmt(n)} Tagen mit ${coldWater(m.tempBelow)}.`;
+    }
     case "SEASONS":
-      return `${fmt(n)} ${awardUnit("SEASONS", n)} mit mindestens einem Start.`;
+      return `${fmt(n)} ${awardUnit("SEASONS", n)} mit mindestens ${beach ? "einem Strandtag" : "einem Start"}.`;
   }
 }
 
@@ -162,7 +175,16 @@ export function dayMonthText(ymd: string): string {
 export function awardHowText(
   m: { metric: GamiMetric; tempBelow?: number | null },
   info: { today: string; openingDay?: string | null; waterNow?: number | null },
+  pass: PassKind = "RIDE",
 ): string {
+  if (pass === "BEACH") {
+    if (m.metric === "COLD_DAYS") {
+      const now = info.waterNow != null ? ` Gerade hat das Wasser ${formatDegrees(info.waterNow)} °C.` : "";
+      return `Komm an einem Tag mit ${coldWater(m.tempBelow)} an den Strand. Gemessen wird automatisch im See.${now}`;
+    }
+    if (m.metric === "OPENING_DAY") return "Sei am ersten Tag der Saison am Strand.";
+    return "Sei an dem Tag am Strand, an dem er vergeben wird. Den Tag gibt das Team bekannt.";
+  }
   if (m.metric === "OPENING_DAY") {
     if (!info.openingDay) return "Sei am ersten Tag der Saison am Start. Es zählt der erste Tag im Jahr, an dem am Lift gefahren wird.";
     if (info.openingDay === info.today) return "Heute ist der erste Tag der Saison. Ein Start am Lift genügt.";
@@ -282,3 +304,32 @@ export const AWARD_DEFAULTS: AwardDefault[] = [
 
 /** Sortierung der Vorlage: hinter selbst angelegten Meilensteinen, in dieser Reihenfolge. */
 export const AWARD_DEFAULT_SORT_BASE = 100;
+
+/**
+ * Vorlage für den Beach Pass (Aaron, 22.11.2026: „die awards für den beach
+ * pass“). Gezählt werden Tage mit Eintritt am Strandbad-Eingang. Ziele aus den
+ * Scans 2026 der 63 Beach-Abo-Tickets: Median 6 Tage, 24 mit 10+, 9 mit 20+,
+ * 4 mit 30+, höchstens 51. Ohne Frühstart und ersten Tag der Saison: beide
+ * richten sich nach dem Lift. Gutscheine aus Imbiss-Karte und Tickets wie beim
+ * Ride Pass. Wird beim Einschalten des Beach Pass angelegt (`audience` BEACH),
+ * danach in der Verwaltung änderbar. Schlüssel beginnen mit "beach-".
+ */
+export const BEACH_AWARD_DEFAULTS: AwardDefault[] = [
+  { key: "beach-first-dip", name: "First Dip", tier: "BRONZE", metric: "VISIT_DAYS", threshold: 1, period: "ALL_TIME", voucherLabel: "Welcome Drink: ein Softdrink nach Wahl", voucherShort: "Welcome Drink", voucherValidDays: YEAR, hint: "Dein erster Tag am Strand." },
+  { key: "beach-sun-seeker", name: "Sun Seeker", tier: "BRONZE", metric: "VISIT_DAYS", threshold: 5, period: "SEASON", voucherLabel: "Ein Eis nach Wahl", voucherShort: "Eis nach Wahl", voucherValidDays: YEAR },
+  { key: "beach-regular", name: "Beach Regular", tier: "SILVER", metric: "VISIT_DAYS", threshold: 10, period: "SEASON", voucherLabel: "Steakhaus Pommes und ein Softdrink", voucherShort: "Pommes + Drink", voucherValidDays: YEAR },
+  { key: "beach-sandcastle-king", name: "Sandcastle King", tier: "GOLD", metric: "VISIT_DAYS", threshold: 20, period: "SEASON", voucherLabel: "Bring a Friend: Strandbad-Tageskarte für eine Begleitung", voucherShort: "Bring a Friend", voucherValidDays: YEAR },
+  { key: "beach-endless-summer", name: "Beach Legend", tier: "LEGENDARY", metric: "VISIT_DAYS", threshold: 40, period: "SEASON", voucherLabel: "Flammkuchen oder Pinsa für zwei", voucherShort: "2× Flammkuchen", voucherValidDays: YEAR, bonus: "Hall-of-Fame-Wand" },
+  { key: "beach-century", name: "Century Tan", tier: "GOLD", metric: "VISIT_DAYS", threshold: 100, period: "ALL_TIME", voucherLabel: "Bring a Friend: Aquapark-Stundenkarte für eine Begleitung", voucherShort: "Bring a Friend", voucherValidDays: YEAR, hint: "100 Tage am Strand, über alle Saisons." },
+
+  { key: "beach-weekend-lounger", name: "Weekend Lounger", tier: "SILVER", metric: "WEEKENDS", threshold: 3, period: "SEASON", voucherLabel: "Ein alkoholfreies Kaltgetränk nach Wahl", voucherShort: "Kaltgetränk", voucherValidDays: YEAR },
+  { key: "beach-summer-streak", name: "Summer Streak", tier: "SILVER", metric: "STREAK_WEEKS", threshold: 4, period: "SEASON", voucherLabel: "Ein Café Crème oder Cappuccino", voucherShort: "Kaffee", voucherValidDays: YEAR },
+  { key: "beach-cold-plunge", name: "Cold Plunge", tier: "GOLD", metric: "COLD_DAYS", threshold: 1, period: "SEASON", tempBelow: 16, voucherLabel: "Eine heiße Schokolade zum Aufwärmen", voucherShort: "Heiße Schokolade", voucherValidDays: YEAR, hint: "Am Strand an einem Tag mit unter 16 °C Wassertemperatur." },
+
+  { key: "beach-back-again", name: "Back Again", tier: "BRONZE", metric: "SEASONS", threshold: 2, period: "ALL_TIME", voucherLabel: "Die zweite Saison geht aufs Haus: ein Getränk", voucherShort: "Freigetränk", voucherValidDays: YEAR },
+  { key: "beach-veteran", name: "Beach Veteran", tier: "SILVER", metric: "SEASONS", threshold: 3, period: "ALL_TIME", voucherLabel: "Combo nach Wahl: Currywurst, Chicken oder Kibbelinge mit Pommes", voucherShort: "Pommes-Combo", voucherValidDays: YEAR },
+  { key: "beach-local-hero", name: "Local Hero", tier: "GOLD", metric: "SEASONS", threshold: 5, period: "ALL_TIME", voucherLabel: "Ein Abo-Monat geschenkt", voucherShort: "Gratis-Monat", voucherValidDays: null },
+];
+
+/** Sortierung der Beach-Vorlage: hinter der Ride-Vorlage. */
+export const BEACH_AWARD_SORT_BASE = 200;

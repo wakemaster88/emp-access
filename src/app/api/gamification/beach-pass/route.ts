@@ -4,6 +4,7 @@ import { gamiAdminSession } from "@/lib/gamification-session";
 import { backfillYear, invalidateGamiConfig } from "@/lib/gamification-service";
 import { cleanIds, foreignRefError } from "@/lib/tenant-refs";
 import { berlinYmd } from "@/lib/berlin-day";
+import { ensureBeachAwards } from "@/lib/beach-awards";
 
 const schema = z.object({
   enabled: z.boolean(),
@@ -14,6 +15,7 @@ const schema = z.object({
  * PUT: Beach Pass ein- oder ausschalten und die Strandbad-Abos wählen.
  * Danach werden die Tagessummen des laufenden Jahres neu berechnet, damit
  * die Strandbad-Besuche der Saison sofort mitzählen (bzw. wieder wegfallen).
+ * Beim Einschalten wird die Beach-Award-Vorlage angelegt (fehlende Schlüssel).
  */
 export async function PUT(request: NextRequest) {
   const session = await gamiAdminSession();
@@ -48,11 +50,12 @@ export async function PUT(request: NextRequest) {
   const changed =
     (before?.beachEnabled ?? false) !== data.beachEnabled ||
     (data.beachEnabled && [...(before?.beachSubscriptionIds ?? [])].sort().join(",") !== [...beachSubscriptionIds].sort().join(","));
+  const awardsCreated = data.beachEnabled && !(before?.beachEnabled ?? false) ? await ensureBeachAwards(db, accountId) : 0;
   let recount: { year: number; days: number; tickets: number } | null = null;
   if (changed) {
     const year = Number(berlinYmd(new Date()).slice(0, 4));
     const r = await backfillYear(db, accountId, year);
     recount = { year, days: r.days, tickets: r.tickets };
   }
-  return NextResponse.json({ ok: true, ...data, recount });
+  return NextResponse.json({ ok: true, ...data, recount, awardsCreated });
 }

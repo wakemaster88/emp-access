@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   AWARD_DEFAULTS,
+  BEACH_AWARD_DEFAULTS,
   awardCategory,
   awardCountable,
   awardFace,
@@ -204,4 +205,41 @@ test("normalizeMilestone: erster Tag der Saison ist genau ein Tag, kaltes Wasser
   assert.deepEqual(cold.eventDays, []);
   assert.equal(milestoneSchema.safeParse({ ...base, metric: "COLD_DAYS", period: "SEASON" }).success, false);
   assert.equal(milestoneSchema.safeParse({ ...base, metric: "COLD_DAYS", period: "SEASON", tempBelow: 80 }).success, false);
+});
+
+test("Beach-Vorlage: eindeutig, nur Strand-taugliche Zählarten, speicherbar und ohne Lift im Text", () => {
+  const keys = new Set([...AWARD_DEFAULTS, ...BEACH_AWARD_DEFAULTS].map((a) => a.key));
+  assert.equal(keys.size, AWARD_DEFAULTS.length + BEACH_AWARD_DEFAULTS.length);
+  assert.equal(new Set(BEACH_AWARD_DEFAULTS.map((a) => a.name)).size, BEACH_AWARD_DEFAULTS.length);
+  for (const a of BEACH_AWARD_DEFAULTS) {
+    assert.ok(a.key.startsWith("beach-"), a.key);
+    // Frühstart und erster Tag der Saison richten sich nach dem Lift, Starts gibt es am Strand nicht.
+    assert.ok(!["STARTS", "EARLY_DAYS", "OPENING_DAY", "EVENT_DAYS"].includes(a.metric), a.key);
+    if (a.metric === "SEASONS") assert.equal(a.period, "ALL_TIME", a.key);
+    const parsed = milestoneSchema.safeParse({
+      name: a.name,
+      metric: a.metric,
+      threshold: a.threshold,
+      period: a.period,
+      tier: a.tier,
+      voucherLabel: a.voucherLabel,
+      voucherShort: a.voucherShort,
+      voucherValidDays: a.voucherValidDays,
+      bonus: a.bonus ?? null,
+      hint: a.hint ?? null,
+      tempBelow: a.tempBelow ?? null,
+      active: true,
+    });
+    assert.ok(parsed.success, `${a.key}: ${parsed.success ? "" : parsed.error.message}`);
+    assert.ok(!/Lift|Start/.test(awardText(a, "BEACH")), a.key);
+  }
+});
+
+test("awardText und awardHowText im Beach Pass: Strand statt Lift", () => {
+  assert.equal(awardText({ metric: "VISIT_DAYS", threshold: 1, period: "ALL_TIME" }, "BEACH"), "Dein erster Tag am Strand.");
+  assert.equal(awardText({ metric: "VISIT_DAYS", threshold: 10, period: "SEASON" }, "BEACH"), "10 Tage am Strand in einer Saison.");
+  assert.equal(awardText({ metric: "WEEKENDS", threshold: 3, period: "SEASON" }, "BEACH"), "3 Wochenenden in Folge am Strand.");
+  assert.equal(awardText({ metric: "SEASONS", threshold: 2, period: "ALL_TIME" }, "BEACH"), "2 Saisons mit mindestens einem Strandtag.");
+  assert.equal(awardText({ metric: "WEEKENDS", threshold: 3, period: "SEASON" }), "3 Wochenenden in Folge am Lift.");
+  assert.match(awardHowText({ metric: "COLD_DAYS", tempBelow: 16 }, { today: "2026-06-01", waterNow: 15.5 }, "BEACH"), /an den Strand.*15,5 °C/);
 });
