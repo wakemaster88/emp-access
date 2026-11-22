@@ -54,6 +54,20 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 - Rechenlogik in `src/lib/operating-calendar.ts` (Monatsraster, KW, Tagesspannen),
   Öffnung je Tag weiter über `openingForDay` aus `src/lib/operating-hours.ts`.
 
+## Öffentliche Betriebszeiten-API für die Website (22.11.2026)
+
+- `GET /api/public/betriebszeiten` ohne Anmeldung, CORS offen, 5 Min CDN-Cache.
+  Parameter: `von` (JJJJ-MM-TT, Standard heute Berlin), `bis` oder `tage`
+  (Standard 14, höchstens 400), `bereich` (Schlüssel wie `wasserski`,
+  `gastronomie`, Anfang davon oder Id; mehrere mit Komma).
+- Antwort: `bereiche[]` mit `id`, `name`, `schluessel` und `tage[]`
+  (`datum`, `geoeffnet`, `zeiten[{von,bis}]`, `text` wie „12:00 - 18:00“ oder
+  „geschlossen“, `ausnahme`, `hinweis` = Notiz des Ausnahmetags).
+- Nur Mandant `WEBSITE_ACCOUNT_ID` (Standard 1). Saisonnamen, Beschreibung und
+  Räume bleiben intern. Logik rein in `src/lib/public-opening.ts` (Tests).
+- Die Website (Repo tuttenbrocksee) fragt diese API zuerst und fällt nur bei
+  Ausfall auf anny bzw. ihre eigenen Zeiten zurück.
+
 ## Veranstaltungen und Partnerzugang (20.11.2026)
 
 Für die Rooftop Lounge und andere Räume, die für Feiern belegt werden.
