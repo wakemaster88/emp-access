@@ -753,6 +753,8 @@ export const operatingScheduleCreateSchema = z.object({
       z.string().trim().regex(/^\d{1,12}$/, "anny-Ressource ist eine Zahl").nullable(),
     )
     .optional(),
+  /// Geteilte Zeit mit anderen Buchungsangeboten auf derselben Anlage.
+  sharedTime: z.boolean().optional(),
   /// Saisons samt Öffnungszeiten (Vollersetzung, wenn angegeben).
   seasons: z.array(operatingSeasonSchema).max(12).optional(),
   /// Ausnahmetage (Vollersetzung, wenn angegeben).

@@ -59,6 +59,7 @@ export function ScheduleDialog({
   const [facilities, setFacilities] = useState<string[]>(() => schedule?.facilities ?? []);
   const [newFacility, setNewFacility] = useState("");
   const [annyResourceId, setAnnyResourceId] = useState(schedule?.annyResourceId ?? "");
+  const [sharedTime, setSharedTime] = useState(schedule?.sharedTime ?? false);
 
   // Nur eine Ebene: Oberprofile sind Bereiche ohne eigenes Oberprofil, nie das Profil selbst.
   const parents = schedules.filter((s) => s.parentId == null && s.id !== schedule?.id);
@@ -112,6 +113,7 @@ export function ScheduleDialog({
       parentId,
       facilities: cleanFacilities(facilities),
       annyResourceId: annyResourceId.trim() || null,
+      sharedTime,
       seasons: seasons.map((season, index) => ({ ...season, sortOrder: index })),
       exceptions: exceptions.map((e) => ({
         date: e.date,
@@ -254,6 +256,19 @@ export function ScheduleDialog({
               Profile mit gleicher Anlage dürfen sich zeitlich nicht überschneiden; sonst wird nicht gespeichert.
             </p>
           </div>
+
+          {facilities.length > 0 && (
+            <div className="glass-tile flex items-start justify-between gap-3 p-2.5">
+              <div className="min-w-0 space-y-0.5">
+                <Label htmlFor="sched-shared">Geteilte Zeit</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Für Buchungsangebote wie Bahnmiete und Kurs: dürfen sich mit anderen Profilen mit geteilter Zeit
+                  überschneiden, wer zuerst bucht, bekommt die Anlage. Gegen den öffentlichen Betrieb wird weiter geprüft.
+                </p>
+              </div>
+              <Switch id="sched-shared" checked={sharedTime} disabled={disabled} onCheckedChange={setSharedTime} />
+            </div>
+          )}
 
           {/* Ja/Nein als Schalterzeile in einer Glas-Kachel wie in den Resource- und Service-Dialogen (docs/design-regeln.md, Abschnitte 14 und 18).
               Unterprofile sind nie Vorbelegung für Räume. */}

@@ -3087,6 +3087,9 @@ model OperatingSchedule {
   facilities     String[]             @default([])
   /// anny-Ressource fuer den Abgleich, z. B. "179480". Leer: ueber Website/Namen.
   annyResourceId String?
+  /// Geteilte Zeit: zwei Profile mit diesem Haken duerfen sich auf derselben
+  /// Anlage ueberschneiden (Bahnmiete und Kurs, anny verhindert Doppelbuchungen).
+  sharedTime     Boolean              @default(false)
   seasons        OperatingSeason[]
   exceptions     OperatingException[]
   rooms          KeyRoom[]

@@ -229,6 +229,7 @@ function ScheduleCard({
                 `${schedule.facilities.length === 1 ? "Anlage" : "Anlagen"}: ${schedule.facilities.join(", ")}`}
               {schedule.facilities.length > 0 && schedule.annyResourceId && " · "}
               {schedule.annyResourceId && `anny ${schedule.annyResourceId}`}
+              {schedule.sharedTime && " · geteilte Zeit"}
             </p>
           )}
         </div>

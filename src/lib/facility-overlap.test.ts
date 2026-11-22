@@ -63,6 +63,7 @@ test("facilityClashes: Feiertag mit Wochenendzeiten überschneidet die Bahnmiete
     second: { id: 10, name: "Bahnmiete A" },
     start: 12 * 60,
     end: 16 * 60,
+    shared: false,
   });
 });
 
@@ -131,4 +132,30 @@ test("clashDatesLabel: kurz, mit Rest", () => {
     clashDatesLabel(["2027-05-06", "2027-05-17", "2027-05-27", "2027-06-03", "2027-06-04"]),
     "06.05., 17.05., 27.05., 03.06. und 1 weiterer Tag",
   );
+});
+
+test("facilityClashes: geteilte Zeit nur, wenn beide Profile sie erlauben", () => {
+  const rental: FacilityProfile = {
+    id: 30,
+    name: "Bahnmiete B",
+    facilities: ["Seilbahn B"],
+    shared: true,
+    spec: spec("Bahnmiete B", days([5, 6], "10:00", "20:00")),
+  };
+  const course: FacilityProfile = {
+    id: 31,
+    name: "Anfängerkurse Seilbahn B",
+    facilities: ["Seilbahn B"],
+    shared: true,
+    spec: spec("Anfängerkurse Seilbahn B", days([5, 6], "12:00", "18:00")),
+  };
+  const both = facilityClashes([rental, course], "2027-05-01", 31);
+  assert.equal(both.length, 10);
+  assert.ok(both.every((c) => c.shared));
+  assert.ok(groupClashes(both).every((g) => g.shared));
+
+  // Gegen ein Profil ohne geteilte Zeit (z. B. öffentlicher Betrieb) bleibt es ein Fehler.
+  const strict = facilityClashes([rental, { ...course, shared: false }], "2027-05-01", 31);
+  assert.equal(strict.length, 10);
+  assert.ok(strict.every((c) => !c.shared));
 });

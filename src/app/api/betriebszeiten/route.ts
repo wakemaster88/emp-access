@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
     id: -1,
     name: data.name.trim(),
     facilities,
+    shared: data.sharedTime ?? false,
     spec: {
       name: data.name.trim(),
       seasons: seasonInputsToSpec(data.seasons ?? []),
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
       parentId,
       facilities,
       annyResourceId: data.annyResourceId ?? null,
+      sharedTime: data.sharedTime ?? false,
     },
     select: { id: true },
   });

@@ -241,11 +241,18 @@ export async function clashesForCandidate(
   ]);
   const profiles: FacilityProfile[] = [
     candidate,
-    ...others.map((s) => ({ id: s.id, name: s.name, facilities: s.facilities, spec: toScheduleSpec(s) })),
+    ...others.map((s) => ({
+      id: s.id,
+      name: s.name,
+      facilities: s.facilities,
+      shared: s.sharedTime,
+      spec: toScheduleSpec(s),
+    })),
   ];
   const from = tzYmd(now, account?.timezone || DEFAULT_TIMEZONE);
+  // Geteilte Zeit ist gewollt und hält das Speichern nicht auf.
   const clashes = facilityClashes(profiles, from, CLASH_DAYS).filter(
-    (c) => c.first.id === candidate.id || c.second.id === candidate.id,
+    (c) => !c.shared && (c.first.id === candidate.id || c.second.id === candidate.id),
   );
   return groupClashes(clashes);
 }
