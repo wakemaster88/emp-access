@@ -144,3 +144,8 @@ test("Viele Geraete gleichzeitig: eine Sammelmeldung", () => {
   assert.equal(f[0].key, "trend:link:many");
   assert.match(f[0].title, /6 von 6 Geräten/);
 });
+
+test("Alter Platten-Verlauf in Prozent wird auf Anteile umgerechnet", () => {
+  const st = reviveHealthStore({ v: 1, disk: [[T0, 9.09], [T0 + HOUR, 0.1]] });
+  assert.deepEqual(st.disk, [[T0, 0.0909], [T0 + HOUR, 0.1]]);
+});

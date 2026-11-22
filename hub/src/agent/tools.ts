@@ -63,7 +63,8 @@ const str = (description: string, extra: Record<string, unknown> = {}) => ({ typ
 const num = (description: string) => ({ type: "number", description });
 
 const MB = 1024 * 1024;
-const pct = (x: number | null | undefined) => (x == null ? null : Math.round(x * 1000) / 10);
+/** Prozentwert (0–100) auf eine Nachkommastelle. */
+const pct = (x: number | null | undefined) => (x == null ? null : Math.round(x * 10) / 10);
 
 function notesPath(): string {
   return path.join(CONFIG.hubDir, ".cache", "agent-notes.md");
@@ -128,7 +129,8 @@ export const TOOLS: AgentTool[] = [
         hub: { name: CONFIG.name, version: CONFIG.version, uptimeMin: Math.round(process.uptime() / 60) },
         cloud: STATE.heartbeat,
         system: {
-          cpuPct: m.cpu.usage == null ? null : Math.round(m.cpu.usage * 100),
+          // systemMetrics() liefert Prozent (0–100).
+          cpuPct: m.cpu.usage == null ? null : Math.round(m.cpu.usage),
           loadPerCore: m.cpu.loadPerCore,
           ramPct: pct(m.memory.usage),
           ramUsedGB: Math.round(m.memory.usedBytes / 1024 / MB),

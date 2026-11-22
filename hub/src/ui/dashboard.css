@@ -1674,8 +1674,12 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
   object-fit: cover;
   background: #05070d;
 }
-.live-tile video { opacity: 0; transition: opacity 0.4s; }
-.live-tile.is-live video { opacity: 1; }
+/*
+ * Kein Ein-/Ausblenden des Videos ueber opacity: Safari (22.11.2026) dekodierte
+ * die Bilder, das Bild war per Canvas auslesbar, auf dem Schirm blieben die
+ * Kacheln aber schwarz. Der Hinweis liegt ohnehin ueber dem Video und
+ * verschwindet mit is-live.
+ */
 
 .live-empty {
   position: absolute; inset: 0;

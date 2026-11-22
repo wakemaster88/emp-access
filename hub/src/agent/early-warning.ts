@@ -92,7 +92,12 @@ export function reviveHealthStore(raw: unknown): HealthStore {
     const v = r[k];
     if (v && typeof v === "object" && !Array.isArray(v)) (st as unknown as Record<string, unknown>)[k] = v;
   }
-  if (Array.isArray(r.disk)) st.disk = r.disk.filter((s) => Array.isArray(s) && s.length === 2);
+  // Bis 22.11.2026 wurden Prozent statt Anteile gespeichert (9,09 statt 0,0909).
+  if (Array.isArray(r.disk)) {
+    st.disk = r.disk
+      .filter((s) => Array.isArray(s) && s.length === 2)
+      .map(([t, u]) => [t, u > 1.5 ? u / 100 : u] as [number, number]);
+  }
   return st;
 }
 
