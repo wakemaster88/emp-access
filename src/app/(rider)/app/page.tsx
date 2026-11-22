@@ -2,7 +2,7 @@ import { AwardBadge, AwardBadgeDefs } from "@/components/rider/award-badge";
 import { GiftIcon } from "@/components/rider/award-parts";
 import { RiderMailLink } from "@/components/rider/rider-mail-link";
 import { RiderPasskeyLogin } from "@/components/rider/rider-auth";
-import { AWARD_DEFAULTS } from "@/lib/awards";
+import { AWARD_DEFAULTS, BEACH_AWARD_DEFAULTS, type AwardDefault } from "@/lib/awards";
 import { RIDER_LOCATION } from "@/lib/rider-shop";
 import { RiderLinkExpired } from "@/components/rider/rider-link-expired";
 import { Suspense } from "react";
@@ -21,9 +21,10 @@ const icon = (d: string) => (
 );
 
 /** Drei Abzeichen aus der Award-Vorlage als Schaufenster: Einstieg, Ziel, Fernziel. */
-const SHOWCASE = ["first-splash", "tuttenbrock-legend", "lake-local"]
-  .map((key) => AWARD_DEFAULTS.find((a) => a.key === key))
-  .filter((a): a is (typeof AWARD_DEFAULTS)[number] => !!a);
+const pick = (list: AwardDefault[], keys: string[]) =>
+  keys.map((key) => list.find((a) => a.key === key)).filter((a): a is AwardDefault => !!a);
+const SHOWCASE = pick(AWARD_DEFAULTS, ["first-splash", "tuttenbrock-legend", "lake-local"]);
+const BEACH_SHOWCASE = pick(BEACH_AWARD_DEFAULTS, ["beach-first-dip", "beach-endless-summer", "beach-sandcastle-king"]);
 
 const PERKS = [
   {
@@ -43,10 +44,10 @@ const PERKS = [
   },
 ];
 
-/** Dasselbe für den Beach Pass (/beach): Strandtage statt Starts, ohne Lift-Awards im Schaufenster. */
+/** Dasselbe für den Beach Pass (/beach): Strandtage statt Starts, Beach-Awards im Schaufenster. */
 const BEACH_PERKS = [
   { ...PERKS[0], text: "Laufzeit und Strandtage auf einen Blick." },
-  { ...PERKS[1], title: "Awards zum Freischalten", text: "Vom ersten Strandtag bis zur Beach-Legende." },
+  { ...PERKS[1], title: `${BEACH_AWARD_DEFAULTS.length} Awards zum Freischalten`, text: "Vom ersten Strandtag bis zur Beach Legend." },
   { ...PERKS[2], text: "Eis, Drinks und Pommes am Strand." },
 ];
 
@@ -72,11 +73,11 @@ export default async function RiderLoginPage() {
         </div>
       </div>
 
-      {!beach && <div className="rd-wl-badges" aria-label="Beispiele für Awards">
-        {SHOWCASE.map((a) => (
+      <div className="rd-wl-badges" aria-label="Beispiele für Awards">
+        {(beach ? BEACH_SHOWCASE : SHOWCASE).map((a) => (
           <AwardBadge key={a.key} award={{ name: a.name, tier: a.tier, metric: a.metric, threshold: a.threshold, key: a.key }} size={a.tier === "LEGENDARY" ? 112 : 84} />
         ))}
-      </div>}
+      </div>
 
       <Suspense fallback={null}>
         <RiderLinkExpired />

@@ -1141,7 +1141,8 @@ Aaron, 21.11.2026: „jetzt das gleiche konzept als beach pass für alle strandb
 - **Zielgruppe** `PassAudience` (RIDE/BEACH/ALL) an `Milestone`, `Challenge`, `RiderOffer`, Vorgabe RIDE. App, Vergabe (`awardMilestones`, `awardTaskChallenges`), Ranglisten der Challenges (`challengeUnits`), Rückblick-Vergleich und Push (`rider-announce.ts`) filtern danach. Feiertage und Geburtstag gelten für beide.
 - **App**: Klasse `.rd-pass-beach` (Meerblau #0e7490 statt Petrol, Gelb bleibt), Name „Beach Pass“ in Manifest, Titel, Intro und Installations-Hinweis. Ohne Lift-Auslastung und Playlist, „Dein Tag heute“ mit Besuchstag und Ankunft, Rückblick „Tage am Strand“ ohne Starts.
 - **Verwaltung**: Kunden App › Einstellungen › Karte „Beach Pass“ (Schalter + Strandbad-Abos, `PUT /api/gamification/beach-pass`, zählt die Saison danach neu). Feld „Für“ in den Dialogen für Awards, Challenges und Angebote erscheint nur bei eingeschaltetem Beach Pass.
-- Ab Werk aus (`beachEnabled = false`). Offen: eigene Beach-Awards als Vorlage, Strandbad-Tageskarten (Tagesgäste) im Beach Pass.
+- Ab Werk aus (`beachEnabled = false`). Offen: Strandbad-Tageskarten (Tagesgäste) im Beach Pass.
+- **Beach-Awards** (Aaron, 22.11.2026): Vorlage `BEACH_AWARD_DEFAULTS` in `awards.ts`, 12 Awards mit Schlüssel `beach-…` und `audience` BEACH. Angelegt von `ensureBeachAwards` (`src/lib/beach-awards.ts`), wenn der Beach Pass eingeschaltet wird (nur fehlende Schlüssel). Ziele aus den Scans 2026 der Beach-Abo-Tickets (Median 6 Tage, 24 mit 10+, 9 mit 20+, höchstens 51): 1 Tag gesamt, 5/10/20/40 Tage je Saison, 100 Tage gesamt, 3 Wochenenden und 4 Wochen in Folge, Wasser unter 16 °C, 2/3/5 Saisons. Bewusst ohne Starts, Frühstart und ersten Tag der Saison, weil diese sich nach dem Lift richten. `awardText`/`awardHowText` nehmen den Pass und sprechen im Beach Pass vom Strand statt vom Lift.
 
 ### Beach Pass als eigene App unter /beach (22.11.2026)
 

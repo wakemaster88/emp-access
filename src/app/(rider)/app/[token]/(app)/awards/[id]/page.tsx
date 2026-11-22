@@ -73,7 +73,7 @@ export default async function RiderAwardDetail({ params }: { params: Promise<{ t
           </div>
           <div className="rd-muted" style={{ fontSize: 12.5 }}>
             {awardRemainingText(a)}
-            {a.metric === "VISIT_DAYS" ? " Jeder Tag mit mindestens einem Start zählt." : ""}
+            {a.metric === "VISIT_DAYS" ? (rider.pass === "BEACH" ? " Jeder Tag mit Eintritt am Strandbad zählt." : " Jeder Tag mit mindestens einem Start zählt.") : ""}
             {a.metric === "EARLY_DAYS" ? " Es zählt die erste Stunde nach dem ersten Start des Tages." : ""}
             {a.metric === "COLD_DAYS" && a.tempBelow != null ? ` Kalt ist ein Tag mit unter ${formatDegrees(a.tempBelow)} °C Wassertemperatur.` : ""}
             {waterNow != null ? ` Gerade hat das Wasser ${formatDegrees(waterNow)} °C.` : ""}
@@ -86,7 +86,7 @@ export default async function RiderAwardDetail({ params }: { params: Promise<{ t
         <div className="rd-card">
           <span className="rd-label">So holst du ihn</span>
           <div className="rd-soft">
-            {awardHowText(a, { today: berlinYmd(new Date()), openingDay: a.openingDay, waterNow })}
+            {awardHowText(a, { today: berlinYmd(new Date()), openingDay: a.openingDay, waterNow }, rider.pass)}
             {a.lastPeriod ? ` Zuletzt geschafft: ${a.lastPeriod}.` : ""}
           </div>
         </div>

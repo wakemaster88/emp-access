@@ -60,11 +60,14 @@ export function BeachPassCard({
       }
       setSaved({ enabled, subscriptionIds: ids });
       const r = json.recount as { year: number; days: number; tickets: number } | null;
+      const created = typeof json.awardsCreated === "number" ? json.awardsCreated : 0;
       setNotice({
         ok: true,
-        text: r
-          ? `Gespeichert. ${r.year} neu gezählt: ${r.days.toLocaleString("de-DE")} Besuchstage von ${r.tickets.toLocaleString("de-DE")} Tickets.`
-          : "Gespeichert.",
+        text:
+          (r
+            ? `Gespeichert. ${r.year} neu gezählt: ${r.days.toLocaleString("de-DE")} Besuchstage von ${r.tickets.toLocaleString("de-DE")} Tickets.`
+            : "Gespeichert.") +
+          (created > 0 ? ` ${created} Beach-Awards angelegt, zu finden unter Awards.` : ""),
       });
       router.refresh();
     } catch {
@@ -83,8 +86,8 @@ export function BeachPassCard({
         </CardTitle>
         <CardDescription>
           Die Kunden-App für Strandbad-Kunden. Wer nur ein Strandbad-Abo hat, sieht den Beach Pass: eigene Farbe, Besuchstage
-          am Strandbad-Eingang statt Starts, ohne Lift-Auslastung und Playlist. Awards, Challenges und Angebote gelten je
-          nach Auswahl „Für“ beim Anlegen.
+          am Strandbad-Eingang statt Starts, ohne Lift-Auslastung und Playlist. Beim ersten Einschalten kommen 12 Beach-Awards
+          dazu. Awards, Challenges und Angebote gelten je nach Auswahl „Für“ beim Anlegen.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
