@@ -4,8 +4,12 @@
  * aus „Schnittstellen“, die Website über einen Nur-Lese-Zugang auf ihre
  * Datenbank (`WEBSITE_DATABASE_URL`, Rolle `emp_access_reader`).
  *
- * Die Website zeigt für Seiten mit anny-Ressource die anny-Zeiten, solange in
- * ihrer eigenen Tabelle für den Tag nichts steht. Genau so wird sie hier gelesen.
+ * Die Website übernimmt seit 22.11.2026 die Zeiten aus emp-access
+ * (`/api/public/betriebszeiten`). Ob sie das für eine Seite tut, fragt der
+ * Abgleich die Live-Website (`/api/opening/<slug>/<heute>` mit `source`
+ * „emp-access“). Nur Seiten, die das nicht tun, werden wie früher gelesen:
+ * mit anny-Ressource die anny-Zeiten, solange in ihrer eigenen Tabelle für den
+ * Tag nichts steht.
  */
 import { neon } from "@neondatabase/serverless";
 import { berlinOffset } from "./anny-availability";
@@ -39,6 +43,8 @@ export interface SyncSide {
   lastDay: string | null;
   /** Nur Website: Tage, an denen sie die anny-Zeiten zeigt. */
   fromAnny?: number;
+  /** Nur Website: Seite übernimmt die Zeiten live aus emp-access. */
+  viaEmp?: boolean;
   result: CompareResult | null;
   /** Ein Zeichen je Tag ab `from` für das Farbband (siehe `dayMarks`). */
   marks: string | null;
@@ -93,6 +99,34 @@ export interface WebsiteData {
 }
 
 const LIFT_NAME = /wasserski|wakeboard|seilbahn|lift/i;
+
+/** Öffentliche Adresse der Website (für die Prüfung, ob sie emp-access übernimmt). */
+export const DEFAULT_WEBSITE_PUBLIC_URL = "https://www.tuttenbrocksee.com";
+
+/**
+ * Welche Seiten zeigen live die Zeiten aus emp-access? Fragt je Seite den
+ * heutigen Tag ab. Fehler zählen als „nein“ – dann gilt der bisherige Abgleich.
+ */
+async function loadWebsiteLive(baseUrl: string, slugs: string[], today: string): Promise<Set<string>> {
+  const base = baseUrl.replace(/\/+$/, "");
+  const results = await Promise.all(
+    slugs.map(async (slug) => {
+      try {
+        const res = await fetch(`${base}/api/opening/${encodeURIComponent(slug)}/${today}`, {
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(8_000),
+          cache: "no-store",
+        });
+        if (!res.ok) return null;
+        const json = (await res.json()) as { source?: unknown };
+        return json?.source === "emp-access" ? slug : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return new Set(results.filter((s): s is string => s != null));
+}
 
 function side(state: SyncState, source: string | null = null): SyncSide {
   return { state, source, lastDay: null, result: null, marks: null };
@@ -225,11 +259,14 @@ export async function buildSyncReport(options: {
   anny: { baseUrl: string; token: string } | null;
   links: AnnyLinkInfo[];
   websiteUrl: string | null;
+  /** Öffentliche Website für die Live-Prüfung; null = nicht prüfen. */
+  websitePublicUrl?: string | null;
   now?: Date;
   /** Nur für Tests und Vorschau: Laden ersetzen. */
   loaders?: {
     website?: (from: string, to: string) => Promise<WebsiteData>;
     anny?: (resourceIds: string[], from: string, to: string) => Promise<Map<string, { start: string; end: string }[]>>;
+    websiteLive?: (slugs: string[], today: string) => Promise<Set<string>>;
   };
 }): Promise<SyncReport> {
   const now = options.now ?? new Date();
@@ -255,6 +292,15 @@ export async function buildSyncReport(options: {
     const page = slug ? (website?.pages.find((p) => p.slug === slug) ?? null) : null;
     return { schedule: s, page, resourceId: annyResourceFor(s, page, options.links) };
   });
+
+  // Seiten, die live aus emp-access lesen, sind per Definition gleich.
+  const linkedSlugs = [...new Set(plan.map((p) => p.page?.slug).filter((s): s is string => Boolean(s)))];
+  const liveSlugs =
+    website && linkedSlugs.length > 0 && (options.loaders?.websiteLive || options.websitePublicUrl)
+      ? options.loaders?.websiteLive
+        ? await options.loaders.websiteLive(linkedSlugs, from)
+        : await loadWebsiteLive(options.websitePublicUrl as string, linkedSlugs, from)
+      : new Set<string>();
 
   let annyPeriods: Map<string, { start: string; end: string }[]> | null = null;
   let annyError: string | null = null;
@@ -293,7 +339,9 @@ export async function buildSyncReport(options: {
     if (!options.websiteUrl) site = side("unlinked");
     else if (websiteError || !website) site = side("error");
     else if (!page) site = side("unlinked");
-    else {
+    else if (liveSlugs.has(page.slug)) {
+      site = { ...finish(days, ours, ours, `Website /${page.slug} · aus emp-access`, to), fromAnny: 0, viaEmp: true };
+    } else {
       const periods = website.periods.get(page.id) ?? [];
       const dates = website.dates.get(page.id) ?? [];
       const own = new Map(days.map((d) => [d, websiteDayValue(periods, dates, d)]));

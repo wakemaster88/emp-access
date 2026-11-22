@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
-import { buildSyncReport } from "@/lib/opening-sync";
+import { DEFAULT_WEBSITE_PUBLIC_URL, buildSyncReport } from "@/lib/opening-sync";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +53,7 @@ export async function GET() {
       : null,
     links: links.map((l) => ({ annyResourceId: l.annyResourceId, isPublic: l.isPublic, areaName: l.accessArea.name })),
     websiteUrl: websiteUrlFor(accountId),
+    websitePublicUrl: websiteUrlFor(accountId) ? process.env.WEBSITE_PUBLIC_URL || DEFAULT_WEBSITE_PUBLIC_URL : null,
   });
   return NextResponse.json(report);
 }

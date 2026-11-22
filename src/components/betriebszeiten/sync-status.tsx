@@ -41,7 +41,7 @@ const TONE: Record<SyncSide["state"], StatusTone> = {
 function headline(side: SyncSide, key: SideKey, sub = false): string {
   switch (side.state) {
     case "same":
-      return "gleich";
+      return side.viaEmp ? "gleich · übernimmt emp-access" : "gleich";
     case "diff": {
       const n = side.result?.differing ?? 0;
       return `${n} ${n === 1 ? "Tag" : "Tage"} anders`;
