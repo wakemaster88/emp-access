@@ -31,7 +31,8 @@ type View = "monat" | "woche";
  * die Bereiche sind Datenreihen, keine Zustände. Ab dem sechsten Profil wiederholt
  * sich die Reihe; Name und Reihenfolge bleiben eindeutig.
  */
-const SERIES = ["bg-chart-1", "bg-chart-2", "bg-chart-3", "bg-chart-4", "bg-chart-5"];
+/** Eine Farbe je Bereich; bis sieben Profile wiederholt sich keine. */
+const SERIES = ["bg-chart-1", "bg-chart-2", "bg-chart-3", "bg-chart-4", "bg-chart-5", "bg-chart-6", "bg-chart-7"];
 
 const WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
