@@ -441,6 +441,11 @@ model Device {
   /// Gamification: ein GRANTED-Scan eines Abo-Tickets an diesem Geraet zaehlt
   /// als Start (z. B. Drehkreuz an der Seilbahn). Siehe src/lib/gamification.ts.
   countsAsStart        Boolean              @default(false)
+  /// Gamification, nur für die Rückrechnung: ein früheres Start-Gerät
+  /// (z. B. der alte Scanner an Seilbahn A vor dem Drehkreuz). Seine
+  /// GRANTED-Scans VOR diesem Zeitpunkt zählen in „Statistik neu berechnen“
+  /// als Starts, auch wenn `countsAsStart` aus ist. Live-Scans zählen nie.
+  legacyStartsUntil    DateTime?
   /// Optionale Kamera-Zuordnung: Kamera, die diesen Zugang im Blick hat
   /// (z. B. Drehkreuz "Eingang A" → Kamera Eingang). Scans dieses Geraets
   /// werden in der UI mit der Kamera verknuepft (Live-Bild/Schnappschuss).

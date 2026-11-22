@@ -477,3 +477,23 @@ test("tempStat und tempStatNote: Mittel über die Tage mit Messwert", async () =
   assert.equal(tempStatNote(tempStat([24.4])!, 1), "an deinem Tag am Lift");
   assert.equal(tempStatNote(tempStat([-0.3, 4.6])!, 2), "zwischen 0 und 5 °C");
 });
+
+test("startScanWhere: heutige Start-Geräte ganz, frühere nur bis zum Stichtag", async () => {
+  const { startScanWhere } = await import("./gamification");
+  const until = new Date("2026-08-20T22:00:00.000Z");
+  assert.equal(startScanWhere([]), null);
+  assert.deepEqual(
+    startScanWhere([
+      { id: 84, countsAsStart: true, legacyStartsUntil: null },
+      { id: 6, countsAsStart: false, legacyStartsUntil: until },
+    ]),
+    { OR: [{ deviceId: { in: [84] } }, { deviceId: 6, scanTime: { lt: until } }] },
+  );
+  // Heute Start-Gerät: der Stichtag spielt keine Rolle mehr.
+  assert.deepEqual(startScanWhere([{ id: 84, countsAsStart: true, legacyStartsUntil: until }]), {
+    OR: [{ deviceId: { in: [84] } }],
+  });
+  assert.deepEqual(startScanWhere([{ id: 6, countsAsStart: false, legacyStartsUntil: until }]), {
+    OR: [{ deviceId: 6, scanTime: { lt: until } }],
+  });
+});
