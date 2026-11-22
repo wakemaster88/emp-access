@@ -91,6 +91,43 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 - Einen Bereich mit Unterprofilen kann man erst löschen, wenn die Unterprofile
   weg oder umgehängt sind.
 
+## Automationen zu Bahnmieten und Kursen (22.11.2026)
+
+- Reichweite der Betriebszeit je Automation (`OperatingExtent`): an
+  Raumregeln (`RoomRule.operatingExtent`), Raumklima
+  (`RoomClimate.operatingExtent`) und der Musik-Automatik einer Audio-Zone
+  (`AudioZone.musicExtent`, nur bei „Betriebszeit“).
+  - `SELF` (Standard): nur der öffentliche Betrieb.
+  - `BOOKED_SUBPROFILES`: dazu Termine, die in anny auf der Ressource eines
+    Unterprofils gebucht sind (Tickets mit `annyResourceId`, nicht storniert,
+    ungültig oder pausiert), beschnitten auf die Zeiten des Unterprofils. Ein
+    Ferienkurs-Ticket über fünf Tage zählt so nur Mo–Fr 10–12.
+  - `SUBPROFILES`: dazu alle Zeiten der Unterprofile, auch ohne Buchung.
+- Rechnung in `src/lib/operating-extent.ts` (Tests), geladen in
+  `operating-extent-queries.ts` (Fenster gestern bis drei Tage voraus). Die
+  zusätzlichen Zeiten hängen als `ScheduleSpec.extra` am Profil und werden in
+  `openingForDay` mit den eigenen Spannen zusammengelegt (`mergeWindows`).
+- Anzeigen (Kunden-App, Website, Kalender, Durchsagen „Öffentlicher Betrieb“)
+  nutzen das nie. Die Auswahl erscheint in Regel-, Klima- und Zonen-Dialog nur,
+  wenn das Profil Unterprofile hat. Buchungen erreichen emp-access über den
+  stündlichen anny-Abgleich.
+
+## Verwendung je Profil (22.11.2026)
+
+- `OperatingSchedule.role` (Lift, Shop, Strandbad), je Mandant höchstens ein
+  Profil; wer sie setzt, nimmt sie den anderen (`clearOtherRoles`). Nur an
+  eigenen Bereichen, nicht an Unterprofilen.
+- `src/lib/operating-role.ts`: Kunden-App, Skills und Auslastung nehmen das
+  Lift-Profil, der Check-in-Monitor das Shop-Profil, der Beach Pass das
+  Strandbad-Profil (Karte und Kalender zuerst). Ohne Verwendung entscheidet wie
+  bisher der Name; das Strandbad fällt nie auf die Vorbelegung zurück.
+
+## Hinweis auf fehlende Feiertage im nächsten Jahr (22.11.2026)
+
+- Ab September zeigt `/betriebszeiten` eine Warnung, wenn Profile im laufenden
+  Jahr Ausnahmetage haben, im nächsten aber keine (`opening-next-year.ts`,
+  Tests). Feiertage wandern, ohne Eintrag gilt dort der normale Wochentag.
+
 ## Veranstaltungen und Partnerzugang (20.11.2026)
 
 Für die Rooftop Lounge und andere Räume, die für Feiern belegt werden.
@@ -556,8 +593,11 @@ Aaron: „sowas wie neue öffnungszeiten als news abschnitt und nicht angebote�
   anny an dem Tag keine Zeiten hat. Belegt ist, was sich überschneidet: alle
   Buchungen und Sperren der anny-Ressource (`fetchAnnyResourceBusy`), Sperren
   und Vereinsbuchungen in EMP. Ist anny nicht erreichbar, bietet das Portal
-  nichts an. Anfängerkurse am Übungslift liegen in anny auf einer anderen
-  Ressource und werden dabei nicht gesehen.
+  nichts an. Seit 22.11.2026 zählen auch Kurse und Mieten auf Nachbar-
+  Ressourcen derselben Anlage (Unterprofile mit gleicher Anlage, z. B.
+  Anfängerkurse und Ferienkurs am Übungslift), live aus anny plus Tickets für
+  mehrtägige Kurse, jeweils nur in den Zeiten des Unterprofils
+  (`src/lib/verein-related-bookings.ts`, Tests).
 - „Für wen“ (`bookedFor`) ist bei Buchung und Anfrage Pflicht und steht in
   Backoffice, Telegram und CSV.
 - Inklusivmiete (22.11.2026, Aaron): je freigegebenem Service schaltbar

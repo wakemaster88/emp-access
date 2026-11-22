@@ -6,6 +6,7 @@ import {
   clashError,
   clashesForCandidate,
   clearOtherDefaults,
+  clearOtherRoles,
   exceptionInputsToSpec,
   replaceExceptions,
   replaceSeasons,
@@ -77,6 +78,8 @@ export async function POST(request: NextRequest) {
       facilities,
       annyResourceId: data.annyResourceId ?? null,
       sharedTime: data.sharedTime ?? false,
+      // Lift, Shop, Strandbad: nur ein eigener Bereich, kein Unterprofil.
+      role: parentId == null ? (data.role ?? null) : null,
     },
     select: { id: true },
   });
@@ -84,6 +87,7 @@ export async function POST(request: NextRequest) {
   if (data.seasons) await replaceSeasons(db, created.id, data.seasons);
   if (data.exceptions) await replaceExceptions(db, created.id, data.exceptions);
   if (data.isDefault && parentId == null) await clearOtherDefaults(db, accountId, created.id);
+  if (data.role && parentId == null) await clearOtherRoles(db, accountId, created.id, data.role);
 
   const schedule = await db.operatingSchedule.findUnique({
     where: { id: created.id },

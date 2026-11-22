@@ -3,6 +3,7 @@
 /** Beschriftungen und Kurzfassungen für Regeln. */
 
 import { deviceControls } from "@/lib/device-controls";
+import { OPERATING_EXTENT_SHORT } from "@/lib/operating-extent";
 import { eventTypeLabel } from "@/components/raeume/shared";
 import type { Rule, RuleAction, RuleTrigger } from "@/components/regeln/types";
 
@@ -105,7 +106,8 @@ export function describeTrigger(rule: Rule): string {
     case "CLOSING": {
       const base = rule.trigger === "OPENING" ? "Betriebsbeginn" : "Betriebsende";
       const which = rule.operatingSchedule?.name ?? rule.room?.name ?? "des Raums";
-      return `${base} (${which}), ${offsetLabel(rule.offsetMinutes)}`;
+      const extent = OPERATING_EXTENT_SHORT[rule.operatingExtent ?? "SELF"];
+      return `${base} (${which}${extent ? ` ${extent}` : ""}), ${offsetLabel(rule.offsetMinutes)}`;
     }
     case "SUNRISE":
     case "SUNSET": {

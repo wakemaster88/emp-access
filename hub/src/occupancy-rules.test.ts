@@ -6,6 +6,7 @@ import {
   camerasForSpot,
   effectivePerHour,
   inHours,
+  spotClosed,
   levelFor,
   mergeSpots,
   newAlertState,
@@ -105,4 +106,18 @@ test("Betriebszeit und Textzeile", () => {
     spotLine({ name: "Übungslift", persons: 14, level: "voll", wait: 14 }),
     "Übungslift: voll (14 Personen, Wartezeit ca. 14 min)",
   );
+});
+
+test("Punkt ruht, wenn alle Raeume seiner Kameras zu sind", () => {
+  const rooms = [
+    { cameras: [{ id: 5 }], operating: { open: false } },
+    { cameras: [{ id: 7 }], operating: { open: true } },
+    { cameras: [{ id: 8 }], operating: null },
+  ];
+  assert.equal(spotClosed([5], rooms), true);
+  assert.equal(spotClosed([5, 7], rooms), false);
+  // Raum ohne Betriebszeit oder Kamera ohne Raum: weiter messen.
+  assert.equal(spotClosed([8], rooms), false);
+  assert.equal(spotClosed([9], rooms), false);
+  assert.equal(spotClosed([], rooms), false);
 });

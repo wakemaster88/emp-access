@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { isOperatingExtent } from "@/lib/operating-extent";
 import {
   MAX_OPERATING_OFFSET_MINUTES,
   checkExternalReceivers,
@@ -131,6 +132,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (body.musicExtent !== undefined && !isOperatingExtent(body.musicExtent)) {
+    return NextResponse.json({ error: "Reichweite der Betriebszeit unbekannt" }, { status: 400 });
+  }
+  const musicExtent = isOperatingExtent(body.musicExtent) ? body.musicExtent : "SELF";
+
   const last = await db.audioZone.findFirst({
     where: { accountId: accountId! },
     orderBy: { sortOrder: "desc" },
@@ -159,6 +165,7 @@ export async function POST(request: NextRequest) {
       musicTimes: music.musicTimes,
       musicOpenOffset,
       musicCloseOffset,
+      musicExtent,
       airplayEnabled,
       bluetoothEnabled,
       externalName:

@@ -44,6 +44,7 @@ export default async function BetriebszeitenPage() {
       facilities: s.facilities,
       annyResourceId: s.annyResourceId,
       sharedTime: s.sharedTime,
+      role: s.role,
       roomCount: s._count.rooms,
       roomNames: s.rooms.map((r) => r.name),
       seasons: s.seasons.map((season) => ({

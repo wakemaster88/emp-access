@@ -31,6 +31,8 @@ import { prisma } from "@/lib/prisma";
 import { recordCloudSample } from "@/lib/climate-history";
 import { isOperatingAt, isWithinOperatingSpan, type ScheduleSpec, type SpanOffsets } from "@/lib/operating-hours";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { extendedSpecCache } from "@/lib/operating-extent-queries";
+import type { OperatingExtentKind } from "@/lib/operating-extent";
 import {
   shellyBaseId,
   shellyCloudAllStatuses,
@@ -233,12 +235,16 @@ export async function runClimateTick(now = new Date()): Promise<ClimateTickResul
     where: { isActive: true },
     include: {
       account: { select: { id: true, timezone: true } },
-      room: { select: { id: true, name: true, operatingSchedule: { include: scheduleSpecInclude } } },
+      room: {
+        select: { id: true, name: true, operatingScheduleId: true, operatingSchedule: { include: scheduleSpecInclude } },
+      },
       operatingSchedule: { include: scheduleSpecInclude },
       sensorDevice: { select: { id: true, shellyId: true, isActive: true } },
     },
     orderBy: { id: "asc" },
   });
+  // Klimas, die auch zu Bahnmieten und Kursen heizen, brauchen die erweiterte Betriebszeit.
+  const extended = extendedSpecCache(prisma, now);
   const result: ClimateTickResult = { climates: climates.length, switched: 0, errors: 0 };
   if (climates.length === 0) return result;
 
@@ -253,7 +259,13 @@ export async function runClimateTick(now = new Date()): Promise<ClimateTickResul
     for (const c of list) {
       const tz = c.account.timezone || DEFAULT_TIMEZONE;
       const record = c.operatingSchedule ?? c.room.operatingSchedule ?? null;
-      const spec = record ? toScheduleSpec(record) : null;
+      const scheduleId = c.operatingScheduleId ?? c.room.operatingScheduleId ?? null;
+      const spec =
+        record && scheduleId != null && c.operatingExtent !== "SELF"
+          ? ((await extended(accountId, scheduleId, c.operatingExtent, tz)) ?? toScheduleSpec(record))
+          : record
+            ? toScheduleSpec(record)
+            : null;
       const { targetC, override } = climateTarget(c, spec, now, tz);
       // Abgelaufenes Uebersteuern wegraeumen, damit die Anzeige nicht haengt.
       const clearOverride = !override && (c.overrideC != null || c.overrideUntil != null);
@@ -355,6 +367,7 @@ export function climateView(c: {
   fanOn: boolean | null;
   lastHumidity: number | null;
   operatingScheduleId: number | null;
+  operatingExtent?: OperatingExtentKind;
   lastTempC: number | null;
   lastReadAt: Date | null;
   heating: boolean | null;
@@ -383,6 +396,7 @@ export function climateView(c: {
     fanOn: c.fanOn,
     lastHumidity: c.lastHumidity,
     operatingScheduleId: c.operatingScheduleId,
+    operatingExtent: c.operatingExtent ?? "SELF",
     lastTempC: c.lastTempC,
     lastReadAt: c.lastReadAt?.toISOString() ?? null,
     heating: c.heating,

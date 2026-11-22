@@ -755,6 +755,8 @@ export const operatingScheduleCreateSchema = z.object({
     .optional(),
   /// Geteilte Zeit mit anderen Buchungsangeboten auf derselben Anlage.
   sharedTime: z.boolean().optional(),
+  /// Wofür das Profil steht (Lift, Shop, Strandbad); je Mandant höchstens eins.
+  role: z.enum(["LIFT", "SHOP", "BEACH"]).nullable().optional(),
   /// Saisons samt Öffnungszeiten (Vollersetzung, wenn angegeben).
   seasons: z.array(operatingSeasonSchema).max(12).optional(),
   /// Ausnahmetage (Vollersetzung, wenn angegeben).
@@ -816,6 +818,9 @@ export const roomRuleActionSchema = z
     path: ["audioPlaylistId"],
   });
 
+/// Reichweite der Betriebszeit fuer Automationen (siehe `operating-extent.ts`).
+export const operatingExtent = z.enum(["SELF", "BOOKED_SUBPROFILES", "SUBPROFILES"]);
+
 export const roomRuleCreateSchema = z
   .object({
     name: z.string().min(1).max(120),
@@ -843,6 +848,7 @@ export const roomRuleCreateSchema = z
 
     operating: z.enum(["ANY", "OPEN", "CLOSED"]).optional(),
     operatingScheduleId: z.coerce.number().int().positive().nullable().optional(),
+    operatingExtent: operatingExtent.optional(),
     windowStart: hhmm.optional(),
     windowEnd: hhmm.optional(),
     onlyWhenDark: z.boolean().optional(),
@@ -890,6 +896,7 @@ export const roomRuleUpdateSchema = z.object({
   idleMinutes: z.coerce.number().int().min(1).max(1440).nullable().optional(),
   operating: z.enum(["ANY", "OPEN", "CLOSED"]).optional(),
   operatingScheduleId: z.coerce.number().int().positive().nullable().optional(),
+  operatingExtent: operatingExtent.optional(),
   windowStart: hhmm.optional(),
   windowEnd: hhmm.optional(),
   onlyWhenDark: z.boolean().optional(),
