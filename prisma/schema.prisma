@@ -216,6 +216,8 @@ model Account {
   riderProfiles          RiderProfile[]
   riderFamilies          RiderFamily[]
   customers              Customer[]
+  chips                  Chip[]
+  chipEvents             ChipEvent[]
   riderPasskeys          RiderPasskey[]
   riderPushSubscriptions RiderPushSubscription[]
   riderDayStats          RiderDayStat[]
@@ -4166,6 +4168,7 @@ model RiderProfile {
   birthdayGifts     RiderBirthdayGift[]
   /// Geburtstags-Durchsage am Lift: die Person kann sie in der App abschalten.
   birthdayAnnounce  Boolean                 @default(true)
+  chips             Chip[]
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
@@ -4198,6 +4201,64 @@ model Customer {
   updatedAt       DateTime       @updatedAt
 
   @@unique([accountId, email])
+  @@index([accountId])
+}
+
+/// Wem ein Bändchen (RFID-Chip) gehört.
+enum ChipOwner {
+  /// Bringt der Kunde selbst mit oder hat es gekauft: bleibt bei ihm, wird nie
+  /// automatisch frei.
+  KUNDE
+  /// Leihbändchen des Betriebs: wird frei, sobald kein Ticket damit mehr gilt.
+  BETRIEB
+  /// Mitarbeiter-Chip (emp-control): bleibt am Mitarbeiter-Ticket.
+  MITARBEITER
+}
+
+/// Bändchen (RFID-Chip) am Kunden statt am einzelnen Ticket (lib/chips.ts).
+/// `Ticket.rfidCode` bleibt der Code, den die Scanner lesen; jedes Ticket der
+/// Person bekommt ihn mit. Der Chip sagt, wem das Bändchen gehört und mit wem
+/// es fährt, damit Historie, Starts und Awards an der Person bleiben.
+model Chip {
+  id             Int           @id @default(autoincrement())
+  /// So, wie der Scanner ihn liefert (getrimmt).
+  code           String
+  owner          ChipOwner     @default(KUNDE)
+  /// Person, mit der das Bändchen fährt. NULL = hängt nur an Tickets.
+  riderProfileId Int?
+  riderProfile   RiderProfile? @relation(fields: [riderProfileId], references: [id], onDelete: SetNull)
+  /// Verloren oder kaputt: bleibt zur Nachvollziehbarkeit, gilt nicht mehr.
+  blockedAt      DateTime?
+  note           String?
+  events         ChipEvent[]
+  accountId      Int
+  account        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([accountId, code])
+  @@index([accountId])
+  @@index([riderProfileId])
+}
+
+/// Verlauf eines Bändchens: angelegt, einer Person gegeben, Eigentum geändert,
+/// übergeben, gesperrt. Nur anhängen, nie ändern.
+model ChipEvent {
+  id             Int      @id @default(autoincrement())
+  chipId         Int
+  chip           Chip     @relation(fields: [chipId], references: [id], onDelete: Cascade)
+  /// ANGELEGT | PERSON | EIGENTUM | AUSGEGEBEN | GESPERRT | UEBERNOMMEN | RUECKGAENGIG
+  kind           String
+  riderProfileId Int?
+  ticketId       Int?
+  /// Wo es passiert ist: KASSE, BACKEND, ABGLEICH, ALTBESTAND.
+  source         String?
+  note           String?
+  accountId      Int
+  account        Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@index([chipId])
   @@index([accountId])
 }
 

@@ -6,14 +6,21 @@ import { ticketCreateSchema } from "@/lib/validators";
 import { resolveAnnyOrganizationId, fetchAnnyServiceMatch, resolveServiceResourceId } from "@/lib/anny-availability";
 import { createAnnyBookingV2 } from "@/lib/anny-bookings";
 import { aboEmailError } from "@/lib/abo-email";
-import { linkAboCustomerSafe } from "@/lib/customers";
+import { linkAboCustomerSafe, RiderError } from "@/lib/customers";
+import { codesForDecision, countForPerson, decideSale, recordChipSale, type SaleCheck } from "@/lib/chips";
+import { conflictText, isTicketInUse } from "@/lib/chip-rules";
 
 const publicTicketCreateSchema = ticketCreateSchema.extend({
   voucherCode: z.string().min(1).optional(),
-  // Bei Code-Konflikt mit einem bestehenden Ticket: wenn `transferCode`
-  // true ist, wird der Code vom alten Ticket abgezogen und auf das neue
-  // umgehaengt. Genutzt z.B. bei recycelten Tagesgast-Baendchen.
+  // Baendchen am Kunden (lib/chips): ein Code darf an mehreren Tickets
+  // derselben Person haengen. Bei einem Konflikt entscheidet die Kasse:
+  // `shareCode` = alte Tickets behalten den Code, das neue bekommt ihn dazu;
+  // `transferCode` = Code von den alten Tickets abziehen (Baendchen geht an
+  // jemand anderen).
   transferCode: z.boolean().optional(),
+  shareCode: z.boolean().optional(),
+  /** Person aus dem Kundenfenster, fuer die verkauft wird. */
+  personId: z.number().int().positive().optional(),
 });
 
 export async function POST(
@@ -94,59 +101,61 @@ export async function POST(
     serviceAreaIds = svcAreas.map((sa: { accessAreaId: number }) => sa.accessAreaId);
   }
 
-  // Pre-Check: Wenn barcode/qrCode/rfidCode bereits einem Ticket im
-  // gleichen Account gehoeren, brechen wir mit 409 ab statt 500 - es sei
-  // denn der Aufrufer setzt `transferCode: true`, dann wird der Code
-  // vom alten Ticket abgezogen und auf das neue uebertragen.
-  // (Frueher hat Prisma einen Unique-Constraint-Fehler ungebremst zum
-  // 500 durchgereicht.)
-  const codes = [data.barcode, data.qrCode, data.rfidCode].filter(
-    (c): c is string => !!c,
-  );
-  let conflictTicketId: number | null = null;
-  if (codes.length > 0) {
-    const conflict = await prisma.ticket.findFirst({
-      where: {
-        accountId: monitor.accountId,
-        OR: [
-          { barcode: { in: codes } },
-          { qrCode: { in: codes } },
-          { rfidCode: { in: codes } },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        firstName: true,
-        lastName: true,
-        ticketTypeName: true,
-      },
-    });
-    if (conflict) {
-      if (!transferCode) {
-        const owner =
-          [conflict.firstName, conflict.lastName].filter(Boolean).join(" ")
-          || conflict.name;
-        return NextResponse.json(
-          {
-            error: {
-              formErrors: [
-                `Code ist bereits Ticket "${owner}" zugeordnet${
-                  conflict.ticketTypeName ? ` (${conflict.ticketTypeName})` : ""
-                }.`,
-              ],
-              code: "CODE_CONFLICT",
-              conflictTicketId: conflict.id,
-              conflictTicketLabel: owner,
-              conflictTicketType: conflict.ticketTypeName,
-            },
-          },
-          { status: 409 },
-        );
+  // Baendchen am Kunden (lib/chips): Gehoert der Code derselben Person (oder
+  // niemandem), behalten die alten Tickets ihn und das neue bekommt ihn
+  // dazu. Statistik und laufende Abos bleiben so am Baendchen. Konflikte
+  // (anderer Gast, Leihbaendchen noch in Benutzung, Mitarbeiter-Chip) gehen
+  // mit 409 zurueck; die Kasse entscheidet mit shareCode/transferCode.
+  const code = data.rfidCode || data.qrCode || data.barcode || null;
+  let sale: SaleCheck | null = null;
+  if (code) {
+    try {
+      sale = await decideSale(monitor.accountId, {
+        code,
+        personId: data.personId ?? null,
+        typedName: data.firstName || data.lastName ? { firstName: data.firstName, lastName: data.lastName } : undefined,
+        resolve: transferCode ? "transfer" : data.shareCode ? "share" : null,
+      });
+    } catch (e) {
+      if (e instanceof RiderError) {
+        return NextResponse.json({ error: { formErrors: [e.message] } }, { status: e.status });
       }
-      conflictTicketId = conflict.id;
+      throw e;
+    }
+    const d = sale.decision;
+    if (d.kind === "CONFLICT") {
+      const holderName = [sale.holder?.firstName, sale.holder?.lastName].filter(Boolean).join(" ") || null;
+      const first = sale.tickets.find((t) => d.ticketIds.includes(t.id)) ?? sale.tickets[0];
+      const owner = holderName
+        || [first?.firstName, first?.lastName].filter(Boolean).join(" ")
+        || "ein anderes Ticket";
+      return NextResponse.json(
+        {
+          error: {
+            formErrors: [conflictText(d.reason, holderName)],
+            code: "CODE_CONFLICT",
+            reason: d.reason,
+            conflictTicketId: first?.id ?? null,
+            conflictTicketLabel: owner,
+            conflictTicketType: null,
+            holderId: sale.holder?.id ?? null,
+            holderName,
+            // Uebergeben nimmt einem laufenden Abo das Baendchen: Kasse warnt.
+            runningAbo: sale.tickets.some((t) => d.ticketIds.includes(t.id) && t.subscriptionId != null && isTicketInUse(t)),
+            // Uebergeben (Code abziehen) bietet die Kasse nur an, wo es Sinn hat.
+            canShare: d.reason !== "BLOCKED",
+            canTransfer: d.reason !== "BLOCKED",
+          },
+        },
+        { status: 409 },
+      );
     }
   }
+  const decision = sale?.decision ?? null;
+  const stripTicketIds = decision?.kind === "TRANSFER" ? decision.stripTicketIds : [];
+  const codeFields = code && decision ? codesForDecision(code, decision) : {};
+  const saleRiderProfileId =
+    decision && decision.kind !== "CONFLICT" ? decision.personId : (data.personId ?? null);
 
   // ANNY-Booking anlegen (Kapazitaet in ANNY blocken).
   //
@@ -296,15 +305,17 @@ export async function POST(
 
   const ticketData = {
     name: data.name,
+    barcode: data.barcode,
     qrCode: data.qrCode,
     rfidCode: data.rfidCode,
+    ...codeFields,
+    ...(saleRiderProfileId != null ? { riderProfileId: saleRiderProfileId } : {}),
     startDate: data.startDate ? new Date(data.startDate) : undefined,
     endDate: data.endDate ? new Date(data.endDate) : undefined,
     accessAreaId: data.accessAreaId,
     subscriptionId: data.subscriptionId,
     serviceId: data.serviceId,
     status: data.status ?? "VALID",
-    barcode: data.barcode,
     firstName: data.firstName,
     lastName: data.lastName,
     email: data.email?.trim().toLowerCase() || undefined,
@@ -324,6 +335,22 @@ export async function POST(
         }
       : {}),
   };
+
+  /** Baendchen und Verlauf fortschreiben, Tagesticket der Person zaehlen. */
+  async function afterSale(ticket: { id: number; riderProfileId: number | null }) {
+    if (code && sale && sale.decision.kind !== "CONFLICT") {
+      await recordChipSale(monitor!.accountId, {
+        code,
+        decision: sale.decision,
+        ticketId: ticket.id,
+        owner: sale.owner,
+        previousHolder: sale.holder?.id ?? null,
+      }).catch((e) => console.error("[checkin/ticket] Baendchen-Verlauf", e));
+    }
+    if (ticket.riderProfileId != null) {
+      await countForPerson(monitor!.accountId, [ticket.id]).catch((e) => console.error("[checkin/ticket] Zaehlen", e));
+    }
+  }
 
   function handleCreateError(e: unknown): NextResponse {
     const msg = e instanceof Error ? e.message : String(e);
@@ -377,12 +404,7 @@ export async function POST(
           throw new Error("VOUCHER_ALREADY_REDEEMED");
         }
 
-        if (conflictTicketId != null) {
-          await tx.ticket.update({
-            where: { id: conflictTicketId },
-            data: { barcode: null, qrCode: null, rfidCode: null },
-          });
-        }
+        if (stripTicketIds.length > 0) await stripCodes(tx, stripTicketIds, code!);
 
         const newTicket = await tx.ticket.create({ data: ticketData });
 
@@ -397,6 +419,7 @@ export async function POST(
         return newTicket;
       });
 
+      await afterSale(result);
       return NextResponse.json(result, { status: 201 });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -423,24 +446,31 @@ export async function POST(
   }
 
   try {
-    if (conflictTicketId != null) {
-      // Code-Transfer: in einer Transaktion alten Code abziehen und
-      // neues Ticket mit dem Code erstellen.
-      const ticket = await prisma.$transaction(async (tx) => {
-        await tx.ticket.update({
-          where: { id: conflictTicketId! },
-          data: { barcode: null, qrCode: null, rfidCode: null },
-        });
-        return tx.ticket.create({ data: ticketData });
-      });
-      if (ticket.subscriptionId != null) await linkAboCustomerSafe(ticket.accountId, ticket.id);
-      return NextResponse.json(ticket, { status: 201 });
-    }
-
-    const ticket = await prisma.ticket.create({ data: ticketData });
+    const ticket = stripTicketIds.length > 0
+      ? await prisma.$transaction(async (tx) => {
+          // Baendchen uebergeben: alte Tickets verlieren den Code.
+          await stripCodes(tx, stripTicketIds, code!);
+          return tx.ticket.create({ data: ticketData });
+        })
+      : await prisma.ticket.create({ data: ticketData });
     if (ticket.subscriptionId != null) await linkAboCustomerSafe(ticket.accountId, ticket.id);
+    await afterSale(ticket);
     return NextResponse.json(ticket, { status: 201 });
   } catch (e) {
     return handleCreateError(e);
   }
+}
+
+/**
+ * Code von alten Tickets abziehen (nur die Felder, in denen genau dieser
+ * Code steht). Statistik bleibt am alten Ticket und an seiner Person.
+ */
+async function stripCodes(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  ticketIds: number[],
+  code: string,
+): Promise<void> {
+  await tx.ticket.updateMany({ where: { id: { in: ticketIds }, rfidCode: code }, data: { rfidCode: null } });
+  await tx.ticket.updateMany({ where: { id: { in: ticketIds }, qrCode: code }, data: { qrCode: null } });
+  await tx.ticket.updateMany({ where: { id: { in: ticketIds }, barcode: code }, data: { barcode: null } });
 }

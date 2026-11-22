@@ -5,6 +5,8 @@ import { dayTicketEmailChanged, normalizeEmail } from "@/lib/day-guest";
 import { aboEmailError } from "@/lib/abo-email";
 import { assignRider, linkAboCustomerSafe, RiderError, updatePersonData } from "@/lib/customers";
 import { personDataKey, riderDataEntered, riderView } from "@/lib/customer-person";
+import { countForPerson, decideSale, recordChipSale, type SaleCheck } from "@/lib/chips";
+import { conflictText, isTicketInUse } from "@/lib/chip-rules";
 
 export async function PUT(
   request: NextRequest,
@@ -55,6 +57,7 @@ export async function PUT(
   const annyAbo = isAbo && (ticket.uuid?.startsWith("anny-sub:") ?? false);
 
   const updateData: Record<string, unknown> = {};
+  let chipSale: SaleCheck | null = null;
 
   if (body.profileImage !== undefined) {
     updateData.profileImage = body.profileImage || null;
@@ -71,32 +74,50 @@ export async function PUT(
       }, { status: 400 });
     }
 
-    if (rfid) {
-      const existing = await prisma.ticket.findFirst({
-        where: {
-          rfidCode: rfid,
-          accountId: monitor.accountId,
-          id: { not: ticket.id },
-        },
-        select: { id: true, name: true, firstName: true, lastName: true, ticketTypeName: true },
+    if (rfid && rfid !== ticket.rfidCode) {
+      // Baendchen am Kunden (lib/chips): Gehoert das Baendchen derselben
+      // Person oder niemandem, behalten die anderen Tickets den Code. Sonst
+      // fragt die Kasse nach: teilen (`share`) oder uebergeben (`force`).
+      chipSale = await decideSale(monitor.accountId, {
+        code: rfid,
+        personId: ticket.riderProfileId,
+        resolve: body.force ? "transfer" : body.share ? "share" : null,
       });
-
-      if (existing && !body.force) {
-        const ownerName = [existing.firstName, existing.lastName].filter(Boolean).join(" ") || existing.name;
+      let d = chipSale.decision;
+      // Ticket ohne Person, Baendchen gehoert jemandem: nicht still an diese
+      // Person haengen (anny-Begleitung traegt z. B. den Namen des Buchers).
+      if (d.kind === "SHARE" && d.personId != null && ticket.riderProfileId == null && !body.share) {
+        d = { kind: "CONFLICT", reason: "OTHER_PERSON", ticketIds: chipSale.tickets.map((t) => t.id), personId: null };
+      }
+      const others = chipSale.tickets.filter((t) => t.id !== ticket.id);
+      if (d.kind === "CONFLICT" && others.length > 0) {
+        const holderName = [chipSale.holder?.firstName, chipSale.holder?.lastName].filter(Boolean).join(" ") || null;
+        const first = others.find((t) => d.ticketIds.includes(t.id)) ?? others[0];
+        const ownerName = holderName || [first.firstName, first.lastName].filter(Boolean).join(" ") || "ein anderes Ticket";
         return NextResponse.json({
           conflict: true,
-          existingTicketId: existing.id,
+          reason: d.reason,
+          existingTicketId: first.id,
           existingOwner: ownerName,
-          existingType: existing.ticketTypeName,
-          message: `RFID ist bereits vergeben an ${ownerName}`,
+          existingType: null,
+          holderName,
+          runningAbo: others.some((t) => d.ticketIds.includes(t.id) && t.subscriptionId != null && isTicketInUse(t)),
+          canShare: d.reason !== "BLOCKED",
+          message: conflictText(d.reason, holderName),
         }, { status: 409 });
       }
-
-      if (existing && body.force) {
-        await prisma.ticket.update({
-          where: { id: existing.id },
-          data: { rfidCode: null, version: { increment: 1 } },
-        });
+      if (d.kind === "TRANSFER") {
+        const strip = d.stripTicketIds.filter((id) => id !== ticket.id);
+        if (strip.length > 0) {
+          await prisma.ticket.updateMany({
+            where: { id: { in: strip }, accountId: monitor.accountId, rfidCode: rfid },
+            data: { rfidCode: null, version: { increment: 1 } },
+          });
+        }
+      }
+      // Einzelticket ohne Person: zaehlt ab jetzt auf die Person des Baendchens.
+      if ((d.kind === "SHARE" || d.kind === "FREE") && d.personId != null && ticket.riderProfileId == null && !isAbo) {
+        updateData.riderProfileId = d.personId;
       }
     }
 
@@ -303,6 +324,21 @@ export async function PUT(
       where: { id: ticket.id },
       data: updateData,
     });
+  }
+
+  // Baendchen-Verlauf (lib/chips); Fehler brechen die Aenderung nicht ab.
+  if (chipSale && chipSale.decision.kind !== "CONFLICT" && typeof updateData.rfidCode === "string") {
+    const d = chipSale.decision;
+    await recordChipSale(monitor.accountId, {
+      code: updateData.rfidCode,
+      decision: { ...d, personId: (updateData.riderProfileId as number | undefined) ?? ticket.riderProfileId ?? d.personId },
+      ticketId: ticket.id,
+      owner: chipSale.owner,
+      previousHolder: chipSale.holder?.id ?? null,
+    }).catch((err) => console.error("[checkin] Baendchen-Verlauf", err));
+    if (updateData.riderProfileId != null) {
+      await countForPerson(monitor.accountId, [ticket.id]).catch((err) => console.error("[checkin] Zaehlen", err));
+    }
   }
 
   // Abo: Kundenkonto zur neuen Adresse (lib/customers).

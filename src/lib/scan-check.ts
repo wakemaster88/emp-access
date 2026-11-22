@@ -63,12 +63,14 @@ export async function performScanCheck({
 
   let lockSeconds: number | null = null;
   let isExitDevice = false;
+  let deviceAreaIds: number[] = [];
   if (deviceId) {
     const scanDevice = await db.device.findFirst({
       where: { id: deviceId, accountId },
       select: { scanLockSeconds: true, accessIn: true, accessOut: true },
     });
     lockSeconds = scanDevice?.scanLockSeconds ?? null;
+    deviceAreaIds = [scanDevice?.accessIn, scanDevice?.accessOut].filter((a): a is number => a != null);
     isExitDevice = scanDevice != null && scanDevice.accessOut != null && scanDevice.accessIn == null;
   }
 
@@ -106,6 +108,8 @@ export async function performScanCheck({
   // Direct-Lookup hat immer Vorrang, Fallback-Varianten greifen nur,
   // wenn der Original-Code keinen Treffer liefert.
   const codesToTry = buildScanCodeVariants(rawCode);
+  // Mehrere Tickets am selben Baendchen: das Ticket fuer diesen Bereich zuerst.
+  const scanAreaHint = accessAreaId != null ? [accessAreaId] : deviceAreaIds;
   type TicketWithRels = Awaited<ReturnType<typeof loadCandidates>>[number];
   let ticket: TicketWithRels | null = null;
 
@@ -159,7 +163,7 @@ export async function performScanCheck({
       // besten geeignete Ticket waehlen: ein gueltiges Abo/Vereins-Ticket
       // schlaegt ein abgelaufenes Einzel-Zeitticket (DURATION). Siehe
       // scan-candidate.ts.
-      ticket = pickBestScanCandidate(candidates);
+      ticket = pickBestScanCandidate(candidates, new Date(), scanAreaHint);
       break;
     }
   }

@@ -7,6 +7,22 @@ import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { redeemBenefitVoucher } from "@/lib/gamification-service";
 import { riderView } from "@/lib/customer-person";
 import { appLinkInfo, readAppCode } from "@/lib/rider-kasse-link";
+import { ensureAnnyBooker, loadAnnyOrder, loadChipView } from "@/lib/chips";
+import type { ChipView } from "@/lib/chip-rules";
+
+/** Kundenfenster: Fehler hier dürfen den Scan nicht kaputt machen. */
+async function customerView(
+  accountId: number,
+  code: string | null,
+  opts: { personId?: number | null; annyTicketId?: number | null } = {},
+): Promise<ChipView | null> {
+  try {
+    return await loadChipView(accountId, code, opts);
+  } catch (e) {
+    console.error("[checkin/scan] Kundenfenster", e);
+    return null;
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -43,6 +59,7 @@ export async function POST(
   // unterschiedliche Schreibweisen.
   const codesToTry = buildScanCodeVariants(rawCode);
   let ticket = null;
+  let matchedCode = rawCode;
   for (const c of codesToTry) {
     const candidates = await prisma.ticket.findMany({
       where: {
@@ -67,6 +84,7 @@ export async function POST(
       // schlaegt ein abgelaufenes Einzel-Zeitticket (DURATION). Siehe
       // scan-candidate.ts.
       ticket = pickBestScanCandidate(candidates);
+      matchedCode = c;
       break;
     }
   }
@@ -144,7 +162,12 @@ export async function POST(
       });
     }
 
-    return NextResponse.json({ found: false, message: "Ticket nicht gefunden" });
+    // Unbekanntes Bändchen: Kundenfenster mit Vorschlag nach Uhrzeit.
+    return NextResponse.json({
+      found: false,
+      message: "Ticket nicht gefunden",
+      customer: await customerView(monitor.accountId, rawCode),
+    });
   }
 
   let checkedIn = ticket.status === "REDEEMED";
@@ -166,9 +189,28 @@ export async function POST(
     checkedIn = !!scanToday;
   }
 
+  // Kundenfenster: anny-Buchung über den Bucher (Konto über die E-Mail aus
+  // anny), sonst über das Bändchen.
+  const isAnnyDay = ticket.source === "ANNY" && ticket.subscriptionId == null;
+  let annyPerson: number | null = null;
+  if (isAnnyDay) {
+    annyPerson = await ensureAnnyBooker(monitor.accountId, ticket.id).catch((e) => {
+      console.error("[checkin/scan] anny-Bucher", e);
+      return null;
+    });
+  }
+  // anny: der Barcode der Buchung ist kein Bändchen; das Bändchen des Buchers zählt.
+  const annyOrder = isAnnyDay ? await loadAnnyOrder(monitor.accountId, ticket.id).catch(() => null) : null;
+  const viewCode = isAnnyDay ? (annyOrder?.tickets.find((t) => t.booker)?.rfidCode ?? null) : matchedCode;
+  const customer = await customerView(monitor.accountId, viewCode, {
+    personId: annyPerson ?? ticket.riderProfileId ?? null,
+    annyTicketId: isAnnyDay ? ticket.id : null,
+  });
+
   // Abo: Name der Person, die damit fährt (lib/customer-person).
   const rider = riderView(ticket);
   return NextResponse.json({
+    customer,
     found: true,
     ticket: {
       id: ticket.id,

@@ -33,7 +33,9 @@ import { PaymentOpenOverlay } from "@/components/checkin/payment-open-overlay";
 import { BulkOverlay } from "@/components/checkin/bulk-overlay";
 import { Cake, Lock, PackageSearch, Layers, Wallet } from "lucide-react";
 import { bundleAnnyTickets, type TicketBundle } from "@/lib/anny-ticket-bundle";
-import { AddTicketOverlay } from "@/components/checkin/add-ticket-overlay";
+import { AddTicketOverlay, toDateInput } from "@/components/checkin/add-ticket-overlay";
+import { CustomerOverlay } from "@/components/checkin/customer-overlay";
+import type { ChipView } from "@/lib/chip-rules";
 import { printVoucher } from "@/components/checkin/checkin-print";
 import type { BundlePart, CheckinData, CheckinTicket, EquipmentSetup, GuestInfoSummary, OpenableDevice, SlotOverviewData, SlotOverviewSlot } from "@/components/checkin/checkin-types";
 import { DaySelector, GuestInfoSummaryPanel, LiveClock, OverlayGrip, RentalOverviewPanel, Section, overlayScrimClass, overlaySheetClass } from "@/components/checkin/checkin-ui";
@@ -105,6 +107,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [expandedServiceGroups, setExpandedServiceGroups] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
+  // Kundenfenster nach einem Bändchen-Scan (Bändchen am Kunden, lib/chips).
+  const [customer, setCustomer] = useState<{ view: ChipView; ticket: CheckinTicket | null; seq: number } | null>(null);
+  const customerSeq = useRef(0);
   const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
   const [lostItemsOverlayOpen, setLostItemsOverlayOpen] = useState(false);
   const [paymentOpenOverlayOpen, setPaymentOpenOverlayOpen] = useState(false);
@@ -137,6 +142,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     slotEnd?: string;
     /** Beim Mount auf das RFID/Code-Feld fokussieren. */
     focusRfid?: boolean;
+    /** Person aus dem Kundenfenster. */
+    personId?: number;
     voucher?: {
       code: string;
       ticketTypeName: string | null;
@@ -629,6 +636,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           ? { ...prev, ticket, notice: null }
           : { ...prev, notice: ticket ? "Das ist kein Abo. Bitte die Abo-Karte scannen." : json.message ?? "Nicht gefunden." }));
         setScanMode(false);
+      } else if (json.found && json.ticket && json.customer) {
+        // Bändchen am Kunden: Kundenfenster mit Vorschlag statt Ticket-Ansicht.
+        setScanResult(null);
+        setSelectedTicket(null);
+        setScanMode(false);
+        setCustomer({ view: json.customer, ticket: json.ticket, seq: ++customerSeq.current });
       } else if (json.found && json.ticket) {
         setScanResult(json);
         setSelectedTicket(json.ticket);
@@ -645,6 +658,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           voucher: json.voucher,
         });
         setAddTicketOpen(true);
+      } else if (json.customer) {
+        // Unbekanntes Bändchen: direkt Ticket wählen, Kunde freiwillig.
+        setScanResult(null);
+        setSelectedTicket(null);
+        setScanMode(false);
+        setCustomer({ view: json.customer, ticket: null, seq: ++customerSeq.current });
       } else {
         setScanResult(json);
       }
@@ -664,6 +683,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     rfidCode: string;
     existingOwner: string;
     existingType: string | null;
+    message?: string | null;
+    runningAbo?: boolean;
+    canShare?: boolean;
   } | null>(null);
 
   const handleUpdateTicket = useCallback(async (
@@ -681,6 +703,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       slotEnd?: string | null;
       notes?: string | null;
       guestInfo?: Record<string, string> | null;
+      /** Bändchen am Kunden: Code an beiden Tickets lassen. */
+      share?: boolean;
     },
     force?: boolean,
   ) => {
@@ -699,6 +723,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           rfidCode: update.rfidCode,
           existingOwner: json.existingOwner,
           existingType: json.existingType,
+          message: typeof json.message === "string" ? json.message : null,
+          runningAbo: json.runningAbo === true,
+          canShare: json.canShare === true,
         });
         setUpdatingTicket(null);
         return;
@@ -1835,6 +1862,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           accountName={data?.accountName ?? ""}
           rfidConflict={rfidConflict?.ticketId === selectedTicket.id ? rfidConflict : null}
           onForceRfid={() => { if (rfidConflict) { handleUpdateTicket(rfidConflict.ticketId, { rfidCode: rfidConflict.rfidCode }, true); } }}
+          onShareRfid={() => { if (rfidConflict) { handleUpdateTicket(rfidConflict.ticketId, { rfidCode: rfidConflict.rfidCode, share: true }); } }}
           onCancelRfid={() => setRfidConflict(null)}
           ticketScans={(data?.recentScans ?? []).filter((s) => s.ticketId === selectedTicket.id)}
           onAddTicket={() => {
@@ -1869,6 +1897,57 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         <CameraOverlay
           onCapture={handleCameraCapture}
           onClose={() => setCameraOpen(false)}
+        />
+      )}
+
+      {/* Kundenfenster (Bändchen am Kunden) */}
+      {customer && (
+        <CustomerOverlay
+          key={customer.seq}
+          token={token}
+          services={data?.services ?? []}
+          initial={customer.view}
+          photo={customer.ticket?.subscriptionId != null && customer.ticket.profileImage ? customer.ticket.profileImage : null}
+          onClose={() => setCustomer(null)}
+          canOpen={(id) => (data?.tickets ?? []).some((x) => x.id === id) || customer.ticket?.id === id}
+          onOpenTicket={(id) => {
+            const t = (data?.tickets ?? []).find((x) => x.id === id) ?? (customer.ticket?.id === id ? customer.ticket : null);
+            if (!t) return;
+            setCustomer(null);
+            setSelectedTicket(t);
+          }}
+          onFormSale={(prefill) => {
+            setCustomer(null);
+            setSelectedTicket(null);
+            // Kurs/anny-Slot: Tag vorbelegen, damit die Slot-Auswahl gleich lädt.
+            const svc = prefill.serviceId != null ? data?.services.find((x) => x.id === prefill.serviceId) : undefined;
+            const slotDate = svc ? (svc.defaultStartDate ? toDateInput(svc.defaultStartDate) : toDateStr(new Date())) : undefined;
+            setAddTicketPrefill({
+              slotDate,
+              serviceId: prefill.serviceId,
+              rfidCode: prefill.rfidCode,
+              firstName: prefill.firstName,
+              lastName: prefill.lastName,
+              personId: prefill.personId,
+              focusRfid: prefill.focusRfid,
+            });
+            setAddTicketOpen(true);
+          }}
+          onChanged={async (newTicketId) => {
+            const today = toDateStr(new Date());
+            if (date !== today) setDate(today);
+            await refreshRef.current?.();
+            if (newTicketId) {
+              setScanHighlights((prev) => new Map(prev).set(newTicketId, "GRANTED"));
+              setTimeout(() => {
+                setScanHighlights((prev) => {
+                  const next = new Map(prev);
+                  next.delete(newTicketId);
+                  return next;
+                });
+              }, 4000);
+            }
+          }}
         />
       )}
 

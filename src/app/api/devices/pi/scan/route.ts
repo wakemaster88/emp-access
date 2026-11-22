@@ -333,7 +333,11 @@ export async function POST(request: NextRequest) {
       // besten geeignete Ticket waehlen: ein gueltiges Abo/Vereins-Ticket
       // schlaegt ein abgelaufenes Einzel-Zeitticket (DURATION). Siehe
       // scan-candidate.ts.
-      ticket = pickBestScanCandidate(candidates);
+      ticket = pickBestScanCandidate(
+        candidates,
+        new Date(),
+        [device.accessIn, device.accessOut].filter((a): a is number => a != null),
+      );
       break;
     }
   }
