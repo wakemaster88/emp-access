@@ -17,7 +17,9 @@ import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import { apiRequest } from "@/components/raeume/shared";
 import { ActionEditor, emptyAction, type ActionDraft } from "@/components/regeln/action-editor";
 import { TRIGGER_HINTS, TRIGGER_LABELS } from "@/components/regeln/shared";
+import { OperatingExtentSelect } from "@/components/betriebszeiten/operating-extent-select";
 import { deviceControls } from "@/lib/device-controls";
+import type { OperatingExtentKind } from "@/lib/operating-extent";
 import type { Rule, RuleOptions, RuleTrigger } from "@/components/regeln/types";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -129,6 +131,9 @@ export function RuleDialog({
   const [operatingScheduleId, setOperatingScheduleId] = useState<number | null>(
     rule?.operatingScheduleId ?? null,
   );
+  const [operatingExtent, setOperatingExtent] = useState<OperatingExtentKind>(
+    rule?.operatingExtent ?? "SELF",
+  );
   const [windowStart, setWindowStart] = useState(rule?.windowStart ?? "");
   const [windowEnd, setWindowEnd] = useState(rule?.windowEnd ?? "");
   const [onlyWhenDark, setOnlyWhenDark] = useState(rule?.onlyWhenDark ?? false);
@@ -140,6 +145,14 @@ export function RuleDialog({
 
   const triggerDevice = options.devices.find((d) => d.id === triggerDeviceId) ?? null;
   const needsOffset = trigger === "OPENING" || trigger === "CLOSING" || trigger === "SUNRISE" || trigger === "SUNSET";
+  // Haengt die Regel an einer Betriebszeit mit Bahnmieten und Kursen, kann sie
+  // auch zu deren Zeiten laufen. Ohne Unterprofile bleibt die Auswahl verborgen.
+  const usesOperating = trigger === "OPENING" || trigger === "CLOSING" || operating !== "ANY";
+  const effectiveScheduleId =
+    operatingScheduleId ?? options.rooms.find((r) => r.id === roomId)?.operatingScheduleId ?? null;
+  const effectiveSubprofiles =
+    options.schedules.find((s) => s.id === effectiveScheduleId)?.subprofileCount ?? 0;
+  const showExtent = usesOperating && (effectiveSubprofiles > 0 || operatingExtent !== "SELF");
 
   async function save() {
     if (!name.trim()) return setError("Bitte einen Namen angeben.");
@@ -180,6 +193,7 @@ export function RuleDialog({
       idleMinutes: trigger === "IDLE" ? idleMinutes : null,
       operating,
       operatingScheduleId,
+      operatingExtent: usesOperating ? operatingExtent : "SELF",
       windowStart: windowStart || null,
       windowEnd: windowEnd || null,
       onlyWhenDark,
@@ -473,6 +487,14 @@ export function RuleDialog({
                   </NativeSelect>
                 </div>
               </div>
+
+              {showExtent && (
+                <OperatingExtentSelect
+                  disabled={disabled}
+                  value={operatingExtent}
+                  onChange={setOperatingExtent}
+                />
+              )}
 
               <div className="grid gap-2 sm:grid-cols-3">
                 <div className="space-y-1">

@@ -22,6 +22,11 @@ Stand 8. November 2026. Erledigtes bitte streichen.
 - MCP-Schnittstelle: Dürfen Türen und Tore über MCP geschaltet werden
   (Stufe `access`, `MCP_OFFERED_LEVELS`)?
 - Vereinsportal: Soll der Zugang nur außerhalb der Betriebszeit gelten?
+- Betriebszeiten-Automationen (22.11.2026): Sollen Display Shop, Musikanlage,
+  Movingheads und Effektlicht im Insel-Technikraum, Licht in den Umkleiden und
+  Tischlampen Gastro eigene Regeln zur Betriebszeit bekommen? Heute meldet nur
+  der Energie-Agent, wenn sie 45 Min. nach Schluss an sind. Drehkreuze prüfen
+  keine Betriebszeit (nur zur Info).
 - Awards (20.11.2026): für die Treue-Awards „Fährt seit“ an den Personen
   nachtragen, die schon vor 2026 dabei waren.
 - Abos über die E-Mail (20.11.2026, Etappe 2 ff.): Gibt es einen

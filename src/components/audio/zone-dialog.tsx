@@ -36,6 +36,8 @@ import {
   type SpanOffsets,
 } from "@/lib/operating-hours";
 import { formatHhmm, tzMinutesOfDay, tzYmd } from "@/lib/tz-time";
+import type { OperatingExtentKind } from "@/lib/operating-extent";
+import { OperatingExtentSelect } from "@/components/betriebszeiten/operating-extent-select";
 import { Chip, sliderFill } from "./ui";
 import type {
   AudioDeviceOption,
@@ -186,6 +188,7 @@ export function ZoneDialog({
   });
   const [musicOpenOffset, setMusicOpenOffset] = useState(zone?.musicOpenOffset ?? 0);
   const [musicCloseOffset, setMusicCloseOffset] = useState(zone?.musicCloseOffset ?? 0);
+  const [musicExtent, setMusicExtent] = useState<OperatingExtentKind>(zone?.musicExtent ?? "SELF");
   const [airplayEnabled, setAirplayEnabled] = useState(zone?.airplayEnabled ?? false);
   const [bluetoothEnabled, setBluetoothEnabled] = useState(zone?.bluetoothEnabled ?? false);
   const [externalName, setExternalName] = useState(zone?.externalName ?? "");
@@ -308,6 +311,7 @@ export function ZoneDialog({
         ...(musicMode === "TIMES" ? { musicTimes: daysToTimes(days) } : {}),
         musicOpenOffset: musicMode === "OPERATING" ? musicOpenOffset : 0,
         musicCloseOffset: musicMode === "OPERATING" ? musicCloseOffset : 0,
+        musicExtent: musicMode === "OPERATING" ? musicExtent : "SELF",
         airplayEnabled,
         bluetoothEnabled,
         externalName: externalName.trim() || null,
@@ -568,6 +572,13 @@ export function ZoneDialog({
                   Beginn heißt: Musik ab einer halben Stunde vor Betriebsbeginn.
                 </p>
                 {musicHint && <p className="text-xs text-warning">{musicHint}</p>}
+                {((roomSpec?.subprofileCount ?? 0) > 0 || musicExtent !== "SELF") && (
+                  <OperatingExtentSelect
+                    label="Auch zu Bahnmieten und Kursen"
+                    value={musicExtent}
+                    onChange={setMusicExtent}
+                  />
+                )}
               </>
             )}
 

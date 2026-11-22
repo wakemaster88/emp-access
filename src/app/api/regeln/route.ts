@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
       idleMinutes: data.idleMinutes ?? null,
       operating: data.operating ?? "ANY",
       operatingScheduleId: data.operatingScheduleId ?? null,
+      operatingExtent: data.operatingExtent ?? "SELF",
       windowStart: data.windowStart ?? null,
       windowEnd: data.windowEnd ?? null,
       onlyWhenDark: data.onlyWhenDark ?? false,

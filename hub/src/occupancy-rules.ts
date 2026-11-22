@@ -206,6 +206,24 @@ export function inHours(spec: string, hour: number): boolean {
   return from < to ? hour >= from && hour < to : hour >= from || hour < to;
 }
 
+/**
+ * Sind alle Raeume, in denen die Kameras eines Punkts haengen, laut
+ * Betriebszeit zu? Dann misst der Takt dort nicht: niemand wartet, und ein
+ * Mitarbeiter am Lift soll keine „wird voll“-Meldung ausloesen. Kameras ohne
+ * Raum oder Raeume ohne Betriebszeit zaehlen als offen (wie bisher nur das
+ * feste Fenster HUB_OCCUPANCY_HOURS).
+ */
+export function spotClosed(
+  cameraIds: number[],
+  rooms: Array<{ cameras: Array<{ id: number }>; operating: { open: boolean } | null }>,
+): boolean {
+  if (cameraIds.length === 0) return false;
+  return cameraIds.every((id) => {
+    const own = rooms.filter((r) => r.cameras.some((c) => c.id === id));
+    return own.length > 0 && own.every((r) => r.operating != null && r.operating.open === false);
+  });
+}
+
 /** Ein Satz je Punkt fuer Telegram. */
 export function spotLine(s: { name: string; persons: number; level: Level; wait: number; partial?: boolean }): string {
   const who = s.persons === 1 ? "1 Person" : `${s.persons} Personen`;

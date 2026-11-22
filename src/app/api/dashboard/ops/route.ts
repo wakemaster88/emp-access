@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { isPlayerOnline, musicWindowState } from "@/lib/audio-constants";
-import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { scheduleSpecInclude } from "@/lib/operating-queries";
+import { zoneMusicSpec } from "@/lib/operating-extent-queries";
 import {
   berlinDayRange,
   berlinHm,
@@ -77,10 +78,12 @@ export async function GET() {
           musicOpenOffset: true,
           musicCloseOffset: true,
           musicOverrideUntil: true,
+          musicExtent: true,
+          accountId: true,
           externalSender: true,
           device: { select: { lastUpdate: true } },
           account: { select: { timezone: true } },
-          keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
+          keyRoom: { select: { operatingScheduleId: true, operatingSchedule: { include: scheduleSpecInclude } } },
         },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
@@ -188,9 +191,14 @@ export async function GET() {
       };
     });
 
+  // Musikfenster je Zone; mit `musicExtent` samt gebuchten Bahnmieten und Kursen.
+  const zoneSpecs = await Promise.all(
+    zones.map((z) => zoneMusicSpec(db, z.accountId, z, now, z.account.timezone)),
+  );
+
   return NextResponse.json({
     audio: {
-      zones: zones.map((z) => ({
+      zones: zones.map((z, i) => ({
         id: z.id,
         name: z.name,
         isPlaying: z.isPlaying,
@@ -200,7 +208,7 @@ export async function GET() {
         externalSender: z.externalSender,
         offHours: !musicWindowState(
           z,
-          z.keyRoom?.operatingSchedule ? toScheduleSpec(z.keyRoom.operatingSchedule) : null,
+          zoneSpecs[i],
           now,
           z.account.timezone
         ).allowed,

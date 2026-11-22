@@ -2420,6 +2420,8 @@ model AudioZone {
   /// Raum mit Betriebszeit wirkt die Kopplung nicht.
   musicOpenOffset    Int                @default(0)
   musicCloseOffset   Int                @default(0)
+  /// musicMode = OPERATING: Musik auch zu Bahnmieten und Kursen (Unterprofile)?
+  musicExtent        OperatingExtent    @default(SELF)
   /// Manuelles Play ausserhalb des Musikfensters: Bis hierhin gilt die Zone
   /// als "Musik erlaubt" (naechster Fensterbeginn, laengstens Tagesende).
   /// Ein manueller Stopp loescht den Wert. Manuell geht vor Automatik.
@@ -3076,6 +3078,29 @@ model KeySignature {
 // Die Kindtabellen tragen bewusst keinen `accountId`: sie haengen ueber Cascade
 // am Profil, das die Mandantengrenze zieht.
 
+/// Wofuer ein Bereich steht, wo das System ihn ohne Raum braucht. Hoechstens
+/// ein Profil je Rolle und Mandant; ohne Rolle wird ueber den Namen gesucht.
+enum OperatingRole {
+  /// Lift: "Lift geoeffnet" und Auslastung in der Kunden-App, Skills.
+  LIFT
+  /// Shop: Oeffnungszeit im Check-in-Monitor.
+  SHOP
+  /// Strandbad: Oeffnungszeit im Beach Pass.
+  BEACH
+}
+
+/// Wie weit eine Automation die Betriebszeit fasst, wenn der Bereich
+/// Unterprofile (Bahnmieten, Kurse) hat.
+enum OperatingExtent {
+  /// Nur die Betriebszeit des Bereichs selbst (oeffentlicher Betrieb).
+  SELF
+  /// Dazu gebuchte Termine der Unterprofile (anny-Tickets ihrer Ressource),
+  /// beschnitten auf deren Zeiten.
+  BOOKED_SUBPROFILES
+  /// Dazu alle Zeiten der Unterprofile, auch ohne Buchung.
+  SUBPROFILES
+}
+
 /// Betriebszeit-Profil, z. B. "Strandbad" oder "Gastronomie". Ein Raum haengt an
 /// hoechstens einem Profil; Regeln fragen darueber, ob gerade geoeffnet ist.
 model OperatingSchedule {
@@ -3101,6 +3126,8 @@ model OperatingSchedule {
   /// Geteilte Zeit: zwei Profile mit diesem Haken duerfen sich auf derselben
   /// Anlage ueberschneiden (Bahnmiete und Kurs, anny verhindert Doppelbuchungen).
   sharedTime     Boolean              @default(false)
+  /// Rolle des Bereichs (Lift, Shop, Strandbad); null = keine.
+  role           OperatingRole?
   seasons        OperatingSeason[]
   exceptions     OperatingException[]
   rooms          KeyRoom[]
@@ -3272,6 +3299,8 @@ model RoomRule {
   /// Welche Betriebszeit gilt; null = die des Raums.
   operatingScheduleId Int?
   operatingSchedule   OperatingSchedule?     @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
+  /// Auch zu Bahnmieten und Kursen (Unterprofile) der Betriebszeit?
+  operatingExtent     OperatingExtent        @default(SELF)
   /// Zusaetzliches Zeitfenster "HH:mm"–"HH:mm"; Ende vor Beginn = ueber Mitternacht.
   windowStart         String?
   windowEnd           String?
@@ -3403,6 +3432,8 @@ model RoomClimate {
   /// Welche Betriebszeit gilt; null = die des Raums. Ohne beide: immer `targetC`.
   operatingScheduleId Int?
   operatingSchedule   OperatingSchedule? @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
+  /// Auch zu Bahnmieten und Kursen (Unterprofile) der Betriebszeit heizen?
+  operatingExtent     OperatingExtent    @default(SELF)
 
   /// Laufzustand, vom Takt geschrieben.
   lastTempC      Float?

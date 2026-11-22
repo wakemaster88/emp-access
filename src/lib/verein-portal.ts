@@ -7,6 +7,8 @@ import { sendRequestToTelegram } from "@/lib/verein-request-telegram";
 import { blockServiceSlot, releaseSlotBlock, resolveAnnyServiceResource } from "@/lib/slot-blocks";
 import { fetchAnnyResourceBusy } from "@/lib/anny-slot-usage";
 import { daylightDay, daylightSlotStates, overlaps, type DaylightDay, type Interval } from "@/lib/verein-daylight";
+import { clipToProfileSpans, relatedResources } from "@/lib/verein-related-bookings";
+import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { deviceSendsRemoteCommand, isActionAllowedForDevice, triggerDeviceAction } from "@/lib/device-open";
 import {
@@ -147,16 +149,73 @@ async function loadDaylightBusy(
     }),
   ]);
   if (!target.ok) return { grid, ok: false, error: "Buchungssystem gerade nicht erreichbar. Versuche es gleich noch einmal." };
-  const anny = await fetchAnnyResourceBusy(target.baseUrl, target.token, target.resourceUuid, date, target.organizationId);
-  if (!anny.ok) return { grid, ok: false, error: "Buchungssystem gerade nicht erreichbar. Versuche es gleich noch einmal." };
+  const [anny, related] = await Promise.all([
+    fetchAnnyResourceBusy(target.baseUrl, target.token, target.resourceUuid, date, target.organizationId),
+    loadRelatedBusy(verein.accountId, target, date, dayStart, dayEnd),
+  ]);
+  if (!anny.ok || !related.ok) {
+    return { grid, ok: false, error: "Buchungssystem gerade nicht erreichbar. Versuche es gleich noch einmal." };
+  }
 
   const toInterval = (b: { startDate: Date; endDate: Date }): Interval => ({ start: b.startDate.getTime(), end: b.endDate.getTime() });
   return {
     grid,
     ok: true,
     mine: bookings.filter((b) => b.vereinId === verein.id).map(toInterval),
-    busy: [...anny.intervals, ...bookings.map(toInterval), ...blocks.map(toInterval)],
+    busy: [...anny.intervals, ...related.intervals, ...bookings.map(toInterval), ...blocks.map(toInterval)],
   };
+}
+
+/**
+ * Belegung durch Kurse und Mieten auf Nachbar-Ressourcen derselben Anlage
+ * (siehe `verein-related-bookings.ts`). Live aus anny wie die Ziel-Ressource,
+ * dazu die Tickets: ein Ferienkurs beginnt Tage vorher, anny liefert aber nur
+ * Buchungen, die am Tag oder am Vortag beginnen. Ist anny nicht erreichbar,
+ * gilt der Tag als unbekannt.
+ */
+async function loadRelatedBusy(
+  accountId: number,
+  target: { baseUrl: string; token: string; organizationId: string | null; resourceUuid: string },
+  date: string,
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<{ ok: true; intervals: Interval[] } | { ok: false }> {
+  const profiles = await prisma.operatingSchedule.findMany({
+    where: { accountId, annyResourceId: { not: null } },
+    include: scheduleSpecInclude,
+  });
+  const related = relatedResources(
+    profiles.map((p) => ({
+      annyResourceId: p.annyResourceId,
+      parentId: p.parentId,
+      facilities: p.facilities,
+      spec: toScheduleSpec(p),
+    })),
+    target.resourceUuid,
+  );
+  if (related.length === 0) return { ok: true, intervals: [] };
+  const ids = related.map((r) => r.resourceId);
+  const [live, tickets] = await Promise.all([
+    Promise.all(ids.map((id) => fetchAnnyResourceBusy(target.baseUrl, target.token, id, date, target.organizationId))),
+    prisma.ticket.findMany({
+      where: {
+        accountId,
+        annyResourceId: { in: ids },
+        status: { notIn: ["CANCELED", "INVALID", "PAUSED"] },
+        startDate: { lt: dayEnd },
+        endDate: { gt: dayStart },
+      },
+      select: { annyResourceId: true, startDate: true, endDate: true },
+    }),
+  ]);
+  if (live.some((r) => !r.ok)) return { ok: false };
+  const intervals = related.flatMap((r, i) => {
+    const fromTickets = tickets
+      .filter((t) => t.annyResourceId === r.resourceId && t.startDate && t.endDate)
+      .map((t) => ({ start: t.startDate!.getTime(), end: t.endDate!.getTime() }));
+    return clipToProfileSpans([...live[i].intervals, ...fromTickets], r.specs, date);
+  });
+  return { ok: true, intervals };
 }
 
 export type BookingOutcome =

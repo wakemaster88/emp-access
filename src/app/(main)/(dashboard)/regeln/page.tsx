@@ -34,7 +34,11 @@ export default async function RegelnPage() {
         orderBy: { triggeredAt: "desc" },
         take: 60,
       }),
-      db.keyRoom.findMany({ where: { accountId }, ...byName }),
+      db.keyRoom.findMany({
+        where: { accountId },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, operatingScheduleId: true },
+      }),
       db.device.findMany({
         where: { accountId, isActive: true },
         select: { id: true, name: true, type: true, category: true },
@@ -42,7 +46,11 @@ export default async function RegelnPage() {
       }),
       db.camera.findMany({ where: { accountId }, ...byName }),
       db.accessArea.findMany({ where: { accountId }, ...byName }),
-      db.operatingSchedule.findMany({ where: { accountId }, ...byName }),
+      db.operatingSchedule.findMany({
+        where: { accountId },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, _count: { select: { children: true } } },
+      }),
       db.audioZone.findMany({ where: { accountId }, ...byName }),
       db.audioAnnouncement.findMany({ where: { accountId }, ...byName }),
       db.audioPlaylist.findMany({ where: { accountId }, ...byName }),
@@ -53,7 +61,16 @@ export default async function RegelnPage() {
     // Prisma liefert Date-Objekte; die Client-Typen erwarten ISO-Strings.
     rules: JSON.parse(JSON.stringify(rules)),
     runs: JSON.parse(JSON.stringify(runs)),
-    options: { rooms, devices, cameras, areas, schedules, audioZones, announcements, playlists },
+    options: {
+      rooms,
+      devices,
+      cameras,
+      areas,
+      schedules: schedules.map((s) => ({ id: s.id, name: s.name, subprofileCount: s._count.children })),
+      audioZones,
+      announcements,
+      playlists,
+    },
     timezone: account?.timezone || DEFAULT_TIMEZONE,
     readonly: session.user.role === "USER",
     renderedAt: new Date().toISOString(),

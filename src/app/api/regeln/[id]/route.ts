@@ -59,6 +59,7 @@ export async function PUT(
       ...(data.operatingScheduleId !== undefined && {
         operatingScheduleId: data.operatingScheduleId,
       }),
+      ...(data.operatingExtent !== undefined && { operatingExtent: data.operatingExtent }),
       ...(data.windowStart !== undefined && { windowStart: data.windowStart }),
       ...(data.windowEnd !== undefined && { windowEnd: data.windowEnd }),
       ...(data.onlyWhenDark !== undefined && { onlyWhenDark: data.onlyWhenDark }),

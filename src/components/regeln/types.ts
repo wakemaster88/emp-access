@@ -1,5 +1,7 @@
 /** Datenformen des Regelmoduls, so wie sie die API liefert. */
 
+import type { OperatingExtentKind } from "@/lib/operating-extent";
+
 export type RuleTrigger =
   | "TIME"
   | "OPENING"
@@ -76,6 +78,8 @@ export interface Rule {
   operating: RuleOperating;
   operatingScheduleId: number | null;
   operatingSchedule: Named | null;
+  /** Auch zu Bahnmieten und Kursen (Unterprofile) der Betriebszeit. */
+  operatingExtent: OperatingExtentKind;
   windowStart: string | null;
   windowEnd: string | null;
   onlyWhenDark: boolean;
@@ -99,11 +103,12 @@ export interface RuleRun {
 
 /** Auswahllisten für den Regel-Dialog. */
 export interface RuleOptions {
-  rooms: Named[];
+  rooms: Array<Named & { operatingScheduleId?: number | null }>;
   devices: Array<{ id: number; name: string; type: string; category: string | null }>;
   cameras: Named[];
   areas: Named[];
-  schedules: Named[];
+  /** `subprofileCount`: Bahnmieten und Kurse unter dem Profil. */
+  schedules: Array<Named & { subprofileCount?: number }>;
   audioZones: Named[];
   announcements: Named[];
   playlists: Named[];

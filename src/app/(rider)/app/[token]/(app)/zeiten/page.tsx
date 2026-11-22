@@ -28,7 +28,7 @@ export default async function RiderOpeningCalendar({
   const query = await searchParams;
   const rider = await requireRider(token);
   const base = await riderBase(token);
-  const schedules = await loadRiderSchedules(rider.accountId);
+  const schedules = await loadRiderSchedules(rider.accountId, rider.pass === "BEACH" ? "BEACH" : "LIFT");
   const today = berlinYmd(new Date());
   const schedule = schedules.find((s) => String(s.id) === query.bereich) ?? schedules[0] ?? null;
   const month = schedule ? calendarMonth(schedule.spec, calendarMonthKey(query.monat, today), today) : null;

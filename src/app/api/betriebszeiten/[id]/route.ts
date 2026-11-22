@@ -6,6 +6,7 @@ import {
   clashError,
   clashesForCandidate,
   clearOtherDefaults,
+  clearOtherRoles,
   exceptionInputsToSpec,
   replaceExceptions,
   replaceSeasons,
@@ -68,6 +69,8 @@ export async function PUT(
 
   // Ein Unterprofil ist nie die Vorbelegung für neue Räume.
   const isDefault = parentId != null ? false : data.isDefault;
+  // Lift, Shop, Strandbad gibt es nur an eigenen Bereichen.
+  const role = parentId != null ? null : data.role;
   await db.operatingSchedule.update({
     where: { id: scheduleId },
     data: {
@@ -79,6 +82,7 @@ export async function PUT(
       ...(data.facilities !== undefined && { facilities: cleanFacilities(data.facilities) }),
       ...(data.annyResourceId !== undefined && { annyResourceId: data.annyResourceId }),
       ...(data.sharedTime !== undefined && { sharedTime: data.sharedTime }),
+      ...(role !== undefined && { role }),
     },
     select: { id: true },
   });
@@ -86,6 +90,7 @@ export async function PUT(
   if (data.seasons) await replaceSeasons(db, scheduleId, data.seasons);
   if (data.exceptions) await replaceExceptions(db, scheduleId, data.exceptions);
   if (isDefault) await clearOtherDefaults(db, accountId, scheduleId);
+  if (role) await clearOtherRoles(db, accountId, scheduleId, role);
 
   const schedule = await db.operatingSchedule.findUnique({
     where: { id: scheduleId },

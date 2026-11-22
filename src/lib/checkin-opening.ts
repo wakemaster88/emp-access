@@ -8,9 +8,8 @@
 
 import { openingForDay, operatingSpansForDay, type ScheduleSpec } from "./operating-hours";
 import { DEFAULT_TIMEZONE } from "./tz-time";
+import { pickShopSchedule } from "./operating-role";
 
-const SHOP_NAME = /shop/i;
-const LIFT_NAME = /wasserski|wakeboard|seilbahn|lift/i;
 
 export interface CheckinDayOpening {
   /** Name des Profils, z. B. „Wasserski & Shop“. */
@@ -24,15 +23,8 @@ export interface CheckinDayOpening {
   note: string | null;
 }
 
-/** Welches Profil gilt für den Shop? Erst „Shop“, dann Lift, dann Vorbelegung, dann das einzige. */
-export function pickShopSchedule<T extends { name: string; isDefault: boolean }>(schedules: T[]): T | null {
-  return (
-    schedules.find((s) => SHOP_NAME.test(s.name)) ??
-    schedules.find((s) => LIFT_NAME.test(s.name)) ??
-    schedules.find((s) => s.isDefault) ??
-    (schedules.length === 1 ? schedules[0] : null)
-  );
-}
+/** Welches Profil gilt für den Shop? Siehe `operating-role.ts`. */
+export { pickShopSchedule };
 
 /** "12:00" -> "12", "12:30" -> "12:30". */
 function shortTime(hhmm: string): string {

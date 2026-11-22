@@ -58,6 +58,21 @@ export interface ScheduleSpec {
   name: string;
   seasons: SeasonSpec[];
   exceptions: ExceptionSpec[];
+  /**
+   * Zusaetzliche Zeiten, nur fuer Automationen: Unterprofile (Bahnmieten,
+   * Kurse) bzw. ihre gebuchten Termine je Kalendertag. Sie werden mit den
+   * eigenen Zeiten des Tages zusammengelegt. Anzeigen setzen das nie.
+   */
+  extra?: ScheduleExtra;
+}
+
+export interface ScheduleExtra {
+  /** Profile, deren Zeiten voll mitzaehlen. */
+  specs?: ScheduleSpec[];
+  /** Weitere Spannen je Kalendertag "YYYY-MM-TT", z. B. gebuchte Termine. */
+  windows?: Record<string, OpeningWindow[]>;
+  /** Anzeige fuer Tage, die nur durch diese Zeiten offen sind. */
+  label?: string;
 }
 
 /** Eine Oeffnungsspanne an einem Tag. */
@@ -119,6 +134,60 @@ export function seasonForDay(schedule: ScheduleSpec, ymd: string): SeasonSpec | 
  * Betriebs, nicht UTC.
  */
 export function openingForDay(schedule: ScheduleSpec, ymd: string): DayOpening {
+  const own = ownOpeningForDay(schedule, ymd);
+  const extra = schedule.extra;
+  if (!extra) return own;
+  const more = [
+    ...(extra.specs ?? []).flatMap((spec) => ownOpeningForDay(spec, ymd).windows),
+    ...(extra.windows?.[ymd] ?? []),
+  ];
+  if (more.length === 0) return own;
+  const windows = mergeWindows([...own.windows, ...more]);
+  return {
+    ymd,
+    closed: windows.length === 0,
+    windows,
+    source: own.closed ? "season" : own.source,
+    label: own.closed ? (extra.label ?? own.label) : own.label,
+  };
+}
+
+/** Minuten seit Tagesbeginn als "HH:mm"; ab 24 Uhr am Folgetag. */
+function minutesToHhmm(minutes: number): string {
+  return formatHhmm(((minutes % 1440) + 1440) % 1440);
+}
+
+/**
+ * Spannen eines Tages zusammenlegen, wo sie sich beruehren oder ueberlappen
+ * (10–12 und 12–16 werden 10–16). Ueber Mitternacht laufende Spannen bleiben
+ * erhalten; "durchgehend" (Beginn = Ende) deckt 24 Stunden ab.
+ */
+export function mergeWindows(windows: OpeningWindow[]): OpeningWindow[] {
+  const ranges = windows
+    .map((w) => {
+      const open = parseHhmm(w.opensAt);
+      const close = parseHhmm(w.closesAt);
+      if (open == null || close == null) return null;
+      const end = close > open ? close : close + 1440;
+      return { start: open, end };
+    })
+    .filter((r): r is { start: number; end: number } => r !== null)
+    .sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else merged.push({ ...r });
+  }
+  return merged.map((r) => {
+    const close = Math.min(r.end, r.start + 1440) % 1440;
+    // Wie `toWindow`: Ende vor Beginn = ueber Mitternacht, gleich = durchgehend.
+    return { opensAt: minutesToHhmm(r.start), closesAt: minutesToHhmm(close), overnight: close < r.start };
+  });
+}
+
+/** Oeffnung eines Tages nur aus Ausnahmetag bzw. Saison, ohne `extra`. */
+function ownOpeningForDay(schedule: ScheduleSpec, ymd: string): DayOpening {
   const exception = schedule.exceptions.find((e) => e.date === ymd);
   if (exception) {
     if (exception.closed || !exception.opensAt || !exception.closesAt) {

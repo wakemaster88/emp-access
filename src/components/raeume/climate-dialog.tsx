@@ -10,8 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
+import { OperatingExtentSelect } from "@/components/betriebszeiten/operating-extent-select";
 import { ErrorLine, apiRequest, shortDeviceName } from "@/components/raeume/shared";
 import type { RoomClimateView, RoomDevice, ScheduleOption } from "@/components/raeume/types";
+import type { OperatingExtentKind } from "@/lib/operating-extent";
 import { cn } from "@/lib/utils";
 
 const HEATER_RE = /heiz|klima|radiator|ofen/i;
@@ -33,6 +35,7 @@ export function ClimateDialog({
   roomId,
   roomName,
   roomScheduleName,
+  roomScheduleId,
   climate,
   roomDevices,
   allShellys,
@@ -43,6 +46,7 @@ export function ClimateDialog({
   roomName: string;
   /** Betriebszeit des Raums, falls gesetzt. */
   roomScheduleName: string | null;
+  roomScheduleId: number | null;
   climate: RoomClimateView | null;
   roomDevices: RoomDevice[];
   /** Alle Shelly-Geraete des Mandanten, falls Fuehler oder Heizung in einem anderen Raum haengen. */
@@ -76,6 +80,7 @@ export function ClimateDialog({
   const [afterrun, setAfterrun] = useState(String(climate?.afterrunMinutes ?? 30));
   const [hysteresis, setHysteresis] = useState(String(climate?.hysteresisC ?? 0.5).replace(".", ","));
   const [scheduleId, setScheduleId] = useState<number | null>(climate?.operatingScheduleId ?? null);
+  const [extent, setExtent] = useState<OperatingExtentKind>(climate?.operatingExtent ?? "SELF");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -101,6 +106,7 @@ export function ClimateDialog({
       afterrunMinutes: afterrun,
       hysteresisC: hysteresis,
       operatingScheduleId: scheduleId,
+      operatingExtent: extent,
     });
     setSaving(false);
     if (!res.ok) return setError(res.message);
@@ -120,6 +126,9 @@ export function ClimateDialog({
   const scheduleName = scheduleId
     ? scheduleOptions.find((o) => o.id === scheduleId)?.name ?? null
     : roomScheduleName;
+  const effectiveSubprofiles =
+    scheduleOptions.find((o) => o.id === (scheduleId ?? roomScheduleId))?.subprofileCount ?? 0;
+  const showExtent = !!scheduleName && (effectiveSubprofiles > 0 || extent !== "SELF");
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -155,6 +164,8 @@ export function ClimateDialog({
               </NativeSelect>
             </div>
           </div>
+
+          {showExtent && <OperatingExtentSelect value={extent} onChange={setExtent} />}
 
           {scheduleName && (
             <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-3">

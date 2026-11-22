@@ -9,7 +9,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
 import { clampVolume, musicWindowState, pairableSeconds, parseExternalKind } from "@/lib/audio";
-import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { scheduleSpecInclude } from "@/lib/operating-queries";
+import { zoneMusicSpec } from "@/lib/operating-extent-queries";
 
 const JOB_BATCH_SIZE = 20;
 
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
         },
       },
       account: { select: { timezone: true } },
-      keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
+      keyRoom: { select: { operatingScheduleId: true, operatingSchedule: { include: scheduleSpecInclude } } },
     },
   });
 
@@ -50,11 +51,12 @@ export async function GET(request: NextRequest) {
   // – hier gerechnet, weil der Abspieler weder Saison noch Ausnahmetage kennt.
   // `until` nennt den nächsten Wechsel, damit der Pi ihn auch ohne Verbindung
   // einhält.
-  const operating = zone.keyRoom?.operatingSchedule;
+  // Mit `musicExtent` zählen gebuchte Bahnmieten und Kurse mit.
+  const now = new Date();
   const music = musicWindowState(
     zone,
-    operating ? toScheduleSpec(operating) : null,
-    new Date(),
+    await zoneMusicSpec(db, zone.accountId, zone, now, zone.account.timezone),
+    now,
     zone.account.timezone
   );
 

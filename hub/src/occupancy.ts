@@ -2,7 +2,8 @@
  * Belegung und Wartezeiten an Uebungslift, Seilbahn, Gastro und Drehkreuz.
  *
  * Tagsueber (HUB_OCCUPANCY_HOURS, Standard 9-21) alle
- * HUB_OCCUPANCY_INTERVAL Sekunden (Standard 300):
+ * HUB_OCCUPANCY_INTERVAL Sekunden (Standard 300), nur an Punkten, deren
+ * Raeume laut Betriebszeit offen sind (Kameras ohne Raum zaehlen immer):
  *  - Schnappschuss jeder zugeordneten Kamera, Personen zaehlen mit dem
  *    YOLO-Tracker (POST /classify), optional nur in einer Zone je Kamera.
  *  - Zutritte je Drehkreuz-Bereich aus der Cloud (GET /api/hub/occupancy):
@@ -23,6 +24,7 @@ import { detectPersons } from "./person-crop.js";
 import { inside } from "./vision.js";
 import { sendPhoto, sendText } from "./agent/telegram.js";
 import { berlinHour } from "./agent/watch.js";
+import { roomsPayload } from "./rooms.js";
 import {
   DEFAULT_SPOTS,
   camerasForSpot,
@@ -33,6 +35,7 @@ import {
   newAlertState,
   safeRegex,
   smooth,
+  spotClosed,
   spotLine,
   stepAlert,
   waitMinutes,
@@ -240,12 +243,30 @@ async function measureSpot(spot: SpotConfig): Promise<SpotReading | null> {
   return reading;
 }
 
-/** Alle Punkte messen (laeuft nie doppelt). */
-export function measureAll(): Promise<SpotReading[]> {
+/** Punkte, deren Raeume gerade alle zu sind (siehe spotClosed). */
+function closedSpotKeys(list: SpotConfig[]): Set<string> {
+  const rooms = roomsPayload().rooms;
+  const cams = listCameraConfigs();
+  return new Set(list.filter((s) => spotClosed(camerasForSpot(s, cams).map((c) => c.id), rooms)).map((s) => s.key));
+}
+
+/**
+ * Alle Punkte messen (laeuft nie doppelt). Mit `skipClosed` (der Takt) nur
+ * Punkte, deren Raeume offen sind; auf Nachfrage immer alle.
+ */
+export function measureAll(opts: { skipClosed?: boolean } = {}): Promise<SpotReading[]> {
   if (running) return running;
   running = (async () => {
     try {
-      const list = (await loadSpots()).filter((s) => s.enabled !== false);
+      let list = (await loadSpots()).filter((s) => s.enabled !== false);
+      if (opts.skipClosed) {
+        const closed = closedSpotKeys(list);
+        for (const key of closed) {
+          const rt = runtime.get(key);
+          if (rt) rt.alert = newAlertState();
+        }
+        list = list.filter((s) => !closed.has(s.key));
+      }
       await refreshAreas();
       const out: SpotReading[] = [];
       for (const s of list) {
@@ -346,7 +367,7 @@ async function tick(chatIds: () => string[]): Promise<void> {
     for (const rt of runtime.values()) rt.alert = newAlertState();
     return;
   }
-  const readings = await measureAll();
+  const readings = await measureAll({ skipClosed: true });
   if (!ALERTS) return;
   const ids = chatIds();
   for (const r of readings) {

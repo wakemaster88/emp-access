@@ -14,6 +14,8 @@ import { safeAuth } from "@/lib/auth";
 import { superAdminClient, tenantClient, type TenantDb } from "@/lib/prisma";
 import { isPlayerOnline } from "@/lib/audio-constants";
 import { scheduleInclude, scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { extendedSpecCache } from "@/lib/operating-extent-queries";
+import type { ScheduleSpec } from "@/lib/operating-hours";
 import { audioActionLabel, buildRoomAutomation, sortAutomations, type AutomationInput } from "@/lib/room-automations";
 import { deviceControls } from "@/lib/device-controls";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
@@ -161,6 +163,8 @@ export default async function RaeumePage() {
             offsetMinutes: true,
             timeOfDay: true,
             daysOfWeek: true,
+            operatingScheduleId: true,
+            operatingExtent: true,
             operatingSchedule: { include: scheduleSpecInclude },
             actions: {
               select: {
@@ -236,7 +240,7 @@ export default async function RaeumePage() {
     }),
     db.operatingSchedule.findMany({
       where: accountFilter,
-      select: { id: true, name: true, isDefault: true },
+      select: { id: true, name: true, isDefault: true, _count: { select: { children: true } } },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
     isSuperAdmin
@@ -360,6 +364,22 @@ export default async function RaeumePage() {
   // Ablaeufe je Raum: Regeln des Raums plus Audio-Zeitplaene, die eine Zone
   // des Raums bespielen. Ohne eigene Betriebszeit gilt die des Raums.
   const automationsByRoom = new Map<number, ReturnType<typeof buildRoomAutomation>[]>();
+  // Regeln, die auch zu Bahnmieten und Kursen laufen: naechster Lauf nach der
+  // erweiterten Betriebszeit, sonst stuende dort die oeffentliche Oeffnung.
+  const extended = extendedSpecCache(db, now);
+  const extendedByRule = new Map<number, ScheduleSpec>();
+  await Promise.all(
+    rooms.flatMap((room) =>
+      room.rules
+        .filter((rule) => rule.operatingExtent !== "SELF")
+        .map(async (rule) => {
+          const scheduleId = rule.operatingScheduleId ?? room.operatingScheduleId;
+          if (scheduleId == null) return;
+          const spec = await extended(room.accountId, scheduleId, rule.operatingExtent, tz);
+          if (spec) extendedByRule.set(rule.id, spec);
+        }),
+    ),
+  );
   for (const room of rooms) {
     const roomSchedule = room.operatingSchedule ? toScheduleSpec(room.operatingSchedule) : null;
     const zoneNames = new Map(room.audioZones.map((z) => [z.id, z.name]));
@@ -373,7 +393,9 @@ export default async function RaeumePage() {
       offsetMinutes: rule.offsetMinutes,
       timeOfDay: rule.timeOfDay,
       daysOfWeek: rule.daysOfWeek,
-      schedule: rule.operatingSchedule ? toScheduleSpec(rule.operatingSchedule) : roomSchedule,
+      schedule:
+        extendedByRule.get(rule.id) ??
+        (rule.operatingSchedule ? toScheduleSpec(rule.operatingSchedule) : roomSchedule),
       actions: rule.actions.map(ruleActionLabel),
       lastRunAt: rule.lastRunAt,
     }));
@@ -501,7 +523,12 @@ export default async function RaeumePage() {
               looseCameras: looseCameras.map(toCamera),
               looseZones: looseZones.map(toZone),
               network,
-              scheduleOptions: schedules,
+              scheduleOptions: schedules.map((s) => ({
+                id: s.id,
+                name: s.name,
+                isDefault: s.isDefault,
+                subprofileCount: s._count.children,
+              })),
               timezone: tz,
               renderedAt: now.toISOString(),
             }}

@@ -7,6 +7,7 @@
  */
 
 import type { ExceptionSpec, SeasonSpec } from "@/lib/operating-hours";
+import type { OperatingExtentKind } from "@/lib/operating-extent";
 import type { RoomActivity } from "@/lib/room-activity";
 import type { RoomAutomation } from "@/lib/room-automations";
 import type { MowerMap, MowerState } from "@/lib/mower";
@@ -98,6 +99,8 @@ export interface ScheduleOption {
   id: number;
   name: string;
   isDefault: boolean;
+  /** Bahnmieten und Kurse (Unterprofile) unter dem Profil. */
+  subprofileCount?: number;
 }
 
 /** Klima des Raums (Solltemperatur halten), siehe src/lib/room-climate.ts. */
@@ -120,6 +123,8 @@ export interface RoomClimateView {
   fanOn: boolean | null;
   lastHumidity: number | null;
   operatingScheduleId: number | null;
+  /** Auch zu Bahnmieten und Kursen der Betriebszeit heizen. */
+  operatingExtent: OperatingExtentKind;
   lastTempC: number | null;
   lastReadAt: string | null;
   heating: boolean | null;

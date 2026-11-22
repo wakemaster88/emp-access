@@ -362,6 +362,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
           roomId={climateRoom.id}
           roomName={climateRoom.name}
           roomScheduleName={climateRoom.schedule?.name ?? null}
+          roomScheduleId={climateRoom.schedule?.id ?? null}
           climate={climateRoom.climate}
           roomDevices={climateRoom.devices}
           allShellys={allShellys}

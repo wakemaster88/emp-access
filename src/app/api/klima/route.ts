@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionOrApiToken } from "@/lib/api-auth";
 import { CLIMATE_LIMITS, climateView } from "@/lib/room-climate";
+import { isOperatingExtent } from "@/lib/operating-extent";
 
 /**
  * Klima je Raum (Solltemperatur halten). Sitzung oder Account-Token, damit
@@ -98,6 +99,8 @@ export async function PUT(request: NextRequest) {
     const sched = await db.operatingSchedule.findFirst({ where: { id: operatingScheduleId, accountId }, select: { id: true } });
     if (!sched) return bad("Betriebszeit nicht gefunden");
   }
+  const extent = body.operatingExtent;
+  if (extent !== undefined && !isOperatingExtent(extent)) return bad("Reichweite der Betriebszeit unbekannt");
 
   const data = {
     isActive: body.isActive !== false,
@@ -114,6 +117,8 @@ export async function PUT(request: NextRequest) {
     fanAfterrunMinutes,
     fanMinTempC,
     operatingScheduleId,
+    // Nur setzen, wenn mitgeschickt: aeltere Hub-Stände kennen das Feld nicht.
+    ...(extent !== undefined && { operatingExtent: extent }),
   };
   const climate = await db.roomClimate.upsert({
     where: { roomId },
