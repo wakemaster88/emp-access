@@ -5,9 +5,11 @@ import { tenantClient } from "@/lib/prisma";
 import { isTenantAdminRole } from "@/lib/api-auth";
 import { berlinHm, berlinYmd } from "@/lib/berlin-day";
 import {
-  benefitVoucherState, challengePhase, dbDateToYmd, offerVisible, parsePriceMap, ymdToDbDate,
+  benefitVoucherState, challengePhase, dbDateToYmd, milestoneConditionText, offerVisible, parsePriceMap,
+  periodKey, ymdToDbDate, ALL_TIME_KEY, TIER_LABEL,
   type GamiMetric, type GamiPeriod, type GamiTier,
 } from "@/lib/gamification";
+import { awardReach, bucketize, groupPersonDays, monthRows } from "@/lib/gamification-stats";
 import { challengeUnits, settleDueChallenges, type ChallengeRow } from "@/lib/challenge-service";
 import { loadVoting } from "@/lib/challenge-voting";
 import { Header } from "@/components/layout/header";
@@ -19,7 +21,7 @@ import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { MilestonesCard, type MilestoneRow } from "@/components/gamification/milestones-card";
-import { loadOpeningDays, loadWaterNow } from "@/lib/gamification-service";
+import { loadOpeningDays, loadWaterNow, toMilestoneRule } from "@/lib/gamification-service";
 import { BenefitVouchersCard, type BenefitVoucherRow } from "@/components/gamification/benefit-vouchers-card";
 import { RidersCard, type RiderRow } from "@/components/gamification/riders-card";
 import { DayGuestMailsCard, type DayGuestMailRow } from "@/components/gamification/day-guest-mails-card";
@@ -100,16 +102,24 @@ export default async function GamificationPage({ searchParams }: { searchParams:
   const skillName = new Map(skillChoices.map((k) => [k.id, k.name]));
 
   if (tab === "auswertung") {
-    const [perTicket, awards, openVouchers, redeemedVouchers] = await Promise.all([
-      db.riderDayStat.groupBy({
-        by: ["ticketId"],
-        where: { accountId, day: yearRange },
-        _count: { _all: true },
-        _sum: { starts: true },
+    const subscriptionIds = config?.subscriptionIds ?? [];
+    const capPerDay = config?.startCapPerDay ?? 10;
+    const todayYmd = berlinYmd(new Date());
+    const [stats, milestones, awardRows, openVouchers, redeemedVouchers, legacyDevice, openingDays] = await Promise.all([
+      // Alle Jahre: Awards ohne Zeitraum zählen über die ganze Zeit.
+      subscriptionIds.length
+        ? db.riderDayStat.findMany({
+            where: { accountId, ticket: { subscriptionId: { in: subscriptionIds }, NOT: { name: { startsWith: "TEST:" } } } },
+            select: { ticketId: true, day: true, starts: true },
+          })
+        : Promise.resolve([]),
+      db.milestone.findMany({
+        where: { accountId, active: true, audience: { in: ["RIDE", "ALL"] } },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
       }),
-      // Nach dem Tag der Vergabe: Awards ohne Zeitraum tragen kein Jahr im Schlüssel.
-      db.milestoneAward.count({
-        where: { accountId, awardedAt: { gte: new Date(`${year}-01-01T00:00:00+01:00`), lt: new Date(`${year + 1}-01-01T00:00:00+01:00`) } },
+      db.milestoneAward.findMany({
+        where: { accountId, milestone: { active: true } },
+        select: { milestoneId: true, ticketId: true, periodKey: true },
       }),
       db.voucher.count({
         where: {
@@ -118,48 +128,200 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         },
       }),
       db.voucher.count({ where: { accountId, kind: "BENEFIT", redeemedAt: { not: null } } }),
+      db.device.findFirst({
+        where: { accountId, legacyStartsUntil: { not: null } },
+        select: { name: true, legacyStartsUntil: true },
+        orderBy: { legacyStartsUntil: "desc" },
+      }),
+      loadOpeningDays(db, accountId, [String(year)]),
     ]);
 
-    const riders = perTicket
-      .map((r) => ({ ticketId: r.ticketId, visitDays: r._count._all, starts: r._sum.starts ?? 0 }))
-      .sort((a, b) => b.visitDays - a.visitDays || b.starts - a.starts);
-    const totalDays = riders.reduce((s, r) => s + r.visitDays, 0);
-    const totalStarts = riders.reduce((s, r) => s + r.starts, 0);
-    const buckets = [
-      { label: "1 bis 4 Besuchstage", count: riders.filter((r) => r.visitDays <= 4).length },
-      { label: "5 bis 9 Besuchstage", count: riders.filter((r) => r.visitDays >= 5 && r.visitDays <= 9).length },
-      { label: "10 bis 19 Besuchstage", count: riders.filter((r) => r.visitDays >= 10 && r.visitDays <= 19).length },
-      { label: "20 und mehr Besuchstage", count: riders.filter((r) => r.visitDays >= 20).length },
-    ];
-    const top = riders.slice(0, 10);
-    const tickets = top.length
+    // Je Person zählen wie bei den Awards: Profil, sonst das Ticket.
+    const ticketIds = [...new Set([...stats.map((r) => r.ticketId), ...awardRows.map((a) => a.ticketId)])];
+    const tickets = ticketIds.length
       ? await db.ticket.findMany({
-          where: { accountId, id: { in: top.map((r) => r.ticketId) } },
-          select: { id: true, name: true, firstName: true, lastName: true },
+          where: { accountId, id: { in: ticketIds } },
+          select: {
+            id: true, name: true, firstName: true, lastName: true, riderProfileId: true,
+            riderProfile: { select: { ridingSince: true } },
+          },
         })
       : [];
-    const nameById = new Map(tickets.map((t) => [t.id, ticketLabel(t)]));
+    const personOf = new Map(tickets.map((t) => [t.id, t.riderProfileId != null ? `p${t.riderProfileId}` : `t${t.id}`]));
+    const nameOf = new Map<string, string>();
+    const ridingSince = new Map<string, number | null>();
+    for (const t of tickets) {
+      const key = personOf.get(t.id)!;
+      if (!nameOf.has(key)) nameOf.set(key, ticketLabel(t));
+      if (t.riderProfile?.ridingSince != null) ridingSince.set(key, t.riderProfile.ridingSince);
+    }
+    const persons = groupPersonDays(
+      stats.map((r) => ({ person: personOf.get(r.ticketId) ?? `t${r.ticketId}`, day: dbDateToYmd(r.day), starts: r.starts })),
+      ridingSince,
+    );
+    const yearKey = String(year);
+    const season = persons
+      .map((p) => {
+        const days = p.days.filter((d) => d.day.startsWith(yearKey) && d.starts > 0);
+        return {
+          key: p.key,
+          visitDays: days.length,
+          starts: days.reduce((sum, d) => sum + Math.min(d.starts, capPerDay), 0),
+          allStarts: p.days.reduce((sum, d) => sum + Math.min(d.starts, capPerDay), 0),
+        };
+      })
+      .filter((p) => p.visitDays > 0)
+      .sort((a, b) => b.visitDays - a.visitDays || b.starts - a.starts);
+    const active = season.length;
+    const totalDays = season.reduce((s, r) => s + r.visitDays, 0);
+    const totalStarts = season.reduce((s, r) => s + r.starts, 0);
+    const median = (values: number[]) => {
+      if (values.length === 0) return 0;
+      const v = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(v.length / 2);
+      return v.length % 2 ? v[mid] : Math.round((v[mid - 1] + v[mid]) / 2);
+    };
+
+    const rules = milestones.map(toMilestoneRule);
+    const reach = new Map(awardReach(persons, rules, todayYmd, capPerDay, openingDays).map((r) => [r.milestoneId, r.reached]));
+    const awardedPersons = new Map<number, Set<string>>();
+    const awardsThisYear = awardRows.filter((a) => a.periodKey === yearKey || a.periodKey === ALL_TIME_KEY);
+    for (const a of awardRows) {
+      const m = milestones.find((x) => x.id === a.milestoneId);
+      if (!m || a.periodKey !== periodKey(m.period as GamiPeriod, todayYmd)) continue;
+      const set = awardedPersons.get(a.milestoneId) ?? new Set<string>();
+      set.add(personOf.get(a.ticketId) ?? `t${a.ticketId}`);
+      awardedPersons.set(a.milestoneId, set);
+    }
+    const share = (n: number) => (active > 0 ? `${Math.round((n / active) * 100)} %` : "–");
+
+    const thresholdsOf = (metric: string) => milestones.filter((m) => m.metric === metric).map((m) => m.threshold);
+    const dayBuckets = bucketize(season.map((r) => r.visitDays), [1, ...thresholdsOf("VISIT_DAYS")], "Tage");
+    const startBuckets = bucketize(season.map((r) => r.allStarts), [1, ...thresholdsOf("STARTS")], "Starts");
+    const months = monthRows(persons, yearKey, capPerDay);
+    const monthName = (ym: string) =>
+      new Date(`${ym}-15T12:00:00Z`).toLocaleDateString("de-DE", { month: "long", timeZone: "Europe/Berlin" });
+    const top = season.slice(0, 20);
+    const legacyUntil = legacyDevice?.legacyStartsUntil ? berlinYmd(new Date(legacyDevice.legacyStartsUntil.getTime() - 1)) : null;
+    const fmtYmd = (ymd: string) => `${ymd.slice(8, 10)}.${ymd.slice(5, 7)}.${ymd.slice(0, 4)}`;
 
     content = (
       <>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard label="Aktive Fahrer" value={riders.length} icon={Users} hint={`Saison ${year}`} />
-          <StatCard label="Besuchstage" value={totalDays} icon={CalendarCheck} tone="info" hint="alle Fahrer zusammen" />
-          <StatCard label="Starts" value={totalStarts} icon={Play} tone="success" hint="an den Start-Geräten" />
-          <StatCard label="Awards vergeben" value={awards} icon={Trophy} tone="violet" hint={`${openVouchers} Gutscheine offen, ${redeemedVouchers} eingelöst`} />
+          <StatCard label="Aktive Fahrer" value={active} icon={Users} hint={`Saison ${year}, je Person`} />
+          <StatCard label="Besuchstage" value={totalDays} icon={CalendarCheck} tone="info" hint={`Median ${median(season.map((r) => r.visitDays))} je Fahrer`} />
+          <StatCard label="Starts" value={totalStarts} icon={Play} tone="success" hint={`Median ${median(season.map((r) => r.starts))} je Fahrer`} />
+          <StatCard label="Awards vergeben" value={awardsThisYear.length} icon={Trophy} tone="violet" hint={`${openVouchers} Gutscheine offen, ${redeemedVouchers} eingelöst`} />
+        </div>
+        {legacyDevice && legacyUntil && (
+          <Notice tone="info" compact title={`Bis ${fmtYmd(legacyUntil)} zählt „${legacyDevice.name}“`}>
+            Dort wurde nur ein Teil der Starts gescannt. Besuchstage stimmen, Starts aus dieser Zeit sind eine Untergrenze.
+          </Notice>
+        )}
+        <Card flush>
+          <CardHeader>
+            <CardTitle>Wer welchen Award schafft</CardTitle>
+            <CardDescription>
+              Erreicht: Personen, die das Ziel heute erfüllen (Saison {year} oder insgesamt). Anteil von {active} aktiven Fahrern.
+            </CardDescription>
+          </CardHeader>
+          <Table edge>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Award</TableHead>
+                <TableHead className="max-sm:hidden">Ziel</TableHead>
+                <TableHead className="text-right">Erreicht</TableHead>
+                <TableHead className="text-right max-sm:hidden">Anteil</TableHead>
+                <TableHead className="text-right">Vergeben</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {milestones.length === 0 && <TableEmpty colSpan={5} title="Keine aktiven Awards." />}
+              {milestones.map((m) => {
+                const reached = reach.get(m.id) ?? null;
+                return (
+                  <TableRow key={m.id}>
+                    <TableCell className="max-sm:whitespace-normal">
+                      <span className="font-medium">{m.name}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {TIER_LABEL[m.tier as GamiTier]}
+                        <span className="sm:hidden"> · {milestoneConditionText({ metric: m.metric as GamiMetric, threshold: m.threshold, period: m.period as GamiPeriod, tempBelow: m.tempBelow })}</span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="max-sm:hidden">
+                      {milestoneConditionText({ metric: m.metric as GamiMetric, threshold: m.threshold, period: m.period as GamiPeriod, tempBelow: m.tempBelow })}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {reached ?? "–"}
+                      {reached != null && <span className="block text-xs text-muted-foreground sm:hidden">{share(reached)}</span>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums max-sm:hidden">{reached != null ? share(reached) : "–"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{awardedPersons.get(m.id)?.size ?? 0}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
+        <div className="grid gap-4 sm:gap-5 lg:grid-cols-2">
+          <Card flush>
+            <CardHeader>
+              <CardTitle>Besuchstage je Fahrer</CardTitle>
+              <CardDescription>Saison {year}, Stufen nach den Award-Zielen.</CardDescription>
+            </CardHeader>
+            <Table edge>
+              <TableBody>
+                {dayBuckets.map((b) => (
+                  <TableRow key={b.label}>
+                    <TableCell>{b.label}</TableCell>
+                    <TableCell className="text-right tabular-nums">{b.count}</TableCell>
+                    <TableCell className="w-16 text-right tabular-nums text-muted-foreground">{share(b.count)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+          <Card flush>
+            <CardHeader>
+              <CardTitle>Starts je Fahrer</CardTitle>
+              <CardDescription>Insgesamt, höchstens {capPerDay} je Tag, wie bei den Awards.</CardDescription>
+            </CardHeader>
+            <Table edge>
+              <TableBody>
+                {startBuckets.map((b) => (
+                  <TableRow key={b.label}>
+                    <TableCell>{b.label}</TableCell>
+                    <TableCell className="text-right tabular-nums">{b.count}</TableCell>
+                    <TableCell className="w-16 text-right tabular-nums text-muted-foreground">{share(b.count)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
         </div>
         <div className="grid gap-4 sm:gap-5 lg:grid-cols-2">
           <Card flush>
             <CardHeader>
-              <CardTitle>Wie oft die Fahrer kommen</CardTitle>
-              <CardDescription>Fahrer nach Besuchstagen in der Saison {year}.</CardDescription>
+              <CardTitle>Saison {year} je Monat</CardTitle>
+              <CardDescription>Fahrer, Besuchstage und Starts.</CardDescription>
             </CardHeader>
             <Table edge>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Monat</TableHead>
+                  <TableHead className="text-right">Fahrer</TableHead>
+                  <TableHead className="text-right">Tage</TableHead>
+                  <TableHead className="text-right">Starts</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
-                {buckets.map((b) => (
-                  <TableRow key={b.label}>
-                    <TableCell>{b.label}</TableCell>
-                    <TableCell className="text-right tabular-nums">{b.count}</TableCell>
+                {months.length === 0 && <TableEmpty colSpan={4} title="Noch keine Besuchstage gezählt." />}
+                {months.map((r) => (
+                  <TableRow key={r.month}>
+                    <TableCell>{monthName(r.month)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.persons}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.visitDays}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.starts}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -168,7 +330,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
           <Card flush>
             <CardHeader>
               <CardTitle>Meiste Besuchstage</CardTitle>
-              <CardDescription>Nur hier in der Verwaltung sichtbar.</CardDescription>
+              <CardDescription>Top 20 der Saison {year}. Nur hier in der Verwaltung sichtbar.</CardDescription>
             </CardHeader>
             <Table edge>
               <TableHeader>
@@ -181,8 +343,8 @@ export default async function GamificationPage({ searchParams }: { searchParams:
               <TableBody>
                 {top.length === 0 && <TableEmpty colSpan={3} title="Noch keine Besuchstage gezählt." />}
                 {top.map((r) => (
-                  <TableRow key={r.ticketId}>
-                    <TableCell className="max-sm:whitespace-normal">{nameById.get(r.ticketId) ?? `Ticket ${r.ticketId}`}</TableCell>
+                  <TableRow key={r.key}>
+                    <TableCell className="max-sm:whitespace-normal">{nameOf.get(r.key) ?? "Unbekannt"}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.visitDays}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.starts}</TableCell>
                   </TableRow>
