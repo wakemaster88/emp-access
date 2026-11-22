@@ -1057,6 +1057,8 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
   let lastFrames = 0;
   let lastFrameAt = 0;
   let lastTime = 0;
+  let noPictureSince = 0;
+  let reattached = false;
 
   /*
    * Gleiche, kleine Verzoegerung fuer alle Kacheln: Der Browser puffert
@@ -1107,13 +1109,39 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
     // Browser die nicht liefert) die Abspielzeit des Videos laeuft weiter.
     const frames = cur ? cur.f : 0;
     const t = video.currentTime || 0;
-    if (frames > lastFrames || (t > lastTime && video.videoWidth > 0)) {
+    const moving = frames > lastFrames || (t > lastTime && video.videoWidth > 0);
+    if (moving) {
       lastFrames = Math.max(lastFrames, frames);
       lastTime = t;
       lastFrameAt = now;
+    }
+    /*
+     * Safari dekodiert die Bilder (framesDecoded steigt), das <video> bekommt
+     * aber manchmal nie eine Groesse und bleibt schwarz – im Log vom 22.11.
+     * 1800 Bilder bei 0×0. "LIVE" gilt darum erst mit echter Bildgroesse.
+     * Bleibt das Element bei sichtbarem Fenster 6 s leer, wird der Stream
+     * neu angehaengt, nach weiteren 8 s die Verbindung neu aufgebaut.
+     */
+    const hasPicture = video.videoWidth > 0;
+    if (moving && !hasPicture && document.visibilityState === "visible") {
+      if (!noPictureSince) noPictureSince = now;
+      else if (!reattached && now - noPictureSince > 6000) {
+        reattached = true;
+        const ms = video.srcObject;
+        video.srcObject = null;
+        video.srcObject = ms;
+        video.play().catch(() => {});
+      } else if (reattached && now - noPictureSince > 14000) {
+        retry(false, "kein-bild-im-fenster");
+        return;
+      }
+    } else if (hasPicture) {
+      noPictureSince = 0;
+    }
+    if (moving && hasPicture) {
       if (!isLive) {
         isLive = true;
-        if (attempts > 0) report("live");
+        if (attempts > 0 || reattached) report(reattached ? "live-nach-neuanhaengen" : "live");
         attempts = 0;
         onState("live");
         // Bild da, aber schwarz? Einmal je Verbindung nach 4 s pruefen.
@@ -1124,7 +1152,7 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
           if (dark) report("schwarz");
         }, 4000);
       }
-    } else if (now - lastFrameAt > 12000) {
+    } else if (!moving && now - lastFrameAt > 12000) {
       retry(false, isLive ? "bild-steht" : "keine-bilder");
       return;
     }
@@ -1150,6 +1178,8 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
     isLive = false;
     lastFrames = 0;
     lastTime = 0;
+    noPictureSince = 0;
+    reattached = false;
     if (!pc) return;
     pc.ontrack = null;
     pc.onconnectionstatechange = null;
