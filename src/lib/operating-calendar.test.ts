@@ -8,7 +8,12 @@ import {
   membersLabel,
   hourRange,
   isoWeek,
+  markRuns,
   monthGrid,
+  monthTicks,
+  planSegments,
+  weekWindows,
+  yearMarks,
   monthTitle,
   weekDays,
   weekTitle,
@@ -141,4 +146,44 @@ test("membersLabel: alle, alle außer, Namen", () => {
   assert.equal(membersLabel(all.filter((n) => n !== "Wasserski"), all), "alle außer Wasserski");
   assert.equal(membersLabel(["Wasserski", "Shop"], all), "Wasserski, Shop");
   assert.equal(membersLabel(["Gastronomie"], ["Gastronomie"]), "Gastronomie");
+});
+
+test("markRuns und monthTicks: Läufe und angeschnittene Monate", () => {
+  assert.deepEqual(markRuns("oocx"), [
+    { ch: "o", start: 0, length: 2 },
+    { ch: "c", start: 2, length: 1 },
+    { ch: "x", start: 3, length: 1 },
+  ]);
+  const ticks = monthTicks("2026-11-22", 365);
+  assert.equal(ticks.length, 13);
+  assert.deepEqual(ticks[0], { offset: 0, days: 9, label: "Nov", initial: "N" });
+  assert.deepEqual(ticks[1], { offset: 9, days: 31, label: "Dez", initial: "D" });
+  assert.equal(ticks.at(-1)?.days, 21);
+  assert.equal(ticks.reduce((n, t) => n + t.days, 0), 365);
+});
+
+test("yearMarks, weekWindows und planSegments", () => {
+  const spec = {
+    name: "Test",
+    seasons: [
+      {
+        name: "Sommer",
+        startMmDd: "06-01",
+        endMmDd: "06-30",
+        sortOrder: 0,
+        periods: [
+          { weekday: 5, opensAt: "10:00", closesAt: "20:00" },
+          { weekday: 6, opensAt: "22:00", closesAt: "02:00" },
+        ],
+      },
+    ],
+    exceptions: [{ date: "2027-06-03", closed: false, opensAt: "12:00", closesAt: "18:00", note: "Fronleichnam" }],
+  };
+  // 2027-06-03 Do (Ausnahme), 04 Fr (zu), 05 Sa (offen)
+  assert.equal(yearMarks(spec, "2027-06-03", 3), "xco");
+  const week = weekWindows(spec.seasons[0].periods);
+  assert.deepEqual(week[5], [{ start: 600, end: 1200 }]);
+  assert.deepEqual(week[6], [{ start: 1320, end: 1440 }]);
+  assert.equal(week[0].length, 0);
+  assert.deepEqual(hourRange(planSegments(spec)), { from: 10, to: 24 });
 });

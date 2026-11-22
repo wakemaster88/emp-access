@@ -4,6 +4,7 @@ import {
   CLOSED,
   annyDayValues,
   compareDays,
+  dayMarks,
   daysBetween,
   matchWebsiteSlug,
   parseWebsiteTime,
@@ -97,4 +98,14 @@ test("matchWebsiteSlug: Name, Anfang und Lift", () => {
   assert.equal(matchWebsiteSlug("Gastronomie", slugs), "gastro");
   assert.equal(matchWebsiteSlug("Wasserski", slugs), "wakeboard");
   assert.equal(matchWebsiteSlug("Grillplatz", slugs), null);
+});
+
+test("dayMarks: gleich, anders, leer nach dem letzten eingetragenen Tag", () => {
+  const days = daysBetween("2027-03-12", "2027-03-15"); // Fr, Sa, So, Mo
+  const theirs = (d: string) => (d === "2027-03-13" ? "12:00–16:00" : CLOSED);
+  // Gegenseite hat Zeiten bis 13.03.: Fr gleich zu, Sa gleich, So hier offen, dort leer -> anders, Mo leer
+  assert.equal(dayMarks(days, (d) => scheduleDayValue(wake, d), theirs, "2027-03-13"), "ggal");
+  assert.equal(dayMarks(days, (d) => scheduleDayValue(wake, d), theirs, null), "laal");
+  const result = compareDays(days, (d) => scheduleDayValue(wake, d), theirs);
+  assert.equal(result.differing, 1);
 });

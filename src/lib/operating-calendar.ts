@@ -241,3 +241,78 @@ export function membersLabel(names: string[], all: string[]): string {
   if (names.length >= 3 && rest.length <= 2 && rest.length < names.length) return `alle außer ${rest.join(", ")}`;
   return names.join(", ");
 }
+
+/** Ein Lauf gleicher Zeichen in einer Tageskette ("oooccx…"). */
+export interface MarkRun {
+  ch: string;
+  start: number;
+  length: number;
+}
+
+/** "oocx" -> o ab 0 (2 Tage), c ab 2 (1 Tag), x ab 3 (1 Tag). */
+export function markRuns(marks: string): MarkRun[] {
+  const runs: MarkRun[] = [];
+  for (let i = 0; i < marks.length; i += 1) {
+    const last = runs.at(-1);
+    if (last && last.ch === marks[i]) last.length += 1;
+    else runs.push({ ch: marks[i], start: i, length: 1 });
+  }
+  return runs;
+}
+
+const MONTH_SHORT = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+
+/** Monat in einer Tageskette: Beginn (Tag ab 0) und Länge im Zeitraum. */
+export interface MonthTick {
+  offset: number;
+  days: number;
+  label: string;
+  initial: string;
+}
+
+/** Monate ab `from` über `days` Tage; der angeschnittene erste und letzte Monat zählen mit. */
+export function monthTicks(from: string, days: number): MonthTick[] {
+  const ticks: MonthTick[] = [];
+  for (let i = 0; i < days; i += 1) {
+    const ymd = addDaysToYmd(from, i);
+    if (i === 0 || ymd.endsWith("-01")) {
+      const month = Number(ymd.slice(5, 7)) - 1;
+      ticks.push({ offset: i, days: 0, label: MONTH_SHORT[month], initial: MONTH_SHORT[month][0] });
+    }
+    ticks[ticks.length - 1].days += 1;
+  }
+  return ticks;
+}
+
+/** Je Tag ab `from`: "o" geöffnet, "x" geöffnet als Ausnahmetag, "c" geschlossen. */
+export function yearMarks(spec: ScheduleSpec, from: string, days: number): string {
+  let out = "";
+  for (let i = 0; i < days; i += 1) {
+    const day = openingForDay(spec, addDaysToYmd(from, i));
+    out += day.closed ? "c" : day.source === "exception" ? "x" : "o";
+  }
+  return out;
+}
+
+/** Fenster eines Wochenplans je Wochentag (0 = Mo) in Minuten; über Mitternacht bis 24:00. */
+export function weekWindows(periods: { weekday: number; opensAt: string; closesAt: string }[]): DaySegment[][] {
+  const out: DaySegment[][] = Array.from({ length: 7 }, () => []);
+  for (const p of periods) {
+    const open = parseHhmm(p.opensAt);
+    const close = parseHhmm(p.closesAt);
+    if (open == null || close == null || p.weekday < 0 || p.weekday > 6) continue;
+    out[p.weekday].push(open === close ? { start: 0, end: DAY_MINUTES } : { start: open, end: close < open ? DAY_MINUTES : close });
+  }
+  for (const list of out) list.sort((a, b) => a.start - b.start);
+  return out;
+}
+
+/** Alle Fenster eines Profils (Saisons und Ausnahmen) – für einen gemeinsamen Stundenbereich. */
+export function planSegments(spec: ScheduleSpec): DaySegment[] {
+  const segments = spec.seasons.flatMap((s) => weekWindows(s.periods).flat());
+  for (const e of spec.exceptions) {
+    if (e.closed || !e.opensAt || !e.closesAt) continue;
+    segments.push(...weekWindows([{ weekday: 0, opensAt: e.opensAt, closesAt: e.closesAt }])[0]);
+  }
+  return segments;
+}
