@@ -8,7 +8,7 @@
  *  - Statische Dateien (/_next/static, Icons, Manifest, Splash) kommen aus
  *    dem Cache und werden im Hintergrund aufgefrischt.
  *  - /api wird nie gecacht: alles dort ist personen- oder zeitbezogen.
- *  - Kunden-App (/app/<token>/…): Seiten kommen sofort aus einem lokalen
+ *  - Kunden-App (/app/<token>/… und /beach/<token>/…): Seiten kommen sofort aus einem lokalen
  *    Cache und werden dabei im Hintergrund vom Server erneuert (der Server
  *    bleibt fuehrend, die Seite selbst holt danach frische Daten, siehe
  *    src/components/rider/rider-sync.tsx). Nur angemeldete Seiten mit 200,
@@ -28,7 +28,7 @@
  * bindet die App per Skew Protection an das alte Deployment, das dann an
  * der neuen Datenbank scheitert (20.11.2026, Awards mit ALL_TIME).
  */
-const VERSION = "2026-11-22-beach-pass";
+const VERSION = "2026-11-22-beach-app";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 // Name muss zu RIDER_CACHE_PREFIX in src/lib/rider-local.ts passen (Abmelden loescht danach).
 const RIDER_CACHE = `emp-rider-${VERSION}`;
@@ -79,7 +79,7 @@ function isStaticAsset(url) {
  * Mail- und Familien-Links bleiben aussen vor.
  */
 function riderCacheToken(pathname) {
-  const m = /^\/app\/([^/]+)(\/.*)?$/.exec(pathname);
+  const m = /^\/(?:app|beach)\/([^/]+)(\/.*)?$/.exec(pathname);
   if (!m) return null;
   const token = m[1];
   if (token === "familie" || token === "mail" || decodeURIComponent(token).length < 16) return null;
@@ -99,9 +99,11 @@ const riderServedAt = new Map();
 
 async function purgeRiderToken(token) {
   const cache = await caches.open(RIDER_CACHE);
-  const prefix = `${self.location.origin}/app/${token}`;
+  // Ride Pass (/app) und Beach Pass (/beach) teilen die Anmeldung.
+  const prefixes = ["app", "beach"].map((p) => `${self.location.origin}/${p}/${token}`);
   const keys = await cache.keys();
-  await Promise.all(keys.filter((r) => r.url === prefix || r.url.startsWith(`${prefix}/`) || r.url.startsWith(`${prefix}?`)).map((r) => cache.delete(r)));
+  const hit = (u) => prefixes.some((prefix) => u === prefix || u.startsWith(`${prefix}/`) || u.startsWith(`${prefix}?`));
+  await Promise.all(keys.filter((r) => hit(r.url)).map((r) => cache.delete(r)));
 }
 
 async function storeRider(cacheKey, res) {

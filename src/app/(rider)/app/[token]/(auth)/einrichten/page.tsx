@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { riderAppPath } from "@/lib/rider-app";
+import { riderHome } from "@/lib/rider-base";
 import { findRiderAuthProfile, riderAccess, riderHolder, sessionRider } from "@/lib/rider-auth";
 import { memberName } from "@/lib/rider-family";
 import { aboSentence, setupGreeting } from "@/lib/rider-setup";
@@ -27,8 +27,8 @@ export default async function RiderSetupPage({ params }: { params: Promise<{ tok
   const profile = await findRiderAuthProfile(token);
   if (!profile) notFound();
   const access = await riderAccess(profile);
-  if (access === "ok") redirect(riderAppPath(token));
-  if (access === "login") redirect(`${riderAppPath(token)}/anmelden`);
+  if (access === "ok") redirect(await riderHome(token));
+  if (access === "login") redirect(`${await riderHome(token)}/anmelden`);
 
   const greeting = await setupGreeting(profile.id);
   const name = greeting?.firstName ?? null;
@@ -48,7 +48,7 @@ export default async function RiderSetupPage({ params }: { params: Promise<{ tok
           Zugang an. Melde dich mit dem Zugang von {holder?.name ?? "diesem Konto"} an, dort {name ? `steht ${name}` : "steht das Abo"} unter Familie.
         </p>
         {holder && (
-          <Link href={`${riderAppPath(holder.token)}/anmelden`} className="rd-btn rd-btn-wide"><span>Anmelden</span></Link>
+          <Link href={`${await riderHome(holder.token)}/anmelden`} className="rd-btn rd-btn-wide"><span>Anmelden</span></Link>
         )}
       </>
     );

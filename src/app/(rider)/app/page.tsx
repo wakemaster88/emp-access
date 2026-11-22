@@ -6,6 +6,7 @@ import { AWARD_DEFAULTS } from "@/lib/awards";
 import { RIDER_LOCATION } from "@/lib/rider-shop";
 import { RiderLinkExpired } from "@/components/rider/rider-link-expired";
 import { Suspense } from "react";
+import { riderAppKind } from "@/lib/rider-base";
 
 const PIN_ICON = (
   <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -42,8 +43,17 @@ const PERKS = [
   },
 ];
 
-/** Einstieg in die Kunden-App: Anmeldung per E-Mail-Link, mit oder ohne Abo. */
-export default function RiderLoginPage() {
+/** Dasselbe für den Beach Pass (/beach): Strandtage statt Starts, ohne Lift-Awards im Schaufenster. */
+const BEACH_PERKS = [
+  { ...PERKS[0], text: "Laufzeit und Strandtage auf einen Blick." },
+  { ...PERKS[1], title: "Awards zum Freischalten", text: "Vom ersten Strandtag bis zur Beach-Legende." },
+  { ...PERKS[2], text: "Eis, Drinks und Pommes am Strand." },
+];
+
+/** Einstieg in die Kunden-App: Anmeldung per E-Mail-Link, mit oder ohne Abo. Ride Pass unter /app, Beach Pass unter /beach. */
+export default async function RiderLoginPage() {
+  const beach = (await riderAppKind()) === "beach";
+  const perks = beach ? BEACH_PERKS : PERKS;
   return (
     <main className="rd-main">
       <AwardBadgeDefs />
@@ -55,23 +65,25 @@ export default function RiderLoginPage() {
         </svg>
         <div className="rd-hero-body">
           <div className="rd-hero-line rd-loc">{PIN_ICON}{RIDER_LOCATION}</div>
-          <h1 className="rd-display rd-wl-title">Deine Saison</h1>
-          <p className="rd-wl-lead">Starts sammeln, Awards holen, Gutscheine einlösen.</p>
+          <h1 className="rd-display rd-wl-title">{beach ? "Beach Pass" : "Deine Saison"}</h1>
+          <p className="rd-wl-lead">
+            {beach ? "Strandtage sammeln, Awards holen, Gutscheine einlösen." : "Starts sammeln, Awards holen, Gutscheine einlösen."}
+          </p>
         </div>
       </div>
 
-      <div className="rd-wl-badges" aria-label="Beispiele für Awards">
+      {!beach && <div className="rd-wl-badges" aria-label="Beispiele für Awards">
         {SHOWCASE.map((a) => (
           <AwardBadge key={a.key} award={{ name: a.name, tier: a.tier, metric: a.metric, threshold: a.threshold, key: a.key }} size={a.tier === "LEGENDARY" ? 112 : 84} />
         ))}
-      </div>
+      </div>}
 
       <Suspense fallback={null}>
         <RiderLinkExpired />
       </Suspense>
 
       <ul className="rd-wl-perks">
-        {PERKS.map((p) => (
+        {perks.map((p) => (
           <li key={p.title}>
             <span className="rd-wl-icon">{p.icon}</span>
             <span>

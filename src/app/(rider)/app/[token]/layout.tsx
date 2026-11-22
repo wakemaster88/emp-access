@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { loadRiderCached, riderAppPath } from "@/lib/rider-app";
+import { loadRiderCached } from "@/lib/rider-app";
+import { riderAppKind, riderHome } from "@/lib/rider-base";
+import { APP_BRAND } from "@/lib/rider-app-kind";
 import { appleStartupImages } from "@/lib/pwa-splash";
-import { PASS_NAME } from "@/lib/rider-pass";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -12,13 +13,21 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
   const { token } = await params;
   const rider = await loadRiderCached(token).catch(() => null);
   const name = rider?.accountName ?? "Deine Saison";
+  const brand = APP_BRAND[await riderAppKind()];
   return {
-    title: `Deine Saison · ${name}`,
-    manifest: `${riderAppPath(token)}/manifest.webmanifest`,
+    title: `${brand.name} · ${name}`,
+    icons: {
+      icon: [
+        { url: `/app-icons/${brand.icon}-32.png`, sizes: "32x32", type: "image/png" },
+        { url: `/app-icons/${brand.icon}-192.png`, sizes: "192x192", type: "image/png" },
+      ],
+      apple: [{ url: `/app-icons/${brand.icon}-apple-180.png`, sizes: "180x180", type: "image/png" }],
+    },
+    manifest: `${await riderHome(token)}/manifest.webmanifest`,
     appleWebApp: {
       capable: true,
       statusBarStyle: "black-translucent",
-      title: PASS_NAME[rider?.pass ?? "RIDE"],
+      title: brand.name,
       startupImage: appleStartupImages(),
     },
     robots: { index: false, follow: false },

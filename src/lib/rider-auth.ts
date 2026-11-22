@@ -24,7 +24,8 @@ import {
 import { prisma } from "./prisma";
 import { CHALLENGE_TTL_MS } from "./passkey";
 import type { RelyingParty } from "./passkey-utils";
-import { loadRider, newRiderToken, riderAppPath, type RiderView } from "./rider-app";
+import { loadRider, newRiderToken, type RiderView } from "./rider-app";
+import { riderHome } from "./rider-base";
 import { familyRelation, loadFamilyMembers, memberName, type FamilyMember, type FamilyPerson, type FamilyRelation } from "./rider-family";
 import { RIDER_COOKIE, RIDER_SESSION_DAYS, signRiderSession, verifyRiderSession } from "./rider-session";
 import { riderResetKeyValid } from "./rider-reset";
@@ -218,8 +219,8 @@ export const requireRider = cache(async (token: string): Promise<RiderView> => {
   const profile = await findRiderAuthProfile(token);
   if (!profile) notFound();
   const access = await riderAccess(profile);
-  if (access === "setup" || access === "held") redirect(`${riderAppPath(token)}/einrichten`);
-  if (access === "login") redirect(`${riderAppPath(token)}/anmelden`);
+  if (access === "setup" || access === "held") redirect(`${await riderHome(token)}/einrichten`);
+  if (access === "login") redirect(`${await riderHome(token)}/anmelden`);
   const rider = await loadRider(token);
   if (!rider) notFound();
   return rider;

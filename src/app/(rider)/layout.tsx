@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./rider-base.css";
 import { SwRegister } from "@/components/layout/sw-register";
+import { riderAppKind } from "@/lib/rider-base";
+import { APP_BRAND, APP_PREFIX } from "@/lib/rider-app-kind";
 
 /*
  * Eigener Wurzelrahmen der Kunden-App. Sie nutzt nur ihre `rd-`-Klassen
@@ -24,14 +26,17 @@ export const viewport: Viewport = {
   themeColor: "#0b1214",
 };
 
-export const metadata: Metadata = {
-  title: "Deine Saison",
-  description: "Abo, Gutscheine und Statistik auf einen Blick.",
-  // Allgemeines Ride-Pass-Manifest; unter /app/<token> gilt das persönliche.
-  manifest: "/app/manifest.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Ride Pass" },
-  formatDetection: { telephone: false, email: false, address: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const kind = await riderAppKind();
+  return {
+    title: "Deine Saison",
+    description: "Abo, Gutscheine und Statistik auf einen Blick.",
+    // Allgemeines Manifest der App; unter /app/<token> bzw. /beach/<token> gilt das persönliche.
+    manifest: `${APP_PREFIX[kind]}/manifest.webmanifest`,
+    appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: APP_BRAND[kind].name },
+    formatDetection: { telephone: false, email: false, address: false },
+  };
+}
 
 export default function RiderRootLayout({ children }: { children: React.ReactNode }) {
   return (

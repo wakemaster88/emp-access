@@ -1139,6 +1139,17 @@ Aaron, 21.11.2026: „jetzt das gleiche konzept als beach pass für alle strandb
 - **Pass der Person** (`passKindOf`): Lift-Abo aus `GamificationConfig.subscriptionIds` → Ride Pass. Nur ein Abo aus `beachSubscriptionIds` (z. B. „Beach Abo“) → Beach Pass. Zuerst zählen gültige Tickets, ein Lift-Abo geht immer vor. Tagesgäste bleiben vorerst beim Ride Pass.
 - **Zählung**: Beach-Abo-Tickets zählen einen Besuchstag beim erlaubten Eintritt an einem Eingangs-Drehkreuz des Bereichs „Strandbad“ (`beachEntranceIds` in `beach-occupancy.ts`, gleiche Geräte wie „Strandbad jetzt“). `RiderDayStat.starts` zählt dort die Eintritte und wird nicht angezeigt. Ride-Tickets zählen am Strandbad-Eingang weiter nichts, Beach-Tickets am Lift nichts. `backfillYear` rechnet beides.
 - **Zielgruppe** `PassAudience` (RIDE/BEACH/ALL) an `Milestone`, `Challenge`, `RiderOffer`, Vorgabe RIDE. App, Vergabe (`awardMilestones`, `awardTaskChallenges`), Ranglisten der Challenges (`challengeUnits`), Rückblick-Vergleich und Push (`rider-announce.ts`) filtern danach. Feiertage und Geburtstag gelten für beide.
-- **App**: Klasse `.rd-pass-beach` (Meerblau #0e7490 statt Petrol, Gelb bleibt), Name „Beach Pass“ in Manifest, Titel, Intro und Installations-Hinweis. Ohne Lift-Auslastung und Playlist, „Dein Tag heute“ mit Besuchstag und Ankunft, Rückblick „Tage am Strand“ ohne Starts. Icon ist noch das Ride-Pass-Icon.
+- **App**: Klasse `.rd-pass-beach` (Meerblau #0e7490 statt Petrol, Gelb bleibt), Name „Beach Pass“ in Manifest, Titel, Intro und Installations-Hinweis. Ohne Lift-Auslastung und Playlist, „Dein Tag heute“ mit Besuchstag und Ankunft, Rückblick „Tage am Strand“ ohne Starts.
 - **Verwaltung**: Kunden App › Einstellungen › Karte „Beach Pass“ (Schalter + Strandbad-Abos, `PUT /api/gamification/beach-pass`, zählt die Saison danach neu). Feld „Für“ in den Dialogen für Awards, Challenges und Angebote erscheint nur bei eingeschaltetem Beach Pass.
-- Ab Werk aus (`beachEnabled = false`). Offen: eigene Beach-Awards als Vorlage, Strandbad-Tageskarten (Tagesgäste) im Beach Pass, eigenes Icon.
+- Ab Werk aus (`beachEnabled = false`). Offen: eigene Beach-Awards als Vorlage, Strandbad-Tageskarten (Tagesgäste) im Beach Pass.
+
+### Beach Pass als eigene App unter /beach (22.11.2026)
+
+Aaron, 22.11.2026: „Eigene App unter eigenem Link“. Ein Code, zwei Apps (`src/lib/rider-app-kind.ts`):
+
+- **Proxy** (`src/proxy.ts`): `/beach/…` wird intern auf `/app/…` umgeschrieben, Kopfzeile `x-rd-app: beach`, `x-rd-rest` = Pfad nach dem Token. Beide Kopfzeilen (und `x-rd-base`) löscht der Proxy bei jeder Anfrage, damit das Gerät sie nicht setzen kann.
+- **Links**: `riderHome`/`riderBase` (`rider-base.ts`) liefern `/beach/<token>` in der Beach-App, auch für Familie (`/beach/<ich>/als/<person>`). Neue Links nie fest auf `/app` schreiben.
+- **Richtige App**: `(app)/layout.tsx` leitet die eigene Startseite in die App des Passes um (Beach-Pass-Person auf `/app/…` → `/beach/…`, Ride-Pass-Person auf `/beach/…` → `/app/…`, Unterseite bleibt). Beach Pass aus → alle landen in `/app`. Familienansicht wird nicht umgeleitet.
+- **Anmeldung**: Cookie `rider_session` gilt für `/`, also für beide Apps. Anmeldeseite `/beach` mit eigenem Text, ohne Lift-Awards im Schaufenster. Mail-Link und Einrichten führen über `/app/<token>` und werden dann umgeleitet.
+- **Installation**: eigenes Manifest (Scope `/beach`, Name „Beach Pass“) und Icon `public/app-icons/beach-pass-*` (Meerblau, Sonne, „BEACH PASS / BECKUM“, Quelle wie Ride-Pass-Icon). Service Worker hält `/beach/<token>` wie `/app/<token>` vor.
+- **Aushang**: Kunden App › Einstellungen › „Aushang und Bildschirm“ zeigt bei eingeschaltetem Beach Pass einen zweiten QR-Code zu `/beach` (A4 in Meerblau, `printAppPoster(url, name, "beach")`).
