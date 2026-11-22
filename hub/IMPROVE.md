@@ -1157,3 +1157,20 @@ Log-Abruf nach PR #233 (Hub 9a9c42c, Zentrale in Safari neu geladen 11:29 UTC):
 ### Nächster Schritt
 
 - Zentrale neu laden. Bleibt Safari schwarz, obwohl `bild-ok` im Log steht, Zentrale in Chrome öffnen.
+
+## 2026-11-22 (Zentrale: Safari malt das Videobild nicht – Canvas-Umweg)
+
+### Befund
+
+- Nach #238 und Neuladen um 13:18: alle 12 Kacheln melden „bild-ok“ (Canvas liest ein helles Bild, 640×360 bis 1536×432), auf dem Schirm trotzdem schwarz. Aaron am Mac im Management-WLAN, Safari-Tab `192.168.1.121:8787`.
+- Gleicher Mac, Chrome: alle Bilder sichtbar. Netz und go2rtc sind also in Ordnung, Safari stellt das `<video>` nicht dar.
+- Erster Aufbau hängt weiter bei 7 von 12 Kacheln (`ice-timeout`), Neuversuch nach ca. 4 s verbunden; um 13:19 drei gleichzeitige Abbrüche, sofort neu verbunden.
+
+### Änderungen
+
+- In Safari malt ein Canvas über jedem Live-Video das Bild selbst (ca. 15 Bilder/s, übernimmt object-fit, Zoom und Einblendung der Großansicht). `?spiegel=1` / `?spiegel=0` erzwingt bzw. schaltet ab (wird gemerkt).
+
+### Offen
+
+- Prüfen, ob Safari damit Bilder zeigt; sonst Zentrale in Chrome.
+- Gleichzeitige Abbrüche alle paar Minuten und langsamer erster ICE-Aufbau.
