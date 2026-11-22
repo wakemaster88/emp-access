@@ -140,3 +140,104 @@ export function hourRange(segments: DaySegment[]): { from: number; to: number } 
   const to = Math.ceil(Math.max(...segments.map((s) => s.end)) / 60);
   return to - from < 4 ? { from: Math.max(0, from - 1), to: Math.min(24, Math.max(to, from + 4)) } : { from, to };
 }
+
+const WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+/** "12:00" -> "12", "12:30" -> "12:30": kurze Zeiten für enge Zellen. */
+export function compactTime(hhmm: string): string {
+  return hhmm.endsWith(":00") ? String(Number(hhmm.slice(0, 2))) : hhmm.replace(/^0/, "");
+}
+
+/** "12–16", "10–13, 15–20", "24 h" oder "zu". */
+export function compactHours(day: DayOpening): string {
+  if (day.closed || day.windows.length === 0) return "zu";
+  return day.windows
+    .map((w) => (w.opensAt === w.closesAt ? "24 h" : `${compactTime(w.opensAt)}–${compactTime(w.closesAt)}`))
+    .join(", ");
+}
+
+/** Wochentage als "Sa/So", "Di–Fr" oder "Mo, Mi". */
+function dayList(days: number[]): string {
+  const runs: number[][] = [];
+  for (const d of [...days].sort((a, b) => a - b)) {
+    const last = runs.at(-1);
+    if (last && d === last[last.length - 1] + 1) last.push(d);
+    else runs.push([d]);
+  }
+  return runs
+    .map((r) =>
+      r.length === 1
+        ? WEEKDAY_SHORT[r[0]]
+        : r.length === 2
+          ? `${WEEKDAY_SHORT[r[0]]}/${WEEKDAY_SHORT[r[1]]}`
+          : `${WEEKDAY_SHORT[r[0]]}–${WEEKDAY_SHORT[r[r.length - 1]]}`,
+    )
+    .join(", ");
+}
+
+/**
+ * Wochenplan einer Saison in einer Zeile: Tage mit gleichen Zeiten zusammen,
+ * z. B. "Di–Fr 16–20 · Sa/So 12–20" oder "täglich 10–20".
+ */
+export function describeWeekPlan(periods: { weekday: number; opensAt: string; closesAt: string }[]): string {
+  const byDay = new Map<number, string>();
+  for (let d = 0; d < 7; d += 1) {
+    const windows = periods
+      .filter((p) => p.weekday === d)
+      .sort((a, b) => a.opensAt.localeCompare(b.opensAt))
+      .map((p) => (p.opensAt === p.closesAt ? "24 h" : `${compactTime(p.opensAt)}–${compactTime(p.closesAt)}`));
+    if (windows.length > 0) byDay.set(d, windows.join(", "));
+  }
+  if (byDay.size === 0) return "geschlossen";
+  const groups = new Map<string, number[]>();
+  for (const [d, hours] of byDay) groups.set(hours, [...(groups.get(hours) ?? []), d]);
+  if (groups.size === 1 && byDay.size === 7) return `täglich ${[...groups.keys()][0]}`;
+  return [...groups.entries()]
+    .sort((a, b) => Math.min(...a[1]) - Math.min(...b[1]))
+    .map(([hours, days]) => `${dayList(days)} ${hours}`)
+    .join(" · ");
+}
+
+/** Bereiche eines Tags mit gleichen Zeiten. */
+export interface HoursGroup<T> {
+  hours: string;
+  /** Mindestens ein Bereich hat an dem Tag einen Ausnahmetag. */
+  exception: boolean;
+  members: T[];
+}
+
+/**
+ * Bereiche eines Tags nach gleichen Zeiten zusammengefasst, früheste Öffnung
+ * zuerst. Geschlossene Bereiche fallen weg, außer ein Ausnahmetag schließt sie
+ * („zu“). Ausnahmetage bilden eigene Gruppen, damit die Markierung stimmt.
+ */
+export function groupByHours<T>(entries: { item: T; day: DayOpening }[]): HoursGroup<T>[] {
+  const groups = new Map<string, HoursGroup<T> & { sort: number }>();
+  for (const { item, day } of entries) {
+    const exception = day.source === "exception";
+    if (day.closed && !exception) continue;
+    const hours = compactHours(day);
+    const key = `${hours}|${exception ? 1 : 0}`;
+    const g = groups.get(key);
+    if (g) g.members.push(item);
+    else {
+      const first = day.windows[0];
+      const sort = day.closed || !first ? 24 * 60 * 2 : (parseHhmm(first.opensAt) ?? 0) * 2 + (exception ? 1 : 0);
+      groups.set(key, { hours, exception, members: [item], sort });
+    }
+  }
+  return [...groups.values()]
+    .sort((a, b) => a.sort - b.sort || a.hours.localeCompare(b.hours))
+    .map(({ hours, exception, members }) => ({ hours, exception, members }));
+}
+
+/**
+ * Namen einer Gruppe kurz: "alle", "alle außer Wasserski" oder die Namen.
+ * `all` sind alle gezeigten Bereiche in ihrer Reihenfolge.
+ */
+export function membersLabel(names: string[], all: string[]): string {
+  if (all.length > 1 && names.length === all.length) return "alle";
+  const rest = all.filter((n) => !names.includes(n));
+  if (names.length >= 3 && rest.length <= 2 && rest.length < names.length) return `alle außer ${rest.join(", ")}`;
+  return names.join(", ");
+}

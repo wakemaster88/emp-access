@@ -10,9 +10,12 @@ import type { ScheduleRow } from "@/components/betriebszeiten/types";
 import { describeSeasonRange, openingForDay, seasonForDay, type DayOpening, type ScheduleSpec } from "@/lib/operating-hours";
 import {
   addMonthsToYmd,
+  compactHours,
   daySegments,
   firstOfMonth,
+  groupByHours,
   hourRange,
+  membersLabel,
   mondayOf,
   monthGrid,
   monthTitle,
@@ -28,10 +31,9 @@ type View = "monat" | "woche";
 
 /**
  * Eine Farbe je Bereich aus der Diagramm-Reihe (docs/design-regeln.md, Abschnitt 15):
- * die Bereiche sind Datenreihen, keine Zustände. Ab dem sechsten Profil wiederholt
- * sich die Reihe; Name und Reihenfolge bleiben eindeutig.
+ * die Bereiche sind Datenreihen, keine Zustände. Bis sieben Profile wiederholt sich
+ * keine Farbe; danach bleiben Name und Reihenfolge eindeutig.
  */
-/** Eine Farbe je Bereich; bis sieben Profile wiederholt sich keine. */
 const SERIES = ["bg-chart-1", "bg-chart-2", "bg-chart-3", "bg-chart-4", "bg-chart-5", "bg-chart-6", "bg-chart-7"];
 
 const WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -41,18 +43,6 @@ interface Area {
   name: string;
   color: string;
   spec: ScheduleSpec;
-}
-
-/** "12:00" -> "12", "12:30" -> "12:30": kurze Zeiten für enge Zellen. */
-function compactTime(hhmm: string): string {
-  return hhmm.endsWith(":00") ? String(Number(hhmm.slice(0, 2))) : hhmm.replace(/^0/, "");
-}
-
-function compactDay(day: DayOpening): string {
-  if (day.closed || day.windows.length === 0) return "zu";
-  return day.windows
-    .map((w) => (w.opensAt === w.closesAt ? "24 h" : `${compactTime(w.opensAt)}–${compactTime(w.closesAt)}`))
-    .join(", ");
 }
 
 function fullDay(day: DayOpening): string {
@@ -66,7 +56,7 @@ function Dot({ color, className }: { color: string; className?: string }) {
   return <span aria-hidden className={cn("inline-block size-2 shrink-0 rounded-full", color, className)} />;
 }
 
-/** Monatsraster: je Tag ein Balken (Handy) bzw. eine Zeile mit Uhrzeit (ab sm) pro Bereich. */
+/** Monatsraster: je Tag ein Balken je Bereich (Handy) bzw. gleiche Zeiten mit Bereichsnamen (ab sm). */
 function MonthView({
   anchor,
   areas,
@@ -82,6 +72,7 @@ function MonthView({
 }) {
   const grid = useMemo(() => monthGrid(anchor), [anchor]);
   const month = anchor.slice(0, 7);
+  const areaNames = useMemo(() => areas.map((a) => a.name), [areas]);
 
   return (
     <div aria-label={monthTitle(anchor)} className="grid grid-cols-7 gap-1 sm:gap-1.5">
@@ -105,7 +96,7 @@ function MonthView({
             aria-label={`${shortDayLabel(ymd)}: ${openCount} von ${areas.length} geöffnet${hasException ? ", Ausnahmetag" : ""}`}
             onClick={() => onSelect(ymd)}
             className={cn(
-              "flex min-h-14 min-w-0 flex-col gap-1 rounded-lg border p-1 text-left outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-h-24 sm:p-1.5",
+              "flex min-h-14 min-w-0 flex-col gap-1 rounded-lg border p-1 text-left outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-h-16 sm:p-1.5",
               inMonth ? "bg-glass-tile border-glass-tile-border" : "border-transparent opacity-50",
               isSelected && "border-primary ring-1 ring-primary/40",
               "hover:bg-glass-strong",
@@ -131,24 +122,22 @@ function MonthView({
                 />
               ))}
             </span>
-            <span className="hidden min-w-0 flex-col gap-0.5 sm:flex">
-              {days.map(({ area, day }) => (
-                // Geschlossen bleibt leer (Zeile hält nur die Höhe), damit offene Bereiche
-                // auf einen Blick herausstechen; ein geschlossener Ausnahmetag sagt „zu“.
+            {/* Ab sm: gleiche Zeiten in einer Zeile mit den Bereichsnamen („12–16 Wasserski, Shop“).
+                Geschlossene Bereiche stehen nicht da; ein geschlossener Ausnahmetag sagt „zu“. */}
+            <span className="hidden min-w-0 flex-col gap-1 sm:flex">
+              {groupByHours(days.map(({ area, day }) => ({ item: area, day }))).map((g) => (
                 <span
-                  key={area.id}
-                  className={cn(
-                    "flex h-4 min-w-0 items-center gap-1 text-[11px] tabular-nums",
-                    day.source === "exception" && "text-warning",
-                  )}
-                  title={`${area.name}: ${fullDay(day)}`}
+                  key={`${g.hours}-${g.exception}`}
+                  className="line-clamp-2 min-w-0 text-[11px] leading-snug"
+                  title={`${g.hours}: ${g.members.map((a) => a.name).join(", ")}`}
                 >
-                  {(!day.closed || day.source === "exception") && (
-                    <>
-                      <Dot color={area.color} className="size-1.5" />
-                      <span className="truncate">{compactDay(day)}</span>
-                    </>
-                  )}
+                  <span className={cn("font-semibold tabular-nums", g.exception && "text-warning")}>{g.hours}</span>{" "}
+                  <span className="text-muted-foreground">
+                    {membersLabel(
+                      g.members.map((a) => a.name),
+                      areaNames,
+                    )}
+                  </span>
                 </span>
               ))}
             </span>
@@ -196,7 +185,7 @@ function TimelineRow({
         )}
         title={fullDay(day)}
       >
-        <span className="sm:hidden">{compactDay(day)}</span>
+        <span className="sm:hidden">{compactHours(day)}</span>
         <span className="hidden sm:inline">{fullDay(day)}</span>
       </span>
     </div>
@@ -250,9 +239,21 @@ function WeekView({ anchor, areas, todayYmd }: { anchor: string; areas: Area[]; 
               {shortDayLabel(ymd)}
               {ymd === todayYmd && <span className="ml-1.5 font-normal">heute</span>}
             </h4>
-            {areas.map((a) => (
-              <TimelineRow key={a.id} area={a} ymd={ymd} range={range} />
-            ))}
+            {areas
+              .filter((a) => {
+                const day = openingForDay(a.spec, ymd);
+                return !day.closed || day.source === "exception" || daySegments(a.spec, ymd).length > 0;
+              })
+              .map((a) => (
+                <TimelineRow key={a.id} area={a} ymd={ymd} range={range} />
+              ))}
+            <ClosedLine
+              areas={areas.filter((a) => {
+                const day = openingForDay(a.spec, ymd);
+                return day.closed && day.source !== "exception" && daySegments(a.spec, ymd).length === 0;
+              })}
+              all={areas.length}
+            />
             {notes.map(({ area, day }) => (
               <p key={area.id} className="text-[11px] text-warning">
                 Ausnahme {area.name}
@@ -266,16 +267,27 @@ function WeekView({ anchor, areas, todayYmd }: { anchor: string; areas: Area[]; 
   );
 }
 
-/** Alle Bereiche an einem gewählten Tag, mit Saison bzw. Ausnahme. */
+/** Geschlossene Bereiche in einer Zeile statt je eine Zeile „geschlossen“. */
+function ClosedLine({ areas, all }: { areas: Area[]; all: number }) {
+  if (areas.length === 0) return null;
+  return (
+    <p className="text-[11px] text-muted-foreground">
+      {areas.length === all ? "Alle Bereiche geschlossen" : `Geschlossen: ${areas.map((a) => a.name).join(", ")}`}
+    </p>
+  );
+}
+
+/** Alle Bereiche an einem gewählten Tag: offene mit Zeit und Saison, geschlossene in einer Zeile. */
 function DayDetail({ ymd, areas }: { ymd: string; areas: Area[] }) {
+  const rows = areas.map((a) => ({ area: a, day: openingForDay(a.spec, ymd), season: seasonForDay(a.spec, ymd) }));
+  const shown = rows.filter((r) => !r.day.closed || r.day.source === "exception");
+  const closed = rows.filter((r) => r.day.closed && r.day.source !== "exception").map((r) => r.area);
   return (
     <div className="space-y-2 rounded-xl border bg-glass-tile p-3">
       <h4 className="text-sm font-semibold">{shortDayLabel(ymd)}</h4>
-      <ul className="space-y-1.5">
-        {areas.map((a) => {
-          const day = openingForDay(a.spec, ymd);
-          const season = seasonForDay(a.spec, ymd);
-          return (
+      {shown.length > 0 && (
+        <ul className="space-y-1.5">
+          {shown.map(({ area: a, day, season }) => (
             <li key={a.id} className="flex min-w-0 items-start gap-2 text-xs">
               <Dot color={a.color} className="mt-1" />
               <div className="min-w-0 flex-1">
@@ -288,15 +300,14 @@ function DayDetail({ ymd, areas }: { ymd: string; areas: Area[] }) {
                     <span className="text-warning">Ausnahmetag{day.label ? `: ${day.label}` : ""}</span>
                   ) : season ? (
                     `${season.name} (${describeSeasonRange(season.startMmDd, season.endMmDd)})`
-                  ) : (
-                    "keine Saison hinterlegt"
-                  )}
+                  ) : null}
                 </div>
               </div>
             </li>
-          );
-        })}
-      </ul>
+          ))}
+        </ul>
+      )}
+      <ClosedLine areas={closed} all={areas.length} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, CalendarOff, DoorClosed, DoorOpen, LayoutGrid, Pencil, Plus, Trash2 } from "lucide-react";
 import {
@@ -33,28 +33,65 @@ import { ScheduleDialog } from "@/components/betriebszeiten/schedule-dialog";
 import { OperatingCalendar } from "@/components/betriebszeiten/operating-calendar";
 import type { BetriebszeitenData, ScheduleRow } from "@/components/betriebszeiten/types";
 import {
-  boundariesForDay,
   describeDay,
   describeSeasonRange,
   isOperatingAt,
   openingForDay,
+  operatingSpanState,
   seasonForDay,
   type ScheduleSpec,
+  type SeasonSpec,
 } from "@/lib/operating-hours";
-import { addDaysToYmd, tzYmd } from "@/lib/tz-time";
+import { compactHours, describeWeekPlan, shortDayLabel } from "@/lib/operating-calendar";
+import { addDaysToYmd, formatHhmm, tzMinutesOfDay, tzYmd } from "@/lib/tz-time";
+import { SyncStatus } from "@/components/betriebszeiten/sync-status";
 
 function toSpec(row: ScheduleRow): ScheduleSpec {
   return { name: row.name, seasons: row.seasons, exceptions: row.exceptions };
 }
 
-/** "in 25 Min." bzw. "vor 3 Std." – für den nächsten Betriebswechsel. */
-function untilLabel(target: Date, nowMs: number): string {
+/** So weit voraus sucht die Karte die nächste Öffnung (Winterpause). */
+const LOOKAHEAD_DAYS = 200;
+
+/** "in 25 Min." bzw. "in 3 Std." – nur für Wechsel in den nächsten 24 Stunden. */
+function untilLabel(target: Date, nowMs: number): string | null {
   const minutes = Math.round((target.getTime() - nowMs) / 60_000);
   if (minutes <= 0) return "jetzt";
   if (minutes < 60) return `in ${minutes} Min.`;
+  if (minutes >= 24 * 60) return null;
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest === 0 ? `in ${hours} Std.` : `in ${hours} Std. ${rest} Min.`;
+}
+
+/** "heute 16:00", "morgen 12:00" oder "Sa, 13.03. 12:00". */
+function whenLabel(at: Date, todayYmd: string, timezone: string): string {
+  const ymd = tzYmd(at, timezone);
+  const time = formatHhmm(tzMinutesOfDay(at, timezone));
+  if (ymd === todayYmd) return `heute ${time}`;
+  if (ymd === addDaysToYmd(todayYmd, 1)) return `morgen ${time}`;
+  return `${shortDayLabel(ymd)} ${time}`;
+}
+
+/** Saison von heute, sonst die nächste mit ihrem ersten Tag. */
+function currentOrNextSeason(spec: ScheduleSpec, todayYmd: string): { season: SeasonSpec; startsOn: string | null } | null {
+  const today = seasonForDay(spec, todayYmd);
+  if (today) return { season: today, startsOn: null };
+  for (let i = 1; i <= 366; i += 1) {
+    const ymd = addDaysToYmd(todayYmd, i);
+    const season = seasonForDay(spec, ymd);
+    if (season) return { season, startsOn: ymd };
+  }
+  return null;
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 gap-2">
+      <dt className="w-16 shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 flex-1">{children}</dd>
+    </div>
+  );
 }
 
 function ScheduleCard({
@@ -76,15 +113,13 @@ function ScheduleCard({
   const now = new Date(nowMs);
   const todayYmd = tzYmd(now, timezone);
   const today = openingForDay(spec, todayYmd);
-  const tomorrow = openingForDay(spec, addDaysToYmd(todayYmd, 1));
   const open = isOperatingAt(spec, now, timezone);
-  const season = seasonForDay(spec, todayYmd);
-
-  // Nächster Wechsel: erste Grenze von heute oder morgen, die noch aussteht.
-  const nextBoundary = [
-    ...boundariesForDay(spec, todayYmd, timezone),
-    ...boundariesForDay(spec, addDaysToYmd(todayYmd, 1), timezone),
-  ].find((b) => b.at.getTime() > nowMs);
+  const state = operatingSpanState(spec, now, timezone, undefined, LOOKAHEAD_DAYS);
+  const until = state.until ? untilLabel(state.until, nowMs) : null;
+  const season = currentOrNextSeason(spec, todayYmd);
+  const nextException = schedule.exceptions
+    .filter((e) => e.date > todayYmd)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
 
   return (
     <Card>
@@ -140,62 +175,68 @@ function ScheduleCard({
       {/* Inhalt füllt die Karte, damit der Fuß in einer Rasterzeile bei allen Karten unten steht. */}
       <CardContent className="flex-1">
         <dl className="space-y-1 text-xs">
-          <div className="flex gap-2">
-            <dt className="w-16 shrink-0 text-muted-foreground">Heute</dt>
-            <dd className="font-medium">
+          <Row label="Jetzt">
+            {state.inside ? (
+              <>
+                <span className="font-medium">geöffnet bis {state.until ? whenLabel(state.until, todayYmd, timezone).replace(/^heute /, "") : "?"}</span>
+                {until && <span className="text-muted-foreground"> · {until}</span>}
+              </>
+            ) : state.until ? (
+              <>
+                <span className="font-medium">öffnet {whenLabel(state.until, todayYmd, timezone)}</span>
+                {until && <span className="text-muted-foreground"> · {until}</span>}
+              </>
+            ) : (
+              <span className="text-muted-foreground">keine Öffnung in den nächsten {LOOKAHEAD_DAYS} Tagen</span>
+            )}
+          </Row>
+          {(!today.closed || today.source === "exception") && (
+            <Row label="Heute">
               {describeDay(today)}
               {today.source === "exception" && (
-                <span className="ml-1.5 font-normal text-warning">
-                  Ausnahme{today.label ? `: ${today.label}` : ""}
-                </span>
+                <span className="ml-1.5 text-warning">Ausnahme{today.label ? `: ${today.label}` : ""}</span>
               )}
-            </dd>
-          </div>
-          <div className="flex gap-2">
-            <dt className="w-16 shrink-0 text-muted-foreground">Morgen</dt>
-            <dd>{describeDay(tomorrow)}</dd>
-          </div>
-          {nextBoundary && (
-            <div className="flex gap-2">
-              <dt className="w-16 shrink-0 text-muted-foreground">Nächster</dt>
-              <dd>
-                {nextBoundary.kind === "open" ? "Betriebsbeginn" : "Betriebsende"}{" "}
-                <span className="text-muted-foreground">{untilLabel(nextBoundary.at, nowMs)}</span>
-              </dd>
-            </div>
+            </Row>
           )}
-          <div className="flex gap-2">
-            <dt className="w-16 shrink-0 text-muted-foreground">Saison</dt>
-            <dd>
-              {season ? (
-                <>
-                  {season.name}{" "}
-                  <span className="text-muted-foreground">
-                    ({describeSeasonRange(season.startMmDd, season.endMmDd)})
-                  </span>
-                </>
-              ) : (
+          <Row label="Saison">
+            {season ? (
+              <>
+                {season.startsOn && <span className="text-muted-foreground">ab {shortDayLabel(season.startsOn)} </span>}
+                {season.season.name}{" "}
                 <span className="text-muted-foreground">
-                  heute keine Saison hinterlegt – gilt als geschlossen
+                  ({describeSeasonRange(season.season.startMmDd, season.season.endMmDd)})
                 </span>
-              )}
-            </dd>
-          </div>
+              </>
+            ) : (
+              <span className="text-muted-foreground">keine Saison hinterlegt</span>
+            )}
+          </Row>
+          {season && (
+            <Row label="Woche">
+              <span className="tabular-nums">{describeWeekPlan(season.season.periods)}</span>
+            </Row>
+          )}
+          {nextException && (
+            <Row label="Ausnahme">
+              <span className="tabular-nums">{shortDayLabel(nextException.date)}</span>{" "}
+              {nextException.note && <span>{nextException.note} </span>}
+              <span className="text-muted-foreground tabular-nums">
+                {compactHours(openingForDay(spec, nextException.date))}
+              </span>
+            </Row>
+          )}
         </dl>
       </CardContent>
 
-      <CardFooter className="flex-wrap gap-1.5 border-t text-[11px] text-muted-foreground tabular-nums">
-        <span>
-          {schedule.seasons.length} {schedule.seasons.length === 1 ? "Saison" : "Saisons"}
+      <CardFooter className="min-w-0 gap-1.5 border-t text-[11px] text-muted-foreground tabular-nums">
+        <span className="shrink-0">
+          {schedule.seasons.length} {schedule.seasons.length === 1 ? "Saison" : "Saisons"} ·{" "}
+          {schedule.exceptions.length} {schedule.exceptions.length === 1 ? "Ausnahmetag" : "Ausnahmetage"} ·
         </span>
-        <span>·</span>
-        <span>
-          {schedule.exceptions.length}{" "}
-          {schedule.exceptions.length === 1 ? "Ausnahmetag" : "Ausnahmetage"}
-        </span>
-        <span>·</span>
-        <span>
-          {schedule.roomCount} {schedule.roomCount === 1 ? "Raum" : "Räume"}
+        <span className="min-w-0 truncate" title={schedule.roomNames.join(", ")}>
+          {schedule.roomNames.length === 0
+            ? "kein Raum"
+            : `${schedule.roomNames.length === 1 ? "Raum" : "Räume"}: ${schedule.roomNames.join(", ")}`}
         </span>
       </CardFooter>
     </Card>
@@ -260,6 +301,8 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
       </div>
 
       {error && <Notice tone="danger" compact title={error} />}
+
+      {data.schedules.length > 0 && <SyncStatus />}
 
       {data.schedules.length === 0 ? (
         <Card className="py-0 sm:py-0">

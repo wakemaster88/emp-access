@@ -58,7 +58,10 @@ Umgebungsvariablen (lokal in `.env`, auf Vercel unter Settings → Environment
 Variables): `DATABASE_URL`, `DATABASE_URL_UNPOOLED` (Migrationen),
 `AUTH_SECRET`, `AUTH_URL`, `CRON_SECRET`, `BLOB_READ_WRITE_TOKEN`, optional
 `XAI_API_KEY` (TTS), `NEXT_PUBLIC_VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/
-`VAPID_SUBJECT` (Web-Push), `TWO_FACTOR_KEY`.
+`VAPID_SUBJECT` (Web-Push), `TWO_FACTOR_KEY`, `WEBSITE_DATABASE_URL`
+(Nur-Lese-Zugang `emp_access_reader` auf die Datenbank der Website, für den
+Abgleich unter Betriebszeiten; gilt nur für Mandant `WEBSITE_ACCOUNT_ID`,
+Standard 1).
 
 **Datenbank.** Schema in `prisma/schema.prisma`, Migrationen in
 `prisma/migrations`. Der Vercel-Build (`scripts/vercel-build.mjs`) führt
