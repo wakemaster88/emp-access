@@ -149,7 +149,8 @@ export async function sampleHealth(): Promise<void> {
   // Mac selbst: Neustarts und Plattenstand.
   const m = systemMetrics();
   if (m.hostUptimeSec > 0) recordUptime(store, "host:hub", CONFIG.name, "Hub-Mac", m.hostUptimeSec, now);
-  if (m.disk) recordDisk(store, m.disk.usage, now);
+  // Verlauf rechnet mit Anteilen (0–1), systemMetrics() liefert Prozent.
+  if (m.disk) recordDisk(store, m.disk.usage / 100, now);
 
   await save();
 }

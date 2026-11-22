@@ -1144,12 +1144,14 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
         if (attempts > 0 || reattached) report(reattached ? "live-nach-neuanhaengen" : "live");
         attempts = 0;
         onState("live");
-        // Bild da, aber schwarz? Einmal je Verbindung nach 4 s pruefen.
+        // Bild da, aber schwarz? Einmal je Verbindung nach 4 s pruefen und
+        // melden, was das Canvas sieht (hell = Bild ist da, nur die Anzeige fehlt).
         const thisPc = pc;
         setTimeout(() => {
           if (stopped || pc !== thisPc) return;
           const dark = videoIsBlack(video);
           if (dark) report("schwarz");
+          else if (dark === false && document.visibilityState === "visible") report("bild-ok");
         }, 4000);
       }
     } else if (!moving && now - lastFrameAt > 12000) {

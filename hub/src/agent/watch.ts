@@ -40,11 +40,13 @@ export function collectFindings(now = Date.now()): Finding[] {
   }
 
   const m = systemMetrics();
-  if (m.memory.usage > 0.92) {
-    out.push({ key: "ram", severity: "warn", title: `Arbeitsspeicher des Hubs bei ${Math.round(m.memory.usage * 100)} %` });
+  // systemMetrics() liefert Prozent (0–100), nicht Anteile. Vorher Schwelle
+  // 0,92 und ×100: Warnung bei jedem Stand, z. B. „Arbeitsspeicher 4316 %“.
+  if (m.memory.usage > 92) {
+    out.push({ key: "ram", severity: "warn", title: `Arbeitsspeicher des Hubs bei ${Math.round(m.memory.usage)} %` });
   }
-  if (m.disk && m.disk.usage > 0.9) {
-    out.push({ key: "disk", severity: "warn", title: `Platte des Hubs bei ${Math.round(m.disk.usage * 100)} %` });
+  if (m.disk && m.disk.usage > 90) {
+    out.push({ key: "disk", severity: "warn", title: `Platte des Hubs bei ${Math.round(m.disk.usage)} %` });
   }
 
   if (STATE.parking.lots > 0 && STATE.parking.lastAt && !STATE.parking.trackerOnline) {

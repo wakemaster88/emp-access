@@ -1140,3 +1140,20 @@ Log-Abruf nach PR #233 (Hub 9a9c42c, Zentrale in Safari neu geladen 11:29 UTC):
 
 - Bei sichtbarem Fenster Log mit `grep: "Zentrale ("` lesen: kommt `live-nach-neuanhaengen`, war es das; kommt `kein-bild-im-fenster` immer wieder, Safari-Web-App gegen Chrome tauschen.
 - Gleichzeitige Abbrüche alle 4–5 min weiter beobachten (Takt mit Auto-Scan/SNMP vergleichen).
+
+## 2026-11-22 (Zentrale in Safari weiter schwarz, falsche Prozent-Warnungen)
+
+### Befund
+
+- Screenshot 12:53 (Safari-Tab, `http://192.168.1.121:8787`, Hub d92f7dc mit #235): 12 von 13 Kacheln „LIVE“ – nach #235 heißt das, das Video hat eine Bildgröße –, trotzdem alles schwarz. Die Pixelprüfung meldete kein „schwarz“, Safari hat das Bild also, zeigt es aber nicht. Verdacht: das Ein-/Ausblenden des `<video>` über `opacity` (Safari-Ebenen).
+- KI-Warnungen „Arbeitsspeicher des Hubs bei 4316 %“, „Platte des Hubs bei 909 %“: `systemMetrics()` liefert Prozent (0–100), `agent/watch.ts` prüfte gegen 0,92 und rechnete ×100 – Warnung bei jedem Stand (tatsächlich ≈ 43 % RAM, ≈ 9 % Platte). Gleicher Fehler in `hub_status` (cpu/ram/disk) und im Platten-Verlauf (`health-trends.ts` speicherte Prozent, die Prognose rechnet mit Anteilen).
+
+### Änderung
+
+- `dashboard.css`: Video der Kachel nicht mehr per `opacity` ein-/ausblenden; der Hinweis liegt darüber und verschwindet mit `is-live`.
+- `dashboard.js`: Meldung `bild-ok`, wenn das Canvas bei sichtbarem Fenster ein Bild sieht (zeigt, dass nur die Anzeige fehlt).
+- `watch.ts`: Schwellen 92 % / 90 %, kein ×100. `tools.ts`: Prozentwerte unverändert durchreichen. `health-trends.ts`: Anteile speichern; `reviveHealthStore` rechnet alte Prozent-Werte um (Test).
+
+### Nächster Schritt
+
+- Zentrale neu laden. Bleibt Safari schwarz, obwohl `bild-ok` im Log steht, Zentrale in Chrome öffnen.
