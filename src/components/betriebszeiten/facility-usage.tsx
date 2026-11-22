@@ -24,7 +24,8 @@ const DAYS = 365;
  * Belegung der Anlagen (Seilbahn A, B, Übungslift): wer nutzt welche Anlage,
  * an welchen Tagen ist sie belegt, und überschneiden sich zwei Profile? Das
  * Speichern lehnt Überschneidungen ab; die Karte zeigt den Stand und findet
- * Altlasten, die vor der Prüfung entstanden sind.
+ * Altlasten, die vor der Prüfung entstanden sind. Geteilte Zeit (beide
+ * Profile erlauben sie, anny verhindert Doppelbuchungen) steht als Hinweis da.
  */
 export function FacilityUsage({ tree, todayYmd }: { tree: TreeEntry<ScheduleRow>[]; todayYmd: string }) {
   const profiles = tree
@@ -35,6 +36,7 @@ export function FacilityUsage({ tree, todayYmd }: { tree: TreeEntry<ScheduleRow>
         id: e.item.id,
         name: e.item.name,
         facilities: e.item.facilities,
+        shared: e.item.sharedTime,
         spec: { name: e.item.name, seasons: e.item.seasons, exceptions: e.item.exceptions },
       },
     }));
@@ -46,7 +48,9 @@ export function FacilityUsage({ tree, todayYmd }: { tree: TreeEntry<ScheduleRow>
     DAYS,
   );
   const groups = groupClashes(clashes);
-  const clashDays = new Set(clashes.map((c) => `${facilityKey(c.facility)}|${c.date}`));
+  const conflicts = clashes.filter((c) => !c.shared);
+  const clashDays = new Set(conflicts.map((c) => `${facilityKey(c.facility)}|${c.date}`));
+  const sharedDays = new Set(clashes.filter((c) => c.shared).map((c) => `${facilityKey(c.facility)}|${c.date}`));
   const marksById = new Map(profiles.map((p) => [p.profile.id, yearMarks(p.profile.spec, todayYmd, DAYS)]));
 
   const facilities = cleanFacilities(profiles.flatMap((p) => p.profile.facilities));
@@ -59,6 +63,7 @@ export function FacilityUsage({ tree, todayYmd }: { tree: TreeEntry<ScheduleRow>
     for (let i = 0; i < DAYS; i += 1) {
       const date = addDaysToYmd(todayYmd, i);
       if (clashDays.has(`${key}|${date}`)) marks += "x";
+      else if (sharedDays.has(`${key}|${date}`)) marks += "s";
       else if (memberMarks.some((m) => m[i] && m[i] !== "c")) marks += "o";
       else marks += "c";
       if (marks[i] !== "c") used += 1;
@@ -73,16 +78,17 @@ export function FacilityUsage({ tree, todayYmd }: { tree: TreeEntry<ScheduleRow>
           <CardTitle>
             <h3>Anlagen-Belegung</h3>
           </CardTitle>
-          {groups.length === 0 ? (
+          {conflicts.length === 0 ? (
             <Badge variant="success">keine Überschneidung</Badge>
           ) : (
             <Badge variant="warning">
-              {clashes.length} {clashes.length === 1 ? "Überschneidung" : "Überschneidungen"}
+              {conflicts.length} {conflicts.length === 1 ? "Überschneidung" : "Überschneidungen"}
             </Badge>
           )}
         </div>
         <CardDescription className="text-xs">
-          Profile mit gleicher Anlage dürfen nicht gleichzeitig geöffnet sein. Geprüft heute und die nächsten 12 Monate.
+          Profile mit gleicher Anlage dürfen nicht gleichzeitig geöffnet sein, außer beide teilen sich die Zeit
+          (Bahnmiete und Kurs, wer zuerst bucht). Geprüft heute und die nächsten 12 Monate.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -106,21 +112,22 @@ export function FacilityUsage({ tree, todayYmd }: { tree: TreeEntry<ScheduleRow>
               <DayStrip
                 marks={row.marks}
                 from={todayYmd}
-                styles={{ o: OPEN_FILL_SOFT, x: "bg-warning" }}
-                labels={{ o: "belegt", x: "Überschneidung", c: "frei" }}
-                ariaLabel={`${row.name}: ${row.used} Tage belegt, ${row.groups.length === 0 ? "keine Überschneidung" : "mit Überschneidungen"}`}
+                styles={{ o: OPEN_FILL_SOFT, s: "bg-info/70", x: "bg-warning" }}
+                labels={{ o: "belegt", s: "belegt, geteilte Zeit", x: "Überschneidung", c: "frei" }}
+                ariaLabel={`${row.name}: ${row.used} Tage belegt, ${row.groups.some((g) => !g.shared) ? "mit Überschneidungen" : "keine Überschneidung"}`}
               />
               <MonthAxis from={todayYmd} days={DAYS} />
               {row.groups.length > 0 && (
                 <ul className="space-y-0.5 pt-1 text-[11px] tabular-nums">
                   {row.groups.map((g) => (
                     <li key={`${g.first.id}|${g.second.id}|${g.start}|${g.end}`} className="flex min-w-0 items-start gap-1.5">
-                      <StatusDot tone="warning" size="xs" className="mt-1" />
+                      <StatusDot tone={g.shared ? "info" : "warning"} size="xs" className="mt-1" />
                       <span className="min-w-0">
-                        <span className="font-medium">
+                        <span className={g.shared ? undefined : "font-medium"}>
                           {g.first.name} und {g.second.name}
                         </span>{" "}
                         <span className="text-muted-foreground">
+                          {g.shared ? "teilen sich " : ""}
                           {clashTimeLabel(g.start, g.end)} am {clashDatesLabel(g.dates)}
                         </span>
                       </span>

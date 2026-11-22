@@ -17,6 +17,8 @@ export interface ScheduleRow {
   facilities: string[];
   /** Feste anny-Ressource für den Abgleich. */
   annyResourceId: string | null;
+  /** Geteilte Zeit mit anderen Buchungsangeboten auf derselben Anlage. */
+  sharedTime: boolean;
   roomCount: number;
   /** Räume, die diesem Profil folgen (für die Profilkarte). */
   roomNames: string[];

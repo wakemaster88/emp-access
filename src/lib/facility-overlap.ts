@@ -6,6 +6,11 @@
  *
  * Spannen gelten halboffen: 10–12 und 12–16 berühren sich, überschneiden sich
  * aber nicht.
+ *
+ * Ausnahme „geteilte Zeit“: Haben beide Profile `shared`, ist die
+ * Überschneidung gewollt (Bahnmiete und Anfängerkurs am Wochenende; wer zuerst
+ * bucht, bekommt die Anlage, anny verhindert Doppelbuchungen). Sie wird mit
+ * `shared: true` gemeldet und blockiert das Speichern nicht.
  */
 import type { ScheduleSpec } from "./operating-hours";
 import { compactTime, daySegments, type DaySegment } from "./operating-calendar";
@@ -16,6 +21,8 @@ export interface FacilityProfile {
   name: string;
   facilities: string[];
   spec: ScheduleSpec;
+  /** Geteilte Zeit erlaubt (siehe oben). */
+  shared?: boolean;
 }
 
 export interface ClashParty {
@@ -32,6 +39,8 @@ export interface FacilityClash {
   /** Minuten ab 0:00. */
   start: number;
   end: number;
+  /** Beide Profile teilen sich die Zeit bewusst – kein Fehler. */
+  shared: boolean;
 }
 
 /** Gleiche Überschneidung an mehreren Tagen, für Liste und Fehlermeldung. */
@@ -41,6 +50,7 @@ export interface ClashGroup {
   second: ClashParty;
   start: number;
   end: number;
+  shared: boolean;
   dates: string[];
 }
 
@@ -114,6 +124,7 @@ export function facilityClashes(profiles: FacilityProfile[], from: string, days:
                 second: { id: members[b].id, name: members[b].name },
                 start: hit.start,
                 end: hit.end,
+                shared: Boolean(members[a].shared && members[b].shared),
               });
             }
           }
@@ -130,7 +141,15 @@ export function groupClashes(clashes: FacilityClash[]): ClashGroup[] {
   for (const c of clashes) {
     const [first, second] = c.first.id <= c.second.id ? [c.first, c.second] : [c.second, c.first];
     const key = `${facilityKey(c.facility)}|${first.id}|${second.id}|${c.start}|${c.end}`;
-    const group = groups.get(key) ?? { facility: c.facility, first, second, start: c.start, end: c.end, dates: [] };
+    const group = groups.get(key) ?? {
+      facility: c.facility,
+      first,
+      second,
+      start: c.start,
+      end: c.end,
+      shared: c.shared,
+      dates: [],
+    };
     group.dates.push(c.date);
     groups.set(key, group);
   }

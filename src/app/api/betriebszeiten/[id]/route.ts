@@ -55,6 +55,7 @@ export async function PUT(
     id: scheduleId,
     name,
     facilities: data.facilities ? cleanFacilities(data.facilities) : existing.facilities,
+    shared: data.sharedTime ?? existing.sharedTime,
     spec: {
       name,
       seasons: data.seasons ? seasonInputsToSpec(data.seasons) : current.seasons,
@@ -77,6 +78,7 @@ export async function PUT(
       ...(data.parentId !== undefined && { parentId: data.parentId }),
       ...(data.facilities !== undefined && { facilities: cleanFacilities(data.facilities) }),
       ...(data.annyResourceId !== undefined && { annyResourceId: data.annyResourceId }),
+      ...(data.sharedTime !== undefined && { sharedTime: data.sharedTime }),
     },
     select: { id: true },
   });

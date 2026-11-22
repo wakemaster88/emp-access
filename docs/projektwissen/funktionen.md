@@ -79,6 +79,11 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
   `/api/betriebszeiten` prüfen heute + 12 Monate und antworten sonst 409 mit
   den Tagen. Spannen sind halboffen (10–12 und 12–16 sind erlaubt). Logik rein
   in `src/lib/facility-overlap.ts` (Tests).
+- `sharedTime` („Geteilte Zeit“): Zwei Profile, die beide den Haken haben,
+  dürfen sich auf derselben Anlage überschneiden (Bahnmiete und Anfängerkurs am
+  Wochenende, wer zuerst bucht; anny verhindert Doppelbuchungen). Die Karte
+  zeigt das blau als Hinweis. Gegen Profile ohne Haken (öffentlicher Betrieb,
+  Ferienkurs) bleibt es eine Überschneidung.
 - `annyResourceId` legt die anny-Ressource für den Abgleich fest; Unterprofile
   werden nur darüber mit anny verglichen und nie mit der Website.
 - Seite: Unterprofile als eigener Abschnitt unter dem Bereich, Karte
