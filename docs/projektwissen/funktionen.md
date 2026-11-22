@@ -136,6 +136,7 @@ Excel-Import (`/api/warenwirtschaft/import`, Taste „Excel importieren“ auf A
 - „Statistik neu berechnen“ baut die Tagessummen des laufenden Jahres aus den
   Scans neu auf und vergibt dabei nichts. Verlässliche Starts gibt es erst seit
   dem Drehkreuz (21.08.2026).
+- Kunden App › Übersicht: komplette Statistik je Person (Profil, sonst Ticket), ohne „TEST:“-Tickets: Award-Reichweite (Erreicht heute / Anteil / Vergeben, nachgerechnet mit `ruleValue`; Wasser und Frühstart nicht nachrechenbar), Besuchstage und Starts je Fahrer in Stufen der Award-Ziele, Saison je Monat, Top 20. Rechenlogik `src/lib/gamification-stats.ts`.
 - Frühere Start-Geräte (`Device.legacyStartsUntil`): ihre GRANTED-Scans vor dem
   Stichtag zählen in der Rückrechnung als Starts, live nie (`startScanWhere`).
   Gesetzt für den alten Scanner an Seilbahn A (Gerät 6) bis 20.08.2026: bringt

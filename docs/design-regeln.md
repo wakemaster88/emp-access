@@ -303,9 +303,11 @@ bereit.
   500 und 600 nur für Symbole, Punkte und Flächen: als Text erreichen sie schon auf heller
   weißer Karte keine 4,5:1 (Bernstein, Orange, Smaragd, Himmelblau 600: 3,1 bis 3,9:1). Als Pille
   fertig: `Badge variant="light"` usw.
-- Diagramme (Recharts): `var(--chart-1)` … `var(--chart-5)` bzw. die Zustandsfarben, Gitter in
-  `var(--border)`, Achsentext `var(--muted-foreground)`. Keine Verläufe als Füllung. Die Farbe
-  folgt dem Ding (Bereich, Kamera), nie dem Rang: Bereiche im Dashboard über
+- Diagramme (Recharts): `var(--chart-1)` … `var(--chart-7)` bzw. die Zustandsfarben, Gitter in
+  `var(--border)`, Achsentext `var(--muted-foreground)`. 6 (Pink) und 7 (Limette) nur, wenn mehr als
+  fünf Reihen nebeneinander stehen (z. B. Betriebszeiten-Kalender mit sieben Bereichen). Nur für
+  Punkte, Balken und Flächen, nie als Textfarbe. Keine Verläufe als Füllung. Die Farbe folgt dem
+  Ding (Bereich, Kamera), nie dem Rang: Bereiche im Dashboard über
   `components/dashboard/area-colors.ts` (chart-1, 3, 5, 2, 4; ab dem sechsten grau). Eine Reihe
   hervorheben: die anderen blass (Deckkraft 0,3), nicht umfärben.
 

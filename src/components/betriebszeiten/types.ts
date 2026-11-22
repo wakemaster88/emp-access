@@ -12,6 +12,8 @@ export interface ScheduleRow {
   isDefault: boolean;
   sortOrder: number;
   roomCount: number;
+  /** Räume, die diesem Profil folgen (für die Profilkarte). */
+  roomNames: string[];
   seasons: SeasonSpec[];
   exceptions: ExceptionSpec[];
 }

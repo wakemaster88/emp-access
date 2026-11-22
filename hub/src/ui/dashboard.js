@@ -1017,6 +1017,77 @@ function mowerTileNote(c) {
   return [m.online ? (m.active ? "" : m.statusLabel) : "", batt].filter(Boolean).join(" · ");
 }
 
+/*
+ * Safari-Umweg (22.11.2026): Safari dekodierte die WebRTC-Bilder (per Canvas
+ * auslesbar, Log "bild-ok"), malte das <video> aber nicht auf den Schirm –
+ * alle Kacheln LIVE und schwarz, in Chrome am selben Mac alles da. In Safari
+ * malt darum ein Canvas ueber dem Video das Bild selbst (ca. 15 Bilder/s).
+ * Erzwingen/abschalten: ?spiegel=1 bzw. ?spiegel=0 (wird gemerkt).
+ */
+function needsVideoMirror() {
+  try {
+    const q = new URLSearchParams(location.search).get("spiegel");
+    if (q === "0" || q === "1") storeSet("hub-video-spiegel", q);
+  } catch {
+    // ohne URL-Parameter
+  }
+  const saved = storeGet("hub-video-spiegel");
+  if (saved === "0" || saved === "1") return saved === "1";
+  const ua = navigator.userAgent || "";
+  return /Safari\//.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|Edg\/|Android/.test(ua);
+}
+let videoMirrorOn = null;
+
+/** Canvas direkt hinter dem Video, das dessen Bild malt; gibt eine Stopp-Funktion zurueck. */
+function mirrorVideo(video) {
+  if (videoMirrorOn === null) videoMirrorOn = needsVideoMirror();
+  if (!videoMirrorOn || !video.parentNode) return () => {};
+  const canvas = document.createElement("canvas");
+  canvas.className = "rtc-mirror";
+  canvas.setAttribute("aria-hidden", "true");
+  video.after(canvas);
+  const ctx = canvas.getContext("2d");
+  let raf = 0;
+  let last = 0;
+  let painted = false;
+  const paint = (now) => {
+    raf = requestAnimationFrame(paint);
+    if (now - last < 66) return;
+    last = now;
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    // Lage, Zoom und Einblendung vom Video uebernehmen (Grossansicht).
+    const cs = getComputedStyle(video);
+    if (canvas.style.objectFit !== cs.objectFit) canvas.style.objectFit = cs.objectFit;
+    if (canvas.style.transform !== video.style.transform) canvas.style.transform = video.style.transform;
+    if (canvas.style.transformOrigin !== video.style.transformOrigin) canvas.style.transformOrigin = video.style.transformOrigin;
+    const op = video.style.opacity || "";
+    if (canvas.style.opacity !== op) canvas.style.opacity = op;
+    if (!w || !h || video.readyState < 2) {
+      if (painted) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        painted = false;
+      }
+      return;
+    }
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    try {
+      ctx.drawImage(video, 0, 0, w, h);
+      painted = true;
+    } catch {
+      // Bild gerade nicht lesbar
+    }
+  };
+  raf = requestAnimationFrame(paint);
+  return () => {
+    cancelAnimationFrame(raf);
+    canvas.remove();
+  };
+}
+
 /** true, wenn das aktuelle Videobild (fast) komplett schwarz ist; null = nicht pruefbar. */
 function videoIsBlack(video) {
   try {
@@ -1298,11 +1369,13 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
   }
 
   onState("connecting");
+  const stopMirror = mirrorVideo(video);
   connect();
   return () => {
     stopped = true;
     clearTimeout(timer);
     cleanup();
+    stopMirror();
     video.srcObject = null;
   };
 }
