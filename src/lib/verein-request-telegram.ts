@@ -20,6 +20,8 @@ export interface RequestSummary {
   slotEnd: string;
   priceCents: number;
   bookedBy: string | null;
+  /** Für wen angefragt wurde (seit 22.11.2026 Pflicht im Portal). */
+  bookedFor?: string | null;
   note: string | null;
 }
 
@@ -35,6 +37,7 @@ export function requestTelegramText(r: RequestSummary): string {
     `${escapeHtml(r.serviceName)} · ${fmtDate(r.date)}, ${r.slotStart}–${r.slotEnd} Uhr`,
     `Preis ${escapeHtml(formatCents(r.priceCents))}${r.bookedBy ? ` · ${escapeHtml(r.bookedBy)}` : ""}`,
   ];
+  if (r.bookedFor) lines.push(`Für ${escapeHtml(r.bookedFor)}`);
   if (r.note) lines.push(`„${escapeHtml(r.note)}“`);
   return lines.join("\n");
 }
@@ -100,6 +103,7 @@ export async function loadRequestSummary(accountId: number, requestId: number): 
     slotEnd: b.slotEnd,
     priceCents: b.priceCents,
     bookedBy: b.bookedBy,
+    bookedFor: b.bookedFor,
     note: b.note,
   };
 }

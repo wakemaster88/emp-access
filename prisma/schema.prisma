@@ -1444,6 +1444,10 @@ model VereinBookableService {
   serviceId  Int
   /// Preis pro gebuchtem Slot in Cent (brutto). 0 = kostenlos.
   priceCents Int     @default(0)
+  /// Bei Tageslicht buchbar: eigene Slots von Sonnenaufgang bis
+  /// Sonnenuntergang (Konto-Standort), unabhaengig von den anny-Zeiten.
+  /// Belegt ist, was in anny auf der Resource liegt oder schon gebucht ist.
+  daylight   Boolean @default(false)
   verein     Verein  @relation(fields: [vereinId], references: [id], onDelete: Cascade)
   service    Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
@@ -1485,6 +1489,8 @@ model VereinSlotBooking {
   status         VereinBookingStatus @default(BOOKED)
   /// Name, den die buchende Person im Portal angegeben hat.
   bookedBy       String?
+  /// Fuer wen gebucht wurde (Fahrer, Gruppe), Pflicht im Portal seit 22.11.2026.
+  bookedFor      String?
   note           String?
   canceledAt     DateTime?
   /// "VEREIN" (selbst storniert) oder "ADMIN" (vom Backoffice).

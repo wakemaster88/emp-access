@@ -1,9 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { berlinOffset } from "@/lib/anny-availability";
+import { berlinDayRange } from "@/lib/berlin-day";
 import { loadServiceSlots } from "@/lib/service-slots";
 import { sendPushToAccount } from "@/lib/web-push";
 import { sendRequestToTelegram } from "@/lib/verein-request-telegram";
-import { blockServiceSlot, releaseSlotBlock } from "@/lib/slot-blocks";
+import { blockServiceSlot, releaseSlotBlock, resolveAnnyServiceResource } from "@/lib/slot-blocks";
+import { fetchAnnyResourceBusy } from "@/lib/anny-slot-usage";
+import { daylightDay, daylightSlotStates, overlaps, type DaylightDay, type Interval } from "@/lib/verein-daylight";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { deviceSendsRemoteCommand, isActionAllowedForDevice, triggerDeviceAction } from "@/lib/device-open";
 import {
@@ -46,9 +49,14 @@ export async function loadPortalVerein(token: string) {
       portalTrailMinutes: true,
       portalDeviceIds: true,
       portalDoorbirdIds: true,
-      account: { select: { name: true } },
+      account: { select: { name: true, latitude: true, longitude: true } },
       bookableServices: {
-        select: { serviceId: true, priceCents: true, service: { select: { id: true, name: true } } },
+        select: {
+          serviceId: true,
+          priceCents: true,
+          daylight: true,
+          service: { select: { id: true, name: true, defaultValidityDurationMinutes: true } },
+        },
         orderBy: { service: { name: "asc" } },
       },
     },
@@ -64,7 +72,14 @@ export async function loadPortalSlots(
   verein: PortalVerein,
   serviceId: number,
   date: string,
-): Promise<{ slots: PortalSlot[]; note?: string; error?: string }> {
+): Promise<{ slots: PortalSlot[]; note?: string; error?: string; daylight?: { sunrise: string | null; sunset: string | null } }> {
+  const bookable = verein.bookableServices.find((s) => s.serviceId === serviceId);
+  if (bookable?.daylight) {
+    const day = await loadDaylightBusy(verein, bookable, date);
+    const sun = { sunrise: day.grid.sunrise, sunset: day.grid.sunset };
+    if (!day.ok) return { slots: [], error: day.error, daylight: sun };
+    return { slots: daylightSlotStates(day.grid.slots, { mine: day.mine, busy: day.busy }), daylight: sun };
+  }
   const result = await loadServiceSlots(verein.accountId, serviceId, date);
   if (result.status !== 200) return { slots: [], error: String(result.body.error ?? "Slots nicht verfügbar") };
   if (result.body.serviceType === "day") {
@@ -90,6 +105,58 @@ export async function loadPortalSlots(
   };
 }
 
+/** Länge eines Tageslicht-Slots: Gültigkeitsdauer des Service, sonst 60 Min. */
+function daylightSlotMinutes(bookable: PortalVerein["bookableServices"][number]): number {
+  const minutes = bookable.service.defaultValidityDurationMinutes;
+  return minutes && minutes >= 15 && minutes <= 240 ? minutes : 60;
+}
+
+/**
+ * Tageslicht-Slots eines Tages plus alles, was sie belegt: Buchungen und
+ * Sperren in anny auf der Resource, Sperren und Vereinsbuchungen in EMP.
+ * Ist anny nicht erreichbar, gilt der Tag als unbekannt (`ok: false`).
+ */
+async function loadDaylightBusy(
+  verein: PortalVerein,
+  bookable: PortalVerein["bookableServices"][number],
+  date: string,
+): Promise<{ grid: DaylightDay; ok: true; busy: Interval[]; mine: Interval[] } | { grid: DaylightDay; ok: false; error: string }> {
+  const lat = verein.account.latitude ?? 51.756;
+  const lng = verein.account.longitude ?? 8.043;
+  const grid = daylightDay(date, lat, lng, daylightSlotMinutes(bookable));
+  if (grid.slots.length === 0) return { grid, ok: true, busy: [], mine: [] };
+
+  const { start: dayStart, endExclusive: dayEnd } = berlinDayRange(date);
+  const [target, bookings, blocks] = await Promise.all([
+    resolveAnnyServiceResource(verein.accountId, bookable.serviceId),
+    prisma.vereinSlotBooking.findMany({
+      where: {
+        accountId: verein.accountId,
+        serviceId: bookable.serviceId,
+        status: "BOOKED",
+        startDate: { lt: dayEnd },
+        endDate: { gt: dayStart },
+      },
+      select: { vereinId: true, startDate: true, endDate: true },
+    }),
+    prisma.slotBlock.findMany({
+      where: { accountId: verein.accountId, serviceId: bookable.serviceId, date },
+      select: { startDate: true, endDate: true },
+    }),
+  ]);
+  if (!target.ok) return { grid, ok: false, error: "Buchungssystem gerade nicht erreichbar. Versuche es gleich noch einmal." };
+  const anny = await fetchAnnyResourceBusy(target.baseUrl, target.token, target.resourceUuid, date, target.organizationId);
+  if (!anny.ok) return { grid, ok: false, error: "Buchungssystem gerade nicht erreichbar. Versuche es gleich noch einmal." };
+
+  const toInterval = (b: { startDate: Date; endDate: Date }): Interval => ({ start: b.startDate.getTime(), end: b.endDate.getTime() });
+  return {
+    grid,
+    ok: true,
+    mine: bookings.filter((b) => b.vereinId === verein.id).map(toInterval),
+    busy: [...anny.intervals, ...bookings.map(toInterval), ...blocks.map(toInterval)],
+  };
+}
+
 export type BookingOutcome =
   | { ok: true; bookingId: number }
   | { ok: false; status: number; error: string };
@@ -97,12 +164,36 @@ export type BookingOutcome =
 /** Bucht einen Slot fuer den Verein. Prueft Freigabe, Fenster und Verfuegbarkeit selbst. */
 export async function createVereinBooking(
   verein: PortalVerein,
-  input: { serviceId: number; date: string; slotStart: string; bookedBy: string | null; note: string | null },
+  input: { serviceId: number; date: string; slotStart: string; bookedBy: string | null; bookedFor: string | null; note: string | null },
 ): Promise<BookingOutcome> {
   const bookable = verein.bookableServices.find((s) => s.serviceId === input.serviceId);
   if (!bookable) return { ok: false, status: 403, error: "Dieser Service ist für euren Verein nicht freigegeben." };
   if (!isDateBookable(input.date, verein.portalHorizonDays)) {
     return { ok: false, status: 400, error: `Buchbar sind nur die nächsten ${verein.portalHorizonDays} Tage.` };
+  }
+
+  if (bookable.daylight) {
+    // Tageslicht: Slot aus dem eigenen Raster, Belegung frisch aus anny und EMP.
+    const day = await loadDaylightBusy(verein, bookable, input.date);
+    if (!day.ok) return { ok: false, status: 503, error: day.error };
+    const slot = day.grid.slots.find((s) => s.startTime === input.slotStart);
+    if (!slot) return { ok: false, status: 409, error: "Diesen Slot gibt es nicht (mehr). Bitte neu laden." };
+    const range = { start: new Date(slot.startIso).getTime(), end: new Date(slot.endIso).getTime() };
+    if (range.start <= Date.now()) return { ok: false, status: 409, error: "Der Slot hat schon begonnen." };
+    if (day.busy.some((b) => overlaps(range, b))) return { ok: false, status: 409, error: "Der Slot ist inzwischen belegt." };
+    return finalizeVereinBooking(verein, {
+      serviceId: input.serviceId,
+      serviceName: bookable.service.name,
+      date: input.date,
+      slotStart: slot.startTime,
+      slotEnd: slot.endTime,
+      startIso: slot.startIso,
+      endIso: slot.endIso,
+      priceCents: bookable.priceCents,
+      bookedBy: input.bookedBy,
+      bookedFor: input.bookedFor,
+      note: input.note,
+    });
   }
 
   // Verfuegbarkeit serverseitig neu pruefen; Endzeit und ISO-Zeiten kommen
@@ -143,6 +234,7 @@ export async function createVereinBooking(
     endIso: slot.endIso,
     priceCents: bookable.priceCents,
     bookedBy: input.bookedBy,
+    bookedFor: input.bookedFor,
     note: input.note,
   });
 }
@@ -166,6 +258,7 @@ interface FinalizeInput {
   endIso: string;
   priceCents: number;
   bookedBy: string | null;
+  bookedFor: string | null;
   note: string | null;
 }
 
@@ -219,7 +312,10 @@ async function finalizeVereinBooking(
           slotEnd: clampedBerlinHm(window.to, input.date, "end"),
           accessAreaId: mainAreaId,
           status: "VALID",
-          notes: input.bookedBy ? `Gebucht im Vereinsportal von ${input.bookedBy}` : "Gebucht im Vereinsportal",
+          notes: [
+            input.bookedBy ? `Gebucht im Vereinsportal von ${input.bookedBy}` : "Gebucht im Vereinsportal",
+            input.bookedFor ? `für ${input.bookedFor}` : null,
+          ].filter(Boolean).join(", "),
           ...(areaIds.length > 0 && {
             ticketAreas: { create: areaIds.map((accessAreaId) => ({ accessAreaId })) },
           }),
@@ -252,6 +348,7 @@ async function finalizeVereinBooking(
           serviceId: input.serviceId,
           date: input.date,
           bookedBy: input.bookedBy,
+          bookedFor: input.bookedFor,
           note: input.note,
         },
         select: { id: true },
@@ -275,7 +372,7 @@ const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
  */
 export async function createVereinRequest(
   verein: PortalVerein,
-  input: { serviceId: number; date: string; start: string; end: string; bookedBy: string | null; note: string | null },
+  input: { serviceId: number; date: string; start: string; end: string; bookedBy: string | null; bookedFor: string | null; note: string | null },
 ): Promise<BookingOutcome> {
   const bookable = verein.bookableServices.find((s) => s.serviceId === input.serviceId);
   if (!bookable) return { ok: false, status: 403, error: "Dieser Service ist für euren Verein nicht freigegeben." };
@@ -309,6 +406,7 @@ export async function createVereinRequest(
       priceCents: bookable.priceCents,
       status: "REQUESTED",
       bookedBy: input.bookedBy,
+      bookedFor: input.bookedFor,
       note: input.note,
     },
     select: { id: true },
@@ -329,6 +427,7 @@ export async function createVereinRequest(
     slotEnd: input.end,
     priceCents: bookable.priceCents,
     bookedBy: input.bookedBy,
+    bookedFor: input.bookedFor,
     note: input.note,
   }).catch((e) => console.error("[verein-portal] telegram failed:", e));
 
@@ -383,6 +482,7 @@ export async function approveVereinRequest(
       endIso: request.endDate.toISOString(),
       priceCents: opts.priceCents ?? request.priceCents,
       bookedBy: request.bookedBy,
+      bookedFor: request.bookedFor,
       note: request.note,
     },
     { requestId: request.id },

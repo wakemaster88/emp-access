@@ -71,6 +71,44 @@ function collectServiceNames(empName: string, annyNamesJson: string | null): str
 }
 
 /**
+ * ANNY-Zugang und Resource eines EMP-Service (fuer Abfragen der Belegung).
+ * Dieselbe Aufloesung wie beim Sperren: Service per Name, Resource als
+ * Schnittmenge EMP-Bereiche ∩ ANNY-Service, sonst der erste verknuepfte Link.
+ */
+export async function resolveAnnyServiceResource(
+  accountId: number,
+  serviceId: number,
+): Promise<
+  | { ok: true; baseUrl: string; token: string; organizationId: string | null; resourceUuid: string }
+  | { ok: false; error: string }
+> {
+  const svc = await prisma.service.findFirst({
+    where: { id: serviceId, accountId },
+    select: {
+      name: true,
+      annyNames: true,
+      serviceAreas: { select: { area: { select: { annyLinks: { select: { annyResourceId: true } } } } } },
+    },
+  });
+  if (!svc) return { ok: false, error: "Service nicht gefunden" };
+  const annyConfig = await prisma.apiConfig.findFirst({
+    where: { accountId, provider: "ANNY" },
+    select: { token: true, baseUrl: true, extraConfig: true },
+  });
+  if (!annyConfig?.token) return { ok: false, error: "ANNY nicht konfiguriert" };
+  const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
+  const organizationId = await resolveAnnyOrganizationId(baseUrl, annyConfig.token, annyConfig.extraConfig);
+  const linked = svc.serviceAreas
+    .flatMap((sa) => sa.area?.annyLinks ?? [])
+    .map((l) => l.annyResourceId)
+    .filter((x): x is string => !!x);
+  const match = await fetchAnnyServiceMatch(baseUrl, annyConfig.token, collectServiceNames(svc.name, svc.annyNames), organizationId);
+  const resourceUuid = (match.id ? resolveServiceResourceId(linked, match.resourceIds ?? []) : null) ?? linked[0] ?? null;
+  if (!resourceUuid) return { ok: false, error: "Keine ANNY-Resource fuer diesen Service gefunden." };
+  return { ok: true, baseUrl, token: annyConfig.token, organizationId: organizationId ?? null, resourceUuid };
+}
+
+/**
  * Sperrt einen Slot: belegt ihn in ANNY ueber einen nativen Blocker und legt
  * einen SlotBlock-Datensatz an. Idempotent: ist der Slot schon gesperrt,
  * kommt die bestehende Sperre mit `alreadyBlocked` zurueck.

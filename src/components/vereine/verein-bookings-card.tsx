@@ -33,6 +33,7 @@ export interface BookingRowData {
   priceCents: number;
   status: "BOOKED" | "CANCELED";
   bookedBy: string | null;
+  bookedFor?: string | null;
   note: string | null;
   canceledBy: string | null;
   billedAt: string | null;
@@ -240,7 +241,7 @@ export function VereinBookingsCard({
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       <span className="sm:hidden">{r.vereinName} · </span>
-                      {r.serviceName}{r.bookedBy ? ` · ${r.bookedBy}` : ""}{r.note ? ` · ${r.note}` : ""}
+                      {r.serviceName}{r.bookedFor ? ` · für ${r.bookedFor}` : ""}{r.bookedBy ? ` · ${r.bookedBy}` : ""}{r.note ? ` · ${r.note}` : ""}
                     </p>
                   </TableCell>
                   <TableCell className="max-sm:hidden">{r.vereinName}</TableCell>
