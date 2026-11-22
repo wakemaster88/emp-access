@@ -31,13 +31,15 @@ import { LockerOverlay } from "@/components/checkin/locker-overlay";
 import { LostItemsOverlay } from "@/components/checkin/lost-items-overlay";
 import { PaymentOpenOverlay } from "@/components/checkin/payment-open-overlay";
 import { BulkOverlay } from "@/components/checkin/bulk-overlay";
-import { Lock, PackageSearch, Layers, Wallet } from "lucide-react";
+import { Cake, Lock, PackageSearch, Layers, Wallet } from "lucide-react";
 import { bundleAnnyTickets, type TicketBundle } from "@/lib/anny-ticket-bundle";
 import { AddTicketOverlay } from "@/components/checkin/add-ticket-overlay";
 import { printVoucher } from "@/components/checkin/checkin-print";
 import type { BundlePart, CheckinData, CheckinTicket, EquipmentSetup, GuestInfoSummary, OpenableDevice, SlotOverviewData, SlotOverviewSlot } from "@/components/checkin/checkin-types";
 import { DaySelector, GuestInfoSummaryPanel, LiveClock, OverlayGrip, RentalOverviewPanel, Section, overlayScrimClass, overlaySheetClass } from "@/components/checkin/checkin-ui";
 import { classifyInfoLabel, compareSetups, isYes, toDateStr } from "@/components/checkin/checkin-utils";
+import { checkinOpeningText } from "@/lib/checkin-opening";
+import { ageOn, isBirthdayOn } from "@/lib/birthday";
 import { CameraOverlay, ScanOverlay } from "@/components/checkin/scan-overlay";
 import { AppLinkDialog, type AppLinkState } from "@/components/checkin/app-link-dialog";
 import { SlotOverviewSection } from "@/components/checkin/slot-overview";
@@ -355,7 +357,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     let cancelled = false;
     const seenIds = new Set<number>();
 
-    setData(null);
+    // Alte Daten bleiben beim Tageswechsel stehen (gedimmt, siehe Inhalt), damit
+    // Kopf und Tagesauswahl nicht neu aufgebaut werden und die Pille gleiten kann.
     setLoading(true);
     setError("");
 
@@ -1087,6 +1090,26 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     );
   }
 
+  // Neuer Tag lädt noch: Inhalt des alten Tages gedimmt und nicht bedienbar.
+  const dayLoading = !!data && data.date !== date;
+
+  // Geburtstage der Abo-Fahrer am gewählten Tag, je Person einmal (mehrere Abos).
+  const birthdays = (() => {
+    if (!data || data.date !== date) return [];
+    const seen = new Map<string, { key: string; name: string; age: number }>();
+    for (const sub of data.subscriptions) {
+      for (const t of sub.tickets) {
+        if (!t.birthDate) continue;
+        const bd = new Date(t.birthDate);
+        if (!isBirthdayOn(bd, date)) continue;
+        const name = [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
+        const key = `${name.toLowerCase()}|${t.birthDate.slice(0, 10)}`;
+        if (!seen.has(key)) seen.set(key, { key, name, age: ageOn(bd, date) });
+      }
+    }
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
+  })();
+
   if (loading && !data) {
     return (
       <div className={cn("dark page-ambient text-foreground [color-scheme:dark] flex items-center justify-center", kioskMinHeightClass)}>
@@ -1340,13 +1363,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         </div>
       </header>
 
-      {/* ANNY Sync Status */}
-      {data?.annySyncStatus && (() => {
-        const syncSt = data.annySyncStatus!;
-        const syncAge = syncSt.lastSync ? Date.now() - new Date(syncSt.lastSync).getTime() : Infinity;
+      {/* Tagesauswahl mit ANNY-Sync (links) und Öffnungszeit des Tages (rechts) in einer Zeile. */}
+      {(() => {
+        const syncSt = data?.annySyncStatus ?? null;
+        const syncAge = syncSt?.lastSync ? Date.now() - new Date(syncSt.lastSync).getTime() : Infinity;
         const isStale = syncAge > 2 * 60 * 60_000;
-        const hasErrors = (syncSt.errors ?? 0) > 0;
-        const details = syncSt.errorDetails ?? [];
+        const hasErrors = (syncSt?.errors ?? 0) > 0;
+        const details = syncSt?.errorDetails ?? [];
         const fmtAgo = (iso: string | null) => {
           if (!iso) return "Nie";
           const diff = Date.now() - new Date(iso).getTime();
@@ -1366,92 +1389,119 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           } catch { /* ignore */ }
           setSyncing(false);
         };
-        // Ruhe bei Normalbetrieb: eine gedämpfte Zeile. Fehler (rot) und ein
-        // veralteter Stand (Hinweisfarbe) stehen als Notice mit der Handlung
-        // daneben (docs/design-regeln.md, Abschnitte 3, 19 und 23.4). Die
-        // Sync-Taste ist 44 px, am Kiosk 56 px hoch; in der ruhigen Zeile auf
-        // dem Handy nur ein Symbol, damit der Stand lesbar bleibt.
         const syncLabel = syncing ? "Sync..." : "Jetzt synchronisieren";
-        const status = (
+        const status = syncSt && (
           <>
-            <span className="truncate">ANNY Sync: {fmtAgo(syncSt.lastSync)}</span>
+            {/* Schmal nur „vor 23 Min.“ neben dem Sync-Symbol, damit der Stand lesbar bleibt. */}
+            <span className="truncate"><span className="hidden xl:inline">ANNY Sync: </span>{fmtAgo(syncSt.lastSync)}</span>
             {(syncSt.created ?? 0) > 0 && <span className="text-success font-medium tabular-nums shrink-0">+{syncSt.created} neu</span>}
             {hasErrors && <span className="text-destructive font-semibold tabular-nums shrink-0">{syncSt.errors} Fehler</span>}
           </>
         );
-        if (!hasErrors && !isStale) {
-          return (
-            <div className="px-4 sm:px-6 pt-3 flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="flex min-w-0 flex-1 items-center gap-2">{status}</span>
-              <Button
-                variant="ghost"
-                onClick={triggerSync}
-                disabled={syncing}
-                aria-label={syncLabel}
-                className="h-11 min-w-11 shrink-0 font-semibold text-muted-foreground hover:text-foreground sm:h-14"
-              >
-                <RefreshCw className={cn(syncing && "animate-spin")} />
-                <span className="hidden sm:inline">{syncLabel}</span>
-              </Button>
-            </div>
-          );
-        }
+        // Ruhe bei Normalbetrieb: gedämpfter Stand und die Sync-Taste links in der
+        // Tageszeile; ein veralteter Stand steht in Hinweisfarbe (docs/design-regeln.md,
+        // Abschnitte 3 und 19). Die Beschriftung der Taste erst ab 1440 px, schmaler
+        // nur das Symbol, damit die Tage mittig bleiben.
+        const syncControl = syncSt && (
+          <div className={cn("flex min-w-0 items-center gap-1 text-xs sm:text-sm", isStale ? "text-warning" : "text-muted-foreground")}>
+            <Button
+              variant="ghost"
+              onClick={triggerSync}
+              disabled={syncing}
+              aria-label={syncLabel}
+              title={syncLabel}
+              className="h-11 min-w-11 shrink-0 px-2.5 font-semibold text-muted-foreground hover:text-foreground sm:h-14 sm:min-w-14"
+            >
+              <RefreshCw className={cn(syncing && "animate-spin")} />
+              <span className="hidden min-[1440px]:inline">{syncLabel}</span>
+            </Button>
+            <span className="flex min-w-0 items-center gap-2">{status}</span>
+          </div>
+        );
+        // Öffnungszeit nur, solange am gewählten Tag noch nicht geöffnet ist.
+        const openingText =
+          data && data.date === date ? checkinOpeningText(data.opening, date, toDateStr(new Date()), new Date()) : null;
+        const openingInfo = openingText && (
+          <span
+            className={cn(
+              "flex min-w-0 items-center gap-1.5 text-right text-xs leading-tight sm:text-sm",
+              data?.opening?.closed ? "text-muted-foreground" : "font-medium text-foreground",
+            )}
+            title={data?.opening?.scheduleName ? `Betriebszeiten: ${data.opening.scheduleName}` : undefined}
+          >
+            <Clock className="size-4 shrink-0 text-muted-foreground" />
+            {/* Zwischen lg und xl ist neben den Tagen wenig Platz: dort nur der erste
+                Teil („Öffnet um 13 Uhr“), der Rest („bis 18 Uhr“) ab xl und schmaler darunter. */}
+            <span className="min-w-0">
+              <span className="whitespace-nowrap">{openingText.split(" · ")[0]}</span>
+              {openingText.includes(" · ") && (
+                <span className="lg:max-xl:hidden"> · {openingText.split(" · ").slice(1).join(" · ")}</span>
+              )}
+            </span>
+          </span>
+        );
         // Fehlerliste klappt über eine echte Taste auf (Tastatur, aria-expanded).
         // Die Zeile ist nur 20 px hoch; die Trefffläche reicht per `::after` auf
         // 44 px, am Kiosk auf 56 px (Abschnitt 20), ohne die Notice zu vergrößern.
-        // Die Sync-Taste steht oben an der Titelzeile und springt beim Aufklappen nicht.
         const canExpand = hasErrors && details.length > 0;
         return (
-          <div className="px-4 sm:px-6 pt-3">
-            <Notice
-              tone={hasErrors ? "danger" : "warning"}
-              icon={RefreshCw}
-              compact
-              actionAlign="start"
-              role="status"
-              title={
-                canExpand ? (
-                  <button
-                    type="button"
-                    aria-expanded={syncErrorsOpen}
-                    onClick={() => setSyncErrorsOpen((v) => !v)}
-                    className="relative flex w-full min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 after:absolute after:inset-x-0 after:-inset-y-3 sm:after:-inset-y-[18px]"
-                  >
-                    {status}
-                    <ChevronDown
-                      className={cn("size-4 shrink-0 text-muted-foreground transition-transform", syncErrorsOpen && "rotate-180")}
-                    />
-                  </button>
-                ) : (
-                  <span className="flex min-w-0 items-center gap-2">{status}</span>
-                )
-              }
-              action={
-                <Button
-                  variant="outline"
-                  onClick={triggerSync}
-                  disabled={syncing}
-                  className="h-11 shrink-0 font-semibold sm:h-14"
-                >
-                  <RefreshCw className={cn(syncing && "animate-spin")} />
-                  {syncLabel}
-                </Button>
-              }
-            >
-              {canExpand && syncErrorsOpen && (
-                <div className="space-y-0.5 pt-1">
-                  {details.map((d, i) => (
-                    <p key={i} className="text-[11px] text-destructive font-mono truncate">{d}</p>
+          <>
+            <DaySelector date={date} onChange={setDate} start={syncControl} end={openingInfo} />
+            {birthdays.length > 0 && (
+              // Geburtstage der Abo-Fahrer am gewählten Tag: eine ruhige Zeile, nur wenn es welche gibt.
+              <p className="flex min-w-0 items-center gap-2 px-4 pt-1 text-xs text-muted-foreground sm:px-6 sm:text-sm">
+                <Cake className="size-4 shrink-0" aria-hidden />
+                <span className="min-w-0">
+                  {date === toDateStr(new Date()) ? "Heute Geburtstag: " : "Geburtstag: "}
+                  {birthdays.map((b, i) => (
+                    <span key={b.key}>
+                      {i > 0 && ", "}
+                      <span className="font-medium text-foreground">{b.name}</span>
+                      <span className="tabular-nums"> ({b.age})</span>
+                    </span>
                   ))}
-                </div>
-              )}
-            </Notice>
-          </div>
+                </span>
+              </p>
+            )}
+            {hasErrors && (
+              <div className="px-4 sm:px-6 pt-3">
+                <Notice
+                  tone="danger"
+                  icon={RefreshCw}
+                  compact
+                  actionAlign="start"
+                  role="status"
+                  title={
+                    canExpand ? (
+                      <button
+                        type="button"
+                        aria-expanded={syncErrorsOpen}
+                        onClick={() => setSyncErrorsOpen((v) => !v)}
+                        className="relative flex w-full min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 after:absolute after:inset-x-0 after:-inset-y-3 sm:after:-inset-y-[18px]"
+                      >
+                        {status}
+                        <ChevronDown
+                          className={cn("size-4 shrink-0 text-muted-foreground transition-transform", syncErrorsOpen && "rotate-180")}
+                        />
+                      </button>
+                    ) : (
+                      <span className="flex min-w-0 items-center gap-2">{status}</span>
+                    )
+                  }
+                >
+                  {canExpand && syncErrorsOpen && (
+                    <div className="space-y-0.5 pt-1">
+                      {details.map((d, i) => (
+                        <p key={i} className="text-[11px] text-destructive font-mono truncate">{d}</p>
+                      ))}
+                    </div>
+                  )}
+                </Notice>
+              </div>
+            )}
+          </>
         );
       })()}
-
-      {/* Day selector */}
-      <DaySelector date={date} onChange={setDate} />
 
       {/* Search */}
       <div className="px-4 sm:px-6 pt-3">
@@ -1479,7 +1529,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 space-y-4 sm:space-y-5 monitor-scrollbar">
+      <div
+        aria-busy={dayLoading}
+        className={cn(
+          "flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 space-y-4 sm:space-y-5 monitor-scrollbar transition-opacity",
+          dayLoading && "pointer-events-none opacity-50",
+        )}
+      >
 
         {/* Zugebuchtes Verleihmaterial des Tages (aus ANNY). */}
         <RentalOverviewPanel tickets={dayTickets} />

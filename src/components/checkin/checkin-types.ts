@@ -1,3 +1,5 @@
+import type { CheckinDayOpening } from "@/lib/checkin-opening";
+
 /**
  * Typen des Check-in-Kiosks (Daten aus /api/checkin/public/[token]).
  * Ausgelagert aus src/app/checkin/[token]/page.tsx.
@@ -250,6 +252,8 @@ export interface CheckinData {
   allSubscriptions?: SubOption[];
   recentScans: ScanEntry[];
   annySyncStatus?: AnnySyncStatus | null;
+  /** Öffnungszeit des Shops am gewählten Tag (Betriebszeiten). */
+  opening?: CheckinDayOpening | null;
   openableDevices?: OpenableDevice[];
   quickDeviceIds?: number[];
 }
