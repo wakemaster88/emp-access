@@ -159,6 +159,8 @@ export const offerSchema = z
     push: z.boolean().optional(),
     /** Für welchen Pass (Ride Pass, Beach Pass, beide); fehlt der Wert, bleibt er, wie er ist. */
     audience: z.enum(["RIDE", "BEACH", "ALL"]).optional(),
+    /** Angebot oder News; nur beim Anlegen wirksam, fehlt der Wert, ist es ein Angebot. */
+    kind: z.enum(["OFFER", "NEWS"]).optional(),
   })
   .refine((o) => !o.validFrom || !o.validTo || o.validFrom <= o.validTo, { message: "Das Ende liegt vor dem Start" });
 

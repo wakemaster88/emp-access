@@ -3922,8 +3922,17 @@ model ChallengeVote {
 }
 
 /// Angebot auf dem Dashboard der Kunden-App.
+/// Art eines Eintrags in `RiderOffer`: Angebot oder News (Mitteilung wie
+/// geänderte Öffnungszeiten). Beide teilen Zeitraum, Zielgruppe und Push,
+/// erscheinen in Verwaltung und App aber getrennt.
+enum RiderOfferKind {
+  OFFER
+  NEWS
+}
+
 model RiderOffer {
   id          Int       @id @default(autoincrement())
+  kind        RiderOfferKind @default(OFFER)
   title       String
   text        String?
   /// Sichtbar ab/bis (Kalendertag, einschliesslich); NULL = offen.

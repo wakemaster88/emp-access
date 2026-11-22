@@ -88,8 +88,15 @@ export interface AnnounceText {
   body: string;
 }
 
-export function offerPushText(o: { title: string; text: string | null; toYmd: string | null }): AnnounceText {
+export function offerPushText(o: {
+  title: string;
+  text: string | null;
+  toYmd: string | null;
+  /** News melden nur den Titel, ohne „Neues Angebot“ und ohne „Gilt bis“. */
+  kind?: "OFFER" | "NEWS";
+}): AnnounceText {
   const body = sentence(o.text?.trim() || "Schau in der App vorbei.");
+  if (o.kind === "NEWS") return { title: o.title, body };
   return {
     title: `Neues Angebot: ${o.title}`,
     body: o.toYmd ? `${body} Gilt bis ${dm(o.toYmd)}` : body,

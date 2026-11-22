@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Bell, Loader2, Megaphone, Plus, Save, Trash2 } from "lucide-react";
+import { Bell, Loader2, Megaphone, Newspaper, Plus, Save, Trash2 } from "lucide-react";
 import { berlinHour, berlinYmd } from "@/lib/berlin-day";
 import { offerAnnounceBlock, offerPushText } from "@/lib/rider-announce-rules";
 import { PushAnnounceField, type PushReach } from "./push-announce-field";
@@ -50,8 +50,40 @@ interface FormState {
   audience: PassAudience;
 }
 
-/** Neue Angebote melden wir standardmäßig per Push; abschalten geht im Dialog. */
+/** Neue Einträge melden wir standardmäßig per Push; abschalten geht im Dialog. */
 const EMPTY: FormState = { id: null, title: "", text: "", validFrom: "", validTo: "", active: true, push: true, audience: "RIDE" };
+
+export type OfferKind = "OFFER" | "NEWS";
+
+/** Texte je Art: Angebote und News teilen Karte, Dialog und Push. */
+const COPY = {
+  OFFER: {
+    icon: Megaphone,
+    heading: "Angebote",
+    description: "Oben auf der Startseite der App, höchstens drei zugleich.",
+    add: "Angebot",
+    column: "Angebot",
+    emptyTitle: "Noch keine Angebote",
+    emptyText: "Zum Beispiel „Feierabend-Stunde: ab 18 Uhr Leihbrett gratis“.",
+    create: "Angebot anlegen",
+    edit: "Angebot bearbeiten",
+    hint: "Kurz und konkret: ein Titel und ein Satz dazu.",
+    audience: "RIDE" as PassAudience,
+  },
+  NEWS: {
+    icon: Newspaper,
+    heading: "News",
+    description: "Mitteilungen wie geänderte Öffnungszeiten, ganz oben auf der Startseite der App, die neueste zuerst.",
+    add: "News",
+    column: "News",
+    emptyTitle: "Noch keine News",
+    emptyText: "Zum Beispiel „Morgen wetterbedingt geschlossen“.",
+    create: "News anlegen",
+    edit: "News bearbeiten",
+    hint: "Ein Titel und ein, zwei Sätze. Mit „Sichtbar bis“ verschwindet die News von selbst.",
+    audience: "ALL" as PassAudience,
+  },
+} as const;
 
 function fmt(ymd: string | null): string {
   if (!ymd) return "";
@@ -66,17 +98,22 @@ function rangeText(o: { validFrom: string | null; validTo: string | null }): str
   return "ohne Ende";
 }
 
-/** Angebote, die Abo-Fahrer auf der Startseite der Kunden-App sehen. */
+/** Angebote oder News, die Kunden auf der Startseite der Kunden-App sehen. */
 export function OffersCard({
   offers,
   reach,
   beachEnabled = false,
+  kind = "OFFER",
 }: {
   offers: OfferAdminRow[];
   reach: PushReach;
   /** Beach Pass an: Feld „Für“ zeigen. */
   beachEnabled?: boolean;
+  kind?: OfferKind;
 }) {
+  const copy = COPY[kind];
+  const Icon = copy.icon;
+  const idp = kind === "NEWS" ? "nw" : "of";
   const router = useRouter();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -114,6 +151,7 @@ export function OffersCard({
                 validTo: form.validTo || null,
                 active: form.active,
                 push: form.push,
+                ...(form.id == null && { kind }),
                 ...(beachEnabled && { audience: form.audience }),
               }),
             },
@@ -137,23 +175,21 @@ export function OffersCard({
       <Card flush>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Megaphone className="h-4 w-4 text-primary shrink-0" />
-            Angebote ({offers.length})
+            <Icon className="h-4 w-4 text-primary shrink-0" />
+            {copy.heading} ({offers.length})
           </CardTitle>
-          <CardDescription>
-            Oben auf der Startseite der App, höchstens drei zugleich.
-          </CardDescription>
+          <CardDescription>{copy.description}</CardDescription>
           <CardAction>
-            <Button onClick={() => open(EMPTY)} className="max-sm:h-11" aria-label="Angebot anlegen">
+            <Button onClick={() => open({ ...EMPTY, audience: copy.audience })} className="max-sm:h-11" aria-label={copy.create}>
               <Plus className="h-4 w-4" />
-              <span>Angebot<span className="max-sm:sr-only"> anlegen</span></span>
+              <span>{copy.add}<span className="max-sm:sr-only"> anlegen</span></span>
             </Button>
           </CardAction>
         </CardHeader>
         <Table edge>
           <TableHeader>
             <TableRow>
-              <TableHead>Angebot</TableHead>
+              <TableHead>{copy.column}</TableHead>
               <TableHead className="hidden sm:table-cell">Sichtbar</TableHead>
               <TableHead className="text-right">Status</TableHead>
             </TableRow>
@@ -162,9 +198,9 @@ export function OffersCard({
             {offers.length === 0 && (
               <TableEmpty
                 colSpan={3}
-                icon={Megaphone}
-                title="Noch keine Angebote"
-                description="Zum Beispiel „Feierabend-Stunde: ab 18 Uhr Leihbrett gratis“."
+                icon={Icon}
+                title={copy.emptyTitle}
+                description={copy.emptyText}
                 compact={false}
               />
             )}
@@ -198,40 +234,40 @@ export function OffersCard({
       <Dialog open={!!form} onOpenChange={(o) => !o && !saving && setForm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{form?.id == null ? "Angebot anlegen" : "Angebot bearbeiten"}</DialogTitle>
-            <DialogDescription>Kurz und konkret: ein Titel und ein Satz dazu.</DialogDescription>
+            <DialogTitle>{form?.id == null ? copy.create : copy.edit}</DialogTitle>
+            <DialogDescription>{copy.hint}</DialogDescription>
           </DialogHeader>
           {form && (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="of-title">Titel</Label>
-                <Input id="of-title" value={form.title} maxLength={60} onChange={(e) => set({ title: e.target.value })} className="max-sm:h-11" />
+                <Label htmlFor={`${idp}-title`}>Titel</Label>
+                <Input id={`${idp}-title`} value={form.title} maxLength={60} onChange={(e) => set({ title: e.target.value })} className="max-sm:h-11" />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="of-text">Text (optional)</Label>
-                <Input id="of-text" value={form.text} maxLength={300} onChange={(e) => set({ text: e.target.value })} className="max-sm:h-11" />
+                <Label htmlFor={`${idp}-text`}>Text (optional)</Label>
+                <Input id={`${idp}-text`} value={form.text} maxLength={300} onChange={(e) => set({ text: e.target.value })} className="max-sm:h-11" />
               </div>
               <div className="grid gap-4 grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="of-from">Sichtbar ab</Label>
-                  <Input id="of-from" type="date" value={form.validFrom} onChange={(e) => set({ validFrom: e.target.value })} className="max-sm:h-11" />
+                  <Label htmlFor={`${idp}-from`}>Sichtbar ab</Label>
+                  <Input id={`${idp}-from`} type="date" value={form.validFrom} onChange={(e) => set({ validFrom: e.target.value })} className="max-sm:h-11" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="of-to">Sichtbar bis</Label>
-                  <Input id="of-to" type="date" value={form.validTo} min={form.validFrom || undefined} onChange={(e) => set({ validTo: e.target.value })} className="max-sm:h-11" />
+                  <Label htmlFor={`${idp}-to`}>Sichtbar bis</Label>
+                  <Input id={`${idp}-to`} type="date" value={form.validTo} min={form.validFrom || undefined} onChange={(e) => set({ validTo: e.target.value })} className="max-sm:h-11" />
                 </div>
               </div>
-              {beachEnabled && <AudienceField id="of-audience" value={form.audience} onChange={(v) => set({ audience: v })} />}
+              {beachEnabled && <AudienceField id={`${idp}-audience`} value={form.audience} onChange={(v) => set({ audience: v })} />}
               <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="of-active">Aktiv</Label>
-                <Switch id="of-active" checked={form.active} onCheckedChange={(v) => set({ active: v })} />
+                <Label htmlFor={`${idp}-active`}>Aktiv</Label>
+                <Switch id={`${idp}-active`} checked={form.active} onCheckedChange={(v) => set({ active: v })} />
               </div>
 
               <PushAnnounceField
-                id="of-push"
+                id={`${idp}-push`}
                 checked={form.push}
                 onChange={(v) => set({ push: v })}
-                preview={offerPushText({ title: form.title.trim() || "Titel", text: form.text, toYmd: form.validTo || null })}
+                preview={offerPushText({ title: form.title.trim() || "Titel", text: form.text, toYmd: form.validTo || null, kind })}
                 reach={reach}
                 status={selected ? { pushedAt: selected.pushedAt, pushSent: selected.pushSent } : null}
                 block={offerAnnounceBlock(

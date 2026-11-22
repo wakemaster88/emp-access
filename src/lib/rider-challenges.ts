@@ -190,15 +190,24 @@ export interface RiderOfferView {
   id: number;
   title: string;
   text: string | null;
+  validFrom: Date | null;
   validTo: Date | null;
 }
 
-/** Angebote, die heute sichtbar sind. */
-export async function loadRiderOffers(accountId: number, pass: PassKind = "RIDE", now: Date = new Date()): Promise<RiderOfferView[]> {
+/**
+ * Angebote oder News, die heute sichtbar sind. Angebote in der Reihenfolge
+ * der Verwaltung, News die neueste zuerst.
+ */
+export async function loadRiderOffers(
+  accountId: number,
+  pass: PassKind = "RIDE",
+  now: Date = new Date(),
+  kind: "OFFER" | "NEWS" = "OFFER",
+): Promise<RiderOfferView[]> {
   const today = berlinYmd(now);
   const offers = await prisma.riderOffer.findMany({
-    where: { accountId, active: true, audience: { in: audiencesFor(pass) } },
-    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    where: { accountId, kind, active: true, audience: { in: audiencesFor(pass) } },
+    orderBy: kind === "NEWS" ? [{ validFrom: { sort: "desc", nulls: "last" } }, { id: "desc" }] : [{ sortOrder: "asc" }, { id: "asc" }],
     take: 20,
   });
   return offers
@@ -208,5 +217,5 @@ export async function loadRiderOffers(accountId: number, pass: PassKind = "RIDE"
         today,
       ),
     )
-    .map((o) => ({ id: o.id, title: o.title, text: o.text, validTo: o.validTo }));
+    .map((o) => ({ id: o.id, title: o.title, text: o.text, validFrom: o.validFrom, validTo: o.validTo }));
 }

@@ -42,6 +42,12 @@ const CLOCK_ICON = (
   </svg>
 );
 
+const MEGAPHONE_ICON = (
+  <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 11v3a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" />
+  </svg>
+);
+
 const PIN_ICON = (
   <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" />
@@ -281,7 +287,8 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { token } = await params;
   const rider = await requireRider(token);
   const base = await riderBase(token);
-  const [offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills, birthday] = await Promise.all([
+  const [news, offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills, birthday] = await Promise.all([
+    loadRiderOffers(rider.accountId, rider.pass, undefined, "NEWS"),
     loadRiderOffers(rider.accountId, rider.pass),
     loadRiderChallengesCached(rider),
     loadRiderOccupancy(rider.accountId).catch(() => null),
@@ -360,6 +367,23 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
           />
         </div>
       </div>
+
+      {/* News (z. B. geänderte Öffnungszeiten) ganz oben, die neueste zuerst. */}
+      {news.slice(0, 3).map((n) => (
+        <section key={n.id} className="rd-card rd-news" aria-label={`News: ${n.title}`}>
+          <div className="rd-news-head">
+            <span className="rd-news-icon">{MEGAPHONE_ICON}</span>
+            <span className="rd-label rd-grow">News</span>
+            {n.validFrom && (
+              <span className="rd-muted" style={{ fontSize: 12 }}>
+                {n.validFrom.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "UTC" })}
+              </span>
+            )}
+          </div>
+          <b className="rd-news-title">{n.title}</b>
+          {n.text && <span className="rd-soft">{n.text}</span>}
+        </section>
+      ))}
 
       {rider.today && <TodayCard rider={rider} base={base} water={water} air={air} challenge={challenge} />}
 

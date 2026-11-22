@@ -291,6 +291,15 @@ kein Hochladen und Abstimmen mehr, Stimmen sichtbar, und Top X/Foto werden beim
 nächsten Aufruf der App oder Verwaltung bzw. beim nächsten Start ausgewertet.
 Die App zeigt „heute bis 18 Uhr“, der Push „Am 06.12. bis 18 Uhr“.
 
+### News in der Kunden-App (22.11.2026)
+
+Aaron: „sowas wie neue öffnungszeiten als news abschnitt und nicht angebote“. News sind Mitteilungen (geänderte Öffnungszeiten, wetterbedingt geschlossen) und stehen getrennt von den Angeboten.
+
+- Daten: `RiderOffer.kind` = `OFFER` oder `NEWS` (Migration `20261122130000_rider_news`). News teilen Zeitraum, „Für“ (Ride/Beach/beide) und Push mit den Angeboten; die Art wird nur beim Anlegen gesetzt.
+- Verwaltung: Kunden App › Aktionen, Karte „News“ ganz oben (`OffersCard kind="NEWS"`). Neue News gelten ab Werk für beide Pässe.
+- App: ganz oben auf der Startseite unter dem Kopf, höchstens drei, die neueste zuerst (`loadRiderOffers(…, "NEWS")`, Klasse `.rd-news`).
+- Push: Titel der News ohne „Neues Angebot:“ und ohne „Gilt bis“; sonst gelten die Regeln unten (einmalig, 9–21 Uhr, nie bei „TEST:“).
+
 ### Push bei neuen Angeboten und Challenges (20.11.2026)
 
 - Aaron: „bei neuen angeboten, challenges soll eine push nachricht an die

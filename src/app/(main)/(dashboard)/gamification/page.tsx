@@ -450,7 +450,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         gifts: s ? giftsById.get(s.id) ?? 0 : 0,
       };
     });
-    const rows: OfferAdminRow[] = offers.map((o) => {
+    const allRows = offers.map((o) => {
       const validFrom = o.validFrom ? dbDateToYmd(o.validFrom) : null;
       const validTo = o.validTo ? dbDateToYmd(o.validTo) : null;
       return {
@@ -465,11 +465,16 @@ export default async function GamificationPage({ searchParams }: { searchParams:
         pushedAt: o.pushedAt?.toISOString() ?? null,
         pushSent: o.pushSent,
         audience: o.audience,
-      };
+        kind: o.kind,
+      } satisfies OfferAdminRow & { kind: string };
     });
-    // Meldungen in der App: Challenges, Angebote und Feiertage in einem Reiter.
+    const rows: OfferAdminRow[] = allRows.filter((r) => r.kind === "OFFER");
+    // News die neueste zuerst, wie in der App.
+    const newsRows: OfferAdminRow[] = allRows.filter((r) => r.kind === "NEWS").reverse();
+    // Meldungen in der App: News, Challenges, Angebote und Feiertage in einem Reiter.
     content = (
       <>
+        <OffersCard kind="NEWS" offers={newsRows} reach={reach} beachEnabled={config?.beachEnabled ?? false} />
         <ChallengesCard
           challenges={challengeRows}
           today={today}
