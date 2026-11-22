@@ -663,6 +663,7 @@ export default async function GamificationPage({ searchParams }: { searchParams:
       <AppShareCard
         accountName={session.user.accountName ?? ""}
         rankingPath={config?.displayToken ? `/rangliste/${config.displayToken}` : null}
+        beach={config?.beachEnabled ?? false}
       />
       </>
     );

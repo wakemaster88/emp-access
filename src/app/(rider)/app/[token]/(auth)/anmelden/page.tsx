@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { riderAppPath } from "@/lib/rider-app";
+import { riderHome } from "@/lib/rider-base";
 import { findRiderAuthProfile, riderAccess } from "@/lib/rider-auth";
 import { resetEmailFor } from "@/lib/rider-reset";
 import { maskEmail } from "@/lib/rider-reset-key";
@@ -13,8 +13,8 @@ export default async function RiderSignInPage({ params }: { params: Promise<{ to
   const profile = await findRiderAuthProfile(token);
   if (!profile) notFound();
   const access = await riderAccess(profile);
-  if (access === "ok") redirect(riderAppPath(token));
-  if (access === "setup" || access === "held") redirect(`${riderAppPath(token)}/einrichten`);
+  if (access === "ok") redirect(await riderHome(token));
+  if (access === "setup" || access === "held") redirect(`${await riderHome(token)}/einrichten`);
   const email = await resetEmailFor(profile.id);
 
   return (

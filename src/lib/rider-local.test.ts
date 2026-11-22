@@ -40,6 +40,9 @@ test("Service Worker hält nur angemeldete Seiten der Kunden-App lokal vor", () 
   assert.equal(riderCacheToken("/app/kurz"), null);
   assert.equal(riderCacheToken("/app"), null);
   assert.equal(riderCacheToken("/dashboard"), null);
+  assert.equal(riderCacheToken(`/beach/${TOKEN}`), TOKEN);
+  assert.equal(riderCacheToken(`/beach/${TOKEN}/anmelden`), null);
+  assert.equal(riderCacheToken("/beach"), null);
 });
 
 test("Umleitung oder fehlende Berechtigung gilt als abgemeldet", () => {

@@ -1,4 +1,6 @@
-import { riderBase } from "@/lib/rider-base";
+import { riderAppKind, riderBase, riderRest } from "@/lib/rider-base";
+import { redirect } from "next/navigation";
+import { APP_PREFIX } from "@/lib/rider-app-kind";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { RiderNav } from "@/components/rider/rider-nav";
 import { RiderInstallHint } from "@/components/rider/rider-install-hint";
@@ -27,6 +29,13 @@ export default async function RiderAppLayout({
   const base = await riderBase(token);
   // Gewechselt wird am Gruß der Startseite; sonst nur ein Hinweis, wenn eine andere Person angezeigt wird.
   const viewing = family && family.viewerToken !== token ? family.members.find((m) => m.token === token) : undefined;
+  // Zwei Apps: wer nur ein Strandbad-Abo hat, gehört in den Beach Pass (/beach),
+  // alle anderen in den Ride Pass (/app). Gleiche Seite in der richtigen App.
+  const kind = await riderAppKind();
+  const wanted = rider.pass === "BEACH" ? "beach" : "ride";
+  if (!viewing && base === `${APP_PREFIX[kind]}/${encodeURIComponent(token)}` && kind !== wanted) {
+    redirect(`${APP_PREFIX[wanted]}/${encodeURIComponent(token)}${await riderRest()}`);
+  }
   // Freischalt-Momente sieht die Person selbst, bei einem Kind auch die Eltern. Der Partner nicht.
   const unlocks = family?.relation === "view" ? [] : rider.unlocks;
   const next = nextAward(rider.awards);
