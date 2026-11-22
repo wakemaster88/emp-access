@@ -7,8 +7,17 @@
  * geht deshalb ueber das Profil, dessen Zugehoerigkeit vorher geprueft wird.
  */
 
+import {
+  cleanFacilities,
+  describeClashGroup,
+  facilityClashes,
+  groupClashes,
+  type ClashGroup,
+  type FacilityProfile,
+} from "./facility-overlap";
 import type { ScheduleSpec } from "./operating-hours";
 import type { TenantDb } from "./prisma";
+import { DEFAULT_TIMEZONE, tzYmd } from "./tz-time";
 
 export const scheduleInclude = {
   seasons: {
@@ -154,4 +163,96 @@ export async function clearOtherDefaults(
     where: { accountId, isDefault: true, id: { not: keepId } },
     data: { isDefault: false },
   });
+}
+
+// ─── Unterprofile und Anlagen ───────────────────────────────────────────────
+
+/** Saisons aus der Eingabe in die Auswertungsform bringen (wie `replaceSeasons` speichert). */
+export function seasonInputsToSpec(seasons: SeasonInput[]): ScheduleSpec["seasons"] {
+  return seasons.map((s, index) => ({
+    name: s.name.trim(),
+    startMmDd: s.startMmDd,
+    endMmDd: s.endMmDd,
+    sortOrder: s.sortOrder ?? index,
+    periods: s.periods.map((p) => ({ weekday: p.weekday, opensAt: p.opensAt, closesAt: p.closesAt })),
+  }));
+}
+
+/** Ausnahmen aus der Eingabe in die Auswertungsform bringen (wie `replaceExceptions` speichert). */
+export function exceptionInputsToSpec(exceptions: ExceptionInput[]): ScheduleSpec["exceptions"] {
+  const seen = new Set<string>();
+  return exceptions
+    .filter((e) => (seen.has(e.date) ? false : (seen.add(e.date), true)))
+    .map((e) => ({
+      date: e.date,
+      closed: e.closed,
+      opensAt: e.closed ? null : (e.opensAt ?? null),
+      closesAt: e.closed ? null : (e.closesAt ?? null),
+      note: e.note?.trim() || null,
+    }));
+}
+
+/**
+ * Zuordnung zu einem Oberprofil pruefen: gleicher Mandant, nur eine Ebene,
+ * nicht sich selbst. Liefert eine Fehlermeldung oder null.
+ */
+export async function checkParent(
+  db: TenantDb,
+  accountId: number,
+  scheduleId: number | null,
+  parentId: number | null,
+): Promise<string | null> {
+  if (parentId == null) return null;
+  if (parentId === scheduleId) return "Ein Profil kann nicht unter sich selbst stehen";
+  const parent = await db.operatingSchedule.findFirst({
+    where: { id: parentId, accountId },
+    select: { parentId: true },
+  });
+  if (!parent) return "Oberprofil nicht gefunden";
+  if (parent.parentId != null) return "Unterprofile haben keine eigenen Unterprofile";
+  if (scheduleId != null) {
+    const children = await db.operatingSchedule.count({ where: { accountId, parentId: scheduleId } });
+    if (children > 0) return "Dieses Profil hat selbst Unterprofile und kann nicht darunter stehen";
+  }
+  return null;
+}
+
+/** So weit voraus wird die Belegung der Anlagen geprueft (wie der Abgleich). */
+export const CLASH_DAYS = 365;
+
+/**
+ * Ueberschneidungen, an denen `candidate` beteiligt waere, ab heute. Die
+ * uebrigen Profile kommen aus der Datenbank; `candidate` ersetzt dort das
+ * gespeicherte Profil gleicher ID (beim Anlegen: id -1).
+ */
+export async function clashesForCandidate(
+  db: TenantDb,
+  accountId: number,
+  candidate: FacilityProfile,
+  now: Date = new Date(),
+): Promise<ClashGroup[]> {
+  if (cleanFacilities(candidate.facilities).length === 0) return [];
+  const [others, account] = await Promise.all([
+    db.operatingSchedule.findMany({
+      where: { accountId, id: { not: candidate.id }, facilities: { isEmpty: false } },
+      include: scheduleSpecInclude,
+    }),
+    db.account.findUnique({ where: { id: accountId }, select: { timezone: true } }),
+  ]);
+  const profiles: FacilityProfile[] = [
+    candidate,
+    ...others.map((s) => ({ id: s.id, name: s.name, facilities: s.facilities, spec: toScheduleSpec(s) })),
+  ];
+  const from = tzYmd(now, account?.timezone || DEFAULT_TIMEZONE);
+  const clashes = facilityClashes(profiles, from, CLASH_DAYS).filter(
+    (c) => c.first.id === candidate.id || c.second.id === candidate.id,
+  );
+  return groupClashes(clashes);
+}
+
+/** Fehlermeldung fuer das Speichern, hoechstens drei Gruppen ausgeschrieben. */
+export function clashError(groups: ClashGroup[]): string {
+  const lines = groups.slice(0, 3).map(describeClashGroup);
+  const more = groups.length > 3 ? ` (und ${groups.length - 3} weitere)` : "";
+  return `Überschneidung auf der Anlage – ${lines.join("; ")}${more}. Bitte Zeiten anpassen.`;
 }

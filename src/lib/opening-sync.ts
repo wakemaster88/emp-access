@@ -47,6 +47,8 @@ export interface SyncSide {
 export interface SyncRow {
   scheduleId: number;
   name: string;
+  /** Unterprofil von; Unterprofile stehen nicht auf der Website. */
+  parentId: number | null;
   anny: SyncSide;
   website: SyncSide;
 }
@@ -67,6 +69,9 @@ export interface SyncSchedule {
   id: number;
   name: string;
   spec: ScheduleSpec;
+  parentId?: number | null;
+  /** Fest eingetragene anny-Ressource; geht vor Website-Seite und Namen. */
+  annyResourceId?: string | null;
 }
 
 export interface AnnyLinkInfo {
@@ -174,12 +179,18 @@ async function loadAnny(
   return out;
 }
 
-/** anny-Ressource eines Profils: über die Website-Seite, sonst über den Bereich gleichen Namens. */
+/**
+ * anny-Ressource eines Profils: fest eingetragen, sonst über die Website-Seite,
+ * sonst über den Bereich gleichen Namens. Unterprofile nur fest eingetragen –
+ * „Bahnmiete Seilbahn A“ ist nicht der öffentliche Lift.
+ */
 function annyResourceFor(
   schedule: SyncSchedule,
   page: WebsitePage | null,
   links: AnnyLinkInfo[],
 ): string | null {
+  if (schedule.annyResourceId) return schedule.annyResourceId;
+  if (schedule.parentId != null) return null;
   if (page?.annyResourceId) return page.annyResourceId;
   const name = normalizeName(schedule.name);
   const sameArea = [...new Set(links.filter((l) => normalizeName(l.areaName) === name).map((l) => l.annyResourceId))];
@@ -240,7 +251,7 @@ export async function buildSyncReport(options: {
 
   const slugs = website?.pages.map((p) => p.slug) ?? [];
   const plan = options.schedules.map((s) => {
-    const slug = website ? matchWebsiteSlug(s.name, slugs) : null;
+    const slug = website && s.parentId == null ? matchWebsiteSlug(s.name, slugs) : null;
     const page = slug ? (website?.pages.find((p) => p.slug === slug) ?? null) : null;
     return { schedule: s, page, resourceId: annyResourceFor(s, page, options.links) };
   });
@@ -296,7 +307,7 @@ export async function buildSyncReport(options: {
       site = { ...finish(days, ours, theirs, `Website /${page.slug}`, lastDay), fromAnny };
     }
 
-    return { scheduleId: schedule.id, name: schedule.name, anny, website: site };
+    return { scheduleId: schedule.id, name: schedule.name, parentId: schedule.parentId ?? null, anny, website: site };
   });
 
   return {

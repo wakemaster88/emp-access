@@ -40,7 +40,13 @@ export async function GET() {
   ]);
 
   const report = await buildSyncReport({
-    schedules: schedules.map((s) => ({ id: s.id, name: s.name, spec: toScheduleSpec(s) })),
+    schedules: schedules.map((s) => ({
+      id: s.id,
+      name: s.name,
+      spec: toScheduleSpec(s),
+      parentId: s.parentId,
+      annyResourceId: s.annyResourceId,
+    })),
     timezone: account?.timezone || DEFAULT_TIMEZONE,
     anny: annyConfig?.token
       ? { baseUrl: (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, ""), token: annyConfig.token }

@@ -26,7 +26,7 @@ import {
 } from "@/lib/operating-calendar";
 import { addDaysToYmd, tzYmd } from "@/lib/tz-time";
 import { cn } from "@/lib/utils";
-import { seriesColor } from "@/components/betriebszeiten/series";
+import { scheduleTree } from "@/components/betriebszeiten/series";
 
 type View = "monat" | "woche";
 
@@ -36,6 +36,8 @@ interface Area {
   id: number;
   name: string;
   color: string;
+  /** Unterprofil eines Bereichs (anfangs ausgeblendet). */
+  sub?: boolean;
   spec: ScheduleSpec;
 }
 
@@ -319,14 +321,18 @@ export function OperatingCalendar({
   const [view, setView] = useState<View>("monat");
   const [anchor, setAnchor] = useState(todayYmd);
   const [selected, setSelected] = useState(todayYmd);
-  const [hidden, setHidden] = useState<Set<number>>(() => new Set());
+  // Unterprofile (Bahnmieten, Kurse) erst auf Wunsch, sonst wird der Kalender unübersichtlich.
+  const [hidden, setHidden] = useState<Set<number>>(
+    () => new Set(scheduleTree(schedules).filter((e) => e.sub).map((e) => e.item.id)),
+  );
 
   const allAreas = useMemo<Area[]>(
     () =>
-      schedules.map((s, i) => ({
+      scheduleTree(schedules).map(({ item: s, color, sub }) => ({
         id: s.id,
         name: s.name,
-        color: seriesColor(i),
+        color,
+        sub,
         spec: { name: s.name, seasons: s.seasons, exceptions: s.exceptions },
       })),
     [schedules],

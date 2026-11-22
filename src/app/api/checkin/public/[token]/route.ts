@@ -465,7 +465,8 @@ export async function GET(
   let opening: CheckinDayOpening | null = null;
   try {
     const schedules = await prisma.operatingSchedule.findMany({
-      where: { accountId },
+      // Unterprofile (Bahnmieten, Kurse) sind keine eigenen Bereiche.
+      where: { accountId, parentId: null },
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
       include: scheduleSpecInclude,
     });

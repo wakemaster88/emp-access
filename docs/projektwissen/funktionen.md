@@ -68,6 +68,24 @@ Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 - Die Website (Repo tuttenbrocksee) fragt diese API zuerst und fällt nur bei
   Ausfall auf anny bzw. ihre eigenen Zeiten zurück.
 
+## Unterprofile und Anlagen-Belegung (22.11.2026)
+
+- Ein Profil kann Unterprofil eines Bereichs sein (`OperatingSchedule.parentId`,
+  nur eine Ebene), z. B. Bahnmieten, Anfängerkurse und Ferienkurs unter Wasserski.
+  Unterprofile erscheinen nicht in der Kunden-App, nicht in der öffentlichen API
+  und zählen nicht für „Lift geöffnet“ und den Shop-Monitor.
+- `facilities` = belegte Anlagen („Seilbahn A“, „Seilbahn B“, „Übungslift“).
+  Zwei Profile mit gleicher Anlage dürfen sich nicht überschneiden: POST/PUT
+  `/api/betriebszeiten` prüfen heute + 12 Monate und antworten sonst 409 mit
+  den Tagen. Spannen sind halboffen (10–12 und 12–16 sind erlaubt). Logik rein
+  in `src/lib/facility-overlap.ts` (Tests).
+- `annyResourceId` legt die anny-Ressource für den Abgleich fest; Unterprofile
+  werden nur darüber mit anny verglichen und nie mit der Website.
+- Seite: Unterprofile als eigener Abschnitt unter dem Bereich, Karte
+  „Anlagen-Belegung“ mit Jahresband je Anlage; im Kalender anfangs ausgeblendet.
+- Einen Bereich mit Unterprofilen kann man erst löschen, wenn die Unterprofile
+  weg oder umgehängt sind.
+
 ## Veranstaltungen und Partnerzugang (20.11.2026)
 
 Für die Rooftop Lounge und andere Räume, die für Feiern belegt werden.

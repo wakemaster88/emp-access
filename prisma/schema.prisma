@@ -3076,6 +3076,17 @@ model OperatingSchedule {
   /// Vorbelegung fuer neue Raeume. Hoechstens ein Profil je Mandant.
   isDefault      Boolean              @default(false)
   sortOrder      Int                  @default(0)
+  /// Unterprofil eines Bereichs, z. B. Bahnmiete A unter Wasserski. Nur eine
+  /// Ebene. Unterprofile erscheinen nicht in der Kunden-App und zaehlen nicht
+  /// fuer "Lift geoeffnet"; sie dienen der Belegung der Anlagen.
+  parentId       Int?
+  parent         OperatingSchedule?   @relation("OperatingSubprofiles", fields: [parentId], references: [id], onDelete: SetNull)
+  children       OperatingSchedule[]  @relation("OperatingSubprofiles")
+  /// Anlagen, die das Profil belegt ("Seilbahn A", "Übungslift"). Zwei Profile
+  /// mit gleicher Anlage duerfen sich zeitlich nicht ueberschneiden.
+  facilities     String[]             @default([])
+  /// anny-Ressource fuer den Abgleich, z. B. "179480". Leer: ueber Website/Namen.
+  annyResourceId String?
   seasons        OperatingSeason[]
   exceptions     OperatingException[]
   rooms          KeyRoom[]
@@ -3086,6 +3097,7 @@ model OperatingSchedule {
   audioSchedules AudioSchedule[]
 
   @@index([accountId])
+  @@index([parentId])
 }
 
 /// Zeitraum im Jahr mit eigenem Wochenplan, z. B. "Sommer 01.05.–15.09.".

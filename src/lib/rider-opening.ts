@@ -75,7 +75,8 @@ export function riderOpening(schedule: ScheduleSpec, now: Date, tz: string = DEF
 /** Öffnungszeiten am Lift für ein Konto; null, wenn kein passendes Profil eingerichtet ist. */
 export async function loadRiderOpening(accountId: number, now: Date = new Date()): Promise<RiderOpening | null> {
   const schedules = await prisma.operatingSchedule.findMany({
-    where: { accountId },
+    // Unterprofile (Bahnmieten, Kurse) sind keine eigenen Bereiche.
+    where: { accountId, parentId: null },
     orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
     include: scheduleSpecInclude,
   });
@@ -93,7 +94,8 @@ export interface RiderSchedule {
 /** Alle Betriebszeiten-Profile für den Kalender der Kunden-App, das des Lifts zuerst. */
 export async function loadRiderSchedules(accountId: number): Promise<RiderSchedule[]> {
   const schedules = await prisma.operatingSchedule.findMany({
-    where: { accountId },
+    // Unterprofile (Bahnmieten, Kurse) sind keine eigenen Bereiche.
+    where: { accountId, parentId: null },
     orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
     include: scheduleSpecInclude,
   });

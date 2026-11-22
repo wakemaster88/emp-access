@@ -7,8 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
+import { cleanFacilities, facilityKey } from "@/lib/facility-overlap";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest } from "@/components/raeume/shared";
 import { ExceptionEditor } from "@/components/betriebszeiten/exception-editor";
@@ -32,12 +35,18 @@ function defaultSeason(): SeasonSpec {
 
 export function ScheduleDialog({
   schedule,
+  schedules,
+  initialParentId = null,
   open,
   disabled,
   onClose,
 }: {
   /** `null` = neues Profil anlegen. */
   schedule: ScheduleRow | null;
+  /** Alle Profile: Auswahl „Gehört zu“ und bekannte Anlagen. */
+  schedules: ScheduleRow[];
+  /** Beim Anlegen: gleich als Unterprofil dieses Bereichs. */
+  initialParentId?: number | null;
   open: boolean;
   disabled?: boolean;
   onClose: () => void;
@@ -46,6 +55,31 @@ export function ScheduleDialog({
   const [name, setName] = useState(schedule?.name ?? "");
   const [description, setDescription] = useState(schedule?.description ?? "");
   const [isDefault, setIsDefault] = useState(schedule?.isDefault ?? false);
+  const [parentId, setParentId] = useState<number | null>(schedule ? schedule.parentId : initialParentId);
+  const [facilities, setFacilities] = useState<string[]>(() => schedule?.facilities ?? []);
+  const [newFacility, setNewFacility] = useState("");
+  const [annyResourceId, setAnnyResourceId] = useState(schedule?.annyResourceId ?? "");
+
+  // Nur eine Ebene: Oberprofile sind Bereiche ohne eigenes Oberprofil, nie das Profil selbst.
+  const parents = schedules.filter((s) => s.parentId == null && s.id !== schedule?.id);
+  const hasChildren = schedule != null && schedules.some((s) => s.parentId === schedule.id);
+  // Bekannte Anlagen aus allen Profilen, dazu die des Profils selbst.
+  const knownFacilities = cleanFacilities([...schedules.flatMap((s) => s.facilities), ...facilities]);
+  const selectedKeys = new Set(facilities.map(facilityKey));
+
+  function toggleFacility(name: string) {
+    const key = facilityKey(name);
+    setFacilities((prev) =>
+      prev.some((f) => facilityKey(f) === key) ? prev.filter((f) => facilityKey(f) !== key) : [...prev, name],
+    );
+  }
+
+  function addFacility() {
+    const name = newFacility.trim();
+    if (!name) return;
+    setFacilities((prev) => cleanFacilities([...prev, name]));
+    setNewFacility("");
+  }
   const [seasons, setSeasons] = useState<SeasonSpec[]>(
     () => (schedule?.seasons.length ? schedule.seasons : [defaultSeason()]),
   );
@@ -74,7 +108,10 @@ export function ScheduleDialog({
     const payload = {
       name: name.trim(),
       description: description.trim() || null,
-      isDefault,
+      isDefault: parentId == null && isDefault,
+      parentId,
+      facilities: cleanFacilities(facilities),
+      annyResourceId: annyResourceId.trim() || null,
       seasons: seasons.map((season, index) => ({ ...season, sortOrder: index })),
       exceptions: exceptions.map((e) => ({
         date: e.date,
@@ -129,16 +166,108 @@ export function ScheduleDialog({
             </div>
           </div>
 
-          {/* Ja/Nein als Schalterzeile in einer Glas-Kachel wie in den Resource- und Service-Dialogen (docs/design-regeln.md, Abschnitte 14 und 18). */}
-          <div className="glass-tile flex items-center justify-between gap-3 p-2.5">
-            <Label htmlFor="sched-default">Vorbelegung für neue Räume</Label>
-            <Switch
-              id="sched-default"
-              checked={isDefault}
-              disabled={disabled}
-              onCheckedChange={setIsDefault}
-            />
+          <div className="flex flex-wrap items-start gap-2">
+            <div className="min-w-40 flex-1 space-y-1">
+              <Label htmlFor="sched-parent">Gehört zu</Label>
+              <NativeSelect
+                id="sched-parent"
+                value={parentId ?? ""}
+                disabled={disabled || hasChildren}
+                onChange={(e) => setParentId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Eigener Bereich</option>
+                {parents.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    Unterprofil von {p.name}
+                  </option>
+                ))}
+              </NativeSelect>
+              <p className="text-[11px] text-muted-foreground">
+                {hasChildren
+                  ? "Hat selbst Unterprofile und bleibt ein eigener Bereich."
+                  : parentId != null
+                    ? "Nicht in der Kunden-App; zählt nicht als Öffnung des Bereichs."
+                    : "Eigene Bereiche erscheinen in der Kunden-App."}
+              </p>
+            </div>
+            <div className="min-w-40 flex-1 space-y-1">
+              <Label htmlFor="sched-anny">anny-Ressource</Label>
+              <Input
+                id="sched-anny"
+                value={annyResourceId}
+                disabled={disabled}
+                inputMode="numeric"
+                placeholder="z.B. 179480, optional"
+                className="max-sm:h-11"
+                onChange={(e) => setAnnyResourceId(e.target.value.replace(/\D/g, ""))}
+              />
+              <p className="text-[11px] text-muted-foreground">Für den Abgleich. Leer: über Website und Namen.</p>
+            </div>
           </div>
+
+          <div className="space-y-1.5">
+            <Label id="sched-facilities-label">Anlagen</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              {knownFacilities.length > 0 && (
+                <ToggleChipGroup aria-labelledby="sched-facilities-label">
+                  {knownFacilities.map((f) => (
+                    <ToggleChip
+                      key={facilityKey(f)}
+                      size="sm"
+                      disabled={disabled}
+                      pressed={selectedKeys.has(facilityKey(f))}
+                      onPressedChange={() => toggleFacility(f)}
+                    >
+                      {f}
+                    </ToggleChip>
+                  ))}
+                </ToggleChipGroup>
+              )}
+              <div className="flex min-w-44 flex-1 gap-1.5">
+                <Input
+                  aria-label="Neue Anlage"
+                  value={newFacility}
+                  disabled={disabled}
+                  placeholder="Neue Anlage, z.B. Seilbahn A"
+                  className="h-8 text-xs max-sm:h-11"
+                  onChange={(e) => setNewFacility(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addFacility();
+                    }
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={disabled || !newFacility.trim()}
+                  className="h-8 shrink-0 text-xs max-sm:h-11"
+                  onClick={addFacility}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span className="sr-only">Anlage hinzufügen</span>
+                </Button>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Profile mit gleicher Anlage dürfen sich zeitlich nicht überschneiden; sonst wird nicht gespeichert.
+            </p>
+          </div>
+
+          {/* Ja/Nein als Schalterzeile in einer Glas-Kachel wie in den Resource- und Service-Dialogen (docs/design-regeln.md, Abschnitte 14 und 18).
+              Unterprofile sind nie Vorbelegung für Räume. */}
+          {parentId == null && (
+            <div className="glass-tile flex items-center justify-between gap-3 p-2.5">
+              <Label htmlFor="sched-default">Vorbelegung für neue Räume</Label>
+              <Switch
+                id="sched-default"
+                checked={isDefault}
+                disabled={disabled}
+                onCheckedChange={setIsDefault}
+              />
+            </div>
+          )}
 
           <Tabs defaultValue="seasons">
             {/* Glas-Kapsel, in der Ebene automatisch getönt (docs/design-regeln.md, Abschnitt 18). */}
