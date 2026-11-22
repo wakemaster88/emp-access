@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { isOperatingExtent } from "@/lib/operating-extent";
 import {
   MAX_OPERATING_OFFSET_MINUTES,
   checkExternalReceivers,
@@ -117,6 +118,10 @@ export async function PUT(
   }
   const music = parseMusicSettings(body, existing);
   if ("error" in music) return NextResponse.json({ error: music.error }, { status: 400 });
+  if (body.musicExtent !== undefined && !isOperatingExtent(body.musicExtent)) {
+    return NextResponse.json({ error: "Reichweite der Betriebszeit unbekannt" }, { status: 400 });
+  }
+  const musicExtent = isOperatingExtent(body.musicExtent) ? body.musicExtent : undefined;
 
   const airplayEnabled =
     body.airplayEnabled === undefined ? undefined : body.airplayEnabled === true;
@@ -178,6 +183,7 @@ export async function PUT(
       musicTimes: music.musicTimes,
       musicOpenOffset,
       musicCloseOffset,
+      musicExtent,
       airplayEnabled,
       bluetoothEnabled,
       externalName:

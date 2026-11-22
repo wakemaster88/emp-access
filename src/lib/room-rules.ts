@@ -32,6 +32,7 @@ import { sendPushToAccount } from "@/lib/web-push";
 import { getSunTimesForAccount } from "@/lib/sun";
 import { dueOperatingOccurrence, isOperatingAt, type ScheduleSpec } from "@/lib/operating-hours";
 import { scheduleSpecInclude, toScheduleSpec, type ScheduleRecord } from "@/lib/operating-queries";
+import { extendedSpecCache, zoneMusicSpec } from "@/lib/operating-extent-queries";
 import { DEFAULT_TIMEZONE, isWithinWindow, tzInstant, tzWeekdayBit, tzYmd } from "@/lib/tz-time";
 
 /** Toleranz um den geplanten Zeitpunkt. Der Cron laeuft alle fuenf Minuten. */
@@ -129,6 +130,7 @@ const ruleInclude = {
     select: {
       id: true,
       name: true,
+      operatingScheduleId: true,
       operatingSchedule: {
         include: {
           seasons: { include: { periods: true }, orderBy: { sortOrder: "asc" as const } },
@@ -143,8 +145,30 @@ type LoadedRule = RoomRule & {
   actions: RoomRuleAction[];
   account: { id: number; timezone: string | null; latitude: number | null; longitude: number | null };
   operatingSchedule: ScheduleRecord | null;
-  room: { id: number; name: string; operatingSchedule: ScheduleRecord | null } | null;
+  room: { id: number; name: string; operatingScheduleId: number | null; operatingSchedule: ScheduleRecord | null } | null;
+  /**
+   * Betriebszeit samt Bahnmieten und Kursen, wenn die Regel sie mitnimmt
+   * (`operatingExtent`); vorab geladen von `withExtendedSpecs`.
+   */
+  extendedSpec?: ScheduleSpec | null;
 };
+
+/**
+ * Regeln, die auch zu Bahnmieten und Kursen laufen, bekommen ihre erweiterte
+ * Betriebszeit vorab: `scheduleFor` bleibt so synchron. Ohne solche Regeln
+ * kostet das keine Abfrage.
+ */
+async function withExtendedSpecs<T extends LoadedRule>(rules: T[], now: Date): Promise<T[]> {
+  const extended = rules.filter((r) => r.operatingExtent !== "SELF");
+  if (extended.length === 0) return rules;
+  const load = extendedSpecCache(prisma, now);
+  for (const rule of extended) {
+    const scheduleId = rule.operatingScheduleId ?? rule.room?.operatingScheduleId ?? null;
+    if (scheduleId == null) continue;
+    rule.extendedSpec = await load(rule.accountId, scheduleId, rule.operatingExtent, rule.account.timezone);
+  }
+  return rules;
+}
 
 /**
  * Zustaendige Betriebszeit: die ausdrueckliche der Regel, sonst die des Raums.
@@ -152,6 +176,7 @@ type LoadedRule = RoomRule & {
  * ohne dass man sie an jeder Regel wiederholen muss.
  */
 function scheduleFor(rule: LoadedRule): ScheduleSpec | null {
+  if (rule.extendedSpec !== undefined) return rule.extendedSpec;
   const record = rule.operatingSchedule ?? rule.room?.operatingSchedule ?? null;
   return record ? toScheduleSpec(record) : null;
 }
@@ -332,7 +357,8 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
       musicOpenOffset: true,
       musicCloseOffset: true,
       musicOverrideUntil: true,
-      keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
+      musicExtent: true,
+      keyRoom: { select: { operatingScheduleId: true, operatingSchedule: { include: scheduleSpecInclude } } },
     },
   });
   if (!zone) return { ...base, target: `#${action.audioZoneId}`, ok: false, error: "Zone nicht gefunden" };
@@ -346,7 +372,7 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
   const operating = zone.keyRoom?.operatingSchedule;
   const musicAllowed = musicWindowState(
     zone,
-    operating ? toScheduleSpec(operating) : null,
+    await zoneMusicSpec(prisma, rule.accountId, zone, new Date(), timezone),
     new Date(),
     timezone,
   ).allowed;
@@ -429,6 +455,7 @@ export async function executeRule(
   })) as LoadedRule | null;
 
   if (!rule) return { success: false, actions: [], durationMs: Date.now() - started };
+  await withExtendedSpecs([rule], new Date());
 
   const results: ActionResult[] = [];
   for (const action of rule.actions) {
@@ -528,10 +555,10 @@ async function roomIsIdle(rule: LoadedRule, now: Date): Promise<boolean> {
  */
 export async function runRuleTick(now = new Date()): Promise<TickResult> {
   const timed: RuleTrigger[] = ["TIME", "OPENING", "CLOSING", "SUNRISE", "SUNSET", "IDLE"];
-  const rules = (await prisma.roomRule.findMany({
+  const rules = await withExtendedSpecs((await prisma.roomRule.findMany({
     where: { isActive: true, trigger: { in: timed } },
     include: ruleInclude,
-  })) as LoadedRule[];
+  })) as LoadedRule[], now);
 
   const result: TickResult = { checked: rules.length, triggered: 0, results: [] };
 
@@ -590,7 +617,7 @@ export async function runMotionRules(
       ? [{ cameraId }, { cameraId: null, roomId: camera.keyRoomId }]
       : [{ cameraId }];
 
-  const rules = (await prisma.roomRule.findMany({
+  const rules = await withExtendedSpecs((await prisma.roomRule.findMany({
     where: {
       accountId,
       isActive: true,
@@ -598,7 +625,7 @@ export async function runMotionRules(
       AND: [{ OR: [{ eventType: null }, { eventType }] }, { OR: cameraMatch }],
     },
     include: ruleInclude,
-  })) as LoadedRule[];
+  })) as LoadedRule[], now);
 
   let triggered = 0;
   for (const rule of rules) {
@@ -625,7 +652,7 @@ export async function runDeviceSwitchedRules(
 ): Promise<{ triggered: number }> {
   if (depth > MAX_CHAIN_DEPTH) return { triggered: 0 };
 
-  const rules = (await prisma.roomRule.findMany({
+  const rules = await withExtendedSpecs((await prisma.roomRule.findMany({
     where: {
       accountId,
       isActive: true,
@@ -634,7 +661,7 @@ export async function runDeviceSwitchedRules(
       OR: [{ triggerAction: null }, { triggerAction: action }],
     },
     include: ruleInclude,
-  })) as LoadedRule[];
+  })) as LoadedRule[], now);
 
   let triggered = 0;
   for (const rule of rules) {
@@ -656,7 +683,7 @@ export async function runScanRules(
   direction: "IN" | "OUT",
   now = new Date(),
 ): Promise<{ triggered: number }> {
-  const rules = (await prisma.roomRule.findMany({
+  const rules = await withExtendedSpecs((await prisma.roomRule.findMany({
     where: {
       accountId,
       isActive: true,
@@ -664,7 +691,7 @@ export async function runScanRules(
       OR: [{ areaId: null }, ...(areaIds.length > 0 ? [{ areaId: { in: areaIds } }] : [])],
     },
     include: ruleInclude,
-  })) as LoadedRule[];
+  })) as LoadedRule[], now);
 
   let triggered = 0;
   for (const rule of rules) {
@@ -736,11 +763,11 @@ export async function buildHubRulePlan(
   from = new Date(),
   hours = 48,
 ): Promise<HubRulePlanRule[]> {
-  const rules = (await prisma.roomRule.findMany({
+  const rules = await withExtendedSpecs((await prisma.roomRule.findMany({
     where: { accountId, isActive: true, trigger: { not: "SCAN" } },
     include: ruleInclude,
     orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-  })) as LoadedRule[];
+  })) as LoadedRule[], from);
 
   const end = from.getTime() + hours * 3_600_000;
   const out: HubRulePlanRule[] = [];

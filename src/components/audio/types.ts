@@ -13,6 +13,7 @@ import type {
 } from "@prisma/client";
 import type { MusicTimeSpan } from "@/lib/audio-constants";
 import type { ExceptionSpec, SeasonSpec } from "@/lib/operating-hours";
+import type { OperatingExtentKind } from "@/lib/operating-extent";
 import type { SoundwebDeviceDto } from "@/lib/soundweb-server";
 
 export interface ZoneRow {
@@ -48,6 +49,8 @@ export interface ZoneRow {
   /** Versatz in Minuten gegenüber Betriebsbeginn/-ende (nur OPERATING). */
   musicOpenOffset: number;
   musicCloseOffset: number;
+  /** Nur OPERATING: auch zu Bahnmieten und Kursen der Betriebszeit. */
+  musicExtent: OperatingExtentKind;
   /** Manuelles Play außerhalb des Fensters gilt bis hierhin (ISO), sonst null. */
   musicOverrideUntil: string | null;
   /** Empfänger, über die ein Sender die Zone übernehmen darf. */
@@ -195,6 +198,8 @@ export interface OperatingScheduleOption {
   name: string;
   seasons: SeasonSpec[];
   exceptions: ExceptionSpec[];
+  /** Bahnmieten und Kurse (Unterprofile) unter dem Profil. */
+  subprofileCount?: number;
 }
 
 export type { MusicTimeSpan };

@@ -7,6 +7,7 @@
  * geht deshalb ueber das Profil, dessen Zugehoerigkeit vorher geprueft wird.
  */
 
+import type { OperatingRoleKind } from "./operating-role";
 import {
   cleanFacilities,
   describeClashGroup,
@@ -162,6 +163,22 @@ export async function clearOtherDefaults(
   await db.operatingSchedule.updateMany({
     where: { accountId, isDefault: true, id: { not: keepId } },
     data: { isDefault: false },
+  });
+}
+
+/**
+ * Jede Verwendung (Lift, Shop, Strandbad) gilt je Mandant für höchstens ein
+ * Profil: wer sie neu setzt, nimmt sie den anderen.
+ */
+export async function clearOtherRoles(
+  db: TenantDb,
+  accountId: number,
+  keepId: number,
+  role: OperatingRoleKind,
+): Promise<void> {
+  await db.operatingSchedule.updateMany({
+    where: { accountId, role, id: { not: keepId } },
+    data: { role: null },
   });
 }
 

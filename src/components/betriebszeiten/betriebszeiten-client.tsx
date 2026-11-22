@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
+import { describeNextYearGap, nextYearExceptionGap } from "@/lib/opening-next-year";
+import type { OperatingRoleKind } from "@/lib/operating-role";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest } from "@/components/raeume/shared";
 import { useNow } from "@/components/raeume/status";
@@ -49,6 +51,9 @@ import { DayStrip, MonthAxis, OPEN_FILL_SOFT, WeekColumns, type WeekColumn } fro
 import { scheduleTree } from "@/components/betriebszeiten/series";
 import { SyncStatus } from "@/components/betriebszeiten/sync-status";
 import { FacilityUsage } from "@/components/betriebszeiten/facility-usage";
+
+/** Kurzform der Verwendung für die Profilkarte. */
+const ROLE_BADGE: Record<OperatingRoleKind, string> = { LIFT: "Lift", SHOP: "Shop", BEACH: "Strandbad" };
 
 function toSpec(row: ScheduleRow): ScheduleSpec {
   return { name: row.name, seasons: row.seasons, exceptions: row.exceptions };
@@ -177,6 +182,7 @@ function ScheduleCard({
             <h3 className="truncate">{schedule.name}</h3>
           </CardTitle>
           {schedule.isDefault && <Badge variant="secondary">Vorbelegung</Badge>}
+          {schedule.role && <Badge variant="secondary">{ROLE_BADGE[schedule.role]}</Badge>}
           {/* Zustand als Farbe: geöffnet grün, geschlossen grau (docs/design-regeln.md, Abschnitt 3). */}
           <Badge variant={open ? "success" : "neutral"}>
             {open ? <DoorOpen /> : <DoorClosed />}
@@ -329,6 +335,8 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
   const todayYmd = tzYmd(new Date(nowMs), data.timezone);
 
   const openCount = areas.filter((e) => isOperatingAt(toSpec(e.item), new Date(nowMs), data.timezone)).length;
+  // Ab September: fehlen fürs nächste Jahr Feiertage, die sich jedes Jahr verschieben?
+  const nextYearGap = useMemo(() => nextYearExceptionGap(data.schedules, todayYmd), [data.schedules, todayYmd]);
 
   function askRemove(schedule: ScheduleRow) {
     setToDelete(schedule);
@@ -372,6 +380,20 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
       </div>
 
       {error && <Notice tone="danger" compact title={error} />}
+
+      {nextYearGap && (
+        <Notice
+          tone="warning"
+          compact
+          title={`Für ${nextYearGap.year} fehlen noch Feiertage`}
+        >
+          {describeNextYearGap(nextYearGap)}{" "}
+          {nextYearGap.areas.length + nextYearGap.subCount === 1 ? "hat" : "haben"} Ausnahmetage für{" "}
+          {nextYearGap.year - 1}, aber noch keine für {nextYearGap.year}. Ohne Eintrag gilt an Ostermontag,
+          Himmelfahrt, Pfingstmontag und Fronleichnam der normale Wochentag. Saisongrenzen, die an Ferien hängen,
+          bitte mit prüfen.
+        </Notice>
+      )}
 
       {data.schedules.length > 0 && <SyncStatus />}
 

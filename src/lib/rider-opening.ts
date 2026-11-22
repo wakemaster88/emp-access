@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { openingForDay, operatingSpanState, operatingSpansForDay, type ScheduleSpec } from "./operating-hours";
 import { scheduleSpecInclude, toScheduleSpec } from "./operating-queries";
+import { pickBeachSchedule, pickLiftSchedule } from "./operating-role";
 import { shortTime } from "./rider-calendar";
 import { DEFAULT_TIMEZONE, addDaysToYmd, formatHhmm, tzMinutesOfDay, tzYmd, weekdayBitOfYmd } from "./tz-time";
 
@@ -8,13 +9,13 @@ import { DEFAULT_TIMEZONE, addDaysToYmd, formatHhmm, tzMinutesOfDay, tzYmd, week
  * Öffnungszeiten am Lift für die Karte „Auslastung jetzt“ der Kunden-App.
  *
  * Quelle sind die Betriebszeiten (`/betriebszeiten`) samt Ausnahmetagen. Der
- * Lift hängt an keinem Profil; genommen wird das Profil, dessen Name nach Lift
- * klingt („Wasserski & Shop“), sonst die Vorbelegung, sonst das einzige Profil.
+ * Lift hängt an keinem Raum; genommen wird das Profil mit der Verwendung
+ * „Lift“, sonst eines, dessen Name nach Lift klingt („Wasserski & Shop“),
+ * sonst die Vorbelegung, sonst das einzige Profil.
  */
 
 /** So weit voraus wird die nächste Öffnung gesucht (Winterpause bis Frühjahr). */
 const LOOKAHEAD_DAYS = 150;
-const LIFT_NAME = /wasserski|wakeboard|seilbahn|lift/i;
 const WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 export interface RiderOpening {
@@ -25,14 +26,8 @@ export interface RiderOpening {
   note: string | null;
 }
 
-/** Welches Profil gilt für den Lift? */
-export function pickLiftSchedule<T extends { name: string; isDefault: boolean }>(schedules: T[]): T | null {
-  return (
-    schedules.find((s) => LIFT_NAME.test(s.name)) ??
-    schedules.find((s) => s.isDefault) ??
-    (schedules.length === 1 ? schedules[0] : null)
-  );
-}
+/** Welches Profil gilt für den Lift? Siehe `operating-role.ts`. */
+export { pickLiftSchedule };
 
 
 function shortInstant(at: Date, tz: string): string {
@@ -85,21 +80,42 @@ export async function loadRiderOpening(accountId: number, now: Date = new Date()
   return riderOpening(toScheduleSpec(schedule), now);
 }
 
+/**
+ * Öffnungszeiten des Strandbads für den Beach Pass; null ohne passendes
+ * Profil. Mit Namen, damit die Karte sagt, wessen Zeiten sie zeigt.
+ */
+export async function loadBeachOpening(
+  accountId: number,
+  now: Date = new Date(),
+): Promise<(RiderOpening & { scheduleName: string }) | null> {
+  const schedules = await prisma.operatingSchedule.findMany({
+    where: { accountId, parentId: null },
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    include: scheduleSpecInclude,
+  });
+  const schedule = pickBeachSchedule(schedules);
+  if (!schedule) return null;
+  return { ...riderOpening(toScheduleSpec(schedule), now), scheduleName: schedule.name };
+}
+
 export interface RiderSchedule {
   id: number;
   name: string;
   spec: ScheduleSpec;
 }
 
-/** Alle Betriebszeiten-Profile für den Kalender der Kunden-App, das des Lifts zuerst. */
-export async function loadRiderSchedules(accountId: number): Promise<RiderSchedule[]> {
+/**
+ * Alle Betriebszeiten-Profile für den Kalender der Kunden-App, das des Lifts
+ * zuerst – beim Beach Pass das des Strandbads.
+ */
+export async function loadRiderSchedules(accountId: number, first: "LIFT" | "BEACH" = "LIFT"): Promise<RiderSchedule[]> {
   const schedules = await prisma.operatingSchedule.findMany({
     // Unterprofile (Bahnmieten, Kurse) sind keine eigenen Bereiche.
     where: { accountId, parentId: null },
     orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
     include: scheduleSpecInclude,
   });
-  const lift = pickLiftSchedule(schedules);
+  const lift = (first === "BEACH" ? pickBeachSchedule(schedules) : null) ?? pickLiftSchedule(schedules);
   return [...schedules]
     .sort((a, b) => Number(b === lift) - Number(a === lift))
     .map((s) => ({ id: s.id, name: s.name, spec: toScheduleSpec(s) }));

@@ -1174,3 +1174,19 @@ Log-Abruf nach PR #233 (Hub 9a9c42c, Zentrale in Safari neu geladen 11:29 UTC):
 
 - Prüfen, ob Safari damit Bilder zeigt; sonst Zentrale in Chrome.
 - Gleichzeitige Abbrüche alle paar Minuten und langsamer erster ICE-Aufbau.
+
+## 2026-11-22 (Belegung: nicht mehr in geschlossenen Räumen zählen)
+
+### Befund
+
+- Belegungszählung läuft fest 9–21 Uhr (`HUB_OCCUPANCY_HOURS`), unabhängig von der Betriebszeit. Log 22.11. ab 12:01: nur die Startzeile „Belegung: an, alle 300 s zwischen 9-21 Uhr“, keine Meldung. Im Winter oder an Ruhetagen misst der Hub trotzdem alle 5 Min mit YOLO und kann bei Mitarbeitern am Lift „wird voll“ melden.
+- Diagnose 23:06: Hinweise Gallery-Schwelle und Fahrzeug-Bursts ohne Plate unverändert offen; betreffen Kameras und Zufahrt, hier nicht angefasst.
+
+### Änderungen
+
+- `occupancy-rules.ts`: `spotClosed` (Test) – ein Punkt ruht, wenn alle Räume seiner Kameras laut Betriebszeit zu sind. Kameras ohne Raum oder Räume ohne Betriebszeit zählen weiter wie bisher.
+- `occupancy.ts`: der Takt misst nur offene Punkte und setzt den Meldestatus der ruhenden zurück. Das Werkzeug „occupancy“ misst auf Nachfrage weiter alles.
+
+### Nächster Schritt
+
+- In der Saison prüfen, ob an Öffnungstagen alle Punkte gemessen werden (`occupancy` → `spots`); fehlt ein Punkt, den Raum seiner Kamera prüfen.

@@ -15,7 +15,7 @@ import { RiderBirthdayAnnounce } from "@/components/rider/rider-birthday-announc
 import { fmtDay, voucherValidity } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
-import { loadRiderOpening } from "@/lib/rider-opening";
+import { loadBeachOpening, loadRiderOpening } from "@/lib/rider-opening";
 import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
 import { awardRemainingText, nextAward, voucherHeadline } from "@/lib/awards";
 import { berlinYmd } from "@/lib/berlin-day";
@@ -287,7 +287,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const { token } = await params;
   const rider = await requireRider(token);
   const base = await riderBase(token);
-  const [news, offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills, birthday] = await Promise.all([
+  const [news, offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills, birthday, beachOpening] = await Promise.all([
     loadRiderOffers(rider.accountId, rider.pass, undefined, "NEWS"),
     loadRiderOffers(rider.accountId, rider.pass),
     loadRiderChallengesCached(rider),
@@ -311,6 +311,8 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       console.error("[rider-birthday]", e);
       return null;
     }),
+    // Beach Pass: Öffnungszeit des Strandbads statt der des Lifts.
+    rider.pass === "BEACH" ? loadBeachOpening(rider.accountId).catch(() => null) : Promise.resolve(null),
   ]);
   // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
   // Familie: die angemeldete Person zuerst, dann Partner und Kinder (Wechsel am Gruß).
@@ -554,23 +556,39 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
         </div>
       )}
 
-      {beach && (
+      {(beach || beachOpening) && (
         <div className="rd-card">
-          <div className="rd-between">
-            <div className="rd-label">{beach.areaName} jetzt</div>
-            <span className="rd-muted" style={{ fontSize: 12 }}>
-              Stand {beach.at.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" })} Uhr
-            </span>
-          </div>
-          <div className="rd-display rd-h2">{BEACH_LABEL[beach.level]}</div>
-          <div
-            className={`rd-bar rd-occ-${beach.level}`}
-            role="img"
-            aria-label={`${beach.areaName}: ${BEACH_LABEL[beach.level]}`}
-          >
-            <i style={{ width: `${Math.max(beach.percent, 3)}%` }} />
-          </div>
-          <span className="rd-muted">Geschätzt aus den Eintritten der letzten 3 Stunden.</span>
+          {beach ? (
+            <>
+              <div className="rd-between">
+                <div className="rd-label">{beach.areaName} jetzt</div>
+                <span className="rd-muted" style={{ fontSize: 12 }}>
+                  Stand {beach.at.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" })} Uhr
+                </span>
+              </div>
+              <div className="rd-display rd-h2">{BEACH_LABEL[beach.level]}</div>
+              <div
+                className={`rd-bar rd-occ-${beach.level}`}
+                role="img"
+                aria-label={`${beach.areaName}: ${BEACH_LABEL[beach.level]}`}
+              >
+                <i style={{ width: `${Math.max(beach.percent, 3)}%` }} />
+              </div>
+              <span className="rd-muted">Geschätzt aus den Eintritten der letzten 3 Stunden.</span>
+            </>
+          ) : (
+            <div className="rd-label">{beachOpening!.scheduleName}</div>
+          )}
+          {beachOpening && (
+            <Link href={`${base}/zeiten`} prefetch className={`rd-hours${beachOpening.open ? " rd-hours-open" : ""}`}>
+              {CLOCK_ICON}
+              <span className="rd-grow">
+                {beachOpening.text}
+                {beachOpening.note ? ` (${beachOpening.note})` : ""}
+              </span>
+              <span className="rd-hours-more">Kalender{CHEVRON_RIGHT}</span>
+            </Link>
+          )}
         </div>
       )}
 

@@ -1,4 +1,5 @@
 import type { ExceptionSpec, PeriodSpec, SeasonSpec } from "@/lib/operating-hours";
+import type { OperatingRoleKind } from "@/lib/operating-role";
 
 export interface SeasonRow extends SeasonSpec {
   /** Nur zum Wiedererkennen in der Liste; die API ersetzt Saisons vollständig. */
@@ -19,6 +20,8 @@ export interface ScheduleRow {
   annyResourceId: string | null;
   /** Geteilte Zeit mit anderen Buchungsangeboten auf derselben Anlage. */
   sharedTime: boolean;
+  /** Wofür das Profil steht (Lift, Shop, Strandbad); null = nichts Besonderes. */
+  role: OperatingRoleKind | null;
   roomCount: number;
   /** Räume, die diesem Profil folgen (für die Profilkarte). */
   roomNames: string[];

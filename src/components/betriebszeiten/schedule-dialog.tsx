@@ -12,6 +12,12 @@ import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import { cleanFacilities, facilityKey } from "@/lib/facility-overlap";
+import {
+  OPERATING_ROLES,
+  OPERATING_ROLE_LABELS,
+  isOperatingRole,
+  type OperatingRoleKind,
+} from "@/lib/operating-role";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest } from "@/components/raeume/shared";
 import { ExceptionEditor } from "@/components/betriebszeiten/exception-editor";
@@ -60,7 +66,10 @@ export function ScheduleDialog({
   const [newFacility, setNewFacility] = useState("");
   const [annyResourceId, setAnnyResourceId] = useState(schedule?.annyResourceId ?? "");
   const [sharedTime, setSharedTime] = useState(schedule?.sharedTime ?? false);
+  const [role, setRole] = useState<OperatingRoleKind | null>(schedule?.role ?? null);
 
+  // Gleiche Verwendung an einem anderen Profil: wechselt beim Speichern hierher.
+  const roleOwner = role ? schedules.find((s) => s.role === role && s.id !== schedule?.id) ?? null : null;
   // Nur eine Ebene: Oberprofile sind Bereiche ohne eigenes Oberprofil, nie das Profil selbst.
   const parents = schedules.filter((s) => s.parentId == null && s.id !== schedule?.id);
   const hasChildren = schedule != null && schedules.some((s) => s.parentId === schedule.id);
@@ -114,6 +123,7 @@ export function ScheduleDialog({
       facilities: cleanFacilities(facilities),
       annyResourceId: annyResourceId.trim() || null,
       sharedTime,
+      role: parentId == null ? role : null,
       seasons: seasons.map((season, index) => ({ ...season, sortOrder: index })),
       exceptions: exceptions.map((e) => ({
         date: e.date,
@@ -281,6 +291,30 @@ export function ScheduleDialog({
                 disabled={disabled}
                 onCheckedChange={setIsDefault}
               />
+            </div>
+          )}
+
+          {parentId == null && (
+            <div className="space-y-1">
+              <Label htmlFor="sched-role">Verwendung</Label>
+              <NativeSelect
+                id="sched-role"
+                disabled={disabled}
+                value={role ?? ""}
+                onChange={(e) => setRole(isOperatingRole(e.target.value) ? e.target.value : null)}
+              >
+                <option value="">keine besondere</option>
+                {OPERATING_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {OPERATING_ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </NativeSelect>
+              <p className="text-[11px] text-muted-foreground">
+                {role && roleOwner
+                  ? `Bisher bei „${roleOwner.name}“; beim Speichern wechselt die Verwendung hierher.`
+                  : "Welche Zeiten Kunden-App, Check-in-Monitor und Beach Pass zeigen. Ohne Angabe entscheidet der Name."}
+              </p>
             </div>
           )}
 

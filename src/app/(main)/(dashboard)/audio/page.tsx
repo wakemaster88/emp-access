@@ -118,7 +118,7 @@ export default async function AudioPage({
       }),
       db.operatingSchedule.findMany({
         where: { accountId },
-        include: scheduleSpecInclude,
+        include: { ...scheduleSpecInclude, _count: { select: { children: true } } },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
       db.soundwebDevice.findMany({
@@ -163,6 +163,7 @@ export default async function AudioPage({
             musicTimes: parseMusicTimes(z.musicTimes),
             musicOpenOffset: z.musicOpenOffset,
             musicCloseOffset: z.musicCloseOffset,
+            musicExtent: z.musicExtent,
             musicOverrideUntil: z.musicOverrideUntil?.toISOString() ?? null,
             airplayEnabled: z.airplayEnabled,
             bluetoothEnabled: z.bluetoothEnabled,
@@ -263,6 +264,7 @@ export default async function AudioPage({
               name: schedule.name,
               seasons: spec.seasons,
               exceptions: spec.exceptions,
+              subprofileCount: schedule._count.children,
             };
           })}
           timeZone={account?.timezone || "Europe/Berlin"}

@@ -11,7 +11,8 @@
 import type { Prisma } from "@prisma/client";
 import type { TenantDb } from "@/lib/prisma";
 import { clampVolume, manualMusicOverrideUntil, playlistPayload, queueZoneCommand } from "@/lib/audio";
-import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { scheduleSpecInclude } from "@/lib/operating-queries";
+import { zoneMusicSpec } from "@/lib/operating-extent-queries";
 import { isAudioDevice, withDeviceControlInfo, type ControllableDevice } from "@/lib/device-controls";
 
 type Db = TenantDb;
@@ -84,6 +85,11 @@ export type AudioControlInput = {
    * manueller Eingriff – das Musikfenster wird nicht übersteuert.
    */
   fromSchedule?: boolean;
+  /**
+   * Herkunft im Audio-Verlauf (`AudioJob.triggerKind`), z. B. "SCHEDULE:OPENING".
+   * Ohne Angabe "MANUAL".
+   */
+  triggerKind?: string;
 };
 
 /**
@@ -106,16 +112,18 @@ async function setManualMusicOverride(db: Db, zoneId: number, play: boolean): Pr
       musicTimes: true,
       musicOpenOffset: true,
       musicCloseOffset: true,
+      musicExtent: true,
+      accountId: true,
       account: { select: { timezone: true } },
-      keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
+      keyRoom: { select: { operatingScheduleId: true, operatingSchedule: { include: scheduleSpecInclude } } },
     },
   });
   if (!zone) return;
-  const operating = zone.keyRoom?.operatingSchedule;
+  const now = new Date();
   const until = manualMusicOverrideUntil(
     zone,
-    operating ? toScheduleSpec(operating) : null,
-    new Date(),
+    await zoneMusicSpec(db, zone.accountId, zone, now, zone.account.timezone),
+    now,
     zone.account.timezone,
   );
   await db.audioZone.update({ where: { id: zoneId }, data: { musicOverrideUntil: until, staffChoiceAt } });
@@ -258,8 +266,9 @@ export async function controlAudioZone(
   zone: ZoneForControl,
   input: AudioControlInput,
 ): Promise<AudioControlResult> {
+  const triggerKind = input.triggerKind ?? "MANUAL";
   if (input.action === "STOP") {
-    await queueZoneCommand(db, accountId, [zone], "STOP", null, "MANUAL");
+    await queueZoneCommand(db, accountId, [zone], "STOP", null, triggerKind);
     await db.audioZone.update({
       where: { id: zone.id },
       data: { sourceKind: "SILENCE" },
@@ -270,7 +279,7 @@ export async function controlAudioZone(
 
   if (input.action === "VOLUME") {
     const volume = clampVolume(input.volume, zone.volume);
-    await queueZoneCommand(db, accountId, [zone], "VOLUME", { volume }, "MANUAL");
+    await queueZoneCommand(db, accountId, [zone], "VOLUME", { volume }, triggerKind);
     await db.audioZone.update({ where: { id: zone.id }, data: { volume } });
     return { ok: true, volume };
   }
@@ -283,7 +292,7 @@ export async function controlAudioZone(
   const manual = !input.fromSchedule;
 
   if (trackId != null && Number.isInteger(trackId) && trackId > 0) {
-    return playTrack(db, accountId, zone, trackId, manual);
+    return playTrack(db, accountId, zone, trackId, manual, triggerKind);
   }
 
   const playlistGiven = input.playlistId != null && input.playlistId !== "";
@@ -312,7 +321,7 @@ export async function controlAudioZone(
       [zone],
       "PLAY",
       { kind: "STREAM", url: parsed.url, volume: zone.volume, manual },
-      "MANUAL",
+      triggerKind,
     );
 
     const persist = input.persistStreamUrl !== false || parsed.url === zone.streamUrl;
@@ -357,7 +366,7 @@ export async function controlAudioZone(
     [zone],
     "PLAY",
     { kind: "PLAYLIST", volume: zone.volume, ...(payload as object), manual },
-    "MANUAL",
+    triggerKind,
   );
   await db.audioZone.update({
     where: { id: zone.id },
@@ -372,6 +381,7 @@ async function playTrack(
   zone: ZoneForControl,
   trackId: number,
   manual: boolean,
+  triggerKind: string,
 ): Promise<AudioControlResult> {
   const track = await db.audioTrack.findFirst({
     where: { id: trackId, accountId, kind: { in: ["MUSIC", "JINGLE"] } },
@@ -388,7 +398,7 @@ async function playTrack(
     manual,
   };
   if (manual) await setManualMusicOverride(db, zone.id, true);
-  await queueZoneCommand(db, accountId, [zone], "PLAY", payload, "MANUAL");
+  await queueZoneCommand(db, accountId, [zone], "PLAY", payload, triggerKind);
   await db.audioZone.update({
     where: { id: zone.id },
     data: { sourceKind: "PLAYLIST" },
