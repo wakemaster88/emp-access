@@ -38,6 +38,7 @@ export function TicketOverlay({
   updatingTicket,
   accountName,
   rfidConflict,
+  onShareRfid,
   onForceRfid,
   onCancelRfid,
   ticketScans,
@@ -67,7 +68,16 @@ export function TicketOverlay({
   onOpenCamera: () => void;
   updatingTicket: boolean;
   accountName: string;
-  rfidConflict: { rfidCode: string; existingOwner: string; existingType: string | null } | null;
+  rfidConflict: {
+    rfidCode: string;
+    existingOwner: string;
+    existingType: string | null;
+    message?: string | null;
+    runningAbo?: boolean;
+    canShare?: boolean;
+  } | null;
+  /** Bändchen am Kunden: Code an beiden Tickets lassen (lib/chips). */
+  onShareRfid?: () => void;
   onForceRfid: () => void;
   onCancelRfid: () => void;
   ticketScans: ScanEntry[];
@@ -963,7 +973,13 @@ export function TicketOverlay({
                     </>
                   }
                 >
-                  <p>RFID vom bisherigen Besitzer entfernen und diesem Ticket zuweisen?</p>
+                  {rfidConflict.message && <p>{rfidConflict.message}</p>}
+                  {rfidConflict.runningAbo && <p className="mt-1 font-medium text-foreground">Übergeben nimmt einem laufenden Abo das Bändchen.</p>}
+                  <p className="mt-1">
+                    {rfidConflict.canShare && onShareRfid
+                      ? "Gehört das Bändchen derselben Person, behalten beide Tickets den Code. Sonst das Bändchen übergeben: das andere Ticket verliert ihn."
+                      : "RFID vom bisherigen Besitzer entfernen und diesem Ticket zuweisen?"}
+                  </p>
                   <div className="flex flex-col-reverse gap-2 mt-3 sm:flex-row">
                     <Button
                       variant="outline"
@@ -972,11 +988,20 @@ export function TicketOverlay({
                     >
                       Abbrechen
                     </Button>
+                    {rfidConflict.canShare && onShareRfid && (
+                      <Button
+                        variant="outline"
+                        onClick={onShareRfid}
+                        className="h-11 font-semibold sm:h-14 sm:flex-1"
+                      >
+                        Beide behalten
+                      </Button>
+                    )}
                     <Button
                       onClick={onForceRfid}
                       className="h-11 font-semibold sm:h-14 sm:flex-1"
                     >
-                      Überschreiben
+                      {rfidConflict.canShare && onShareRfid ? "Übergeben" : "Überschreiben"}
                     </Button>
                   </div>
                 </Notice>

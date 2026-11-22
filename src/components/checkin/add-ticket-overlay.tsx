@@ -128,6 +128,8 @@ export function AddTicketOverlay({
     slotStart?: string;
     slotEnd?: string;
     focusRfid?: boolean;
+    /** Person aus dem Kundenfenster (Bändchen am Kunden, lib/chips). */
+    personId?: number;
     voucher?: {
       code: string;
       ticketTypeName: string | null;
@@ -156,9 +158,14 @@ export function AddTicketOverlay({
   );
   // accessAreaId bleibt im State - wird automatisch ueber den Service gesetzt,
   // hat aber keine UI-Eingabemoeglichkeit mehr (Shop-Workflow: nicht relevant).
-  const [accessAreaId, setAccessAreaId] = useState(
-    voucher?.accessAreaId != null ? String(voucher.accessAreaId) : "none",
-  );
+  const [accessAreaId, setAccessAreaId] = useState(() => {
+    if (voucher?.accessAreaId != null) return String(voucher.accessAreaId);
+    // Vorbelegter Service (Kundenfenster, Slot-Auslastung): Hauptressource
+    // wie bei der Auswahl im Feld „Ticket-Typ“.
+    const svc = prefill?.serviceId != null ? services.find((x) => x.id === prefill.serviceId) : undefined;
+    const mainId = svc ? svc.mainAccessAreaId ?? svc.areaIds?.[0] ?? null : null;
+    return mainId != null ? String(mainId) : "none";
+  });
   // Optionale Datums-Felder. Format je nach `dateMode`:
   //   * "datetime" -> yyyy-mm-ddTHH:mm (Kurs: Datum + Uhrzeit von/bis)
   //   * "single"   -> yyyy-mm-dd, nur startDate sichtbar (Tagesticket/DURATION)
@@ -313,6 +320,12 @@ export function AddTicketOverlay({
     label: string;
     type: string | null;
     payload: Record<string, unknown>;
+    /** Grund aus lib/chip-rules (OTHER_PERSON, LEIH_IN_USE, STAFF, BLOCKED, AMBIGUOUS). */
+    reason: string | null;
+    message: string | null;
+    holderId: number | null;
+    holderName: string | null;
+    runningAbo: boolean;
   } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -358,6 +371,7 @@ export function AddTicketOverlay({
     if (firstName) payload.firstName = firstName;
     if (lastName) payload.lastName = lastName;
     if (email.trim()) payload.email = email.trim();
+    if (prefill?.personId != null) payload.personId = prefill.personId;
 
     if (serviceId !== "none") {
       payload.serviceId = Number(serviceId);
@@ -538,6 +552,10 @@ export function AddTicketOverlay({
               code?: string;
               conflictTicketLabel?: string;
               conflictTicketType?: string | null;
+              reason?: string;
+              holderId?: number | null;
+              holderName?: string | null;
+              runningAbo?: boolean;
             }
           | null;
 
@@ -553,6 +571,11 @@ export function AddTicketOverlay({
             label: errVal.conflictTicketLabel ?? "ein anderes Ticket",
             type: errVal.conflictTicketType ?? null,
             payload,
+            reason: errVal.reason ?? null,
+            message: errVal.formErrors?.[0] ?? null,
+            holderId: errVal.holderId ?? null,
+            holderName: errVal.holderName ?? null,
+            runningAbo: errVal.runningAbo === true,
           });
           setError("");
           setLoading(false);
@@ -643,11 +666,15 @@ export function AddTicketOverlay({
     }
   }
 
-  async function confirmTransfer() {
+  /** Konflikt auflösen: übergeben (Code abziehen), teilen oder für die Person am Bändchen. */
+  async function resolveConflict(how: "transfer" | "share" | "holder") {
     if (!pendingConflict) return;
     setLoading(true);
     setError("");
-    const retryPayload = { ...pendingConflict.payload, transferCode: true };
+    const retryPayload: Record<string, unknown> = { ...pendingConflict.payload };
+    if (how === "transfer") retryPayload.transferCode = true;
+    if (how === "share") retryPayload.shareCode = true;
+    if (how === "holder" && pendingConflict.holderId != null) retryPayload.personId = pendingConflict.holderId;
     setPendingConflict(null);
     await submitWithPayload(retryPayload);
   }
@@ -1035,36 +1062,48 @@ export function AddTicketOverlay({
 
           {pendingConflict && (
             <Notice tone="warning" title="Bändchen bereits vergeben">
-              <p>
-                Der Code ist aktuell Ticket{" "}
-                <span className="font-semibold text-foreground">{pendingConflict.label}</span>
-                {pendingConflict.type ? (
-                  <span> ({pendingConflict.type})</span>
-                ) : null}{" "}
-                zugeordnet. Bändchen auf das neue Ticket umhängen? Das alte Ticket
-                verliert dann seinen Code.
-              </p>
-              <div className="flex gap-2 mt-3">
+              {pendingConflict.message ? (
+                <p>{pendingConflict.message}</p>
+              ) : (
+                <p>
+                  Der Code ist aktuell Ticket{" "}
+                  <span className="font-semibold text-foreground">{pendingConflict.label}</span>
+                  {pendingConflict.type ? <span> ({pendingConflict.type})</span> : null} zugeordnet.
+                </p>
+              )}
+              {pendingConflict.runningAbo && (
+                <p className="mt-1 font-medium text-foreground">Übergeben nimmt einem laufenden Abo das Bändchen.</p>
+              )}
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                {pendingConflict.reason === "OTHER_PERSON" && pendingConflict.holderId != null && (
+                  <Button type="button" onClick={() => void resolveConflict("holder")} disabled={loading} className="h-11 font-semibold sm:h-14 sm:flex-1">
+                    Für {pendingConflict.holderName ?? "die Person"} verkaufen
+                  </Button>
+                )}
+                {(pendingConflict.reason === "STAFF" || pendingConflict.reason === "AMBIGUOUS") && (
+                  <Button type="button" onClick={() => void resolveConflict("share")} disabled={loading} className="h-11 font-semibold sm:h-14 sm:flex-1">
+                    Trotzdem verkaufen
+                  </Button>
+                )}
+                {pendingConflict.reason !== "BLOCKED" && pendingConflict.reason !== "STAFF" && (
+                  <Button
+                    type="button"
+                    variant={pendingConflict.reason === "OTHER_PERSON" || pendingConflict.reason === "AMBIGUOUS" ? "outline" : "default"}
+                    onClick={() => void resolveConflict("transfer")}
+                    disabled={loading}
+                    className="h-11 font-semibold sm:h-14 sm:flex-1"
+                  >
+                    {loading ? <Loader2 className="animate-spin" /> : pendingConflict.reason === "LEIH_IN_USE" ? "Bändchen freigeben" : "Bändchen übergeben"}
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={cancelTransfer}
+                  onClick={() => { cancelTransfer(); setCode(""); requestAnimationFrame(() => codeInputRef.current?.focus()); }}
                   disabled={loading}
-                  className="flex-1 h-11 font-semibold sm:h-14"
+                  className="h-11 font-semibold sm:h-14 sm:flex-1"
                 >
-                  Abbrechen
-                </Button>
-                <Button
-                  type="button"
-                  onClick={confirmTransfer}
-                  disabled={loading}
-                  className="flex-1 h-11 font-semibold sm:h-14"
-                >
-                  {loading ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    "Bändchen umhängen"
-                  )}
+                  Anderes Bändchen
                 </Button>
               </div>
             </Notice>
