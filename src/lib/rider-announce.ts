@@ -1,5 +1,5 @@
 /**
- * Push an alle Kunden der App, wenn ein neues Angebot oder eine neue
+ * Push an alle Kunden der App, wenn ein neues Angebot, eine News oder eine neue
  * Challenge veröffentlicht wird oder ein Feiertag in der App erscheint. Die Verwaltung setzt beim Anlegen den
  * Schalter „Push senden“ (`pushPlanned`); gesendet wird genau einmal
  * (`pushedAt`), sobald der Eintrag für Kunden sichtbar ist und es Tag ist.
@@ -102,7 +102,7 @@ export async function runAccountAnnouncements(accountId: number, now: Date = new
       data: { pushedAt: now },
     });
     if (claimed.count !== 1) continue;
-    const sent = await sendToAllRiders(accountId, offerPushText({ title: o.title, text: o.text, toYmd }), "", `rider-offer-${o.id}`, {
+    const sent = await sendToAllRiders(accountId, offerPushText({ title: o.title, text: o.text, toYmd, kind: o.kind }), "", `rider-${o.kind === "NEWS" ? "news" : "offer"}-${o.id}`, {
       audience: o.audience,
       config,
     });

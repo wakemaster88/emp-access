@@ -314,6 +314,11 @@
 .rd-offer::before { content: ""; position: absolute; left: -6px; top: 0; bottom: 0; width: 14px; background: var(--rd-offer); transform: skewX(-10deg); }
 .rd-offer > * { padding-left: 10px; }
 .rd-offer b { font-size: 15px; }
+/* News: Mitteilungen wie geänderte Öffnungszeiten, ruhiger als Angebote. */
+.rd-news { gap: 6px; }
+.rd-news-head { display: flex; align-items: center; gap: 8px; }
+.rd-news-icon { flex: none; width: 28px; height: 28px; border-radius: 999px; display: flex; align-items: center; justify-content: center; background: var(--rd-accent); color: var(--rd-on-accent); }
+.rd-news-title { font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
 /* Gewinn einer Challenge: eigener Kasten statt Fließtext. */
 .rd-prize { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--rd-accent); border-radius: 6px; background: color-mix(in srgb, var(--rd-accent) 10%, transparent); }
 .rd-prize-icon { flex: none; width: 28px; height: 28px; color: var(--rd-accent); }

@@ -52,6 +52,11 @@ test("Texte der Nachricht", () => {
     body: "Ab 18 Uhr Leihbrett gratis. Gilt bis 30.11.",
   });
   assert.equal(offerPushText({ title: "X", text: null, toYmd: null }).body, "Schau in der App vorbei.");
+  // News: Titel ohne „Neues Angebot“, kein „Gilt bis“.
+  assert.deepEqual(
+    offerPushText({ title: "Neue Öffnungszeiten", text: "Morgen wetterbedingt geschlossen!", toYmd: "2026-11-23", kind: "NEWS" }),
+    { title: "Neue Öffnungszeiten", body: "Morgen wetterbedingt geschlossen!" },
+  );
   const base = {
     name: "November-Grind", description: null, kind: "TASK" as const, metric: "VISIT_DAYS" as const,
     threshold: 5, topCount: null, startYmd: "2026-11-20", endYmd: "2026-11-30", voucherLabel: "Freigetränk",
