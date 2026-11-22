@@ -134,7 +134,9 @@ export async function queueAnnouncement(
   accountId: number,
   announcement: AnnouncementForQueue,
   zones: { id: number }[],
-  triggerKind: string
+  triggerKind: string,
+  /** Musik unter der Durchsage (Audio-Pi mischt sie, ältere Pis spielen ohne). */
+  bed?: { url: string; untilSec: number; level: number } | null
 ): Promise<number> {
   if (zones.length === 0) return 0;
   if (!announcement.track) {
@@ -147,6 +149,7 @@ export async function queueAnnouncement(
     repeat: announcement.repeatCount,
     priority: announcement.priority,
     durationSec: announcement.track.durationSec,
+    ...(bed ? { bed } : {}),
   };
 
   const result = await db.audioJob.createMany({

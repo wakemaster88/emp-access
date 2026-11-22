@@ -17,8 +17,11 @@ import {
   birthdayPushBlock,
   birthdayPushText,
   birthdayTitle,
+  BIRTHDAY_BED_LEVEL,
+  birthdayBedUntil,
   fillName,
   isBirthdayOn,
+  ttsSeconds,
   parseBirthdayZoneIds,
 } from "./birthday";
 import { queueAnnouncement, renderTtsTrack, resolveTargetZones } from "./audio";
@@ -258,11 +261,34 @@ export async function announceBirthdayOnScan(accountId: number, profileId: numbe
         isTemplate: false,
       },
     });
-    await queueAnnouncement(db, accountId, { ...announcement, track }, zones, "BIRTHDAY");
+    const bed = await birthdayBed(accountId, settings.announceMusicTrackId, track.id);
+    await queueAnnouncement(db, accountId, { ...announcement, track }, zones, "BIRTHDAY", bed);
     return true;
   } catch (e) {
     // Ohne Durchsage wieder freigeben: der nächste Scan heute versucht es erneut.
     await prisma.riderBirthdayGift.update({ where: { id: row.id }, data: { announcedAt: null } }).catch(() => {});
     throw e;
   }
+}
+
+/**
+ * Musik unter der Geburtstags-Ansage: Titel aus der Mediathek, Ende aus der
+ * Länge der gesprochenen Ansage. Ohne Titel (oder gelöscht) null.
+ */
+export async function birthdayBed(
+  accountId: number,
+  musicTrackId: number | null,
+  speechTrackId: number,
+): Promise<{ url: string; untilSec: number; level: number } | null> {
+  if (musicTrackId == null) return null;
+  const [music, speech] = await Promise.all([
+    prisma.audioTrack.findFirst({ where: { id: musicTrackId, accountId }, select: { url: true, durationSec: true } }),
+    prisma.audioTrack.findFirst({ where: { id: speechTrackId, accountId }, select: { durationSec: true, sizeBytes: true } }),
+  ]);
+  if (!music) return null;
+  return {
+    url: music.url,
+    untilSec: birthdayBedUntil(speech ? ttsSeconds(speech) : null, music.durationSec),
+    level: BIRTHDAY_BED_LEVEL,
+  };
 }
