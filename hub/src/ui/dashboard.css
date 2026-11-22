@@ -1610,7 +1610,7 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
   .live-tile { border-radius: var(--radius-control); }
 }
 .live-tile.is-wide { grid-column: span 2; aspect-ratio: 32 / 9; }
-.live-tile.is-wide video, .live-tile.is-wide img { object-fit: contain; }
+.live-tile.is-wide video, .live-tile.is-wide img, .live-tile.is-wide .rtc-mirror { object-fit: contain; }
 .live-grid[data-cols="1"] .live-tile.is-wide { grid-column: auto; aspect-ratio: 16 / 9; }
 
 /* Die Zentrale nutzt die volle Breite. */
@@ -1680,6 +1680,16 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
  * Kacheln aber schwarz. Der Hinweis liegt ohnehin ueber dem Video und
  * verschwindet mit is-live.
  */
+
+/* Safari-Umweg: Canvas malt das Videobild (siehe mirrorVideo in dashboard.js). */
+.rtc-mirror {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.cam-stage .rtc-mirror { object-fit: contain; transition: transform 0.15s var(--ease); }
+.cam-stage.is-gesture .rtc-mirror { transition: none; }
 
 .live-empty {
   position: absolute; inset: 0;
