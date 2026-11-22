@@ -5,6 +5,7 @@ import { Activity, Car, Cctv, ParkingSquare, UserRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SegmentBar } from "@/components/ui/segment-bar";
 import { StatCard } from "@/components/ui/stat-card";
 import { type DashboardLive, fmtAgo } from "@/components/dashboard/live-section";
 
@@ -25,6 +26,7 @@ function parts(...items: (string | false | null | undefined)[]): string {
 export function TrackingSection({ live, now }: { live: DashboardLive; now: number }) {
   const { persons, vehicles, movement, parking } = live.tracking;
   const busiest = movement.cameras[0];
+  const maxMovement = movement.cameras.reduce((m, c) => Math.max(m, c.total), 0);
 
   return (
     <div className="space-y-3 sm:space-y-4">
@@ -45,7 +47,17 @@ export function TrackingSection({ live, now }: { live: DashboardLive; now: numbe
                   `${persons.unknown} unbekannt`,
                 )
           }
-        />
+        >
+          {persons.today > 0 && (
+            <SegmentBar
+              segments={[
+                { label: "Gesperrt", value: persons.blocked, className: "bg-destructive" },
+                { label: "Bekannt", value: persons.known, className: "bg-success" },
+                { label: "Unbekannt", value: persons.unknown, className: "bg-muted-foreground/45" },
+              ]}
+            />
+          )}
+        </StatCard>
         <StatCard
           href="/fahrzeuge"
           label="Fahrzeuge heute"
@@ -62,7 +74,17 @@ export function TrackingSection({ live, now }: { live: DashboardLive; now: numbe
                   vehicles.delivery > 0 && `${vehicles.delivery} Lieferdienst`,
                 )
           }
-        />
+        >
+          {vehicles.today > 0 && (
+            <SegmentBar
+              segments={[
+                { label: "Zugeordnet", value: vehicles.matched, className: "bg-success" },
+                { label: "Lieferdienst", value: vehicles.delivery, className: "bg-info" },
+                { label: "Offen", value: vehicles.unmatched, className: "bg-warning" },
+              ]}
+            />
+          )}
+        </StatCard>
         <StatCard
           href="/cameras"
           label="Bewegungen"
@@ -208,8 +230,16 @@ export function TrackingSection({ live, now }: { live: DashboardLive; now: numbe
             ) : (
               movement.cameras.map((c) => (
                 <div key={c.id} className={ROW_CLASS}>
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 space-y-1">
                     <p className="truncate text-xs font-medium text-foreground/90">{c.name}</p>
+                    <SegmentBar
+                      max={maxMovement}
+                      segments={[
+                        { label: "Personen", value: c.person, className: "bg-chart-1" },
+                        { label: "Fahrzeuge", value: c.vehicle, className: "bg-chart-3" },
+                        { label: "Sonstige", value: c.other, className: "bg-muted-foreground/45" },
+                      ]}
+                    />
                     <p className="truncate text-[11px] text-muted-foreground">
                       {parts(
                         c.person > 0 && `${c.person} ${c.person === 1 ? "Person" : "Personen"}`,

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { isPlayerOnline } from "@/lib/audio-constants";
 import { berlinDayStart } from "@/lib/berlin-day";
-import { buildLiveWarnings, summarizeCameraActivity } from "@/lib/dashboard-live";
+import { buildLiveWarnings, summarizeCameraActivity, type LiveAreaOccupancy } from "@/lib/dashboard-live";
+import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
+import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
 import { parseParkingSnapshot } from "@/lib/parking";
 import { scanDenyReasonLabel } from "@/lib/scan-deny-reason";
 import { summarizeAreaRates } from "@/lib/turnstile-rate";
@@ -64,7 +66,7 @@ export async function GET() {
         category: "DREHKREUZ",
         OR: [{ accessIn: { not: null } }, { accessOut: { not: null } }],
       },
-      select: { id: true, accessIn: true, accessOut: true },
+      select: { id: true, accessIn: true, accessOut: true, countsAsStart: true },
     }),
     db.scan.findMany({
       where: { ...where, scanTime: { gte: dayStart } },
@@ -203,6 +205,37 @@ export async function GET() {
       if (t >= t15) totals.denied15++;
     }
   }
+  // Auslastung wie in der Kunden-App: Lift (Fahrer der letzten 60 Min an
+  // Start-Geräten) und Strandbad (Eintritte 3 h × Faktor). Dieselbe Zahl, die
+  // Gäste gerade sehen; am Strandbad verlässlicher als „rein minus raus“,
+  // weil am Ausgang kaum jemand scannt.
+  const [lift, beach] =
+    accountId != null
+      ? await Promise.all([
+          loadRiderOccupancy(accountId, now).catch(() => null),
+          loadBeachOccupancy(accountId, now).catch(() => null),
+        ])
+      : [null, null];
+  const startAreaIds = new Set(
+    turnstiles.filter((d) => d.countsAsStart && d.accessIn != null).map((d) => d.accessIn as number),
+  );
+  const occupancyOf = (area: { id: number; name: string }): LiveAreaOccupancy | null => {
+    if (lift && startAreaIds.has(area.id)) {
+      return { kind: "lift", level: lift.level, label: OCCUPANCY_LABEL[lift.level], riders: lift.riders, starts: lift.starts };
+    }
+    if (beach && beach.areaName === area.name) {
+      return {
+        kind: "beach",
+        level: beach.level,
+        label: BEACH_LABEL[beach.level],
+        estimated: beach.estimated,
+        entries: beach.entries,
+        capacity: beach.capacity,
+      };
+    }
+    return null;
+  };
+
   const insideAreas = areas.filter((a) => a.inside != null);
   const inside = insideAreas.length > 0 ? insideAreas.reduce((sum, a) => sum + (a.inside ?? 0), 0) : null;
 
@@ -330,7 +363,7 @@ export async function GET() {
     access: {
       inside,
       ...totals,
-      areas,
+      areas: areas.map((a) => ({ ...a, occupancy: occupancyOf(a) })),
       recent: recentScans.map((s) => ({
         id: s.id,
         result: s.result,

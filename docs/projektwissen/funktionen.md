@@ -4,6 +4,42 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Dashboard der Verwaltung (22.11.2026)
+
+- Reihenfolge bleibt: 1. „Jetzt“, 2. Tracking, 3. Statistik mit Tag-Wahl und
+  den Ansichten „Auswertung“ und „Buchungen“.
+- **Jetzt**: je Bereich mit Betrieb eine Kachel mit derselben Auslastung wie
+  die Kunden-App (Lift: Fahrer der letzten 60 Min. und Stufe aus
+  `rider-occupancy`; Strandbad: „ca. … Gäste“ aus `beach-occupancy` mit Balken
+  zur Kapazität; sonst „drin/Limit“ oder Einlässe in 60 Min.). Ruhige Bereiche
+  nur als Zeile „Heute noch ohne Einlass“. Daneben die Karte „Technik“ (Leser,
+  Kameras, Hub, Audio, Bewässerung; `OpsCard` in `ops-strip.tsx`).
+- **Auswertung** (`/api/dashboard/areas`, `src/lib/dashboard-areas.ts`): Zahlen
+  je Bereich statt einer Summe über alle Leser. Gezählt wird nur an Lesern,
+  die in den Bereich hinein zählen (`accessIn`); die Zahl heißt Fahrten (Gerät
+  mit `countsAsStart`), Eintritte (eigener Ausgang) oder Durchgänge (ein Leser
+  für beide Richtungen). Kacheln je Bereich mit Vergleich zum Schnitt der 6
+  Tage davor sind zugleich der Filter (Wahl bleibt im Browser, Standard
+  Seilbahn A). Darunter Tagesverlauf aller Bereiche gestapelt (gewählter
+  voll, andere blass), 7 Tage des gewählten Bereichs mit Ø-Linie,
+  Ticket-Typen, Leser und Ablehnungsgründe.
+- Farbe je Bereich hängt an seiner Position in der Antwort (meiste Leser
+  zuerst), nicht am Rang des Tages (`area-colors.ts`, Reihenfolge chart-1, 3,
+  5, 2, 4; mit Farbfehlsichtigkeit geprüft).
+- **Buchungen**: Gebucht (Tagesbuchungen ohne Abos und Services), Eingecheckt
+  (davon mit erlaubtem Scan an dem Tag), Abos da (von den aktiven), Neu
+  angelegt (echte Zahl, davon über anny). Abos-Liste zeigt nur Abos, die an dem
+  Tag da waren; Services nur benutzte oder neu angelegte (vorher standen alle
+  unbefristeten Stundenkarten jeden Tag dort). Grüner Punkt an einer Buchung =
+  eingecheckt. anny-Abgleich als leise Zeile, Hinweis nur bei Fehlern oder
+  Stillstand über 2 Std.
+- Entfallen (doppelt oder irreführend): Scan-Verlauf über alle Leser,
+  Ring „Scan-Ergebnisse“, 7-Tage-Trend mit Verlauf, Top-Geräte, Kachel
+  „Spitze“, Leiste der Technik-Kacheln, Karte „Bereiche jetzt“. Früher lag
+  „Eingecheckt“ bei über 100 % (alle Scans inkl. Abos), „Neueste Tickets“ zählte
+  höchstens 10.
+- Anteile als dünne Leiste: `SegmentBar` (`src/components/ui/segment-bar.tsx`).
+
 ## Kalender der Betriebszeiten (20.11.2026)
 
 - Seite `/betriebszeiten` hat zwei Tabs: „Profile“ (Karten wie bisher) und
@@ -567,7 +603,7 @@ werden nicht mehr gepusht. Parallel bleibt das Telegram-Foto mit „Tor
   Summen. Stufen nach Fahrern: 0 „Gerade ruhig“, 1–9 „Freie Bahn“, 10–24
   „Gut besucht“, ab 25 „Viel los“. Grenzen je Mandant unter Kunden App ›
   Einstellungen (`GamificationConfig.occupancyMediumFrom/HighFrom`), gelten
-  auch für das Badge „Jetzt: …“ an der Drehkreuz-Karte im Dashboard.
+  auch für das Badge an der Lift-Kachel unter „Jetzt“ im Dashboard.
   „Viel los“ soll selten erscheinen (rund 5 % der Betriebszeit), damit niemand
   wegbleibt (Aaron, 21.11.2026; Daten 21.08.–15.11.2026: Median 7, 90 % bis 18,
   Spitze 38 Fahrer je 60 Min). Ohne Start-Gerät bleibt die Karte weg.

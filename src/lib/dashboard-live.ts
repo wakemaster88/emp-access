@@ -18,6 +18,23 @@ export interface LiveWarning {
   at: string | null;
 }
 
+/**
+ * Auslastung eines Bereichs, wie die Kunden-App sie gerade zeigt: am Lift
+ * Fahrer der letzten 60 Minuten, am Strandbad geschätzte Gäste (Eintritte der
+ * letzten 3 Stunden × Faktor). Stufen und Texte aus `rider-occupancy-labels`
+ * bzw. `beach-occupancy-labels`.
+ */
+export type LiveAreaOccupancy =
+  | { kind: "lift"; level: "none" | "low" | "medium" | "high"; label: string; riders: number; starts: number }
+  | {
+      kind: "beach";
+      level: "low" | "medium" | "high";
+      label: string;
+      estimated: number;
+      entries: number;
+      capacity: number | null;
+    };
+
 /** Ab so vielen Ablehnungen in 15 Minuten gilt ein Bereich als auffällig. */
 export const DENIED_BURST_THRESHOLD = 5;
 

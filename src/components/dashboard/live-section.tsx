@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   DoorOpen,
-  LogIn,
   MapPin,
   OctagonAlert,
   ScanLine,
@@ -15,14 +14,14 @@ import {
   XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
 import { GateDialog } from "@/components/dashboard/gate-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
 import { StatCard } from "@/components/ui/stat-card";
 import { cn } from "@/lib/utils";
-import type { LiveWarning } from "@/lib/dashboard-live";
+import type { LiveAreaOccupancy, LiveWarning } from "@/lib/dashboard-live";
 import type { AreaRate } from "@/lib/turnstile-rate";
 
 export interface DashboardLive {
@@ -37,7 +36,7 @@ export interface DashboardLive {
     denied15: number;
     denied60: number;
     deniedToday: number;
-    areas: AreaRate[];
+    areas: (AreaRate & { occupancy: LiveAreaOccupancy | null })[];
     recent: {
       id: number;
       result: "GRANTED" | "DENIED" | "PROTECTED";
@@ -166,49 +165,86 @@ function Warnings({ warnings }: { warnings: LiveWarning[] }) {
   );
 }
 
-function AreaRow({ area }: { area: AreaRate }) {
+const LEVEL_BADGE = { none: "neutral", low: "success", medium: "info", high: "warning" } as const;
+
+type LiveArea = DashboardLive["access"]["areas"][number];
+
+/**
+ * Kennzahl je Bereich: am Lift die Fahrer der letzten Stunde, am Strandbad
+ * die geschätzten Gäste (beides wie in der Kunden-App), sonst Anwesende
+ * gegen das Limit oder Zutritte der letzten Stunde.
+ */
+function AreaTile({ area, className }: { area: LiveArea; className?: string }) {
+  const occ = area.occupancy;
   const limit = area.personLimit;
-  const hasInside = area.inside != null;
-  // Mit Ausgang: Anwesende gegen das Limit. Ohne: Zutritte der letzten Stunde
-  // (bei der Seilbahn fährt jeder Gast mehrfach, „heute“ gegen das Limit wäre falsch).
-  const pct = hasInside && limit ? Math.min(100, Math.round((area.inside! / limit) * 100)) : null;
-  const over = hasInside && limit != null && area.inside! > limit;
+  const fmt = (n: number) => n.toLocaleString("de-DE");
+  let value: string;
+  let suffix: string;
+  let hint: string;
+  let progress: number | undefined;
+  let over = false;
+
+  if (occ?.kind === "lift") {
+    value = fmt(occ.riders);
+    suffix = "Fahrer";
+    hint = `${fmt(occ.starts)} Fahrten in 60 Min. · ${fmt(area.inToday)} heute`;
+  } else if (occ?.kind === "beach") {
+    value = `ca. ${fmt(occ.estimated)}`;
+    suffix = "Gäste";
+    hint = `${fmt(area.in60)} rein in 60 Min. · ${fmt(area.inToday)} heute`;
+    if (occ.capacity) {
+      progress = occ.estimated / occ.capacity;
+      over = occ.estimated > occ.capacity;
+    }
+  } else if (area.inside != null) {
+    value = fmt(area.inside);
+    suffix = limit != null ? `von ${fmt(limit)} drin` : "drin";
+    hint = `${fmt(area.in15)} rein in 15 Min. · ${fmt(area.inToday)} heute`;
+    if (limit) {
+      progress = area.inside / limit;
+      over = area.inside > limit;
+    }
+  } else {
+    value = fmt(area.in60);
+    suffix = "in 60 Min.";
+    hint = `${fmt(area.in15)} in 15 Min. · ${fmt(area.inToday)} heute`;
+  }
+
+  const tone = over
+    ? "danger"
+    : occ?.level === "high" || (progress != null && progress >= 0.8)
+      ? "warning"
+      : area.in15 > 0
+        ? "live"
+        : "neutral";
+
   return (
-    <Link
+    <StatCard
       href={`/areas/${area.id}`}
-      className="flex min-h-11 flex-col justify-center gap-1.5 rounded-[10px] px-2 py-2 outline-none transition-colors hover:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      label={area.name}
+      icon={MapPin}
+      tone={tone}
+      value={value}
+      suffix={suffix}
+      hint={hint}
+      progress={progress}
+      className={className}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90">{area.name}</span>
-        {area.denied15 > 0 && (
-          <Badge variant="danger" className="tabular-nums">
-            {area.denied15} abgelehnt
-          </Badge>
-        )}
-        <span className="shrink-0 text-xs font-semibold tabular-nums text-foreground">
-          {hasInside ? area.inside : area.in60}
-          <span className="ml-1 font-normal text-muted-foreground">
-            {hasInside ? (limit != null ? `/ ${limit} drin` : "drin") : "in 60 Min."}
-          </span>
-        </span>
-      </div>
-      {pct != null && (
-        <span className="block h-1 overflow-hidden rounded-full bg-muted" aria-hidden>
-          <span
-            className={cn(
-              "block h-full rounded-full transition-[width] duration-300",
-              over ? "bg-destructive" : pct >= 80 ? "bg-warning" : "bg-emerald-500 dark:bg-emerald-400",
-            )}
-            style={{ width: `${pct}%` }}
-          />
+      {(occ || area.denied15 > 0) && (
+        <span className="flex flex-wrap gap-1">
+          {occ && (
+            <Badge variant={LEVEL_BADGE[occ.level]} title="So zeigt es die Kunden-App gerade">
+              {occ.label}
+            </Badge>
+          )}
+          {area.denied15 > 0 && (
+            <Badge variant="danger" className="tabular-nums">
+              {area.denied15} abgelehnt
+            </Badge>
+          )}
         </span>
       )}
-      <p className="text-[11px] tabular-nums text-muted-foreground">
-        {area.in15} in 15 Min. · {area.inToday} heute rein
-        {area.outToday != null && ` · ${area.outToday} raus`}
-        {area.lastScanAt && ` · zuletzt ${fmtHm(area.lastScanAt)}`}
-      </p>
-    </Link>
+    </StatCard>
   );
 }
 
@@ -216,18 +252,18 @@ export function LiveSection({
   live,
   now,
   onOpenTicket,
+  side,
 }: {
   live: DashboardLive;
   /** Uhrzeit des letzten Abrufs (ms), damit „vor 3 Min.“ beim Rendern rein bleibt. */
   now: number;
   onOpenTicket: (id: number) => void;
+  /** Rechts neben „Letzte Scans“ (Desktop), darunter auf dem Handy: die Technik-Karte. */
+  side?: React.ReactNode;
 }) {
   const a = live.access;
   const s = live.status;
   const gate = s.gates[0];
-  const devicesTotal = s.readers.total + s.cameras.total;
-  const devicesOnline = s.readers.online + s.cameras.online;
-  const devicesOffline = [...s.readers.offline, ...s.cameras.offline];
   const [gateId, setGateId] = useState<number | null>(null);
   const openGate = s.gates.find((g) => g.id === gateId) ?? null;
 
@@ -247,6 +283,12 @@ export function LiveSection({
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, [gateIds]);
 
+  // Bereiche mit Betrieb heute als Kachel; ruhige nur als Zeile darunter
+  // (Ruhe bei Normalbetrieb: keine Kachel mit lauter Nullen).
+  const busy = a.areas.filter((area) => area.inToday > 0 || area.in60 > 0 || (area.inside ?? 0) > 0);
+  const quiet = a.areas.filter((area) => !busy.includes(area));
+  const tileCount = busy.length + (gate ? 1 : 0);
+
   return (
     <div className="space-y-3 sm:space-y-4">
       {openGate && (
@@ -261,104 +303,61 @@ export function LiveSection({
       )}
       <Warnings warnings={live.warnings} />
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {a.inside != null ? (
-          <StatCard
-            label="Jetzt drin"
-            icon={Users}
-            tone="live"
-            value={a.inside}
-            suffix="geschätzt"
-            hint={`${a.inToday} Einlässe heute`}
-          />
-        ) : (
-          <StatCard
-            label="Einlässe heute"
-            icon={Users}
-            tone="live"
-            value={a.inToday}
-            hint={a.deniedToday > 0 ? `${a.deniedToday} abgelehnt` : "keine Ablehnung"}
-          />
-        )}
-        <StatCard
-          label="Einlässe"
-          icon={LogIn}
-          tone={a.in15 > 0 ? "live" : "neutral"}
-          value={a.in60}
-          suffix="in 60 Min."
-          hint={`${a.in15} in den letzten 15 Min.`}
-        />
-        <StatCard
-          href="/scans"
-          label="Ablehnungen"
-          icon={XCircle}
-          tone={a.denied15 > 0 ? "danger" : "neutral"}
-          value={a.denied60}
-          suffix="in 60 Min."
-          hint={a.denied15 > 0 ? `${a.denied15} in den letzten 15 Min.` : `${a.deniedToday} heute`}
-        />
-        {gate ? (
-          <StatCard
-            onClick={() => setGateId(gate.id)}
-            label={gate.name}
-            icon={DoorOpen}
-            tone={gate.holdError ? "danger" : gate.holdUntil ? "warning" : gate.online ? "success" : "neutral"}
-            value={gate.holdUntil ? "Offen" : gate.online ? "Bereit" : "Offline"}
-            suffix={gate.holdUntil ? `bis ${fmtHm(gate.holdUntil)}` : undefined}
-            hint={
-              gate.holdError && gate.holdUntil
-                ? gate.holdError
-                : s.lastOpening
-                  ? `zuletzt geöffnet ${fmtHm(s.lastOpening.at)}${s.lastOpening.label ? ` für ${s.lastOpening.label}` : ""}`
-                  : "heute noch nicht für ein Fahrzeug geöffnet"
-            }
-          />
-        ) : (
-          <StatCard
-            href="/devices"
-            label="Leser und Kameras"
-            icon={ScanLine}
-            tone={devicesOffline.length > 0 ? "warning" : "success"}
-            value={`${devicesOnline}/${devicesTotal}`}
-            suffix="online"
-            hint={devicesOffline.length > 0 ? `offline: ${devicesOffline.join(" · ")}` : "alle erreichbar"}
-            progress={devicesTotal > 0 ? devicesOnline / devicesTotal : undefined}
-          />
+      <div className="space-y-2">
+        <div
+          className={cn(
+            "grid grid-cols-2 gap-3 sm:gap-4",
+            tileCount >= 4 ? "lg:grid-cols-4" : tileCount === 3 ? "lg:grid-cols-3" : "lg:grid-cols-2",
+          )}
+        >
+          {busy.length === 0 && (
+            // Kein Bereich mit Drehkreuz oder heute noch kein Einlass: Gesamtzahl wie bisher.
+            <StatCard
+              href="/scans"
+              label="Einlässe heute"
+              icon={Users}
+              tone={a.in15 > 0 ? "live" : "neutral"}
+              value={a.inToday}
+              hint={a.deniedToday > 0 ? `${a.deniedToday} abgelehnt` : "keine Ablehnung"}
+              className={gate ? undefined : "col-span-2 lg:col-span-1"}
+            />
+          )}
+          {busy.map((area, i) => (
+            <AreaTile
+              key={area.id}
+              area={area}
+              // Ungerade Zahl an Kacheln: die letzte füllt auf dem Handy die Zeile.
+              className={!gate && busy.length % 2 === 1 && i === busy.length - 1 ? "max-lg:col-span-2" : undefined}
+            />
+          ))}
+          {gate && (
+            <StatCard
+              onClick={() => setGateId(gate.id)}
+              label={gate.name}
+              icon={DoorOpen}
+              tone={gate.holdError ? "danger" : gate.holdUntil ? "warning" : gate.online ? "success" : "neutral"}
+              value={gate.holdUntil ? "Offen" : gate.online ? "Bereit" : "Offline"}
+              suffix={gate.holdUntil ? `bis ${fmtHm(gate.holdUntil)}` : undefined}
+              hint={
+                gate.holdError && gate.holdUntil
+                  ? gate.holdError
+                  : s.lastOpening
+                    ? `zuletzt geöffnet ${fmtHm(s.lastOpening.at)}${s.lastOpening.label ? ` für ${s.lastOpening.label}` : ""}`
+                    : "heute noch nicht für ein Fahrzeug geöffnet"
+              }
+              className={tileCount % 2 === 1 ? "max-lg:col-span-2" : undefined}
+            />
+          )}
+        </div>
+        {busy.length > 0 && quiet.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Heute noch ohne Einlass: {quiet.map((q) => q.name).join(" · ")}
+          </p>
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="gap-3">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              Bereiche jetzt
-            </CardTitle>
-            <CardAction>
-              <Badge variant="secondary" className="tabular-nums">
-                {a.areas.length}
-              </Badge>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="px-2 sm:px-2.5">
-            {a.areas.length === 0 ? (
-              <EmptyState
-                compact
-                icon={MapPin}
-                title="Kein Bereich mit Drehkreuz"
-                description="Ordne einem Bereich unter Ressourcen ein Drehkreuz zu, dann zählt er hier mit."
-              />
-            ) : (
-              <div className="divide-y divide-border/60">
-                {a.areas.map((area) => (
-                  <AreaRow key={area.id} area={area} />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="gap-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="gap-3 lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5">
               <ScanLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -373,7 +372,7 @@ export function LiveSection({
               </Link>
             </CardAction>
           </CardHeader>
-          <div className="max-h-[420px] divide-y divide-border/60 overflow-y-auto px-2 scrollbar-thin sm:px-2.5">
+          <div className="max-h-[400px] divide-y divide-border/60 overflow-y-auto px-2 scrollbar-thin sm:px-2.5">
             {a.recent.length === 0 ? (
               <EmptyState compact icon={ScanLine} title="Heute noch kein Scan" />
             ) : (
@@ -422,6 +421,7 @@ export function LiveSection({
             )}
           </div>
         </Card>
+        {side}
       </div>
     </div>
   );
