@@ -10,7 +10,12 @@ import {
   VolumeX,
   WifiOff,
 } from "lucide-react";
-import { StatCard } from "@/components/ui/stat-card";
+import Link from "next/link";
+import type { LucideIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
+import { IconChip, type ChipTone } from "@/components/ui/icon-chip";
+import { cn } from "@/lib/utils";
 import type { DashboardLive } from "@/components/dashboard/live-section";
 
 export interface DashboardOps {
@@ -105,13 +110,29 @@ function zoneSubline(z: DashboardOps["audio"]["zones"][number]): string {
   return "Stumm";
 }
 
-export function OpsStrip({
+interface OpsRow {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  tone: ChipTone;
+  value: string;
+  detail: string;
+}
+
+/**
+ * Technik auf einen Blick: Leser, Kameras, Hub, Audio, Bewässerung als
+ * Zeilen in einer Karte. Störungen stehen zusätzlich oben als Warnung; hier
+ * reicht im Normalbetrieb ein ruhiger Blick (Ruhe bei Normalbetrieb).
+ */
+export function OpsCard({
   ops,
   status,
+  className,
 }: {
   ops: DashboardOps | null;
   /** Leser und Kameras aus der Live-Lage (`/api/dashboard/live`). */
   status?: DashboardLive["status"] | null;
+  className?: string;
 }) {
   if (!ops) return null;
 
@@ -121,112 +142,113 @@ export function OpsStrip({
   const hubsMissing = ops.hubs.total === 0 || ops.hubs.online < ops.hubs.total;
   const hubsOutdated = ops.hubs.agents.some((h) => h.outdated);
 
-  // Zweite Zeile der Audio-Kachel: erst Störungen, dann was gerade läuft.
+  // Nebenzeile Audio: erst Störungen, dann was gerade läuft.
   const audioHint =
     audioOffline > 0
       ? `${audioOffline} Zone${audioOffline === 1 ? "" : "n"} offline`
       : ops.audio.zones.length > 0
         ? ops.audio.zones
-            .slice(0, 3)
+            .filter((z) => z.isPlaying)
+            .slice(0, 2)
             .map((z) => `${z.name}: ${zoneSubline(z)}`)
-            .join(" · ")
+            .join(" · ") || "alle Zonen still"
         : "Keine Zonen";
-
-  // Kennzahl ist eine Zahl (laufende Zonen) oder die nächste Startzeit; der
-  // Zonenname steht im Hinweis.
-  const wateringHint = watering
-    ? `${watering.name} läuft noch ${watering.remainingMin} Min.`
-    : ops.irrigation.next
-      ? `als nächstes ${ops.irrigation.next.name}`
-      : "Kein Lauf heute";
 
   const readers = status?.readers;
   const cameras = status?.cameras;
+  const rows: OpsRow[] = [];
+
+  if (readers) {
+    rows.push({
+      href: "/devices",
+      label: "Leser",
+      icon: readers.offline.length > 0 ? WifiOff : ScanLine,
+      tone: readers.offline.length > 0 ? "warning" : readers.total > 0 ? "success" : "neutral",
+      value: `${readers.online}/${readers.total}`,
+      detail:
+        readers.offline.length > 0
+          ? `offline: ${readers.offline.join(" · ")}`
+          : readers.total > 0
+            ? "alle melden sich"
+            : "Kein Leser eingerichtet",
+    });
+  }
+  if (cameras) {
+    rows.push({
+      href: "/cameras",
+      label: "Kameras",
+      icon: Cctv,
+      tone:
+        cameras.total === 0 ? "neutral" : !cameras.hubOnline ? "danger" : cameras.offline.length > 0 ? "warning" : "success",
+      value: `${cameras.online}/${cameras.total}`,
+      detail:
+        cameras.total === 0
+          ? "Keine Kamera eingerichtet"
+          : !cameras.hubOnline
+            ? "Hub offline, Stand unbekannt"
+            : cameras.offline.length > 0
+              ? `fehlt: ${cameras.offline.join(" · ")}`
+              : "alle erreichbar",
+    });
+  }
+  rows.push({
+    href: "/network",
+    label: "Hub",
+    icon: hubsMissing ? ServerOff : Server,
+    tone: hubsMissing ? "danger" : hubsOutdated ? "warning" : "success",
+    value: `${ops.hubs.online}/${ops.hubs.total}`,
+    detail: hubSubline(ops.hubs),
+  });
+  rows.push({
+    href: "/audio",
+    label: "Audio",
+    icon: playing > 0 ? Volume2 : VolumeX,
+    tone: audioOffline > 0 ? "warning" : playing > 0 ? "music" : "neutral",
+    value: `${playing}/${ops.audio.zones.length}`,
+    detail: audioHint,
+  });
+  rows.push({
+    href: "/bewaesserung",
+    label: "Bewässerung",
+    icon: Droplets,
+    tone: watering ? "water" : "neutral",
+    value: watering ? `${ops.irrigation.watering.length} aktiv` : ops.irrigation.next ? ops.irrigation.next.startTime : "—",
+    detail: watering
+      ? `${watering.name} läuft noch ${watering.remainingMin} Min.`
+      : ops.irrigation.next
+        ? `als nächstes ${ops.irrigation.next.name}`
+        : "Kein Lauf heute",
+  });
+
+  const issues = rows.filter((r) => r.tone === "warning" || r.tone === "danger").length;
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-      {readers && (
-        <StatCard
-          href="/devices"
-          label="Leser"
-          icon={readers.offline.length > 0 ? WifiOff : ScanLine}
-          tone={readers.offline.length > 0 ? "warning" : readers.total > 0 ? "success" : "neutral"}
-          value={`${readers.online}/${readers.total}`}
-          suffix="online"
-          hint={
-            readers.offline.length > 0
-              ? `offline: ${readers.offline.join(" · ")}`
-              : readers.total > 0
-                ? "alle melden sich"
-                : "Kein Leser eingerichtet"
-          }
-          progress={readers.total > 0 ? readers.online / readers.total : undefined}
-        />
-      )}
-
-      {cameras && (
-        <StatCard
-          href="/cameras"
-          label="Kameras"
-          icon={Cctv}
-          tone={
-            cameras.total === 0
-              ? "neutral"
-              : !cameras.hubOnline
-                ? "danger"
-                : cameras.offline.length > 0
-                  ? "warning"
-                  : "success"
-          }
-          value={`${cameras.online}/${cameras.total}`}
-          suffix="erreichbar"
-          hint={
-            cameras.total === 0
-              ? "Keine Kamera eingerichtet"
-              : !cameras.hubOnline
-                ? "Hub offline, Stand unbekannt"
-                : cameras.offline.length > 0
-                  ? `fehlt: ${cameras.offline.join(" · ")}`
-                  : "alle erreichbar"
-          }
-          progress={cameras.total > 0 ? cameras.online / cameras.total : undefined}
-        />
-      )}
-
-      <StatCard
-        href="/network"
-        label="Hub"
-        icon={hubsMissing ? ServerOff : Server}
-        tone={hubsMissing ? "danger" : hubsOutdated ? "warning" : "success"}
-        value={`${ops.hubs.online}/${ops.hubs.total}`}
-        suffix="verbunden"
-        hint={hubSubline(ops.hubs)}
-        progress={ops.hubs.total > 0 ? ops.hubs.online / ops.hubs.total : undefined}
-      />
-
-      <StatCard
-        href="/audio"
-        label="Audio"
-        icon={playing > 0 ? Volume2 : VolumeX}
-        tone={audioOffline > 0 ? "warning" : playing > 0 ? "music" : "neutral"}
-        value={`${playing}/${ops.audio.zones.length || 0}`}
-        suffix="spielen"
-        hint={audioHint}
-        progress={ops.audio.zones.length > 0 ? playing / ops.audio.zones.length : undefined}
-      />
-
-      {/* Rasterspalte direkt am Link der Kachel (StatCard mit href): die letzte
-          Kachel füllt auf dem Handy die Zeile, wenn fünf Kacheln stehen. */}
-      <StatCard
-        href="/bewaesserung"
-        label="Bewässerung"
-        icon={Droplets}
-        tone={watering ? "water" : "neutral"}
-        value={watering ? ops.irrigation.watering.length : ops.irrigation.next ? ops.irrigation.next.startTime : "—"}
-        suffix={watering ? "aktiv" : undefined}
-        hint={wateringHint}
-        className={readers && cameras ? "col-span-2 lg:col-span-1" : undefined}
-      />
-    </div>
+    <Card className={cn("gap-3", className)}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5">
+          <Server className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          Technik
+        </CardTitle>
+        <CardAction>
+          <Badge variant={issues > 0 ? "warning" : "success"}>{issues > 0 ? `${issues} prüfen` : "alles ok"}</Badge>
+        </CardAction>
+      </CardHeader>
+      <div className="divide-y divide-border/60 px-2 sm:px-2.5">
+        {rows.map((r) => (
+          <Link
+            key={r.label}
+            href={r.href}
+            className="flex min-h-11 items-center gap-2.5 rounded-[10px] px-2 py-2 outline-none transition-colors hover:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <IconChip icon={r.icon} tone={r.tone} size="sm" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium text-foreground/90">{r.label}</p>
+              <p className="truncate text-[11px] text-muted-foreground">{r.detail}</p>
+            </div>
+            <span className="shrink-0 text-xs font-semibold tabular-nums text-foreground">{r.value}</span>
+          </Link>
+        ))}
+      </div>
+    </Card>
   );
 }

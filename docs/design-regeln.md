@@ -276,6 +276,7 @@ Jede Seite baut aus diesen Teilen. Ein Muster, das hier fehlt, kommt als Baustei
 | `DropdownMenu`, `Select`-Liste, `Tooltip` | `ui/…` | Schwebende Ebenen: deckend mit Haarlinie und Schatten (`glass-surface`). |
 | `Table` | `ui/table.tsx` | Tabellen in einer Karte, Haarlinien, Kopf 11 px Versalien. `edge` für Tabellen bis an den Kartenrand (mit `Card flush`), `TableEmpty` für die leere Tabelle (kompakter `EmptyState`); Kürzen in einer Zelle: Zelle `max-w-0 w-full`, Text `truncate`. |
 | `EmptyState` | `ui/empty-state.tsx` | Leerer Zustand: ein Satz, kleines Symbol, nächster Schritt. `title`/`description` dürfen Hervorhebungen enthalten; `compact` für Tabellenzellen (`TableEmpty`) und kleine Karten, `size="sm"` für Kacheln und Picker. |
+| `SegmentBar` | `ui/segment-bar.tsx` | Anteile als dünne Leiste (erlaubt/abgelehnt, eingecheckt/offen, Personen/Fahrzeuge): 2 px Lücke, Enden rund, Werte als Text für Screenreader. Mit `max` kürzer (Zeilen vergleichbar, z. B. Buchungen zum Limit). Daneben steht immer ein sichtbarer Text mit den Zahlen. |
 | `StatusDot` | `ui/status-dot.tsx` | Zustandspunkt; `pulse` nur für „lebt gerade“. Töne wie `IconChip` (auch `light`, `music`, `heat`, `water`, `live`). |
 | `SectionHeading` | `ui/section-heading.tsx` | Überschrift eines Abschnitts. |
 
@@ -303,7 +304,10 @@ bereit.
   weißer Karte keine 4,5:1 (Bernstein, Orange, Smaragd, Himmelblau 600: 3,1 bis 3,9:1). Als Pille
   fertig: `Badge variant="light"` usw.
 - Diagramme (Recharts): `var(--chart-1)` … `var(--chart-5)` bzw. die Zustandsfarben, Gitter in
-  `var(--border)`, Achsentext `var(--muted-foreground)`.
+  `var(--border)`, Achsentext `var(--muted-foreground)`. Keine Verläufe als Füllung. Die Farbe
+  folgt dem Ding (Bereich, Kamera), nie dem Rang: Bereiche im Dashboard über
+  `components/dashboard/area-colors.ts` (chart-1, 3, 5, 2, 4; ab dem sechsten grau). Eine Reihe
+  hervorheben: die anderen blass (Deckkraft 0,3), nicht umfärben.
 
 ## 16. Formulare
 

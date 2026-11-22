@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
+import { SegmentBar } from "@/components/ui/segment-bar";
 import { Segmented } from "@/components/ui/segmented";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusDot } from "@/components/ui/status-dot";
@@ -23,38 +23,21 @@ import {
   Clock,
   CreditCard,
   CheckCircle2,
-  XCircle,
-  TrendingUp,
   Ticket,
   RefreshCw,
   Activity,
-  PieChart as PieChartIcon,
   BarChart3,
-  Smartphone,
   Radar,
+  CalendarCheck,
+  Sparkles,
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area,
-  Legend,
-} from "recharts";
 import { cn } from "@/lib/utils";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { OpsStrip, type DashboardOps } from "@/components/dashboard/ops-strip";
+import { OpsCard, type DashboardOps } from "@/components/dashboard/ops-strip";
 import { LiveSection, type DashboardLive, fmtHm } from "@/components/dashboard/live-section";
 import { TrackingSection } from "@/components/dashboard/tracking-section";
-import { TurnstileCard } from "@/components/dashboard/turnstile-card";
+import { AreaStats } from "@/components/dashboard/area-stats";
 
 interface TicketEntry {
   id: number;
@@ -76,6 +59,8 @@ interface TicketEntry {
   needsRfid: boolean;
   needsPhoto: boolean;
   groupName: string | null;
+  /** Erlaubter Scan an diesem Tag. */
+  checkedIn: boolean;
 }
 
 interface ResourceBlock {
@@ -96,16 +81,6 @@ interface AreaData {
   _count: { tickets: number };
 }
 
-interface RecentScan {
-  id: number;
-  result: "GRANTED" | "DENIED" | "PROTECTED";
-  scanTime: string;
-  deviceName: string | null;
-  ticketName: string;
-  ticketTypeName: string | null;
-  profileImage: string | null;
-}
-
 interface NewTicket {
   id: number;
   name: string;
@@ -124,48 +99,24 @@ interface AnnySyncStatus {
   total?: number;
 }
 
-interface HourlyBucket {
-  hour: string;
-  granted: number;
-  denied: number;
-  total: number;
-}
-
-interface WeekTrendDay {
-  date: string;
-  dayName: string;
-  scans: number;
-  granted: number;
-  denied: number;
-  tickets: number;
-}
-
-interface TopDevice {
-  id: number;
-  name: string;
-  granted: number;
-  denied: number;
-  total: number;
-}
-
 interface DashboardData {
   date: string;
-  scansToday: number;
-  checkedInCount: number;
-  newTicketsCount: number;
-  activeDevices: number;
-  recentScans: RecentScan[];
+  kpis: {
+    /** Tagesbuchungen (Bereiche und ohne Bereich), ohne Abos und Services. */
+    booked: number;
+    bookedCheckedIn: number;
+    subscriptionsVisited: number;
+    subscriptionsActive: number;
+    newTickets: number;
+    newTicketsAnny: number;
+  };
   newTickets: NewTicket[];
   areas: AreaData[];
   unassigned: AreaData;
+  /** Abos mit erlaubtem Scan an diesem Tag. */
   subscriptions: TicketEntry[];
+  /** Services, die an diesem Tag benutzt oder angelegt wurden. */
   services: TicketEntry[];
-  scanResults: { granted: number; denied: number; protected: number };
-  grantRate: number;
-  peakHour: { hour: string; count: number } | null;
-  hourly: HourlyBucket[];
-  weekTrend: WeekTrendDay[];
-  topDevices: TopDevice[];
   annySyncStatus?: AnnySyncStatus | null;
 }
 
@@ -195,6 +146,13 @@ function isToday(dateStr: string): boolean {
   return dateStr === toLocaleDateStr(new Date());
 }
 
+type DayState = "past" | "today" | "future";
+
+function dayStateOf(dateStr: string): DayState {
+  const today = toLocaleDateStr(new Date());
+  return dateStr === today ? "today" : dateStr < today ? "past" : "future";
+}
+
 function personName(t: TicketEntry): string {
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
 }
@@ -209,8 +167,9 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
     : null;
 
   return (
-    <div
-      className="flex items-center gap-2 py-1.5 sm:py-1 cursor-pointer rounded-[10px] px-1 -mx-1 hover:bg-glass-tile transition-colors"
+    <button
+      type="button"
+      className="flex w-full items-center gap-2 py-1.5 sm:py-1 text-left rounded-[10px] px-1 -mx-1 outline-none hover:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-ring/50 transition-colors"
       onClick={onClick}
     >
       {ticket.profileImage ? (
@@ -232,274 +191,16 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
         <span className="text-[11px] text-primary tabular-nums shrink-0">{time}</span>
       )}
       {ticket.needsPhoto && (
-        <Camera className="h-3 w-3 text-warning shrink-0" />
+        <Camera className="h-3 w-3 text-warning shrink-0" aria-label="Foto fehlt" />
       )}
       {ticket.needsRfid && (
-        <ScanLine className="h-3 w-3 text-warning shrink-0" />
+        <ScanLine className="h-3 w-3 text-warning shrink-0" aria-label="Chip fehlt" />
       )}
-      <StatusDot
-        size="xs"
-        tone={
-          ticket.status === "VALID"
-            ? "success"
-            : ticket.status === "REDEEMED"
-              ? "info"
-              : "neutral"
-        }
-      />
-    </div>
+      {/* Grün = an diesem Tag schon durchs Drehkreuz, grau = noch nicht da. */}
+      <StatusDot size="xs" tone={ticket.checkedIn ? "success" : "neutral"} label={ticket.checkedIn ? "eingecheckt" : "noch nicht da"} />
+    </button>
   );
 }
-
-// Diagramme nur aus Tokens (docs/design-regeln.md, Abschnitt 15): Kurzinfo
-// deckend wie ein Menü, Gitter in --border, Achsentext gedämpft.
-const CHART_TOOLTIP_STYLE = {
-  backgroundColor: "var(--popover)",
-  border: "1px solid var(--border)",
-  borderRadius: "12px",
-  boxShadow: "0 12px 32px -14px oklch(0 0 0 / 45%)",
-  fontSize: "12px",
-  color: "var(--popover-foreground)",
-  padding: "6px 10px",
-};
-const CHART_GRID = "var(--border)";
-const CHART_AXIS = "var(--muted-foreground)";
-const CHART_CURSOR = { fill: "var(--primary)", fillOpacity: 0.08 };
-
-function HourlyChart({ data, peakHour }: { data: HourlyBucket[]; peakHour: { hour: string; count: number } | null }) {
-  const total = data.reduce((s, b) => s + b.total, 0);
-  return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-1.5">
-          <BarChart3 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          Scan-Verlauf (Tag)
-        </CardTitle>
-        <CardAction className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-success" /> Erlaubt
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-destructive" /> Abgelehnt
-          </span>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {total === 0 ? (
-          <EmptyState compact title="Keine Scans an diesem Tag." />
-        ) : (
-          <>
-            <div className="h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
-                  <XAxis
-                    dataKey="hour"
-                    tick={{ fontSize: 9, fill: CHART_AXIS }}
-                    tickLine={false}
-                    axisLine={false}
-                    interval={2}
-                  />
-                  <YAxis tick={{ fontSize: 9, fill: CHART_AXIS }} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={CHART_CURSOR} />
-                  <Bar dataKey="granted" name="Erlaubt" stackId="a" fill="var(--success)" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="denied" name="Abgelehnt" stackId="a" fill="var(--destructive)" radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            {peakHour && (
-              <p className="text-[11px] text-muted-foreground mt-1 text-center">
-                Spitze um <span className="font-semibold text-foreground">{peakHour.hour}</span> mit {peakHour.count} Scans
-              </p>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ScanResultDonut({ results }: { results: { granted: number; denied: number; protected: number } }) {
-  const total = results.granted + results.denied + results.protected;
-  const data = [
-    { name: "Erlaubt", value: results.granted, color: "var(--success)" },
-    { name: "Abgelehnt", value: results.denied, color: "var(--destructive)" },
-    { name: "Geschützt", value: results.protected, color: "var(--warning)" },
-  ].filter((d) => d.value > 0);
-
-  return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-1.5">
-          <PieChartIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          Scan-Ergebnisse
-        </CardTitle>
-        <CardAction>
-          <Badge variant="secondary" className="tabular-nums">{total}</Badge>
-        </CardAction>
-      </CardHeader>
-      {/* Ring und Legende nach der Kartenbreite (@container): schmal (Drittelspalte bei 1024 px)
-          untereinander, mittel (360 px, 1280 px) mit kleinerem Ring nebeneinander, breit wie bisher.
-          So bleibt der Legende immer Platz für „Abgelehnt“ statt „Abg…“. */}
-      <CardContent className="@container">
-        {total === 0 ? (
-          <EmptyState compact title="Noch keine Scans an diesem Tag." />
-        ) : (
-          <div className="flex flex-col items-center gap-3 @min-[17rem]:flex-row">
-            <div className="size-40 @min-[17rem]:size-30 @min-[19.5rem]:size-40 shrink-0 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  {/* Radien in Prozent, damit der Ring mit der Fläche mitwächst (bei 160 px wie zuvor 45/70 px). */}
-                  <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="56%" outerRadius="88%" paddingAngle={2} stroke="none">
-                    {data.map((d) => <Cell key={d.name} fill={d.color} />)}
-                  </Pie>
-                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-2xl font-bold text-foreground tabular-nums leading-none">{total}</span>
-                <span className="text-[11px] text-muted-foreground mt-0.5">Scans</span>
-              </div>
-            </div>
-            <div className="w-full flex-1 space-y-1.5 min-w-0">
-              {data.map((d) => {
-                const pct = Math.round((d.value / total) * 100);
-                return (
-                  <div key={d.name} className="flex items-center gap-2 min-w-0">
-                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                    <span className="text-[11px] text-muted-foreground truncate flex-1">{d.name}</span>
-                    <span className="text-[11px] font-semibold text-foreground/80 tabular-nums">{d.value}</span>
-                    <span className="text-[11px] text-muted-foreground tabular-nums w-8 text-right">{pct}%</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WeekTrendChart({ data, selectedDate }: { data: WeekTrendDay[]; selectedDate: string }) {
-  const totalScans = data.reduce((s, d) => s + d.scans, 0);
-  const totalTickets = data.reduce((s, d) => s + d.tickets, 0);
-  return (
-    <Card className="h-full">
-      <CardHeader>
-        {/* Titel bricht nicht am Bindestrich („7-Tage-“ / „Trend“); wird es bei 360 px eng,
-            rückt die Legende rechts in zwei Zeilen. */}
-        <CardTitle className="flex items-center gap-1.5 whitespace-nowrap">
-          <Activity className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          7-Tage-Trend
-        </CardTitle>
-        <CardAction className="flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-chart-1" /> Scans
-            <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">{totalScans}</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-chart-2" /> Neue Tickets
-            <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">{totalTickets}</span>
-          </span>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {totalScans === 0 && totalTickets === 0 ? (
-          <EmptyState compact title="Keine Aktivität in den letzten 7 Tagen." />
-        ) : (
-          <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="scansGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0.05} />
-                  </linearGradient>
-                  <linearGradient id="ticketsGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--chart-2)" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="var(--chart-2)" stopOpacity={0.05} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
-                <XAxis
-                  dataKey="dayName"
-                  tickFormatter={(value: string, index: number) => {
-                    const isSelected = data[index]?.date === selectedDate;
-                    return isSelected ? `▸${value}` : value;
-                  }}
-                  tick={{ fontSize: 10, fill: CHART_AXIS }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis tick={{ fontSize: 9, fill: CHART_AXIS }} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                <Area type="monotone" dataKey="scans" name="Scans" stroke="var(--chart-1)" strokeWidth={2} fill="url(#scansGradient)" />
-                <Area type="monotone" dataKey="tickets" name="Neue Tickets" stroke="var(--chart-2)" strokeWidth={2} fill="url(#ticketsGradient)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function TopDevicesCard({ devices }: { devices: TopDevice[] }) {
-  const max = devices.reduce((m, d) => Math.max(m, d.total), 0);
-  return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-1.5">
-          <Smartphone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          Top-Geräte heute
-        </CardTitle>
-        <CardAction>
-          <Badge variant="secondary" className="tabular-nums">{devices.length}</Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {devices.length === 0 ? (
-          <EmptyState compact title="Noch keine Scans an diesem Tag." />
-        ) : (
-          devices.map((d) => {
-            const grantedPct = max > 0 ? (d.granted / max) * 100 : 0;
-            const deniedPct = max > 0 ? (d.denied / max) * 100 : 0;
-            const rate = d.total > 0 ? Math.round((d.granted / d.total) * 100) : 0;
-            return (
-              <div key={d.id} className="space-y-1">
-                <div className="flex items-center gap-2 text-[11px]">
-                  <span className="font-medium text-foreground/80 truncate flex-1 min-w-0">{d.name}</span>
-                  <span className="text-muted-foreground tabular-nums">{d.total}</span>
-                  <span className={cn(
-                    "tabular-nums w-10 text-right font-semibold",
-                    rate >= 90 ? "text-success" : rate >= 70 ? "text-warning" : "text-destructive",
-                  )}>{rate}%</span>
-                </div>
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden flex">
-                  <div className="bg-success h-full" style={{ width: `${grantedPct}%` }} />
-                  <div className="bg-destructive h-full" style={{ width: `${deniedPct}%` }} />
-                </div>
-              </div>
-            );
-          })
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// Gruppenfarben aus der Diagramm-Reihe (keine Zustandsfarben als Dekor).
-const MEMBERSHIP_PALETTE = [
-  { bar: "bg-chart-5", dot: "bg-chart-5" },
-  { bar: "bg-chart-1", dot: "bg-chart-1" },
-  { bar: "bg-chart-4", dot: "bg-chart-4" },
-  { bar: "bg-chart-2", dot: "bg-chart-2" },
-  { bar: "bg-chart-3", dot: "bg-chart-3" },
-  { bar: "bg-chart-5/50", dot: "bg-chart-5/50" },
-  { bar: "bg-chart-1/50", dot: "bg-chart-1/50" },
-  { bar: "bg-chart-4/50", dot: "bg-chart-4/50" },
-] as const;
 
 function MembershipsCard({
   title,
@@ -507,12 +208,17 @@ function MembershipsCard({
   tickets,
   openTicket,
   fallbackGroupName,
+  aside,
+  emptyText,
 }: {
   title: string;
   icon: React.ReactNode;
   tickets: TicketEntry[];
   openTicket: (id: number) => void;
   fallbackGroupName: string;
+  /** Bezug rechts neben der Zahl, z. B. „von 412 aktiven“. */
+  aside?: string;
+  emptyText: string;
 }) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
@@ -523,16 +229,9 @@ function MembershipsCard({
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     }
-    return [...map.entries()].sort((a, b) => b[1].length - a[1].length);
+    return [...map.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], "de"));
   })();
-
-  const total = tickets.length;
-  const colored = grouped.map(([name, group], i) => ({
-    name,
-    group,
-    color: MEMBERSHIP_PALETTE[i % MEMBERSHIP_PALETTE.length],
-    pct: total > 0 ? (group.length / total) * 100 : 0,
-  }));
+  const maxGroup = grouped.reduce((m, [, g]) => Math.max(m, g.length), 0);
 
   function toggle(key: string) {
     setOpenGroups((prev) => {
@@ -549,56 +248,43 @@ function MembershipsCard({
           {icon}
           {title}
         </CardTitle>
-        <CardAction>
-          <Badge variant="secondary" className="tabular-nums">{total}</Badge>
+        <CardAction className="flex items-center gap-1.5">
+          {aside && <span className="text-[11px] text-muted-foreground tabular-nums">{aside}</span>}
+          <Badge variant="secondary" className="tabular-nums">{tickets.length}</Badge>
         </CardAction>
       </CardHeader>
 
-      {colored.length > 1 && (
-        <CardContent>
-          <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
-            {colored.map((c) => (
-              <div
-                key={c.name}
-                className={cn("h-full transition-all", c.color.bar)}
-                style={{ width: `${c.pct}%` }}
-                title={`${c.name}: ${c.group.length}`}
-              />
-            ))}
-          </div>
-        </CardContent>
-      )}
-
       <div className="max-h-[360px] overflow-y-auto scrollbar-thin min-h-[60px]">
-        {colored.length === 0 ? (
-          <EmptyState compact title="Keine aktiven Einträge am gewählten Tag." />
+        {grouped.length === 0 ? (
+          <EmptyState compact title={emptyText} />
         ) : (
           <div className="px-2 sm:px-2.5 space-y-0.5">
-            {colored.map(({ name, group, color, pct }) => {
+            {grouped.map(([name, group]) => {
               const isOpen = openGroups.has(name);
               return (
                 <div key={name}>
+                  {/* Eine Farbe für alle Gruppen: der Balken zeigt die Menge, nicht wer es ist. */}
                   <button
                     type="button"
                     onClick={() => toggle(name)}
-                    className="w-full flex items-center gap-2 px-2 py-2.5 sm:py-1.5 rounded-[10px] hover:bg-glass-tile transition-colors"
+                    aria-expanded={isOpen}
+                    className="w-full space-y-1 px-2 py-2 sm:py-1.5 rounded-[10px] outline-none hover:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-ring/50 transition-colors"
                   >
-                    <span className={cn("h-2 w-2 rounded-full shrink-0", color.dot)} aria-hidden />
-                    <span className="text-xs font-medium text-foreground/80 truncate flex-1 min-w-0 text-left">
-                      {name}
+                    <span className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-foreground/80 truncate flex-1 min-w-0 text-left">
+                        {name}
+                      </span>
+                      <span className="text-xs font-semibold tabular-nums text-foreground/80 shrink-0">
+                        {group.length}
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          "h-3 w-3 text-muted-foreground shrink-0 transition-transform",
+                          isOpen && "rotate-180",
+                        )}
+                      />
                     </span>
-                    <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">
-                      {Math.round(pct)}%
-                    </span>
-                    <span className="text-xs font-semibold tabular-nums text-foreground/80 shrink-0 min-w-[1.5rem] text-right">
-                      {group.length}
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        "h-3 w-3 text-muted-foreground shrink-0 transition-transform",
-                        isOpen && "rotate-180",
-                      )}
-                    />
+                    <SegmentBar segments={[{ label: name, value: group.length, className: "bg-chart-1" }]} max={maxGroup} />
                   </button>
                   {isOpen && (
                     <div className="pl-4 pr-1.5 pb-1">
@@ -617,20 +303,18 @@ function MembershipsCard({
   );
 }
 
-function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: number) => void }) {
+function areaTickets(area: AreaData): TicketEntry[] {
+  return [...area.resources.flatMap((r) => r.tickets), ...area.otherTickets];
+}
+
+function AreaCard({ area, openTicket, dayState }: { area: AreaData; openTicket: (id: number) => void; dayState: DayState }) {
   const hasResources = area.resources.length > 0;
   const hasOther = area.otherTickets.length > 0;
   const count = area._count.tickets;
+  const checkedIn = areaTickets(area).filter((t) => t.checkedIn).length;
   const limit = area.personLimit;
   const overLimit = limit != null && count > limit;
-  const utilPct = limit != null && limit > 0 ? Math.min(100, Math.round((count / limit) * 100)) : null;
-  const utilTone = utilPct == null
-    ? null
-    : utilPct >= 100
-      ? "rose"
-      : utilPct >= 80
-        ? "amber"
-        : "indigo";
+  const nearLimit = !overLimit && limit != null && limit > 0 && count / limit >= 0.8;
 
   return (
     <Card
@@ -639,7 +323,7 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
         // Über dem Limit bzw. ab 80 % Auslastung: Karte in der Zustandsfarbe getönt.
         overLimit
           ? "border-destructive/40 bg-destructive/[0.05]"
-          : utilTone === "amber" && "border-warning/45 bg-warning/[0.05]",
+          : nearLimit && "border-warning/45 bg-warning/[0.05]",
         area.id === null && "border-dashed",
       )}>
       <CardHeader>
@@ -653,44 +337,34 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
               {area.openingHours}
             </span>
           )}
-          {limit != null ? (
-            <Badge
-              variant={
-                overLimit
-                  ? "danger"
-                  : utilTone === "amber"
-                    ? "warning"
-                    : count > 0
-                      ? "secondary"
-                      : "neutral"
-              }
-              className="tabular-nums"
-            >
-              {count}/{limit}
-            </Badge>
-          ) : (
-            <Badge variant={count > 0 ? "secondary" : "neutral"} className="tabular-nums">
-              {count}
-            </Badge>
-          )}
+          <Badge
+            variant={overLimit ? "danger" : nearLimit ? "warning" : count > 0 ? "secondary" : "neutral"}
+            className="tabular-nums"
+            title={limit != null ? `${count} gebucht, Limit ${limit}` : `${count} gebucht`}
+          >
+            {limit != null ? `${count}/${limit}` : count}
+          </Badge>
         </CardAction>
       </CardHeader>
 
-      {utilPct != null && count > 0 && (
-        <CardContent>
-          <div className="h-1 rounded-full bg-muted overflow-hidden">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all",
-                overLimit
-                  ? "bg-destructive"
-                  : utilTone === "amber"
-                    ? "bg-warning"
-                    : "bg-primary",
-              )}
-              style={{ width: `${utilPct}%` }}
-            />
-          </div>
+      {count > 0 && (
+        <CardContent className="space-y-1">
+          {/* Länge = Buchungen im Verhältnis zum Limit, grün = davon schon da. */}
+          <SegmentBar
+            segments={[
+              { label: "Eingecheckt", value: checkedIn, className: "bg-success" },
+              { label: "Noch nicht da", value: count - checkedIn, className: overLimit ? "bg-destructive/60" : "bg-muted-foreground/45" },
+            ]}
+            max={limit ?? undefined}
+          />
+          <p className="text-[11px] text-muted-foreground tabular-nums">
+            {dayState === "future"
+              ? `${count} gebucht`
+              : checkedIn === count
+                ? "alle eingecheckt"
+                : `${checkedIn} von ${count} eingecheckt`}
+            {limit != null && ` · Limit ${limit}`}
+          </p>
         </CardContent>
       )}
 
@@ -903,8 +577,6 @@ export function DashboardClient() {
     ? [...data.areas, ...(data.unassigned._count.tickets > 0 ? [data.unassigned] : [])]
     : [];
 
-  const totalTickets = allAreas.reduce((sum, a) => sum + a._count.tickets, 0);
-
   const weekDays = (() => {
     const current = new Date(date + "T12:00:00");
     const dayOfWeek = current.getDay();
@@ -924,21 +596,15 @@ export function DashboardClient() {
   })();
 
   function fmtSyncAgo(iso: string | null): string {
-    if (!iso) return "Nie";
+    if (!iso) return "nie";
     const diff = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diff / 60_000);
-    if (mins < 1) return "Gerade eben";
+    if (mins < 1) return "gerade eben";
     if (mins < 60) return `vor ${mins} Min.`;
     const hrs = Math.floor(mins / 60);
     if (hrs < 24) return `vor ${hrs} Std.`;
     const days = Math.floor(hrs / 24);
     return `vor ${days} Tag${days > 1 ? "en" : ""}`;
-  }
-
-  function fmtScanTime(iso: string): string {
-    try {
-      return new Date(iso).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    } catch { return ""; }
   }
 
   function fmtCreatedAt(iso: string): string {
@@ -947,7 +613,7 @@ export function DashboardClient() {
     } catch { return ""; }
   }
 
-  const bookingCount = totalTickets + (data ? data.subscriptions.length + data.services.length : 0);
+  const dayState = dayStateOf(date);
 
   return (
     <div className="space-y-6 sm:space-y-8">
@@ -966,7 +632,12 @@ export function DashboardClient() {
           }
         />
         {live ? (
-          <LiveSection live={live} now={liveNow} onOpenTicket={openTicket} />
+          <LiveSection
+            live={live}
+            now={liveNow}
+            onOpenTicket={openTicket}
+            side={<OpsCard ops={ops} status={live.status} />}
+          />
         ) : liveFailed ? (
           <Notice tone="warning" compact title="Live-Lage nicht erreichbar">
             Die Seite versucht es alle 20 Sekunden erneut.
@@ -977,7 +648,6 @@ export function DashboardClient() {
             Lädt …
           </div>
         )}
-        <OpsStrip ops={ops} status={live?.status} />
       </section>
 
       {/* 2. Tracking: Personen, Fahrzeuge, Bewegungen. */}
@@ -1054,338 +724,251 @@ export function DashboardClient() {
           aria-label="Ansicht des Tages"
           options={[
             { value: "stats", label: "Auswertung" },
-            { value: "bookings", label: "Buchungen", count: data ? bookingCount : undefined },
+            { value: "bookings", label: "Buchungen", count: data ? data.kpis.booked : undefined },
           ]}
         />
 
-        {loading && !data && (
+        {/* Eintritte, Fahrten und Gäste je Bereich (Strandbad, Seilbahn …) statt einer Summe über alle Leser. */}
+        {dayView === "stats" && <AreaStats date={date} />}
+
+        {dayView === "bookings" && loading && !data && (
           <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
             Lädt …
           </div>
         )}
 
-        {dayView === "stats" && (
+        {dayView === "bookings" && data && (
           <div className="space-y-4">
-          {data && (() => {
-            const noShowCount = Math.max(0, totalTickets - data.checkedInCount);
-            const checkInRate = totalTickets > 0 ? Math.round((data.checkedInCount / totalTickets) * 100) : 0;
-            return (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                <StatCard
-                  label="Tickets"
-                  icon={Ticket}
-                  tone="primary"
-                  value={totalTickets}
-                  hint={
-                    totalTickets > 0
-                      ? noShowCount > 0
-                        ? <><span className="font-medium text-destructive">{noShowCount}</span> No-Show</>
-                        : "Alle eingecheckt"
-                      : undefined
-                  }
-                />
-                <StatCard
-                  label="Scans"
-                  icon={ScanLine}
-                  tone="info"
-                  value={data.scansToday}
-                  hint={
-                    data.scansToday > 0
-                      ? <><span className="font-medium text-success">{data.grantRate}%</span> Erfolgsrate</>
-                      : "Keine Scans"
-                  }
-                />
-                <StatCard
-                  label="Eingecheckt"
-                  icon={CheckCircle2}
-                  tone="success"
-                  value={data.checkedInCount}
-                  hint={
-                    totalTickets > 0
-                      ? `${checkInRate}% der Tickets`
-                      : "—"
-                  }
-                  progress={totalTickets > 0 ? data.checkedInCount / totalTickets : undefined}
-                />
-                <StatCard
-                  label="Spitze"
-                  icon={TrendingUp}
-                  tone="neutral"
-                  value={data.peakHour ? data.peakHour.hour : "—"}
-                  suffix={data.peakHour ? "Uhr" : undefined}
-                  hint={data.peakHour ? `${data.peakHour.count} Scans in der Stunde` : "Noch keine Scans"}
-                />
-              </div>
-            );
-          })()}
-
-          {/* Drehkreuz-Auswertung (Fahrten/Gäste je Bereich, Standard: Seilbahn A) */}
-          <TurnstileCard date={date} />
-
-          {/* Charts: Stundenverlauf + Scan-Ergebnisse */}
-          {data && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2">
-                <HourlyChart data={data.hourly} peakHour={data.peakHour} />
-              </div>
-              <ScanResultDonut results={data.scanResults} />
-            </div>
-          )}
-
-          {/* 7-Tage-Trend + Top-Geräte */}
-          {data && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2">
-                <WeekTrendChart data={data.weekTrend} selectedDate={data.date} />
-              </div>
-              <TopDevicesCard devices={data.topDevices} />
-            </div>
-          )}
-
-            {/* Scans eines vergangenen Tages; für heute stehen sie oben unter „Jetzt“. */}
-            {data && !isToday(date) && (
-              <Card className="gap-3">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-1.5">
-                    <ScanLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    Letzte Scans
-                  </CardTitle>
-                  <CardAction>
-                    <Badge variant="secondary" className="tabular-nums">
-                      {data.scansToday}
-                    </Badge>
-                  </CardAction>
-                </CardHeader>
-                <div className="px-2 sm:px-2.5 divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto scrollbar-thin">
-                  {data.recentScans.length === 0 ? (
-                    <EmptyState
-                      compact
-                      icon={ScanLine}
-                      title="Keine Scans an diesem Tag"
-                      description="Anderes Datum oben wählen oder die vollständige Historie öffnen."
-                    />
-                  ) : (
-                    data.recentScans.map((scan) => (
-                      <div key={scan.id} className="flex items-center gap-2.5 px-2 py-2 hover:bg-glass-tile transition-colors">
-                        {scan.profileImage ? (
-                          <img src={scan.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
-                        ) : (
-                          <IconChip
-                            icon={scan.result === "GRANTED" ? CheckCircle2 : XCircle}
-                            tone={scan.result === "GRANTED" ? "success" : "danger"}
-                            size="sm"
-                            className="rounded-full"
-                          />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-foreground/90 truncate">{scan.ticketName}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">
-                            {scan.ticketTypeName && <>{scan.ticketTypeName} · </>}
-                            {scan.deviceName || "Unbekannt"}
-                          </p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <span className="text-[11px] tabular-nums text-muted-foreground">{fmtScanTime(scan.scanTime)}</span>
-                          <StatusDot
-                            size="xs"
-                            className="flex ml-auto mt-0.5"
-                            tone={scan.result === "GRANTED" ? "success" : scan.result === "DENIED" ? "danger" : "warning"}
-                          />
-                        </div>
-                      </div>
-                    ))
-                  )}
+            {(() => {
+              const k = data.kpis;
+              const open = Math.max(0, k.booked - k.bookedCheckedIn);
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                  <StatCard
+                    label="Gebucht"
+                    icon={CalendarCheck}
+                    tone="primary"
+                    value={k.booked}
+                    hint={
+                      k.booked > 0
+                        ? `in ${allAreas.filter((a) => a._count.tickets > 0).length} ${allAreas.filter((a) => a._count.tickets > 0).length === 1 ? "Bereich" : "Bereichen"}`
+                        : "keine Tagesbuchung"
+                    }
+                  />
+                  <StatCard
+                    label="Eingecheckt"
+                    icon={CheckCircle2}
+                    tone="success"
+                    value={k.bookedCheckedIn}
+                    suffix={k.booked > 0 ? `von ${k.booked}` : undefined}
+                    progress={k.booked > 0 && dayState !== "future" ? k.bookedCheckedIn / k.booked : undefined}
+                    hint={
+                      k.booked === 0
+                        ? "—"
+                        : dayState === "future"
+                          ? "Tag liegt noch vor uns"
+                          : open === 0
+                            ? "alle eingecheckt"
+                            : dayState === "today"
+                              ? `${open} noch nicht da`
+                              : `${open} nicht gekommen`
+                    }
+                  />
+                  <StatCard
+                    label="Abos da"
+                    icon={CreditCard}
+                    tone="info"
+                    value={k.subscriptionsVisited}
+                    hint={`von ${k.subscriptionsActive.toLocaleString("de-DE")} aktiven`}
+                  />
+                  <StatCard
+                    label="Neu angelegt"
+                    icon={Sparkles}
+                    tone="neutral"
+                    value={k.newTickets}
+                    hint={k.newTickets > 0 ? `davon ${k.newTicketsAnny} über anny` : "kein neues Ticket"}
+                  />
                 </div>
-              </Card>
-            )}
-          </div>
-        )}
+              );
+            })()}
 
-        {dayView === "bookings" && (
-          <div className="space-y-4">
-          {/* ANNY Sync Status */}
-          {data?.annySyncStatus && (() => {
-            const s = data.annySyncStatus!;
-            const syncAge = s.lastSync ? Date.now() - new Date(s.lastSync).getTime() : Infinity;
-            const isStale = syncAge > 2 * 60 * 60_000;
-            const hasErrors = (s.errors ?? 0) > 0;
-            const details = s.errorDetails ?? [];
-            return (
-              <Notice
-                tone={hasErrors ? "danger" : isStale ? "warning" : "success"}
-                icon={RefreshCw}
-                role="status"
-                compact
-                title={
-                  <>
-                    ANNY Sync
-                    <span className="font-normal text-muted-foreground ml-2">
-                      {fmtSyncAgo(s.lastSync)}
-                      {s.lastSync && (
-                        <span className="hidden sm:inline"> ({new Date(s.lastSync).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" })} Uhr)</span>
-                      )}
-                    </span>
-                  </>
-                }
-              >
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {s.total != null && (
-                    <span className="mr-0.5">{s.total} Buchungen</span>
-                  )}
-                  {(s.created ?? 0) > 0 && (
-                    <Badge variant="success">
-                      +{s.created} neu
-                    </Badge>
-                  )}
-                  {(s.updated ?? 0) > 0 && (
-                    <Badge variant="info">
-                      {s.updated} aktualisiert
-                    </Badge>
-                  )}
-                  {hasErrors && (
-                    <Badge variant="danger">
-                      {s.errors} Fehler
-                    </Badge>
-                  )}
-                  {!s.lastSync && (
-                    <Badge variant="warning">
-                      Kein Sync
-                    </Badge>
-                  )}
-                  {/* Fehlerliste per Taste aufklappen (Tastatur und Screenreader erreichen sie).
-                      Steht in der Zeile der Fehlerzahl statt im action-Platz der Notice: dort
-                      sitzt sie mittig und springt beim Aufklappen nach unten. */}
-                  {hasErrors && details.length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="-my-2 h-9"
-                      aria-expanded={syncErrorsOpen}
-                      onClick={() => setSyncErrorsOpen((v) => !v)}
-                    >
-                      Details
-                      <ChevronDown className={cn("transition-transform", syncErrorsOpen && "rotate-180")} />
-                    </Button>
-                  )}
-                </div>
-                {syncErrorsOpen && details.length > 0 && (
-                  <div className="mt-2 space-y-1 border-t border-destructive/30 pt-2">
-                    {details.map((d, i) => (
-                      <p key={i} className="text-xs text-destructive font-mono break-words">{d}</p>
-                    ))}
-                  </div>
-                )}
-              </Notice>
-            );
-          })()}
-
-          {/* Area cards: aktive zuerst, ruhige Bereiche kompakt darunter */}
-          {data && allAreas.length === 0 && (
-            <Card>
-              <EmptyState
-                icon={MapPin}
-                title="Keine Resourcen für dieses Datum"
-                description="Anderes Datum oben wählen."
-              />
-            </Card>
-          )}
-
-          {data && allAreas.length > 0 && (() => {
-            const activeAreas = allAreas.filter((a) => a._count.tickets > 0);
-            const quietAreas = allAreas.filter((a) => a._count.tickets === 0 && a.occupancyRelevant !== false);
-            if (activeAreas.length === 0 && quietAreas.length === 0) return null;
-            return (
-              <div className="space-y-4">
-                {activeAreas.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {activeAreas.map((area) => (
-                      <AreaCard key={area.id ?? "unassigned"} area={area} openTicket={openTicket} />
-                    ))}
-                  </div>
-                )}
-                <QuietAreasCard areas={quietAreas} />
-              </div>
-            );
-          })()}
-
-          {/* Abos & Services: separate Bereiche, unabhängig von Tages-Areas */}
-          {data && (data.subscriptions.length > 0 || data.services.length > 0) && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {data.subscriptions.length > 0 && (
-                <MembershipsCard
-                  title="Abos"
-                  icon={<CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                  tickets={data.subscriptions}
-                  openTicket={openTicket}
-                  fallbackGroupName="Abo"
-                />
-              )}
-              {data.services.length > 0 && (
-                <MembershipsCard
-                  title="Services"
-                  icon={<Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                  tickets={data.services}
-                  openTicket={openTicket}
-                  fallbackGroupName="Service"
-                />
-              )}
-            </div>
-          )}
-
-            {data && (
-              <Card className="gap-3">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-1.5">
-                    <TrendingUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    Neueste Tickets
-                  </CardTitle>
-                  <CardAction>
-                    <Badge variant="secondary" className="tabular-nums">
-                      {data.newTicketsCount}
-                    </Badge>
-                  </CardAction>
-                </CardHeader>
-                <div className="px-2 sm:px-2.5 divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto scrollbar-thin">
-                  {data.newTickets.length === 0 ? (
-                    <EmptyState
-                      compact
-                      icon={Ticket}
-                      title="Keine neuen Tickets an diesem Tag"
-                      description="Hier erscheinen Tickets, sobald sie für diesen Tag angelegt wurden."
-                    />
-                  ) : (
-                    data.newTickets.map((ticket) => (
-                      <div
-                        key={ticket.id}
-                        className="flex items-center gap-2.5 px-2 py-2 cursor-pointer hover:bg-glass-tile transition-colors"
-                        onClick={() => openTicket(ticket.id)}
+            {/* anny-Abgleich: leise Zeile, solange alles läuft; Fehler und Stillstand als Hinweis. */}
+            {data.annySyncStatus && (() => {
+              const s = data.annySyncStatus!;
+              const syncAge = s.lastSync ? Date.now() - new Date(s.lastSync).getTime() : Infinity;
+              const isStale = syncAge > 2 * 60 * 60_000;
+              const hasErrors = (s.errors ?? 0) > 0;
+              const details = s.errorDetails ?? [];
+              if (!hasErrors && !isStale) {
+                return (
+                  <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground" role="status">
+                    <RefreshCw className="h-3 w-3 shrink-0" aria-hidden />
+                    <span>anny abgeglichen {fmtSyncAgo(s.lastSync)}</span>
+                    {(s.created ?? 0) > 0 && <span className="tabular-nums">· {s.created} neu</span>}
+                    {(s.updated ?? 0) > 0 && <span className="tabular-nums">· {s.updated} aktualisiert</span>}
+                  </p>
+                );
+              }
+              return (
+                <Notice
+                  tone={hasErrors ? "danger" : "warning"}
+                  icon={RefreshCw}
+                  role="status"
+                  compact
+                  title={
+                    <>
+                      {hasErrors ? `anny-Abgleich mit ${s.errors} Fehler${s.errors === 1 ? "" : "n"}` : "anny-Abgleich hängt"}
+                      <span className="font-normal text-muted-foreground ml-2">
+                        zuletzt {fmtSyncAgo(s.lastSync)}
+                      </span>
+                    </>
+                  }
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {s.total != null && <span className="mr-0.5">{s.total} Buchungen geprüft</span>}
+                    {!s.lastSync && <Badge variant="warning">Noch nie gelaufen</Badge>}
+                    {/* Fehlerliste per Taste aufklappen (Tastatur und Screenreader erreichen sie). */}
+                    {hasErrors && details.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="-my-2 h-9"
+                        aria-expanded={syncErrorsOpen}
+                        onClick={() => setSyncErrorsOpen((v) => !v)}
                       >
-                        {ticket.profileImage ? (
-                          <img src={ticket.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
-                        ) : (
-                          // Neutral wie die Personenzeilen der Bereichskarten: Akzent-Initiale auf
-                          // Akzent-Tönung erreicht im Dunkeln nur 3,7:1.
-                          <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-                            <span className="text-[10px] font-bold text-muted-foreground">
-                              {(ticket.name[0] || "?").toUpperCase()}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-foreground/90 truncate">{ticket.name}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">
-                            {ticket.typeName || "Ticket"}
-                            {ticket.source && <> · {ticket.source === "ANNY" ? "anny.co" : ticket.source === "EMP_CONTROL" ? "Mitarbeiter" : ticket.source}</>}
-                          </p>
-                        </div>
-                        <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
-                      </div>
-                    ))
+                        Details
+                        <ChevronDown className={cn("transition-transform", syncErrorsOpen && "rotate-180")} />
+                      </Button>
+                    )}
+                  </div>
+                  {syncErrorsOpen && details.length > 0 && (
+                    <div className="mt-2 space-y-1 border-t border-destructive/30 pt-2">
+                      {details.map((d, i) => (
+                        <p key={i} className="text-xs text-destructive font-mono break-words">{d}</p>
+                      ))}
+                    </div>
                   )}
-                </div>
+                </Notice>
+              );
+            })()}
+
+            {/* Bereiche mit Buchungen zuerst, ruhige kompakt darunter */}
+            {allAreas.length === 0 && (
+              <Card>
+                <EmptyState
+                  icon={MapPin}
+                  title="Keine Resourcen für dieses Datum"
+                  description="Anderes Datum oben wählen."
+                />
               </Card>
             )}
+
+            {allAreas.length > 0 && (() => {
+              const activeAreas = allAreas
+                .filter((a) => a._count.tickets > 0)
+                .sort((x, y) => y._count.tickets - x._count.tickets);
+              const quietAreas = allAreas.filter((a) => a._count.tickets === 0 && a.occupancyRelevant !== false);
+              if (activeAreas.length === 0 && quietAreas.length === 0) return null;
+              return (
+                <div className="space-y-4">
+                  {activeAreas.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {activeAreas.map((area) => (
+                        <AreaCard key={area.id ?? "unassigned"} area={area} openTicket={openTicket} dayState={dayState} />
+                      ))}
+                    </div>
+                  )}
+                  <QuietAreasCard areas={quietAreas} />
+                </div>
+              );
+            })()}
+
+            {/* Abos (da gewesen) und Services (benutzt oder neu) des Tages */}
+            {(data.kpis.subscriptionsActive > 0 || data.services.length > 0) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {data.kpis.subscriptionsActive > 0 && (
+                  <MembershipsCard
+                    title="Abos da"
+                    icon={<CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                    tickets={data.subscriptions}
+                    openTicket={openTicket}
+                    fallbackGroupName="Abo"
+                    aside={`von ${data.kpis.subscriptionsActive.toLocaleString("de-DE")}`}
+                    emptyText={dayState === "today" ? "Heute war noch kein Abo da." : "An diesem Tag war kein Abo da."}
+                  />
+                )}
+                {data.services.length > 0 && (
+                  <MembershipsCard
+                    title="Services"
+                    icon={<Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                    tickets={data.services}
+                    openTicket={openTicket}
+                    fallbackGroupName="Service"
+                    aside="benutzt oder neu"
+                    emptyText="Kein Service an diesem Tag."
+                  />
+                )}
+              </div>
+            )}
+
+            <Card className="gap-3">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-1.5">
+                  <Ticket className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  Neu angelegte Tickets
+                </CardTitle>
+                <CardAction className="flex items-center gap-1.5">
+                  {data.kpis.newTickets > data.newTickets.length && (
+                    <span className="text-[11px] text-muted-foreground tabular-nums">
+                      neueste {data.newTickets.length}
+                    </span>
+                  )}
+                  <Badge variant="secondary" className="tabular-nums">
+                    {data.kpis.newTickets}
+                  </Badge>
+                </CardAction>
+              </CardHeader>
+              <div className="px-2 sm:px-2.5 divide-y divide-border/60 max-h-[360px] min-h-[120px] overflow-y-auto scrollbar-thin">
+                {data.newTickets.length === 0 ? (
+                  <EmptyState
+                    compact
+                    icon={Ticket}
+                    title="Keine neuen Tickets an diesem Tag"
+                    description="Hier erscheinen Tickets, sobald sie für diesen Tag angelegt wurden."
+                  />
+                ) : (
+                  data.newTickets.map((ticket) => (
+                    <button
+                      type="button"
+                      key={ticket.id}
+                      className="flex w-full min-h-11 items-center gap-2.5 px-2 py-2 text-left outline-none hover:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-ring/50 transition-colors"
+                      onClick={() => openTicket(ticket.id)}
+                    >
+                      {ticket.profileImage ? (
+                        <img src={ticket.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                      ) : (
+                        // Neutral wie die Personenzeilen der Bereichskarten: Akzent-Initiale auf
+                        // Akzent-Tönung erreicht im Dunkeln nur 3,7:1.
+                        <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0">
+                          <span className="text-[10px] font-bold text-muted-foreground">
+                            {(ticket.name[0] || "?").toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-foreground/90 truncate">{ticket.name}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {ticket.typeName || "Ticket"}
+                          {ticket.source && <> · {ticket.source === "ANNY" ? "anny" : ticket.source === "EMP_CONTROL" ? "Mitarbeiter" : ticket.source}</>}
+                        </p>
+                      </div>
+                      <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </Card>
           </div>
         )}
       </section>

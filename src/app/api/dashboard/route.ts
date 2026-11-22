@@ -5,13 +5,7 @@ import {
   fmtTimeBerlin as fmtTime,
   type AvailabilityPeriod,
 } from "@/lib/anny-availability";
-import {
-  addCalendarDays,
-  berlinDayRange,
-  berlinHour,
-  berlinYmd,
-  isBerlinYmd,
-} from "@/lib/berlin-day";
+import { berlinDayRange, berlinYmd, isBerlinYmd } from "@/lib/berlin-day";
 
 function getBookingTimeForDate(qrCode: string | null, dateStr: string): { start: string; end: string } | null {
   if (!qrCode) return null;
@@ -47,7 +41,6 @@ export async function GET(request: NextRequest) {
   // nicht setHours(0) auf einem lokalen Date.
   const { start: dayStart, endExclusive } = berlinDayRange(dateStr);
   const dayEnd = new Date(endExclusive.getTime() - 1);
-  const weekStart = berlinDayRange(addCalendarDays(dateStr, -6)).start;
 
   const dayActiveFilter = {
     status: { in: ["VALID", "REDEEMED"] as ("VALID" | "REDEEMED")[] },
@@ -85,7 +78,10 @@ export async function GET(request: NextRequest) {
     rfidCode: true,
   };
 
-  const [areas, dayScans, unassignedTickets, subscriptionTickets, serviceTickets, annyConfig, recentScans, checkedInToday, newTicketsToday, activeDevices, weekScans, weekTickets, devicesAll] = await Promise.all([
+  // Abo-Besuch und Check-in: ein erlaubter Scan an diesem Tag.
+  const grantedOnDay = { some: { scanTime: { gte: dayStart, lt: endExclusive }, result: "GRANTED" as const } };
+
+  const [areas, unassignedTickets, visitedSubscriptions, activeSubscriptions, serviceTickets, annyConfig, checkedInToday, newTicketsToday, newTicketSources] = await Promise.all([
     db.accessArea.findMany({
       where: { ...where, showOnDashboard: true },
       select: {
@@ -102,25 +98,31 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { name: "asc" },
     }),
-    db.scan.findMany({
-      where: { ...where, scanTime: { gte: dayStart, lt: endExclusive } },
-      select: { scanTime: true, result: true, deviceId: true },
-    }),
     db.ticket.findMany({
       where: { ...where, accessAreaId: null, subscriptionId: null, serviceId: null, ...dayActiveFilter },
       select: ticketSelect,
       orderBy: { name: "asc" },
     }),
+    // Abos: nur die, die an diesem Tag da waren – alle aktiven stehen unter „Abos“.
     db.ticket.findMany({
-      where: { ...where, subscriptionId: { not: null }, ...dayActiveFilter },
+      where: { ...where, subscriptionId: { not: null }, scans: grantedOnDay },
       select: {
         ...ticketSelect,
         subscription: { select: { name: true, requiresPhoto: true, requiresRfid: true } },
       },
       orderBy: [{ subscription: { name: "asc" } }, { name: "asc" }],
     }),
+    db.ticket.count({
+      where: { ...where, subscriptionId: { not: null }, ...dayActiveFilter },
+    }),
+    // Services (Stundenkarten, Kurse …): an diesem Tag benutzt oder angelegt.
+    // Ohne diese Grenze stünden alle unbefristeten Karten jeden Tag hier.
     db.ticket.findMany({
-      where: { ...where, serviceId: { not: null }, ...dayActiveFilter },
+      where: {
+        ...where,
+        serviceId: { not: null },
+        OR: [{ createdAt: { gte: dayStart, lt: endExclusive } }, { scans: grantedOnDay }],
+      },
       select: {
         ...ticketSelect,
         service: { select: { name: true, requiresPhoto: true, requiresRfid: true } },
@@ -130,19 +132,6 @@ export async function GET(request: NextRequest) {
     db.apiConfig.findFirst({
       where: { ...(isSuperAdmin ? {} : { accountId: accountId! }), provider: "ANNY" },
       select: { token: true, baseUrl: true, extraConfig: true, lastUpdate: true },
-    }),
-    db.scan.findMany({
-      where: { ...where, scanTime: { gte: dayStart, lt: endExclusive } },
-      select: {
-        id: true,
-        code: true,
-        result: true,
-        scanTime: true,
-        device: { select: { name: true } },
-        ticket: { select: { id: true, name: true, firstName: true, lastName: true, ticketTypeName: true, profileImage: true } },
-      },
-      orderBy: { scanTime: "desc" },
-      take: 15,
     }),
     db.scan.findMany({
       where: { ...where, scanTime: { gte: dayStart, lt: endExclusive }, result: "GRANTED", ticketId: { not: null } },
@@ -166,22 +155,13 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
-    db.device.count({
-      where: { ...where, isActive: true, lastUpdate: { gte: new Date(Date.now() - 5 * 60_000) } },
-    }),
-    db.scan.findMany({
-      where: { ...where, scanTime: { gte: weekStart, lt: endExclusive } },
-      select: { scanTime: true, result: true },
-    }),
     db.ticket.findMany({
-      where: { ...where, createdAt: { gte: weekStart, lt: endExclusive } },
-      select: { createdAt: true },
-    }),
-    db.device.findMany({
-      where: { ...where },
-      select: { id: true, name: true },
+      where: { ...where, createdAt: { gte: dayStart, lt: endExclusive } },
+      select: { source: true },
     }),
   ]);
+
+  const checkedInIds = new Set(checkedInToday.map((s) => s.ticketId!));
 
   const annyLinks = await db.annyResourceLink.findMany({
     where: { accountId: accountId! },
@@ -217,7 +197,16 @@ export async function GET(request: NextRequest) {
     const needsPhoto = !hasPhoto && (!!ticket.service?.requiresPhoto || !!ticket.subscription?.requiresPhoto);
     const groupName = ticket.subscription?.name || ticket.service?.name || null;
     const { qrCode: _, barcode: _b, rfidCode: _r, service: _s, subscription: _sub, ...rest } = ticket;
-    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null, hasRfid, needsRfid, needsPhoto, groupName };
+    return {
+      ...rest,
+      bookingStart: bt?.start || null,
+      bookingEnd: bt?.end || null,
+      hasRfid,
+      needsRfid,
+      needsPhoto,
+      groupName,
+      checkedIn: checkedInIds.has(ticket.id),
+    };
   }
 
   function ticketMatchesResource(ticketTypeName: string | null, resourceName: string): boolean {
@@ -382,82 +371,16 @@ export async function GET(request: NextRequest) {
   });
 
   const filteredUnassigned = unassignedTickets.filter(isDayTicket).map(enrichTicket);
-  const enrichedSubscriptions = subscriptionTickets.map(enrichTicket);
+  const enrichedSubscriptions = visitedSubscriptions.map(enrichTicket);
   const enrichedServices = serviceTickets.map(enrichTicket);
 
-  // Stundenverlauf für den gewählten Tag (24 Buckets)
-  const hourly = Array.from({ length: 24 }, (_, h) => ({
-    hour: `${String(h).padStart(2, "0")}:00`,
-    granted: 0,
-    denied: 0,
-    total: 0,
-  }));
-  let scanGranted = 0;
-  let scanDenied = 0;
-  let scanProtected = 0;
-  const deviceCounts = new Map<number, { granted: number; denied: number; total: number }>();
-  for (const s of dayScans) {
-    const h = berlinHour(s.scanTime);
-    const bucket = hourly[h];
-    if (!bucket) continue;
-    bucket.total++;
-    if (s.result === "GRANTED") {
-      bucket.granted++;
-      scanGranted++;
-    } else if (s.result === "DENIED") {
-      bucket.denied++;
-      scanDenied++;
-    } else {
-      scanProtected++;
-    }
-    if (s.deviceId != null) {
-      const cur = deviceCounts.get(s.deviceId) || { granted: 0, denied: 0, total: 0 };
-      cur.total++;
-      if (s.result === "GRANTED") cur.granted++;
-      else if (s.result === "DENIED") cur.denied++;
-      deviceCounts.set(s.deviceId, cur);
-    }
-  }
-  const peakHour = hourly.reduce<{ hour: string; total: number } | null>((best, b) => {
-    if (b.total > 0 && (!best || b.total > best.total)) return { hour: b.hour, total: b.total };
-    return best;
-  }, null);
-  const grantRate = dayScans.length > 0 ? Math.round((scanGranted / dayScans.length) * 100) : 0;
-
-  // Top-Geräte heute
-  const deviceNameById = new Map(devicesAll.map((d) => [d.id, d.name]));
-  const topDevices = [...deviceCounts.entries()]
-    .map(([id, c]) => ({ id, name: deviceNameById.get(id) || `Gerät ${id}`, ...c }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 5);
-
-  // 7-Tage-Trend: Scans + neue Tickets pro Tag (Berlin-Kalender, nicht UTC)
-  const weekTrend: { date: string; dayName: string; scans: number; granted: number; denied: number; tickets: number }[] = [];
-  for (let i = 0; i < 7; i++) {
-    const ymd = addCalendarDays(dateStr, i - 6);
-    const noon = berlinDayRange(ymd).start;
-    weekTrend.push({
-      date: ymd,
-      dayName: noon.toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", weekday: "short" }),
-      scans: 0,
-      granted: 0,
-      denied: 0,
-      tickets: 0,
-    });
-  }
-  const weekIdxByDate = new Map(weekTrend.map((t, i) => [t.date, i]));
-  for (const s of weekScans) {
-    const idx = weekIdxByDate.get(berlinYmd(s.scanTime));
-    if (idx == null) continue;
-    weekTrend[idx].scans++;
-    if (s.result === "GRANTED") weekTrend[idx].granted++;
-    else if (s.result === "DENIED") weekTrend[idx].denied++;
-  }
-  for (const t of weekTickets) {
-    const idx = weekIdxByDate.get(berlinYmd(t.createdAt));
-    if (idx == null) continue;
-    weekTrend[idx].tickets++;
-  }
+  // Kennzahlen der Buchungen: nur Tagesbuchungen (Bereiche + ohne Bereich),
+  // eingecheckt = davon mit erlaubtem Scan an diesem Tag. Früher zählte
+  // „Eingecheckt“ alle Scans inkl. Abos und lag weit über 100 %.
+  const dayTickets = [...structuredAreas.flatMap((a) => [...a.resources.flatMap((r) => r.tickets), ...a.otherTickets]), ...filteredUnassigned];
+  const booked = dayTickets.length;
+  const bookedCheckedIn = dayTickets.filter((t) => t.checkedIn).length;
+  const newTicketsAnny = newTicketSources.filter((t) => t.source === "ANNY").length;
 
   let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number; errorDetails?: string[]; total?: number } | null = null;
   if (annyConfig) {
@@ -479,26 +402,15 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     date: dateStr,
-    scansToday: dayScans.length,
-    checkedInCount: checkedInToday.length,
-    newTicketsCount: newTicketsToday.length,
-    activeDevices,
-    scanResults: { granted: scanGranted, denied: scanDenied, protected: scanProtected },
-    grantRate,
-    peakHour: peakHour ? { hour: peakHour.hour, count: peakHour.total } : null,
-    hourly,
-    weekTrend,
-    topDevices,
+    kpis: {
+      booked,
+      bookedCheckedIn,
+      subscriptionsVisited: enrichedSubscriptions.length,
+      subscriptionsActive: activeSubscriptions,
+      newTickets: newTicketSources.length,
+      newTicketsAnny,
+    },
     annySyncStatus,
-    recentScans: recentScans.map((s) => ({
-      id: s.id,
-      result: s.result,
-      scanTime: s.scanTime,
-      deviceName: s.device?.name ?? null,
-      ticketName: s.ticket ? ([s.ticket.firstName, s.ticket.lastName].filter(Boolean).join(" ") || s.ticket.name) : s.code,
-      ticketTypeName: s.ticket?.ticketTypeName ?? null,
-      profileImage: s.ticket?.profileImage ?? null,
-    })),
     newTickets: newTicketsToday.map((t) => ({
       id: t.id,
       name: [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name,
