@@ -1120,3 +1120,23 @@ Log-Abruf nach PR #232 (Hub 9c533b6, 11:06–11:18 UTC): go2rtc läuft, 34 von 3
 
 - Zentrale auf dem Hub-Rechner neu laden, nach ein paar Minuten Log-Abruf mit `grep: "Zentrale ("`. `ice-timeout` → WebRTC-Kandidaten in `webcams/infra/go2rtc.yaml` prüfen; `schwarz` mit Bildern > 0 → Dekoder/Browser.
 - Kamera Gastro liefert go2rtc keine Daten, obwohl Schnappschüsse kommen: RTSP-Sub-Stream der Kamera prüfen.
+
+## 2026-11-22 (Zentrale: Safari dekodiert, zeigt aber nichts)
+
+Log-Abruf nach PR #233 (Hub 9a9c42c, Zentrale in Safari neu geladen 11:29 UTC):
+
+### Befund
+
+- Beim ersten Aufbau hingen 8 Kacheln in „connecting / ICE checking“ (`ice-timeout` nach 15 s); der neue Versuch war jeweils nach 3–7 s verbunden. Der 15-s-Neuversuch aus #233 behebt also die ewig wartenden Kacheln.
+- Alle verbundenen Kacheln dekodierten Bilder (bis 1 853 je Verbindung), das `<video>` hatte aber durchgehend **0×0**. Die Zentrale meldete trotzdem „LIVE“, weil `framesDecoded` stieg – das sind die schwarzen LIVE-Kacheln vom Screenshot. Fenster war in dieser Zeit verdeckt; ob Safari auch sichtbar bei 0×0 bleibt, zeigt der nächste Log-Abruf.
+- Etwa alle 4–5 min brechen mehrere Verbindungen gleichzeitig ab (11:32:08 fünf „disconnected“, 11:36:44 elf „failed“), go2rtc meldete 11:31:56 kurz 6 Streams ohne Daten. Neuaufbau klappt jeweils nach ~4 s. Ursache offen.
+- Seilbahn A: go2rtc „dial tcp 192.168.1.69:554: host is down“ – Kamera aus/abgeklemmt, nicht Software.
+
+### Änderung
+
+- `dashboard.js`: „LIVE“ erst, wenn das Video eine Größe hat. Dekodiert Safari, bleibt das Element aber bei sichtbarem Fenster 6 s leer, wird der Stream neu angehängt, nach weiteren 8 s die Verbindung neu aufgebaut (Meldung `kein-bild-im-fenster` bzw. `live-nach-neuanhaengen`).
+
+### Nächster Schritt
+
+- Bei sichtbarem Fenster Log mit `grep: "Zentrale ("` lesen: kommt `live-nach-neuanhaengen`, war es das; kommt `kein-bild-im-fenster` immer wieder, Safari-Web-App gegen Chrome tauschen.
+- Gleichzeitige Abbrüche alle 4–5 min weiter beobachten (Takt mit Auto-Scan/SNMP vergleichen).
