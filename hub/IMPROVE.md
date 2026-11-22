@@ -1105,3 +1105,18 @@ Snapshot über Log-Abruf (HUB_LOG, Hub `imac-technikraum`, Stand 5a63527, läuft
 
 - Nach dem Update (Hub zieht main selbst) Log-Abruf mit `grep: "go2rtc"`; je nach Zeile: go2rtc neu starten, H.265-Sub-Stream an der Kamera auf H.264 stellen (nur mit Aarons OK) oder WebRTC-Kandidaten in `go2rtc.yaml` prüfen.
 - Uhren Gastro und Übungslift (NTP/Zeitzone) mit Aaron klären.
+
+## 2026-11-22 (Zentrale: Browser-Seite der Livebilder)
+
+Log-Abruf nach PR #232 (Hub 9c533b6, 11:06–11:18 UTC): go2rtc läuft, 34 von 35 Streams bekommen Daten von der Kamera; ohne Daten nur `cam-gastro_sub`. WebRTC-Anfragen scheitern nur für `cam-seilbahn-a_sub` („dial tcp 192.168.1.69:554: host is down“, Kamera seit 14.11. offline). Die Signalisierung klappt also für alle anderen – das Problem sitzt zwischen go2rtc und dem Fenster (ICE) oder beim Abspielen.
+
+### Änderung
+
+- `dashboard.js`: Hing eine Verbindung nach der Antwort von go2rtc in „new/connecting“, gab es nie einen neuen Versuch (Kachel ewig „Verbindung wird aufgebaut“). Jetzt nach 15 s neu (`ice-timeout`).
+- Jede Kachel meldet Fehlversuche, Erholung und schwarzes Bild (Pixelprüfung 4 s nach „LIVE“) an `POST /api/go2rtc/client`; der Hub schreibt das gedrosselt ins Log („Zentrale (Safari) cam-…_sub: ice-timeout – Verbindung connecting, ICE checking, Bilder 0 …“). `hub_status.live.browser` zeigt die letzten Meldungen.
+- Geprüft: `tsc -p hub` 0 Fehler, Tests grün. Nicht am Hub geprüft.
+
+### Nächster Schritt
+
+- Zentrale auf dem Hub-Rechner neu laden, nach ein paar Minuten Log-Abruf mit `grep: "Zentrale ("`. `ice-timeout` → WebRTC-Kandidaten in `webcams/infra/go2rtc.yaml` prüfen; `schwarz` mit Bildern > 0 → Dekoder/Browser.
+- Kamera Gastro liefert go2rtc keine Daten, obwohl Schnappschüsse kommen: RTSP-Sub-Stream der Kamera prüfen.

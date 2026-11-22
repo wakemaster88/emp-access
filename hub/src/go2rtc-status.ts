@@ -10,7 +10,7 @@
  */
 import { log } from "./config.js";
 import { improve } from "./improve-log.js";
-import { liveProblemLine, liveProblems, summarizeStreams, type Go2rtcRaw, type StreamSummary } from "./go2rtc-status-rules.js";
+import { clientReport, liveProblemLine, liveProblems, summarizeStreams, type Go2rtcRaw, type StreamSummary } from "./go2rtc-status-rules.js";
 
 export const GO2RTC_URL = (process.env.HUB_GO2RTC_URL || "http://127.0.0.1:1984").replace(/\/$/, "");
 
@@ -62,6 +62,23 @@ export function noteWebrtcFailure(src: string, msg: string): void {
   improve("camera", "webrtc_fail", { src });
 }
 
+const clientLogged = new Map<string, number>();
+const clientLast = new Map<string, { at: number; line: string }>();
+
+/** Zustandsmeldung einer Kachel aus dem Browser (gedrosselt ins Log). */
+export function noteWebrtcClient(body: Record<string, unknown>, ua: string): void {
+  const r = clientReport(body, ua);
+  if (!r) return;
+  const now = Date.now();
+  clientLast.set(r.src, { at: now, line: r.line });
+  if (clientLast.size > 200) clientLast.delete(clientLast.keys().next().value as string);
+  const key = `${r.src}|${r.event.split(":")[0]}`;
+  if (now - (clientLogged.get(key) ?? 0) < WEBRTC_LOG_EVERY_MS) return;
+  clientLogged.set(key, now);
+  log(r.line);
+  improve("camera", r.event === "live" ? "webrtc_recovered" : r.event === "schwarz" ? "webrtc_black" : "webrtc_client_fail", { src: r.src });
+}
+
 /** Gescheiterte WebRTC-Anfragen der letzten 10 Minuten je Stream. */
 export function recentWebrtcFailures(): Array<{ src: string; count: number; lastAt: string; msg: string }> {
   const since = Date.now() - 10 * 60_000;
@@ -85,6 +102,7 @@ export function go2rtcSummary(): Record<string, unknown> {
     unplayable: p.unplayable,
     formats: Object.fromEntries(s.streams.filter((x) => x.video).map((x) => [x.name, x.video])),
     webrtcFailures: recentWebrtcFailures(),
+    browser: [...clientLast.values()].filter((c) => c.at >= Date.now() - 10 * 60_000).map((c) => c.line),
   };
 }
 

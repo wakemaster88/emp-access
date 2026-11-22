@@ -46,7 +46,7 @@ import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
 import { buildAllowedHosts, checkDashboardRequest } from "./dashboard-guard.js";
 import { personBoxes, seenPeople } from "./live-people.js";
 import { getFrame, startFrameWarmer } from "./frame-cache.js";
-import { GO2RTC_URL, fetchGo2rtcStreams, noteWebrtcFailure } from "./go2rtc-status.js";
+import { GO2RTC_URL, fetchGo2rtcStreams, noteWebrtcClient, noteWebrtcFailure } from "./go2rtc-status.js";
 import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
 import { isMowerStream } from "./mower-streams.js";
 import { assistantHealth } from "./agent/agent.js";
@@ -173,6 +173,11 @@ async function proxyGo2rtc(
         consumers: x.consumers,
       }));
       return json(res, 200, { reachable: true, streams });
+    }
+    if (req.method === "POST" && sub === "/client") {
+      // Zustandsmeldung einer Kachel (WebRTC im Browser) – nur fuers Hub-Log.
+      noteWebrtcClient(await readBody(req), String(req.headers["user-agent"] ?? ""));
+      return json(res, 200, { ok: true });
     }
     const src = url.searchParams.get("src") ?? "";
     if (!/^[^\s/?#&]{1,80}$/.test(src)) return json(res, 400, { error: "src ungueltig" });
