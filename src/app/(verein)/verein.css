@@ -96,7 +96,7 @@ div.vp-offer::before { background: var(--rd-offer); }
   align-items: center;
   gap: 6px;
   min-height: 28px;
-  padding: 0 10px;
+  padding: 0 9px;
   border-radius: 999px;
   background: var(--rd-accent-bg);
   color: var(--rd-accent-soft);
@@ -212,7 +212,7 @@ div.vp-offer::before { background: var(--rd-offer); }
 
 /* Meine Buchungen */
 .vp-bookings { display: flex; flex-direction: column; }
-.vp-booking { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+.vp-booking { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; }
 .vp-booking + .vp-booking { border-top: 1px solid var(--rd-line); }
 .vp-date {
   flex: none;
@@ -236,9 +236,10 @@ div.vp-offer::before { background: var(--rd-offer); }
 .vp-booking-off .vp-date { background: var(--rd-line); color: var(--rd-muted); }
 .vp-booking-off .vp-date b { color: var(--rd-muted); }
 .vp-booking-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.vp-booking-main b { font-size: 15px; }
-.vp-booking-main span { color: var(--rd-muted); font-size: 13px; overflow-wrap: anywhere; }
-.vp-booking-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.vp-booking-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
+.vp-booking-top b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.vp-booking-main > span { color: var(--rd-muted); font-size: 13px; overflow-wrap: anywhere; }
+.vp-booking-action { align-self: flex-start; margin-top: 6px; min-height: 40px; }
 .vp-pill-wait { color: var(--rd-on-accent); background: var(--rd-accent); }
 .vp-pill-done { color: var(--rd-accent-soft); background: var(--rd-accent-bg); }
 

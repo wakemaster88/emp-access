@@ -402,7 +402,6 @@ export function VereinPortalClient({
                   <div className="vp-facts">
                     <span className="vp-fact"><Undo2 /> Storno bis {cancelHours} Std. vorher</span>
                     <span className="vp-fact"><ReceiptText /> Rechnung monatlich</span>
-                    {service?.daylight && <span className="vp-fact"><Sun /> Sonnenauf- bis -untergang</span>}
                   </div>
                 </section>
 
@@ -742,6 +741,17 @@ function BookingRow({ booking: b, onCancel }: { booking: PortalBooking; onCancel
   const off = b.status === "CANCELED" || b.status === "REJECTED";
   const requested = b.status === "REQUESTED";
   const [, m, d] = b.date.split("-").map(Number);
+  const pill = requested ? (
+    <span className="rd-pill vp-pill-wait">Angefragt</span>
+  ) : b.status === "REJECTED" ? (
+    <span className="rd-pill rd-pill-off">Abgelehnt</span>
+  ) : b.status === "CANCELED" ? (
+    <span className="rd-pill rd-pill-off">Storniert</span>
+  ) : b.past ? (
+    <span className={`rd-pill ${b.billed ? "vp-pill-done" : "rd-pill-off"}`}>{b.billed ? "Abgerechnet" : "Vorbei"}</span>
+  ) : (
+    <span className="rd-pill rd-pill-open">Gebucht</span>
+  );
   return (
     <div className={`vp-booking${off || b.past ? " vp-booking-off" : ""}`}>
       <div className="vp-date" aria-hidden="true">
@@ -750,25 +760,18 @@ function BookingRow({ booking: b, onCancel }: { booking: PortalBooking; onCancel
         <span>{MONTHS[m - 1].slice(0, 3)}</span>
       </div>
       <div className="vp-booking-main">
-        <b>{b.slotStart}–{b.slotEnd} Uhr</b>
-        <span>{b.serviceName} · {formatCents(b.priceCents)}</span>
-        {(b.bookedFor || b.bookedBy) && (
-          <span>{b.bookedFor ? `Für ${b.bookedFor}` : ""}{b.bookedFor && b.bookedBy ? " · " : ""}{b.bookedBy ? `von ${b.bookedBy}` : ""}</span>
-        )}
+        <div className="vp-booking-top">
+          <b>{b.slotStart}–{b.slotEnd}</b>
+          {pill}
+        </div>
+        <span>{b.serviceName} · {formatCents(b.priceCents).replace(",00", "")}</span>
+        {b.bookedFor && <span>Für {b.bookedFor}</span>}
+        {b.bookedBy && <span>Gebucht von {b.bookedBy}</span>}
         {b.status === "REJECTED" && b.rejectReason && <span>Abgelehnt: {b.rejectReason}</span>}
-      </div>
-      <div className="vp-booking-side">
-        {requested && <span className="rd-pill vp-pill-wait">Angefragt</span>}
-        {b.status === "REJECTED" ? (
-          <span className="rd-pill rd-pill-off">Abgelehnt</span>
-        ) : b.status === "CANCELED" ? (
-          <span className="rd-pill rd-pill-off">Storniert</span>
-        ) : b.past ? (
-          <span className={`rd-pill ${b.billed ? "vp-pill-done" : "rd-pill-off"}`}>{b.billed ? "Abgerechnet" : "Vorbei"}</span>
-        ) : onCancel ? (
-          <button type="button" className="rd-btn rd-btn-ghost rd-btn-sm" onClick={onCancel}><span>{requested ? "Zurückziehen" : "Stornieren"}</span></button>
-        ) : (
-          !requested && <span className="rd-pill rd-pill-open">Gebucht</span>
+        {onCancel && (
+          <button type="button" className="rd-btn rd-btn-ghost rd-btn-sm vp-booking-action" onClick={onCancel}>
+            <span>{requested ? "Anfrage zurückziehen" : "Stornieren"}</span>
+          </button>
         )}
       </div>
     </div>
