@@ -264,7 +264,8 @@ function ticketLabel(t: ViewTicketRow): string {
 }
 
 function historyState(t: ViewTicketRow, inUse: boolean, used: boolean, now: Date): HistoryState {
-  if (t.status === "CANCELED" || t.status === "INVALID") return "storniert";
+  // Alte Abos stehen nach Ablauf oft auf INVALID: dann „abgelaufen“, nicht „storniert“.
+  if (t.status === "CANCELED" || t.status === "INVALID") return t.endDate && berlinYmd(t.endDate) < berlinYmd(now) ? "abgelaufen" : "storniert";
   if (t.status === "PAUSED") return "pausiert";
   if (t.subscriptionId != null) return inUse ? "läuft" : "abgelaufen";
   if (inUse) return used ? "aktiv" : berlinYmd(t.createdAt) === berlinYmd(now) ? "neu" : "aktiv";
@@ -343,7 +344,9 @@ export async function loadChipView(
   // Leihbändchen ohne Person: frühere Gäste gehören nicht ins Fenster.
   const showCodeHistory = owner !== "BETRIEB" || person != null;
   const byId = new Map<number, ViewTicketRow>();
-  for (const t of personTickets) byId.set(t.id, t);
+  // Mitarbeiter-Ticket (EMP-Control) der Person gehört nicht in die Kundensicht,
+  // außer genau dieses Bändchen wurde gescannt.
+  for (const t of personTickets) if (t.source !== "EMP_CONTROL" || (code != null && t.rfidCode === code)) byId.set(t.id, t);
   if (showCodeHistory) {
     for (const t of codeTickets) {
       // Tickets anderer Personen am selben Code nicht zeigen.
