@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, isTenantAdminRole } from "@/lib/api-auth";
+import { hubTaskListFilter } from "@/lib/role-guards";
 
 /**
  * GET (Session): ein einzelner Hub-Task mit Status und Ergebnis.
  * Die UI pollt damit z. B. den Log-Abruf (HUB_LOG), statt die ganze
- * Task-Liste samt Scan-Ergebnissen zu laden.
+ * Task-Liste samt Scan-Ergebnissen zu laden. USER sieht wie in der Liste
+ * nur die Typen, die er selbst anlegen darf.
  */
 export async function GET(
   _request: NextRequest,
@@ -21,7 +23,11 @@ export async function GET(
   }
 
   const task = await db.hubTask.findFirst({
-    where: { id: taskId, accountId: accountId! },
+    where: {
+      id: taskId,
+      accountId: accountId!,
+      ...hubTaskListFilter(isTenantAdminRole(session.session.user.role)),
+    },
     select: {
       id: true,
       type: true,

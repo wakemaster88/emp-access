@@ -33,6 +33,14 @@ export function hubTaskAllowedForUser(type: unknown): boolean {
   return typeof type === "string" && USER_HUB_TASK_TYPES.has(type);
 }
 
+/**
+ * Filter fuer die Auftragsliste in der Sitzung: USER sieht nur Auftraege der
+ * Typen, die er selbst anlegen darf; die Verwaltung sieht alle.
+ */
+export function hubTaskListFilter(isAdmin: boolean): { type?: { in: string[] } } {
+  return isAdmin ? {} : { type: { in: [...USER_HUB_TASK_TYPES] } };
+}
+
 /** Gespeicherter Stand der Ueberwachung, gegen den ein PATCH verglichen wird. */
 export interface SurveillanceStored {
   scheduleEnabled: boolean;

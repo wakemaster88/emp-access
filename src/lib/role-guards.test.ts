@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   hubTaskAllowedForUser,
+  hubTaskListFilter,
   PERSON_OPENER_DEFAULTS,
   personHasOpener,
   personOpenerChangeNeedsAdmin,
@@ -30,6 +31,13 @@ test("USER darf nur Schnappschuss und Tueroeffnen als Hub-Auftrag anlegen", () =
   }
   assert.equal(hubTaskAllowedForUser(undefined), false);
   assert.equal(hubTaskAllowedForUser(42), false);
+});
+
+test("Auftragsliste: Verwaltung ohne Filter, USER nur die eigenen Bedien-Typen", () => {
+  assert.deepEqual(hubTaskListFilter(true), {});
+  const filter = hubTaskListFilter(false);
+  assert.deepEqual([...(filter.type?.in ?? [])].sort(), ["CAMERA_SNAPSHOT", "DOORBIRD_OPEN"]);
+  for (const type of filter.type?.in ?? []) assert.equal(hubTaskAllowedForUser(type), true, type);
 });
 
 const stored: SurveillanceStored = {
