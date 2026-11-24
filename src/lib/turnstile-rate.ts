@@ -102,3 +102,125 @@ export function summarizeAreaRates(
     })
     .filter((r) => r.devices > 0);
 }
+
+/**
+ * Scans des Tages je Geraet und Ergebnis, schon in der Datenbank gezaehlt
+ * (`loadDayScanCounts`). Die Zaehlung ab Tagesbeginn ohne Obergrenze braucht
+ * die Gesamtsumme der Live-Lage, die Zaehlung bis einschliesslich `now`
+ * braucht `summarizeAreaRateCounts` (wie `summarizeAreaRates`).
+ */
+export interface RateScanCount {
+  deviceId: number | null;
+  result: string;
+  total: number;
+  total60: number;
+  total15: number;
+  upToNow: number;
+  upToNow60: number;
+  upToNow15: number;
+  lastUpToNow: Date | null;
+}
+
+/** Dieselbe Zaehlung wie die Datenbank-Abfrage, aus einzelnen Scans (fuer Tests). */
+export function countRateScans(scans: RateScan[], now: Date, dayStart: Date): RateScanCount[] {
+  const t15 = now.getTime() - 15 * 60_000;
+  const t60 = now.getTime() - 60 * 60_000;
+  const map = new Map<string, RateScanCount>();
+  for (const s of scans) {
+    const t = s.scanTime.getTime();
+    if (t < dayStart.getTime()) continue;
+    const key = `${s.deviceId}:${s.result}`;
+    const c = map.get(key) ?? {
+      deviceId: s.deviceId,
+      result: s.result,
+      total: 0,
+      total60: 0,
+      total15: 0,
+      upToNow: 0,
+      upToNow60: 0,
+      upToNow15: 0,
+      lastUpToNow: null,
+    };
+    c.total++;
+    if (t >= t60) c.total60++;
+    if (t >= t15) c.total15++;
+    if (t <= now.getTime()) {
+      c.upToNow++;
+      if (t >= t60) c.upToNow60++;
+      if (t >= t15) c.upToNow15++;
+      if (!c.lastUpToNow || t > c.lastUpToNow.getTime()) c.lastUpToNow = s.scanTime;
+    }
+    map.set(key, c);
+  }
+  return [...map.values()];
+}
+
+/** Wie `summarizeAreaRates`, aber aus den gezaehlten Scans des Tages. */
+export function summarizeAreaRateCounts(
+  areas: RateArea[],
+  devices: RateDevice[],
+  counts: RateScanCount[],
+): AreaRate[] {
+  const byId = new Map(devices.map((d) => [d.id, d]));
+  return areas
+    .map((area) => {
+      const own = devices.filter((d) => d.accessIn === area.id || d.accessOut === area.id);
+      const hasSeparateExit = own.some((d) => d.accessOut === area.id && d.accessIn !== area.id);
+      const r: AreaRate = {
+        id: area.id,
+        name: area.name,
+        personLimit: area.personLimit,
+        devices: own.length,
+        in15: 0,
+        in60: 0,
+        inToday: 0,
+        out15: hasSeparateExit ? 0 : null,
+        out60: hasSeparateExit ? 0 : null,
+        outToday: hasSeparateExit ? 0 : null,
+        denied15: 0,
+        inside: null,
+        lastScanAt: null,
+      };
+      let last = 0;
+      for (const c of counts) {
+        const d = c.deviceId != null ? byId.get(c.deviceId) : undefined;
+        if (!d || (d.accessIn !== area.id && d.accessOut !== area.id)) continue;
+        if (c.upToNow === 0) continue;
+        if (c.lastUpToNow && c.lastUpToNow.getTime() > last) last = c.lastUpToNow.getTime();
+        if (c.result !== "GRANTED") {
+          r.denied15 += c.upToNow15;
+          continue;
+        }
+        if (d.accessIn === area.id) {
+          r.inToday += c.upToNow;
+          r.in60 += c.upToNow60;
+          r.in15 += c.upToNow15;
+        } else if (hasSeparateExit) {
+          r.outToday! += c.upToNow;
+          r.out60! += c.upToNow60;
+          r.out15! += c.upToNow15;
+        }
+      }
+      if (hasSeparateExit) r.inside = Math.max(0, r.inToday - (r.outToday ?? 0));
+      r.lastScanAt = last ? new Date(last).toISOString() : null;
+      return r;
+    })
+    .filter((r) => r.devices > 0);
+}
+
+/** Summen der Live-Lage ueber alle Geraete (auch ohne Geraet), ab Tagesbeginn. */
+export function scanTotalsFromCounts(counts: RateScanCount[]) {
+  const totals = { in15: 0, in60: 0, inToday: 0, denied15: 0, denied60: 0, deniedToday: 0 };
+  for (const c of counts) {
+    if (c.result === "GRANTED") {
+      totals.inToday += c.total;
+      totals.in60 += c.total60;
+      totals.in15 += c.total15;
+    } else if (c.result === "DENIED") {
+      totals.deniedToday += c.total;
+      totals.denied60 += c.total60;
+      totals.denied15 += c.total15;
+    }
+  }
+  return totals;
+}

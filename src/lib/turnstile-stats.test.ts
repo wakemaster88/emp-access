@@ -87,3 +87,27 @@ test("leerer Tag bleibt bei Null und ohne Vergleich", () => {
   assert.equal(summary.average, null);
   assert.equal(summary.deviceStats.get(6)?.total, 0);
 });
+
+test("weekCounts ergibt denselben Wochenverlauf wie weekScans", () => {
+  const weekScans = [
+    { result: "GRANTED", ticketId: 1, scanTime: new Date("2026-03-28T22:59:59Z") },
+    { result: "GRANTED", ticketId: 1, scanTime: new Date("2026-03-28T23:00:00Z") },
+    { result: "GRANTED", ticketId: 2, scanTime: new Date("2026-03-29T12:00:00Z") },
+    { result: "GRANTED", ticketId: null, scanTime: new Date("2026-03-29T12:00:00Z") },
+    { result: "DENIED", ticketId: 3, scanTime: new Date("2026-03-30T08:00:00Z") },
+    { result: "PROTECTED", ticketId: 3, scanTime: new Date("2026-03-30T08:00:00Z") },
+  ];
+  const base = { dateStr: "2026-04-03", dayScans: [], soldTickets: 0 };
+  const fromScans = summarizeTurnstileDay({ ...base, weekScans });
+  const weekCounts = new Map([
+    ["2026-03-28", { rides: 1, denied: 0, guests: 1 }],
+    ["2026-03-29", { rides: 3, denied: 0, guests: 2 }],
+    ["2026-03-30", { rides: 0, denied: 1, guests: 0 }],
+    // ausserhalb der sieben Tage: wird nicht verwendet
+    ["2026-03-01", { rides: 9, denied: 9, guests: 9 }],
+  ]);
+  const fromCounts = summarizeTurnstileDay({ ...base, weekScans: [], weekCounts });
+  assert.deepEqual(fromCounts.weekTrend, fromScans.weekTrend);
+  assert.deepEqual(fromCounts.average, fromScans.average);
+  assert.deepEqual(fromCounts.previousDay, fromScans.previousDay);
+});

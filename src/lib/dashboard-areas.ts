@@ -2,6 +2,7 @@ import {
   summarizeTurnstileDay,
   type TurnstileDaySummary,
   type TurnstileDayScan,
+  type TurnstileWeekCount,
   type TurnstileWeekScan,
 } from "@/lib/turnstile-stats";
 
@@ -93,6 +94,11 @@ export function summarizeAreasDay(args: {
   devices: AreaDevice[];
   dayScans: AreaDayScan[];
   weekScans: AreaWeekScan[];
+  /**
+   * Schon gezaehlter Wochenverlauf je Bereich (Eingangsgeraete, Schluessel
+   * YYYY-MM-DD); ersetzt dann `weekScans`.
+   */
+  weekCountsByArea?: Map<number, Map<string, TurnstileWeekCount>>;
   /** Am Tag für den Bereich angelegte Tickets. */
   sold: Map<number, number>;
 }): AreaDaySummary[] {
@@ -114,6 +120,7 @@ export function summarizeAreasDay(args: {
         dateStr: args.dateStr,
         dayScans: args.dayScans.filter((s) => s.deviceId != null && entryIds.has(s.deviceId)),
         weekScans: args.weekScans.filter((s) => s.deviceId != null && entryIds.has(s.deviceId)),
+        weekCounts: args.weekCountsByArea ? (args.weekCountsByArea.get(area.id) ?? new Map()) : undefined,
         soldTickets: args.sold.get(area.id) ?? 0,
         deviceIds: [...entryIds],
       });
