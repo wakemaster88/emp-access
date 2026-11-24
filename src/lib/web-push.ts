@@ -24,6 +24,9 @@ export interface PushPayload {
 
 let vapidConfigured = false;
 
+/** Zeitlimit je Push-Dienst-Aufruf (Socket-Timeout von web-push). */
+const PUSH_TIMEOUT_MS = 5_000;
+
 export function isWebPushConfigured(): boolean {
   return !!(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
 }
@@ -70,7 +73,9 @@ export async function deliverPush(
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           body,
-          { TTL: 60 * 60 },
+          // Antwortet der Push-Dienst nicht, bricht der Versand nach 5 s ab
+          // und zaehlt wie ein Netzwerkfehler als fehlgeschlagen.
+          { TTL: 60 * 60, timeout: PUSH_TIMEOUT_MS },
         );
         sent++;
       } catch (err) {

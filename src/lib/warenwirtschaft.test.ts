@@ -50,6 +50,10 @@ test("toCsv setzt Semikolon, BOM und Anführungszeichen", () => {
   assert.equal(toCsv([["a;b", 1.5, null]]), '﻿"a;b";1,5;\r\n');
 });
 
+test("toCsv sichert Texte mit Formelzeichen, Zahlen bleiben Zahlen", () => {
+  assert.equal(toCsv([["=1+1", "-Bruch", -2.5, 0]]), "﻿'=1+1;'-Bruch;-2,5;0\r\n");
+});
+
 test("defaultCutoffDate nimmt im Januar das Vorjahr", () => {
   assert.equal(defaultCutoffDate(new Date(2026, 0, 10)), "2025-12-31");
   assert.equal(defaultCutoffDate(new Date(2026, 10, 18)), "2026-12-31");

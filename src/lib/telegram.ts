@@ -1,5 +1,14 @@
 const BASE = "https://api.telegram.org/bot";
 
+/**
+ * Zeitlimits fuer Aufrufe der Bot-API. Antwortet Telegram nicht rechtzeitig,
+ * bricht fetch ab und der Aufrufer bekommt denselben Fehler wie bei einem
+ * Netzwerkausfall. Textaufrufe sind klein; ein Foto wird hochgeladen und
+ * darf laenger brauchen, bleibt aber unter den 10 s der Hub-Routen.
+ */
+const TELEGRAM_TIMEOUT_MS = 5_000;
+const TELEGRAM_PHOTO_TIMEOUT_MS = 8_000;
+
 export async function sendTelegramMessage(
   botToken: string,
   chatId: string,
@@ -9,6 +18,7 @@ export async function sendTelegramMessage(
 ): Promise<{ ok: boolean; description?: string; result?: { message_id: number } }> {
   const res = await fetch(`${BASE}${botToken}/sendMessage`, {
     method: "POST",
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
@@ -30,6 +40,7 @@ export async function editMessageText(
 ): Promise<{ ok: boolean; description?: string }> {
   const res = await fetch(`${BASE}${botToken}/editMessageText`, {
     method: "POST",
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
@@ -77,6 +88,7 @@ export async function sendTelegramPhoto(
   }
   const res = await fetch(`${BASE}${botToken}/sendPhoto`, {
     method: "POST",
+    signal: AbortSignal.timeout(TELEGRAM_PHOTO_TIMEOUT_MS),
     body: form,
   });
   return res.json();
@@ -90,6 +102,7 @@ export async function answerCallbackQuery(
 ): Promise<{ ok: boolean }> {
   const res = await fetch(`${BASE}${botToken}/answerCallbackQuery`, {
     method: "POST",
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
   });
@@ -106,6 +119,7 @@ export async function editMessageCaption(
 ): Promise<{ ok: boolean; description?: string }> {
   const res = await fetch(`${BASE}${botToken}/editMessageCaption`, {
     method: "POST",
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
@@ -140,6 +154,7 @@ export async function setTelegramWebhook(
 ): Promise<{ ok: boolean; description?: string }> {
   const res = await fetch(`${BASE}${botToken}/setWebhook`, {
     method: "POST",
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       url,
@@ -151,7 +166,7 @@ export async function setTelegramWebhook(
 }
 
 export async function getMe(botToken: string): Promise<{ ok: boolean; result?: { username: string } }> {
-  const res = await fetch(`${BASE}${botToken}/getMe`);
+  const res = await fetch(`${BASE}${botToken}/getMe`, { signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS) });
   return res.json();
 }
 
@@ -159,6 +174,8 @@ export async function getUpdates(botToken: string): Promise<{
   ok: boolean;
   result?: { message?: { chat: { id: number; title?: string; type: string }; text?: string } }[];
 }> {
-  const res = await fetch(`${BASE}${botToken}/getUpdates?limit=10&offset=-10`);
+  const res = await fetch(`${BASE}${botToken}/getUpdates?limit=10&offset=-10`, {
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
+  });
   return res.json();
 }

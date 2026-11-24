@@ -4,6 +4,8 @@
  * Komponenten und in Tests laufen.
  */
 
+import { csvQuote, csvTextCell } from "./csv-cell";
+
 /** Kategorien, die die Oberfläche vorschlägt; frei erweiterbar. */
 export const ARTICLE_CATEGORIES = ["Getränke", "Speisen", "Eis", "Shop", "Sonstiges"] as const;
 
@@ -99,12 +101,18 @@ export function totalsByCategory(lines: StocktakeLineLike[]): { category: string
     .map(([category, list]) => ({ category, totals: stocktakeTotals(list) }));
 }
 
-/** CSV mit Semikolon (Excel, deutsch). Felder mit ; " oder Zeilenumbruch in Anführungszeichen. */
+/**
+ * CSV mit Semikolon (Excel, deutsch). Felder mit ; " oder Zeilenumbruch in
+ * Anführungszeichen. Texte, die mit =, +, -, @, Tab oder Wagenrücklauf
+ * beginnen, bekommen ein Hochkomma davor (siehe csv-cell); Zahlen bleiben Zahlen.
+ */
 export function toCsv(rows: (string | number | null)[][]): string {
   const cell = (v: string | number | null) => {
     if (v == null) return "";
-    const s = typeof v === "number" ? v.toLocaleString("de-DE", { maximumFractionDigits: 3, useGrouping: false }) : v;
-    return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    if (typeof v === "number") {
+      return csvQuote(v.toLocaleString("de-DE", { maximumFractionDigits: 3, useGrouping: false }));
+    }
+    return csvTextCell(v);
   };
   // BOM, damit Excel Umlaute richtig liest.
   return "﻿" + rows.map((r) => r.map(cell).join(";")).join("\r\n") + "\r\n";

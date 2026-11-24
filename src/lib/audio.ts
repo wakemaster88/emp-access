@@ -240,6 +240,19 @@ const TTS_ENDPOINT = "https://api.x.ai/v1/tts";
 const TTS_VOICES_ENDPOINT = `${TTS_ENDPOINT}/voices`;
 
 /**
+ * Zeitlimits fuer xAI. Die Stimmenliste ist klein, ohne Antwort greifen die
+ * Ersatzstimmen. Das Rendern einer Ansage (bis 600 Zeichen) braucht
+ * spuerbar laenger. Die meisten Aufrufer (Durchsage aus der Verwaltung,
+ * Vorschau, Abspielen, Regeln, Geburtstagsdurchsage beim Scan) laufen mit
+ * 10 s Laufzeit; 7 s lassen dort Zeit fuer Datenbank und Fehlerbehandlung.
+ * Der Audio-Cron (60 s) gibt dem Rendern 30 s. Ein Abbruch wirkt wie ein
+ * Netzwerkfehler.
+ */
+const TTS_VOICES_TIMEOUT_MS = 5_000;
+const TTS_RENDER_TIMEOUT_MS = 7_000;
+export const TTS_RENDER_TIMEOUT_CRON_MS = 30_000;
+
+/**
  * Fragt die verfügbaren Stimmen bei xAI ab. Eine feste Liste im Code würde mit
  * jeder Änderung des Anbieters schief gehen – und eine Stimme, die es nicht
  * gibt, lehnt die API beim Rendern ab. Kommt die Abfrage nicht durch, bleibt es
@@ -252,6 +265,7 @@ export async function listTtsVoices(): Promise<TtsVoice[]> {
   try {
     const response = await fetch(TTS_VOICES_ENDPOINT, {
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(TTS_VOICES_TIMEOUT_MS),
       // Der Bestand ändert sich selten, die Seite soll nicht darauf warten.
       next: { revalidate: 86400 },
     });
@@ -308,7 +322,8 @@ export async function renderTtsTrack(
   db: Db,
   accountId: number,
   text: string,
-  voice: string | null
+  voice: string | null,
+  timeoutMs: number = TTS_RENDER_TIMEOUT_MS
 ): Promise<{ id: number; url: string; durationSec: number | null }> {
   const cleanText = text.trim().slice(0, MAX_ANNOUNCEMENT_CHARS);
   const usedVoice = normalizeTtsVoice(voice);
@@ -325,6 +340,7 @@ export async function renderTtsTrack(
 
   const response = await fetch(TTS_ENDPOINT, {
     method: "POST",
+    signal: AbortSignal.timeout(timeoutMs),
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -383,6 +399,7 @@ export async function ensureAnnouncementTrack(
     track: { id: number; url: string; durationSec: number | null } | null;
   },
   context?: AnnouncementContext,
+  ttsTimeoutMs?: number,
 ): Promise<{ id: number; url: string; durationSec: number | null }> {
   // Texte mit Platzhaltern ({uhrzeit}, {schluss} …) werden je Abspielen mit
   // den echten Zeiten gerendert. Gleicher Text trifft den TTS-Cache, deshalb
@@ -390,7 +407,7 @@ export async function ensureAnnouncementTrack(
   if (announcement.source === "TTS" && hasPlaceholders(announcement.text)) {
     const text = resolveAnnouncementText(announcement.text!, context ?? { now: new Date(), schedule: null });
     if (!text) throw new Error("Ansagetext ist leer");
-    return renderTtsTrack(db, accountId, text, announcement.voice);
+    return renderTtsTrack(db, accountId, text, announcement.voice, ttsTimeoutMs);
   }
 
   if (announcement.track) return announcement.track;
@@ -403,7 +420,8 @@ export async function ensureAnnouncementTrack(
     db,
     accountId,
     announcement.text,
-    announcement.voice
+    announcement.voice,
+    ttsTimeoutMs
   );
 
   await db.audioAnnouncement.update({

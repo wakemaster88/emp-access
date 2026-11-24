@@ -74,6 +74,14 @@ test("Summen und CSV zaehlen nur gebuchte Slots", () => {
   assert.equal(csv[3], '"WSC; Nord";15.11.2026;09:00;10:00;Übungslift;Inklusiv;0,00;Vorstand;Jan;;');
 });
 
+test("Abrechnungs-CSV sichert freie Texte, der Betrag bleibt eine Zahl", () => {
+  const rows = [
+    { id: 1, vereinName: "WSC", serviceName: "Bahnmiete A", date: "2026-11-12", slotStart: "18:00", slotEnd: "19:00", priceCents: -1500, status: "BOOKED" as const, bookedBy: "@Jan", bookedFor: "=HYPERLINK(1)", billedAt: null, invoiceRef: "+R-1" },
+  ];
+  const csv = billingCsv(rows).replace("﻿", "").trim().split("\r\n");
+  assert.equal(csv[1], "WSC;12.11.2026;18:00;19:00;Bahnmiete A;Miete;-15,00;'=HYPERLINK(1);'@Jan;;'+R-1");
+});
+
 test("Inklusivmiete kostet 0 € und nur, wenn freigeschaltet", () => {
   assert.deepEqual(bookingPrice({ priceCents: 7500, inclusive: true }, false), { ok: true, priceCents: 7500, inclusive: false });
   assert.deepEqual(bookingPrice({ priceCents: 7500, inclusive: true }, undefined), { ok: true, priceCents: 7500, inclusive: false });

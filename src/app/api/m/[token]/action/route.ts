@@ -7,6 +7,7 @@ import {
   deviceSendsRemoteCommand,
 } from "@/lib/device-open";
 import { loadEmployeeByMobileToken } from "@/lib/employee-access";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 
 /**
  * Mitarbeiter-PWA: Schaltbefehl an ein Geraet aus der eigenen Whitelist.
@@ -22,12 +23,19 @@ import { loadEmployeeByMobileToken } from "@/lib/employee-access";
  *   - Jeder Aufruf wird als Scan gespeichert
  *     (`code = "mobile:<ticketId>:<action>"`, deviceId gesetzt). Damit
  *     taucht die Aktion in Scans/Live-Monitor wie ein normaler Zutritt auf.
+ *   - Anfragegrenze je Link und Anschluss: ein Handy schaltet von Hand ein
+ *     paar Mal pro Minute; die Grenze laesst ein Vielfaches davon zu, auch
+ *     fuer mehrere Handys hinter derselben IP.
  */
+
+const ACTION_LIMIT = { limit: 60, windowMs: 60_000 } as const;
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!token || token.length < 8) {
     return NextResponse.json({ error: "Invalid token" }, { status: 404 });
   }
+  const limited = publicLinkRateLimit(req, token, "mobile-action", ACTION_LIMIT);
+  if (limited) return limited;
 
   const profile = await loadEmployeeByMobileToken(token);
   if (!profile) return NextResponse.json({ error: "Not found" }, { status: 404 });

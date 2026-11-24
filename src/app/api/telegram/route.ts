@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { sendTelegramMessage, getMe, getUpdates } from "@/lib/telegram";
 import { buildTelegramDailyReport } from "@/lib/telegram-daily-report";
+import { truncateTelegramLines } from "@/lib/telegram-text";
 
 export async function GET() {
   const session = await getSessionWithDb({ requireAdmin: true });
@@ -109,8 +110,9 @@ export async function POST(request: NextRequest) {
     if (!config) return NextResponse.json({ error: "Kein Telegram konfiguriert" }, { status: 404 });
 
     const report = await buildTelegramDailyReport(session.accountId!);
-    const body =
-      `🧪 <i>Testsendung – gleicher Inhalt wie der geplante Tagesbericht</i>\n\n` + report;
+    const body = truncateTelegramLines(
+      `🧪 <i>Testsendung – gleicher Inhalt wie der geplante Tagesbericht</i>\n\n` + report,
+    );
     const res = await sendTelegramMessage(config.botToken, config.chatId, body);
 
     return NextResponse.json(res);

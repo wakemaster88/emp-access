@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { escapeTelegramHtml, truncateTelegramLines } from "@/lib/telegram-text";
 
 function berlinNow() {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
@@ -379,7 +380,7 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
     }
     return Array.from(byKey.values())
       .sort((a, b) => a.time.localeCompare(b.time) || a.label.localeCompare(b.label))
-      .map((e) => `  • <b>${e.time}</b> ${e.label}: <b>${e.count}</b>`)
+      .map((e) => `  • <b>${escapeTelegramHtml(e.time)}</b> ${escapeTelegramHtml(e.label)}: <b>${e.count}</b>`)
       .join("\n");
   }
 
@@ -391,14 +392,14 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
     }
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([label, count]) => `  • ${label}: <b>${count}</b>`)
+      .map(([label, count]) => `  • ${escapeTelegramHtml(label)}: <b>${count}</b>`)
       .join("\n");
   }
 
   const dateStr = now.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const timeStr = now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 
-  let msg = `📊 <b>Tagesbericht – ${account?.name ?? "Account"}</b>\n`;
+  let msg = `📊 <b>Tagesbericht – ${escapeTelegramHtml(account?.name ?? "Account")}</b>\n`;
   msg += `📅 ${dateStr}, ${timeStr}\n\n`;
 
   msg += `<b>✅ Eingecheckt heute</b>\n`;
@@ -452,7 +453,7 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
     for (const t of todayAbos) {
       const personName = [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
       const aboName = t.subscription?.name ?? t.ticketTypeName ?? "Abo";
-      msg += `  • ${personName} (${aboName})\n`;
+      msg += `  • ${escapeTelegramHtml(personName)} (${escapeTelegramHtml(aboName)})\n`;
     }
   } else {
     msg += `  • Keine\n`;
@@ -487,7 +488,7 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
       const endStr = t.endDate
         ? new Date(t.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
         : "";
-      msg += `  • ${personName}${t.ticketTypeName ? ` (${t.ticketTypeName})` : ""} – ${endStr}\n`;
+      msg += `  • ${escapeTelegramHtml(personName)}${t.ticketTypeName ? ` (${escapeTelegramHtml(t.ticketTypeName)})` : ""} – ${endStr}\n`;
     }
     msg += `\n`;
   }
@@ -499,9 +500,11 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
   if (topNames.length > 0) {
     msg += `<b>🔝 Meiste Scans heute</b>\n`;
     for (const t of topNames) {
-      msg += `  • ${t.name}: ${t.count}×\n`;
+      msg += `  • ${escapeTelegramHtml(t.name)}: ${t.count}×\n`;
     }
   }
 
-  return msg;
+  // Telegram nimmt hoechstens 4096 Zeichen; lange Listen werden am
+  // Zeilenende gekuerzt.
+  return truncateTelegramLines(msg);
 }
