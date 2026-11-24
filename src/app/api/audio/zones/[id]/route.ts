@@ -10,6 +10,8 @@ import {
   parseSourceKind,
   resolveOwnedStream,
 } from "@/lib/audio";
+import { parseStreamUrl } from "@/lib/audio-integration";
+import { MAX_ZONE_NAME, cleanReceiverName } from "@/lib/net-address";
 
 export async function PUT(
   request: NextRequest,
@@ -144,10 +146,29 @@ export async function PUT(
     return NextResponse.json({ error: receiverError }, { status: 400 });
   }
 
+  // Eigene Stream-URL: eine neue muss http/https sein; leer loescht sie wie bisher.
+  let streamUrl: string | null | undefined = undefined;
+  if (streamId === undefined && body.streamUrl !== undefined) {
+    streamUrl = null;
+    if (typeof body.streamUrl === "string" && body.streamUrl.trim()) {
+      streamUrl = body.streamUrl.trim();
+      if (streamUrl !== existing.streamUrl) {
+        const parsed = parseStreamUrl(streamUrl);
+        if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+    }
+  }
+
+  // Der Name landet als AirPlay/Bluetooth-Name in der Konfiguration des
+  // Abspielers; ein unveraenderter Name bleibt, wie er ist.
+  const rawName = typeof body.name === "string" ? body.name.trim() : "";
+  const name = rawName === existing.name ? rawName : cleanReceiverName(rawName, MAX_ZONE_NAME);
+  const externalName = typeof body.externalName === "string" ? cleanReceiverName(body.externalName) : "";
+
   const zone = await db.audioZone.update({
     where: { id: zoneId },
     data: {
-      name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : undefined,
+      name: name || undefined,
       ...(deviceId !== undefined ? { deviceId } : {}),
       ...(keyRoomId !== undefined ? { keyRoomId } : {}),
       ...(playlistId !== undefined ? { playlistId } : {}),
@@ -162,14 +183,9 @@ export async function PUT(
             : null,
       ...(streamId !== undefined
         ? { streamId, streamUrl: streamUrlFromStream }
-        : body.streamUrl === undefined
+        : streamUrl === undefined
           ? {}
-          : {
-              streamUrl:
-                typeof body.streamUrl === "string" && body.streamUrl.trim()
-                  ? body.streamUrl.trim()
-                  : null,
-            }),
+          : { streamUrl }),
       volume: body.volume === undefined ? undefined : clampVolume(body.volume, existing.volume),
       announcementVolume:
         body.announcementVolume === undefined
@@ -186,12 +202,7 @@ export async function PUT(
       musicExtent,
       airplayEnabled,
       bluetoothEnabled,
-      externalName:
-        body.externalName === undefined
-          ? undefined
-          : typeof body.externalName === "string" && body.externalName.trim()
-            ? body.externalName.trim().slice(0, 60)
-            : null,
+      externalName: body.externalName === undefined ? undefined : externalName || null,
       // Ein abgeschalteter Empfänger darf keinen Übernahme-Hinweis und kein
       // offenes Kopplungsfenster hinterlassen.
       ...(wantsAirplay || wantsBluetooth ? {} : { externalActive: null, externalSender: null }),

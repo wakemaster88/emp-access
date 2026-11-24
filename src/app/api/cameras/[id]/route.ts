@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { detectionUpdateData, mergeDetectionSettings } from "@/lib/camera-detection";
+import {
+  INVALID_HOST_ERROR,
+  PASSWORD_REQUIRED_ERROR,
+  addressChangeNeedsPassword,
+  isHostAddress,
+} from "@/lib/net-address";
 
 export async function PUT(
   request: NextRequest,
@@ -57,18 +63,31 @@ export async function PUT(
     if (dup) return NextResponse.json({ error: "Eine Kamera mit diesem Namen existiert bereits" }, { status: 400 });
   }
 
+  // Adresse: ein neuer Host muss eine reine IP oder ein Hostname sein.
+  const host = body.host !== undefined ? String(body.host).trim() : existing.host;
+  if (host !== existing.host && !isHostAddress(host)) {
+    return NextResponse.json({ error: INVALID_HOST_ERROR }, { status: 400 });
+  }
+  const httpPort = body.httpPort !== undefined ? (Number(body.httpPort) || 80) : existing.httpPort;
+  const https = typeof body.https === "boolean" ? body.https : existing.https;
+  // Nur Leerzeichen zaehlen nicht als neu eingegebenes Passwort.
+  const passwordEntered = typeof body.password === "string" ? body.password.trim() !== "" : !!body.password;
+  if (!passwordEntered && addressChangeNeedsPassword(existing, { host, httpPort, https })) {
+    return NextResponse.json({ error: PASSWORD_REQUIRED_ERROR }, { status: 400 });
+  }
+
   const camera = await db.camera.update({
     where: { id: cameraId },
     data: {
       name,
       kind:
         body.kind === "DOORBIRD" || body.kind === "REOLINK" ? body.kind : existing.kind,
-      host: body.host !== undefined ? String(body.host).trim() : existing.host,
-      httpPort: body.httpPort !== undefined ? (Number(body.httpPort) || 80) : existing.httpPort,
-      https: typeof body.https === "boolean" ? body.https : existing.https,
+      host,
+      httpPort,
+      https,
       username: body.username !== undefined ? String(body.username).trim() : existing.username,
       // Leeres Passwort im Formular bedeutet "unveraendert lassen".
-      password: body.password ? String(body.password) : existing.password,
+      password: passwordEntered ? String(body.password) : existing.password,
       channel: body.channel !== undefined ? (Number(body.channel) || 0) : existing.channel,
       enabled: typeof body.enabled === "boolean" ? body.enabled : existing.enabled,
       ...detectionUpdateData(merged.settings),

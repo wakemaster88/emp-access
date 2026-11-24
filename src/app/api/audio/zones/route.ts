@@ -10,6 +10,8 @@ import {
   parseSourceKind,
   resolveOwnedStream,
 } from "@/lib/audio";
+import { parseStreamUrl } from "@/lib/audio-integration";
+import { MAX_ZONE_NAME, cleanReceiverName } from "@/lib/net-address";
 
 export async function GET() {
   const session = await getSessionWithDb();
@@ -36,7 +38,8 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const body = await request.json();
 
-  const name = typeof body.name === "string" ? body.name.trim() : "";
+  // Der Name landet als AirPlay/Bluetooth-Name in der Konfiguration des Abspielers.
+  const name = typeof body.name === "string" ? cleanReceiverName(body.name, MAX_ZONE_NAME) : "";
   if (!name) {
     return NextResponse.json({ error: "Name erforderlich" }, { status: 400 });
   }
@@ -94,7 +97,9 @@ export async function POST(request: NextRequest) {
       streamUrl = stream.url;
     }
   } else if (typeof body.streamUrl === "string" && body.streamUrl.trim()) {
-    streamUrl = body.streamUrl.trim();
+    const parsed = parseStreamUrl(body.streamUrl);
+    if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    streamUrl = parsed.url;
   }
 
   // AirPlay/Bluetooth nur zulassen, wenn der Abspieler die Dienste gemeldet
@@ -169,9 +174,7 @@ export async function POST(request: NextRequest) {
       airplayEnabled,
       bluetoothEnabled,
       externalName:
-        typeof body.externalName === "string" && body.externalName.trim()
-          ? body.externalName.trim().slice(0, 60)
-          : null,
+        typeof body.externalName === "string" ? cleanReceiverName(body.externalName) || null : null,
     },
     include: {
       device: { select: { id: true, name: true, lastUpdate: true } },

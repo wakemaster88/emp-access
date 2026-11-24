@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
+import { isPushServiceUrl } from "@/lib/rider-push";
 import { isWebPushConfigured, sendPushToAccount } from "@/lib/web-push";
 
 /**
@@ -58,7 +59,14 @@ export async function POST(request: NextRequest) {
       keys?: { p256dh?: string; auth?: string };
     } | undefined;
 
-    if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
+    // Nur Endpunkte der Browser-Push-Dienste annehmen (wie in der Kunden-App).
+    if (
+      typeof sub?.endpoint !== "string" ||
+      sub.endpoint.length > 2000 ||
+      !isPushServiceUrl(sub.endpoint) ||
+      !sub.keys?.p256dh ||
+      !sub.keys?.auth
+    ) {
       return NextResponse.json({ error: "Ungültige Subscription" }, { status: 400 });
     }
 

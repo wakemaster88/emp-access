@@ -5,6 +5,8 @@ import { isPulseCategory, parsePulseInput } from "@/lib/pulse-constants";
 import { parseScanLockSeconds } from "@/lib/scan-lock";
 import { withAudioDeviceInfo, AUDIO_ZONE_SELECT } from "@/lib/audio-integration";
 import { withoutDeviceSecrets } from "@/lib/role-guards";
+import { parseDeviceIp } from "@/lib/net-address";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -168,6 +170,30 @@ export async function PUT(
   const flowLph = parseMetric(body.flowLph, existing.flowLph, 30000);
   const areaSqm = parseMetric(body.areaSqm, existing.areaSqm, 10000);
 
+  // IP: nur pruefen, wenn sie neu gesetzt wird – leer bleibt erlaubt.
+  let ipAddress = body.ipAddress ?? existing.ipAddress;
+  if (body.ipAddress != null && typeof body.ipAddress !== "string") {
+    return NextResponse.json({ error: "Ungültige IP-Adresse" }, { status: 400 });
+  }
+  if (typeof body.ipAddress === "string" && body.ipAddress.trim() === existing.ipAddress) {
+    // Unveraendert bis auf Leerraum: gespeicherte IP behalten.
+    ipAddress = existing.ipAddress;
+  } else if (typeof body.ipAddress === "string" && body.ipAddress.trim()) {
+    const ip = parseDeviceIp(body.ipAddress);
+    if ("error" in ip) return NextResponse.json({ error: ip.error }, { status: 400 });
+    ipAddress = ip.ip;
+  }
+
+  // Zutrittsbereiche muessen zum eigenen Mandanten gehoeren; geprueft werden
+  // nur neu gesetzte IDs.
+  const refError = await foreignRefError(db, accountId, {
+    accessAreaIds: [
+      body.accessIn && body.accessIn !== existing.accessIn ? Number(body.accessIn) : null,
+      body.accessOut && body.accessOut !== existing.accessOut ? Number(body.accessOut) : null,
+    ],
+  });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
+
   const device = await db.device.update({
     where: { id: deviceId },
     data: {
@@ -180,7 +206,7 @@ export async function PUT(
       category,
       ...cover.value,
       ...pulse.value,
-      ipAddress: body.ipAddress ?? existing.ipAddress,
+      ipAddress,
       shellyId: body.shellyId ?? existing.shellyId,
       shellyAuthKey: body.shellyAuthKey ?? existing.shellyAuthKey,
       nukiSmartlockId: body.nukiSmartlockId ?? existing.nukiSmartlockId,

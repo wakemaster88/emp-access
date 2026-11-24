@@ -21,6 +21,13 @@ logger = logging.getLogger("emp.audio.cache")
 
 CACHE_DIR = "/var/lib/emp-audio/cache"
 DOWNLOAD_TIMEOUT = 60
+# Obergrenze je Datei (Upload-Limit der Cloud: 50 MB). Größere Downloads
+# werden abgebrochen, damit die SD-Karte nicht volläuft.
+MAX_DOWNLOAD_BYTES = 60 * 1024 * 1024
+
+
+class DownloadTooLarge(Exception):
+    pass
 
 
 class FileCache:
@@ -68,8 +75,14 @@ class FileCache:
                 # so liegt nie eine halb geladene Datei im Cache.
                 fd, tmp_path = tempfile.mkstemp(dir=self.cache_dir, suffix=".part")
                 try:
+                    written = 0
                     with os.fdopen(fd, "wb") as out:
                         for chunk in resp.iter_content(chunk_size=64 * 1024):
+                            written += len(chunk)
+                            if written > MAX_DOWNLOAD_BYTES:
+                                raise DownloadTooLarge(
+                                    f"größer als {MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB, abgebrochen"
+                                )
                             out.write(chunk)
                     os.replace(tmp_path, path)
                 except Exception:
