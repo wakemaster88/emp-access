@@ -49,6 +49,7 @@ export default async function SecurityPage() {
             lastUsedAt: p.lastUsedAt ? p.lastUsedAt.toISOString() : null,
           }))}
           suggestedName={suggestPasskeyName(userAgent)}
+          twoFactorEnabled={isTwoFactorActive(admin)}
         />
 
         <TwoFactorCard

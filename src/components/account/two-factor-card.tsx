@@ -130,7 +130,7 @@ export function TwoFactorCard({
 
   const regenerate = () =>
     run(async () => {
-      const data = (await post("/recovery-codes", { password })) as { recoveryCodes: string[] };
+      const data = (await post("/recovery-codes", { password, code })) as { recoveryCodes: string[] };
       setRecoveryCodes(data.recoveryCodes);
       setCodesLeft(data.recoveryCodes.length);
       resetInputs();
@@ -419,19 +419,33 @@ export function TwoFactorCard({
             }}
           >
             <p className="text-sm text-muted-foreground">
-              Neue Codes erzeugen – die bisherigen verlieren sofort ihre Gültigkeit.
+              Neue Codes erzeugen – die bisherigen verlieren sofort ihre Gültigkeit. Zur Bestätigung Passwort
+              und einen gültigen Code eingeben.
             </p>
-            <div className="space-y-2 max-w-sm">
-              <Label htmlFor="tf-regen-password">Passwort</Label>
-              <Input
-                id="tf-regen-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-                autoFocus
-              />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="tf-regen-password">Passwort</Label>
+                <Input
+                  id="tf-regen-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tf-regen-code">Code oder Wiederherstellungscode</Label>
+                <Input
+                  id="tf-regen-code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  required
+                />
+              </div>
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy} className="max-sm:h-11">

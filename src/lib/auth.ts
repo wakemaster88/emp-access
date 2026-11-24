@@ -1,17 +1,14 @@
 import NextAuth, { type Session } from "next-auth";
+import { headers } from "next/headers";
 import Credentials from "next-auth/providers/credentials";
-import { compare } from "bcryptjs";
 import { prisma } from "./prisma";
 import { isTwoFactorActive, verifySecondFactor } from "./two-factor";
-import {
-  DUMMY_PASSWORD_HASH,
-  clearLoginFailures,
-  isLoginLocked,
-  lockLoginIfExhausted,
-  reserveLoginAttempt,
-} from "./login-lockout";
+import { checkLoginPassword, clearLoginFailures } from "./login-lockout";
 import { clearLoginThrottle, hitLoginThrottle } from "./login-throttle";
 import { relyingPartyFrom, verifyPasskeyLogin } from "./passkey";
+import { requestClientIp } from "./rate-limit";
+import { CROSS_SITE_HEADER } from "./cross-site";
+import { createSessionRevalidator, revalidateOrKeep } from "./session-revalidate";
 
 /** Sitzungsdauer: eine Woche statt der 30 Tage Standard. */
 const SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
@@ -20,6 +17,27 @@ const SESSION_REVALIDATE_MS = 5 * 60_000;
 
 /** `rv` = Zeitpunkt der letzten Pruefung, `sv` = Admin.sessionVersion beim Anmelden. */
 type TokenWithCheck = { rv?: number; sv?: number };
+
+/** Hoechstens eine Datenbankabfrage je Admin und Instanz in SESSION_REVALIDATE_MS. */
+const revalidateSession = createSessionRevalidator(async (adminId) => {
+  const admin = await prisma.admin.findUnique({
+    where: { id: adminId },
+    select: {
+      role: true,
+      accountId: true,
+      sessionVersion: true,
+      account: { select: { name: true, isActive: true } },
+    },
+  });
+  if (!admin) return null;
+  return {
+    role: admin.role,
+    accountId: admin.accountId,
+    accountName: admin.account?.name ?? null,
+    sessionVersion: admin.sessionVersion,
+    accountActive: !(admin.accountId != null && admin.account && !admin.account.isActive),
+  };
+}, SESSION_REVALIDATE_MS);
 
 function throttleKey(request: Request | undefined, email: string): string {
   const ip = request?.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
@@ -49,30 +67,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           include: { account: true },
         });
 
-        if (!admin) {
-          // Gleiche Laufzeit wie bei einem bekannten Konto.
-          await compare(credentials.password as string, DUMMY_PASSWORD_HASH);
-          return null;
-        }
-        if (isLoginLocked(admin)) return null;
-        // Versuch in der Datenbank belegen, bevor verglichen wird: viele
-        // gleichzeitige Anfragen koennen die Sperre so nicht mehr unterlaufen.
-        if (!(await reserveLoginAttempt(admin))) return null;
-
-        const valid = await compare(
-          credentials.password as string,
-          admin.password
-        );
-        if (!valid) {
-          await lockLoginIfExhausted(admin.id);
-          return null;
-        }
+        // Sperre je (E-Mail, Client-IP), Verlangsamung je E-Mail; ein
+        // unbekanntes Konto durchlaeuft dieselben Schritte (login-lockout.ts).
+        const ip = request ? requestClientIp(request.headers) : "-";
+        const { valid, key: lockKey } = await checkLoginPassword(admin, email, credentials.password as string, ip);
+        if (!admin || !valid) return null;
 
         // Deaktivierter Mandant: keine neue Sitzung. Der Passkey-Weg lehnt an
         // derselben Stelle ab (passkey.ts); ohne diese Pruefung kaeme man bis
         // zur naechsten Sitzungspruefung (5 Minuten) trotzdem hinein.
         if (admin.accountId != null && admin.account && !admin.account.isActive) {
-          await clearLoginFailures(admin.id);
+          await clearLoginFailures(lockKey);
           return null;
         }
 
@@ -83,7 +88,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           const second = await verifySecondFactor(admin, credentials.code as string | undefined);
           if (!second.ok) {
             // Das Passwort war richtig: der belegte Passwort-Versuch zaehlt nicht.
-            await clearLoginFailures(admin.id);
+            await clearLoginFailures(lockKey);
             return null;
           }
         }
@@ -92,6 +97,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           where: { id: admin.id },
           data: { lastLogin: new Date(), loginFailures: 0, loginLockedUntil: null },
         });
+        await clearLoginFailures(lockKey);
         clearLoginThrottle(key);
 
         return {
@@ -151,25 +157,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
       const adminId = Number(token.sub);
       if (!Number.isInteger(adminId)) return null;
-      const admin = await prisma.admin.findUnique({
-        where: { id: adminId },
-        select: {
-          role: true,
-          accountId: true,
-          sessionVersion: true,
-          account: { select: { name: true, isActive: true } },
-        },
-      });
+      // Ergebnis kommt hoechstens SESSION_REVALIDATE_MS alt aus dem
+      // Prozessspeicher (session-revalidate.ts). Antwortet die Datenbank
+      // nicht, bleibt das Token unveraendert (rv wird nicht fortgeschrieben):
+      // ein Aussetzer meldet niemanden ab, die naechste Anfrage prueft neu.
+      const check = await revalidateOrKeep(revalidateSession, adminId);
+      if (!check) return token;
+      const admin = check.state;
       if (!admin) return null;
-      if (admin.accountId != null && admin.account && !admin.account.isActive) return null;
+      if (!admin.accountActive) return null;
       // Passwort geaendert oder „ueberall abmelden“: aeltere Sitzungen enden.
       // Sitzungen von vor der Einfuehrung tragen kein `sv` und gelten als 0.
       if (admin.sessionVersion !== ((token as TokenWithCheck).sv ?? 0)) return null;
 
       token.role = admin.role;
       token.accountId = admin.accountId;
-      token.accountName = admin.account?.name ?? null;
-      (token as TokenWithCheck).rv = Date.now();
+      token.accountName = admin.accountName;
+      // Zeitpunkt der echten Abfrage, nicht „jetzt“: sonst laege die naechste
+      // Pruefung bis zu zwei Zeitfenster entfernt.
+      (token as TokenWithCheck).rv = check.checkedAt;
       return token;
     },
     async session({ session, token }) {
@@ -188,8 +194,26 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SEC, updateAge: 60 * 60 },
 });
 
+/**
+ * true, wenn der Proxy die laufende Anfrage als schreibenden Aufruf einer
+ * fremden Seite markiert hat (src/lib/cross-site.ts). Ausserhalb einer
+ * Anfrage (kein headers()) gibt es keine Markierung.
+ */
+export async function markedCrossSite(): Promise<boolean> {
+  try {
+    return (await headers()).get(CROSS_SITE_HEADER) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sitzung oder null. Eine schreibende Anfrage einer fremden Seite (vom Proxy
+ * markiert, src/lib/cross-site.ts) gilt als nicht angemeldet.
+ */
 export async function safeAuth(): Promise<Session | null> {
   try {
+    if (await markedCrossSite()) return null;
     return await auth();
   } catch {
     return null;

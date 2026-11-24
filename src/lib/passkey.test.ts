@@ -36,6 +36,13 @@ test("relyingPartyFrom: Umgebungsvariablen legen fest", () => {
   assert.deepEqual(rp, { rpID: "example.de", origin: "https://app.example.de" });
 });
 
+test("relyingPartyFrom: nur WEBAUTHN_RP_ID gesetzt – Origin fest, nicht aus den Headern", () => {
+  const rp = relyingPartyFrom(h({ host: "intern", "x-forwarded-host": "sub.example.de", "x-forwarded-proto": "http" }), {
+    WEBAUTHN_RP_ID: "app.example.de",
+  });
+  assert.deepEqual(rp, { rpID: "app.example.de", origin: "https://app.example.de" });
+});
+
 test("cleanPasskeyName kuerzt und lehnt Leeres ab", () => {
   assert.equal(cleanPasskeyName("  iPhone   von  Aaron "), "iPhone von Aaron");
   assert.equal(cleanPasskeyName("   "), null);
