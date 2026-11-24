@@ -3,9 +3,21 @@
  * Wird von der Scan-Route genutzt, wenn im eigenen System kein Ticket gefunden wird.
  */
 
+import { createTtlCache } from "./ttl-cache";
+
+type WakesysConfig = { baseUrl: string | null; extraConfig: string | null } | null;
+
 type DbWithApiConfig = {
-  apiConfig: { findFirst: (args: { where: { accountId: number; provider: string } }) => Promise<{ baseUrl: string | null; extraConfig: string | null } | null> };
+  apiConfig: { findFirst: (args: { where: { accountId: number; provider: string } }) => Promise<WakesysConfig> };
 };
+
+/**
+ * Konfiguration je Account hoechstens 60 s im Speicher der Function: der
+ * Scan-Weg fragt sie sonst bei jedem Scan neu ab. Aenderungen an der
+ * Schnittstelle wirken damit spaetestens nach 60 s.
+ */
+const CONFIG_TTL_MS = 60_000;
+const configCache = createTtlCache<WakesysConfig>(CONFIG_TTL_MS);
 
 export function isValueValid(value: { card_valid?: string; next_tickets?: unknown[]; valid_until?: string } | null): boolean {
   if (!value) return false;
@@ -26,16 +38,23 @@ export type WakesysCheckResult =
 
 /**
  * Prüft bei Wakesys, ob der Scan-Code ein gültiges Ticket hat.
+ * Die Schnittstellen werden nacheinander gefragt, bis eine den Code kennt.
+ * `timeoutMs`: Zeitlimit fuer alle Abrufe zusammen; ohne Angabe 10 s je
+ * Abruf. Laeuft es ab, gilt der Code als ungueltig – wie bei jedem anderen
+ * Fehler eines Abrufs.
  * @returns { valid: true, ... } wenn gültig, { valid: false } wenn ungültig, null wenn Wakesys nicht konfiguriert
  */
 export async function checkWakesys(
   db: DbWithApiConfig,
   accountId: number,
-  scan: string
+  scan: string,
+  opts: { timeoutMs?: number } = {},
 ): Promise<WakesysCheckResult> {
-  const config = await db.apiConfig.findFirst({
-    where: { accountId, provider: "WAKESYS" },
-  });
+  const config = await configCache.get(String(accountId), () =>
+    db.apiConfig.findFirst({
+      where: { accountId, provider: "WAKESYS" },
+    }),
+  );
   if (!config) return null;
 
   const extraConfig = config.extraConfig ? JSON.parse(config.extraConfig) : {};
@@ -52,11 +71,14 @@ export async function checkWakesys(
 
   const idsToTry = interfaceIds.length > 0 ? interfaceIds : [2];
 
+  const totalSignal =
+    opts.timeoutMs != null ? AbortSignal.timeout(Math.max(1, opts.timeoutMs)) : null;
+
   try {
     for (const interfaceId of idsToTry) {
       const url = `https://${account}.wakesys.com/files_for_admin_and_browser/sql_query/query_operator.php?interface=gate&interface_id=${interfaceId}&controller_interface_type=${interfaceType}&id=${encodeURIComponent(scan)}`;
 
-      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      const res = await fetch(url, { signal: totalSignal ?? AbortSignal.timeout(10000) });
       const data = await res.json();
       const value = data?.data?.value ?? null;
 
