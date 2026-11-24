@@ -5,11 +5,14 @@
  * Eine Erwachsene der Familie gibt im Profil eine Adresse ein; dorthin geht
  * eine Mail im Look der App. Ihr Link ist der Anmelde-Link
  * (`/app/mail/<schlüssel>`, 7 Tage gültig) mit dem Einladungsschlüssel der
- * Familie (`?familie=<schlüssel>`): Wer ihn öffnet, belegt damit seine Adresse,
- * ist angemeldet (beim ersten Mal nach dem Einrichten) und gehört danach als
- * Erwachsene zur Familie. Gehören zur Adresse schon Abos, wählt die Person wie
- * bei der Anmeldung zuerst, wer sie ist; der Schlüssel wartet so lange in
- * einem Cookie.
+ * Familie (`?familie=<schlüssel>`): Wer ihn öffnet, belegt damit seine Adresse
+ * und ist angemeldet (beim ersten Mal nach dem Einrichten). Der Familie tritt
+ * die Person erst bei, wenn sie es auf der Einladungsseite per Knopf bestätigt:
+ * Ein geöffneter Link allein ändert nichts, denn Postfächer rufen Links zum
+ * Prüfen vorab ab. Bis dahin wartet der Schlüssel in einem Cookie, und die App
+ * zeigt oben einen Hinweis auf die Einladung. Das Cookie nennt auch die
+ * eingeladene Adresse: Der Hinweis erscheint nur bei der Person mit dieser
+ * Adresse, nicht bei jemand anderem am selben Gerät.
  *
  * Kinder mit eigener Adresse holt weiter der Bestätigungslink
  * (lib/rider-family-link), Kinder ohne Adresse die Kasse (lib/rider-kasse-link).
@@ -18,10 +21,11 @@ import { prisma } from "./prisma";
 import { mailLinkKey, normalizeEmail } from "./day-guest";
 import { sendEmail } from "./email-sender";
 import {
-  FAMILY_INVITE_DAYS, FamilyError, assertRoom, ensureFamily, familyInviteKey, joinFamily, memberName,
+  FAMILY_INVITE_DAYS, FamilyError, assertRoom, ensureFamily, familyInviteInfo, familyInviteKey, memberName,
   type FamilyPerson,
 } from "./rider-family";
 import { familyInviteMail } from "./rider-mail-template";
+import { equalsInsensitive } from "./like-escape";
 
 export const FAMILY_INVITE_MAIL_SUBJECT = "Einladung in die App";
 /** Cookie, in dem der Schlüssel bis zum Ende der Anmeldung wartet. */
@@ -71,7 +75,7 @@ export async function inviteFamilyByMail(
     where: {
       accountId: viewer.accountId,
       subject: FAMILY_INVITE_MAIL_SUBJECT,
-      to: { equals: email, mode: "insensitive" },
+      to: equalsInsensitive(email),
       sentAt: { gte: new Date(now.getTime() - 86_400_000) },
     },
     select: { sentAt: true },
@@ -105,21 +109,44 @@ export async function inviteFamilyByMail(
   return "sent";
 }
 
+/** Cookie mit dem Einladungsschlüssel: gilt einen Tag, nur für den Server lesbar. */
+export function familyInviteCookieOptions(secure: boolean) {
+  return { httpOnly: true, sameSite: "lax" as const, secure, path: "/", maxAge: 86_400 };
+}
+
+/** Cookie-Wert: die eingeladene Adresse und der Schlüssel, durch ein Leerzeichen getrennt. */
+export function familyInviteCookieValue(key: string, email: string): string {
+  return `${email} ${key}`;
+}
+
+function parseFamilyInviteCookie(value: string | undefined): { email: string; key: string } | null {
+  if (!value) return null;
+  const at = value.indexOf(" ");
+  if (at < 1 || at === value.length - 1) return null;
+  return { email: value.slice(0, at), key: value.slice(at + 1) };
+}
+
 /**
- * Nach der Anmeldung über den Link aus der Einladung: die Person mit diesem
- * Token tritt der Familie bei. Gibt eine Meldung zurück, wenn es nicht ging.
+ * Wartende Einladung für das Profil mit diesem Token, gelesen aus dem Cookie
+ * (`familyInviteCookieValue`): gültig, vom selben Betrieb, an die Adresse
+ * dieses Profils gegangen, und die Person ist noch keine Erwachsene dieser
+ * Familie. Der Beitritt selbst läuft nur über den Knopf auf der
+ * Einladungsseite (POST /api/rider/family/join) – ein geöffneter Link allein
+ * ändert nichts.
  */
-export async function acceptFamilyInvite(token: string, key: string): Promise<string | null> {
+export async function pendingFamilyInvite(
+  token: string,
+  cookie: string | undefined,
+): Promise<{ key: string; inviterName: string } | null> {
+  const waiting = parseFamilyInviteCookie(cookie);
+  if (!waiting) return null;
+  const invite = await familyInviteInfo(waiting.key);
+  if (!invite) return null;
   const p = await prisma.riderProfile.findUnique({
     where: { token },
-    select: { id: true, accountId: true, familyId: true, familyAdult: true },
+    select: { accountId: true, email: true, familyId: true, familyAdult: true },
   });
-  if (!p) return "Diese Einladung gilt nicht mehr.";
-  try {
-    await joinFamily(p, key);
-    return null;
-  } catch (e) {
-    if (e instanceof FamilyError) return e.message;
-    throw e;
-  }
+  if (!p || p.accountId !== invite.accountId || p.email !== waiting.email) return null;
+  if (p.familyId === invite.familyId && p.familyAdult) return null;
+  return { key: waiting.key, inviterName: invite.inviterName };
 }

@@ -4,6 +4,7 @@ import { gamiAdminSession } from "@/lib/gamification-session";
 import { dayTicketEmailChanged, findDayTicketByCode, normalizeEmail } from "@/lib/day-guest";
 import { loadGamiConfig } from "@/lib/gamification-service";
 import { berlinYmd } from "@/lib/berlin-day";
+import { equalsInsensitive } from "@/lib/like-escape";
 
 const addSchema = z.object({ code: z.string().trim().min(3).max(200), email: z.string().trim().max(180) });
 const changeSchema = z.object({ from: z.string().trim().max(180), to: z.string().trim().max(180).nullable() });
@@ -49,7 +50,7 @@ export async function PUT(request: NextRequest) {
   const config = await loadGamiConfig(db, accountId);
   const year = berlinYmd(new Date()).slice(0, 4);
   const tickets = await db.ticket.findMany({
-    where: { accountId, subscriptionId: null, serviceId: { in: config.dayServiceIds }, email: { equals: from, mode: "insensitive" } },
+    where: { accountId, subscriptionId: null, serviceId: { in: config.dayServiceIds }, email: equalsInsensitive(from) },
     select: { id: true, email: true, startDate: true, createdAt: true },
     take: 1000,
   });

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ALL_GROUPS, LINK_GONE, loadInventoryLink } from "@/lib/inventory-count-link";
 import { ASSET_GROUPS } from "@/lib/warenwirtschaft";
 import { MAX_PUBLIC_ARTICLES, publicAssetSchema } from "@/lib/warenwirtschaft-server";
+import { equalsInsensitive } from "@/lib/like-escape";
 
 type Ctx = { params: Promise<{ token: string }> };
 
@@ -32,8 +33,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     where: {
       accountId: l.accountId,
       group,
-      name: { equals: a.name, mode: "insensitive" },
-      location: a.location ? { equals: a.location, mode: "insensitive" } : null,
+      name: equalsInsensitive(a.name),
+      location: a.location ? equalsInsensitive(a.location) : null,
     },
     select: { id: true },
   });

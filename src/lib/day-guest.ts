@@ -11,6 +11,7 @@ import { berlinYmd } from "./berlin-day";
 import { buildScanCodeVariants } from "./scan-code-variants";
 import { awardMilestones, loadGamiConfig, syncDayTicketStat } from "./gamification-service";
 import { runChallenges } from "./challenge-service";
+import { equalsInsensitive } from "./like-escape";
 
 const USABLE = ["VALID", "REDEEMED"] as const;
 const MAX_TICKETS = 200;
@@ -80,7 +81,7 @@ export async function dayTicketsByEmail(accountId: number, email: string, now: D
       subscriptionId: null,
       serviceId: { in: config.dayServiceIds },
       status: { in: [...USABLE] },
-      email: { equals: email, mode: "insensitive" },
+      email: equalsInsensitive(email),
     },
     select: { id: true, riderProfileId: true, gamificationOptOut: true, startDate: true, createdAt: true },
     orderBy: { id: "desc" },
@@ -119,7 +120,7 @@ export async function adoptDayTickets(accountId: number, email: string | null | 
       orderBy: { id: "asc" },
     }).then((p) => (p ? { riderProfileId: p.id } : null)))
     ?? (await prisma.ticket.findFirst({
-      where: { accountId, riderProfileId: { not: null }, email: { equals: clean, mode: "insensitive" } },
+      where: { accountId, riderProfileId: { not: null }, email: equalsInsensitive(clean) },
       select: { riderProfileId: true },
       orderBy: { id: "desc" },
     }));

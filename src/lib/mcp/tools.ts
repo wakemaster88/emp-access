@@ -24,6 +24,7 @@ import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { ruleInclude } from "@/lib/room-rule-queries";
 import { DEFAULT_TIMEZONE, addDaysToYmd, tzYmd } from "@/lib/tz-time";
 import { McpToolError, type McpLevel, type McpTool } from "./protocol";
+import { equalsInsensitive } from "@/lib/like-escape";
 
 export interface McpCtx {
   db: TenantDb;
@@ -969,7 +970,7 @@ const backendTools: Tool[] = [
           accountId: ctx.accountId,
           startedAt: { gte: new Date(Date.now() - hours * 3_600_000) },
           ...(cam ? { cameraId: cam.id } : {}),
-          ...(type ? { type: { equals: type, mode: "insensitive" as const } } : {}),
+          ...(type ? { type: equalsInsensitive(type) } : {}),
         },
         select: { type: true, startedAt: true, endedAt: true, camera: { select: { name: true } } },
         orderBy: { startedAt: "desc" },

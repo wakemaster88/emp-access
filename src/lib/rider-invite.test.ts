@@ -75,8 +75,11 @@ test("familyInviteMail: nennt, wer einlädt, Link und Gültigkeit, Werte maskier
   assert.match(m.html, /Anna &lt;b&gt; lädt dich in die App von Wasserski &lt;Test&gt; ein/);
   assert.doesNotMatch(m.html, /<b>|<Test>/);
   assert.match(m.html, /app\/mail\/abc\?familie=xyz/);
-  assert.match(m.text, /Hier nimmst du sie an:\nhttps:\/\/app\.example\/app\/mail\/abc\?familie=xyz/);
+  assert.match(m.text, /Hier öffnest du sie:\nhttps:\/\/app\.example\/app\/mail\/abc\?familie=xyz/);
   assert.match(m.text, /Der Link gilt 7 Tage/);
+  // Der Link allein nimmt niemanden auf: der Beitritt wird in der App bestätigt.
+  assert.match(m.text, /trittst du erst bei, wenn du es in der App bestätigst/);
+  assert.match(m.html, /Einladung öffnen/);
 });
 
 test("mailLinkKey: Einladung gilt länger als der Anmelde-Link", async () => {

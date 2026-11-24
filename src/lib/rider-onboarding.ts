@@ -22,6 +22,7 @@ import { samePersonAbos } from "./abo-person";
 import { customerIdForEmail, kontoLogin, syncKontoFamily, type LoginPerson } from "./customers";
 import { sendEmail } from "./email-sender";
 import { riderLinkMail } from "./rider-mail-template";
+import { equalsInsensitive } from "./like-escape";
 
 const ABO_STATUS = ["VALID", "REDEEMED", "PAUSED"] as const;
 const MAX_ABOS = 20;
@@ -56,11 +57,14 @@ async function confirmedProfile(accountId: number, email: string): Promise<{ id:
 /** Ohne Konto: Profil über ein zugeordnetes Ticket mit dieser Adresse (aus der Zeit vor den Konten). */
 async function profileViaTicket(accountId: number, email: string): Promise<{ id: number; token: string; email: string | null } | null> {
   const viaTicket = await prisma.ticket.findFirst({
-    where: { accountId, riderProfileId: { not: null }, email: { equals: email, mode: "insensitive" } },
-    select: { riderProfile: { select: { id: true, token: true, email: true } } },
+    where: { accountId, riderProfileId: { not: null }, email: equalsInsensitive(email) },
+    select: { email: true, riderProfile: { select: { id: true, token: true, email: true } } },
     orderBy: { id: "desc" },
   });
-  return viaTicket?.riderProfile ?? null;
+  // Zweite Sicherung neben dem maskierten Vergleich: Ein Profil gibt es nur
+  // über ein Ticket, das genau diese Adresse trägt.
+  if (!viaTicket || normalizeEmail(viaTicket.email) !== email) return null;
+  return viaTicket.riderProfile ?? null;
 }
 
 /** Abos mit dieser Adresse, die noch niemand in die App geholt hat. */
@@ -72,7 +76,7 @@ async function openAbos(accountId: number, email: string, now: Date): Promise<On
       subscriptionId: config?.subscriptionIds.length ? { in: config.subscriptionIds } : { not: null },
       riderProfileId: null,
       status: { in: [...ABO_STATUS] },
-      email: { equals: email, mode: "insensitive" },
+      email: equalsInsensitive(email),
       OR: [{ endDate: null }, { endDate: { gte: new Date(now.getTime() - 365 * 86_400_000) } }],
     },
     select: {
@@ -240,7 +244,7 @@ async function targetAccounts(email: string, now: Date): Promise<Array<{ account
       (await prisma.ticket.count({
         where: {
           accountId: c.accountId,
-          email: { equals: email, mode: "insensitive" },
+          email: equalsInsensitive(email),
           OR: [{ subscriptionId: { not: null } }, { riderProfileId: { not: null } }],
         },
       })) > 0 ||
@@ -268,7 +272,7 @@ export async function requestAppLink(rawEmail: unknown, origin: string, now: Dat
       where: {
         accountId: target.accountId,
         subject: DAY_GUEST_MAIL_SUBJECT,
-        to: { equals: email, mode: "insensitive" },
+        to: equalsInsensitive(email),
         sentAt: { gte: new Date(now.getTime() - 86_400_000) },
       },
       select: { sentAt: true },

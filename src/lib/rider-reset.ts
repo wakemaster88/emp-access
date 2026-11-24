@@ -10,6 +10,7 @@ import { sendEmail } from "./email-sender";
 import { riderAppPath } from "./rider-app";
 import { riderResetMail } from "./rider-mail-template";
 import { RESET_LINK_MINUTES, signResetKey, verifyResetKey, type ResetKeyProfile } from "./rider-reset-key";
+import { equalsInsensitive } from "./like-escape";
 
 export const RESET_MAIL_SUBJECT = "Neues Passwort für die App";
 const PAUSE_MINUTES = 5;
@@ -61,7 +62,7 @@ export async function sendRiderResetMail(
     where: {
       accountId: p.accountId,
       subject: RESET_MAIL_SUBJECT,
-      to: { equals: email, mode: "insensitive" },
+      to: equalsInsensitive(email),
       sentAt: { gte: new Date(now.getTime() - 86_400_000) },
     },
     select: { sentAt: true },

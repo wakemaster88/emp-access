@@ -4,8 +4,8 @@ import { publicRateLimit } from "@/lib/rate-limit";
 import { verifyMailLinkKey } from "@/lib/day-guest";
 import { completeOnboarding } from "@/lib/rider-onboarding";
 import { riderAppPath } from "@/lib/rider-app";
-import { signInByMail } from "@/lib/rider-auth";
-import { acceptFamilyInvite, FAMILY_INVITE_COOKIE } from "@/lib/rider-family-invite";
+import { mailLinkSession, setRiderCookie } from "@/lib/rider-auth";
+import { FAMILY_INVITE_COOKIE, pendingFamilyInvite } from "@/lib/rider-family-invite";
 
 const schema = z.object({
   key: z.string().min(10).max(800),
@@ -35,11 +35,14 @@ export async function POST(request: NextRequest) {
   });
   if (!token) return NextResponse.json({ error: "Die App ist gerade nicht freigeschaltet." }, { status: 403 });
 
-  // Kam die Person über eine Einladung in eine Familie (Cookie aus /app/mail): jetzt beitreten.
-  const family = request.cookies.get(FAMILY_INVITE_COOKIE)?.value;
-  const joinError = family ? await acceptFamilyInvite(token, family) : null;
-  const url = joinError && family ? `/app/familie/${encodeURIComponent(family)}` : riderAppPath(token);
-  const res = await signInByMail(NextResponse.json({ url }), token, link.email);
-  if (family) res.cookies.delete(FAMILY_INVITE_COOKIE);
-  return res;
+  // Kam die Person über eine Einladung in eine Familie (Cookie aus /app/mail)?
+  // Dann geht es zur Einladungsseite; beigetreten wird erst dort per Knopf.
+  // Ohne Anmeldedaten zuerst einrichten, die App zeigt die Einladung danach.
+  const cookie = request.cookies.get(FAMILY_INVITE_COOKIE)?.value;
+  const invite = await pendingFamilyInvite(token, cookie);
+  const session = await mailLinkSession(token, link.email);
+  const url = invite && session ? `/app/familie/${encodeURIComponent(invite.key)}` : riderAppPath(token);
+  const res = NextResponse.json({ url });
+  if (cookie && !invite) res.cookies.delete(FAMILY_INVITE_COOKIE);
+  return session ? setRiderCookie(res, session) : res;
 }

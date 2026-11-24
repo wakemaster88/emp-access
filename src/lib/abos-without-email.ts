@@ -8,6 +8,7 @@
  */
 import type { PrismaClient, TicketStatus } from "@prisma/client";
 import { normalizeName } from "./ticket-predecessor";
+import { equalsInsensitive } from "./like-escape";
 
 export type AboSource = "reepay" | "anny" | "manual";
 
@@ -107,8 +108,8 @@ export async function loadAbosWithoutEmail(
   const lastNames = [...new Set(abos.map((a) => a.lastName?.trim()).filter((v): v is string => !!v))];
   const names = [...new Set(abos.filter((a) => !a.lastName?.trim()).map((a) => a.name.trim()).filter(Boolean))];
   const nameFilters = [
-    ...lastNames.map((v) => ({ lastName: { equals: v, mode: "insensitive" as const } })),
-    ...names.map((v) => ({ name: { equals: v, mode: "insensitive" as const } })),
+    ...lastNames.map((v) => ({ lastName: equalsInsensitive(v) })),
+    ...names.map((v) => ({ name: equalsInsensitive(v) })),
   ];
   const candidates = nameFilters.length === 0
     ? []

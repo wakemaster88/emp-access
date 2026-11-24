@@ -19,6 +19,7 @@ import { normalizeEmail } from "./day-guest";
 import { sendEmail } from "./email-sender";
 import { assertRoom, ensureFamily, FamilyError, memberName, type FamilyPerson } from "./rider-family";
 import { familyChildMail } from "./rider-mail-template";
+import { equalsInsensitive } from "./like-escape";
 
 export const FAMILY_CHILD_LINK_DAYS = 7;
 export const FAMILY_CHILD_MAIL_SUBJECT = "Familie in der App bestätigen";
@@ -138,7 +139,7 @@ export async function requestFamilyChildLink(viewer: FamilyPerson, rawEmail: unk
     where: {
       accountId: viewer.accountId,
       subject: FAMILY_CHILD_MAIL_SUBJECT,
-      to: { equals: email, mode: "insensitive" },
+      to: equalsInsensitive(email),
       sentAt: { gte: new Date(now.getTime() - 86_400_000) },
     },
     select: { sentAt: true },
