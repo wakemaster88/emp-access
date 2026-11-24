@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 
+// Sperrliste pflegen (aendern, freigeben) ist Einrichtung: nur Verwaltung.
 async function load(params: Promise<{ id: string }>) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return { error: session.error };
   const { db, accountId } = session;
   const id = Number((await params).id);

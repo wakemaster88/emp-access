@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRoleRequired, getSessionWithDb, validateApiToken } from "@/lib/api-auth";
-import { hubTaskAllowedForUser } from "@/lib/role-guards";
+import { adminRoleRequired, getSessionWithDb, isTenantAdminRole, validateApiToken } from "@/lib/api-auth";
+import { hubTaskAllowedForUser, hubTaskListFilter } from "@/lib/role-guards";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -45,7 +45,8 @@ const VALID_TASK_TYPES = [
 
 /**
  * GET (Hub, Token-Auth): holt offene Tasks ab und markiert sie als RUNNING.
- * GET (Session): listet die letzten Tasks fuer die UI.
+ * GET (Session): listet die letzten Tasks fuer die UI. USER sieht nur die
+ * Typen, die er selbst anlegen darf (hubTaskListFilter).
  */
 export async function GET(request: NextRequest) {
   if (hasApiToken(request)) {
@@ -70,7 +71,10 @@ export async function GET(request: NextRequest) {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
   const tasks = await session.db.hubTask.findMany({
-    where: { accountId: session.accountId! },
+    where: {
+      accountId: session.accountId!,
+      ...hubTaskListFilter(isTenantAdminRole(session.session.user.role)),
+    },
     orderBy: { createdAt: "desc" },
     take: 50,
   });

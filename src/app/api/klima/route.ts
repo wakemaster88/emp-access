@@ -5,7 +5,9 @@ import { isOperatingExtent } from "@/lib/operating-extent";
 
 /**
  * Klima je Raum (Solltemperatur halten). Sitzung oder Account-Token, damit
- * auch der Hub es pflegen kann.
+ * auch der Hub es pflegen kann. Anlegen, aendern und entfernen ist
+ * Einrichtung: in der Sitzung nur mit Verwaltungs-Rolle. Kurzfristig
+ * uebersteuern (klima/override) bleibt Bedienung.
  *
  * GET              alle Klimas des Mandanten
  * PUT              anlegen oder aendern, Schluessel ist `roomId`
@@ -29,7 +31,7 @@ function num(v: unknown): number | null {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await getSessionOrApiToken(request);
+  const auth = await getSessionOrApiToken(request, { requireAdmin: true });
   if ("error" in auth) return auth.error;
   const { db, accountId } = auth;
   if (!accountId) return NextResponse.json({ error: "Kein Mandant" }, { status: 400 });
@@ -130,7 +132,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await getSessionOrApiToken(request);
+  const auth = await getSessionOrApiToken(request, { requireAdmin: true });
   if ("error" in auth) return auth.error;
   const { db, accountId } = auth;
   if (!accountId) return NextResponse.json({ error: "Kein Mandant" }, { status: 400 });
