@@ -650,6 +650,9 @@ model Ticket {
   // jemals eingeloesten Tickets des Mandanten.
   @@index([accountId, endDate])
   @@index([accountId, createdAt])
+  // Dazu ein Ausdrucks-Index auf ("accountId", lower("email")), den Prisma
+  // nicht abbilden kann: Migration 20261124210000_ticket_email_lower_index,
+  // genutzt von lib/ticket-email.ts.
 }
 
 model Scan {

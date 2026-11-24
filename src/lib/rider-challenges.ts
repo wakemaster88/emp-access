@@ -7,7 +7,7 @@
 import { audiencesFor, type PassKind } from "./rider-pass";
 import { cache } from "react";
 import { skillRewardText } from "./rider-skill-rules";
-import { prisma, tenantClient } from "./prisma";
+import { prisma, tenantClient, type TenantDb } from "./prisma";
 import { berlinHm, berlinYmd } from "./berlin-day";
 import {
   challengeConditionText,
@@ -20,8 +20,9 @@ import {
   type GamiMetric,
 } from "./gamification";
 import {
-  awardTaskChallenges, challengeUnits, openChallenges, rankUnits, settleDueChallenges, type ChallengeRow,
+  awardTaskChallenges, challengeUnits, openChallenges, rankUnits, settleDueChallenges, type ChallengeRow, type RiderUnit,
 } from "./challenge-service";
+import { createTtlCache } from "./ttl-cache";
 import type { RiderView } from "./rider-app";
 import { loadVoting, type VotingView } from "./challenge-voting";
 import { loadFamilyMembers } from "./rider-family";
@@ -57,6 +58,22 @@ export interface RiderChallenge {
 
 const KEEP_ENDED_DAYS = 30;
 
+/**
+ * Kurz im Speicher je Instanz: Ranglisten (`challengeUnits`) sind für alle
+ * Kunden gleich, Auswertung und Vergabe müssen nicht bei jedem Aufruf laufen.
+ * Der eigene Wert kommt aus der Rangliste; der Gewinn (`won`) wird immer frisch gelesen.
+ */
+const CHALLENGE_TTL_MS = 60_000;
+const unitsCache = createTtlCache<RiderUnit[]>(CHALLENGE_TTL_MS, { maxEntries: 200 });
+const settleThrottle = createTtlCache<number>(CHALLENGE_TTL_MS, { maxEntries: 50 });
+const taskThrottle = createTtlCache<number>(CHALLENGE_TTL_MS);
+
+/** Rangliste einer Challenge; der Schlüssel enthält alles, wonach sie zählt. */
+function cachedUnits(db: TenantDb, accountId: number, c: ChallengeRow, cap: number): Promise<RiderUnit[]> {
+  const key = [accountId, c.id, cap, c.kind, c.metric, c.audience, c.startDate.getTime(), c.endDate.getTime()].join(":");
+  return unitsCache.get(key, () => challengeUnits(db, accountId, c, cap));
+}
+
 function shiftYmd(ymd: string, days: number): string {
   return new Date(ymdToDbDate(ymd).getTime() + days * 86_400_000).toISOString().slice(0, 10);
 }
@@ -72,15 +89,23 @@ export async function loadRiderChallenges(
   const { accountId } = rider;
   const db = tenantClient(accountId);
   const today = berlinYmd(now);
-  // Fällige Top-X-Challenges auswerten, damit das Ergebnis sofort sichtbar ist.
-  if (!readOnly) await settleDueChallenges(db, accountId, today, rider.startCapPerDay).catch(() => 0);
-  // Aufgaben, die schon vor dem Anlegen der Challenge erfüllt waren, jetzt vergeben.
+  // Fällige Top-X-Challenges auswerten, damit das Ergebnis sofort sichtbar ist
+  // (je Mandant höchstens einmal je Minute).
+  if (!readOnly) {
+    await settleThrottle.get(`${accountId}:${rider.startCapPerDay}`, () =>
+      settleDueChallenges(db, accountId, today, rider.startCapPerDay).catch(() => 0),
+    );
+  }
+  // Aufgaben, die schon vor dem Anlegen der Challenge erfüllt waren, jetzt vergeben
+  // (je Person höchstens einmal je Minute).
   if (!readOnly && rider.ticketIds.length > 0) {
-    await openChallenges(db, accountId)
-      .then((open) =>
-        awardTaskChallenges(db, accountId, Math.max(...rider.ticketIds), today, rider.startCapPerDay, open),
-      )
-      .catch(() => 0);
+    await taskThrottle.get(`${accountId}:${rider.profileId}`, () =>
+      openChallenges(db, accountId)
+        .then((open) =>
+          awardTaskChallenges(db, accountId, Math.max(...rider.ticketIds), today, rider.startCapPerDay, open),
+        )
+        .catch(() => 0),
+    );
   }
 
   const challenges = await prisma.challenge.findMany({
@@ -119,11 +144,14 @@ export async function loadRiderChallenges(
     return new Map<number, VotingView>();
   });
 
+  // Ranglisten nebeneinander laden statt nacheinander.
+  const unitsOf = await Promise.all(
+    challenges.map((c) => (phases.get(c.id) === "upcoming" ? [] : cachedUnits(db, accountId, c as ChallengeRow, rider.startCapPerDay))),
+  );
   const out: RiderChallenge[] = [];
-  for (const c of challenges) {
-    const row = c as ChallengeRow;
+  for (const [i, c] of challenges.entries()) {
     const phase = phases.get(c.id)!;
-    const units = phase === "upcoming" ? [] : await challengeUnits(db, accountId, row, rider.startCapPerDay);
+    const units = unitsOf[i];
     const mine = units.find((u) => u.key === myKey);
     let rank: number | null = null;
     let top: RiderChallenge["top"] = [];

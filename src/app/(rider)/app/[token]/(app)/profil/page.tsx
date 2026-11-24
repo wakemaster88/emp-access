@@ -5,7 +5,7 @@ import { RiderProfileForm } from "@/components/rider/rider-profile-form";
 import { RiderLogout, RiderSecurity } from "@/components/rider/rider-auth";
 import { RiderPush } from "@/components/rider/rider-push";
 import { RiderPerson } from "@/components/rider/rider-person";
-import { findRiderAuthProfile, riderFamilyView } from "@/lib/rider-auth";
+import { findRiderAuthProfileCached, riderFamilyView } from "@/lib/rider-auth";
 import { loadRiderPerson } from "@/lib/rider-person";
 import { RiderFamily } from "@/components/rider/rider-family";
 import { RiderKasseCode } from "@/components/rider/rider-kasse-code";
@@ -23,7 +23,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
   const { token } = await params;
   const rider = await requireRider(token);
   const abo = rider.abo;
-  const [auth, family, person] = await Promise.all([findRiderAuthProfile(token), riderFamilyView(token), loadRiderPerson(token)]);
+  const [auth, family, person] = await Promise.all([findRiderAuthProfileCached(token), riderFamilyView(token), loadRiderPerson(token)]);
   if (!person) notFound();
   const relation = family?.relation ?? "self";
   const self = relation === "self";
@@ -42,7 +42,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
         firstName={person.firstName}
         lastName={person.lastName}
         birthDate={person.birthDate}
-        photo={person.photo}
+        photoUrl={person.photoUrl}
         subtitle={subtitle}
         editable={relation === "self" || relation === "manage"}
         managed={relation === "manage"}
