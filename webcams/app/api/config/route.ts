@@ -4,6 +4,8 @@ import { ConfigSchema } from "@/lib/types";
 import { ensureWorkersStarted } from "@/lib/people-counter";
 import { requireAuth } from "@/lib/auth";
 import { maskConfigSecrets, restoreConfigSecrets } from "@/lib/config-secrets";
+import { configWriteErrors } from "@/lib/config-validate";
+import { requireSameOriginJson } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,8 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  const rejected = requireSameOriginJson(req);
+  if (rejected) return rejected;
   const denied = await requireAuth(req);
   if (denied) return denied;
 
@@ -39,6 +43,10 @@ export async function PUT(req: Request) {
   // ein Platzhalter darf nie ein echtes Secret überschreiben.
   const current = await loadConfig();
   const next = restoreConfigSecrets(parsed.data, current);
+  const invalid = configWriteErrors(next, current);
+  if (invalid.length) {
+    return NextResponse.json({ error: invalid.join("; ") }, { status: 400 });
+  }
 
   const saved = await saveConfig(next);
   // Worker neu syncen (Cam evt. enabled/disabled, Intervall geändert)

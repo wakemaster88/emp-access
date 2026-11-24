@@ -5,6 +5,8 @@ import { writeGo2rtcYaml, reloadGo2rtc } from "@/lib/go2rtc";
 import { syncWorkers } from "@/lib/people-counter";
 import { notifySidecarConfigChanged } from "@/lib/people-tracker";
 import { prepareCamForSave } from "@/lib/cam-helpers";
+import { camWriteErrors } from "@/lib/config-validate";
+import { requireSameOriginJson } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const rejected = requireSameOriginJson(req);
+  if (rejected) return rejected;
   let body: unknown;
   try {
     body = await req.json();
@@ -28,6 +32,10 @@ export async function POST(req: Request) {
       { error: "validation failed", issues: parsed.error.issues },
       { status: 400 },
     );
+  }
+  const invalid = camWriteErrors(parsed.data, null);
+  if (invalid.length) {
+    return NextResponse.json({ error: invalid.join("; ") }, { status: 400 });
   }
   const config = await loadConfig();
   if (config.cams.some((c) => c.id === parsed.data.id)) {

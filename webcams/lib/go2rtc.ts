@@ -37,6 +37,15 @@ function quoteYaml(s: string) {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * Stream-Name als YAML-Schlüssel. Übliche IDs bleiben unverändert; alles
+ * andere (z. B. ältere IDs mit Leerzeichen) wird als JSON-String geschrieben,
+ * der auch ein gültiger YAML-String in doppelten Anführungszeichen ist.
+ */
+export function yamlKey(name: string): string {
+  return /^[A-Za-z0-9_.-]+$/.test(name) ? name : JSON.stringify(name);
+}
+
 export function buildGo2rtcYaml(config: Config): string {
   const lines: string[] = [];
   lines.push("# AUTO-GENERIERT von /admin – nicht manuell editieren.");
@@ -81,9 +90,9 @@ export function buildGo2rtcYaml(config: Config): string {
 
   for (const cam of config.cams) {
     if (!cam.enabled) continue;
-    lines.push(`  ${cam.id}_main:`);
+    lines.push(`  ${yamlKey(`${cam.id}_main`)}:`);
     lines.push(`    - ${quoteYaml(rtspUrl(cam, cam.streamMain))}`);
-    lines.push(`  ${cam.id}_sub:`);
+    lines.push(`  ${yamlKey(`${cam.id}_sub`)}:`);
     lines.push(`    - ${quoteYaml(rtspUrl(cam, cam.streamSub))}`);
   }
 

@@ -62,6 +62,7 @@ class Config:
 
     def load(self):
         if os.path.exists(CONFIG_PATH):
+            self._restrict_permissions()
             try:
                 with open(CONFIG_PATH, "r") as f:
                     stored = json.load(f)
@@ -84,11 +85,21 @@ class Config:
 
     def save(self):
         try:
-            with open(CONFIG_PATH, "w") as f:
+            # audio-config.json enthält das API-Token → nur für den Besitzer lesbar (0600).
+            fd = os.open(CONFIG_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 json.dump(self._data, f, indent=2)
+            self._restrict_permissions()
             logger.info("Konfiguration gespeichert")
         except Exception as e:
             logger.error("Fehler beim Speichern: %s", e)
+
+    def _restrict_permissions(self) -> None:
+        """Bestehende audio-config.json (früher 0644 angelegt) auf 0600 nachziehen."""
+        try:
+            os.chmod(CONFIG_PATH, 0o600)
+        except OSError as e:
+            logger.debug("chmod 0600 auf audio-config.json fehlgeschlagen: %s", e)
 
     @property
     def is_configured(self) -> bool:

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig, saveConfig } from "@/lib/config";
 import { LayoutSchema } from "@/lib/types";
+import { requireSameOriginJson } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const rejected = requireSameOriginJson(req);
+  if (rejected) return rejected;
   let body: unknown;
   try {
     body = await req.json();
@@ -39,6 +42,8 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const rejected = requireSameOriginJson(req);
+  if (rejected) return rejected;
   // Set activeLayoutId
   let body: unknown;
   try {

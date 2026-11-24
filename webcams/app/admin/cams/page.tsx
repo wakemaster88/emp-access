@@ -21,6 +21,7 @@ import { ConfirmDialog } from "@/components/ui/confirm";
 import { CamForm } from "@/components/admin/cam-form";
 import { Field, Input, Label } from "@/components/ui/input";
 import { REOLINK_CAPS, REOLINK_MODELS, type Cam, type ReolinkModel } from "@/lib/types";
+import { clampConfigId } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 
 interface FoundCam {
@@ -118,7 +119,7 @@ export default function CamsPage() {
 
   async function importCam(found: FoundCam) {
     const slug = slugify(found.name) || `cam-${found.ip.replace(/\./g, "-")}`;
-    const camId = `cam-${slug}`;
+    const camId = clampConfigId(`cam-${slug}`);
     setImporting((s) => new Set(s).add(found.ip));
     try {
       // DevInfo liefert z. B. "Reolink Duo 3 PoE" — auf bekannte Modelle mappen.
@@ -153,7 +154,7 @@ export default function CamsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: `w-${slug}`,
+          id: clampConfigId(`w-${slug}`),
           type: "reolink",
           title: found.name,
           camId,
