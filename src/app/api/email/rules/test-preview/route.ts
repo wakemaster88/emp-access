@@ -5,6 +5,7 @@ import { sendEmail } from "@/lib/email-sender";
 import {
   buildSampleTemplateVariables,
   renderTemplate,
+  renderTemplateHtml,
   wrapEmailHtml,
 } from "@/lib/email-templates";
 
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
   });
 
   const renderedSubject = renderTemplate(data.subject, vars);
-  const renderedBody = renderTemplate(data.bodyHtml, vars);
+  const renderedBody = renderTemplateHtml(data.bodyHtml, vars);
   const previewSubject = `[TEST] ${renderedSubject}`;
 
   const html = wrapEmailHtml({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import {
   PARTICIPANT_NAME_LABEL,
   bookingNumberOf,
@@ -14,7 +15,14 @@ import {
  *   GET  – Formular-Definition + Plaetze + bereits gespeicherte Antworten
  *   POST – Antworten speichern (schreibt Ticket.guestInfo aller Tickets
  *          des jeweiligen Platzes: Woche + Tagestickets)
+ *
+ * Die Seite laedt das Formular einmal und speichert einmal; die Grenzen je
+ * Link und Anschluss lassen ein Vielfaches davon zu (Neuladen, mehrere
+ * Geraete einer Familie hinter derselben IP).
  */
+
+const INFO_READ_LIMIT = { limit: 30, windowMs: 60_000 } as const;
+const INFO_WRITE_LIMIT = { limit: 20, windowMs: 60_000 } as const;
 
 async function loadRequest(token: string) {
   if (!token || token.length < 16) return null;
@@ -47,10 +55,12 @@ async function loadRequest(token: string) {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "info-read", INFO_READ_LIMIT);
+  if (limited) return limited;
   const loaded = await loadRequest(token);
   if (!loaded) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   const { infoRequest, tickets } = loaded;
@@ -114,6 +124,8 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "info-write", INFO_WRITE_LIMIT);
+  if (limited) return limited;
   const loaded = await loadRequest(token);
   if (!loaded) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   const { infoRequest, tickets } = loaded;

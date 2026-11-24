@@ -4,6 +4,7 @@
  */
 
 import { addCalendarDays, berlinYmd } from "@/lib/berlin-day";
+import { csvQuote, csvTextCell } from "@/lib/csv-cell";
 
 export type PortalSlotState = "free" | "taken" | "mine" | "past";
 
@@ -122,13 +123,11 @@ export function billingTotals(rows: Pick<BillingRow, "priceCents" | "status" | "
   return { openCents, billedCents, openCount, billedCount };
 }
 
-function csvCell(v: string): string {
-  return /[";\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-}
-
 /**
  * CSV fuer die Abrechnung (Semikolon, deutsches Komma, BOM fuer Excel).
- * Enthaelt nur gebuchte Slots; Stornos werden nicht abgerechnet.
+ * Enthaelt nur gebuchte Slots; Stornos werden nicht abgerechnet. Textfelder
+ * laufen durch csvTextCell (Hochkomma vor =, +, -, @ ...), der Betrag bleibt
+ * eine Zahl, auch wenn er negativ ist.
  */
 export function billingCsv(rows: BillingRow[]): string {
   const head = ["Verein", "Datum", "Von", "Bis", "Service", "Art", "Preis (EUR)", "Für wen", "Gebucht von", "Abgerechnet am", "Rechnung"];
@@ -137,19 +136,17 @@ export function billingCsv(rows: BillingRow[]): string {
     .map((r) => {
       const [y, m, d] = r.date.split("-");
       const billed = r.billedAt ? berlinYmd(new Date(r.billedAt)).split("-").reverse().join(".") : "";
-      return [
+      const price = csvQuote((r.priceCents / 100).toFixed(2).replace(".", ","));
+      const text = [
         r.vereinName,
         `${d}.${m}.${y}`,
         r.slotStart,
         r.slotEnd,
         r.serviceName,
         r.inclusive ? "Inklusiv" : "Miete",
-        (r.priceCents / 100).toFixed(2).replace(".", ","),
-        r.bookedFor ?? "",
-        r.bookedBy ?? "",
-        billed,
-        r.invoiceRef ?? "",
-      ].map(csvCell).join(";");
+      ].map(csvTextCell);
+      const rest = [r.bookedFor ?? "", r.bookedBy ?? "", billed, r.invoiceRef ?? ""].map(csvTextCell);
+      return [...text, price, ...rest].join(";");
     });
   return "﻿" + [head.join(";"), ...lines].join("\r\n") + "\r\n";
 }

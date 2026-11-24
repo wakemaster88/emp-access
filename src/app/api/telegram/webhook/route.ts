@@ -4,6 +4,7 @@ import { answerCallbackQuery, editMessageCaption, editMessageText, telegramWebho
 import { approveVereinRequest, rejectVereinRequest } from "@/lib/verein-portal";
 import { loadRequestSummary, requestTelegramText, VEREIN_REQUEST_CALLBACK_RE } from "@/lib/verein-request-telegram";
 import { secretsEqual } from "@/lib/cron-auth";
+import { escapeTelegramHtml } from "@/lib/telegram-text";
 
 /**
  * Telegram-Webhook: verarbeitet Inline-Button-Klicks (callback_query).
@@ -112,12 +113,14 @@ export async function POST(request: NextRequest) {
         hour: "2-digit",
         minute: "2-digit",
       }).format(new Date());
-      const base = cb.message.caption ?? "Öffnungswunsch";
+      // Telegram liefert die Caption als reinen Text zurueck; fuer den
+      // HTML-Modus wird sie wie der Name maskiert.
+      const base = escapeTelegramHtml(cb.message.caption ?? "Öffnungswunsch");
       await editMessageCaption(
         botToken,
         cb.message.chat.id,
         cb.message.message_id,
-        `${base}\n✅ Tor geöffnet von ${who} um ${timeStr} Uhr`
+        `${base}\n✅ Tor geöffnet von ${escapeTelegramHtml(who)} um ${timeStr} Uhr`
       ).catch(() => undefined);
     }
 
@@ -150,8 +153,8 @@ export async function POST(request: NextRequest) {
         minute: "2-digit",
       }).format(new Date());
       const status = result.ok
-        ? `${approve ? "✅ Freigegeben" : "❌ Abgelehnt"} von ${who} um ${timeStr} Uhr`
-        : `⚠️ ${result.error}`;
+        ? `${approve ? "✅ Freigegeben" : "❌ Abgelehnt"} von ${escapeTelegramHtml(who)} um ${timeStr} Uhr`
+        : `⚠️ ${escapeTelegramHtml(result.error)}`;
       // Bei Fehlern (z. B. Slot inzwischen belegt) bleiben die Tasten stehen,
       // ausser die Anfrage ist schon entschieden.
       const decided = result.ok || result.status === 404;

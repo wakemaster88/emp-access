@@ -28,6 +28,7 @@ import {
 } from "@/lib/audio";
 import { musicWindowState } from "@/lib/audio-constants";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { escapeTelegramHtml } from "@/lib/telegram-text";
 import { sendPushToAccount } from "@/lib/web-push";
 import { getSunTimesForAccount } from "@/lib/sun";
 import { dueOperatingOccurrence, isOperatingAt, type ScheduleSpec } from "@/lib/operating-hours";
@@ -286,7 +287,7 @@ async function runNotifyAction(rule: LoadedRule, action: RoomRuleAction): Promis
     if (configs.length === 0) errors.push("kein aktiver Telegram-Chat");
     for (const config of configs) {
       try {
-        const result = await sendTelegramMessage(config.botToken, config.chatId, text);
+        const result = await sendTelegramMessage(config.botToken, config.chatId, escapeTelegramHtml(text));
         if (result.ok) sent++;
         else errors.push(result.description ?? "Telegram abgelehnt");
       } catch (e) {

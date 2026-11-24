@@ -19,6 +19,7 @@ import { sendEmail, type EmailProvider } from "@/lib/email-sender";
 import {
   computeExpiryStatus,
   renderTemplate,
+  renderTemplateHtml,
   wrapEmailHtml,
   type TemplateVariables,
 } from "@/lib/email-templates";
@@ -434,7 +435,7 @@ export async function processAccountEmailRules(
         });
 
         const subject = renderTemplate(rule.subject, vars);
-        const innerHtml = renderTemplate(rule.bodyHtml, vars);
+        const innerHtml = renderTemplateHtml(rule.bodyHtml, vars);
         const html = wrapEmailHtml({
           innerHtml,
           brandColor: config.brandColor,

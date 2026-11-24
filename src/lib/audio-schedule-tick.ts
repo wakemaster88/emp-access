@@ -13,6 +13,7 @@
 import { prisma, tenantClient, type TenantDb } from "@/lib/prisma";
 import {
   SCHEDULE_WINDOW_MINUTES,
+  TTS_RENDER_TIMEOUT_CRON_MS,
   ensureAnnouncementTrack,
   isScheduleDue,
   parseZoneIds,
@@ -202,7 +203,7 @@ export async function runAudioScheduleTick(now = new Date()): Promise<AudioTickR
             now,
             timezone: timeZone,
             schedule: spec,
-          });
+          }, TTS_RENDER_TIMEOUT_CRON_MS);
           await queueAnnouncement(
             db,
             account.id,

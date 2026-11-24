@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { sendTelegramPhoto } from "@/lib/telegram";
+import { escapeTelegramHtml } from "@/lib/telegram-text";
 
 /**
  * Öffnungswunsch am Tor (Token-Auth, vom Hub):
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
   }).format(new Date());
 
   const title = trigger === "DOORBELL" ? "🔔 Klingel am Tor" : "🚗 Fahrzeug am Tor";
-  const caption = `<b>${title}</b>\n${camera.name} · ${timeStr} Uhr`;
+  const caption = `<b>${title}</b>\n${escapeTelegramHtml(camera.name)} · ${timeStr} Uhr`;
 
   let sent = 0;
   for (const tg of telegramConfigs) {

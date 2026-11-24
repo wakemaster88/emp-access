@@ -167,10 +167,27 @@ export function buildSampleTemplateVariables(args: {
   };
 }
 
+/**
+ * Setzt die Variablen unveraendert ein. Fuer Betreff und reine Textteile;
+ * fuer den HTML-Text einer Mail `renderTemplateHtml` nehmen.
+ */
 export function renderTemplate(template: string, vars: TemplateVariables): string {
   return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
     const v = (vars as Record<string, string | null | undefined>)[key];
     return v == null ? "" : String(v);
+  });
+}
+
+/**
+ * Wie `renderTemplate`, aber fuer den HTML-Text einer Mail: jeder Wert wird
+ * HTML-maskiert (auch Anfuehrungszeichen), damit Namen und Bezeichnungen als
+ * Text erscheinen und Links wie `href="{{renewUrl}}"` gueltig bleiben. Keine
+ * der Variablen traegt fertiges HTML; das HTML steht in der Vorlage selbst.
+ */
+export function renderTemplateHtml(template: string, vars: TemplateVariables): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
+    const v = (vars as Record<string, string | null | undefined>)[key];
+    return v == null ? "" : escapeHtml(String(v));
   });
 }
 
