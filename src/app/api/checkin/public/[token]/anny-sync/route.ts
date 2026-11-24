@@ -46,6 +46,8 @@ export async function POST(
       errors: result.errors,
       errorDetails: result.errorDetails,
       total: result.total,
+      // Lief schon ein Abgleich, kommt dieselbe Erfolgsantwort mit Marker.
+      ...(result.alreadyRunning ? { alreadyRunning: true } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

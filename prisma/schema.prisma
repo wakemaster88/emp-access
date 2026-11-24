@@ -1367,6 +1367,9 @@ model ApiConfig {
   extraConfig    String?
   lastUpdate     DateTime?
   lastPostUpdate DateTime?
+  /// Beginn des laufenden anny-Abgleichs (null = keiner laeuft). Verhindert
+  /// parallele Laeufe; ein Eintrag aelter als 3 Minuten gilt als verwaist.
+  syncStartedAt  DateTime?
   accountId      Int
   account        Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
   gardenaDevices Device[]    @relation("GardenaConfigDevices")

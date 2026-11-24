@@ -5,6 +5,29 @@ import { checkinPhotoUrl } from "@/lib/photo-url";
 import { withRiderView } from "@/lib/customer-person";
 import { checkinDayOpening, pickShopSchedule, type CheckinDayOpening } from "@/lib/checkin-opening";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import type { ScheduleSpec } from "@/lib/operating-hours";
+import { createTtlCache } from "@/lib/ttl-cache";
+
+/**
+ * Betriebszeiten-Profil des Shops je Konto, 60 s im Speicher der Instanz:
+ * es aendert sich selten, wuerde aber bei jedem 12-s-Poll mit Saisons,
+ * Zeitraeumen und Ausnahmetagen neu geladen. Die Oeffnungszeit des Tages
+ * wird weiter bei jedem Abruf aus dem Profil berechnet.
+ */
+const shopScheduleCache = createTtlCache<ScheduleSpec | null>(60_000, { maxEntries: 50 });
+
+function loadShopSchedule(accountId: number): Promise<ScheduleSpec | null> {
+  return shopScheduleCache.get(String(accountId), async () => {
+    const schedules = await prisma.operatingSchedule.findMany({
+      // Unterprofile (Bahnmieten, Kurse) sind keine eigenen Bereiche.
+      where: { accountId, parentId: null },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      include: scheduleSpecInclude,
+    });
+    const schedule = pickShopSchedule(schedules);
+    return schedule ? toScheduleSpec(schedule) : null;
+  });
+}
 
 export async function GET(
   request: NextRequest,
@@ -94,6 +117,9 @@ export async function GET(
     grantedTicketIdsToday,
     openableDevices,
     ticketsWithPhoto,
+    pendingRequests,
+    annyConfig,
+    shopSchedule,
   ] = await Promise.all([
     prisma.ticket.findMany({
       where: {
@@ -273,6 +299,24 @@ export async function GET(
       },
       select: { id: true },
     }),
+
+    // Offene Info-Anfragen, ANNY-Sync-Stand und Betriebszeiten sind fuer die
+    // Anzeige nicht kritisch: ein Fehler laesst nur den jeweiligen Teil leer.
+    prisma.infoRequest
+      .findMany({
+        where: { accountId, status: "SENT" },
+        select: { ticketIds: true },
+      })
+      .catch(() => null),
+
+    prisma.apiConfig
+      .findFirst({
+        where: { accountId, provider: "ANNY" },
+        select: { lastUpdate: true, extraConfig: true },
+      })
+      .catch(() => null),
+
+    loadShopSchedule(accountId).catch(() => null),
   ]);
 
   // Tagesliste ohne EMP_CONTROL-Importe (die sind nur als Abo-Tickets dabei).
@@ -303,11 +347,7 @@ export async function GET(
   // offenen Requests ist klein, das bleibt billig).
   const pendingInfoTicketIds = new Set<number>();
   try {
-    const pendingRequests = await prisma.infoRequest.findMany({
-      where: { accountId, status: "SENT" },
-      select: { ticketIds: true },
-    });
-    for (const r of pendingRequests) {
+    for (const r of pendingRequests ?? []) {
       if (Array.isArray(r.ticketIds)) {
         for (const id of r.ticketIds as number[]) pendingInfoTicketIds.add(id);
       }
@@ -452,10 +492,6 @@ export async function GET(
 
   let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number; errorDetails?: string[] } | null = null;
   try {
-    const annyConfig = await prisma.apiConfig.findFirst({
-      where: { accountId, provider: "ANNY" },
-      select: { lastUpdate: true, extraConfig: true },
-    });
     if (annyConfig) {
       const extra = annyConfig.extraConfig ? JSON.parse(annyConfig.extraConfig) : {};
       const sr = extra.lastSyncResult;
@@ -473,14 +509,7 @@ export async function GET(
   // sonst das des Lifts). Fehlt ein Profil, zeigt der Monitor einfach nichts.
   let opening: CheckinDayOpening | null = null;
   try {
-    const schedules = await prisma.operatingSchedule.findMany({
-      // Unterprofile (Bahnmieten, Kurse) sind keine eigenen Bereiche.
-      where: { accountId, parentId: null },
-      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-      include: scheduleSpecInclude,
-    });
-    const schedule = pickShopSchedule(schedules);
-    if (schedule) opening = checkinDayOpening(toScheduleSpec(schedule), berlinDate);
+    if (shopSchedule) opening = checkinDayOpening(shopSchedule, berlinDate);
   } catch { /* non-critical */ }
 
   return NextResponse.json(
@@ -508,14 +537,11 @@ export async function GET(
       ),
     },
     {
-      // Token-URL ist effektiv ein geteiltes Geheimnis; eine kurze Edge-
-      // Cachezeit beschleunigt das Dauer-Polling im Checkin-Frontend ohne
-      // dass eine Scan-Aenderung sichtbar verzoegert wird. Browser selbst
-      // halten den Body nicht laenger als Sekunden, der CDN-Edge serviert
-      // schnelle 5-Sekunden-Bursts. Aenderungen werden via SWR-Revalidate
-      // im Hintergrund nachgezogen.
+      // Kein Zwischenspeicher am Edge: der Abruf direkt nach einem Check-in
+      // und weitere Kioske mit demselben Link sollen immer den aktuellen
+      // Stand sehen.
       headers: {
-        "Cache-Control": "public, s-maxage=3, stale-while-revalidate=10",
+        "Cache-Control": "no-store",
       },
     },
   );

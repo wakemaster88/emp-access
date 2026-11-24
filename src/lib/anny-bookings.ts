@@ -9,6 +9,8 @@
  * Siehe https://developers.anny.co/guides/admin/booking-creation.
  */
 
+import { invalidateAnnyAvailabilityCache } from "./anny-availability";
+
 export interface CreateAnnyBookingInput {
   baseUrl: string;
   token: string;
@@ -107,6 +109,8 @@ export async function createAnnyBooking(
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000),
     });
+    // Buchung in ANNY geaendert: zwischengespeicherte Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     const status = res.status;
     if (!res.ok) {
       let errText = "";
@@ -129,6 +133,9 @@ export async function createAnnyBooking(
     const bookingId = bookingIds[0] ?? null;
     return { bookingId, bookingIds, orderId, ok: true, status };
   } catch (e) {
+    // Zeitueberschreitung/Netzfehler: die Aenderung kann in ANNY trotzdem
+    // angekommen sein, daher auch hier die Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     const msg = e instanceof Error ? e.message : String(e);
     return { bookingId: null, bookingIds: [], orderId: null, ok: false, status: 0, error: msg };
   }
@@ -181,6 +188,8 @@ export async function createAnnyBookingV2(
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000),
     });
+    // Buchung in ANNY geaendert: zwischengespeicherte Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     const status = res.status;
     if (!res.ok) {
       let errText = "";
@@ -191,6 +200,9 @@ export async function createAnnyBookingV2(
     const bookingId = json?.data?.id ?? null;
     return { bookingId, bookingIds: bookingId ? [bookingId] : [], orderId: null, ok: true, status };
   } catch (e) {
+    // Zeitueberschreitung/Netzfehler: die Aenderung kann in ANNY trotzdem
+    // angekommen sein, daher auch hier die Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     const msg = e instanceof Error ? e.message : String(e);
     return { bookingId: null, bookingIds: [], orderId: null, ok: false, status: 0, error: msg };
   }
@@ -265,6 +277,8 @@ export async function createAnnyBlocker(
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000),
     });
+    // Buchung in ANNY geaendert: zwischengespeicherte Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     const status = res.status;
     if (!res.ok) {
       let errText = "";
@@ -274,6 +288,9 @@ export async function createAnnyBlocker(
     const json = (await res.json()) as { data?: { id?: string } };
     return { blockerId: json?.data?.id ?? null, ok: true, status };
   } catch (e) {
+    // Zeitueberschreitung/Netzfehler: die Aenderung kann in ANNY trotzdem
+    // angekommen sein, daher auch hier die Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     const msg = e instanceof Error ? e.message : String(e);
     return { blockerId: null, ok: false, status: 0, error: msg };
   }
@@ -303,11 +320,16 @@ export async function deleteAnnyBooking(
       },
       signal: AbortSignal.timeout(10000),
     });
+    // Buchung in ANNY geaendert: zwischengespeicherte Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     if (res.ok || res.status === 404) return { ok: true };
     let errText = "";
     try { errText = (await res.text()).slice(0, 500); } catch { /* ignore */ }
     return { ok: false, status: res.status, error: errText || `ANNY ${res.status}` };
   } catch (e) {
+    // Zeitueberschreitung/Netzfehler: die Aenderung kann in ANNY trotzdem
+    // angekommen sein, daher auch hier die Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, status: 0, error: msg };
   }
@@ -375,6 +397,8 @@ export async function cancelAnnyBooking(
       },
       signal: AbortSignal.timeout(10000),
     });
+    // Buchung in ANNY geaendert: zwischengespeicherte Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     if (res.ok || res.status === 404) return { ok: true };
     let errText = "";
     try {
@@ -382,6 +406,9 @@ export async function cancelAnnyBooking(
     } catch { /* ignore */ }
     return { ok: false, status: res.status, error: errText || `ANNY ${res.status}` };
   } catch (e) {
+    // Zeitueberschreitung/Netzfehler: die Aenderung kann in ANNY trotzdem
+    // angekommen sein, daher auch hier die Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, status: 0, error: msg };
   }
