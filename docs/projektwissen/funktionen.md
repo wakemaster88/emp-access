@@ -362,7 +362,7 @@ weitere Arten, angelegt wie die anderen unter Kunden App › Aktionen:
 - **Mail-Link meldet an** (seit 20.11.2026): Der Link aus „Link zur App
   schicken“ belegt die Adresse. Gehört sie dem Zugang und ist schon Passwort
   oder Passkey eingerichtet, ist man damit direkt angemeldet
-  (`signInByMail`); vorher führte er zur Passwort-Abfrage.
+  (`mailLinkSession` + `setRiderCookie`); vorher führte er zur Passwort-Abfrage.
 - **Passkey ohne Link** (seit 20.11.2026): Startseite `/app` hat „Mit Passkey
   anmelden“; das Handy bietet die Passkeys der Domain an, der gewählte führt
   zur eigenen App (`/api/rider/passkey/options` und `/login`). Passkeys tragen
@@ -1011,15 +1011,21 @@ Aaron: „hier will ich leute per email direkt zur app einladen“.
   App“ im Look der App (`inviteFamilyByMail` in
   `src/lib/rider-family-invite.ts`, `familyInviteMail`).
 - Der Link ist der Anmelde-Link `/app/mail/<schlüssel>` (7 Tage) mit
-  `?familie=<einladungsschlüssel>`: Er belegt die Adresse, meldet an (beim
-  ersten Mal über das Einrichten) und nimmt die Person als Erwachsene in die
-  Familie auf. Gehören zur Adresse schon Abos oder ein Kundenkonto, wählt sie
-  zuerst wie bei der Anmeldung, wer sie ist; der Schlüssel wartet so lange im
-  Cookie `rd-family-invite` und `POST /api/rider/onboarding` tritt danach bei.
+  `?familie=<einladungsschlüssel>`: Er belegt die Adresse und meldet an (beim
+  ersten Mal über das Einrichten). Gehören zur Adresse schon Abos oder ein
+  Kundenkonto, wählt die Person zuerst wie bei der Anmeldung, wer sie ist.
+- Beitritt nur mit Bestätigung (seit 24.11.2026): Der geöffnete Link ändert
+  an der Familie nichts, denn Postfächer rufen Links zum Prüfen vorab ab. Er
+  führt zur Einladungsseite `/app/familie/<einladungsschlüssel>`; dort tritt
+  die Person per Knopf bei (`POST /api/rider/family/join`) oder lehnt ab
+  (`DELETE`). Bis dahin wartet die Einladung einen Tag im Cookie
+  `rd-family-invite` (Adresse und Schlüssel), und die App zeigt oben den
+  Hinweis „… lädt dich in die Familie ein“ (`pendingFamilyInvite`, nur bei
+  der Person mit dieser Adresse; Abmelden löscht das Cookie).
 - Verwaltet die eingeladene Person schon eine Familie nur mit Kindern (etwa
   aus ihrem Kundenkonto), kommen die Kinder mit (`joinFamily`). Mit weiteren
-  Erwachsenen muss sie die alte Familie erst verlassen; dann zeigt die
-  Einladungsseite den Grund.
+  Erwachsenen muss sie die alte Familie erst verlassen; die Einladungsseite
+  zeigt dann den Grund.
 - Grenzen: je Adresse höchstens alle 10 Minuten und 3-mal am Tag, je Person
   10 Einladungen in der Stunde. Ist die Adresse schon in der Familie, geht
   keine Mail raus.

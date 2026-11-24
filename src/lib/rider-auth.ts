@@ -5,7 +5,7 @@
  * der Fahrer ein Passwort oder einen Passkey ein. Danach reicht der Link
  * allein nicht mehr, jede Seite und jede Schnittstelle verlangt die Sitzung.
  * Der Link aus der Anmelde-Mail (`/app/mail/…`) belegt die Adresse und meldet
- * direkt an (`signInByMail`). Passwort vergessen: Link zum Neufestlegen per
+ * direkt an (`mailLinkSession`). Passwort vergessen: Link zum Neufestlegen per
  * Mail (lib/rider-reset), oder an der Kasse zurücksetzen lassen.
  */
 import { cache } from "react";

@@ -45,8 +45,8 @@ export default async function RiderAppLayout({
   const beach = rider.pass === "BEACH";
   // Einladung in eine Familie aus der Mail: wartet im Cookie, bis die Person
   // sie auf der Einladungsseite annimmt oder ablehnt. Ohne Cookie keine Abfrage.
-  const inviteKey = (await cookies()).get(FAMILY_INVITE_COOKIE)?.value;
-  const invite = inviteKey && !viewing ? await pendingFamilyInvite(token, inviteKey) : null;
+  const inviteCookie = (await cookies()).get(FAMILY_INVITE_COOKIE)?.value;
+  const invite = inviteCookie && !viewing ? await pendingFamilyInvite(token, inviteCookie) : null;
   return (
     // Beach Pass: eigene Farben über `.rd-pass-beach` (rider.css), sonst alles gleich.
     <div className={beach ? "rd-pass-beach" : undefined} style={{ display: "contents" }}>
@@ -56,7 +56,7 @@ export default async function RiderAppLayout({
         {invite && (
           <div className="rd-viewing" role="status">
             <span><b>{invite.inviterName}</b> lädt dich in die Familie ein</span>
-            <Link href={`/app/familie/${encodeURIComponent(invite.key)}`}>Ansehen</Link>
+            <Link href={`${APP_PREFIX[kind]}/familie/${encodeURIComponent(invite.key)}`}>Ansehen</Link>
           </div>
         )}
         {children}

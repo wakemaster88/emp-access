@@ -10,7 +10,9 @@
  * die Person erst bei, wenn sie es auf der Einladungsseite per Knopf bestätigt:
  * Ein geöffneter Link allein ändert nichts, denn Postfächer rufen Links zum
  * Prüfen vorab ab. Bis dahin wartet der Schlüssel in einem Cookie, und die App
- * zeigt oben einen Hinweis auf die Einladung.
+ * zeigt oben einen Hinweis auf die Einladung. Das Cookie nennt auch die
+ * eingeladene Adresse: Der Hinweis erscheint nur bei der Person mit dieser
+ * Adresse, nicht bei jemand anderem am selben Gerät.
  *
  * Kinder mit eigener Adresse holt weiter der Bestätigungslink
  * (lib/rider-family-link), Kinder ohne Adresse die Kasse (lib/rider-kasse-link).
@@ -112,24 +114,39 @@ export function familyInviteCookieOptions(secure: boolean) {
   return { httpOnly: true, sameSite: "lax" as const, secure, path: "/", maxAge: 86_400 };
 }
 
+/** Cookie-Wert: die eingeladene Adresse und der Schlüssel, durch ein Leerzeichen getrennt. */
+export function familyInviteCookieValue(key: string, email: string): string {
+  return `${email} ${key}`;
+}
+
+function parseFamilyInviteCookie(value: string | undefined): { email: string; key: string } | null {
+  if (!value) return null;
+  const at = value.indexOf(" ");
+  if (at < 1 || at === value.length - 1) return null;
+  return { email: value.slice(0, at), key: value.slice(at + 1) };
+}
+
 /**
- * Wartende Einladung für das Profil mit diesem Token: gültig, vom selben
- * Betrieb, und die Person ist noch keine Erwachsene dieser Familie. Der
- * Beitritt selbst läuft nur über den Knopf auf der Einladungsseite
- * (POST /api/rider/family/join) – ein geöffneter Link allein ändert nichts.
+ * Wartende Einladung für das Profil mit diesem Token, gelesen aus dem Cookie
+ * (`familyInviteCookieValue`): gültig, vom selben Betrieb, an die Adresse
+ * dieses Profils gegangen, und die Person ist noch keine Erwachsene dieser
+ * Familie. Der Beitritt selbst läuft nur über den Knopf auf der
+ * Einladungsseite (POST /api/rider/family/join) – ein geöffneter Link allein
+ * ändert nichts.
  */
 export async function pendingFamilyInvite(
   token: string,
-  key: string | undefined,
+  cookie: string | undefined,
 ): Promise<{ key: string; inviterName: string } | null> {
-  if (!key) return null;
-  const invite = await familyInviteInfo(key);
+  const waiting = parseFamilyInviteCookie(cookie);
+  if (!waiting) return null;
+  const invite = await familyInviteInfo(waiting.key);
   if (!invite) return null;
   const p = await prisma.riderProfile.findUnique({
     where: { token },
-    select: { accountId: true, familyId: true, familyAdult: true },
+    select: { accountId: true, email: true, familyId: true, familyAdult: true },
   });
-  if (!p || p.accountId !== invite.accountId) return null;
+  if (!p || p.accountId !== invite.accountId || p.email !== waiting.email) return null;
   if (p.familyId === invite.familyId && p.familyAdult) return null;
-  return { key, inviterName: invite.inviterName };
+  return { key: waiting.key, inviterName: invite.inviterName };
 }

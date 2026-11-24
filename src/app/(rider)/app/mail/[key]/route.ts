@@ -5,7 +5,7 @@ import { completeOnboarding, onboardingState } from "@/lib/rider-onboarding";
 import { riderAppPath } from "@/lib/rider-app";
 import { mailLinkSession, setRiderCookie } from "@/lib/rider-auth";
 import { familyInviteInfo } from "@/lib/rider-family";
-import { FAMILY_INVITE_COOKIE, familyInviteCookieOptions } from "@/lib/rider-family-invite";
+import { FAMILY_INVITE_COOKIE, familyInviteCookieOptions, familyInviteCookieValue } from "@/lib/rider-family-invite";
 
 export const dynamic = "force-dynamic";
 
@@ -36,11 +36,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const family = invite && invite.accountId === link.accountId ? familyKey : null;
 
   const secure = request.nextUrl.protocol === "https:";
+  const waiting = family ? familyInviteCookieValue(family, link.email) : null;
 
   const state = await onboardingState(link.accountId, link.email);
   if (state.abos.length > 0 || (state.konto?.persons.length ?? 0) > 0) {
     const res = NextResponse.redirect(new URL(`/app/willkommen/${encodeURIComponent(key)}`, request.url));
-    if (family) res.cookies.set(FAMILY_INVITE_COOKIE, family, familyInviteCookieOptions(secure));
+    if (waiting) res.cookies.set(FAMILY_INVITE_COOKIE, waiting, familyInviteCookieOptions(secure));
     return res;
   }
   const token = await completeOnboarding(link.accountId, link.email, {});
@@ -50,6 +51,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const session = await mailLinkSession(token, link.email);
   const target = family && session ? `/app/familie/${encodeURIComponent(family)}` : riderAppPath(token);
   const res = NextResponse.redirect(new URL(target, request.url));
-  if (family) res.cookies.set(FAMILY_INVITE_COOKIE, family, familyInviteCookieOptions(secure));
+  if (waiting) res.cookies.set(FAMILY_INVITE_COOKIE, waiting, familyInviteCookieOptions(secure));
   return session ? setRiderCookie(res, session) : res;
 }

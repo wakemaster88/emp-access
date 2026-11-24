@@ -72,7 +72,7 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
         ? "Wenn zu der Adresse ein Abo gehört, ist dorthin jetzt ein Link unterwegs. Sobald er bestätigt ist, siehst du das Abo hier. Der Link gilt 7 Tage."
         : json.result === "member"
           ? `${address} gehört schon zu deiner Familie.`
-          : `Die Einladung an ${address} ist unterwegs. Wer den Link öffnet, ist gleich in der App und in deiner Familie. Er gilt 7 Tage.`,
+          : `Die Einladung an ${address} ist unterwegs. Wer den Link öffnet, ist in der App und kann deiner Familie dort beitreten. Er gilt 7 Tage.`,
     });
     router.refresh();
   }
@@ -198,7 +198,7 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
           </fieldset>
           <span className="rd-muted">
             {who === "adult"
-              ? "Wir schicken eine Einladung an die Adresse. Wer den Link öffnet, ist angemeldet und gleich in deiner Familie."
+              ? "Wir schicken eine Einladung an die Adresse. Wer den Link öffnet, ist angemeldet und bestätigt den Beitritt in der App."
               : "Dorthin schicken wir einen Link; erst wenn er bestätigt ist, gehört das Abo zur Familie. Kinder ohne eigene Adresse verknüpft die Kasse: zeig dort den Code unter „Abo fehlt?“."}
           </span>
           <div className="rd-row">
@@ -254,6 +254,8 @@ export function RiderFamilyDecline() {
     } catch {
       // Ohne Verbindung bleibt der Hinweis bis morgen stehen; zurück in die App geht es trotzdem.
     }
+    // Lokal gespeicherte Seiten zeigen den Hinweis noch: verwerfen, bevor es zurückgeht.
+    await clearRiderLocalData();
     window.location.assign(url);
   }
 
