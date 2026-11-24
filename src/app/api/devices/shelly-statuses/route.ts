@@ -15,6 +15,7 @@ import {
   type CoverMotion,
 } from "@/lib/shelly-cover";
 import { readSensorReadings, type SensorReading } from "@/lib/shelly-sensor";
+import { lanUnreachable } from "@/lib/shelly-lan";
 
 export interface ShellyDeviceStatus {
   id: number;
@@ -99,18 +100,24 @@ export async function GET(request: NextRequest) {
       return { id: device.id, online, output: sw.output, power: sw.power, source, ...extra };
     };
 
+    // Cloud-Eintrag aus dem gemeinsamen all_status-Abruf
+    const baseId = shellyBaseId(device.shellyId);
+    const cloudEntry = cloudStatuses && baseId
+      ? cloudStatuses.get(baseId) ?? cloudStatuses.get(baseId.toLowerCase())
+      : undefined;
+
+    // Auf Vercel ist die LAN-Adresse nie erreichbar: mit Cloud-Eintrag direkt
+    // diesen nehmen, statt erst auf den lokalen Timeout zu warten.
+    if (cloudEntry && lanUnreachable()) return build(cloudEntry.status, cloudEntry.online, "cloud");
+
     // 1. Local
     if (device.ipAddress) {
       const local = await shellyLocalStatusMap(device.ipAddress, LOCAL_TIMEOUT_MS);
       if (local) return build(local, true, "local");
     }
 
-    // 2. Cloud (aus dem gemeinsamen all_status-Abruf)
-    const baseId = shellyBaseId(device.shellyId);
-    if (cloudStatuses && baseId) {
-      const entry = cloudStatuses.get(baseId) ?? cloudStatuses.get(baseId.toLowerCase());
-      if (entry) return build(entry.status, entry.online, "cloud");
-    }
+    // 2. Cloud
+    if (cloudEntry) return build(cloudEntry.status, cloudEntry.online, "cloud");
 
     return {
       id: device.id,

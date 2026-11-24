@@ -3,6 +3,7 @@ import { prisma, tenantClient } from "@/lib/prisma";
 import { fetchAnnyAvailability, fmtTimeBerlin, berlinOffset } from "@/lib/anny-availability";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
+import { createTtlCache } from "@/lib/ttl-cache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -36,20 +37,60 @@ interface BookingEntry {
   serviceName: string | null;
 }
 
+/** Ein Abruf, der unterwegs abbrach: Teilergebnis zurueckgeben, aber nicht
+ *  zwischenspeichern, damit der naechste Poll es erneut versucht. */
+class PartialBookingsError extends Error {
+  constructor(readonly entries: BookingEntry[]) {
+    super("ANNY-Buchungen unvollständig");
+  }
+}
+
+/** Buchungen je Mandant und Tag rund 60 Sekunden halten: der Monitor pollt
+ *  jede Minute, mehrere Anzeigen desselben Mandanten teilen sich den Abruf. */
+const BOOKINGS_TTL_MS = 60 * 1000;
+const bookingsCache = createTtlCache<BookingEntry[]>(BOOKINGS_TTL_MS);
+
 async function fetchAllAnnyBookingsForDay(
+  accountId: number,
   baseUrl: string,
   apiToken: string,
   dateStr: string,
 ): Promise<BookingEntry[]> {
+  try {
+    return await bookingsCache.get(`${accountId}|${baseUrl}|${dateStr}`, async () => {
+      const { entries, complete } = await loadAnnyBookingsForDay(baseUrl, apiToken, dateStr);
+      if (!complete) throw new PartialBookingsError(entries);
+      return entries;
+    });
+  } catch (err) {
+    return err instanceof PartialBookingsError ? err.entries : [];
+  }
+}
+
+async function loadAnnyBookingsForDay(
+  baseUrl: string,
+  apiToken: string,
+  dateStr: string,
+): Promise<{ entries: BookingEntry[]; complete: boolean }> {
   const result: BookingEntry[] = [];
   const cancelledStatuses = new Set(["cancelled", "canceled", "rejected", "no_show"]);
   let page = 1;
   const pageSize = 100;
+  let complete = false;
+
+  // ANNY filtert serverseitig auf den Buchungsbeginn (Format Y-m-d:Y-m-d wie im
+  // stuendlichen Sync). `start_date` kommt in UTC, deshalb Vor- und Folgetag
+  // mit abfragen und unten lokal auf den Berliner Tag einschraenken.
+  const dayMs = 86400000;
+  const middayMs = new Date(`${dateStr}T12:00:00Z`).getTime();
+  const ymd = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const startDateRange = `${ymd(middayMs - dayMs)}:${ymd(middayMs + dayMs)}`;
 
   try {
     while (page <= 20) {
       const params = new URLSearchParams({
         include: "customer,resource,service",
+        "filter[start_date_range]": startDateRange,
         "page[size]": String(pageSize),
         "page[number]": String(page),
       });
@@ -89,12 +130,15 @@ async function fetchAllAnnyBookingsForDay(
         });
       }
 
-      if (bookings.length < pageSize) break;
+      if (bookings.length < pageSize) {
+        complete = true;
+        break;
+      }
       page++;
     }
   } catch { /* ignore */ }
 
-  return result;
+  return { entries: result, complete };
 }
 
 function timeToMin(t: string): number {
@@ -175,7 +219,7 @@ export async function GET(
     baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
     const [avail, bookings] = await Promise.all([
       fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr),
-      fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
+      fetchAllAnnyBookingsForDay(accountId, baseUrl, annyConfig.token, dateStr),
     ]);
     annyAvailability = avail;
     allBookings = bookings;
