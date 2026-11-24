@@ -48,7 +48,14 @@ export async function PUT(
   if (parsed.data.email !== undefined) data.email = parsed.data.email;
   if (parsed.data.name !== undefined) data.name = parsed.data.name;
   if (parsed.data.role !== undefined) data.role = parsed.data.role;
-  if (parsed.data.password) data.password = await hash(parsed.data.password, 12);
+  if (parsed.data.password) {
+    data.password = await hash(parsed.data.password, 12);
+    // Neues Passwort: bestehende Sitzungen dieses Benutzers enden (auth.ts),
+    // eine Sperre aus alten Fehlversuchen entfaellt.
+    data.sessionVersion = { increment: 1 };
+    data.loginFailures = 0;
+    data.loginLockedUntil = null;
+  }
 
   const user = await superAdminClient.admin.update({
     where: { id: adminId },

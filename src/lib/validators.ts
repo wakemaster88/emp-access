@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_SCAN_LOCK_SECONDS } from "@/lib/scan-lock";
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/password-rules";
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -181,16 +182,18 @@ export const accountUpdateSchema = accountCreateSchema.partial().extend({
   apiToken: z.union([z.literal(""), z.string().min(16).max(256)]).optional(),
 });
 
+// Neu gesetzte Passwörter: mindestens PASSWORD_MIN_LENGTH Zeichen (password-rules.ts).
+// Bestehende, kürzere Passwörter bleiben gültig, bis sie geändert werden.
 export const adminCreateSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH),
   name: z.string().min(1),
   role: z.enum(["USER", "ADMIN"]).optional(),
 });
 
 export const adminUpdateSchema = z.object({
   email: z.string().email().optional(),
-  password: z.string().min(6).optional(),
+  password: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH).optional(),
   name: z.string().min(1).optional(),
   role: z.enum(["USER", "ADMIN"]).optional(),
 });

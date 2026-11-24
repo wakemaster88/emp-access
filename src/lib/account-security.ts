@@ -3,6 +3,7 @@ import { compare } from "bcryptjs";
 import { prisma } from "./prisma";
 import { safeAuth } from "./auth";
 import { twoFactorSelect, type TwoFactorFields } from "./two-factor";
+import { clearLoginThrottle, hitLoginThrottle } from "./login-throttle";
 
 /**
  * Gemeinsamer Unterbau der Routen unter /api/account – sie arbeiten immer auf
@@ -39,10 +40,22 @@ export async function requireCurrentAdmin(): Promise<
  * Sicherheitsrelevante Aenderungen verlangen das Passwort. Eine uebernommene
  * Sitzung allein soll nicht reichen, um den zweiten Faktor umzuhaengen oder
  * abzuschalten.
+ *
+ * Bremse gegen Durchprobieren aus einer uebernommenen Sitzung: je Konto und
+ * Instanz hoechstens 20 Abfragen in 10 Minuten (login-throttle.ts). Bewusst
+ * NICHT an die Anmelde-Sperre gekoppelt – die kann jeder von aussen mit
+ * falschen Passwoertern ausloesen, und dann kaeme der angemeldete Besitzer
+ * hier nicht mehr an seine eigenen Sicherheitseinstellungen.
  */
 export async function passwordMatches(admin: CurrentAdmin, password: unknown): Promise<boolean> {
   if (typeof password !== "string" || password.length === 0) return false;
-  return compare(password, admin.password);
+  const key = `account-password|${admin.id}`;
+  if (!hitLoginThrottle(key).allowed) return false;
+  const valid = await compare(password, admin.password);
+  // Nur falsche Eingaben sollen sich aufsummieren: wer sein Passwort kennt,
+  // darf mehrere Aenderungen hintereinander bestaetigen.
+  if (valid) clearLoginThrottle(key);
+  return valid;
 }
 
 export function wrongPassword() {

@@ -6,9 +6,12 @@ import { clearLoginThrottle, hitLoginThrottle } from "@/lib/login-throttle";
 import { isTwoFactorActive, isTwoFactorLocked } from "@/lib/two-factor";
 import {
   DUMMY_PASSWORD_HASH,
+  LOGIN_LOCK_MINUTES,
+  clearLoginFailures,
   isLoginLocked,
+  lockLoginIfExhausted,
   loginRetryAfterSec,
-  registerLoginFailure,
+  reserveLoginAttempt,
 } from "@/lib/login-lockout";
 
 /**
@@ -20,7 +23,8 @@ import {
  * Login ablesen koennte: ob das Passwort stimmt, sieht er dort genauso.
  *
  * Zwei Bremsen: die In-Memory-Bremse pro Instanz (IP + E-Mail) und die
- * Sperre am Admin-Datensatz nach zu vielen falschen Passwoertern.
+ * Sperre am Admin-Datensatz nach zu vielen falschen Passwoertern. Jeder
+ * Versuch wird vor dem Vergleich in der Datenbank belegt (login-lockout.ts).
  */
 
 const schema = z.object({
@@ -84,11 +88,19 @@ export async function POST(request: NextRequest) {
     return lockedResponse(loginRetryAfterSec(admin, now));
   }
 
+  // Versuch in der Datenbank belegen, bevor verglichen wird: gleichzeitige
+  // Anfragen koennen die Sperre so nicht unterlaufen.
+  if (admin && !(await reserveLoginAttempt(admin, now))) {
+    return lockedResponse(LOGIN_LOCK_MINUTES * 60);
+  }
+
   const valid = await compare(parsed.data.password, admin?.password ?? DUMMY_PASSWORD_HASH);
   if (!admin || !valid) {
-    if (admin) await registerLoginFailure(admin, now);
+    if (admin) await lockLoginIfExhausted(admin.id, now);
     return NextResponse.json({ ok: false });
   }
+  // Richtiges Passwort: der belegte Versuch zaehlt nicht als Fehlversuch.
+  await clearLoginFailures(admin.id);
 
   if (!isTwoFactorActive(admin)) {
     clearLoginThrottle(clientKey(request, parsed.data.email));

@@ -46,8 +46,9 @@ export default function LoginPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    if (res.status === 429) {
-      const data = (await res.json()) as PrecheckResponse;
+    // 429 = Bremse, 423 = Konto vorübergehend gesperrt; beide nennen die Wartezeit.
+    if (res.status === 429 || res.status === 423) {
+      const data = (await res.json().catch(() => ({}))) as PrecheckResponse;
       setError(data.error || lockMessage(data.retryAfterSec));
       return null;
     }

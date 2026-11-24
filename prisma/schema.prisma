@@ -311,6 +311,11 @@ model Admin {
   loginFailures    Int       @default(0)
   loginLockedUntil DateTime?
 
+  /// Wird bei jedem Passwortwechsel erhoeht. Das Sitzungs-JWT traegt den Stand
+  /// vom Anmelden; weicht er ab, endet die Sitzung bei der naechsten Pruefung
+  /// (src/lib/auth.ts). So meldet ein Passwortwechsel alle Geraete ab.
+  sessionVersion Int @default(0)
+
   passkeys            Passkey[]
   stocktakeSignatures StocktakeSignature[]
 

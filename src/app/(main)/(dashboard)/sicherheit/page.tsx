@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/header";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { TwoFactorCard } from "@/components/account/two-factor-card";
 import { PasskeyCard } from "@/components/account/passkey-card";
+import { PasswordCard } from "@/components/account/password-card";
 import { passkeyListSelect, suggestPasskeyName } from "@/lib/passkey";
 import { isTwoFactorActive } from "@/lib/two-factor";
 
@@ -56,6 +57,8 @@ export default async function SecurityPage() {
           initialRecoveryCodesLeft={admin.twoFactorRecoveryCodes.length}
           enabledAt={admin.twoFactorEnabledAt ? admin.twoFactorEnabledAt.toISOString() : null}
         />
+
+        <PasswordCard twoFactorEnabled={isTwoFactorActive(admin)} />
       </div>
     </>
   );
