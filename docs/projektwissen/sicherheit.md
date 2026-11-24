@@ -1,6 +1,6 @@
 # Sicherheit
 
-Stand: 13. November 2026.
+Stand: 24. November 2026.
 
 ## Täglicher Sicherheitscheck
 
@@ -24,6 +24,11 @@ Bei Befunden schlägt der Lauf fehl (GitHub schickt eine Mail) und das Issue
 
 - Transitive Pakete mit Lücken über `overrides` heben: Cloud in
   `package.json`, Webcams in `webcams/pnpm-workspace.yaml`.
+- Aktueller Override in `package.json`: `effect` auf `3.22.4`, begrenzt auf
+  `@prisma/config`. Das Konfigurations-Paket der Datenbank-CLI (`prisma`)
+  pinnt eine ältere `effect`-Version; es wird nur von der CLI zum Laden von
+  `prisma.config.ts` gebraucht. Der Eintrag entfällt, sobald `prisma` eine
+  Version mit `effect` > 3.22.0 ausliefert (prüfen mit `npm ls effect`).
 - `npm audit fix --force` nicht blind ausführen: es schlägt teils
   Herabstufungen vor (z. B. `@vercel/blob` auf 2.4.0).
 - Geheimnisse, die im Repo gelandet sind, sofort beim Anbieter neu erzeugen;
