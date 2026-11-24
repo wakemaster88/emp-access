@@ -44,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PASSWORD_MIN_LENGTH } from "@/lib/password-rules";
 
 interface Account {
   id: number;
@@ -237,8 +238,9 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
       setUserError("Name und E-Mail sind erforderlich");
       return;
     }
-    if (!editUser && userForm.password.length < 6) {
-      setUserError("Passwort muss mindestens 6 Zeichen haben");
+    // Neu anlegen verlangt ein Passwort; beim Bearbeiten heisst leer „unveraendert“.
+    if ((!editUser || userForm.password) && userForm.password.length < PASSWORD_MIN_LENGTH) {
+      setUserError(`Passwort muss mindestens ${PASSWORD_MIN_LENGTH} Zeichen haben`);
       return;
     }
 
@@ -751,7 +753,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                 <Input
                   id="userPassword"
                   type={showPassword ? "text" : "password"}
-                  placeholder={editUser ? "••••••••" : "Mindestens 6 Zeichen"}
+                  placeholder={editUser ? "••••••••" : `Mindestens ${PASSWORD_MIN_LENGTH} Zeichen`}
                   value={userForm.password}
                   onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
                   className="pr-10"

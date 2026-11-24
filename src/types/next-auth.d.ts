@@ -5,6 +5,8 @@ declare module "next-auth" {
     role?: string;
     accountId?: number | null;
     accountName?: string | null;
+    /** Admin.sessionVersion beim Anmelden; nur fuer den jwt-Callback. */
+    sessionVersion?: number;
   }
 
   interface Session {

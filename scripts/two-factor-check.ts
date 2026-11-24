@@ -104,15 +104,9 @@ async function main() {
 
   // Die Attrappe schreibt in denselben Datensatz zurueck, damit
   // aufeinanderfolgende Versuche denselben Zustand sehen wie in der Datenbank.
+  const { fakeAdminDb } = await import("../src/lib/testing/fake-admin-db");
   function makeDb(admin: TwoFactorFields) {
-    return {
-      admin: {
-        async update({ data }: { where: { id: number }; data: Record<string, unknown> }) {
-          Object.assign(admin, data);
-          return {};
-        },
-      },
-    };
+    return fakeAdminDb(admin);
   }
 
   {
