@@ -240,6 +240,30 @@ export function RiderFamilyJoin({ inviteKey }: { inviteKey: string }) {
   return <FamilyAction url="/api/rider/family/join" body={{ key: inviteKey }} label="Familie beitreten" />;
 }
 
+/** Einladung nicht annehmen: Der Hinweis in der App verschwindet, sonst ändert sich nichts. */
+export function RiderFamilyDecline() {
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setBusy(true);
+    let url = "/app";
+    try {
+      const res = await fetch("/api/rider/family/join", { method: "DELETE" });
+      const json = (await res.json().catch(() => ({}))) as { url?: string };
+      if (typeof json.url === "string") url = json.url;
+    } catch {
+      // Ohne Verbindung bleibt der Hinweis bis morgen stehen; zurück in die App geht es trotzdem.
+    }
+    window.location.assign(url);
+  }
+
+  return (
+    <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={run} disabled={busy}>
+      <span>Nicht beitreten</span>
+    </button>
+  );
+}
+
 export interface FamilyConfirmPerson {
   id: number;
   name: string;

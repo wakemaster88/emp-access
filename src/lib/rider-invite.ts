@@ -24,6 +24,7 @@ import { mailLinkKey, normalizeEmail } from "./day-guest";
 import { sendEmail } from "./email-sender";
 import { riderInviteMail } from "./rider-mail-template";
 import { berlinHour } from "./berlin-day";
+import { equalsInsensitive } from "./like-escape";
 
 export const INVITE_SUBJECT = "Dein Abo ist in der App";
 export const INVITE_LINK_DAYS = 7;
@@ -195,7 +196,7 @@ export async function sendAboInvites(
     }
     if (excluded.has(email)) continue;
     const olderAbo = await prisma.ticket.count({
-      where: { accountId, subscriptionId: { not: null }, email: { equals: email, mode: "insensitive" }, id: { notIn: newIds } },
+      where: { accountId, subscriptionId: { not: null }, email: equalsInsensitive(email), id: { notIn: newIds } },
     });
     if (olderAbo > 0) continue;
     if (await sendInvite(ctx, email, abo, now, send)) sent += 1;
@@ -352,7 +353,7 @@ export async function inviteCustomer(
     where: {
       accountId,
       subject: INVITE_SUBJECT,
-      to: { equals: email, mode: "insensitive" },
+      to: equalsInsensitive(email),
       sentAt: { gte: new Date(now.getTime() - SINGLE_PAUSE_MINUTES * 60_000) },
     },
   });

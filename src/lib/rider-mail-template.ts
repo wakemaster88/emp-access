@@ -255,13 +255,13 @@ export function riderInviteMail(args: {
 /**
  * Einladung in die Familie per Mail (Profil › Familie › „Per E-Mail
  * einladen“, lib/rider-family-invite). Der Link meldet an wie der
- * Anmelde-Link und nimmt die Person danach in die Familie auf.
+ * Anmelde-Link und führt zur Einladung; beigetreten wird erst dort per Knopf.
  */
 export function familyInviteMail(args: { url: string; accountName: string; origin: string; inviterName: string; days: number }): RiderLinkMail {
   const subject = "Einladung in die App";
   const intro = `${args.inviterName} lädt dich in die App von ${args.accountName} ein, gleich in die gemeinsame Familie. Ihr seht dann gegenseitig Abo, Besuchstage, Starts und Gutscheine und kümmert euch zusammen um die Kinder. Gezählt wird weiter für jede Person einzeln.`;
-  const note = `Der Link gilt ${args.days} Tage. Beim ersten Öffnen richtest du einen Passkey oder ein Passwort ein, danach findest du die App jederzeit unter ${args.origin.replace(/^https?:\/\//, "")}/app. Die Familie kannst du im Profil jederzeit verlassen.`;
-  const footer = `Du kennst ${args.inviterName} nicht oder willst das nicht? Dann musst du nichts tun, ohne Klick passiert nichts.`;
+  const note = `Der Link gilt ${args.days} Tage. Beim ersten Öffnen richtest du einen Passkey oder ein Passwort ein, danach bestätigst du die Einladung in der App. Die App findest du jederzeit unter ${args.origin.replace(/^https?:\/\//, "")}/app, die Familie kannst du im Profil jederzeit verlassen.`;
+  const footer = `Du kennst ${args.inviterName} nicht oder willst das nicht? Dann musst du nichts tun. Der Familie trittst du erst bei, wenn du es in der App bestätigst.`;
   const html = riderMailHtml({
     title: subject,
     preheader: `${args.inviterName} lädt dich in die App ein.`,
@@ -270,11 +270,11 @@ export function familyInviteMail(args: { url: string; accountName: string; origi
     headline: ["Deine", "Einladung"],
     introHtml: escapeHtml(intro),
     chips: ["Abo", "Besuche", "Familie"],
-    button: "Einladung annehmen",
+    button: "Einladung öffnen",
     url: args.url,
     noteHtml: escapeHtml(note),
     footerHtml: escapeHtml(footer),
   });
-  const text = ["Deine Einladung", "", intro, "", "Hier nimmst du sie an:", args.url, "", note, "", footer].join("\n");
+  const text = ["Deine Einladung", "", intro, "", "Hier öffnest du sie:", args.url, "", note, "", footer].join("\n");
   return { subject, html, text };
 }

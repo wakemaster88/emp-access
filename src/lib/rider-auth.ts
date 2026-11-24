@@ -267,16 +267,16 @@ export async function mayManageCredentials(p: RiderAuthProfile, resetKey?: unkno
 
 /**
  * Link aus der Anmelde-Mail: Er belegt die Adresse. Gehört sie diesem Zugang
- * (bestätigt) und ist schon ein Passwort oder Passkey eingerichtet, ist man
- * damit angemeldet. Ohne Anmeldedaten geht es wie bisher zum Einrichten.
+ * (bestätigt) und ist schon ein Passwort oder Passkey eingerichtet, meldet der
+ * Link an (`setRiderCookie`). Null: ohne Anmeldedaten geht es zum Einrichten.
  */
-export async function signInByMail(res: NextResponse, token: string, email: string): Promise<NextResponse> {
+export async function mailLinkSession(token: string, email: string): Promise<{ id: number; sessionVersion: number } | null> {
   const p = await prisma.riderProfile.findUnique({
     where: { token },
     select: { id: true, email: true, sessionVersion: true, passwordHash: true, _count: { select: { passkeys: true } } },
   });
-  if (!p || p.email !== email || (p.passwordHash == null && p._count.passkeys === 0)) return res;
-  return setRiderCookie(res, p);
+  if (!p || p.email !== email || (p.passwordHash == null && p._count.passkeys === 0)) return null;
+  return { id: p.id, sessionVersion: p.sessionVersion };
 }
 
 export function setRiderCookie(res: NextResponse, p: { id: number; sessionVersion: number }): NextResponse {

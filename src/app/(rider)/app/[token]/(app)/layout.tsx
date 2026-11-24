@@ -1,4 +1,6 @@
 import { riderAppKind, riderBase, riderRest } from "@/lib/rider-base";
+import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { APP_PREFIX } from "@/lib/rider-app-kind";
 import { requireRider, riderFamilyView } from "@/lib/rider-auth";
@@ -12,6 +14,7 @@ import { RiderAwardUnlock } from "@/components/rider/rider-award-unlock";
 import { nextAward } from "@/lib/awards";
 import { riderRenderStamp } from "@/lib/rider-local";
 import { PASS_NAME, PASS_WORD } from "@/lib/rider-pass";
+import { FAMILY_INVITE_COOKIE, pendingFamilyInvite } from "@/lib/rider-family-invite";
 
 /** Geschützter Teil der Kunden-App: ohne Anmeldung geht es zum Einrichten oder Anmelden. */
 export default async function RiderAppLayout({
@@ -40,12 +43,22 @@ export default async function RiderAppLayout({
   const unlocks = family?.relation === "view" ? [] : rider.unlocks;
   const next = nextAward(rider.awards);
   const beach = rider.pass === "BEACH";
+  // Einladung in eine Familie aus der Mail: wartet im Cookie, bis die Person
+  // sie auf der Einladungsseite annimmt oder ablehnt. Ohne Cookie keine Abfrage.
+  const inviteKey = (await cookies()).get(FAMILY_INVITE_COOKIE)?.value;
+  const invite = inviteKey && !viewing ? await pendingFamilyInvite(token, inviteKey) : null;
   return (
     // Beach Pass: eigene Farben über `.rd-pass-beach` (rider.css), sonst alles gleich.
     <div className={beach ? "rd-pass-beach" : undefined} style={{ display: "contents" }}>
       <AwardBadgeDefs />
       <main className="rd-main">
         {family && viewing && <RiderViewing base={base} name={viewing.name} selfToken={family.viewerToken} />}
+        {invite && (
+          <div className="rd-viewing" role="status">
+            <span><b>{invite.inviterName}</b> lädt dich in die Familie ein</span>
+            <Link href={`/app/familie/${encodeURIComponent(invite.key)}`}>Ansehen</Link>
+          </div>
+        )}
         {children}
       </main>
       <RiderNav base={base} />

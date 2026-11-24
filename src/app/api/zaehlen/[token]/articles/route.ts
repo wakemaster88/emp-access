@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { countLinkState, isPlausibleCountToken } from "@/lib/warenwirtschaft";
 import { MAX_PUBLIC_ARTICLES, publicArticleSchema } from "@/lib/warenwirtschaft-server";
 import { logEvents, voidSignatures } from "@/lib/stocktake-audit";
+import { equalsInsensitive } from "@/lib/like-escape";
 
 type Ctx = { params: Promise<{ token: string }> };
 
@@ -33,8 +34,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     where: {
       stocktakeId: st.id,
       accountId: st.accountId,
-      name: { equals: a.name, mode: "insensitive" },
-      unit: a.unit ? { equals: a.unit, mode: "insensitive" } : null,
+      name: equalsInsensitive(a.name),
+      unit: a.unit ? equalsInsensitive(a.unit) : null,
     },
     select: { id: true },
   });

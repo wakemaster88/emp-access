@@ -28,6 +28,7 @@
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { canBeSamePerson } from "./abo-person";
+import { equalsInsensitive } from "./like-escape";
 
 export type PredecessorMatch = {
   ticketId: number;
@@ -206,7 +207,7 @@ export async function findPredecessor(
 
   if (email) {
     const byEmail = await ticketDb.findMany({
-      where: { ...baseWhere, email: { equals: email, mode: "insensitive" } },
+      where: { ...baseWhere, email: equalsInsensitive(email) },
       select: CANDIDATE_SELECT,
       orderBy: { updatedAt: "desc" },
       take: 50,

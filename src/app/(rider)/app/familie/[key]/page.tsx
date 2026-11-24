@@ -2,7 +2,7 @@ import Link from "next/link";
 import { riderAppPath } from "@/lib/rider-app";
 import { sessionRider } from "@/lib/rider-auth";
 import { familyInviteInfo } from "@/lib/rider-family";
-import { RiderFamilyJoin } from "@/components/rider/rider-family";
+import { RiderFamilyDecline, RiderFamilyJoin } from "@/components/rider/rider-family";
 
 export const dynamic = "force-dynamic";
 
@@ -38,9 +38,13 @@ export default async function RiderFamilyInvitePage({ params }: { params: Promis
       ) : (
         <>
           <p className="rd-soft" style={{ margin: 0 }}>
-            {invite.inviterName} lädt dich in die Familie ein. Ihr seht dann gegenseitig Abo, Statistik und Gutscheine und verwaltet gemeinsam die Kinder. Gezählt wird weiter für jeden einzeln, und du kannst die Familie jederzeit im Profil verlassen.
+            {invite.inviterName} lädt dich in die Familie ein. Ihr seht dann gegenseitig Abo, Statistik und Gutscheine und verwaltet gemeinsam die Kinder. Hast du in der App schon Kinder, kommen sie mit in die Familie. Gezählt wird weiter für jeden einzeln, und du kannst die Familie jederzeit im Profil verlassen.
+          </p>
+          <p className="rd-soft" style={{ margin: 0 }}>
+            Du kennst {invite.inviterName} nicht? Dann tritt nicht bei.
           </p>
           <RiderFamilyJoin inviteKey={decodeURIComponent(key)} />
+          <RiderFamilyDecline />
         </>
       )}
     </main>
