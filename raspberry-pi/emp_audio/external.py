@@ -44,11 +44,27 @@ BLUETOOTH_UNITS = ("emp-bluealsa.service", "emp-bluealsa-aplay.service")
 
 CMD_TIMEOUT = 10
 
+# Höchstlänge des Empfängernamens (wie in der Cloud).
+MAX_NAME = 60
+
 # Kennungen, unter denen die Backends im Heartbeat gemeldet werden. Das
 # Dashboard gibt einen Schalter nur frei, wenn die Kennung angekommen ist –
 # siehe AUDIO_BACKENDS in src/lib/audio-constants.ts.
 BACKEND_AIRPLAY = "shairport"
 BACKEND_BLUETOOTH = "bluealsa"
+
+
+def clean_name(value: str) -> str:
+    """
+    Empfängername für die Konfiguration: Anführungszeichen, Backslash und
+    Steuerzeichen (auch Zeilenumbrüche) fallen weg, danach wird gekürzt.
+    Umlaute, "&", Klammern usw. bleiben stehen.
+    """
+    kept = "".join(
+        ch for ch in value
+        if ch not in '"\\\u2028\u2029' and not (ord(ch) < 0x20 or 0x7F <= ord(ch) <= 0x9F)
+    )
+    return kept.strip()[:MAX_NAME].strip()
 
 
 def _run(cmd: list[str], input_bytes: Optional[bytes] = None) -> tuple[int, str]:
@@ -205,7 +221,7 @@ class ExternalSource:
         source = airplay if airplay_wanted else bluetooth if bluetooth_wanted else None
         name = ""
         if isinstance(source, dict) and isinstance(source.get("name"), str):
-            name = source["name"].strip()[:60]
+            name = clean_name(source["name"])
 
         pairable_for = 0
         if bluetooth_wanted:

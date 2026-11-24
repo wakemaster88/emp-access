@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { isIpv4 } from "@/lib/net-address";
 
 // Fetch Shelly device list using saved credentials (no key required in request)
 export async function GET() {
@@ -236,7 +237,9 @@ export async function PATCH(request: NextRequest) {
       if (!cloud) continue;
 
       const newName = cloud.name ?? local.name;
-      const newIp = cloud.ip ?? local.ipAddress ?? null;
+      // Nur eine IPv4 aus der Cloud uebernehmen, sonst bleibt die bisherige.
+      const cloudIp = typeof cloud.ip === "string" && isIpv4(cloud.ip.trim()) ? cloud.ip.trim() : null;
+      const newIp = cloudIp ?? local.ipAddress ?? null;
 
       if (newName !== local.name || newIp !== local.ipAddress) {
         await db.device.update({
@@ -251,11 +254,13 @@ export async function PATCH(request: NextRequest) {
   }
 
   // --- Import single device: { shellyId, name, ip } ---
-  const { shellyId, name, ip } = body as { shellyId: string; name: string; ip?: string };
+  const { shellyId, name, ip: rawIp } = body as { shellyId: string; name: string; ip?: string };
 
   if (!shellyId || !name) {
     return NextResponse.json({ error: "shellyId und name erforderlich" }, { status: 400 });
   }
+  // Nur eine IPv4 uebernehmen; alles andere wird wie eine fehlende IP behandelt.
+  const ip = typeof rawIp === "string" && isIpv4(rawIp.trim()) ? rawIp.trim() : undefined;
 
   const config = await db.apiConfig.findFirst({
     where: { accountId: accountId!, provider: "SHELLY" },

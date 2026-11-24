@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { INVALID_HOST_ERROR, isHostAddress } from "@/lib/net-address";
 
 // Felder ohne Passwort und ohne Snapshot-Bytes (die UI laedt das Bild ueber
 // die eigene Snapshot-Route).
@@ -48,6 +49,9 @@ export async function POST(request: NextRequest) {
       { error: "Name, Host, Benutzername und Passwort sind erforderlich" },
       { status: 400 }
     );
+  }
+  if (!isHostAddress(host)) {
+    return NextResponse.json({ error: INVALID_HOST_ERROR }, { status: 400 });
   }
 
   const existing = await db.camera.findFirst({ where: { accountId: accountId!, name } });

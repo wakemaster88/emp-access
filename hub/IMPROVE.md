@@ -1207,3 +1207,20 @@ Log-Abruf nach PR #233 (Hub 9a9c42c, Zentrale in Safari neu geladen 11:29 UTC):
 ### Nächster Schritt
 
 - Bei neuen Einträgen Kennzeichen umschreiben, in Tests nur Platzhalter.
+
+## 2026-11-24 (Stream-Konfiguration: Kamera-Adressen werden vor dem Schreiben geprüft)
+
+### Befund
+
+- `applyIpChange` in `streams.ts` ersetzte die alte Adresse in `webcams/infra/go2rtc.yaml` und `webcams/config.json` durch jeden Host-Wert aus der Cloud. Ein Schreibweg (`rewriteFile`), 2 Zieldateien, gerufen aus `updateLocalStreams` und `syncLocalStreamsFromCloud`.
+- Die Ersetzung grenzte nur gegen Ziffern und Punkte ab. Ein Hostname wie `cam` hätte auch Teile von `cams` getroffen.
+
+### Änderungen
+
+- Neue Datei `hub/src/stream-host.ts` (5 Tests): Alte und neue Adresse müssen eine IPv4 in üblicher Schreibweise sein (Werte bis 255, ohne führende Nullen) oder ein Hostname aus Buchstaben, Ziffern, Punkten und Bindestrichen. `replaceHost` ersetzt eine IPv4 wie bisher und einen Hostnamen nur als ganzen Namen.
+- Bei abgelehnten Werten bleiben die Dateien unverändert, go2rtc wird nicht neu gestartet. Im Log steht einmal pro Prozesslauf „Stream-Konfig nicht angepasst (Kamera <Name>)“ mit alter und neuer Adresse.
+- Die Cloud prüft den Host beim Speichern mit derselben Regel. Stand heute: 13 Kameras, alle mit privater IPv4 in üblicher Schreibweise, es wird also nichts abgelehnt.
+
+### Nächster Schritt
+
+- Ein paar Tage im Hub-Log auf „Stream-Konfig nicht angepasst“ achten. Taucht die Meldung auf, den Host der genannten Kamera in der Cloud bzw. den Eintrag in `config.json` korrigieren.

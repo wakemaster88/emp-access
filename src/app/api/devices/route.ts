@@ -5,6 +5,8 @@ import { isPulseCategory, parsePulseInput } from "@/lib/pulse-constants";
 import { parseScanLockSeconds } from "@/lib/scan-lock";
 import { withAudioDeviceInfo, AUDIO_ZONE_SELECT } from "@/lib/audio-integration";
 import { withoutDeviceSecrets } from "@/lib/role-guards";
+import { parseDeviceIp } from "@/lib/net-address";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -111,6 +113,14 @@ export async function POST(request: NextRequest) {
     keyRoomId = candidate;
   }
 
+  const ip = parseDeviceIp(body.ipAddress || null);
+  if ("error" in ip) return NextResponse.json({ error: ip.error }, { status: 400 });
+
+  const accessIn = body.accessIn ? Number(body.accessIn) : null;
+  const accessOut = body.accessOut ? Number(body.accessOut) : null;
+  const refError = await foreignRefError(db, accountId, { accessAreaIds: [accessIn, accessOut] });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
+
   const device = await db.device.create({
     data: {
       name: body.name.trim(),
@@ -118,14 +128,14 @@ export async function POST(request: NextRequest) {
       category,
       ...cover.value,
       ...pulse.value,
-      ipAddress: body.ipAddress || null,
+      ipAddress: ip.ip,
       shellyId: body.shellyId || null,
       shellyAuthKey: body.shellyAuthKey || null,
       nukiSmartlockId: body.nukiSmartlockId || null,
       loqedLockId: body.loqedLockId || null,
       isActive: body.isActive ?? true,
-      accessIn: body.accessIn ? Number(body.accessIn) : null,
-      accessOut: body.accessOut ? Number(body.accessOut) : null,
+      accessIn,
+      accessOut,
       allowReentry: body.allowReentry ?? false,
       scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, null),
       keyRoomId,

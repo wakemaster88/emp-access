@@ -5,6 +5,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, log } from "./config.js";
+import { isStreamHost, replaceHost } from "./stream-host.js";
 
 const GO2RTC_URL = (process.env.HUB_GO2RTC_URL || "http://127.0.0.1:1984").replace(/\/$/, "");
 
@@ -22,16 +23,6 @@ function kioskPath() {
   return path.join(CONFIG.repoDir, "webcams", "config.json");
 }
 
-function replaceIp(text: string, oldIp: string, newIp: string): { text: string; count: number } {
-  const re = new RegExp(`(?<![\\d.])${oldIp.replace(/\./g, "\\.")}(?![\\d])`, "g");
-  let count = 0;
-  const replaced = text.replace(re, () => {
-    count++;
-    return newIp;
-  });
-  return { text: replaced, count };
-}
-
 async function rewriteFile(file: string, oldIp: string, newIp: string): Promise<number> {
   let text: string;
   try {
@@ -39,7 +30,7 @@ async function rewriteFile(file: string, oldIp: string, newIp: string): Promise<
   } catch {
     return 0;
   }
-  const { text: replaced, count } = replaceIp(text, oldIp, newIp);
+  const { text: replaced, count } = replaceHost(text, oldIp, newIp);
   if (count === 0) return 0;
   await fs.writeFile(file, replaced, "utf8");
   return count;
@@ -57,8 +48,24 @@ async function restartGo2rtc(): Promise<boolean> {
   }
 }
 
-async function applyIpChange(oldIp: string, newIp: string): Promise<number> {
+// Abgelehnte Adresswechsel nur einmal je Prozesslauf protokollieren, weil
+// der Cloud-Abgleich regelmäßig läuft.
+const rejectedLogged = new Set<string>();
+
+async function applyIpChange(oldIp: string, newIp: string, label = ""): Promise<number> {
   if (!oldIp || !newIp || oldIp === newIp) return 0;
+  // Nur reine IPv4-Adressen oder Hostnamen in die Dateien schreiben.
+  if (!isStreamHost(oldIp) || !isStreamHost(newIp)) {
+    const key = `${label}|${oldIp}|${newIp}`;
+    if (!rejectedLogged.has(key)) {
+      rejectedLogged.add(key);
+      log(
+        `Stream-Konfig nicht angepasst${label ? ` (Kamera ${label})` : ""}: ` +
+          `${JSON.stringify(oldIp)} → ${JSON.stringify(newIp)} ist keine IPv4 bzw. kein Hostname`
+      );
+    }
+    return 0;
+  }
   let total = 0;
   for (const file of [go2rtcPath(), kioskPath()]) {
     try {
@@ -105,7 +112,7 @@ export async function syncLocalStreamsFromCloud(cameras: CloudCameraHost[]): Pro
     return;
   }
 
-  const changes: Array<{ oldIp: string; newIp: string }> = [];
+  const changes: Array<{ oldIp: string; newIp: string; label: string }> = [];
   const cams = Array.isArray(cfg.cams) ? cfg.cams : [];
 
   for (const cloud of cameras) {
@@ -114,7 +121,7 @@ export async function syncLocalStreamsFromCloud(cameras: CloudCameraHost[]): Pro
     if (!host) continue;
 
     if (cloud.kind === "DOORBIRD" && cfg.doorbird?.ip && cfg.doorbird.ip !== host) {
-      changes.push({ oldIp: cfg.doorbird.ip, newIp: host });
+      changes.push({ oldIp: cfg.doorbird.ip, newIp: host, label: String(cloud.name ?? "") });
       continue;
     }
 
@@ -124,13 +131,13 @@ export async function syncLocalStreamsFromCloud(cameras: CloudCameraHost[]): Pro
     if (!match) continue;
     const oldIp = String(match.ip ?? "").trim();
     if (oldIp && oldIp !== host) {
-      changes.push({ oldIp, newIp: host });
+      changes.push({ oldIp, newIp: host, label: String(cloud.name ?? "") });
     }
   }
 
   let total = 0;
-  for (const { oldIp, newIp } of changes) {
-    total += await applyIpChange(oldIp, newIp);
+  for (const { oldIp, newIp, label } of changes) {
+    total += await applyIpChange(oldIp, newIp, label);
   }
   if (total === 0) return;
   const restarted = await restartGo2rtc();
