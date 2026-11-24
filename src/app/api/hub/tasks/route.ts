@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRoleRequired, getSessionWithDb, isTenantAdminRole, validateApiToken } from "@/lib/api-auth";
 import { hubTaskAllowedForUser, hubTaskListFilter } from "@/lib/role-guards";
+import {
+  EXPIRED_TASK_ERROR,
+  SCAN_SNAPSHOT_TYPE,
+  checkHubTaskPayload,
+  expiredSwitchCommandsWhere,
+  hubTaskActor,
+  withActor,
+} from "@/lib/hub-task-rules";
+
+/** Hoechstens so viele Auftraege je Abholung. */
+const PICKUP_LIMIT = 10;
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -45,6 +56,9 @@ const VALID_TASK_TYPES = [
 
 /**
  * GET (Hub, Token-Auth): holt offene Tasks ab und markiert sie als RUNNING.
+ * Augenblicksgebundene Schaltbefehle, die laenger als eine Minute liegen
+ * (expiredSwitchCommandsWhere; Ausschalten verfaellt nicht), werden vorher auf FAILED ("abgelaufen") gesetzt.
+ * Steuerbefehle kommen in Anlege-Reihenfolge vor SCAN_SNAPSHOT.
  * GET (Session): listet die letzten Tasks fuer die UI. USER sieht nur die
  * Typen, die er selbst anlegen darf (hubTaskListFilter).
  */
@@ -54,11 +68,26 @@ export async function GET(request: NextRequest) {
     if ("error" in auth) return auth.error;
     const { db, account } = auth;
 
-    const pending = await db.hubTask.findMany({
-      where: { accountId: account.id, status: "PENDING" },
-      orderBy: { createdAt: "asc" },
-      take: 10,
+    const now = new Date();
+    await db.hubTask.updateMany({
+      where: expiredSwitchCommandsWhere(account.id, now),
+      data: { status: "FAILED", error: EXPIRED_TASK_ERROR, finishedAt: now },
     });
+
+    const control = await db.hubTask.findMany({
+      where: { accountId: account.id, status: "PENDING", type: { not: SCAN_SNAPSHOT_TYPE } },
+      orderBy: { createdAt: "asc" },
+      take: PICKUP_LIMIT,
+    });
+    const snapshots =
+      control.length < PICKUP_LIMIT
+        ? await db.hubTask.findMany({
+            where: { accountId: account.id, status: "PENDING", type: SCAN_SNAPSHOT_TYPE },
+            orderBy: { createdAt: "asc" },
+            take: PICKUP_LIMIT - control.length,
+          })
+        : [];
+    const pending = [...control, ...snapshots];
     if (pending.length > 0) {
       await db.hubTask.updateMany({
         where: { id: { in: pending.map((t) => t.id) } },
@@ -86,6 +115,9 @@ export async function POST(request: NextRequest) {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
   const { db, accountId } = session;
+  if (accountId == null) {
+    return NextResponse.json({ error: "Kein Mandant gewählt" }, { status: 400 });
+  }
 
   const body = await request.json();
   if (!VALID_TASK_TYPES.includes(body.type)) {
@@ -98,11 +130,23 @@ export async function POST(request: NextRequest) {
     if (denied) return denied;
   }
 
+  const check = checkHubTaskPayload(body.type, body.payload);
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: 400 });
+  }
+  if (check.cameraId != null) {
+    const camera = await db.camera.findFirst({
+      where: { id: check.cameraId, accountId },
+      select: { id: true },
+    });
+    if (!camera) return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 400 });
+  }
+
   const task = await db.hubTask.create({
     data: {
       type: body.type,
-      payload: body.payload ?? undefined,
-      accountId: accountId!,
+      payload: withActor(check.payload, hubTaskActor(session.session.user)) as object,
+      accountId,
     },
   });
   return NextResponse.json(task, { status: 201 });

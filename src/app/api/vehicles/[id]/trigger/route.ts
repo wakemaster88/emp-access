@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { processVehicleSighting } from "@/lib/vehicles";
+import { hubTaskActor } from "@/lib/hub-task-rules";
 
 /** Manuell auslösen (Test): Sichtung mit dem Kennzeichen des Fahrzeugs. */
 export async function POST(
@@ -27,6 +28,7 @@ export async function POST(
     accountId: accountId!,
     plate: vehicle.plate,
     source: "MANUAL",
+    by: hubTaskActor(session.session.user),
   });
 
   return NextResponse.json(result);

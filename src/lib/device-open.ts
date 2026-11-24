@@ -9,6 +9,7 @@ import { shellyBaseId, shellySwitchIndex } from "./shelly-cloud";
 import { isCoverDevice, runCoverAction, type CoverAction } from "./shelly-cover";
 import { isPulseCategory, pulseSeconds } from "./pulse-constants";
 import { isAudioDevice } from "./device-controls";
+import { deviceTaskSetAt, type HubTaskActor } from "./hub-task-rules";
 
 // Standard-Bewässerungsdauer (Sekunden), falls beim Öffnen keine Dauer
 // mitgegeben wird (z. B. Auslösung über den Public-Checkin-Monitor).
@@ -129,6 +130,8 @@ interface TriggerOptions {
   /// Shelly "open": eigener Auto-Off-Timer in Sekunden statt des Standards der
   /// Kategorie (Skills der Kunden-App schalten auch Schalter nur auf Zeit).
   autoOffSec?: number;
+  /// Von Hand ausgeloest: angemeldeter Benutzer, steht im Hub-Task (HUE_SET).
+  by?: HubTaskActor;
 }
 
 /**
@@ -139,11 +142,15 @@ interface TriggerOptions {
 interface DbLike {
   hubTask: {
     create: (args: {
-      data: { accountId: number; type: string; payload: { deviceId: number; bridgeId: string; lightId: string; on: boolean } };
+      data: {
+        accountId: number;
+        type: string;
+        payload: { deviceId: number; bridgeId: string; lightId: string; on: boolean; by?: HubTaskActor };
+      };
     }) => Promise<unknown>;
   };
   device: {
-    update: (args: { where: { id: number }; data: { task: number } }) => Promise<unknown>;
+    update: (args: { where: { id: number }; data: { task: number; taskSetAt: Date | null } }) => Promise<unknown>;
     findFirst: (args: {
       where: { id: number; accountId: number };
       select?: { gardenaServiceId?: boolean; gardenaConfigId?: boolean; type?: boolean };
@@ -264,7 +271,8 @@ export async function triggerDeviceAction(
   const task = ALL_TASK_MAP[action];
   await db.device.update({
     where: { id: device.id },
-    data: { task },
+    // taskSetAt: Einmal-Oeffnen am Pi verfaellt nach einer Minute (devices/pi).
+    data: { task, taskSetAt: deviceTaskSetAt(task) },
   });
 
   if (device.type === "GARDENA_VALVE") {
@@ -363,6 +371,7 @@ export async function triggerDeviceAction(
           bridgeId: device.hueBridgeId,
           lightId: device.hueLightId,
           on: action === "open" || action === "emergency",
+          ...(options.by ? { by: options.by } : {}),
         },
       },
     });
