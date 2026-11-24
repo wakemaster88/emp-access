@@ -5,7 +5,8 @@ import { newDeviceApiToken } from "@/lib/tokens";
 const TOKEN_DEVICE_TYPES = new Set(["RASPBERRY_PI", "AUDIO_PLAYER"]);
 
 async function loadDevice(request: NextRequest, params: Promise<{ id: string }>) {
-  const session = await getSessionWithDb();
+  // Geraete-Token erzeugen oder zurueckziehen ist Verwaltung von Zugangsdaten.
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return { error: session.error };
   const deviceId = Number((await params).id);
   if (!Number.isInteger(deviceId)) {

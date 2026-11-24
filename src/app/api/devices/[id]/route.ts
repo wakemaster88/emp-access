@@ -4,6 +4,7 @@ import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
 import { isPulseCategory, parsePulseInput } from "@/lib/pulse-constants";
 import { parseScanLockSeconds } from "@/lib/scan-lock";
 import { withAudioDeviceInfo, AUDIO_ZONE_SELECT } from "@/lib/audio-integration";
+import { withoutDeviceSecrets } from "@/lib/role-guards";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -44,14 +45,16 @@ export async function GET(
   });
   if (!device) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  return NextResponse.json(withAudioDeviceInfo(device));
+  // Geraete-Token und Shelly-Schluessel bleiben auf dem Server.
+  return NextResponse.json(withoutDeviceSecrets(withAudioDeviceInfo(device)));
 }
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSessionWithDb();
+  // Geraete aendern ist Verwaltung (Zugangsdaten, Zutritts-Zuordnung).
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const { id } = await params;
@@ -194,14 +197,14 @@ export async function PUT(
     },
   });
 
-  return NextResponse.json(withAudioDeviceInfo(device));
+  return NextResponse.json(withoutDeviceSecrets(withAudioDeviceInfo(device)));
 }
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const { id } = await params;

@@ -4,6 +4,7 @@ import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
 import { isPulseCategory, parsePulseInput } from "@/lib/pulse-constants";
 import { parseScanLockSeconds } from "@/lib/scan-lock";
 import { withAudioDeviceInfo, AUDIO_ZONE_SELECT } from "@/lib/audio-integration";
+import { withoutDeviceSecrets } from "@/lib/role-guards";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -54,7 +55,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getSessionWithDb();
+  // Geraete anlegen ist Verwaltung (Zugangsdaten, Zutritts-Zuordnung).
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const body = await request.json();
@@ -131,5 +133,5 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  return NextResponse.json(withAudioDeviceInfo(device), { status: 201 });
+  return NextResponse.json(withoutDeviceSecrets(withAudioDeviceInfo(device)), { status: 201 });
 }

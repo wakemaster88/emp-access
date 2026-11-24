@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { adminRoleRequired, getSessionWithDb } from "@/lib/api-auth";
+import { PERSON_OPENER_DEFAULTS, personOpenerChangeNeedsAdmin } from "@/lib/role-guards";
 import { listedPersonCreateSchema } from "@/lib/validators";
 
 export async function GET(request: NextRequest) {
@@ -32,6 +33,11 @@ export async function POST(request: NextRequest) {
   const parsed = listedPersonCreateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+  // Automatischer Oeffner bei Erkennung nur mit Verwaltungs-Rolle.
+  if (personOpenerChangeNeedsAdmin(parsed.data, PERSON_OPENER_DEFAULTS)) {
+    const denied = adminRoleRequired(session.session.user.role);
+    if (denied) return denied;
   }
 
   if (parsed.data.cameraId) {

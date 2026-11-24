@@ -1,5 +1,6 @@
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
+import { isTenantAdminRole } from "@/lib/api-auth";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -35,7 +36,8 @@ export default async function EmailPage() {
     ? {
         id: emailConfig.id,
         provider: emailConfig.provider,
-        apiKey: emailConfig.apiKey
+        // Anfang des Schluessels nur fuer Verwaltungs-Rollen.
+        apiKey: emailConfig.apiKey && isTenantAdminRole(session.user.role)
           ? `${emailConfig.apiKey.slice(0, 6)}${"•".repeat(Math.max(0, emailConfig.apiKey.length - 6))}`
           : null,
         hasApiKey: !!emailConfig.apiKey,

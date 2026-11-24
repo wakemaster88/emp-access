@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { adminRoleRequired, getSessionWithDb } from "@/lib/api-auth";
+import { personOpenerChangeNeedsAdmin, personOpenerScopeChangeNeedsAdmin } from "@/lib/role-guards";
 import { listedPersonUpdateSchema } from "@/lib/validators";
 
 export async function PUT(
@@ -20,6 +21,15 @@ export async function PUT(
   const parsed = listedPersonUpdateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+  // Automatischer Oeffner bei Erkennung nur mit Verwaltungs-Rolle – auch,
+  // wann er ausloest (Person wieder aktivieren, andere Kamera).
+  if (
+    personOpenerChangeNeedsAdmin(parsed.data, existing) ||
+    personOpenerScopeChangeNeedsAdmin(parsed.data, existing)
+  ) {
+    const denied = adminRoleRequired(session.session.user.role);
+    if (denied) return denied;
   }
 
   if (parsed.data.cameraId) {

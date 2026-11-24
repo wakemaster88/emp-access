@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { adminRoleRequired, getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { hubTaskAllowedForUser } from "@/lib/role-guards";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -85,6 +86,12 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   if (!VALID_TASK_TYPES.includes(body.type)) {
     return NextResponse.json({ error: "Ungültiger Task-Typ" }, { status: 400 });
+  }
+  // USER darf nur bedienen (Schnappschuss, Tuer oeffnen); alle anderen
+  // Auftraege an den Hub verlangen eine Verwaltungs-Rolle.
+  if (!hubTaskAllowedForUser(body.type)) {
+    const denied = adminRoleRequired(session.session.user.role);
+    if (denied) return denied;
   }
 
   const task = await db.hubTask.create({

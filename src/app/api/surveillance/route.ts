@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, isTenantAdminRole } from "@/lib/api-auth";
+import { SURVEILLANCE_DEFAULTS, surveillancePatchNeedsAdmin } from "@/lib/role-guards";
 import { surveillanceUpdateSchema } from "@/lib/validators";
 import { isSurveillanceArmed } from "@/lib/surveillance";
 import { prisma } from "@/lib/prisma";
@@ -57,14 +58,8 @@ export async function GET() {
     return NextResponse.json({
       id: null,
       manualArmed: false,
-      scheduleEnabled: false,
-      daysOfWeek: 127,
-      windowStart: "22:00",
-      windowEnd: "08:00",
-      cooldownMinutes: 5,
-      alertOnPerson: true,
-      alertOnVehicle: true,
-      alertTelegram: true,
+      // Dieselben Voreinstellungen prueft der PATCH fuer USER (role-guards).
+      ...SURVEILLANCE_DEFAULTS,
       cameraIds: [] as number[],
       cameras: [],
       armedNow: false,
@@ -88,6 +83,24 @@ export async function PATCH(request: NextRequest) {
   }
 
   const data = parsed.data;
+
+  // Scharf/unscharf ist Bedienung; Zeitplan, Alarmwege und Kameraauswahl
+  // sind Verwaltung. Die Oberflaeche schickt immer das ganze Formular, daher
+  // zaehlt nur die Abweichung vom gespeicherten Stand.
+  if (!isTenantAdminRole(session.session.user.role)) {
+    const stored = await loadConfig(accountId!);
+    const needsAdmin = surveillancePatchNeedsAdmin(
+      data,
+      stored ? { ...stored, cameraIds: stored.cameras.map((c) => c.cameraId) } : null,
+    );
+    if (needsAdmin) {
+      return NextResponse.json(
+        { error: "Keine Berechtigung – Zeitplan, Alarmwege und Kameras ändert ein Admin." },
+        { status: 403 },
+      );
+    }
+  }
+
   if (
     data.scheduleEnabled &&
     data.windowStart !== undefined &&

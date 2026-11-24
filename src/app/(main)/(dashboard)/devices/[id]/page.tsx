@@ -29,6 +29,7 @@ import { LoqedStatusCard } from "@/components/devices/loqed-status-card";
 import { LATEST_PI_VERSION } from "@/lib/pi-version";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
+import { isTenantAdminRole } from "@/lib/api-auth";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -44,6 +45,9 @@ export default async function DeviceDetailPage({ params }: Props) {
   if (isNaN(deviceId)) notFound();
 
   const db = tenantClient(session.user.accountId);
+  // Zugangsdaten (Geraete-/Account-Token, Shelly-Schluessel) sehen nur
+  // Verwaltungs-Rollen; USER bedient nur.
+  const isAdmin = isTenantAdminRole(session.user.role);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -80,7 +84,7 @@ export default async function DeviceDetailPage({ params }: Props) {
     }),
     db.account.findUnique({
       where: { id: session.user.accountId },
-      select: { apiToken: true, timezone: true },
+      select: { apiToken: isAdmin, timezone: true },
     }),
     db.keyRoom.findMany({
       where: { accountId: session.user.accountId },
@@ -134,11 +138,13 @@ export default async function DeviceDetailPage({ params }: Props) {
         ? `https://${process.env.VERCEL_URL}`
         : process.env.AUTH_URL ?? "http://localhost:3000";
   // Geraete-Token, wenn eines erzeugt wurde; sonst (Altbestand) das Account-Token.
-  const configUrl = JSON.stringify({
-    url: serverUrl,
-    token: device.apiToken ?? account?.apiToken ?? "",
-    id: device.id,
-  });
+  const configUrl = isAdmin
+    ? JSON.stringify({
+        url: serverUrl,
+        token: device.apiToken ?? account?.apiToken ?? "",
+        id: device.id,
+      })
+    : "";
 
   // Die Funktion ist eine Art, kein Zustand: Glas-Pille ohne eigene Farbe.
   const categoryMeta: Record<string, { label: string; icon: React.ElementType }> = {
@@ -177,7 +183,7 @@ export default async function DeviceDetailPage({ params }: Props) {
             <div className="flex flex-col sm:flex-row gap-6">
 
               {/* QR Code – nur für Raspberry Pi */}
-              {device.type === "RASPBERRY_PI" && (
+              {device.type === "RASPBERRY_PI" && isAdmin && (
                 <div className="shrink-0 flex flex-col items-center gap-2">
                   <DeviceQr value={configUrl} size={110} />
                   <p className="text-xs text-muted-foreground text-center">Konfigurations-QR</p>
@@ -278,7 +284,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                     category: device.category ?? null,
                     ipAddress: device.ipAddress,
                     shellyId: device.shellyId,
-                    shellyAuthKey: device.shellyAuthKey,
+                    shellyAuthKey: isAdmin ? device.shellyAuthKey : null,
                     coverUpChannel: device.coverUpChannel,
                     coverDownChannel: device.coverDownChannel,
                     coverRuntimeSec: device.coverRuntimeSec,
@@ -301,13 +307,13 @@ export default async function DeviceDetailPage({ params }: Props) {
         </Card>
 
         {/* Eigenes Token pro Pi statt Account-Token fuer alle Geraete */}
-        {(device.type === "RASPBERRY_PI" || device.type === "AUDIO_PLAYER") && (
+        {isAdmin && (device.type === "RASPBERRY_PI" || device.type === "AUDIO_PLAYER") && (
           <DeviceTokenCard deviceId={device.id} hasToken={Boolean(device.apiToken)} />
         )}
 
         {/* Abspieler: Installation und Konfigurations-JSON. Ein Audio-Pi hat
             keinen Scanner, deshalb Text zum Kopieren statt QR-Code. */}
-        {device.type === "AUDIO_PLAYER" && (
+        {device.type === "AUDIO_PLAYER" && isAdmin && (
           <AudioSetupCard configJson={configUrl} zoneName={device.audioZone?.name ?? null} />
         )}
 

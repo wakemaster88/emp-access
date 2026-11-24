@@ -23,8 +23,16 @@ const putSchema = z.object({
     .max(100),
 });
 
-async function loadVerein(request: NextRequest | null, params: Promise<{ id: string }>) {
-  const session = await getSessionWithDb();
+/**
+ * `requireAdmin`: Portal freischalten, Tueren freigeben und den Link tauschen
+ * ist Verwaltung; ansehen darf jede Rolle.
+ */
+async function loadVerein(
+  request: NextRequest | null,
+  params: Promise<{ id: string }>,
+  options: { requireAdmin?: boolean } = {},
+) {
+  const session = await getSessionWithDb({ requireAdmin: options.requireAdmin });
   if ("error" in session) return { error: session.error };
   if (session.accountId == null) {
     return { error: NextResponse.json({ error: "Kein Mandant" }, { status: 403 }) };
@@ -88,7 +96,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
 /** Speichert Portal-Einstellungen und freigegebene Services mit Preis. */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const loaded = await loadVerein(request, params);
+  const loaded = await loadVerein(request, params, { requireAdmin: true });
   if ("error" in loaded) return loaded.error;
   const parsed = putSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -137,7 +145,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
 /** `{ action: "rotate" }`: neuer Link, der alte gilt sofort nicht mehr. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const loaded = await loadVerein(request, params);
+  const loaded = await loadVerein(request, params, { requireAdmin: true });
   if ("error" in loaded) return loaded.error;
   const body = (await request.json().catch(() => null)) as { action?: string } | null;
   if (body?.action !== "rotate") return NextResponse.json({ error: "Unbekannte Aktion" }, { status: 400 });
