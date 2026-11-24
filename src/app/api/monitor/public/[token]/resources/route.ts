@@ -2,9 +2,17 @@ import { NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { fetchAnnyAvailability, fmtTimeBerlin, berlinOffset } from "@/lib/anny-availability";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+/**
+ * Die Auslastungsanzeige fragt einmal pro Minute ab (dazu Tageswechsel per
+ * Hand). Jeder Abruf geht an ANNY; die Grenze reicht fuer viele Anzeigen mit
+ * demselben Link hinter einer IP.
+ */
+const RESOURCES_LIMIT = { limit: 120, windowMs: 60_000 } as const;
 
 interface TimeSlot {
   start: string;
@@ -103,6 +111,8 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "monitor-resources", RESOURCES_LIMIT);
+  if (limited) return limited;
 
   const config = await prisma.monitorConfig.findUnique({
     where: { token },

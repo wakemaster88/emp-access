@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { publicRateLimit } from "@/lib/rate-limit";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 import { evaluateScanLock } from "@/lib/scan-lock";
@@ -10,10 +10,10 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
-  const limited = publicRateLimit(token, "monitor-scan");
+  const limited = publicLinkRateLimit(request, token, "monitor-scan");
   if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
-  if (!monitor || !monitor.isActive) {
+  if (!monitor || !monitor.isActive || monitor.type !== "MONITOR") {
     return NextResponse.json({ error: "Monitor nicht gefunden" }, { status: 404 });
   }
 

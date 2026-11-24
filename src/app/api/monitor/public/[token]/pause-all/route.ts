@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { publicRateLimit } from "@/lib/rate-limit";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -92,10 +92,10 @@ export async function POST(
 ) {
   try {
     const { token } = await params;
-    const limited = publicRateLimit(token, "monitor-pause-all");
+    const limited = publicLinkRateLimit(request, token, "monitor-pause-all");
     if (limited) return limited;
     const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
-    if (!monitor || !monitor.isActive) {
+    if (!monitor || !monitor.isActive || monitor.type !== "MONITOR") {
       return NextResponse.json({ error: "Monitor nicht gefunden" }, { status: 404 });
     }
 
@@ -253,7 +253,7 @@ export async function POST(
   } catch (err) {
     console.error("pause-all error:", err);
     return NextResponse.json(
-      { error: "Interner Fehler", detail: String(err) },
+      { error: "Interner Fehler" },
       { status: 500 }
     );
   }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
 
 /// Punktuelles Update einer einzelnen (auch alten) Vermietung – z. B. um aus
@@ -59,6 +60,8 @@ export async function PATCH(
   { params }: { params: Promise<{ token: string; id: string; rentalId: string }> }
 ) {
   const { token, id, rentalId } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-locker-rental-edit");
+  if (limited) return limited;
   const accountId = await resolveAccountId(token);
   if (accountId === null) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 

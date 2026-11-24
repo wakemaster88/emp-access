@@ -5,6 +5,7 @@ import { berlinOffset } from "@/lib/anny-availability";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { redeemBenefitVoucher } from "@/lib/gamification-service";
+import { checkVoucherAccess } from "@/lib/voucher-access";
 import { riderView } from "@/lib/customer-person";
 import { appLinkInfo, readAppCode } from "@/lib/rider-kasse-link";
 import { ensureAnnyBooker, loadAnnyOrder, loadChipView } from "@/lib/chips";
@@ -117,16 +118,13 @@ export async function POST(
       });
     }
     if (voucher) {
-      if (voucher.disabledAt) {
+      // Deaktivierte, eingelöste und abgelaufene Zutritts-Gutscheine werden
+      // nicht angeboten (gemeinsame Regel aller Einlasswege).
+      const access = checkVoucherAccess(voucher);
+      if (!access.ok) {
         return NextResponse.json({
           found: false,
-          message: "Gutschein wurde deaktiviert",
-        });
-      }
-      if (voucher.redeemedAt) {
-        return NextResponse.json({
-          found: false,
-          message: "Gutschein bereits eingelöst",
+          message: access.message,
         });
       }
 

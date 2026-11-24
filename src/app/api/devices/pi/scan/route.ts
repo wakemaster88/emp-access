@@ -16,6 +16,7 @@ import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
 import { recordStart } from "@/lib/gamification-service";
 import { adoptDayTickets } from "@/lib/day-guest";
 import { riderView } from "@/lib/customer-person";
+import { checkVoucherAccess } from "@/lib/voucher-access";
 
 /**
  * Meldung des Raspberry Pi, dass das Relais per Dashboard-Button geoeffnet
@@ -346,15 +347,17 @@ export async function POST(request: NextRequest) {
     // Gutschein-Einlösung: Code beginnt mit "GS-"
     if (code.startsWith("GS-")) {
       const voucher = await db.voucher.findUnique({ where: { code, accountId } });
-      if (voucher?.kind === "BENEFIT") {
-        // Leistungs-Gutschein (z. B. Freigetränk): gibt keinen Zutritt und wird
-        // hier auch nicht entwertet – das passiert an der Kasse.
+      // Leistungs-Gutscheine (z. B. Freigetränk) geben keinen Zutritt und werden
+      // hier auch nicht entwertet – das passiert an der Kasse. Deaktivierte,
+      // eingelöste und abgelaufene Gutscheine geben ebenfalls keinen Zutritt.
+      const access = voucher ? checkVoucherAccess(voucher) : null;
+      if (access && !access.ok) {
         await db.scan.create({
-          data: { code, deviceId, result: "DENIED", note: "voucher_benefit_only", accountId },
+          data: { code, deviceId, result: "DENIED", note: access.note, accountId },
         });
-        return NextResponse.json({ granted: false, message: "Gutschein gilt nur an der Kasse" });
+        return NextResponse.json({ granted: false, message: access.message });
       }
-      if (voucher && !voucher.redeemedAt) {
+      if (voucher) {
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0);
         const todayEnd = new Date(today);
@@ -419,13 +422,6 @@ export async function POST(request: NextRequest) {
             serviceName: null,
           },
         });
-      }
-
-      if (voucher?.redeemedAt) {
-        await db.scan.create({
-          data: { code, deviceId, result: "DENIED", note: "voucher_already_redeemed", accountId },
-        });
-        return NextResponse.json({ granted: false, message: "Gutschein bereits eingelöst" });
       }
     }
 

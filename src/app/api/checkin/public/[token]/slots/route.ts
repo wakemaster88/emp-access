@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { loadServiceSlots } from "@/lib/service-slots";
 
 export const maxDuration = 15;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Jeder Abruf fragt ANNY; die Grenze reicht fuer mehrere Kioske hinter einer IP. */
+const SLOTS_LIMIT = { limit: 300, windowMs: 60_000 } as const;
 
 /**
  * Holt fuer einen Service an einem konkreten Datum die buchbaren Slots aus
@@ -16,6 +20,8 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-slots", SLOTS_LIMIT);
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });

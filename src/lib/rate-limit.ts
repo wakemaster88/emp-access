@@ -60,6 +60,29 @@ export function publicRateLimit(
   );
 }
 
+/** Client-IP hinter dem Vercel-Proxy; "-", wenn keine bekannt ist. */
+export function requestClientIp(headers: Headers): string {
+  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || headers.get("x-real-ip")?.trim() || "-";
+}
+
+/**
+ * Bremse fuer die oeffentlichen Links (Monitor, Kiosk, Auslastung): gezaehlt
+ * wird je Endpunkt, Token UND Client-IP. Alle Geraete eines Betriebs teilen
+ * sich meist eine oeffentliche IP; die Grenzwerte muessen deshalb fuer
+ * mehrere Geraete mit demselben Link reichen. Die IP im Schluessel sorgt
+ * dafuer, dass Last von fremden Anschluessen den eigenen Betrieb nicht
+ * mitbremst.
+ */
+export function publicLinkRateLimit(
+  request: Request,
+  token: string,
+  scope: string,
+  opts: { limit: number; windowMs: number } = PUBLIC_WRITE_LIMIT,
+): NextResponse | null {
+  return publicRateLimit(`${token}|${requestClientIp(request.headers)}`, scope, opts);
+}
+
 /** Nur fuer Tests. */
 export function _resetRateLimits() {
   buckets.clear();

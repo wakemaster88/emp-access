@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { blockServiceSlot, releaseSlotBlock } from "@/lib/slot-blocks";
 
 export const maxDuration = 30;
@@ -19,6 +20,8 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-slot-block");
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
@@ -64,6 +67,8 @@ export async function DELETE(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-slot-block");
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });

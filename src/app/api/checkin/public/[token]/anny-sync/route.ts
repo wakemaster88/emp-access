@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { syncAnnyForAccount } from "@/lib/anny-sync";
 
 // Fensterlauf, angestossen ueber den Checkin-Monitor. Bewusst niedriger als der
@@ -7,11 +8,20 @@ import { syncAnnyForAccount } from "@/lib/anny-sync";
 // beliebig lange Funktionslaufzeit binden koennen.
 export const maxDuration = 120;
 
+/**
+ * Der Abgleich wird von Hand am Kiosk angestossen und laeuft bis zu zwei
+ * Minuten. Die Grenze bremst Schleifen, nicht das Personal (mehrere Kioske
+ * mit demselben Link teilen sich eine IP).
+ */
+const ANNY_SYNC_LIMIT = { limit: 10, windowMs: 10 * 60_000 } as const;
+
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-anny-sync", ANNY_SYNC_LIMIT);
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });

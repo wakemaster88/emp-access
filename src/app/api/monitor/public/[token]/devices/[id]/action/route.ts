@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { publicRateLimit } from "@/lib/rate-limit";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { parseMonitorIdList } from "@/lib/monitor-public-poll";
 import { deviceControls, isAudioDevice } from "@/lib/device-controls";
@@ -20,7 +20,7 @@ export async function POST(
   { params }: { params: Promise<{ token: string; id: string }> },
 ) {
   const { token, id } = await params;
-  const limited = publicRateLimit(token, "monitor-device-action");
+  const limited = publicLinkRateLimit(request, token, "monitor-device-action");
   if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({
     where: { token },
