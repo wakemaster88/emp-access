@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, use, useRef, type CSSProperties } from "react";
 import { useWakeLock } from "@/hooks/use-wake-lock";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { CalendarDays, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -127,11 +128,8 @@ export default function ResourceMonitorPage({
     }
   }, [token, selectedDate]);
 
-  useEffect(() => {
-    fetchData();
-    const iv = setInterval(fetchData, POLL_INTERVAL);
-    return () => clearInterval(iv);
-  }, [fetchData]);
+  // Pausiert im Hintergrund; beim Zurückkommen wird sofort neu geladen.
+  useVisiblePolling(fetchData, POLL_INTERVAL);
 
   useEffect(() => {
     const iv = setInterval(() => {

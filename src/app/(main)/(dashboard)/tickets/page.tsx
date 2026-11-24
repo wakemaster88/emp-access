@@ -84,14 +84,45 @@ export default async function TicketsPage({ searchParams }: Props) {
       // Code- und Quellenfilter bringen beide ein OR mit; als AND-Liste
       // überschreibt der Quellenfilter die Code-Suche nicht mehr.
       where: { ...baseWhere, ...statusFilter, ...areaFilter, ...subFilter, ...svcFilter, AND: [codeFilter, sourceFilter] },
-      include: {
-        accessArea: true,
-        subscription: true,
+      // Nur die Spalten, die Tabelle und Bearbeiten-Dialog lesen. Foto und
+      // E-Mail bleiben dabei: der Dialog zeigt sie und schickt sie beim
+      // Speichern mit.
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        birthDate: true,
+        email: true,
+        ticketTypeName: true,
+        barcode: true,
+        qrCode: true,
+        rfidCode: true,
+        status: true,
+        accessAreaId: true,
+        subscriptionId: true,
+        serviceId: true,
+        vereinId: true,
+        startDate: true,
+        endDate: true,
+        validityType: true,
+        slotStart: true,
+        slotEnd: true,
+        validityDurationMinutes: true,
+        firstScanAt: true,
+        profileImage: true,
+        uuid: true,
+        source: true,
+        extras: true,
+        customerId: true,
+        riderProfileId: true,
+        accessArea: { select: { id: true, name: true } },
+        subscription: { select: { id: true, name: true } },
         // serviceAreas mitladen, damit die Tabelle Multi-Area-ANNY-Pairs
         // (z.B. Aquapark Tageskarte = Aquapark+Strandbad) zu einer Zeile
         // pro Person zusammenfassen kann.
-        service: { include: { serviceAreas: { select: { accessAreaId: true } } } },
-        ticketAreas: { include: { accessArea: true } },
+        service: { select: { id: true, name: true, serviceAreas: { select: { accessAreaId: true } } } },
+        ticketAreas: { select: { accessArea: { select: { id: true, name: true } } } },
         _count: { select: { scans: true } },
         // Abo: Person, die damit fährt (Name statt der Daten am Ticket).
         riderProfile: { select: { firstName: true, lastName: true, birthDate: true } },
