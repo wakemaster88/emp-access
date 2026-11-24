@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { personSightingCreateSchema } from "@/lib/validators";
 import { processManualPersonSighting } from "@/lib/persons";
+import { hubTaskActor } from "@/lib/hub-task-rules";
 
 export async function GET(request: NextRequest) {
   const session = await getSessionWithDb();
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
       cameraId: parsed.data.cameraId,
       notes: parsed.data.notes,
       triggerShelly: parsed.data.triggerShelly,
+      actorId: hubTaskActor(session.session.user).adminId,
     });
     return NextResponse.json(result, { status: 201 });
   } catch (e) {

@@ -235,7 +235,10 @@ async function runDeviceAction(
       device,
       rule.accountId,
       action.deviceAction as DeviceAction,
-      action.timerSeconds ? { seconds: action.timerSeconds } : {},
+      {
+        ...(action.timerSeconds ? { seconds: action.timerSeconds } : {}),
+        actor: { source: "regel", actorLabel: `regel:${rule.id}` },
+      },
     );
     // Folgeregeln erst nach erfolgreichem Schalten, und nur begrenzt tief.
     if (!result.error && depth < MAX_CHAIN_DEPTH) {

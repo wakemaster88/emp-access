@@ -15,6 +15,7 @@
 import type { TenantDb } from "@/lib/prisma";
 import { waitForHubTask } from "@/lib/hub-task-wait";
 import { isValidDeviceAction, isActionAllowedForDevice, triggerDeviceAction, deviceSendsRemoteCommand } from "@/lib/device-open";
+import { recordDeviceAction } from "@/lib/device-action-log";
 import { availableDeviceActions, isAudioDevice } from "@/lib/device-controls";
 import { audioInputFromDeviceAction, controlAudioDevice } from "@/lib/audio-integration";
 import { runDeviceSwitchedRules } from "@/lib/room-rules";
@@ -31,9 +32,16 @@ export interface McpCtx {
   db: TenantDb;
   accountId: number;
   tokenName: string;
+  /** McpToken.id – fuers Geraete-Protokoll. */
+  tokenId?: number;
 }
 
 type Tool = McpTool<McpCtx>;
+
+/** Kennung des MCP-Tokens fuers Geraete-Protokoll (ID und Name, nie das Token). */
+function mcpActorLabel(ctx: McpCtx): string {
+  return ctx.tokenId != null ? `mcp:${ctx.tokenId} ${ctx.tokenName}` : ctx.tokenName;
+}
 type Args = Record<string, unknown>;
 
 // ---------- kleine Eingabe-Helfer ----------
@@ -147,7 +155,23 @@ function hubTool(def: {
     levelFor: def.levelFor,
     run: async (args, ctx) => {
       const need = (def.levelFor ? await def.levelFor(args, ctx) : null) ?? level;
-      return runHubTask(ctx, "AGENT_TOOL", { tool: def.name, args, level: need });
+      if (def.name !== "open_gate") return runHubTask(ctx, "AGENT_TOOL", { tool: def.name, args, level: need });
+      // Tor-Oeffnung ins Geraete-Protokoll: deviceId 0, die DoorBird loest der Hub auf.
+      let failed = true;
+      try {
+        const result = await runHubTask(ctx, "AGENT_TOOL", { tool: def.name, args, level: need });
+        failed = false;
+        return result;
+      } finally {
+        recordDeviceAction({
+          accountId: ctx.accountId,
+          deviceId: 0,
+          deviceName: `DoorBird ${String(args.camera ?? "")}`,
+          action: "doorbird_open",
+          result: failed ? "fehler" : "ok",
+          by: { source: "mcp", actorLabel: mcpActorLabel(ctx) },
+        });
+      }
     },
   };
 }
@@ -677,6 +701,7 @@ const cloudTools: Tool[] = [
       const minutes = args.minutes != null ? argInt(args, "minutes", 0, 1, 240) : undefined;
       const r = await triggerDeviceAction(ctx.db, device, ctx.accountId, action, {
         seconds: minutes ? minutes * 60 : undefined,
+        actor: { source: "mcp", actorLabel: mcpActorLabel(ctx) },
       });
       if (!r.error) {
         void runDeviceSwitchedRules(ctx.accountId, device.id, action).catch((err) => {

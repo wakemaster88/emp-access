@@ -10,6 +10,12 @@ import { isCoverDevice, runCoverAction, type CoverAction } from "./shelly-cover"
 import { isPulseCategory, pulseSeconds } from "./pulse-constants";
 import { isAudioDevice } from "./device-controls";
 import { deviceTaskSetAt, type HubTaskActor } from "./hub-task-rules";
+import {
+  deviceActionOutcome,
+  recordDeviceAction,
+  type DeviceActionBy,
+  type DeviceActionResult,
+} from "./device-action-log";
 
 // Standard-Bewässerungsdauer (Sekunden), falls beim Öffnen keine Dauer
 // mitgegeben wird (z. B. Auslösung über den Public-Checkin-Monitor).
@@ -95,6 +101,8 @@ export function isActionAllowedForDevice(
 
 interface DeviceForAction {
   id: number;
+  /// Nur fuers Protokoll (DeviceActionLog); ohne Namen steht dort "#<id>".
+  name?: string | null;
   type: string;
   /// Steuert bei Shelly-Geraeten, ob als Schalter oder als Antrieb (MARKISE/
   /// ROLLTOR) geschaltet wird.
@@ -132,6 +140,9 @@ interface TriggerOptions {
   autoOffSec?: number;
   /// Von Hand ausgeloest: angemeldeter Benutzer, steht im Hub-Task (HUE_SET).
   by?: HubTaskActor;
+  /// Wer schaltet – fuer das Protokoll (DeviceActionLog). Ohne Angabe steht
+  /// dort die Quelle "unbekannt".
+  actor?: DeviceActionBy;
 }
 
 /**
@@ -260,6 +271,9 @@ export function shellyAutoOffSec(
  * Setzt den Task auf dem Gerät und – bei Shelly – sendet den Switch-Befehl
  * lokal (Gen2/Gen1) bzw. via Shelly Cloud. Wird sowohl vom internen Action-
  * Endpoint als auch vom Public-Checkin-Monitor genutzt.
+ *
+ * Nach dem Schalten steht ein Eintrag im Protokoll (DeviceActionLog). Das
+ * Schreiben wird nicht abgewartet und kann die Schaltung nicht scheitern lassen.
  */
 export async function triggerDeviceAction(
   db: DbLike,
@@ -267,6 +281,32 @@ export async function triggerDeviceAction(
   accountId: number,
   action: DeviceAction,
   options: TriggerOptions = {},
+): Promise<{ task: number; sent: boolean; error?: string }> {
+  const log = (result: DeviceActionResult) =>
+    recordDeviceAction({
+      accountId,
+      deviceId: device.id,
+      deviceName: device.name,
+      action,
+      result,
+      by: options.actor,
+    });
+  try {
+    const res = await switchDevice(db, device, accountId, action, options);
+    log(deviceActionOutcome(deviceSendsRemoteCommand(device.type), res));
+    return res;
+  } catch (err) {
+    log("fehler");
+    throw err;
+  }
+}
+
+async function switchDevice(
+  db: DbLike,
+  device: DeviceForAction,
+  accountId: number,
+  action: DeviceAction,
+  options: TriggerOptions,
 ): Promise<{ task: number; sent: boolean; error?: string }> {
   const task = ALL_TASK_MAP[action];
   await db.device.update({

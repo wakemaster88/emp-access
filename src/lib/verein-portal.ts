@@ -11,6 +11,7 @@ import { clipToProfileSpans, relatedResources } from "@/lib/verein-related-booki
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { deviceSendsRemoteCommand, isActionAllowedForDevice, triggerDeviceAction } from "@/lib/device-open";
+import { recordDeviceAction } from "@/lib/device-action-log";
 import {
   accessWindow,
   bookingPrice,
@@ -715,11 +716,20 @@ export async function openPortalAccessPoint(
   if (target.kind === "doorbird") {
     const camera = await prisma.camera.findFirst({
       where: { id: target.id, accountId: verein.accountId, kind: "DOORBIRD" },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!camera) return { ok: false, status: 404, error: "Tor nicht gefunden." };
     await prisma.hubTask.create({
       data: { type: "DOORBIRD_OPEN", payload: { cameraId: camera.id, relay: 1, source: code }, accountId: verein.accountId },
+    });
+    // Kamera-Tueren haben keine Device-Zeile: deviceId 0, Kamera im Namen.
+    recordDeviceAction({
+      accountId: verein.accountId,
+      deviceId: 0,
+      deviceName: `${camera.name ?? "Kamera"} (Kamera ${camera.id})`,
+      action: "doorbird_open",
+      result: "ok",
+      by: { source: "verein", actorLabel: `verein:${verein.id}` },
     });
     return { ok: true };
   }
@@ -727,7 +737,7 @@ export async function openPortalAccessPoint(
   const device = await prisma.device.findFirst({
     where: { id: target.id, accountId: verein.accountId, type: { in: [...PORTAL_OPENABLE_TYPES] } },
     select: {
-      id: true, type: true, category: true, shellyId: true, ipAddress: true,
+      id: true, name: true, type: true, category: true, shellyId: true, ipAddress: true,
       coverUpChannel: true, coverDownChannel: true, coverRuntimeSec: true, pulseSeconds: true,
       nukiSmartlockId: true, loqedLockId: true, gardenaServiceId: true, gardenaConfigId: true, pumpDeviceId: true,
     },
@@ -737,7 +747,9 @@ export async function openPortalAccessPoint(
   let sent = false;
   let error: string | undefined;
   try {
-    const res = await triggerDeviceAction(tenantClient(verein.accountId), device, verein.accountId, "open");
+    const res = await triggerDeviceAction(tenantClient(verein.accountId), device, verein.accountId, "open", {
+      actor: { source: "verein", actorLabel: `verein:${verein.id}` },
+    });
     sent = res.sent;
     error = res.error;
   } catch (e) {

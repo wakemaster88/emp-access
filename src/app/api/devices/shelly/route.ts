@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { shellyControlSchema } from "@/lib/validators";
 import { controlShelly, getStatus } from "@/lib/shelly";
+import { hubTaskActor } from "@/lib/hub-task-rules";
+import { recordDeviceAction } from "@/lib/device-action-log";
 
 export async function GET(request: NextRequest) {
   const session = await getSessionWithDb();
@@ -58,6 +60,14 @@ export async function POST(request: NextRequest) {
     parsed.data.action,
     parsed.data.timer
   );
+  recordDeviceAction({
+    accountId: device.accountId,
+    deviceId: device.id,
+    deviceName: device.name,
+    action: parsed.data.action,
+    result: success ? "ok" : "fehler",
+    by: { source: "admin", actorId: hubTaskActor(session.session.user).adminId },
+  });
 
   return NextResponse.json({ success, device: device.name, action: parsed.data.action });
 }

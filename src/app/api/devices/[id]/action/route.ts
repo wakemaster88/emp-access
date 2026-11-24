@@ -80,7 +80,13 @@ export async function POST(
     existing,
     accountId!,
     action,
-    { seconds, by },
+    {
+      seconds,
+      by,
+      // Protokoll: angemeldeter Benutzer. Mit Account-Token schalten auch
+      // Automatiken (Hub, Schranke) – die Quelle bleibt dann "unbekannt".
+      actor: by ? { source: "admin", actorId: by.adminId } : { source: "unbekannt", actorLabel: "API-Token" },
+    },
   );
 
   // Raumregeln, die an diesem Schaltvorgang haengen. Nur bei Erfolg und
