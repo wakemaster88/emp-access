@@ -8,6 +8,6 @@ alwaysApply: true
 Bei jeder Arbeit am lokalen Hub (`hub/`, Kameras, Face, ALPR, DoorBird, Parken, Tasks):
 
 1. Zuerst lesen: `http://127.0.0.1:8787/api/improve`, sonst `hub/.cache/improve-latest.md`, plus die letzten relevanten Zeilen in `~/Library/Logs/emp-hub.log`.
-2. Danach einen Eintrag an `hub/IMPROVE.md` anhängen: Datum, Befund (mit Zahlen), Änderung, nächster Schritt. Keine Secrets (Tokens, Passwörter, Embeddings).
+2. Danach einen Eintrag an `hub/IMPROVE.md` anhängen: Datum, Befund (mit Zahlen), Änderung, nächster Schritt. Keine Secrets (Tokens, Passwörter, Embeddings), keine Kennzeichen und keine Namen Dritter: Das Repo ist öffentlich. Kennzeichen umschreiben („Whitelist-Kennzeichen“, „ein Lieferwagen“, „Kreis GT“); in Tests und Kommentaren nur Platzhalter wie `BO-XY 474E` oder `GT-AB 4321`.
 3. Offene Hinweise aus dem Snapshot (`hints`) zuerst abarbeiten, nicht bei null anfangen.
 4. Rohdaten liegen in `hub/.cache/improve.jsonl` (gitignored). Das Journal `hub/IMPROVE.md` ist die verdichtete Spur.

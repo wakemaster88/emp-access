@@ -278,13 +278,13 @@ function scorePlateFormat(plate: string): number {
   else s += 1;
   if (digits.length >= 3) s += 2;
   if (KNOWN_CITY.has(city)) s += 4;
-  // Tie-Break GT-U vs. G-TU: Kreis aus der Region gewinnt.
+  // Tie-Break GT-K vs. G-TK: Kreis aus der Region gewinnt.
   if (LOCAL_CITY_CODES.has(city)) s += 2;
   if (new Set(mid).size === mid.length) s += 1;
   return s;
 }
 
-/** Alle plausiblen DE-Splits eines kompakten OCR-Texts ("BOQC626E" → "BO-QC 626E" …). */
+/** Alle plausiblen DE-Splits eines kompakten OCR-Texts ("BOXY474E" → "BO-XY 474E" …). */
 function expandCompact(text: string): string[] {
   const compact = text.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const m = compact.match(/^([A-Z]{2,5})(\d{1,4})([EH]?)$/);

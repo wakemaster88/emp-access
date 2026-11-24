@@ -3,10 +3,10 @@
  * Reine Logik ohne Hub-Konfiguration (testbar, vehicle-burst-rules.test.ts).
  *
  * Befund 20.11.2026 (Log der letzten 24 h, Kamera Eingang): Die OCR las
- * Kennzeichen oft über viele Bilder sicher (GT-AR 9876 auf 18 Bildern mit
+ * Kennzeichen oft über viele Bilder sicher (GT-AB 4321 auf 18 Bildern mit
  * 0,98), der Hub verwarf sie aber (Kreis unbekannt) und nahm als Bild das
  * letzte mit irgendeinem Fahrzeug – meist das wegfahrende Auto. Einzelbilder
- * lesen außerdem gern ein Zeichen falsch (ST-U statt GT-U). Darum zählt hier
+ * lesen außerdem gern ein Zeichen falsch (ST-K statt GT-K). Darum zählt hier
  * die Mehrheit über den ganzen Burst.
  *
  * Schalten (Tor/Shelly) hängt NICHT an diesen Regeln, sondern weiter nur am
@@ -26,7 +26,7 @@ export interface FrameRead {
 }
 
 export interface BurstConsensus {
-  /** Kennzeichen in Anzeigeform (z. B. „GT-AR 9876“). */
+  /** Kennzeichen in Anzeigeform (z. B. „GT-AB 4321“). */
   plate: string;
   /** Auf so vielen Bildern gelesen (inkl. abgeschnittener Lesungen). */
   frames: number;
@@ -60,8 +60,8 @@ function digitCount(plate: string): number {
 
 /**
  * Mehrheit über alle Bilder: je Bild die beste gültige Lesung, gruppiert nach
- * normalisiertem Text. Abgeschnittene Lesungen („GT-KS 33“) zählen für die
- * längere („GT-KS 339“). Gewinnt die Gruppe mit den meisten Bildern, bei
+ * normalisiertem Text. Abgeschnittene Lesungen („GT-AB 12“) zählen für die
+ * längere („GT-AB 123“). Gewinnt die Gruppe mit den meisten Bildern, bei
  * Gleichstand die höhere Summe der Confidence.
  *
  * Angenommen wird sie nur, wenn sie trägt: mindestens 2 Bilder, oder ein Bild

@@ -3,6 +3,10 @@
  *
  *   DATABASE_URL=... npx tsx scripts/backfill-plates.ts
  *   DATABASE_URL=... npx tsx scripts/backfill-plates.ts --force
+ *
+ * Optional, kommagetrennt, nur über die Umgebung (nie im Code):
+ *   BACKFILL_DROP_PLATES    Fehllesungen in Anzeigeform, die geleert werden
+ *   BACKFILL_RESET_MATCHED  Kennzeichen, deren Whitelist-Treffer neu geprüft werden
  */
 import { config } from "dotenv";
 config({ path: ".env" });
@@ -18,6 +22,13 @@ function normalizePlate(plate: string): string {
     .replace(/[Ü]/g, "UE")
     .replace(/ß/g, "SS")
     .replace(/[^A-Z0-9]/g, "");
+}
+
+function envList(name: string): string[] {
+  return (process.env[name] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 async function main() {
@@ -48,7 +59,8 @@ async function main() {
   );
   console.log(`Whitelist: ${whitelist.size} Fahrzeuge`);
 
-  // OCR-Fehltreffer bereinigen (zu kurz, 1-Buchstaben-Kreis, bekannte Artefakte).
+  // OCR-Fehltreffer bereinigen (zu kurz, 1-Buchstaben-Kreis, bekannte Artefakte
+  // aus der Umgebung, siehe Kopf).
   // Manuelle Zuordnungen bleiben unangetastet.
   const cleaned = await client.query(
     `UPDATE "VehicleSighting"
@@ -58,13 +70,14 @@ async function main() {
        AND (
          length(regexp_replace(coalesce("plateNormalized", ''), '[^0-9]', '', 'g')) < 3
          OR plate ~ '^[A-Z]-'
-         OR plate IN ('AI-VA 21', 'H-S 601', 'H-S 9011', 'UN-BR 2041')
+         OR plate = ANY($1::text[])
          OR (
            matched = true
-           AND "plateNormalized" IN ('DOHM338E', 'BOQC626E')
+           AND "plateNormalized" = ANY($2::text[])
          )
        )
-     RETURNING id, plate`
+     RETURNING id, plate`,
+    [envList("BACKFILL_DROP_PLATES"), envList("BACKFILL_RESET_MATCHED").map(normalizePlate)]
   );
   if (cleaned.rows.length) {
     console.log(
