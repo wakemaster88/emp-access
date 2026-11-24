@@ -2,13 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { validateApiToken } from "@/lib/api-auth";
 import { ingestSwitchSnapshots, type SwitchIngestPayload } from "@/lib/snmp-ingest";
-
-function statusObject(raw: unknown): Record<string, unknown> {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
-  }
-  return {};
-}
+import { mergeHubAgentStatus } from "@/lib/hub-agent-status";
 
 /**
  * POST (Hub): SNMP-Snapshot der Switches. Aktualisiert NetworkDevice/Ports
@@ -28,28 +22,25 @@ export async function POST(request: NextRequest) {
 
   const stats = await ingestSwitchSnapshots(db, account.id, switches);
 
-  const existing = await db.hubAgent.findUnique({
-    where: { accountId_name: { accountId: account.id, name } },
-    select: { status: true },
-  });
   // `SwitchIngestPayload` hat optionale Felder; `InputJsonValue` verbietet
-  // `undefined`. Beim Schreiben serialisiert Prisma nach JSON und laesst sie
-  // fallen – der Umweg über `unknown` ist hier die Grenze zwischen beidem.
-  const status = {
-    ...statusObject(existing?.status),
-    snmp: { at: new Date().toISOString(), switches, stats },
-  } as unknown as Prisma.InputJsonValue;
+  // `undefined`. Beim Schreiben wird nach JSON serialisiert und sie fallen
+  // weg – der Umweg über `unknown` ist hier die Grenze zwischen beidem.
+  const snmp = { at: new Date().toISOString(), switches, stats };
 
+  // Zeile anlegen bzw. lastSeenAt setzen; `status.snmp` danach in einer
+  // eigenen Anweisung, die die uebrigen Teile von status unberuehrt laesst.
   await db.hubAgent.upsert({
     where: { accountId_name: { accountId: account.id, name } },
     create: {
       name,
-      status,
+      status: { snmp } as unknown as Prisma.InputJsonValue,
       lastSeenAt: new Date(),
       accountId: account.id,
     },
-    update: { status, lastSeenAt: new Date() },
+    update: { lastSeenAt: new Date() },
+    select: { id: true },
   });
+  await mergeHubAgentStatus(db, account.id, name, { snmp });
 
   return NextResponse.json({ ok: true, ...stats });
 }

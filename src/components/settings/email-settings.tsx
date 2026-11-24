@@ -1425,7 +1425,9 @@ function DiagnoseBlock({
     try {
       const res = await fetch("/api/integrations/anny", { method: "POST" });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.alreadyRunning && typeof data.message === "string") {
+        setBackfillResult(data.message);
+      } else if (res.ok) {
         setBackfillResult(
           `Anny-Sync abgeschlossen: ${data.created ?? 0} neu, ${data.updated ?? 0} aktualisiert. ` +
             `Bitte Diagnose erneut ausführen.`,

@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
           mode: result.mode,
           created: result.created,
           updated: result.updated,
+          ...(result.alreadyRunning ? { alreadyRunning: true } : {}),
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
