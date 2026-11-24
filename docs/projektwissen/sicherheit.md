@@ -5,9 +5,12 @@ Stand: 24. November 2026.
 ## Täglicher Sicherheitscheck
 
 Workflow [`.github/workflows/security.yml`](../../.github/workflows/security.yml),
-jeden Tag um 8 Uhr deutscher Zeit (Cron um 6 und 7 Uhr UTC, der Lauf, der
-nicht 8 Uhr Berlin ist, wird ausgelassen). Von Hand: Actions → Sicherheitscheck
-→ „Run workflow“.
+einmal täglich (Cron um 6:17 Uhr UTC, also 7:17 Uhr im Winter und 8:17 Uhr im
+Sommer). GitHub startet geplante Läufe oft erst Stunden später; deshalb prüft
+jeder geplante Lauf, egal wann er startet. Eine Uhrzeit-Bedingung im Workflow
+gibt es bewusst nicht: mit ihr wurde jeder verspätete Lauf ausgelassen und
+trotzdem als grün gemeldet. Von Hand: Actions → Sicherheitscheck → „Run
+workflow“.
 
 Er prüft:
 
