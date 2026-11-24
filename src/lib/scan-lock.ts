@@ -60,11 +60,16 @@ export async function evaluateScanLock(
   const lockSeconds = opts.lockSeconds ?? 0;
   if (!opts.deviceId || lockSeconds <= 0 || opts.isExit) return null;
 
+  // Nur Scans im Sperrfenster koennen noch sperren: Fuer einen aelteren
+  // letzten GRANTED waere remainingMs unten ohnehin <= 0. Die Zeitgrenze
+  // aendert das Ergebnis also nicht, begrenzt aber die gelesenen Zeilen.
+  const windowStart = new Date(Date.now() - lockSeconds * 1000);
   const last = await db.scan.findFirst({
     where: {
       deviceId: opts.deviceId,
       accountId: opts.accountId,
       result: "GRANTED",
+      scanTime: { gte: windowStart },
       ...(opts.ticketId != null ? { ticketId: opts.ticketId } : { code: opts.code }),
     },
     orderBy: { scanTime: "desc" },

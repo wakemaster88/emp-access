@@ -320,7 +320,6 @@ model Admin {
   stocktakeSignatures StocktakeSignature[]
 
   @@index([accountId])
-  @@index([email])
 }
 
 /// Passkey (WebAuthn) eines Admins: Anmeldung ohne Passwort per Face ID,
@@ -503,7 +502,6 @@ model Device {
   gamificationWater    GamificationConfig[] @relation("GamificationWaterSensor")
   motionEvents         RoomMotionEvent[]
 
-  @@index([accountId])
   @@index([gardenaConfigId])
   @@index([keyRoomId])
   @@index([accountId, hueBridgeId, hueLightId])
@@ -631,10 +629,8 @@ model Ticket {
 
   @@index([riderProfileId])
   @@index([customerId])
-  @@index([accountId])
   @@index([rfidCode])
   @@index([qrCode])
-  @@index([barcode])
   @@index([accessAreaId])
   @@index([subscriptionId])
   @@index([serviceId])
@@ -653,6 +649,10 @@ model Ticket {
   // Dazu ein Ausdrucks-Index auf ("accountId", lower("email")), den Prisma
   // nicht abbilden kann: Migration 20261124210000_ticket_email_lower_index,
   // genutzt von lib/ticket-email.ts.
+  // Ticketliste und /api/tickets sortieren nach updatedAt; die Betriebszeiten-
+  // Abfrage filtert nach annyResourceId.
+  @@index([accountId, updatedAt])
+  @@index([accountId, annyResourceId])
 }
 
 model Scan {
@@ -673,12 +673,10 @@ model Scan {
   snapshot  ScanSnapshot?
   createdAt DateTime      @default(now())
 
-  @@index([accountId])
-  @@index([deviceId])
+  @@index([deviceId, scanTime])
   @@index([scanTime])
   @@index([code])
-  @@index([ticketId])
-  @@index([accountId, scanTime])
+  @@index([ticketId, scanTime])
   @@index([accountId, scanTime, result])
 }
 
@@ -763,7 +761,6 @@ model TicketArea {
   accessArea   AccessArea @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
 
   @@unique([ticketId, accessAreaId])
-  @@index([ticketId])
   @@index([accessAreaId])
 }
 
@@ -781,7 +778,6 @@ model TicketDevice {
   device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@unique([ticketId, deviceId])
-  @@index([ticketId])
   @@index([deviceId])
 }
 
@@ -842,7 +838,6 @@ model Locker {
   updatedAt  DateTime       @updatedAt
 
   @@unique([accountId, number])
-  @@index([accountId])
 }
 
 /// Eine Vermietung eines Schließfachs an einen Mieter (Abo-Ticket) für ein
@@ -877,7 +872,6 @@ model LockerRental {
   updatedAt    DateTime  @updatedAt
 
   @@unique([lockerId, year])
-  @@index([lockerId])
   @@index([ticketId])
   @@index([year])
 }
@@ -896,7 +890,6 @@ model ServiceArea {
   area                           AccessArea    @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
 
   @@unique([serviceId, accessAreaId])
-  @@index([serviceId])
   @@index([accessAreaId])
 }
 
@@ -1012,7 +1005,6 @@ model MonitorConfig {
   updatedAt        DateTime @updatedAt
 
   @@index([accountId])
-  @@index([token])
 }
 
 /// Kurznachricht, die ein Mitarbeiter vom Shop-/Check-in-Monitor an alle
@@ -1117,7 +1109,6 @@ model EmailConfig {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@index([accountId])
 }
 
 /// Welcher Lebenszyklus-Event triggert die Mail?
@@ -1173,7 +1164,6 @@ model EmailRule {
   updatedAt              DateTime         @updatedAt
   emailSends             EmailSend[]
 
-  @@index([accountId])
   @@index([accountId, isActive])
   @@index([trigger, isActive])
 }
@@ -1250,9 +1240,7 @@ model InfoRequest {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  @@index([accountId])
   @@index([accountId, status])
-  @@index([token])
 }
 
 /// Web-Push-Abonnement eines Browsers/PWA-Geraets (Dashboard). Ein Admin kann
@@ -1319,7 +1307,6 @@ model AnnyResourceLink {
 
   @@unique([accessAreaId, annyName])
   @@index([accountId])
-  @@index([accessAreaId])
 }
 
 model Voucher {
@@ -1363,8 +1350,6 @@ model Voucher {
   birthdayGifts           RiderBirthdayGift[]
   createdAt               DateTime            @default(now())
 
-  @@index([accountId])
-  @@index([code])
   @@index([accountId, expiresAt])
   @@index([accountId, kind])
   @@index([ownerTicketId])
@@ -1388,7 +1373,6 @@ model ApiConfig {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  @@index([accountId])
   @@index([provider])
   @@index([accountId, provider])
 }
@@ -1447,7 +1431,6 @@ model Verein {
   updatedAt          DateTime                @updatedAt
 
   @@unique([accountId, name])
-  @@index([accountId])
 }
 
 /// Service, den ein Verein im Vereinsportal buchen darf, mit Preis pro Slot.
@@ -1468,7 +1451,6 @@ model VereinBookableService {
   service    Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@unique([vereinId, serviceId])
-  @@index([vereinId])
   @@index([serviceId])
 }
 
@@ -1545,7 +1527,6 @@ model VereinAccessTicket {
   ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@unique([vereinId, ticketId])
-  @@index([vereinId])
   @@index([ticketId])
 }
 
@@ -1668,7 +1649,6 @@ model NetworkVlan {
   updatedAt   DateTime          @updatedAt
 
   @@unique([accountId, vlanId])
-  @@index([accountId])
 }
 
 /// Physischer/organisatorischer Bereich innerhalb eines VLANs
@@ -1692,7 +1672,6 @@ model NetworkArea {
   updatedAt   DateTime        @updatedAt
 
   @@unique([accountId, name])
-  @@index([accountId])
   @@index([vlanId])
 }
 
@@ -1754,7 +1733,6 @@ model NetworkPort {
   updatedAt   DateTime          @updatedAt
 
   @@unique([deviceId, number])
-  @@index([deviceId])
   @@index([vlanId])
 }
 
@@ -1767,7 +1745,6 @@ model NetworkPortVlan {
   vlan   NetworkVlan @relation(fields: [vlanId], references: [id], onDelete: Cascade)
 
   @@unique([portId, vlanId])
-  @@index([portId])
   @@index([vlanId])
 }
 
@@ -1787,7 +1764,6 @@ model NetworkOutlet {
   updatedAt DateTime          @updatedAt
 
   @@unique([accountId, label])
-  @@index([accountId])
 }
 
 /// Endgeraet im Netzwerk (Kassen-PC, Drucker, Kamera, NAS, ...). Kann
@@ -1858,7 +1834,6 @@ model HubAgent {
   updatedAt         DateTime  @updatedAt
 
   @@unique([accountId, name])
-  @@index([accountId])
 }
 
 /// Offene Befunde, die der Hub meldet (z. B. VLAN-Fehler an einem Switch-Port
@@ -1990,7 +1965,6 @@ model Camera {
   ruleActions         RoomRuleAction[]     @relation("RoomRuleActionCamera")
 
   @@unique([accountId, name])
-  @@index([accountId])
   @@index([keyRoomId])
 }
 
@@ -2852,7 +2826,6 @@ model KeyRoom {
   networkClients      NetworkClient[]
   motionEvents        RoomMotionEvent[]
 
-  @@index([accountId])
   @@index([accountId, building])
   @@index([operatingScheduleId])
 }
@@ -2926,7 +2899,6 @@ model KeyItem {
   updatedAt DateTime            @updatedAt
 
   @@unique([accountId, keyNumber])
-  @@index([accountId])
   @@index([accountId, status])
 }
 
@@ -2992,7 +2964,6 @@ model KeyHandover {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
-  @@index([accountId])
   @@index([accountId, status])
   @@index([holderId])
 }
@@ -3035,7 +3006,6 @@ model KeyPolicyTemplate {
   updatedAt     DateTime       @updatedAt
 
   @@unique([accountId, name, version])
-  @@index([accountId])
   @@index([accountId, isActive])
 }
 
@@ -3073,7 +3043,6 @@ model KeySignature {
 
   @@index([accountId])
   @@index([handoverId])
-  @@index([token])
   @@index([pdfBlob])
 }
 
@@ -3183,7 +3152,6 @@ model OperatingPeriod {
   opensAt  String
   closesAt String
 
-  @@index([seasonId])
   @@index([seasonId, weekday])
 }
 
@@ -3201,7 +3169,6 @@ model OperatingException {
   note       String?
 
   @@unique([scheduleId, date])
-  @@index([scheduleId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3330,7 +3297,6 @@ model RoomRule {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([accountId])
   @@index([accountId, trigger, isActive])
   @@index([roomId])
   @@index([cameraId])
@@ -3509,6 +3475,8 @@ model ClimateSample {
   @@unique([deviceId, resolution, bucketStart])
   @@index([accountId, roomId, resolution, bucketStart])
   @@index([accountId, resolution, bucketStart])
+  // Das Verdichten im 5-Minuten-Cron filtert resolution + bucketStart ohne accountId.
+  @@index([resolution, bucketStart])
 }
 
 /// Lufttemperatur am Standort des Betriebs je Stunde, vom Wetterdienst
@@ -3819,7 +3787,6 @@ model Milestone {
   updatedAt        DateTime         @updatedAt
 
   @@unique([accountId, key])
-  @@index([accountId])
 }
 
 /// Erreichter Meilenstein eines Tickets in einem Zeitraum ("2027", "2027-06" oder "all").
@@ -4075,7 +4042,6 @@ model RiderHoliday {
   updatedAt        DateTime           @updatedAt
 
   @@unique([accountId, key])
-  @@index([accountId])
 }
 
 /// Feiertags-Gutschein, der an eine Person ging: einmal je Feiertag und Jahr.
@@ -4214,7 +4180,6 @@ model RiderProfile {
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
-  @@index([accountId])
   @@index([familyId])
   @@index([accountId, email])
   @@index([customerId])
@@ -4243,7 +4208,6 @@ model Customer {
   updatedAt       DateTime       @updatedAt
 
   @@unique([accountId, email])
-  @@index([accountId])
 }
 
 /// Wem ein Bändchen (RFID-Chip) gehört.
@@ -4279,7 +4243,6 @@ model Chip {
   updatedAt      DateTime      @updatedAt
 
   @@unique([accountId, code])
-  @@index([accountId])
   @@index([riderProfileId])
 }
 
@@ -4605,7 +4568,6 @@ model EventPartner {
   updatedAt     DateTime     @updatedAt
 
   @@unique([accountId, name])
-  @@index([accountId])
 }
 
 enum VenueExtraUnit {
@@ -4710,7 +4672,6 @@ model VenueEventExtra {
   quantity       Int            @default(1)
 
   @@unique([eventId, extraId])
-  @@index([eventId])
 }
 
 enum VenueDocumentKind {

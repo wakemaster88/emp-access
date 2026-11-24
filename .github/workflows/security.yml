@@ -33,13 +33,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 10.28.0
 
@@ -63,21 +63,10 @@ jobs:
       - name: Geheimnisse im Code suchen
         id: secrets
         continue-on-error: true
-        run: |
-          # Eindeutige Muster: private Schluessel, GitHub-/AWS-/Stripe-/Slack-
-          # Tokens, Telegram-Bot-Tokens, Postgres-URLs mit Passwort (ausser der
-          # CI-Datenbank). Ausgabe nur Datei:Zeile, nie der Treffer selbst.
-          pattern='(-----BEGIN [A-Z ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|sk_live_[A-Za-z0-9]{20,}|xox[abp]-[A-Za-z0-9-]{10,}|[0-9]{8,10}:AA[A-Za-z0-9_-]{33}|postgres(ql)?://[^ "'\''<:]+:[^ "'\''<@]+@[^ "'\''<]+)'
-          hits=$(git grep -nIE "$pattern" -- . ':!package-lock.json' ':!**/package-lock.json' ':!**/pnpm-lock.yaml' \
-            | grep -v 'postgres:postgres@localhost' \
-            | grep -vE 'user:pass(word)?@|USER:PASS|<[a-z_]+>:<[a-z_]+>@' \
-            | cut -d: -f1,2 || true)
-          if [ -n "$hits" ]; then
-            echo "Moegliche Geheimnisse (Datei:Zeile):" | tee secrets.txt
-            echo "$hits" | tee -a secrets.txt
-            exit 1
-          fi
-          echo "Keine Geheimnisse gefunden." | tee secrets.txt
+        # Muster und Ausnahmen stehen in scripts/secret-scan.sh (dasselbe
+        # Skript laeuft im CI bei Pull Requests und Pushes). Ausgabe nur
+        # Datei:Zeile, nie der Treffer selbst.
+        run: bash scripts/secret-scan.sh | tee secrets.txt
 
       - name: Ergebnis
         id: result
@@ -101,7 +90,7 @@ jobs:
 
       - name: Issue anlegen oder ergaenzen
         if: steps.result.outputs.failed != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const fs = require("fs");

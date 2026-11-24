@@ -95,3 +95,21 @@ vertrauen), `hub/.cache`, `hub/mower/.cache`, `webcams/config.json` und
 behält den bisherigen `HUB_NAME`, damit der Hub-Eintrag in der Cloud samt
 Verlauf bleibt. Nie zwei Hubs mit demselben Namen gleichzeitig laufen
 lassen; sie nehmen sich gegenseitig die Aufgaben weg.
+
+## Indizes auf Ticket und Scan nur mit CONCURRENTLY (24.11.2026)
+
+Der Production-Build führt `prisma migrate deploy` während des laufenden
+Betriebs aus. Ein einfaches `CREATE INDEX` sperrt die Tabelle für
+Schreibzugriffe, bis der Index gebaut ist; auf `Scan` und `Ticket` stehen in
+der Zeit Scans am Drehkreuz und das Einlösen von Tickets. Deshalb bekommt
+jeder neue Index auf `Ticket` oder `Scan` eine eigene Migration mit genau
+einer Anweisung `CREATE INDEX CONCURRENTLY IF NOT EXISTS ...`. Nur eine
+Migration mit genau einer Anweisung läuft ohne umschließende Transaktion,
+und nur dann ist `CONCURRENTLY` erlaubt. Der Indexname muss genau der sein, den Prisma aus
+dem Schema ableitet (`<Modell>_<Spalten>_idx`), sonst meldet
+`prisma migrate diff` eine Abweichung. Ersetzt ein neuer Index einen alten,
+wird der alte erst in einer späteren Migration entfernt, ebenfalls einzeln mit
+`DROP INDEX CONCURRENTLY IF EXISTS ...`. Mehrere Anweisungen in einer Datei
+laufen in einer gemeinsamen Transaktion; ein einfaches `DROP INDEX` hält dort
+die Sperre auf der Tabelle bis zum Ende der ganzen Migration. Beispiel:
+`prisma/migrations/20261124220000_*` bis `20261124220447_*`.
