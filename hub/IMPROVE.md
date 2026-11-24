@@ -15,7 +15,7 @@ Rohdaten: `hub/.cache/improve.jsonl` · API: `http://127.0.0.1:8787/api/improve`
 - DoorBird-Monitor startet nach jedem Hub-Kickstart (192.168.1.191). Türöffner nicht getestet (physisch).
 - YOLO-Classify (`vision.ts`) seit Ollama-Umstellung in keinem Fahrzeug-Burst mehr im Log (`Vision (yolo)` fehlt nach 17:30).
 - SNMP: `snmpwalk` ist installiert, `HUB_SNMP_TARGETS` fehlt – Modul idle.
-- ALPR hat heute Plates erkannt (u. a. SO-M 464, HAM-OR 118, MR-U 40). Letzter Burst 16:53 ohne gewähltes Plate (Fehlalarm/leere Zufahrt).
+- ALPR hat heute Plates erkannt (drei verschiedene). Letzter Burst 16:53 ohne gewähltes Plate (Fehlalarm/leere Zufahrt).
 
 ### Änderungen
 
@@ -313,11 +313,11 @@ Snapshot nicht verfügbar: Hub läuft auf dem iMac, diese Sitzung lief auf dem M
 
 ### Befunde
 
-- **Hub-Ausfall 3.9. ~21:00 bis 4.9. 10:50 Uhr.** In dieser Zeit kam von keiner Kamera ein Ereignis an; sonst liefern die Kameras nachts 100–200 Ereignisse pro Stunde. DO-HM 338E wurde bis 2.9. täglich zwischen 9:20 und 10:20 Uhr erkannt, am 3./4.9. nicht – am 4.9. stand der Hub in genau diesem Fenster. Ursache steht nur im Log auf dem iMac.
+- **Hub-Ausfall 3.9. ~21:00 bis 4.9. 10:50 Uhr.** In dieser Zeit kam von keiner Kamera ein Ereignis an; sonst liefern die Kameras nachts 100–200 Ereignisse pro Stunde. Das Whitelist-Kennzeichen wurde bis 2.9. täglich am Vormittag erkannt, am 3./4.9. nicht – am 4.9. stand der Hub in genau diesem Fenster. Ursache steht nur im Log auf dem iMac.
 - **Kennzeichen-OCR unverändert, Liste doppelt so verrauscht.** Kennzeichen je VEHICLE-Alarm (tags, Eingang): Woche ab 24.8. 21 %, Woche ab 31.8. 20 %. Anteil der Alarme, die als „Fahrzeug ohne Kennzeichen" landen: 23.–30.8. ~28 %, ab 31.8. ~55 %. Seit dem Tracker-Neustart am 30.8. antwortet `/classify` wieder – und sagt „Fahrzeug" auf jedes geparkte Auto und jeden Wagen auf der Straße oben links im Bild. 23 von 23 geprüften „ohne Kennzeichen"-Bildern (1.–4.9.) zeigen kein Fahrzeug an der Einfahrt, fast-alpr findet in keinem ein Kennzeichen.
 - **Abends nichts lesbar:** nach 20 Uhr 109 Alarme, 3 Kennzeichen; nach 21 Uhr null. Sonnenuntergang rückt wöchentlich 15 min vor.
 - **Zweiter Wagen ging verloren:** `pendingVehicle` wurde nur nach der Personen-Pipeline abgearbeitet, nie nach dem Fahrzeug-Burst.
-- **Phantom-Flanken:** der Burst schrieb `cam.states.VEHICLE` selbst; der parallele Poll sah beim Flackern neue Flanken. 60–70 % der VEHICLE-Ereignisse hatten kein Ende, nach jedem Burst startete sofort der nächste (Doppel-Einträge im Minutenabstand, z. B. BN-PL 8546 um 10:38:18 und „ohne Kennzeichen" um 10:38:41).
+- **Phantom-Flanken:** der Burst schrieb `cam.states.VEHICLE` selbst; der parallele Poll sah beim Flackern neue Flanken. 60–70 % der VEHICLE-Ereignisse hatten kein Ende, nach jedem Burst startete sofort der nächste (Doppel-Einträge im Minutenabstand, z. B. BN-AB 2345 um 10:38:18 und „ohne Kennzeichen" um 10:38:41).
 - **ALPR konnte sich still abschalten:** ein Daemon-Start über 30 s setzte `disabled = true` bis zum Neustart, stderr des Daemons wurde verworfen.
 - Plates je Frame laufen auf dem MacBook in 0,2 s inkl. 3×2 Kacheln; die Vito-Platte (129×43 px in 4K) fand nur der Kachel-Durchlauf, das Vollbild nicht – die Kacheln bleiben Pflicht.
 
@@ -589,11 +589,11 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 - Meter (Pegelanzeigen) sind bewusst nicht dabei; dafür müsste die Abonnement-Rate gesetzt und die Meldung an die Cloud gedrosselt werden.
 - Regeln und Zeitpläne kennen Soundweb-Regler noch nicht (z. B. Preset zum Betriebsbeginn). Die Task-Schnittstelle ist dafür bereits da.
 
-## 2026-09-26 (DO-HM 338E erkannt, DoorBird danach geöffnet)
+## 2026-09-26 (Whitelist-Kennzeichen erkannt, DoorBird danach geöffnet)
 
 ### Befunde
 
-- Heute 09:51 Uhr (07:51 UTC): Burst Kamera Eingang, 13 Frames, Fahrzeug-Ende 09:50:58. OCR spät→früh. Frames 13–6 ohne Kandidaten (0,00). Frame 5: **DO-HM 338E, conf 0,96, Whitelist**. Dump `hub/.cache/veh-burst/2026-09-26T07-51-16-589Z_Kamera_Eingang`, chosen=4. Auf dem Trefferbild steht der weiße Wagen an der Einfahrt, die späteren Frames sind leer.
+- Heute 09:51 Uhr (07:51 UTC): Burst Kamera Eingang, 13 Frames, Fahrzeug-Ende 09:50:58. OCR spät→früh. Frames 13–6 ohne Kandidaten (0,00). Frame 5: **Whitelist-Kennzeichen, conf 0,96**. Dump `hub/.cache/veh-burst/2026-09-26T07-51-16-589Z_Kamera_Eingang`, chosen=4. Auf dem Trefferbild steht der Wagen an der Einfahrt, die späteren Frames sind leer.
 - Tür 26 ms später: `Tür geöffnet (Relais 1)` um 09:51:16.623, aus der lokalen Whitelist-Schaltung, nicht aus dem Telegram-Knopf.
 - 0,9 s davor, 09:51:15.700: eigener Pfad. DoorBird MOTION ab 09:51:04, kein Gesicht (4 Versuche), YOLO am DoorBird YES conf=0,84 Fläche=14,8 % → `Öffnungswunsch (MOTION) → Telegram`. Das ist die Besuchermeldung, unabhängig vom Kennzeichen.
 - Snapshot-Hinweise (Gallery-Schwelle, Halteverbot, DoorBird-Monitor) erklären diesen Vorgang nicht. Monitor-Drop 10:01 Uhr lag danach.
@@ -610,8 +610,8 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 
 ### Befunde
 
-- Nachgerechnet am Dump von 09:51: fast-alpr Vollbild findet das Schild in 4K nicht (0,05 s, null Treffer). Die sechs Kacheln brauchen auf einem leeren Frame 0,26–0,31 s und finden nichts. macOS Vision auf demselben leeren Frame braucht **1,5–1,9 s** und liest nur die Kamerauhr. Acht leere Frames × (0,3 + 1,6) s = die 16 s. Der Trefferframe selbst ist in 0,10 s fertig (Kachel links, `DOHM338E`), Vision lief dort gar nicht.
-- Im Dump: Frame 02 liest falsch `DOH1336E` (keine Whitelist, andere Ziffern). Frame 03 und der gewählte Frame lesen `DOHM338E`. Die späteren Frames sind leer.
+- Nachgerechnet am Dump von 09:51: fast-alpr Vollbild findet das Schild in 4K nicht (0,05 s, null Treffer). Die sechs Kacheln brauchen auf einem leeren Frame 0,26–0,31 s und finden nichts. macOS Vision auf demselben leeren Frame braucht **1,5–1,9 s** und liest nur die Kamerauhr. Acht leere Frames × (0,3 + 1,6) s = die 16 s. Der Trefferframe selbst ist in 0,10 s fertig (Kachel links, Whitelist-Kennzeichen), Vision lief dort gar nicht.
+- Im Dump: Frame 02 liest falsch (ein Buchstabe als Ziffer, eine Ziffer daneben, keine Whitelist). Frame 03 und der gewählte Frame lesen das Whitelist-Kennzeichen richtig. Die späteren Frames sind leer.
 
 ### Änderung
 
@@ -911,7 +911,7 @@ Snapshot (seit 10:21 UTC, Stand 10:56): `delivery.none` 5, `alpr.plate` 1, `alpr
 
 ### Befunde
 
-- 10:58:22–10:58:32 UTC, Kamera Eingang (Modus NOTIFY): Burst 9 Bilder in 10,7 s (je ~1,2 s statt 400 ms, 4K-Snap). Kennzeichen BN-PL 8546 auf Bild 1/2 (conf 0,98/0,97), Sichtung 1969 ohne `deliveryBrand`.
+- 10:58:22–10:58:32 UTC, Kamera Eingang (Modus NOTIFY): Burst 9 Bilder in 10,7 s (je ~1,2 s statt 400 ms, 4K-Snap). Kennzeichen eines Lieferwagens auf Bild 1/2 (conf 0,98/0,97), Sichtung 1969 ohne `deliveryBrand`.
 - Lieferdienst-Prüfung (späte Bilder zuerst): Bild 9–6 Hintergrund (0,08–0,09 %), 5–4 kein Fahrzeug, Bild 3 und 2 Fahrzeug (10,9 % / 7,8 %), Bild 1 mit 1,89 % knapp unter `vehicleMinArea` 2 % übersprungen. „DHL nur auf 1/2 Bildern – kein Treffer“.
 - Bild (Frame 1, 11:58:24 Ortszeit): gelber VW-Transporter frontal von oben links; „DHL/Deutsche Post“ steht seitlich, lesbar nur kurz beim Einbiegen. Zwei Bilder mit Aufschrift sind bei dieser Anfahrt kaum zu schaffen.
 - Folgen/Nahaufnahme haben nicht eingegriffen (keine Zeilen dazu im Burst).
@@ -924,7 +924,7 @@ Snapshot (seit 10:21 UTC, Stand 10:56): `delivery.none` 5, `alpr.plate` 1, `alpr
 
 ### Nächster Schritt
 
-- BN-PL 8546 wird beim nächsten Besuch gelernt, wenn „DHL“ auf einem Bild lesbar ist (Log „als DHL gemerkt“), ab dem übernächsten gemeldet.
+- Dieses Kennzeichen wird beim nächsten Besuch gelernt, wenn „DHL“ auf einem Bild lesbar ist (Log „als DHL gemerkt“), ab dem übernächsten gemeldet.
 - `delivery.plate` gegen `delivery.weak`/`delivery.none` beobachten.
 
 ## 2026-11-09 (Härtung: Tor nur bei exaktem Kennzeichen, Dashboard-CSRF, Update mit Rollback)
@@ -1025,8 +1025,8 @@ Snapshot über Log-Abruf (HUB_LOG): `alpr.upload_noplate` 61, `alpr.plate` 8 sei
 
 ### Befund
 
-- Aaron stand um kurz nach 18 Uhr innen am Tor, das Tor ging nicht auf. Kamera Eingang (RLC-811A) hat zwischen 18:00 und 18:08 fünf Fahrzeug-Bursts aufgenommen, die OCR las pro Bild etwas anderes („K-W 433“, „N-L 064“, „F-L 364“ …) mit Sicherheit 0,5–0,7. Kein exakter Treffer, also kein Öffnen (richtig so).
-- Seit Sonnenuntergang (ca. 16:35) 0 gelesene Kennzeichen bei 16 Fahrzeugen. In 30 Tagen zwischen 16 und 6 Uhr kein einziger Whitelist-Treffer. Tagsüber klappt es (DO-HM 338E um 10:45 und 11:07 erkannt, DoorBird offen).
+- Aaron stand um kurz nach 18 Uhr innen am Tor, das Tor ging nicht auf. Kamera Eingang (RLC-811A) hat zwischen 18:00 und 18:08 fünf Fahrzeug-Bursts aufgenommen, die OCR las pro Bild etwas anderes (drei verschiedene Fehllesungen) mit Sicherheit 0,5–0,7. Kein exakter Treffer, also kein Öffnen (richtig so).
+- Seit Sonnenuntergang (ca. 16:35) 0 gelesene Kennzeichen bei 16 Fahrzeugen. In 30 Tagen zwischen 16 und 6 Uhr kein einziger Whitelist-Treffer. Tagsüber klappt es (Whitelist-Kennzeichen um 10:45 und 11:07 erkannt, DoorBird offen).
 - Nachtbild der Kamera: große, helle, unscharfe Streifen direkt vor der Linse (Gitter/Zweige/Spinnennetz werfen das IR zurück). Vermutlich Hauptursache, muss vor Ort angesehen werden.
 
 ### Änderung
@@ -1062,15 +1062,15 @@ Snapshot über Log-Abruf (HUB_LOG, Hub `imac-technikraum`, Stand b7992b4): `alpr
 
 ### Befunde
 
-- **Lesbare Kennzeichen verworfen.** 16 Uploads, davon nur 2 mit Kennzeichen (22 weitere Bursts ganz verworfen). In mindestens 9 Bursts las fast-alpr das Kennzeichen über mehrere Bilder sicher (GT-AR 9876 18× mit 0,98, PB-IV 1992 15× mit 0,96, BS-KQ 920, LIP-AK 529, BE-BM 62, GT-U 1212E), verworfen wurde es, weil der Kreis nicht in `KNOWN_CITY` stand (nur ~35 Ruhrgebiets-Kreise, weder WAF noch BE, GT, PB, MS). Ergebnis: „Fahrzeug ohne Kennzeichen“ trotz klarer Lesung.
-- **Einzelbild-Fehllesung gewinnt.** 20.11. 08:59: Bild 1 „ST-U 1212E“ (0,91, ST bekannt) wurde genommen, obwohl die folgenden Bilder „G-TU/GT-U 1212E“ mit 0,95–0,97 lasen. 19.11. 13:59 ähnlich (ST-A 2966 statt GT-AR …).
+- **Lesbare Kennzeichen verworfen.** 16 Uploads, davon nur 2 mit Kennzeichen (22 weitere Bursts ganz verworfen). In mindestens 9 Bursts las fast-alpr das Kennzeichen über mehrere Bilder sicher (eines 18× mit 0,98, eines 15× mit 0,96, vier weitere aus BS, LIP, BE und GT), verworfen wurde es, weil der Kreis nicht in `KNOWN_CITY` stand (nur ~35 Ruhrgebiets-Kreise, weder WAF noch BE, GT, PB, MS). Ergebnis: „Fahrzeug ohne Kennzeichen“ trotz klarer Lesung.
+- **Einzelbild-Fehllesung gewinnt.** 20.11. 08:59: Bild 1 las den Kreis „ST“ statt „GT“ (0,91, ST bekannt) und wurde genommen, obwohl die folgenden Bilder „GT“ mit 0,95–0,97 lasen. 19.11. 13:59 ähnlich (ST statt GT).
 - **Falsches Bild.** Ohne angenommenes Kennzeichen prüfte YOLO die Bilder von hinten und nahm das erste mit Fahrzeug, also das letzte: 7 von 14 Uploads „Frame 20/20“ bzw. letzter Frame, oft das wegfahrende Auto, obwohl das Schild 10 Bilder vorher lesbar war.
 - **Träge.** Bildabstand im Mittel 1,15 s statt 400 ms (Alarm-Abfrage, 4K-Snap und feste Pause nacheinander). Der Burst lief immer bis 20 Bilder (~23 s), auch wenn das Kennzeichen nach 3 Bildern feststand. Danach macOS Vision „einmal“: 16 Aufrufe, 0 Treffer, je 2–7,5 s. Vom Eintreffen bis zum Upload so 25–35 s.
 - **Licht-Schleife in der Dämmerung.** 19.11. 15:28–15:33 UTC und 20.11. 07:07 UTC: Licht an → 800 ms → Alarm schon weg → Licht aus, ~8 s später neuer Fahrzeug-Alarm. 16 von 19 Licht-Bursts ohne ein einziges Bild. Das Schalten selbst löst den Kamera-Alarm aus.
 
 ### Änderung
 
-- `plate-cities.ts` (neu): alle deutschen Unterscheidungszeichen (654, ohne Umlaut-Zeichen) als `KNOWN_CITY`; Kreise der Region (WAF, BE, GT, HAM, MS, …) als Tie-Break in `scorePlateFormat` (GTU1212E → GT-U statt G-TU). Schalten hängt weiter nur am exakten Whitelist-Treffer.
+- `plate-cities.ts` (neu): alle deutschen Unterscheidungszeichen (654, ohne Umlaut-Zeichen) als `KNOWN_CITY`; Kreise der Region (WAF, BE, GT, HAM, MS, …) als Tie-Break in `scorePlateFormat` (GTK3434E → GT-K statt G-TK). Schalten hängt weiter nur am exakten Whitelist-Treffer.
 - `vehicle-burst-rules.ts` (neu, rein): `burstConsensus` (Mehrheit über den Burst, abgeschnittene Lesungen zählen zur längeren; ≥ 2 Bilder oder 1 Bild ≥ 0,95; 1–2 Ziffern brauchen 3 Bilder; Upload-Bild = mittleres der sichersten), `pickFallbackFrame` (ohne Kennzeichen: Bild mit Schild-artiger Lesung, sonst größte Fahrzeug-Box), `burstDone` (Kennzeichen auf 3 Bildern bestätigt → noch 2 Bilder, mit Lieferdienst-Prüfung 4, dann Schluss).
 - `cameras.ts`: Alarm-Abfrage und Snap gleichzeitig, Pause nur noch bis zum Takt; Burst endet nach bestätigtem Kennzeichen; Konsens-Kennzeichen ersetzt Einzelbild-Treffer (eigener Score nur, wenn das Bild selbst genau das las, sonst `actuate: false` → `localActed=1`); macOS Vision im Burst aus (`HUB_VEHICLE_PLATE_VISION=1` an). Weißlicht nur, wenn der Alarm unmittelbar vorher noch steht; Licht-Burst ohne Fahrzeug sperrt das Licht 5 min (`HUB_VEHICLE_SPOTLIGHT_MUTE_MS`). Neue Zähler `alpr.consensus`, `alpr.early_stop`, `alpr.spotlight_mute`.
 - Geprüft: `tsc -p hub` 0 Fehler, `npm test` 517/517 (neu: 7 für die Burst-Regeln mit den Lesungen aus dem Log, 1 für Kreise der Region). Nicht an der Kamera geprüft.
@@ -1190,3 +1190,20 @@ Log-Abruf nach PR #233 (Hub 9a9c42c, Zentrale in Safari neu geladen 11:29 UTC):
 ### Nächster Schritt
 
 - In der Saison prüfen, ob an Öffnungstagen alle Punkte gemessen werden (`occupancy` → `spots`); fehlt ein Punkt, den Raum seiner Kamera prüfen.
+
+## 2026-11-24 (Log, Tests und Kommentare: nur noch Platzhalter-Kennzeichen)
+
+### Befund
+
+- Log, Testdaten und Kommentare führten Kennzeichen als Beispiele. Das Repo ist öffentlich, Beispiele brauchen kein echtes Kennzeichen.
+
+### Änderungen
+
+- `hub/IMPROVE.md`: 13 Stellen umgeschrieben („Whitelist-Kennzeichen“, „ein Lieferwagen“, Kreis statt Kennzeichen).
+- Tests und Kommentare (`plate-match`, `vehicle-burst-rules`, `delivery-plates-rules`, `plate`, `plate-cities`, `alpr`, `cameras`, `alpr_daemon.py`): Platzhalter mit gleichem Aufbau (`BO-XY 474E`, `GT-AB 4321` …). Logik unverändert, Tests grün.
+- `scripts/backfill-plates.ts`: Listen kommen aus der Umgebung (`BACKFILL_DROP_PLATES`, `BACKFILL_RESET_MATCHED`).
+- Regel ergänzt (`.cursor/rules/hub-improve-log.mdc`): keine Kennzeichen, keine Namen Dritter.
+
+### Nächster Schritt
+
+- Bei neuen Einträgen Kennzeichen umschreiben, in Tests nur Platzhalter.

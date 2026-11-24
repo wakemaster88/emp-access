@@ -1039,7 +1039,7 @@ async function uploadVehicleSnapshotBody(
   }
 
   // Mehrheit über den Burst statt bestem Einzelbild: Einzelbilder lesen gern
-  // ein Zeichen falsch (ST-U 1212E einmal, GT-U 1212E viermal). Hat schon ein
+  // ein Zeichen falsch (ST-K 3434E einmal, GT-K 3434E viermal). Hat schon ein
   // freigegebenes Kennzeichen geschaltet, bleibt es dabei.
   const consensus = actedPlate ? null : burstConsensus(frameReads(), burstOpts);
   if (consensus) {

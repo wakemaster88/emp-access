@@ -135,7 +135,7 @@ export function pickPlate(
         probable = v.plate;
         break fuzzy;
       }
-      // Gleicher Ziffernblock, Buchstaben leicht daneben (Q-L 626E vs BOQC626E)
+      // Gleicher Ziffernblock, Buchstaben leicht daneben (X-L 474E vs BOXY474E)
       if (n.endsWith(wantDigits) && want.endsWith(wantDigits)) {
         const nLetters = n.slice(0, -wantDigits.length);
         const wLetters = want.slice(0, -wantDigits.length);

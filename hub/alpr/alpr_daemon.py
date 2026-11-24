@@ -3,7 +3,7 @@
 fast-alpr Daemon für den Hub.
 
 Liest JSON-Zeilen von stdin: {"id": 1, "path": "/tmp/frame.jpg"}
-Schreibt JSON-Zeilen nach stdout: {"id": 1, "candidates": [{"text": "BOQC626E", "ocrConf": 0.98, "detConf": 0.41, "tiled": false}]}
+Schreibt JSON-Zeilen nach stdout: {"id": 1, "candidates": [{"text": "BOXY474E", "ocrConf": 0.98, "detConf": 0.41, "tiled": false}]}
 
 Erst Vollbild-Detektion; wenn nichts gefunden, überlappende Kacheln (3×2)
 für weit entfernte / kleine Kennzeichen.

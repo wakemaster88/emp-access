@@ -60,8 +60,8 @@ export const GERMAN_CITY_CODES: ReadonlySet<string> = new Set(ALL.split(/\s+/).f
 
 /**
  * Kreise rund um den Standort (Beckum, Kreis Warendorf). Nur Tie-Break, wenn
- * ein kompakter OCR-Text zwei gültige Aufteilungen hat (GTU1212E → GT-U oder
- * G-TU): Die Aufteilung mit dem Kreis aus der Region gewinnt.
+ * ein kompakter OCR-Text zwei gültige Aufteilungen hat (GTK3434E → GT-K oder
+ * G-TK): Die Aufteilung mit dem Kreis aus der Region gewinnt.
  */
 export const LOCAL_CITY_CODES: ReadonlySet<string> = new Set([
   "WAF", "BE", "GT", "HAM", "MS", "SO", "PB", "BI", "LIP", "UN", "COE", "ST",

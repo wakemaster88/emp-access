@@ -27,7 +27,7 @@ const RETRY_MAX_MS = 30 * 60_000;
 const STDERR_RING = 30;
 
 export interface AlprCandidate {
-  /** Kompakter OCR-Text, z. B. "BOQC626E". */
+  /** Kompakter OCR-Text, z. B. "BOXY474E". */
   text: string;
   ocrConf: number;
   detConf: number;

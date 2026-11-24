@@ -7,9 +7,9 @@ const T0 = Date.UTC(2026, 10, 6, 11, 0);
 
 test("Kennzeichen mit Marke merken und wiedererkennen", () => {
   const mem: PlateMemory = {};
-  assert.equal(rememberPlate(mem, "BN-PL 8546", "DHL", T0), true);
-  assert.equal(brandForPlate(mem, "bn pl8546", T0 + DAY), "DHL");
-  assert.equal(brandForPlate(mem, "BN-PL 8547", T0 + DAY), null);
+  assert.equal(rememberPlate(mem, "BN-AB 2345", "DHL", T0), true);
+  assert.equal(brandForPlate(mem, "bn ab2345", T0 + DAY), "DHL");
+  assert.equal(brandForPlate(mem, "BN-AB 2346", T0 + DAY), null);
 });
 
 test("Kurze oder leere Kennzeichen nicht merken", () => {
@@ -21,11 +21,11 @@ test("Kurze oder leere Kennzeichen nicht merken", () => {
 
 test("Verfällt nach 90 Tagen ohne Sichtung, jede Sichtung verlängert", () => {
   const mem: PlateMemory = {};
-  rememberPlate(mem, "BN-PL 8546", "DHL", T0);
-  assert.equal(rememberPlate(mem, "BN-PL 8546", "DHL", T0 + 89 * DAY), false);
-  assert.equal(mem.BNPL8546.seen, 2);
-  assert.equal(brandForPlate(mem, "BN-PL 8546", T0 + 150 * DAY), "DHL");
-  assert.equal(brandForPlate(mem, "BN-PL 8546", T0 + 179 * DAY), null);
+  rememberPlate(mem, "BN-AB 2345", "DHL", T0);
+  assert.equal(rememberPlate(mem, "BN-AB 2345", "DHL", T0 + 89 * DAY), false);
+  assert.equal(mem.BNAB2345.seen, 2);
+  assert.equal(brandForPlate(mem, "BN-AB 2345", T0 + 150 * DAY), "DHL");
+  assert.equal(brandForPlate(mem, "BN-AB 2345", T0 + 179 * DAY), null);
 });
 
 test("Höchstens 200 Kennzeichen, die am längsten nicht gesehenen fallen raus", () => {
