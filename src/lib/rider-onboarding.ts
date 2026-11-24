@@ -16,6 +16,7 @@
  */
 import { prisma } from "./prisma";
 import { berlinYmd } from "./berlin-day";
+import { openMailWithinCap } from "./rider-mail-cap";
 import { countLinked, dayTicketsByEmail, mailLinkKey, MAIL_LINK_HOURS, MAIL_MAX_PER_DAY, MAIL_PAUSE_MINUTES, normalizeEmail, DAY_GUEST_MAIL_SUBJECT } from "./day-guest";
 import { newRiderToken } from "./rider-app";
 import { samePersonAbos } from "./abo-person";
@@ -231,13 +232,13 @@ async function adoptDay(accountId: number, email: string, profileId: number, now
 }
 
 /** Konten, für die eine Adresse einen Link bekommt. */
-async function targetAccounts(email: string, now: Date): Promise<Array<{ accountId: number; name: string }>> {
+async function targetAccounts(email: string, now: Date): Promise<Array<{ accountId: number; name: string; known: boolean }>> {
   const configs = await prisma.gamificationConfig.findMany({
     where: { enabled: true, account: { isActive: true } },
     select: { accountId: true, account: { select: { name: true } } },
     take: 50,
   });
-  const known: Array<{ accountId: number; name: string }> = [];
+  const known: Array<{ accountId: number; name: string; known: boolean }> = [];
   for (const c of configs) {
     const hit =
       (await prisma.riderProfile.count({ where: { accountId: c.accountId, email } })) > 0 ||
@@ -249,11 +250,11 @@ async function targetAccounts(email: string, now: Date): Promise<Array<{ account
         },
       })) > 0 ||
       (await dayTicketsByEmail(c.accountId, email, now)).length > 0;
-    if (hit) known.push({ accountId: c.accountId, name: c.account.name });
+    if (hit) known.push({ accountId: c.accountId, name: c.account.name, known: true });
   }
   if (known.length > 0) return known;
   // Neue Kunden ohne Abo und Ticket: nur eindeutig, wenn genau ein Betrieb die App anbietet.
-  return configs.length === 1 ? [{ accountId: configs[0].accountId, name: configs[0].account.name }] : [];
+  return configs.length === 1 ? [{ accountId: configs[0].accountId, name: configs[0].account.name, known: false }] : [];
 }
 
 /**
@@ -279,6 +280,9 @@ export async function requestAppLink(rawEmail: unknown, origin: string, now: Dat
     });
     const pauseFrom = now.getTime() - MAIL_PAUSE_MINUTES * 60_000;
     if (recent.length >= MAIL_MAX_PER_DAY || recent.some((r) => r.sentAt.getTime() > pauseFrom)) continue;
+    // Neue Adresse: Tagesgrenze je Konto (lib/rider-mail-cap). Der Aufrufer
+    // erfährt davon nichts, die Antwort bleibt dieselbe.
+    if (!target.known && !(await openMailWithinCap(target.accountId, email, now))) continue;
 
     const url = `${origin}/app/mail/${mailLinkKey(target.accountId, email, now)}`;
     const content = riderLinkMail({ url, accountName: target.name, origin, hours: MAIL_LINK_HOURS });

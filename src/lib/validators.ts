@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MAX_SCAN_LOCK_SECONDS } from "@/lib/scan-lock";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/password-rules";
+import { profilePhotoError } from "@/lib/photo-url";
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -30,6 +31,17 @@ export const piStatusSchema = z.array(
   })
 );
 
+/// Neues Profilbild beim Anlegen: leer/null wie bisher erlaubt, sonst die
+/// gemeinsame Bildpruefung (lib/photo-url).
+const newProfileImage = z
+  .string()
+  .nullable()
+  .optional()
+  .superRefine((v, ctx) => {
+    const error = v ? profilePhotoError(v) : null;
+    if (error) ctx.addIssue({ code: "custom", message: error });
+  });
+
 export const ticketCreateSchema = z.object({
   name: z.string().min(1),
   qrCode: z.string().optional().nullable(),
@@ -49,11 +61,16 @@ export const ticketCreateSchema = z.object({
   firstName: z.string().optional().nullable(),
   lastName: z.string().optional().nullable(),
   ticketTypeName: z.string().optional().nullable(),
-  profileImage: z.string().optional().nullable(),
+  profileImage: newProfileImage,
   email: z.string().email().max(180).optional().nullable(),
 });
 
-export const ticketUpdateSchema = ticketCreateSchema.partial();
+/// Aendern: das Foto prueft die Route gegen den gespeicherten Wert
+/// (`profilePhotoUpdate` in lib/photo-url), weil Formulare das angezeigte
+/// Foto unveraendert mitschicken.
+export const ticketUpdateSchema = ticketCreateSchema.partial().extend({
+  profileImage: z.string().nullable().optional(),
+});
 
 // ─── Mitarbeiter-Schemas ─────────────────────────────────────────────────────
 

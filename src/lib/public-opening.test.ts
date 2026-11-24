@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { areaKey, matchesArea, parsePublicQuery, publicArea, publicDay } from "./public-opening";
+import { areaKey, clampPublicQuery, matchesArea, parsePublicQuery, publicArea, publicDay } from "./public-opening";
 import type { ScheduleSpec } from "./operating-hours";
 
 const wasserski: ScheduleSpec = {
@@ -95,4 +95,21 @@ test("matchesArea: Schlüssel, Anfang und Id", () => {
   assert.equal(matchesArea(s, ["4"]), true);
   assert.equal(matchesArea(s, ["strandbad"]), false);
   assert.equal(matchesArea({ id: 5, name: "Wasserski & Shop" }, ["wasserski"]), true);
+});
+
+test("clampPublicQuery: von im Fenster bleibt, außerhalb wird gezogen", () => {
+  const today = "2026-11-24";
+  const q = (from: string, days: number) => ({ from, days, areas: ["wasserski"] });
+  // Im Fenster: unverändert (heute, Vormonat für den Monatskalender, ein Jahr voraus).
+  assert.deepEqual(clampPublicQuery(q(today, 14), today), q(today, 14));
+  assert.deepEqual(clampPublicQuery(q("2026-10-01", 31), today), q("2026-10-01", 31));
+  assert.deepEqual(clampPublicQuery(q("2027-12-01", 31), today), q("2027-12-01", 31));
+  // Zu weit zurück: Start auf den Ersten des Vormonats, Ende bleibt.
+  assert.deepEqual(clampPublicQuery(q("2026-09-20", 20), today), q("2026-10-01", 9));
+  // Ganz vor dem Fenster: ein Tag am Fensteranfang.
+  assert.deepEqual(clampPublicQuery(q("2020-01-01", 30), today), q("2026-10-01", 1));
+  // Zu weit voraus: Start auf heute + 400 Tage.
+  assert.deepEqual(clampPublicQuery(q("2030-01-01", 7), today), q("2027-12-29", 7));
+  // Am Monatsanfang reicht heute − 40 Tage weiter zurück als der Vormonat.
+  assert.deepEqual(clampPublicQuery(q("2026-01-01", 1), "2026-03-02"), q("2026-01-21", 1));
 });

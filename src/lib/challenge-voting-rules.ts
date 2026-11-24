@@ -9,6 +9,21 @@ export const CHALLENGE_PHOTO_MAX_CHARS = 2_000_000;
 export const CHALLENGE_PHOTO_PX = 1600;
 /** Längste Kante des Vorschaubilds im Raster (2 Spalten, Retina). */
 export const CHALLENGE_THUMB_PX = 480;
+/** So viele Tage nach dem Endtag zeigt die App eine Challenge noch (lib/rider-challenges). */
+export const CHALLENGE_KEEP_ENDED_DAYS = 30;
+
+/**
+ * Zeigt die App die Fotos dieser Challenge gerade allen Kunden des Kontos?
+ * Ja, solange die Challenge eingeschaltet ist und ihr Endtag höchstens
+ * CHALLENGE_KEEP_ENDED_DAYS zurückliegt: dieselbe Auswahl wie in der App
+ * (laufend, kommend und kürzlich beendet mit Ergebnis). Tage als "YYYY-MM-DD".
+ */
+export function challengePhotosShown(challenge: { active: boolean; endYmd: string }, todayYmd: string): boolean {
+  if (!challenge.active) return false;
+  const [y, m, d] = todayYmd.split("-").map(Number);
+  const oldestEnd = new Date(Date.UTC(y, m - 1, d - CHALLENGE_KEEP_ENDED_DAYS)).toISOString().slice(0, 10);
+  return challenge.endYmd >= oldestEnd;
+}
 
 export interface DecodedPhoto {
   bytes: Uint8Array<ArrayBuffer>;

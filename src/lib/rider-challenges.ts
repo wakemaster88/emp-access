@@ -25,6 +25,7 @@ import {
 import { createTtlCache } from "./ttl-cache";
 import type { RiderView } from "./rider-app";
 import { loadVoting, type VotingView } from "./challenge-voting";
+import { CHALLENGE_KEEP_ENDED_DAYS } from "./challenge-voting-rules";
 import { loadFamilyMembers } from "./rider-family";
 
 export interface RiderChallenge {
@@ -56,7 +57,7 @@ export interface RiderChallenge {
   voting: VotingView | null;
 }
 
-const KEEP_ENDED_DAYS = 30;
+const KEEP_ENDED_DAYS = CHALLENGE_KEEP_ENDED_DAYS;
 
 /**
  * Kurz im Speicher je Instanz: Ranglisten (`challengeUnits`) sind für alle

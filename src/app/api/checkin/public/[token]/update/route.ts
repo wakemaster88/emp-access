@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
+import { profilePhotoUpdate } from "@/lib/photo-url";
 import { rescheduleAnnyBooking } from "@/lib/anny-availability";
 import { dayTicketEmailChanged, normalizeEmail } from "@/lib/day-guest";
 import { aboEmailError } from "@/lib/abo-email";
@@ -63,7 +64,10 @@ export async function PUT(
   let chipSale: SaleCheck | null = null;
 
   if (body.profileImage !== undefined) {
-    updateData.profileImage = body.profileImage || null;
+    // Gemeinsame Bildpruefung; leer entfernt das Foto wie bisher.
+    const photo = profilePhotoUpdate(body.profileImage || null, ticket.profileImage);
+    if ("error" in photo) return NextResponse.json({ error: photo.error }, { status: 400 });
+    if (photo.value !== undefined) updateData.profileImage = photo.value || null;
   }
 
   if (body.rfidCode !== undefined) {
