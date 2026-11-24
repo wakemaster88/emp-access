@@ -292,10 +292,61 @@ export interface HistorySeries {
   stats: SampleStats | null;
 }
 
+/** Zeitraeume, deren Fenster die Datenbank selbst verdichtet (viele Rohpunkte je Fenster). */
+const SQL_BUCKET_RANGES: ReadonlySet<HistoryRange> = new Set(["month", "year"]);
+
+/** Ein in SQL verdichtetes Anzeigefenster: Summen statt Mittel, gerechnet wie in `mergeStats`. */
+export interface BucketSums {
+  tempMin: number | null;
+  tempMax: number | null;
+  /** Summe von tempAvg * max(1, count) ueber die Punkte mit Temperatur. */
+  tempSum: number | null;
+  /** Summe von max(1, count) ueber die Punkte mit Temperatur. */
+  tempW: number | null;
+  humMin: number | null;
+  humMax: number | null;
+  humSum: number | null;
+  humW: number | null;
+  /** Summe von max(1, count) ueber alle Punkte. */
+  count: number;
+}
+
+/** Wert aus einer Rohabfrage als Zahl; null bleibt null (der Treiber kann Zahlen auch als Text liefern). */
+function numOrNull(v: unknown): number | null {
+  return v == null ? null : Number(v);
+}
+
+/** Summen eines Fensters in Kennwerte umrechnen, mit derselben Rundung wie `mergeStats`. */
+export function statsFromSums(raw: BucketSums): SampleStats {
+  const b = {
+    tempMin: numOrNull(raw.tempMin),
+    tempMax: numOrNull(raw.tempMax),
+    tempSum: numOrNull(raw.tempSum),
+    tempW: numOrNull(raw.tempW),
+    humMin: numOrNull(raw.humMin),
+    humMax: numOrNull(raw.humMax),
+    humSum: numOrNull(raw.humSum),
+    humW: numOrNull(raw.humW),
+    count: Number(raw.count),
+  };
+  const round = (v: number) => Math.round(v * 100) / 100;
+  const avg = (sum: number | null, w: number | null) => (sum != null && w != null && w > 0 ? round(sum / w) : null);
+  return {
+    tempMin: b.tempMin,
+    tempAvg: avg(b.tempSum, b.tempW),
+    tempMax: b.tempMax,
+    humMin: b.humMin,
+    humAvg: avg(b.humSum, b.humW),
+    humMax: b.humMax,
+    count: b.count,
+  };
+}
+
 /**
  * Verlauf eines Raums im gewaehlten Zeitraum, je Fuehler eine Reihe, auf das
  * Anzeigefenster verdichtet. Liest alle Aufloesungen, weil junge Daten als
- * 5-Minuten-Punkte und alte als Stunden oder Tage liegen.
+ * 5-Minuten-Punkte und alte als Stunden oder Tage liegen. Monat und Jahr
+ * verdichtet die Datenbank (`roomHistorySql`), Tag und Woche dieser Code.
  */
 export async function roomHistory(
   accountId: number,
@@ -306,6 +357,9 @@ export async function roomHistory(
   const spec = RANGE_SPEC[range];
   const to = Math.ceil(nowMs / spec.bucketMs) * spec.bucketMs;
   const from = to - spec.spanMs;
+  if (SQL_BUCKET_RANGES.has(range)) {
+    return { from, to, bucketMs: spec.bucketMs, series: await roomHistorySql(accountId, roomId, from, to, spec.bucketMs) };
+  }
   const rows = await prisma.climateSample.findMany({
     where: { accountId, roomId, bucketStart: { gte: new Date(from), lt: new Date(to) } },
     orderBy: { bucketStart: "asc" },
@@ -347,6 +401,75 @@ export async function roomHistory(
   }
   series.sort((a, b) => a.name.localeCompare(b.name, "de"));
   return { from, to, bucketMs: spec.bucketMs, series };
+}
+
+/**
+ * Wie der Rest von `roomHistory`, aber die Fenster rechnet Postgres: je
+ * Fuehler und Anzeigefenster eine Zeile mit Min/Max und den Summen fuer das
+ * gewichtete Mittel (Regeln wie `mergeStats`). Dazu je Fuehler der letzte Punkt.
+ */
+async function roomHistorySql(
+  accountId: number,
+  roomId: number,
+  from: number,
+  to: number,
+  bucketMs: number,
+): Promise<HistorySeries[]> {
+  // Als Text mit ::timestamp: die Spalte ist UTC ohne Zeitzone, so haengt der
+  // Vergleich nicht an der Zeitzone der Datenbank-Sitzung.
+  const fromTs = new Date(from).toISOString();
+  const toTs = new Date(to).toISOString();
+  const [buckets, lasts] = await Promise.all([
+    prisma.$queryRaw<Array<BucketSums & { deviceId: number; t: number; firstT: number }>>`
+      SELECT s."deviceId",
+        (floor(extract(epoch FROM s."bucketStart") * 1000 / ${bucketMs}) * ${bucketMs})::float8 AS "t",
+        min(extract(epoch FROM s."bucketStart") * 1000)::float8 AS "firstT",
+        min(coalesce(s."tempMin", s."tempAvg")) FILTER (WHERE s."tempAvg" IS NOT NULL) AS "tempMin",
+        max(coalesce(s."tempMax", s."tempAvg")) FILTER (WHERE s."tempAvg" IS NOT NULL) AS "tempMax",
+        sum(s."tempAvg" * greatest(1, s."count")) FILTER (WHERE s."tempAvg" IS NOT NULL) AS "tempSum",
+        sum(greatest(1, s."count")::float8) FILTER (WHERE s."tempAvg" IS NOT NULL) AS "tempW",
+        min(coalesce(s."humMin", s."humAvg")) FILTER (WHERE s."humAvg" IS NOT NULL) AS "humMin",
+        max(coalesce(s."humMax", s."humAvg")) FILTER (WHERE s."humAvg" IS NOT NULL) AS "humMax",
+        sum(s."humAvg" * greatest(1, s."count")) FILTER (WHERE s."humAvg" IS NOT NULL) AS "humSum",
+        sum(greatest(1, s."count")::float8) FILTER (WHERE s."humAvg" IS NOT NULL) AS "humW",
+        sum(greatest(1, s."count")::float8) AS "count"
+      FROM "ClimateSample" s
+      WHERE s."accountId" = ${accountId} AND s."roomId" = ${roomId}
+        AND s."bucketStart" >= ${fromTs}::timestamp AND s."bucketStart" < ${toTs}::timestamp
+      GROUP BY 1, 2
+      ORDER BY 2, 1`,
+    prisma.$queryRaw<Array<{ deviceId: number; name: string; t: number; tempAvg: number | null; humAvg: number | null }>>`
+      SELECT DISTINCT ON (s."deviceId") s."deviceId", d."name",
+        (extract(epoch FROM s."bucketStart") * 1000)::float8 AS "t", s."tempAvg", s."humAvg"
+      FROM "ClimateSample" s
+      JOIN "Device" d ON d."id" = s."deviceId"
+      WHERE s."accountId" = ${accountId} AND s."roomId" = ${roomId}
+        AND s."bucketStart" >= ${fromTs}::timestamp AND s."bucketStart" < ${toTs}::timestamp
+      ORDER BY s."deviceId", s."bucketStart" DESC`,
+  ]);
+  const lastOf = new Map(lasts.map((l) => [Number(l.deviceId), l]));
+  // Reihenfolge wie bisher: Fuehler in der Folge ihres ersten genauen Punkts, danach nach Name.
+  const byDevice = new Map<number, { firstT: number; points: HistoryPoint[] }>();
+  for (const b of buckets) {
+    const deviceId = Number(b.deviceId);
+    const dev = byDevice.get(deviceId) ?? { firstT: Number(b.firstT), points: [] };
+    dev.firstT = Math.min(dev.firstT, Number(b.firstT));
+    dev.points.push({ t: Number(b.t), ...statsFromSums(b) });
+    byDevice.set(deviceId, dev);
+  }
+  const series: HistorySeries[] = [];
+  for (const [deviceId, { points }] of [...byDevice].sort((a, b) => a[1].firstT - b[1].firstT || a[0] - b[0])) {
+    const last = lastOf.get(deviceId);
+    series.push({
+      deviceId,
+      name: last?.name ?? "",
+      points,
+      last: last ? { t: Number(last.t), tempC: numOrNull(last.tempAvg), humidity: numOrNull(last.humAvg) } : null,
+      stats: mergeStats(points),
+    });
+  }
+  series.sort((a, b) => a.name.localeCompare(b.name, "de"));
+  return series;
 }
 
 export type ClimateSampleWhere = Prisma.ClimateSampleWhereInput;
