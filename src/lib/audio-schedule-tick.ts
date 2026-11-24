@@ -212,7 +212,7 @@ export async function runAudioScheduleTick(now = new Date()): Promise<AudioTickR
             triggerKind,
           );
         } else if (schedule.action === "PLAY" && schedule.playlistId) {
-          const payload = await playlistPayload(db, schedule.playlistId);
+          const payload = await playlistPayload(db, account.id, schedule.playlistId);
           if (payload) {
             await queueZoneCommand(
               db,

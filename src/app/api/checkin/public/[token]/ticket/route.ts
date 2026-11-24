@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { prisma, tenantClient } from "@/lib/prisma";
+import { foreignRefError } from "@/lib/tenant-refs";
 import { ticketCreateSchema } from "@/lib/validators";
 import { checkVoucherAccess } from "@/lib/voucher-access";
 import { resolveAnnyOrganizationId, fetchAnnyServiceMatch, resolveServiceResourceId } from "@/lib/anny-availability";
@@ -52,6 +53,17 @@ export async function POST(
   }
   const transferCode = data.transferCode === true;
 
+  // IDs aus der Anfrage muessen zum Mandanten des Links gehoeren.
+  const refError = await foreignRefError(tenantClient(monitor.accountId), monitor.accountId, {
+    riderProfileIds: [data.personId],
+    accessAreaIds: [data.accessAreaId],
+    subscriptionIds: [data.subscriptionId],
+    serviceIds: [data.serviceId],
+  });
+  if (refError) {
+    return NextResponse.json({ error: { formErrors: [refError] } }, { status: 400 });
+  }
+
   // Guard: endDate nie vor startDate (z.B. zukuenftiger Ferienkurs-Start
   // mit Fallback-Ende "heute"). Ohne Korrektur matcht der Shop-Monitor-
   // Datumsfilter keinen Tag.
@@ -95,6 +107,7 @@ export async function POST(
       data.slotStart = undefined;
       data.slotEnd = undefined;
     }
+    // Service ist oben gegen den Mandanten geprueft.
     const svcAreas = await prisma.serviceArea.findMany({
       where: { serviceId: data.serviceId },
       select: { accessAreaId: true },

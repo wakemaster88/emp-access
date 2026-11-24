@@ -227,7 +227,7 @@ export async function playOptionInZone(
   const target = parseOptionKey(option);
   if (!target) return false;
   if (target.kind === "PLAYLIST") {
-    const payload = await playlistPayload(db, target.id);
+    const payload = await playlistPayload(db, accountId, target.id);
     if (!payload) return false;
     await queueZoneCommand(
       db,

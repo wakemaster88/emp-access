@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { parseScanLockSeconds } from "@/lib/scan-lock";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 export async function PUT(
   request: NextRequest,
@@ -21,11 +22,22 @@ export async function PUT(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
+  const parentId = body.parentId !== undefined ? (body.parentId ? Number(body.parentId) : null) : existing.parentId;
+  if (body.parentId !== undefined && parentId != null) {
+    // Ein Bereich kann nicht sein eigener uebergeordneter Bereich sein, und
+    // der uebergeordnete Bereich muss zum Mandanten gehoeren.
+    if (parentId === areaId) {
+      return NextResponse.json({ error: "Ein Bereich kann nicht sich selbst untergeordnet werden." }, { status: 400 });
+    }
+    const refError = await foreignRefError(db, accountId, { accessAreaIds: [parentId] });
+    if (refError) return NextResponse.json({ error: refError }, { status: 400 });
+  }
+
   const area = await db.accessArea.update({
     where: { id: areaId },
     data: {
       name: body.name?.trim() ?? existing.name,
-      parentId: body.parentId !== undefined ? (body.parentId ? Number(body.parentId) : null) : existing.parentId,
+      parentId,
       allowReentry: body.allowReentry ?? existing.allowReentry,
       personLimit: body.personLimit !== undefined ? (body.personLimit ? Number(body.personLimit) : null) : existing.personLimit,
       scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, existing.scanLockSeconds),

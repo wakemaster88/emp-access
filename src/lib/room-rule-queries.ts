@@ -148,8 +148,22 @@ export async function validateRuleReferences(
         .map((a) => a.targetCameraId as number),
     ),
   ];
+  const announcementIds = [
+    ...new Set(
+      (input.actions ?? [])
+        .filter((a) => a.kind === "AUDIO" && a.audioAnnouncementId)
+        .map((a) => a.audioAnnouncementId as number),
+    ),
+  ];
+  const playlistIds = [
+    ...new Set(
+      (input.actions ?? [])
+        .filter((a) => a.kind === "AUDIO" && a.audioPlaylistId)
+        .map((a) => a.audioPlaylistId as number),
+    ),
+  ];
 
-  const [results, devices, zones, cameras] = await Promise.all([
+  const [results, devices, zones, cameras, announcements, playlists] = await Promise.all([
     Promise.all(checks.map(([, promise]) => promise)),
     deviceIds.length > 0
       ? db.device.findMany({ where: { id: { in: deviceIds }, accountId }, select: { id: true } })
@@ -160,6 +174,12 @@ export async function validateRuleReferences(
     cameraIds.length > 0
       ? db.camera.findMany({ where: { id: { in: cameraIds }, accountId }, select: { id: true } })
       : Promise.resolve([]),
+    announcementIds.length > 0
+      ? db.audioAnnouncement.findMany({ where: { id: { in: announcementIds }, accountId }, select: { id: true } })
+      : Promise.resolve([]),
+    playlistIds.length > 0
+      ? db.audioPlaylist.findMany({ where: { id: { in: playlistIds }, accountId }, select: { id: true } })
+      : Promise.resolve([]),
   ]);
 
   for (const [index, result] of results.entries()) {
@@ -168,6 +188,8 @@ export async function validateRuleReferences(
   if (devices.length !== deviceIds.length) return "Zielgerät nicht gefunden";
   if (zones.length !== zoneIds.length) return "Audio-Zone nicht gefunden";
   if (cameras.length !== cameraIds.length) return "Kamera für Kamera-Aktion nicht gefunden";
+  if (announcements.length !== announcementIds.length) return "Durchsage nicht gefunden";
+  if (playlists.length !== playlistIds.length) return "Playlist nicht gefunden";
 
   return null;
 }

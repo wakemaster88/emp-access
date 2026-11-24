@@ -196,13 +196,15 @@ export async function queueZoneCommand(
 /**
  * Tracks einer Playlist in Abspielreihenfolge – wird als Payload an den Pi
  * geschickt, damit er die Dateien vorab in seinen Cache laden kann.
+ * Nur Playlists des angegebenen Mandanten; sonst `null`.
  */
 export async function playlistPayload(
   db: Db,
+  accountId: number,
   playlistId: number
 ): Promise<Prisma.InputJsonValue | null> {
-  const playlist = await db.audioPlaylist.findUnique({
-    where: { id: playlistId },
+  const playlist = await db.audioPlaylist.findFirst({
+    where: { id: playlistId, accountId },
     include: {
       items: {
         orderBy: { sortOrder: "asc" },
