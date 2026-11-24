@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createVereinBooking, loadPortalVerein } from "@/lib/verein-portal";
+import { publicRateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 30;
 
@@ -14,9 +15,17 @@ const bodySchema = z.object({
   inclusive: z.boolean().optional().default(false),
 });
 
+/**
+ * Buchen von Hand: ein Slot je Klick und Dialog. Die Grenze bremst Schleifen,
+ * nicht den Verein (mehrere Mitglieder teilen sich den Link).
+ */
+const VEREIN_BOOKING_LIMIT = { limit: 30, windowMs: 60_000 } as const;
+
 /** Bucht einen Slot fuer den Verein. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  const limited = publicRateLimit(token, "verein-portal-booking", VEREIN_BOOKING_LIMIT);
+  if (limited) return limited;
   const verein = await loadPortalVerein(token);
   if (!verein) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 

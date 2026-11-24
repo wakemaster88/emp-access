@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { dayTicketEmailChanged } from "@/lib/day-guest";
 import type { PrismaClient } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { ticketCreateSchema } from "@/lib/validators";
+import { ticketUpdateSchema } from "@/lib/validators";
+import { profilePhotoUpdate } from "@/lib/photo-url";
 import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
 import { foreignRefError } from "@/lib/tenant-refs";
 import { aboEmailError, cleanEmail } from "@/lib/abo-email";
@@ -41,7 +42,7 @@ export async function PUT(
   if (isNaN(ticketId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
 
   const body = await request.json();
-  const parsed = ticketCreateSchema.partial().safeParse(body);
+  const parsed = ticketUpdateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -53,6 +54,11 @@ export async function PUT(
     where: { id: ticketId, accountId: accountId! },
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+
+  const photo = profilePhotoUpdate(data.profileImage, existing.profileImage);
+  if ("error" in photo) {
+    return NextResponse.json({ error: { formErrors: [photo.error], fieldErrors: { profileImage: [photo.error] } } }, { status: 400 });
+  }
 
   // Jedes Abo hängt an einer E-Mail-Adresse (siehe lib/abo-email).
   const emailError = aboEmailError(existing, {
@@ -154,7 +160,7 @@ export async function PUT(
       ...(data.slotStart !== undefined && { slotStart: data.slotStart }),
       ...(data.slotEnd !== undefined && { slotEnd: data.slotEnd }),
       ...(data.validityDurationMinutes !== undefined && { validityDurationMinutes: data.validityDurationMinutes }),
-      ...(data.profileImage !== undefined && { profileImage: data.profileImage }),
+      ...(photo.value !== undefined && { profileImage: photo.value }),
       ...(data.email !== undefined && { email: cleanEmail(data.email) }),
       startDate: data.startDate ? new Date(data.startDate) : null,
       endDate: data.endDate ? new Date(data.endDate) : null,

@@ -14,7 +14,7 @@ import { Notice } from "@/components/ui/notice";
 import type { ServiceData } from "./checkin-types";
 import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
 import { annyReasonLabel } from "./checkin-utils";
-import { photoToDataUrl } from "@/lib/photo-url";
+import { photoToDataUrl, profilePhotoAccepted } from "@/lib/photo-url";
 
 export const ADD_EMPTY = {
   firstName: "",
@@ -410,9 +410,10 @@ export function AddTicketOverlay({
 
     if (prefill?.profileImage) {
       // Das Foto kommt aus der Poll-Antwort als URL; fuer das neue Ticket
-      // braucht der Server das Bild selbst.
+      // braucht der Server das Bild selbst. Besteht es die Bildpruefung
+      // nicht, wird das Ticket ohne Foto angelegt.
       const photo = await photoToDataUrl(prefill.profileImage);
-      if (photo) payload.profileImage = photo;
+      if (photo && profilePhotoAccepted(photo)) payload.profileImage = photo;
     }
 
     if (accessAreaId !== "none") {

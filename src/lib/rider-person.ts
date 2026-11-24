@@ -6,10 +6,10 @@
  */
 import { prisma } from "./prisma";
 import { aboNamesRider, isKidsSubscriptionName } from "./customer-person";
-import { decodeImageDataUrl } from "./photo-url";
+import { PROFILE_PHOTO_MAX_CHARS, profilePhotoError } from "./photo-url";
 
 /** Größtes Profilbild als Data-URL. Die App verkleinert vorher auf 320 px (ca. 30 KB). */
-export const PHOTO_MAX_CHARS = 400_000;
+export const PHOTO_MAX_CHARS = PROFILE_PHOTO_MAX_CHARS;
 /** Ältestes Geburtsjahr, das die App annimmt. */
 export const BIRTH_YEAR_MIN = 1900;
 const NAME_MAX = 60;
@@ -47,9 +47,8 @@ export function parsePersonInput(input: PersonInput, now: Date = new Date()): { 
     if (input.photo === null || input.photo === "") {
       data.photo = null;
     } else {
-      if (input.photo.length > PHOTO_MAX_CHARS) return { error: "Das Bild ist zu groß." };
-      const decoded = decodeImageDataUrl(input.photo);
-      if (!decoded || decoded.contentType === "image/gif") return { error: "Bitte ein Foto als JPG, PNG oder WebP wählen." };
+      const photoError = profilePhotoError(input.photo);
+      if (photoError) return { error: photoError };
       data.photo = input.photo.trim();
     }
   }

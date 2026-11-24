@@ -26,8 +26,9 @@ import {
 } from "./rider-family";
 import { familyInviteMail } from "./rider-mail-template";
 import { equalsInsensitive } from "./like-escape";
+import { FAMILY_INVITE_MAIL_SUBJECT, openMailWithinCap } from "./rider-mail-cap";
 
-export const FAMILY_INVITE_MAIL_SUBJECT = "Einladung in die App";
+export { FAMILY_INVITE_MAIL_SUBJECT };
 /** Cookie, in dem der Schlüssel bis zum Ende der Anmeldung wartet. */
 export const FAMILY_INVITE_COOKIE = "rd-family-invite";
 const PAUSE_MINUTES = 10;
@@ -92,6 +93,9 @@ export async function inviteFamilyByMail(
   const key = familyInviteKey(familyId, viewer.id, now);
   const url = `${origin}/app/mail/${mailLinkKey(viewer.accountId, email, now, FAMILY_INVITE_DAYS * 24)}?familie=${key}`;
   const content = familyInviteMail({ url, accountName: account.name, origin, inviterName: memberName(inviter), days: FAMILY_INVITE_DAYS });
+  // Tagesgrenze je Konto (lib/rider-mail-cap): darüber nur an bekannte
+  // Adressen. Die App bekommt dieselbe Antwort wie nach dem Senden.
+  if (!(await openMailWithinCap(viewer.accountId, email, now))) return "sent";
   const result = await send({ config: mail, to: email, subject: content.subject, html: content.html, text: content.text });
   await prisma.emailSend
     .create({

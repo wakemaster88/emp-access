@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadEmployeeByMobileToken } from "@/lib/employee-access";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 
 /**
  * Oeffentliche Mitarbeiter-PWA: liefert das Profil + erreichbare Geraete
@@ -8,11 +9,20 @@ import { loadEmployeeByMobileToken } from "@/lib/employee-access";
  * Account-internen Informationen heraus (z. B. andere Tickets, andere
  * Mitarbeiter, RFID-Codes, Email).
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
+/**
+ * Anfragegrenze je Link und Anschluss: die Seite fragt einmal je Minute nach
+ * (plus Neuladen von Hand); die Grenze laesst ein Vielfaches davon zu, auch
+ * fuer mehrere Handys hinter derselben IP.
+ */
+const PROFILE_READ_LIMIT = { limit: 30, windowMs: 60_000 } as const;
+
+export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!token || token.length < 8) {
     return NextResponse.json({ error: "Invalid token" }, { status: 404 });
   }
+  const limited = publicLinkRateLimit(req, token, "mobile-profile", PROFILE_READ_LIMIT);
+  if (limited) return limited;
 
   const profile = await loadEmployeeByMobileToken(token);
   if (!profile) {

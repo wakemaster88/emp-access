@@ -108,3 +108,16 @@ describe("Eingabe Abstimmung", () => {
     if (ok.success) assert.equal(normalizeChallenge(ok.data).topCount, 1);
   });
 });
+
+describe("challengePhotosShown", () => {
+  it("zeigt Fotos, solange die App die Challenge zeigt", async () => {
+    const { challengePhotosShown } = await import("./challenge-voting-rules");
+    const today = "2026-11-24";
+    assert.equal(challengePhotosShown({ active: true, endYmd: "2026-12-01" }, today), true);
+    assert.equal(challengePhotosShown({ active: true, endYmd: "2026-11-24" }, today), true);
+    // 30 Tage nach dem Ende noch sichtbar, danach nicht mehr.
+    assert.equal(challengePhotosShown({ active: true, endYmd: "2026-10-25" }, today), true);
+    assert.equal(challengePhotosShown({ active: true, endYmd: "2026-10-24" }, today), false);
+    assert.equal(challengePhotosShown({ active: false, endYmd: "2026-12-01" }, today), false);
+  });
+});
