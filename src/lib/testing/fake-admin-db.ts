@@ -2,7 +2,7 @@
  * Attrappe fuer `prisma.admin.update`/`updateMany` in Tests: arbeitet auf einem
  * einzelnen Datensatz im Speicher und versteht genau die Bedingungen, die
  * login-lockout.ts und two-factor.ts benutzen (Gleichheit, null, lt/lte/gt/gte,
- * `has` und `equals` auf Listen, OR) sowie `increment`.
+ * `has` und `equals` auf Listen, OR) sowie `increment` und `decrement`.
  *
  * Jeder Aufruf laeuft in einem Stueck durch – wie ein einzelnes UPDATE in der
  * Datenbank. Damit lassen sich gleichzeitige Anfragen nachstellen: mehrere
@@ -63,6 +63,8 @@ function apply(row: Row, data: Row): void {
   for (const [key, value] of Object.entries(data)) {
     if (value && typeof value === "object" && !(value instanceof Date) && !Array.isArray(value) && "increment" in value) {
       row[key] = (row[key] as number) + (value as { increment: number }).increment;
+    } else if (value && typeof value === "object" && !(value instanceof Date) && !Array.isArray(value) && "decrement" in value) {
+      row[key] = (row[key] as number) - (value as { decrement: number }).decrement;
     } else {
       row[key] = value;
     }
@@ -85,5 +87,72 @@ export function fakeAdminDb<T extends { id: number }>(row: T) {
         return { count: hit ? 1 : 0 };
       },
     },
+  };
+}
+
+/**
+ * Attrappe fuer `prisma.adminLoginLock` und `prisma.adminLoginPace`
+ * (login-lockout.ts): mehrere Datensaetze im Speicher, eindeutig je
+ * (emailHash, ipHash) bzw. je emailHash wie in der Datenbank. Versteht
+ * dieselben Bedingungen wie oben, dazu `createMany` mit `skipDuplicates`,
+ * `deleteMany`, `count` und die Summe ueber `failures`.
+ */
+export type FakeLoginLockRow = {
+  emailHash: string;
+  ipHash: string;
+  failures: number;
+  lockedUntil: Date | null;
+  lastAttemptAt: Date;
+  succeededAt?: Date | null;
+};
+
+export type FakeLoginPaceRow = { emailHash: string; nextAllowedAt: Date };
+
+function fakeTable<T extends object>(rows: T[], unique: (a: Row, b: Row) => boolean, defaults: () => Row) {
+  const matching = (where: Where) => rows.filter((row) => rowMatches(row as unknown as Row, where));
+  return {
+    async updateMany({ where, data }: { where: Where; data: Row }) {
+      const hits = matching(where);
+      for (const row of hits) apply(row as unknown as Row, data);
+      return { count: hits.length };
+    },
+    async createMany({ data, skipDuplicates }: { data: Row[]; skipDuplicates: boolean }) {
+      let count = 0;
+      for (const entry of data) {
+        const exists = rows.some((r) => unique(r as unknown as Row, entry));
+        if (exists) {
+          if (skipDuplicates) continue;
+          throw new Error("Eindeutigkeit verletzt");
+        }
+        rows.push({ ...defaults(), ...entry } as unknown as T);
+        count += 1;
+      }
+      return { count };
+    },
+    async deleteMany({ where }: { where: Where }) {
+      const hits = matching(where);
+      for (const row of hits) rows.splice(rows.indexOf(row), 1);
+      return { count: hits.length };
+    },
+    async count({ where }: { where: Where }) {
+      return matching(where).length;
+    },
+    async aggregate({ where }: { where: Where; _sum: { failures: true } }) {
+      const hits = matching(where) as unknown as Array<{ failures: number }>;
+      return { _sum: { failures: hits.length ? hits.reduce((sum, r) => sum + r.failures, 0) : null } };
+    },
+  };
+}
+
+export function fakeLoginLockDb(rows: FakeLoginLockRow[] = [], paceRows: FakeLoginPaceRow[] = []) {
+  return {
+    rows,
+    paceRows,
+    adminLoginLock: fakeTable(
+      rows,
+      (a, b) => a.emailHash === b.emailHash && a.ipHash === b.ipHash,
+      () => ({ failures: 0, lockedUntil: null, lastAttemptAt: new Date(), succeededAt: null }),
+    ),
+    adminLoginPace: fakeTable(paceRows, (a, b) => a.emailHash === b.emailHash, () => ({})),
   };
 }

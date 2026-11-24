@@ -306,8 +306,9 @@ model Admin {
   twoFactorFailures      Int       @default(0)
   twoFactorLockedUntil   DateTime?
 
-  /// Fehlgeschlagene Passwort-Anmeldungen; nach LOGIN_MAX_FAILURES
-  /// (src/lib/account-security.ts) ist das Konto fuer LOGIN_LOCK_MINUTES gesperrt.
+  /// Frueherer Zaehler der Passwort-Sperre am ganzen Konto. Seit 24.11.2026
+  /// zaehlt AdminLoginLock je (E-Mail, Client-IP); diese Felder werden nur
+  /// noch zurueckgesetzt, nicht mehr ausgewertet.
   loginFailures    Int       @default(0)
   loginLockedUntil DateTime?
 
@@ -320,6 +321,36 @@ model Admin {
   stocktakeSignatures StocktakeSignature[]
 
   @@index([accountId])
+}
+
+/// Fehlgeschlagene Passwort-Anmeldungen je E-Mail und Client-IP
+/// (src/lib/login-lockout.ts). Nach LOGIN_MAX_FAILURES ist nur diese
+/// Kombination fuer LOGIN_LOCK_MINUTES gesperrt; ueber alle IPs zusammen wird
+/// die Anmeldung nur verlangsamt. Gezaehlt wird auch fuer E-Mails ohne Konto,
+/// damit beide gleich antworten. Gespeichert werden nur Abdruecke von E-Mail
+/// und IP mit dem Anwendungsschluessel, nie die Werte selbst.
+model AdminLoginLock {
+  id            Int       @id @default(autoincrement())
+  emailHash     String
+  ipHash        String
+  failures      Int       @default(0)
+  lockedUntil   DateTime?
+  lastAttemptAt DateTime  @default(now())
+  /// Letzte richtige Passworteingabe von dieser IP; solche IPs nimmt die
+  /// Taktung ueber alle IPs (AdminLoginPace) aus.
+  succeededAt   DateTime?
+
+  @@unique([emailHash, ipHash])
+  @@index([emailHash, lastAttemptAt])
+  @@index([lastAttemptAt])
+}
+
+/// Taktung der Passwort-Anmeldung je E-Mail ueber alle IPs zusammen: Bei
+/// vielen Fehlversuchen kommt hoechstens ein Versuch je LOGIN_SLOWDOWN_MS
+/// durch (login-lockout.ts). Gespeichert ist nur der Abdruck der E-Mail.
+model AdminLoginPace {
+  emailHash     String   @id
+  nextAllowedAt DateTime
 }
 
 /// Passkey (WebAuthn) eines Admins: Anmeldung ohne Passwort per Face ID,

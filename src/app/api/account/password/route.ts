@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { passwordMatches, requireCurrentAdmin, wrongPassword } from "@/lib/account-security";
 import { isTwoFactorActive, verifySecondFactor } from "@/lib/two-factor";
 import { passwordProblem } from "@/lib/password-rules";
+import { resetLoginLocks } from "@/lib/login-lockout";
 
 /**
  * Eigenes Passwort aendern – fuer jede Rolle, auch fuer den SUPER_ADMIN, der
@@ -59,6 +60,8 @@ export async function POST(request: NextRequest) {
       loginLockedUntil: null,
     },
   });
+  // Sperren aus alten Fehlversuchen entfallen mit dem neuen Passwort.
+  await resetLoginLocks(admin.email);
 
   return NextResponse.json({ success: true });
 }
