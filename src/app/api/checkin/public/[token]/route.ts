@@ -85,7 +85,7 @@ export async function GET(
   } as const;
 
   const [
-    tickets,
+    dayTickets,
     allSubscriptions,
     services,
     areas,
@@ -100,7 +100,16 @@ export async function GET(
         accountId,
         status: { in: ["VALID", "REDEEMED", "PAUSED"] },
         AND: [
-          { OR: [{ source: null }, { source: { notIn: ["EMP_CONTROL"] } }] },
+          // EMP_CONTROL-Importe gehoeren nicht in die Tagesliste, wohl aber
+          // als Abo-Tickets unter `subscriptions` - deshalb hier mitladen und
+          // unten fuer `tickets` wieder aussortieren.
+          {
+            OR: [
+              { source: null },
+              { source: { notIn: ["EMP_CONTROL"] } },
+              { subscriptionId: { not: null } },
+            ],
+          },
           {
             // Tickets ohne jegliches Datum (startDate=null UND endDate=null)
             // werden im Shop-Monitor NICHT mehr angezeigt – sie liessen sich
@@ -134,7 +143,6 @@ export async function GET(
           },
         },
         verein: { select: { id: true, name: true } },
-        _count: { select: { scans: true } },
       },
       orderBy: [{ slotStart: "asc" }, { startDate: "asc" }, { name: "asc" }],
     }),
@@ -153,24 +161,9 @@ export async function GET(
         defaultSlotEnd: true,
         defaultValidityDurationMinutes: true,
         areas: { select: { id: true } },
-        tickets: {
-          where: {
-            status: { in: ["VALID", "REDEEMED", "PAUSED"] },
-            // Auch Abo-Tickets ohne jegliches Datum werden ausgeblendet,
-            // damit der Shop-Monitor pro Tag konsistent ist.
-            OR: [
-              { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
-              { startDate: { gte: dayStart, lte: dayEnd }, endDate: null },
-              { startDate: null, endDate: { gte: dayStart } },
-            ],
-          },
-          select: {
-            ...ticketSelect,
-            accessArea: { select: { id: true, name: true } },
-            verein: { select: { id: true, name: true } },
-            _count: { select: { scans: true } },
-          },
-        },
+        // Die Abo-Tickets des Tages kommen aus der Ticket-Abfrage oben
+        // (gleicher Status- und Datumsfilter), statt sie hier ein zweites
+        // Mal verschachtelt zu laden.
       },
     }),
 
@@ -281,6 +274,22 @@ export async function GET(
       select: { id: true },
     }),
   ]);
+
+  // Tagesliste ohne EMP_CONTROL-Importe (die sind nur als Abo-Tickets dabei).
+  const tickets = dayTickets.filter((t) => t.source !== "EMP_CONTROL");
+
+  // Abo-Tickets je Abo, in der Form der frueheren verschachtelten Abfrage
+  // (ohne `subscription` und `service`).
+  const ticketsBySubscription = new Map<number, Array<Omit<(typeof dayTickets)[number], "subscription" | "service">>>();
+  for (const t of dayTickets) {
+    if (t.subscriptionId == null) continue;
+    const { subscription: _sub, service: _svc, ...subTicket } = t;
+    void _sub;
+    void _svc;
+    const list = ticketsBySubscription.get(t.subscriptionId);
+    if (list) list.push(subTicket);
+    else ticketsBySubscription.set(t.subscriptionId, [subTicket]);
+  }
 
   const photoTicketIds = new Set(ticketsWithPhoto.map((t) => t.id));
   /** Foto-URL (oder null). `v` aendert sich mit jedem Ticket-Update, die
@@ -419,7 +428,7 @@ export async function GET(
   const subscriptions = allSubscriptions;
   const enrichedSubscriptions = subscriptions.map((sub) => ({
     ...sub,
-    tickets: sub.tickets.map((t) => ({
+    tickets: (ticketsBySubscription.get(sub.id) ?? []).map((t) => ({
       ...withRiderView(t),
       profileImage: photoUrl(t),
       checkedIn: checkedInForTicket(t),

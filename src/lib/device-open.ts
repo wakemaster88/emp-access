@@ -4,6 +4,7 @@ import type { LoqedBoltState } from "./loqed-constants";
 import { gardenaControlValve, gardenaStatusMap } from "./gardena";
 import { logIrrigationRun } from "./irrigation-run-log";
 import { shellySetRelay } from "./shelly-relay";
+import { lanUnreachable } from "./shelly-lan";
 import { shellyBaseId, shellySwitchIndex } from "./shelly-cloud";
 import { isCoverDevice, runCoverAction, type CoverAction } from "./shelly-cover";
 import { isPulseCategory, pulseSeconds } from "./pulse-constants";
@@ -408,9 +409,14 @@ export async function triggerDeviceAction(
   const baseId = shellyBaseId(device.shellyId);
 
   // Lokal zuerst; die Cloud-Verbindung wird nur bei Bedarf nachgeladen, damit
-  // ein Zutritt im LAN ohne zusaetzliche DB-Abfrage auskommt.
+  // ein Zutritt im LAN ohne zusaetzliche DB-Abfrage auskommt. Auf Vercel ist
+  // die LAN-Adresse nie erreichbar: gibt es einen Cloud-Weg, direkt dorthin.
+  let cloud: Awaited<ReturnType<typeof loadCloud>> | undefined;
+  if (baseId && lanUnreachable()) cloud = await loadCloud();
+  const skipLan = cloud != null;
+
   let sent = false;
-  if (device.ipAddress) {
+  if (device.ipAddress && !skipLan) {
     sent = await shellySetRelay(
       { ipAddress: device.ipAddress, baseId: null },
       null,
@@ -422,7 +428,7 @@ export async function triggerDeviceAction(
   if (!sent && baseId) {
     sent = await shellySetRelay(
       { ipAddress: null, baseId },
-      await loadCloud(),
+      cloud !== undefined ? cloud : await loadCloud(),
       switchIdx,
       turnOn,
       timerSec,

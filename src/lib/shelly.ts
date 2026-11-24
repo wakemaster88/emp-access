@@ -1,3 +1,5 @@
+import { lanUnreachable } from "./shelly-lan";
+
 export interface ShellyConfig {
   ipAddress?: string | null;
   shellyId?: string | null;
@@ -119,8 +121,10 @@ export async function controlShelly(
   timer?: number
 ): Promise<boolean> {
   // Lokal bevorzugen (LAN/Hub), bei Fehlschlag Cloud-Fallback – Vercel erreicht
-  // 192.168.x nicht, Cloud-Shellies funktionieren dort trotzdem.
-  if (config.ipAddress) {
+  // 192.168.x nicht, Cloud-Shellies funktionieren dort trotzdem. Gibt es einen
+  // Cloud-Weg, wird der lokale Versuch auf Vercel gar nicht erst gestartet.
+  const hasCloud = Boolean(config.shellyId && config.shellyAuthKey);
+  if (config.ipAddress && !(hasCloud && lanUnreachable())) {
     const localOk = await shellyLocalControl(config.ipAddress, action, timer);
     if (localOk) return true;
   }

@@ -15,6 +15,7 @@ import {
   readCoverStatus,
   type CoverMotion,
 } from "@/lib/shelly-cover";
+import { lanUnreachable } from "@/lib/shelly-lan";
 import { readSensorReadings, type SensorReading } from "@/lib/shelly-sensor";
 
 export interface ShellyCoverStatus {
@@ -109,23 +110,33 @@ export async function GET(
     return { online, output: sw.output, power: sw.power, source, ...extra };
   };
 
-  // 1. Lokale IP (Gen2 Shelly.GetStatus, sonst Gen1 /status)
-  if (device.ipAddress) {
+  const tryLocal = async (): Promise<ShellyStatus | null> => {
+    if (!device.ipAddress) return null;
     const local = await shellyLocalStatusMap(device.ipAddress, LOCAL_TIMEOUT_MS);
-    if (local) return NextResponse.json(build(local, true, "local"));
-  }
+    return local ? build(local, true, "local") : null;
+  };
 
-  // 2. Shelly Cloud – gemeinsamer, gecachter all_status-Abruf statt einzelner
-  //    /device/status-Calls (die laufen bei mehreren Geraeten in HTTP 429).
-  const baseId = shellyBaseId(device.shellyId);
-  const config = await db.apiConfig.findFirst({
-    where: { accountId: accountId!, provider: "SHELLY" },
-  });
-
-  if (config?.token && config?.baseUrl && baseId) {
+  // Shelly Cloud – gemeinsamer, gecachter all_status-Abruf statt einzelner
+  // /device/status-Calls (die laufen bei mehreren Geraeten in HTTP 429).
+  const tryCloud = async (): Promise<ShellyStatus | null> => {
+    const baseId = shellyBaseId(device.shellyId);
+    if (!baseId) return null;
+    const config = await db.apiConfig.findFirst({
+      where: { accountId: accountId!, provider: "SHELLY" },
+    });
+    if (!config?.token || !config?.baseUrl) return null;
     const cloudStatuses = await shellyCloudAllStatuses(config.baseUrl, config.token);
     const entry = cloudStatuses?.get(baseId) ?? cloudStatuses?.get(baseId.toLowerCase());
-    if (entry) return NextResponse.json(build(entry.status, entry.online, "cloud"));
+    return entry ? build(entry.status, entry.online, "cloud") : null;
+  };
+
+  // Lokal zuerst (Gen2 Shelly.GetStatus, sonst Gen1 /status), dann Cloud. Auf
+  // Vercel ist die LAN-Adresse nie erreichbar: dort zuerst die Cloud und nur
+  // ohne Cloud-Eintrag noch der lokale Versuch.
+  const order = lanUnreachable() ? [tryCloud, tryLocal] : [tryLocal, tryCloud];
+  for (const attempt of order) {
+    const status = await attempt();
+    if (status) return NextResponse.json(status);
   }
 
   // Ohne Antwort vom Gerät bleibt das Profil offen; `configured` bezieht sich

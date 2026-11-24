@@ -7,6 +7,7 @@ import {
   shellySwitchIndex,
   shellySwitchState,
 } from "@/lib/shelly-cloud";
+import { createTtlCache } from "@/lib/ttl-cache";
 
 export function parseMonitorIdList(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
@@ -247,6 +248,12 @@ function pickScanLeader(
   return ticketIds.length > 0 ? { ticketIds, count: max } : null;
 }
 
+/** Rangliste je Mandant, Gerätefilter und Berliner Tag rund 5 Minuten halten:
+ *  der Monitor fragt sie bei jedem Voll-Poll ab, sie ändert sich aber kaum.
+ *  Der Tag im Schlüssel sorgt dafür, dass nach Mitternacht neu gerechnet wird. */
+const SCAN_LEADERS_TTL_MS = 5 * 60 * 1000;
+const scanLeadersCache = createTtlCache<ScanLeaderBoard>(SCAN_LEADERS_TTL_MS);
+
 /** Ein Scan über das Jahr, daraus Tag/Woche/Monat/Jahr-Sieger. */
 async function loadScanLeaders(
   prisma: PrismaClient,
@@ -257,6 +264,24 @@ async function loadScanLeaders(
   if (deviceFilter && deviceFilter.length === 0) return empty;
 
   const now = new Date();
+  const dayStart = berlinDayStart(now);
+  const devicesKey = deviceFilter ? [...new Set(deviceFilter)].sort((a, b) => a - b).join(",") : "*";
+  const key = `${accountId}|${dayStart.getTime()}|${devicesKey}`;
+
+  try {
+    return await scanLeadersCache.get(key, () => queryScanLeaders(prisma, accountId, deviceFilter, now));
+  } catch (err) {
+    console.error("scan leaders query failed", err);
+    return empty;
+  }
+}
+
+async function queryScanLeaders(
+  prisma: PrismaClient,
+  accountId: number,
+  deviceFilter: number[] | null,
+  now: Date,
+): Promise<ScanLeaderBoard> {
   const dayStart = berlinDayStart(now);
   const weekStart = berlinWeekStart(now);
   const monthStart = berlinMonthStart(now);
@@ -272,35 +297,34 @@ async function loadScanLeaders(
     filters.push(Prisma.sql`"deviceId" IN (${Prisma.join(deviceFilter)})`);
   }
 
-  try {
-    const rows = await prisma.$queryRaw<Array<{
-      ticketId: number;
-      dayCount: number;
-      weekCount: number;
-      monthCount: number;
-      yearCount: number;
-    }>>`
-      SELECT
-        "ticketId",
-        COUNT(*) FILTER (WHERE "scanTime" >= ${dayStart})::int AS "dayCount",
-        COUNT(*) FILTER (WHERE "scanTime" >= ${weekStart})::int AS "weekCount",
-        COUNT(*) FILTER (WHERE "scanTime" >= ${monthStart})::int AS "monthCount",
-        COUNT(*)::int AS "yearCount"
-      FROM "Scan"
-      WHERE ${Prisma.join(filters, " AND ")}
-      GROUP BY "ticketId"
-    `;
+  // HAVING: Tickets mit weniger als MIN_LEADER_SCANS Scans im Jahr können in
+  // keinem Zeitraum Sieger werden (pickScanLeader verwirft sie), also gar
+  // nicht erst übertragen.
+  const rows = await prisma.$queryRaw<Array<{
+    ticketId: number;
+    dayCount: number;
+    weekCount: number;
+    monthCount: number;
+    yearCount: number;
+  }>>`
+    SELECT
+      "ticketId",
+      COUNT(*) FILTER (WHERE "scanTime" >= ${dayStart})::int AS "dayCount",
+      COUNT(*) FILTER (WHERE "scanTime" >= ${weekStart})::int AS "weekCount",
+      COUNT(*) FILTER (WHERE "scanTime" >= ${monthStart})::int AS "monthCount",
+      COUNT(*)::int AS "yearCount"
+    FROM "Scan"
+    WHERE ${Prisma.join(filters, " AND ")}
+    GROUP BY "ticketId"
+    HAVING COUNT(*) >= ${MIN_LEADER_SCANS}
+  `;
 
-    return {
-      day: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.dayCount }))),
-      week: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.weekCount }))),
-      month: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.monthCount }))),
-      year: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.yearCount }))),
-    };
-  } catch (err) {
-    console.error("scan leaders query failed", err);
-    return empty;
-  }
+  return {
+    day: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.dayCount }))),
+    week: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.weekCount }))),
+    month: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.monthCount }))),
+    year: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.yearCount }))),
+  };
 }
 
 async function loadTickets(
@@ -392,50 +416,51 @@ async function loadTickets(
   // take=2500 ggf. MB-große Payloads pro Poll erzeugen. Stattdessen nur ein
   // hasPhoto-Flag via zweitem schlankem ID-Query; Client lädt das Foto lazy
   // über /api/monitor/public/[token]/photo?ticketId=... bei Bedarf.
-  const [rawTickets, ticketIdsWithPhoto] = await Promise.all([
-    prisma.ticket.findMany({
-      where: ticketWhere,
-      select: {
-        id: true,
-        uuid: true,
-        name: true,
-        firstName: true,
-        lastName: true,
-        birthDate: true,
-        ticketTypeName: true,
-        status: true,
-        validityType: true,
-        validityDurationMinutes: true,
-        firstScanAt: true,
-        startDate: true,
-        endDate: true,
-        slotStart: true,
-        slotEnd: true,
-        subscriptionId: true,
-        serviceId: true,
-        source: true,
-        extras: true,
-        service: {
-          select: {
-            name: true,
-            // serviceAreas.length wird im Frontend zur Gruppierung von
-            // ANNY-Multi-Area-Buchungen verwendet (z.B. Aquapark Tageskarte
-            // = Aquapark + Strandbad, ergibt pro Person 2 ANNY-bookings).
-            serviceAreas: { select: { accessAreaId: true } },
-          },
+  // Der ID-Query läuft nur über die schon geladenen Ticket-IDs (Primärschlüssel),
+  // statt den verschachtelten Bereichsfilter ein zweites Mal auszuwerten.
+  const rawTickets = await prisma.ticket.findMany({
+    where: ticketWhere,
+    select: {
+      id: true,
+      uuid: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      birthDate: true,
+      ticketTypeName: true,
+      status: true,
+      validityType: true,
+      validityDurationMinutes: true,
+      firstScanAt: true,
+      startDate: true,
+      endDate: true,
+      slotStart: true,
+      slotEnd: true,
+      subscriptionId: true,
+      serviceId: true,
+      source: true,
+      extras: true,
+      service: {
+        select: {
+          name: true,
+          // serviceAreas.length wird im Frontend zur Gruppierung von
+          // ANNY-Multi-Area-Buchungen verwendet (z.B. Aquapark Tageskarte
+          // = Aquapark + Strandbad, ergibt pro Person 2 ANNY-bookings).
+          serviceAreas: { select: { accessAreaId: true } },
         },
-        subscription: { select: { name: true } },
-        accessArea: { select: { name: true } },
       },
-      orderBy: { name: "asc" },
-      take: MAX_TICKETS,
-    }),
-    prisma.ticket.findMany({
-      where: { ...ticketWhere, profileImage: { not: null } },
-      select: { id: true },
-      take: MAX_TICKETS,
-    }),
-  ]);
+      subscription: { select: { name: true } },
+      accessArea: { select: { name: true } },
+    },
+    orderBy: { name: "asc" },
+    take: MAX_TICKETS,
+  });
+  const ticketIdsWithPhoto = rawTickets.length > 0
+    ? await prisma.ticket.findMany({
+        where: { id: { in: rawTickets.map((t) => t.id) }, profileImage: { not: null } },
+        select: { id: true },
+      })
+    : [];
 
   const photoIds = new Set(ticketIdsWithPhoto.map((r) => r.id));
 

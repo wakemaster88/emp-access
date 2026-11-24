@@ -83,7 +83,6 @@ export interface CheckinTicket {
     hasAnnyLink?: boolean;
   } | null;
   verein?: { id: number; name: string } | null;
-  _count?: { scans: number };
 }
 
 
