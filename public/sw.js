@@ -6,15 +6,21 @@
  *    startet die Anfrage schon, waehrend der Service Worker noch aufwacht
  *    (spuerbar schnellerer Start der installierten App).
  *  - Statische Dateien (/_next/static, Icons, Manifest, Splash) kommen aus
- *    dem Cache und werden im Hintergrund aufgefrischt.
+ *    dem Cache. /_next/static traegt den Inhalt im Namen und wird nie neu
+ *    geholt, alles andere im Hintergrund aufgefrischt. Hoechstens
+ *    STATIC_MAX_ENTRIES Stueck, die aeltesten fliegen zuerst raus
+ *    (die vorab geladenen Dateien bleiben).
  *  - /api wird nie gecacht: alles dort ist personen- oder zeitbezogen.
  *  - Kunden-App (/app/<token>/… und /beach/<token>/…): Seiten kommen sofort aus einem lokalen
- *    Cache und werden dabei im Hintergrund vom Server erneuert (der Server
- *    bleibt fuehrend, die Seite selbst holt danach frische Daten, siehe
- *    src/components/rider/rider-sync.tsx). Nur angemeldete Seiten mit 200,
- *    hoechstens RIDER_MAX_ENTRIES Stueck und RIDER_MAX_AGE_MS alt. Leitet
- *    der Server zur Anmeldung um, fliegen die Seiten dieses Fahrers raus;
- *    beim Abmelden loescht die App den ganzen Cache.
+ *    Cache (der Server bleibt fuehrend, die Seite selbst holt danach frische
+ *    Daten, siehe src/components/rider/rider-sync.tsx). Die Kopie wird mit
+ *    der Antwort des Navigation Preload erneuert, sonst erst ab
+ *    RIDER_REFRESH_MS Alter im Hintergrund. Ohne Kopie geht die Antwort
+ *    sofort an die Seite, gespeichert wird parallel. Antwortet der Server
+ *    mit 5xx oder gar nicht, zeigt die App die Kopie. Nur angemeldete Seiten
+ *    mit 200, hoechstens RIDER_MAX_ENTRIES Stueck und RIDER_MAX_AGE_MS alt.
+ *    Leitet der Server zur Anmeldung um, fliegen die Seiten dieses Fahrers
+ *    raus; beim Abmelden loescht die App den ganzen Cache.
  *  - Web-Push anzeigen, Klick oeffnet die passende Seite, abgelaufene Abos
  *    werden still erneuert.
  *
@@ -28,17 +34,21 @@
  * bindet die App per Skew Protection an das alte Deployment, das dann an
  * der neuen Datenbank scheitert (20.11.2026, Awards mit ALL_TIME).
  */
-const VERSION = "2026-11-22-news";
+const VERSION = "2026-11-24-tempo";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 // Name muss zu RIDER_CACHE_PREFIX in src/lib/rider-local.ts passen (Abmelden loescht danach).
 const RIDER_CACHE = `emp-rider-${VERSION}`;
 const RIDER_MAX_ENTRIES = 40;
 const RIDER_MAX_AGE_MS = 14 * 86_400_000;
+/** Bei einem Cache-Treffer holt der Service Worker erst ab diesem Alter selbst eine neue Kopie. */
+const RIDER_REFRESH_MS = 30 * 60_000;
+const STATIC_MAX_ENTRIES = 200;
 /** Wird dieselbe Seite so kurz nach einer Cache-Antwort erneut geladen, geht es ans Netz (Neuladen, neuer Build). */
 const RIDER_RELOAD_MS = 10_000;
 const CACHED_AT = "x-emp-cached-at";
 const OFFLINE_URL = "/offline";
-const PRECACHE = [OFFLINE_URL, "/manifest.json", "/icon-192.png", "/icon-512.png", "/apple-icon.png", "/logo.png", "/logo-dark.png"];
+// Nur was ohne Netz gebraucht wird: die Offline-Seite und die App-Icons.
+const PRECACHE = [OFFLINE_URL, "/icon-192.png", "/apple-icon.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -106,18 +116,37 @@ async function purgeRiderToken(token) {
   await Promise.all(keys.filter((r) => hit(r.url)).map((r) => cache.delete(r)));
 }
 
-async function storeRider(cacheKey, res) {
-  const type = res.headers.get("content-type") || "";
-  if (!res.ok || res.redirected || res.status !== 200 || !type.includes("text/html")) return;
-  const headers = new Headers(res.headers);
-  headers.set(CACHED_AT, String(Date.now()));
-  const body = await res.clone().blob();
-  const cache = await caches.open(RIDER_CACHE);
-  await cache.put(cacheKey, new Response(body, { status: 200, statusText: res.statusText, headers }));
-  const keys = await cache.keys();
-  // cache.keys() liefert in Einfuegereihenfolge: aelteste zuerst entfernen.
-  const extra = keys.length - RIDER_MAX_ENTRIES;
+/** Hintergrundarbeit an das Ereignis haengen; wirft nie (z. B. wenn das Ereignis schon vorbei ist). */
+function keep(event, promise) {
+  const p = Promise.resolve(promise).catch(() => {});
+  try {
+    event.waitUntil(p);
+  } catch {
+    // Ereignis schon beendet: die Arbeit laeuft trotzdem zu Ende, solange der Worker wach ist.
+  }
+}
+
+/**
+ * Haelt einen Cache bei hoechstens `max` Eintraegen; cache.keys() liefert die
+ * aeltesten zuerst. Die vorab geladenen Dateien (PRECACHE, u. a. /offline)
+ * bleiben immer und zaehlen nicht mit.
+ */
+async function trimCache(cache, max) {
+  const keys = (await cache.keys()).filter((r) => !PRECACHE.includes(new URL(r.url).pathname));
+  const extra = keys.length - max;
   if (extra > 0) await Promise.all(keys.slice(0, extra).map((r) => cache.delete(r)));
+}
+
+/** Speichert eine Kopie der Antwort (`copy` ist schon geklont und gehoert nur dieser Funktion). */
+async function storeRider(cacheKey, copy) {
+  const type = copy.headers.get("content-type") || "";
+  if (!copy.ok || copy.redirected || copy.status !== 200 || !type.includes("text/html")) return;
+  const headers = new Headers(copy.headers);
+  headers.set(CACHED_AT, String(Date.now()));
+  const body = await copy.blob();
+  const cache = await caches.open(RIDER_CACHE);
+  await cache.put(cacheKey, new Response(body, { status: 200, statusText: copy.statusText, headers }));
+  await trimCache(cache, RIDER_MAX_ENTRIES);
 }
 
 function riderNavigation(event, token) {
@@ -125,30 +154,50 @@ function riderNavigation(event, token) {
   const url = new URL(request.url);
   url.hash = "";
   const cacheKey = url.toString();
+  const preload = Promise.resolve(event.preloadResponse).catch(() => null);
 
-  const network = (async () => {
-    const preloaded = await Promise.resolve(event.preloadResponse).catch(() => null);
-    const res = preloaded || (await fetch(request));
-    if (isSignedOut(res)) await purgeRiderToken(token).catch(() => {});
-    else if (res.status === 404) await caches.open(RIDER_CACHE).then((c) => c.delete(cacheKey)).catch(() => {});
-    else await storeRider(cacheKey, res).catch(() => {});
+  // Antwort vom Server: Cache parallel pflegen, die Antwort selbst sofort weitergeben.
+  const handle = (res) => {
+    try {
+      if (isSignedOut(res)) keep(event, purgeRiderToken(token));
+      else if (res.status === 404) keep(event, caches.open(RIDER_CACHE).then((c) => c.delete(cacheKey)));
+      else if (res.status === 200 && !res.redirected) keep(event, storeRider(cacheKey, res.clone()));
+    } catch {
+      // Cache ist Beiwerk: die Seite bekommt ihre Antwort trotzdem.
+    }
     return res;
-  })();
+  };
+  // Mit `fetchAllowed` false nur die Antwort des Navigation Preload (die der Browser ohnehin holt).
+  const network = async (fetchAllowed) => {
+    const preloaded = await preload;
+    if (preloaded) return handle(preloaded);
+    if (!fetchAllowed) return null;
+    return handle(await fetch(request));
+  };
 
   return (async () => {
-    const cache = await caches.open(RIDER_CACHE);
-    const cached = await cache.match(cacheKey);
+    let cache = null;
+    let cached = null;
+    try {
+      cache = await caches.open(RIDER_CACHE);
+      cached = (await cache.match(cacheKey)) || null;
+    } catch {
+      cached = null;
+    }
     const age = cached ? Date.now() - Number(cached.headers.get(CACHED_AT) || 0) : Infinity;
     const servedAt = riderServedAt.get(cacheKey) || 0;
     const fresh = cached && age < RIDER_MAX_AGE_MS && Date.now() - servedAt > RIDER_RELOAD_MS;
-    if (cached && !fresh && age >= RIDER_MAX_AGE_MS) await cache.delete(cacheKey);
+    if (cached && !fresh && age >= RIDER_MAX_AGE_MS && cache) keep(event, cache.delete(cacheKey));
     if (fresh) {
       riderServedAt.set(cacheKey, Date.now());
-      event.waitUntil(network.catch(() => null));
+      keep(event, network(age >= RIDER_REFRESH_MS));
       return cached;
     }
     try {
-      return await network;
+      const res = await network(true);
+      // Serverfehler: lieber den letzten Stand zeigen als die Fehlerseite.
+      if (res.status >= 500 && cached && age < RIDER_MAX_AGE_MS) return cached;
+      return res;
     } catch {
       // Ohne Netz lieber den letzten Stand zeigen als die Offline-Seite.
       if (cached && age < RIDER_MAX_AGE_MS) return cached;
@@ -189,22 +238,39 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (isStaticAsset(url)) {
+    // /_next/static: der Dateiname enthaelt den Inhalt, eine Kopie ist nie veraltet.
+    const immutable = url.pathname.startsWith("/_next/static/");
     event.respondWith(
-      caches.open(STATIC_CACHE).then(async (cache) => {
-        const cached = await cache.match(request);
-        const refresh = fetch(request)
-          .then((res) => {
-            if (res && res.ok) cache.put(request, res.clone());
-            return res;
-          })
-          .catch(() => null);
+      (async () => {
+        let cache = null;
+        let cached = null;
+        try {
+          cache = await caches.open(STATIC_CACHE);
+          cached = (await cache.match(request)) || null;
+        } catch {
+          cached = null;
+        }
+        const load = () =>
+          fetch(request)
+            .then((res) => {
+              if (cache && res && res.ok) {
+                try {
+                  const copy = res.clone();
+                  keep(event, cache.put(request, copy).then(() => trimCache(cache, STATIC_MAX_ENTRIES)));
+                } catch {
+                  // Kopie misslungen: die Antwort selbst geht trotzdem raus.
+                }
+              }
+              return res;
+            })
+            .catch(() => null);
         if (cached) {
-          event.waitUntil(refresh);
+          if (!immutable) keep(event, load());
           return cached;
         }
-        const res = await refresh;
+        const res = await load();
         return res || new Response("", { status: 504 });
-      }),
+      })(),
     );
   }
 });

@@ -12,6 +12,7 @@ import { buildScanCodeVariants } from "./scan-code-variants";
 import { awardMilestones, loadGamiConfig, syncDayTicketStat } from "./gamification-service";
 import { runChallenges } from "./challenge-service";
 import { equalsInsensitive } from "./like-escape";
+import { ticketIdsByEmail } from "./ticket-email";
 
 const USABLE = ["VALID", "REDEEMED"] as const;
 const MAX_TICKETS = 200;
@@ -90,6 +91,28 @@ export async function dayTicketsByEmail(accountId: number, email: string, now: D
   return rows.filter((t) => berlinYmd(t.startDate ?? t.createdAt).startsWith(year));
 }
 
+/**
+ * Wie `dayTicketsByEmail`, für das Zuordnen bei jedem Öffnen der App: die
+ * Adresse wird über den Index gesucht (`ticketIdsByEmail`), dieselben Tickets.
+ */
+async function dayTicketsOf(accountId: number, ids: number[], dayServiceIds: number[], now: Date): Promise<Candidate[]> {
+  if (ids.length === 0) return [];
+  const year = berlinYmd(now).slice(0, 4);
+  const rows = await prisma.ticket.findMany({
+    where: {
+      accountId,
+      id: { in: ids },
+      subscriptionId: null,
+      serviceId: { in: dayServiceIds },
+      status: { in: [...USABLE] },
+    },
+    select: { id: true, riderProfileId: true, gamificationOptOut: true, startDate: true, createdAt: true },
+    orderBy: { id: "desc" },
+    take: MAX_TICKETS,
+  });
+  return rows.filter((t) => berlinYmd(t.startDate ?? t.createdAt).startsWith(year));
+}
+
 /** Zugeordnete Tickets zählen: Tagessumme anlegen, Meilensteine und Challenges prüfen. */
 export async function countLinked(accountId: number, ticketIds: number[]): Promise<void> {
   if (ticketIds.length === 0) return;
@@ -110,7 +133,10 @@ export async function countLinked(accountId: number, ticketIds: number[]): Promi
 export async function adoptDayTickets(accountId: number, email: string | null | undefined, now: Date = new Date()): Promise<number> {
   const clean = normalizeEmail(email);
   if (!clean) return 0;
-  const tickets = await dayTicketsByEmail(accountId, clean, now);
+  const config = await loadGamiConfig(tenantClient(accountId), accountId);
+  if (!config.enabled || config.dayServiceIds.length === 0) return 0;
+  const ids = await ticketIdsByEmail(accountId, clean);
+  const tickets = await dayTicketsOf(accountId, ids, config.dayServiceIds, now);
   const open = tickets.filter((t) => t.riderProfileId == null && !t.gamificationOptOut).map((t) => t.id);
   if (open.length === 0) return 0;
   const owner = tickets.find((t) => t.riderProfileId != null)
@@ -120,7 +146,7 @@ export async function adoptDayTickets(accountId: number, email: string | null | 
       orderBy: { id: "asc" },
     }).then((p) => (p ? { riderProfileId: p.id } : null)))
     ?? (await prisma.ticket.findFirst({
-      where: { accountId, riderProfileId: { not: null }, email: equalsInsensitive(clean) },
+      where: { accountId, id: { in: ids }, riderProfileId: { not: null } },
       select: { riderProfileId: true },
       orderBy: { id: "desc" },
     }));

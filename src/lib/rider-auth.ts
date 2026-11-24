@@ -24,7 +24,7 @@ import {
 import { prisma } from "./prisma";
 import { CHALLENGE_TTL_MS } from "./passkey";
 import type { RelyingParty } from "./passkey-utils";
-import { loadRider, newRiderToken, type RiderView } from "./rider-app";
+import { loadRiderCached, newRiderToken, type RiderView } from "./rider-app";
 import { riderHome } from "./rider-base";
 import { familyRelation, loadFamilyMembers, memberName, type FamilyMember, type FamilyPerson, type FamilyRelation } from "./rider-family";
 import { RIDER_COOKIE, RIDER_SESSION_DAYS, signRiderSession, verifyRiderSession } from "./rider-session";
@@ -93,6 +93,9 @@ export async function findRiderAuthProfile(token: string): Promise<RiderAuthProf
     customerId: p.customerId,
   };
 }
+
+/** Wie `findRiderAuthProfile`, je Request nur einmal (Seiten und Layouts der App; nicht für Schnittstellen, die danach schreiben). */
+export const findRiderAuthProfileCached = cache(findRiderAuthProfile);
 
 export function hasCredential(p: RiderAuthProfile): boolean {
   return p.passwordHash != null || p.passkeyCount > 0;
@@ -196,7 +199,7 @@ export interface RiderFamilyView {
 
 /** Familien-Sicht für Layout und Profil; setzt eine erlaubte Sitzung voraus. */
 export const riderFamilyView = cache(async (token: string): Promise<RiderFamilyView | null> => {
-  const profile = await findRiderAuthProfile(token);
+  const profile = await findRiderAuthProfileCached(token);
   if (!profile) return null;
   const relation = await riderRelation(profile);
   if (!relation) return null;
@@ -216,12 +219,13 @@ export const riderFamilyView = cache(async (token: string): Promise<RiderFamilyV
  * Anmelden um. Je Request nur einmal (Layout und Seite teilen das Ergebnis).
  */
 export const requireRider = cache(async (token: string): Promise<RiderView> => {
-  const profile = await findRiderAuthProfile(token);
+  const profile = await findRiderAuthProfileCached(token);
   if (!profile) notFound();
   const access = await riderAccess(profile);
   if (access === "setup" || access === "held") redirect(`${await riderHome(token)}/einrichten`);
   if (access === "login") redirect(`${await riderHome(token)}/anmelden`);
-  const rider = await loadRider(token);
+  // Erst nach der Prüfung: nur angemeldete Aufrufe ordnen Tagestickets zu und merken „zuletzt gesehen“.
+  const rider = await loadRiderCached(token);
   if (!rider) notFound();
   return rider;
 });

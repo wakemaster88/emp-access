@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { loadRiderCached } from "@/lib/rider-app";
+import { loadRiderAccountName } from "@/lib/rider-app";
 import { riderAppKind, riderHome } from "@/lib/rider-base";
 import { APP_BRAND } from "@/lib/rider-app-kind";
 import { appleStartupImages } from "@/lib/pwa-splash";
@@ -11,8 +11,8 @@ interface LayoutProps {
 
 export async function generateMetadata({ params }: LayoutProps): Promise<Metadata> {
   const { token } = await params;
-  const rider = await loadRiderCached(token).catch(() => null);
-  const name = rider?.accountName ?? "Deine Saison";
+  // Nur der Kontoname für den Titel; das ganze Profil lädt erst die geschützte Seite.
+  const name = (await loadRiderAccountName(token).catch(() => null)) ?? "Deine Saison";
   const brand = APP_BRAND[await riderAppKind()];
   return {
     title: `${brand.name} · ${name}`,

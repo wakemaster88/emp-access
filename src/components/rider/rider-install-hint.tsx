@@ -1,6 +1,6 @@
 "use client";
 
-import { useInstallState } from "@/components/pwa/install-prompt";
+import { useInstallState } from "@/components/pwa/use-install-state";
 
 const SHARE = (
   <svg aria-label="Teilen" role="img" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

@@ -141,7 +141,7 @@ export default async function RiderAwards({ params }: { params: Promise<{ token:
       {next && <NextAwardCard award={next} href={`${base}/awards/${next.id}`} />}
 
       {openVouchers.length > 0 && (
-        <Link href={`${base}/gutscheine`} prefetch className="rd-card rd-aw-vz">
+        <Link href={`${base}/gutscheine`} className="rd-card rd-aw-vz">
           <span className="rd-aw-gift"><GiftIcon size={22} /></span>
           <span className="rd-grow">
             <b style={{ fontSize: 15 }}>{openVouchers.length === 1 ? "1 Gutschein offen" : `${openVouchers.length} Gutscheine offen`}</b>
