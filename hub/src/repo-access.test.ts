@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { ensureRepoAccess, isSshUrl, sshUrlFor } from "./repo-access";
+import { ensureRepoAccess, gitErrorLine, isSshUrl, sshUrlFor } from "./repo-access";
 
 test("HTTPS-URL wird zur SSH-URL ueber Port 443", () => {
   for (const url of [
@@ -65,4 +65,19 @@ test("Schluessel entsteht, Umstellung auf SSH erst wenn GitHub ihn annimmt", { s
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("Fehlermeldung von git: die Ursache, nicht der Schluss des Hinweistexts", () => {
+  const stderr = [
+    "git@ssh.github.com: Permission denied (publickey).",
+    "fatal: Could not read from remote repository.",
+    "",
+    "Please make sure you have the correct access rights",
+    "and the repository exists.",
+  ].join("\n");
+  assert.equal(gitErrorLine(stderr), "git@ssh.github.com: Permission denied (publickey).");
+  assert.equal(gitErrorLine("fatal: unable to access\nmehr Text"), "fatal: unable to access");
+  assert.equal(gitErrorLine("irgendwas\nanderes"), "irgendwas");
+  assert.equal(gitErrorLine("  \n"), null);
+  assert.equal(gitErrorLine(undefined), null);
 });

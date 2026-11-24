@@ -114,6 +114,9 @@ async function ensureBinary(): Promise<boolean> {
   return building;
 }
 
+/** Inhalt der zuletzt uebernommenen Liste (fuer „hat sich etwas geaendert?“). */
+let whitelistSignature: string | null = null;
+
 function persistWhitelist(): void {
   fs.mkdir(path.dirname(CACHE_FILE), { recursive: true })
     .then(() =>
@@ -160,6 +163,11 @@ export async function refreshVehicleWhitelist(): Promise<void> {
     whitelist = (json.vehicles ?? []).map((v) => hydrateVehicle(v));
     localActuators = json.localActuators === true;
     whitelistLoadedAt = Date.now();
+    // Alle 5 Minuten abgeholt; Datei und Log-Zeile nur, wenn sich etwas
+    // geaendert hat (vorher 288 gleiche Zeilen und Schreibvorgaenge am Tag).
+    const signature = JSON.stringify([localActuators, json.vehicles ?? []]);
+    if (signature === whitelistSignature) return;
+    whitelistSignature = signature;
     persistWhitelist();
     log(
       `Fahrzeuge: ${whitelist.length} Whitelist-Einträge vom Server${

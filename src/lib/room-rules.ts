@@ -35,6 +35,7 @@ import { dueOperatingOccurrence, isOperatingAt, type ScheduleSpec } from "@/lib/
 import { scheduleSpecInclude, toScheduleSpec, type ScheduleRecord } from "@/lib/operating-queries";
 import { extendedSpecCache, zoneMusicSpec } from "@/lib/operating-extent-queries";
 import { DEFAULT_TIMEZONE, isWithinWindow, tzInstant, tzWeekdayBit, tzYmd } from "@/lib/tz-time";
+import { recentActivityWhere } from "@/lib/camera-events";
 
 /** Toleranz um den geplanten Zeitpunkt. Der Cron laeuft alle fuenf Minuten. */
 const FIRE_WINDOW_MS = 3 * 60_000;
@@ -539,10 +540,12 @@ function scheduledTimeFor(rule: LoadedRule, ctx: RuleContext): Date | null {
 async function roomIsIdle(rule: LoadedRule, now: Date): Promise<boolean> {
   if (!rule.roomId || !rule.idleMinutes) return false;
   const since = new Date(now.getTime() - rule.idleMinutes * 60_000);
+  // Auch ein Ereignis, das frueher begann und noch laeuft oder erst im
+  // Zeitraum endete, ist Bewegung (siehe recentActivityWhere).
   const recent = await prisma.cameraEvent.findFirst({
     where: {
       accountId: rule.accountId,
-      startedAt: { gte: since },
+      ...recentActivityWhere(since, now),
       camera: { keyRoomId: rule.roomId },
     },
     select: { id: true },

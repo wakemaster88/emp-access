@@ -1224,3 +1224,34 @@ Log-Abruf nach PR #233 (Hub 9a9c42c, Zentrale in Safari neu geladen 11:29 UTC):
 ### Nächster Schritt
 
 - Ein paar Tage im Hub-Log auf „Stream-Konfig nicht angepasst“ achten. Taucht die Meldung auf, den Host der genannten Kamera in der Cloud bzw. den Eintrag in `config.json` korrigieren.
+
+## 2026-11-24 (Gesamtprüfung Hub und Kamera-Erkennung, Teil 1: Personen-Start, Ereignisfluss, Log)
+
+### Befund
+
+Grundlage: Hub-Log 22.–24.11. (54 Stunden, rund 23.000 Zeilen), Diagnose-Snapshot und die Ereignistabelle der Cloud.
+
+- **Gesichtserkennung startete bei 127 von 843 Personen-Ereignissen nicht** (15 %; Shop 46 von 141, Eingang 20 von 256, Gastro 11 von 169). Die Kamera meldet Bewegung meist ein, zwei Sekunden vor der Person. Das Anzeige-Bild dieser Bewegung setzte dieselbe 30-Sekunden-Drossel wie die Erkennung und sperrte sie damit aus.
+- **Rund 58 % des Logs waren Routine ohne Aussage:** Zugriffszeilen des Gesichts-Dienstes 4.901, Bewegung Beginn/Ende 5.595, SNMP-Lauf 1.074, Fahrzeugliste 649, Diagnose-Snapshot 640, Gesichter-Liste 318, Kamera-Uhren 107. Mehrzeilige Ausgaben des Gesichts-Dienstes standen ohne Zeitstempel im Log.
+- **Bewegung flackert:** rund 17.100 Bewegungs-Ereignisse in 7 Tagen (Eingang 3.560, Aquapark 3.400, Übungslift 2.327, Halle 2 2.277). 78 % der Pausen zwischen zwei Ereignissen derselben Kamera sind kürzer als 60 s.
+- **Jede Ereignis-Meldung schrieb alle Kamera-Zeilen neu** (`seen` hing an jeder Meldung): 2,76 Mio. Schreibvorgänge auf der Kamera-Tabelle seit dem 10.11.
+- **Die Meldung an die Cloud lief im Poll-Takt:** Solange sie unterwegs war (Zeitlimit 30 s), fragte der Hub keine Kamera ab.
+- **19 Ereignisse in der Cloud ohne Ende**, alle rund um Hub-Neustarts (11., 13., 14., 20. und 22.11.). Der Hub kennt nach dem Neustart seine laufenden Ereignisse nicht mehr. Im Kontrollzentrum blinkte auf fünf Kacheln dauerhaft ein altes Ereignis.
+- In 54 Stunden kein einziger gescheiterter Ereignis-Upload, keine unbehandelte Ausnahme im Poll.
+
+### Änderungen
+
+- `camera-poll-rules.ts` (neu, Tests): `snapshotJobFor` trennt Anzeige-Bild und Erkennung. Ein Anzeige-Bild drosselt nur weitere Anzeige-Bilder (`lastAutoSnapshotAt`), die Personen-Pipeline wartet nur noch auf Erkennungs-Pipelines. Kennzeichen starten wie bisher immer.
+- `event-debounce.ts`: Nachlauf je Ereignisart. Reine Bewegung läuft 60 s nach (`HUB_MOTION_END_HOLD_MS`), Person, Fahrzeug und Tier bleiben bei 6 s. Das Ende trägt weiter die Zeit der letzten aktiven Messung.
+- `cameras.ts`: Meldungen an die Cloud laufen nacheinander außerhalb des Polls (Zeitlimit 15 s). `seen` geht einmal je Minute mit. Scheitert eine Meldung, entfällt sie wie bisher; nur ein Ende, dessen Beginn die Cloud kennt, geht noch einmal mit (`EndRetry`, Tests). Eine Störung steht einmal im Log und dann alle 5 Minuten, dazu „Cloud wieder erreichbar“.
+- Nach dem Start meldet der Hub `closeOpen`; die Cloud schließt die Ereignisse von davor (`src/lib/camera-events.ts`, Tests): Das jüngste je Kamera und Art endet, als der Hub die Kamera zuletzt meldete, ältere Altlasten enden an ihrem Beginn.
+- Ruhe im Raum zählt jetzt auch ein laufendes Ereignis: Cloud `roomIsIdle` und das Overlay im Kontrollzentrum über `recentActivityWhere`, Hub `noteCameraActivity` bei jeder aktiven Messung.
+- Log: Gesichts-Dienst protokolliert nur noch Fehler (`log_request`), seine Ausgabe kommt zeilenweise mit Zeitstempel. Bewegung wird gezählt statt geloggt (`camera.motion`). Fahrzeugliste, Gesichter-Liste, Diagnose-Snapshot, SNMP-Lauf und Kamera-Uhren melden nur noch Änderungen (`change-log.ts`), SNMP und Uhren zusätzlich einmal am Tag.
+- `improve-log.ts`: `improveCount` zählt Routine („Halteverbot frei“, „Parkplatz gemeldet“, „VLAN in Ordnung“, SNMP ok), ohne eine Zeile in `improve.jsonl` zu schreiben.
+- `face.ts`: die `/health`-Abfrage vor jedem Bild entfällt, solange der Dienst in den letzten 20 s geantwortet hat; bricht die Verbindung ab, wird er neu sichergestellt und das Bild einmal wiederholt.
+- `repo-access.ts`: Fehlermeldung nennt die Ursache („Permission denied (publickey).“) statt der letzten Zeile des Hinweistexts.
+
+### Nächster Schritt
+
+- Nach dem Update Log holen und vergleichen: Anteil der Personen-Ereignisse mit Pipeline (vorher 71 %), Zeilen je Tag (vorher rund 10.000), Bewegungs-Ereignisse je Tag (vorher rund 2.400), offene Ereignisse in der Cloud (soll: nur laufende).
+- Regeln mit Auslöser „Bewegung“ feuern wie bisher am Beginn eines Ereignisses. Mit dem längeren Nachlauf gibt es weniger Beginne; wer eine solche Regel anlegt, die bei anhaltender Bewegung nachlösen soll, braucht dafür einen eigenen Takt.

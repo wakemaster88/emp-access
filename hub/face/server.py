@@ -370,6 +370,17 @@ def embed_jpeg(data: bytes) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def log_request(self, code="-", size="-"):
+        # Erfolgreiche Anfragen nicht protokollieren: /health und /embed kommen
+        # bei jeder Person mehrfach und fuellten rund ein Fuenftel des Hub-Logs.
+        # Fehler (ab 400) bleiben sichtbar.
+        try:
+            if int(code) < 400:
+                return
+        except (TypeError, ValueError):
+            pass
+        super().log_request(code, size)
+
     def log_message(self, fmt, *args):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 

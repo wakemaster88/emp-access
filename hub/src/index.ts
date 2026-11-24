@@ -14,9 +14,9 @@ import { alprWarmup } from "./alpr.js";
 import { STATE, recordHeartbeat, recordHubEvent, recordTask } from "./state.js";
 import { collectParkingSnapshot, ensureParkingCameras, uploadParkingTrackerFrames } from "./parking.js";
 import { checkNoParking, noParkingConfigSummary, NOPARK_INTERVAL_MS } from "./noparking.js";
-import { runSwitchSync, snmpConfigured } from "./snmp.js";
+import { AUTO_LABEL, runSwitchSync, snmpConfigured } from "./snmp.js";
 import { startVlanCheck } from "./vlan-check.js";
-import { improve, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
+import { improve, improveCount, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
 import { startSystemMetrics } from "./system-metrics.js";
 import { startSystemSetup } from "./system-setup.js";
 import { ensureFfmpeg } from "./ffmpeg-setup.js";
@@ -137,9 +137,9 @@ async function reportParking() {
       body: JSON.stringify({ name: CONFIG.name, parking }),
     });
     await uploadParkingTrackerFrames();
-    improve("parking", parking.trackerOnline ? "report" : "tracker_down", {
-      lots: parking.lots.length,
-    });
+    // Der Normalfall alle 30 s wird nur gezaehlt (keine Zeile in improve.jsonl).
+    if (parking.trackerOnline) improveCount("parking", "report");
+    else improve("parking", "tracker_down", { lots: parking.lots.length });
   } catch (e) {
     log(`Parkplatz-Report: ${e instanceof Error ? e.message : e}`);
     improve("parking", "fail", { error: e instanceof Error ? e.message : String(e) });
@@ -300,9 +300,9 @@ if (snmpConfigured()) {
   const snmpMs = (Number(process.env.HUB_SNMP_INTERVAL) > 0
     ? Number(process.env.HUB_SNMP_INTERVAL)
     : 900) * 1000;
-  void runSwitchSync("SNMP-Auto");
+  void runSwitchSync(AUTO_LABEL);
   setInterval(() => {
-    void runSwitchSync("SNMP-Auto");
+    void runSwitchSync(AUTO_LABEL);
   }, snmpMs);
 }
 // VLAN-Soll/Ist je Switch-Port (nur lesend) – meldet halb umgesetzte

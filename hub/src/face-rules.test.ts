@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bestShot, faceQuality, fuseEmbeddings, rankGallery, cosine, type FaceShot } from "./face-rules.js";
+import {
+  bestShot,
+  faceQuality,
+  fuseEmbeddings,
+  rankGallery,
+  cosine,
+  healthFresh,
+  isTimeout,
+  sidecarLogLines,
+  type FaceShot,
+} from "./face-rules.js";
 
 const shot = (embedding: number[], o: Partial<FaceShot> = {}): FaceShot => ({
   embedding,
@@ -69,4 +79,27 @@ test("Abgleich je Person mit Abstand zum Zweitbesten", () => {
   assert.equal(one.second, null);
 
   assert.equal(rankGallery([1, 0, 0], [], 0.45, 0.05).nearest, null);
+});
+
+test("Gesichts-Dienst: frische Antwort spart die Health-Abfrage, alte oder fehlende nicht", () => {
+  assert.equal(healthFresh(0, 1_000_000), false);
+  assert.equal(healthFresh(1_000_000, 1_000_000 + 5_000), true);
+  assert.equal(healthFresh(1_000_000, 1_000_000 + 20_000), false);
+  // Uhr zurueckgestellt: lieber neu pruefen.
+  assert.equal(healthFresh(1_000_000, 999_000), false);
+});
+
+test("Zeitlimit wird von einem Verbindungsfehler unterschieden", () => {
+  assert.equal(isTimeout(Object.assign(new Error("x"), { name: "TimeoutError" })), true);
+  assert.equal(isTimeout(Object.assign(new Error("x"), { name: "AbortError" })), true);
+  assert.equal(isTimeout(new TypeError("fetch failed")), false);
+  assert.equal(isTimeout(null), false);
+});
+
+test("Ausgabe des Gesichts-Dienstes: je Zeile ein Eintrag, kein doppeltes Praefix", () => {
+  assert.deepEqual(sidecarLogLines("[face] zoom miss 9.6px\nkeep small 14px det=0.61\n\n"), [
+    "[face] zoom miss 9.6px",
+    "[face] keep small 14px det=0.61",
+  ]);
+  assert.deepEqual(sidecarLogLines("   \r\n"), []);
 });

@@ -129,3 +129,30 @@ export function rankGallery(
   const ambiguous = above && !!second && nearest!.score - second.score < margin;
   return { match: above && !ambiguous ? nearest : null, nearest, second, ambiguous };
 }
+
+/** So lange gilt der Gesichts-Dienst nach einer erfolgreichen Antwort als bereit. */
+export const FACE_HEALTH_TTL_MS = 20_000;
+
+/** Letzte erfolgreiche Antwort frisch genug, um die /health-Abfrage zu sparen? */
+export function healthFresh(healthyAt: number, now: number, ttlMs = FACE_HEALTH_TTL_MS): boolean {
+  return healthyAt > 0 && now >= healthyAt && now - healthyAt < ttlMs;
+}
+
+/** Zeitlimit (AbortSignal.timeout) oder echter Verbindungsfehler? */
+export function isTimeout(e: unknown): boolean {
+  const name = (e as { name?: unknown } | null)?.name;
+  return name === "TimeoutError" || name === "AbortError";
+}
+
+/**
+ * Ausgabe des Gesichts-Dienstes in Log-Zeilen zerlegen: ein Datenblock kann
+ * mehrere Zeilen tragen (sie landeten sonst ohne Zeitstempel im Log), und der
+ * Dienst stellt „[face]“ teils schon selbst voran.
+ */
+export function sidecarLogLines(chunk: string): string[] {
+  return chunk
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .map((l) => (l.startsWith("[face]") ? l : `[face] ${l}`));
+}

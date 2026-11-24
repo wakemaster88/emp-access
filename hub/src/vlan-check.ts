@@ -14,7 +14,7 @@ import { CONFIG, api, log } from "./config.js";
 import { friendlySnmpError, oidSuffix, snmpGet, snmpTargets, snmpWalk } from "./snmp.js";
 import { analyzeVlans, Confirmer, parsePortList, type VlanIssue } from "./vlan-analyze.js";
 import { recordHubEvent } from "./state.js";
-import { improve } from "./improve-log.js";
+import { improve, improveCount } from "./improve-log.js";
 
 const OID_SYS_NAME = "1.3.6.1.2.1.1.5.0";
 const OID_BASE_PORT_IFINDEX = "1.3.6.1.2.1.17.1.4.1.2";
@@ -243,7 +243,9 @@ export async function runVlanCheck(): Promise<void> {
       ...confirmed,
       ...lastConfirmed.filter((a) => !confirmedKeys.has(a.key) && silent.some((p) => a.key.startsWith(p))),
     ];
-    improve("snmp", confirmed.length ? "vlan_issues" : "vlan_ok", { issues: confirmed.length });
+    // „Alles in Ordnung“ alle 5 Minuten wird nur gezaehlt.
+    if (confirmed.length) improve("snmp", "vlan_issues", { issues: confirmed.length });
+    else improveCount("snmp", "vlan_ok");
 
     // Erst ab dem zweiten Lauf melden: Vorher ist nichts bestaetigt, die Cloud
     // wuerde offene Befunde nach jedem Hub-Neustart kurz „beheben“.

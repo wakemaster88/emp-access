@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import { CONFIG, api, log } from "./config.js";
 import { improve } from "./improve-log.js";
 import { STATE } from "./state.js";
-import { rankGallery } from "./face-rules.js";
+import { healthFresh, isTimeout, rankGallery, sidecarLogLines } from "./face-rules.js";
 
 const FACE_URL = process.env.FACE_URL || "http://127.0.0.1:8790";
 const FACE_PORT = Number(process.env.FACE_PORT || 8790);
@@ -51,18 +51,32 @@ let gallery: GalleryEntry[] = [];
 let galleryLoadedAt = 0;
 let sidecarProc: ChildProcess | null = null;
 let sidecarStarting: Promise<void> | null = null;
+/**
+ * Letzte erfolgreiche Antwort des Dienstes. Solange sie frisch ist, entfaellt
+ * die /health-Abfrage vor jedem Bild (vorher eine je Einbettung, rund 1.000
+ * am Tag). Faellt der Dienst dazwischen aus, merkt es der naechste Aufruf am
+ * Verbindungsfehler und stellt ihn wie bisher neu sicher.
+ */
+let healthyAt = 0;
 
 async function healthOk(): Promise<boolean> {
   try {
     const res = await fetch(`${FACE_URL}/health`, { signal: AbortSignal.timeout(2000) });
+    if (res.ok) healthyAt = Date.now();
     return res.ok;
   } catch {
     return false;
   }
 }
 
+/** Ausgabe des Dienstes zeilenweise ins Hub-Log, ohne doppeltes „[face]“. */
+function relaySidecarOutput(chunk: unknown): void {
+  for (const line of sidecarLogLines(String(chunk))) log(line);
+}
+
 /** Startet den Python-Sidecar falls noetig (venv unter hub/face/.venv). */
 export async function ensureFaceSidecar(): Promise<boolean> {
+  if (healthFresh(healthyAt, Date.now())) return true;
   if (await healthOk()) return true;
   if (sidecarStarting) {
     await sidecarStarting;
@@ -93,17 +107,12 @@ export async function ensureFaceSidecar(): Promise<boolean> {
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
-    sidecarProc.stdout?.on("data", (d) => {
-      const line = String(d).trim();
-      if (line) log(`[face] ${line}`);
-    });
-    sidecarProc.stderr?.on("data", (d) => {
-      const line = String(d).trim();
-      if (line) log(`[face] ${line}`);
-    });
+    sidecarProc.stdout?.on("data", relaySidecarOutput);
+    sidecarProc.stderr?.on("data", relaySidecarOutput);
     sidecarProc.on("exit", (code) => {
       log(`Face-Sidecar beendet (code ${code})`);
       sidecarProc = null;
+      healthyAt = 0;
     });
     // Warmup abwarten.
     const started = Date.now();
@@ -126,12 +135,25 @@ export async function ensureFaceSidecar(): Promise<boolean> {
 export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
   if (!(await ensureFaceSidecar())) return null;
   try {
-    const res = await fetch(`${FACE_URL}/embed`, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: new Uint8Array(jpeg),
-      signal: AbortSignal.timeout(30_000),
-    });
+    const post = () =>
+      fetch(`${FACE_URL}/embed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Uint8Array(jpeg),
+        signal: AbortSignal.timeout(30_000),
+      });
+    let res: Response;
+    try {
+      res = await post();
+    } catch (e) {
+      // Dienst seit der letzten Pruefung weg (kein Zeitlimit, sondern keine
+      // Verbindung): einmal neu sicherstellen und dasselbe Bild wiederholen.
+      if (isTimeout(e)) throw e;
+      healthyAt = 0;
+      if (!(await ensureFaceSidecar())) throw e;
+      res = await post();
+    }
+    healthyAt = Date.now();
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       log(`Face-Embed HTTP ${res.status}: ${errText.slice(0, 160) || "ohne Details"}`);
@@ -193,6 +215,7 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
       imageH: typeof data.image?.h === "number" ? data.image.h : undefined,
     };
   } catch (e) {
+    healthyAt = 0;
     log(`Face-Embed fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
     improve("face", "error", { error: e instanceof Error ? e.message : String(e) });
     return null;
@@ -205,10 +228,12 @@ export async function refreshGallery(force = false): Promise<void> {
     const res = await api("/api/hub/person-embeddings");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as { embeddings?: GalleryEntry[] };
+    const before = galleryLoadedAt === 0 ? -1 : gallery.length;
     gallery = Array.isArray(data.embeddings) ? data.embeddings : [];
     galleryLoadedAt = Date.now();
     STATE.face.gallery = gallery.length;
-    log(`Face-Gallery: ${gallery.length} Embeddings`);
+    // Nur melden, wenn sich die Zahl aendert (vorher alle 5 Minuten dieselbe Zeile).
+    if (gallery.length !== before) log(`Face-Gallery: ${gallery.length} Embeddings`);
   } catch (e) {
     log(`Face-Gallery Abruf fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
   }

@@ -7,8 +7,8 @@
 import { noteLink } from "./health-trends.js";
 import { zoomStep } from "./zoom-step.js";
 import { clockOffsetSeconds, type ReolinkTime } from "./camera-clock.js";
-import { onCameraEvent } from "./rules.js";
-import { kickIfRulesTriggered } from "./task-kick.js";
+import { noteCameraActivity, onCameraEvent } from "./rules.js";
+import { kickTaskPoll } from "./task-kick.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
@@ -29,10 +29,12 @@ import { checkDelivery, type DeliveryResult } from "./delivery.js";
 import { findIpByMac, macForIp, normalizeMac } from "./netmap.js";
 import { lastScanResult } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
-import { improve } from "./improve-log.js";
+import { improve, improveCount } from "./improve-log.js";
 import { getForecast } from "./weather.js";
 import { isDark, spotlightWanted } from "./vehicle-light-rules.js";
 import { debounceEvents, newDebounceState, type DebounceState } from "./event-debounce.js";
+import { EndRetry, clockDriftKey, endHoldFor, snapshotJobFor } from "./camera-poll-rules.js";
+import { ChangeLog } from "./change-log.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 
 export interface CameraConfig {
@@ -92,7 +94,10 @@ interface CameraRuntime {
   tokenExpiresAt: number;
   /** Aktueller Alarm-Zustand pro Ereignistyp (fuer Flankenerkennung). */
   states: Record<string, boolean>;
+  /** Letztes Bild einer Erkennungs-Pipeline (Person, Fahrzeug) – drosselt die naechste. */
   lastSnapshotAt: number;
+  /** Letztes reines Anzeige-Bild (Bewegung, Tier, Abruf) – drosselt nur weitere Anzeige-Bilder. */
+  lastAutoSnapshotAt: number;
   /** Personen-/Fahrzeug-Pipeline läuft – keine zweite starten. */
   snapshotInFlight: boolean;
   /** VEHICLE kam während einer Pipeline – Burst danach nachholen. */
@@ -159,6 +164,9 @@ const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
 /** Zeit fuers Anfahren eines Presets, bevor „folgen“ eingeschaltet wird. */
 const SCENE_SETTLE_MS = Number(process.env.HUB_CAMERA_SCENE_SETTLE_MS || 2_500);
 const EVENT_END_HOLD_MS = Number(process.env.HUB_EVENT_END_HOLD_MS || 6_000);
+/** Reine Bewegung (ohne KI) laeuft laenger nach, siehe endHoldFor(). */
+const MOTION_END_HOLD_MS = Number(process.env.HUB_MOTION_END_HOLD_MS || 60_000);
+const eventEndHold = (type: string) => endHoldFor(type, EVENT_END_HOLD_MS, MOTION_END_HOLD_MS);
 /** Personen: kurz warten, dann mehrere Versuche solange PERSON aktiv (Gesicht oft erst frontal). */
 const PERSON_SNAP_DELAY_MS = 1_000;
 const PERSON_SNAP_ATTEMPTS = 4;
@@ -531,7 +539,8 @@ export async function uploadSnapshot(
     body: new Uint8Array(buf),
   });
   if (!upload.ok) throw new Error(`Snapshot-Upload fehlgeschlagen: HTTP ${upload.status}`);
-  cam.lastSnapshotAt = Date.now();
+  // Nur Anzeige: drosselt weitere Anzeige-Bilder, nicht die Gesichtserkennung.
+  cam.lastAutoSnapshotAt = Date.now();
   return { bytes: buf.length };
 }
 
@@ -1671,6 +1680,7 @@ async function refreshConfigs(): Promise<void> {
   if (!res.ok) throw new Error(`Kamera-Konfig-Abruf fehlgeschlagen: HTTP ${res.status}`);
   const all = (await res.json()) as CameraConfig[];
 
+  knownCameraIds = all.map((c) => c.id);
   // DoorBirds laufen über ihr eigenes Modul (Event-Push statt Polling).
   syncDoorbirds(all.filter((c) => c.kind === "DOORBIRD"));
   const configs = all.filter((c) => c.kind !== "DOORBIRD");
@@ -1705,6 +1715,7 @@ async function refreshConfigs(): Promise<void> {
         states: {},
         debounce: newDebounceState(),
         lastSnapshotAt: 0,
+        lastAutoSnapshotAt: 0,
         snapshotInFlight: false,
         pendingVehicle: false,
         unreachableLogged: false,
@@ -1750,7 +1761,10 @@ export function listCameraStatus(): CameraStatus[] {
         .map(([type]) => type),
       busy: cam.snapshotInFlight,
       pendingVehicle: cam.pendingVehicle,
-      lastSnapshotAt: cam.lastSnapshotAt ? new Date(cam.lastSnapshotAt).toISOString() : null,
+      lastSnapshotAt:
+        Math.max(cam.lastSnapshotAt, cam.lastAutoSnapshotAt) > 0
+          ? new Date(Math.max(cam.lastSnapshotAt, cam.lastAutoSnapshotAt)).toISOString()
+          : null,
       lastEventAt: cam.lastEventAt,
       lastPerson: cam.lastPerson,
       lastPlate: cam.lastPlate,
@@ -1769,6 +1783,8 @@ export function listCameraStatus(): CameraStatus[] {
 const CLOCK_EVERY_MS = 30 * 60_000;
 const clockCache = new Map<number, CameraClock>();
 let clockCheckAt = 0;
+/** Routinezeilen nur bei Aenderung, sonst einmal am Tag. */
+const routineLog = new ChangeLog(24 * 3_600_000);
 
 async function readCameraClock(cam: CameraRuntime): Promise<CameraClock> {
   await ensureLogin(cam);
@@ -1811,12 +1827,20 @@ export async function refreshCameraClocks(force = false): Promise<void> {
     }
   }
   const off = [...clockCache.entries()].filter(([, c]) => Math.abs(c.offsetS) >= 3);
+  // Alle 30 min gelesen, aber nur gemeldet, wenn sich die Lage aendert
+  // (und einmal am Tag zur Erinnerung): Die Zeile war sonst immer dieselbe.
+  const key = clockDriftKey(
+    off.map(([id, c]) => ({ name: cameras.get(id)?.config.name ?? String(id), offsetS: c.offsetS, ntp: c.ntp }))
+  );
+  if (!routineLog.shouldLog("clocks", key, Date.now())) return;
   if (off.length) {
     log(
       `Kamera-Uhren weichen ab: ${off
         .map(([id, c]) => `${cameras.get(id)?.config.name ?? id} ${c.offsetS > 0 ? "+" : ""}${c.offsetS} s${c.ntp === false ? " (NTP aus)" : ""}`)
         .join(", ")}`
     );
+  } else {
+    log("Kamera-Uhren: alle im Takt");
   }
 }
 
@@ -2205,10 +2229,126 @@ let pollBusy = false;
 /**
  * Erreichbarkeits-Meldung (seen) drosseln: Die Cloud markiert Kameras erst
  * nach 5 min ohne Lebenszeichen als offline – ein Update pro Minute reicht.
- * Ereignisse werden weiterhin sofort gemeldet.
+ * Ereignisse werden weiterhin sofort gemeldet, aber ohne die Liste: Vorher
+ * hing sie an jeder Ereignis-Meldung und schrieb in der Cloud jedes Mal alle
+ * Kamera-Zeilen neu (mehrere tausend Mal am Tag).
  */
 const SEEN_REPORT_MS = 60_000;
 let lastSeenReportAt = 0;
+/** Seit der letzten Meldung erreichte Kameras (ein einzelner Aussetzer zaehlt nicht). */
+const seenSinceReport = new Set<number>();
+
+interface CloudEvent {
+  cameraId: number;
+  type: string;
+  phase: "start" | "end";
+  at: string;
+  plate?: string;
+}
+
+/*
+ * Meldungen an die Cloud laufen nacheinander und ausserhalb des Poll-Takts.
+ * Antwortet die Cloud langsam oder gar nicht (Internet weg), fragt der Hub
+ * die Kameras trotzdem weiter alle 2 s ab; vorher stand die Abfrage so lange
+ * still, wie die Meldung brauchte (bis zum Zeitlimit von 30 s) – auch fuer
+ * die Einfahrt. Scheitert eine Meldung, entfaellt sie wie bisher; nur ein
+ * Ende, dessen Beginn die Cloud schon kennt, geht noch einmal mit (EndRetry).
+ */
+const EVENT_UPLOAD_TIMEOUT_MS = 15_000;
+const EVENT_BATCH_MAX = 100;
+const EVENT_OUTBOX_MAX = 400;
+/** Nach einer gescheiterten Meldung: naechster Versuch fruehestens so spaet. */
+const EVENT_UPLOAD_RETRY_MS = 10_000;
+const eventOutbox: CloudEvent[] = [];
+const seenOutbox = new Set<number>();
+const endRetry = new EndRetry();
+let eventUploadRunning = false;
+/** Laufende Stoerung: Die Zeile kommt einmal und dann alle 5 min, nicht je Versuch. */
+let eventUploadFailing = false;
+const uploadFailLog = new ChangeLog(5 * 60_000);
+/** Start dieses Hub-Prozesses: Ereignisse von davor kann er nicht mehr beenden. */
+const PROCESS_STARTED_AT = new Date().toISOString();
+/** Bis die Cloud einmal bestaetigt hat, dass sie die Ereignisse von vor dem Start geschlossen hat. */
+let orphansClosed = false;
+/** Alle Kameras dieses Hubs inklusive DoorBird (fuer das Schliessen nach dem Start). */
+let knownCameraIds: number[] = [];
+
+function queueEventUpload(events: CloudEvent[], seen: number[]): void {
+  eventOutbox.push(...events);
+  if (eventOutbox.length > EVENT_OUTBOX_MAX) {
+    const dropped = eventOutbox.splice(0, eventOutbox.length - EVENT_OUTBOX_MAX).length;
+    log(`Kamera-Event-Upload: ${dropped} alte Meldungen verworfen (Cloud antwortet nicht)`);
+  }
+  for (const id of seen) seenOutbox.add(id);
+  if (!eventUploadRunning) void drainEventUploads();
+}
+
+/** Gescheiterte Meldung: einmal ins Log, Enden zuruecklegen, bald neu versuchen. */
+function eventUploadFailed(events: CloudEvent[], reason: string): void {
+  if (uploadFailLog.shouldLog("upload", reason, Date.now())) {
+    log(`Kamera-Event-Upload fehlgeschlagen: ${reason}`);
+  }
+  eventUploadFailing = true;
+  eventOutbox.unshift(...endRetry.failed(events));
+  // Die naechste faellige Erreichbarkeits-Meldung stoesst den neuen Versuch an.
+  lastSeenReportAt = Date.now() - SEEN_REPORT_MS + EVENT_UPLOAD_RETRY_MS;
+}
+
+async function drainEventUploads(): Promise<void> {
+  eventUploadRunning = true;
+  try {
+    while (eventOutbox.length > 0 || seenOutbox.size > 0) {
+      const events = eventOutbox.splice(0, EVENT_BATCH_MAX);
+      const seen = [...seenOutbox];
+      seenOutbox.clear();
+      const closeOpen =
+        !orphansClosed && knownCameraIds.length > 0
+          ? { cameraIds: knownCameraIds, before: PROCESS_STARTED_AT }
+          : undefined;
+      let ok = false;
+      try {
+        const res = await api("/api/hub/camera-events", {
+          method: "POST",
+          body: JSON.stringify({ events, seen, ...(closeOpen ? { closeOpen } : {}) }),
+          signal: AbortSignal.timeout(EVENT_UPLOAD_TIMEOUT_MS),
+        });
+        if (!res.ok) {
+          eventUploadFailed(events, `HTTP ${res.status}`);
+        } else {
+          ok = true;
+          const body = (await res.json().catch(() => null)) as {
+            rulesTriggered?: number;
+            orphansClosed?: number;
+            orphansMore?: boolean;
+          } | null;
+          endRetry.delivered(events);
+          // Erst abhaken, wenn die Cloud es bestaetigt: Eine aeltere Cloud-
+          // Version kennt closeOpen nicht und antwortet ohne diese Angabe.
+          if (closeOpen && typeof body?.orphansClosed === "number" && !body.orphansMore) {
+            orphansClosed = true;
+            if (body.orphansClosed > 0) {
+              log(`Kamera-Ereignisse: ${body.orphansClosed} offene von vor dem Hub-Start geschlossen`);
+            }
+          }
+          if (eventUploadFailing) {
+            eventUploadFailing = false;
+            uploadFailLog.shouldLog("upload", "", Date.now());
+            log("Kamera-Event-Upload: Cloud wieder erreichbar");
+          }
+          // Regel ausgeloest (z. B. Kamera auf Preset): Tasks sofort holen.
+          if ((body?.rulesTriggered ?? 0) > 0) kickTaskPoll();
+        }
+      } catch (e) {
+        eventUploadFailed(events, e instanceof Error ? e.message : String(e));
+      }
+      // Nach einem Fehlschlag nicht sofort weiterprobieren (Cloud oder
+      // Internet weg): Der naechste faellige Durchlauf nimmt den Rest mit.
+      if (!ok) break;
+    }
+  } finally {
+    eventUploadRunning = false;
+  }
+}
 
 /** Haupt-Loop: Konfiguration aktuell halten, Zustaende pollen, Events melden. */
 export async function pollCameras(): Promise<void> {
@@ -2223,13 +2363,7 @@ export async function pollCameras(): Promise<void> {
       return;
     }
 
-    const events: {
-      cameraId: number;
-      type: string;
-      phase: "start" | "end";
-      at: string;
-      plate?: string;
-    }[] = [];
+    const events: CloudEvent[] = [];
     const seen: number[] = [];
     const snapshotJobs: number[] = [];
     const personSnapshotJobs: number[] = [];
@@ -2267,22 +2401,28 @@ export async function pollCameras(): Promise<void> {
             } else if (type === "VEHICLE") {
               motion.onVehicleStart(cam.config.id);
             }
-            const idle =
-              !cam.snapshotInFlight &&
-              Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS;
-            if (type === "VEHICLE") {
-              // Kennzeichen nicht durch Personen-Throttle oder Parallel-Person verlieren.
-              vehicleSnapshotJobs.push(cam.config.id);
-            } else if (idle) {
-              if (type === "PERSON") personSnapshotJobs.push(cam.config.id);
-              else snapshotJobs.push(cam.config.id);
-            }
+            // Kennzeichen nie drosseln; ein Anzeige-Bild (Bewegung) sperrt die
+            // Gesichtserkennung nicht mehr (snapshotJobFor in camera-poll-rules.ts).
+            const job = snapshotJobFor(type, {
+              inFlight: cam.snapshotInFlight,
+              now: Date.now(),
+              lastPipelineAt: cam.lastSnapshotAt,
+              lastAutoAt: cam.lastAutoSnapshotAt,
+              throttleMs: EVENT_SNAPSHOT_THROTTLE_MS,
+            });
+            if (job === "vehicle") vehicleSnapshotJobs.push(cam.config.id);
+            else if (job === "person") personSnapshotJobs.push(cam.config.id);
+            else if (job === "auto") snapshotJobs.push(cam.config.id);
           }
           cam.states[type] = active;
         }
+        // Fuer die Ruhe-Regeln im Notbetrieb zaehlt jede Messung mit Alarm,
+        // nicht nur der Beginn eines Ereignisses (ein langes Ereignis galt
+        // sonst nach `idleMinutes` als Ruhe).
+        if (Object.values(states).some(Boolean)) noteCameraActivity(cam.config.id);
 
         // Entprellte Ereignisse gehen an Cloud, Regeln und Lagebild.
-        for (const ev of debounceEvents(cam.debounce, states, Date.now(), EVENT_END_HOLD_MS)) {
+        for (const ev of debounceEvents(cam.debounce, states, Date.now(), eventEndHold)) {
           if (ev.type === "PERSON" && ev.phase === "end") {
             void motion
               .onPersonEnd(cam.config.id)
@@ -2370,20 +2510,25 @@ export async function pollCameras(): Promise<void> {
       );
     }
 
-    // Erst die Pipelines (laufen ohne await), dann die Cloud: die Tuer soll
-    // nicht auf den Upload der Ereignisliste warten.
-    const seenDue = Date.now() - lastSeenReportAt >= SEEN_REPORT_MS;
-    if (events.length > 0 || (seen.length > 0 && seenDue)) {
-      const res = await api("/api/hub/camera-events", {
-        method: "POST",
-        body: JSON.stringify({ events, seen }),
-      });
-      if (!res.ok) log(`Kamera-Event-Upload fehlgeschlagen: HTTP ${res.status}`);
-      else {
-        if (seen.length > 0) lastSeenReportAt = Date.now();
-        await kickIfRulesTriggered(res);
+    // Erst die Pipelines (laufen ohne await), dann die Cloud – und auch die
+    // ohne await (queueEventUpload): weder die Tuer noch der naechste Poll
+    // warten auf den Upload der Ereignisliste.
+    for (const id of seen) seenSinceReport.add(id);
+    const seenDue = seenSinceReport.size > 0 && Date.now() - lastSeenReportAt >= SEEN_REPORT_MS;
+    if (events.length > 0 || seenDue) {
+      const seenNow = seenDue ? [...seenSinceReport] : [];
+      if (seenDue) {
+        seenSinceReport.clear();
+        lastSeenReportAt = Date.now();
       }
+      queueEventUpload(events, seenNow);
       for (const e of events) {
+        // Reine Bewegung nur zaehlen: Diese Zeilen waren ein Fuenftel des
+        // Hub-Logs; Beginn und Ende stehen in der Cloud (Kamera-Ereignisse).
+        if (e.type === "MOTION") {
+          if (e.phase === "start") improveCount("camera", "motion");
+          continue;
+        }
         const cam = cameras.get(e.cameraId);
         log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);
       }

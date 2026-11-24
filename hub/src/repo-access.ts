@@ -80,6 +80,25 @@ export async function ensureKey(keyDir: string, onCreate?: (pub: string) => void
   return pub || null;
 }
 
+/**
+ * Aussagekraeftige Zeile aus der Fehlerausgabe von git. Die letzte Zeile ist
+ * bei einem abgelehnten Schluessel nur der Schluss des Hinweistexts („and the
+ * repository exists.“); die Ursache steht davor („Permission denied
+ * (publickey).“).
+ */
+export function gitErrorLine(stderr: string | undefined | null): string | null {
+  const lines = (stderr ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return null;
+  return (
+    lines.find((l) => /permission denied|host key|timed out|could not resolve|connection (refused|closed|reset)/i.test(l)) ??
+    lines.find((l) => /^(fatal|error):/i.test(l)) ??
+    lines[0]
+  );
+}
+
 type Git = (args: string[], env?: NodeJS.ProcessEnv) => Promise<string>;
 
 function gitIn(repoDir: string): Git {
@@ -121,7 +140,7 @@ export async function ensureRepoAccess(
       await git(["ls-remote", target, "HEAD"], { ...process.env, GIT_SSH_COMMAND: cmd });
     } catch (e) {
       // Normalfall, bis der Schluessel bei GitHub eingetragen ist.
-      const stderr = (e as { stderr?: string }).stderr?.trim().split("\n").pop();
+      const stderr = gitErrorLine((e as { stderr?: string }).stderr);
       status.error = (stderr || (e instanceof Error ? e.message : String(e))).slice(0, 200);
       return status;
     }

@@ -31,13 +31,14 @@ export function newDebounceState(): DebounceState {
 /**
  * Neue Messung einspielen. `states` enthaelt nur Typen, die in diesem Poll
  * gemessen wurden; fehlende Typen (z. B. KI-Abfrage fehlgeschlagen) bleiben
- * unveraendert.
+ * unveraendert. `holdMs` gilt fuer alle Typen oder wird je Typ erfragt
+ * (Bewegung laeuft laenger nach als die KI-Alarme).
  */
 export function debounceEvents(
   st: DebounceState,
   states: Record<string, boolean>,
   now: number,
-  holdMs: number
+  holdMs: number | ((type: string) => number)
 ): DebouncedEvent[] {
   const out: DebouncedEvent[] = [];
   for (const [type, active] of Object.entries(states)) {
@@ -50,7 +51,8 @@ export function debounceEvents(
       }
     } else if (was) {
       const last = st.lastActiveAt[type] ?? now;
-      if (now - last >= holdMs) {
+      const hold = typeof holdMs === "function" ? holdMs(type) : holdMs;
+      if (now - last >= hold) {
         st.reported[type] = false;
         out.push({ type, phase: "end", at: last });
       }
