@@ -74,3 +74,14 @@ export function handleUnknownChat(
   st.attempts = 0;
   return { kind: "issued", code };
 }
+
+export const TITLE_NAME_MAX = 40;
+
+/**
+ * Anzeigename eines Telegram-Chats fuer Ereignistitel: nur druckbare Zeichen,
+ * Leerraum zusammengefasst, hoechstens TITLE_NAME_MAX Zeichen.
+ */
+export function titleName(name: string): string {
+  const clean = name.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, " ").replace(/\s+/g, " ").trim();
+  return Array.from(clean).slice(0, TITLE_NAME_MAX).join("").trim();
+}

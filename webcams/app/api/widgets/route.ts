@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { loadConfig, saveConfig } from "@/lib/config";
 import { WidgetSchema } from "@/lib/types";
+import { widgetWriteErrors } from "@/lib/config-validate";
+import { requireSameOriginJson } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +12,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const rejected = requireSameOriginJson(req);
+  if (rejected) return rejected;
   let body: unknown;
   try {
     body = await req.json();
@@ -22,6 +26,10 @@ export async function POST(req: Request) {
       { error: "validation failed", issues: parsed.error.issues },
       { status: 400 },
     );
+  }
+  const invalid = widgetWriteErrors(parsed.data, null);
+  if (invalid.length) {
+    return NextResponse.json({ error: invalid.join("; ") }, { status: 400 });
   }
   const config = await loadConfig();
   if (config.widgets.some((w) => w.id === parsed.data.id)) {

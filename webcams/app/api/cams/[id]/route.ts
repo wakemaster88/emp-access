@@ -6,6 +6,8 @@ import { invalidateToken } from "@/lib/reolink";
 import { syncWorkers } from "@/lib/people-counter";
 import { notifySidecarConfigChanged } from "@/lib/people-tracker";
 import { prepareCamForSave } from "@/lib/cam-helpers";
+import { camWriteErrors } from "@/lib/config-validate";
+import { requireSameOrigin, requireSameOriginJson } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +24,8 @@ export async function GET(_req: Request, ctx: RouteCtx) {
 }
 
 export async function PUT(req: Request, ctx: RouteCtx) {
+  const rejected = requireSameOriginJson(req);
+  if (rejected) return rejected;
   const { id } = await ctx.params;
   let body: unknown;
   try {
@@ -46,6 +50,10 @@ export async function PUT(req: Request, ctx: RouteCtx) {
   if (incoming.id !== id) {
     return NextResponse.json({ error: "id mismatch" }, { status: 400 });
   }
+  const invalid = camWriteErrors(incoming, config.cams[idx]);
+  if (invalid.length) {
+    return NextResponse.json({ error: invalid.join("; ") }, { status: 400 });
+  }
 
   const next = {
     ...config,
@@ -60,7 +68,9 @@ export async function PUT(req: Request, ctx: RouteCtx) {
   return NextResponse.json({ ok: true, cam: { ...incoming, password: "***" } });
 }
 
-export async function DELETE(_req: Request, ctx: RouteCtx) {
+export async function DELETE(req: Request, ctx: RouteCtx) {
+  const crossOrigin = requireSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
   const { id } = await ctx.params;
   const config = await loadConfig();
   const exists = config.cams.some((c) => c.id === id);

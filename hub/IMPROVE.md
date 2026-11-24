@@ -1224,3 +1224,24 @@ Log-Abruf nach PR #233 (Hub 9a9c42c, Zentrale in Safari neu geladen 11:29 UTC):
 ### Nächster Schritt
 
 - Ein paar Tage im Hub-Log auf „Stream-Konfig nicht angepasst“ achten. Taucht die Meldung auf, den Host der genannten Kamera in der Cloud bzw. den Eintrag in `config.json` korrigieren.
+
+## 2026-11-24 (Assistent fragt vor dem Merken nach, Hilfsskripte gehärtet)
+
+### Befund
+
+- Diagnose von 17:41 UTC gelesen: ein offener Hinweis zur Gesichtserkennung (Treffer knapp unter der Schwelle). Er gehört zur laufenden Arbeit an der Gesichtserkennung und ist hier nicht angefasst.
+- Das Werkzeug `remember` lief als „read“ ohne Rückfrage und stand auch im Tagesbericht zur Verfügung. Notizen bis 300 Zeichen landen in jedem Gespräch im System-Prompt.
+- Das Ereignis zur Kopplungsanfrage enthielt den sechsstelligen Code im Feld `detail`, Ereignistitel übernahmen den Telegram-Anzeigenamen ungekürzt.
+- `backfill-plates` verband sich ohne Zertifikatsprüfung, `install.sh` ließ die Rechte von `hub/.env` offen.
+
+### Änderungen
+
+- `remember` ist jetzt „act“ und braucht wie die Schaltwerkzeuge den Knopf „Ausführen“.
+- Der Filter des Tagesberichts ist eine reine Funktion (`reportToolAllowed` in `agent/report-tools.ts`, Test): nur „read“, ohne die beiden Bild-Werkzeuge.
+- Das Kopplungsereignis enthält keinen Code mehr. Namen in Ereignistiteln sind auf 40 druckbare Zeichen gekürzt (`titleName`, Test in `pairing.test.ts`).
+- `backfill-plates` nutzt TLS mit Zertifikatsprüfung, `install.sh` setzt `chmod 600` auf `hub/.env`.
+
+### Nächster Schritt
+
+- Beobachten, wie oft Rückfragen zu `remember` kommen und wie oft sie abgebrochen werden.
+- Kopplung neuer Chats zusätzlich von einem schon gekoppelten Chat bestätigen lassen und Anfragen je Chat begrenzen (offen, ändert die Bedienung).

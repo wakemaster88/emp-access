@@ -5,6 +5,7 @@ import {
   empAccessGetJson,
   extractDevicesArray,
 } from "@/lib/emp-access-client";
+import { requireSameOrigin } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,9 @@ export async function GET() {
   return handle();
 }
 
-export async function POST() {
+export async function POST(req: Request) {
+  const crossOrigin = requireSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
   return handle();
 }
 

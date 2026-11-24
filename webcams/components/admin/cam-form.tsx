@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CamSchema, REOLINK_CAPS, REOLINK_MODELS, type Cam } from "@/lib/types";
+import { clampConfigId } from "@/lib/utils";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -135,7 +136,7 @@ export function CamForm({
 
   useEffect(() => {
     if (autoId && data.name) {
-      const id = `cam-${slugify(data.name)}`;
+      const id = clampConfigId(`cam-${slugify(data.name)}`);
       if (id !== data.id) setData((d) => ({ ...d, id }));
     }
   }, [data.name, autoId, data.id]);

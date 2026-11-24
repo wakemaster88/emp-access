@@ -52,6 +52,28 @@ def post(path, body):
             return e.code, None
 
 
+def short_hash(text: str) -> str:
+    """FNV-1a (32 Bit) als 6 Zeichen base36, wie shortHash in lib/utils.ts."""
+    h = 0x811C9DC5
+    for ch in text:
+        h ^= ord(ch)
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = ""
+    while h:
+        h, r = divmod(h, 36)
+        out = digits[r] + out
+    return out.rjust(7, "0")[-6:]
+
+
+def clamp_id(id_: str) -> str:
+    """Wie clampConfigId in lib/utils.ts: höchstens 40 Zeichen, gekürzte IDs mit Hash."""
+    if len(id_) <= 40:
+        return id_.rstrip("-")
+    suffix = f"-{short_hash(id_)}"
+    return id_[: 40 - len(suffix)].rstrip("-") + suffix
+
+
 def get(path: str):
     with urllib.request.urlopen(f"{API}{path}", timeout=10) as r:
         return json.loads(r.read())
@@ -60,8 +82,9 @@ def get(path: str):
 def main() -> int:
     for ip, model, name in CAMS:
         slug = slugify(name)
-        cam_id = f"cam-{slug}"
-        widget_id = f"w-{slug}"
+        # IDs: höchstens 40 Zeichen (a-z, 0-9, -, _), wie die Admin-API verlangt.
+        cam_id = clamp_id(f"cam-{slug}")
+        widget_id = clamp_id(f"w-{slug}")
 
         print(f"→ {cam_id}  ({model} @ {ip})  '{name}'")
 

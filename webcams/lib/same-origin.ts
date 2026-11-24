@@ -46,3 +46,25 @@ export function requireSameOrigin(req: Request): Response | null {
   if (ok) return null;
   return Response.json({ error: "cross-origin request rejected" }, { status: 403 });
 }
+
+/** Ist der Content-Type `application/json` (Parameter wie charset erlaubt)? */
+export function isJsonContentType(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return value.split(";")[0].trim().toLowerCase() === "application/json";
+}
+
+/**
+ * Für schreibende Config-Routen mit JSON-Body: Same-Origin wie oben und
+ * zusätzlich `Content-Type: application/json`. Einfache Formular-Requests
+ * (ohne Preflight) haben einen anderen Content-Type und werden abgelehnt.
+ * Gibt `null` zurück wenn erlaubt, sonst eine fertige 403/415-Response.
+ */
+export function requireSameOriginJson(req: Request): Response | null {
+  const crossOrigin = requireSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
+  if (isJsonContentType(req.headers.get("content-type"))) return null;
+  return Response.json(
+    { error: "Content-Type application/json erwartet" },
+    { status: 415 },
+  );
+}

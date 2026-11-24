@@ -11,6 +11,8 @@ if [[ ! -f "$HUB_DIR/.env" ]]; then
   echo "FEHLER: $HUB_DIR/.env fehlt. Bitte .env.example kopieren und ausfüllen."
   exit 1
 fi
+# .env enthaelt Zugangsdaten: nur fuer den eigenen Benutzer lesbar.
+chmod 600 "$HUB_DIR/.env" || echo "     WARNUNG: Rechte von $HUB_DIR/.env nicht gesetzt"
 
 if ! command -v ffmpeg >/dev/null 2>&1 && [[ ! -x /opt/homebrew/bin/ffmpeg && ! -x /usr/local/bin/ffmpeg ]]; then
   if command -v brew >/dev/null 2>&1; then

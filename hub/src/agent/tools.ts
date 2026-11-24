@@ -66,6 +66,11 @@ const MB = 1024 * 1024;
 /** Prozentwert (0–100) auf eine Nachkommastelle. */
 const pct = (x: number | null | undefined) => (x == null ? null : Math.round(x * 10) / 10);
 
+/** Notiz fuer remember: eine Zeile, hoechstens 300 Zeichen. */
+function rememberNote(args: Record<string, unknown>): string {
+  return String(args.note ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+}
+
 function notesPath(): string {
   return path.join(CONFIG.hubDir, ".cache", "agent-notes.md");
 }
@@ -423,11 +428,13 @@ export const TOOLS: AgentTool[] = [
   {
     name: "remember",
     description:
-      "Etwas Dauerhaftes merken (Vorliebe von Aaron, Erkenntnis über die Anlage). Steht künftig im Kontext. Nur kurze Sätze.",
+      "Etwas Dauerhaftes merken (Vorliebe von Aaron, Erkenntnis über die Anlage). Steht künftig im Kontext. Nur kurze Sätze. Braucht Aarons Bestätigung.",
     parameters: obj({ note: str("Ein Satz") }, ["note"]),
-    risk: "read",
+    // Schreibt dauerhaft in den Kontext, deshalb wie Schaltwerkzeuge erst nach Knopf.
+    risk: "act",
+    describe: (args) => `Merken: „${rememberNote(args)}“`,
     run: async (args) => {
-      const note = String(args.note ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+      const note = rememberNote(args);
       if (!note) throw new Error("Notiz leer");
       await mkdir(path.dirname(notesPath()), { recursive: true });
       await appendFile(notesPath(), `- ${new Date().toISOString().slice(0, 10)}: ${note}\n`, "utf8");

@@ -10,6 +10,7 @@ import {
   type Cam,
 } from "@/lib/types";
 import { useToast } from "@/components/ui/toast";
+import { clampConfigId } from "@/lib/utils";
 
 interface WidgetFormProps {
   initial?: Widget;
@@ -121,7 +122,7 @@ export function WidgetForm({ initial, cams, onSaved, onCancel }: WidgetFormProps
 
   useEffect(() => {
     if (autoId && data.title) {
-      const id = `w-${slugify(data.title)}`;
+      const id = clampConfigId(`w-${slugify(data.title)}`);
       if (id !== data.id) setData((d) => ({ ...d, id }));
     }
   }, [data.title, autoId, data.id]);

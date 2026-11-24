@@ -3,6 +3,8 @@ import { loadConfig, saveConfig } from "@/lib/config";
 import { SettingsSchema } from "@/lib/types";
 import { requireAuth } from "@/lib/auth";
 import { maskSettingsSecrets, restoreSettingsSecrets } from "@/lib/config-secrets";
+import { settingsWriteErrors } from "@/lib/config-validate";
+import { requireSameOriginJson } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +14,8 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  const rejected = requireSameOriginJson(req);
+  if (rejected) return rejected;
   const denied = await requireAuth(req);
   if (denied) return denied;
 
@@ -29,6 +33,10 @@ export async function PUT(req: Request) {
     );
   }
   const config = await loadConfig();
+  const invalid = settingsWriteErrors(parsed.data, config.settings);
+  if (invalid.length) {
+    return NextResponse.json({ error: invalid.join("; ") }, { status: 400 });
+  }
   // Secrets werden maskiert ausgeliefert ("***"); beim Speichern darf der
   // Platzhalter den echten Wert nicht überschreiben (adminPin, Bot-Token,
   // API-Token, Webhook-Secrets).
