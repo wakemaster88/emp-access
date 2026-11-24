@@ -76,6 +76,9 @@
       "zod": "$zod"
     },
     "@simplewebauthn/server": "$@simplewebauthn/server",
-    "@simplewebauthn/browser": "$@simplewebauthn/browser"
+    "@simplewebauthn/browser": "$@simplewebauthn/browser",
+    "@prisma/config": {
+      "effect": "3.22.4"
+    }
   }
 }
