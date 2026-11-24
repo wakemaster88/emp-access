@@ -1,20 +1,19 @@
 name: Sicherheitscheck
 
-# Taeglich um 8 Uhr deutscher Zeit: bekannte Luecken in Abhaengigkeiten
-# (Cloud, Hub, Webcams) und versehentlich eingecheckte Geheimnisse.
+# Einmal taeglich: bekannte Luecken in Abhaengigkeiten (Cloud, Hub, Webcams)
+# und versehentlich eingecheckte Geheimnisse.
 #
-# GitHub-Cron laeuft in UTC. Damit es Sommer wie Winter 8 Uhr in Berlin ist,
-# laeuft der Plan um 6 und 7 Uhr UTC; der erste Schritt laesst den Lauf aus,
-# der gerade nicht 8 Uhr Berlin ist. Von Hand (workflow_dispatch) laeuft er
-# immer.
+# Geplant ist 7:17 Uhr (Winter) bzw. 8:17 Uhr (Sommer) deutscher Zeit; der
+# GitHub-Cron laeuft in UTC. GitHub startet geplante Laeufe oft erst Stunden
+# spaeter. Deshalb haengt nichts an der Uhrzeit: jeder geplante Lauf prueft,
+# egal wann er startet. Von Hand geht es ueber workflow_dispatch.
 #
 # Bei Befunden schlaegt der Lauf fehl (GitHub schickt eine Mail) und ein
 # Issue „Sicherheitscheck: Befunde“ wird angelegt bzw. ergaenzt.
 
 on:
   schedule:
-    - cron: "0 6 * * *"
-    - cron: "0 7 * * *"
+    - cron: "17 6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -34,53 +33,35 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: Uhrzeit pruefen (8 Uhr Europe/Berlin)
-        id: when
-        run: |
-          hour=$(TZ=Europe/Berlin date +%H)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$hour" = "08" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Berlin ist es ${hour} Uhr – dieser Lauf wird ausgelassen."
-          fi
-
       - uses: actions/checkout@v4
-        if: steps.when.outputs.run == 'true'
 
       - uses: actions/setup-node@v4
-        if: steps.when.outputs.run == 'true'
         with:
           node-version: 22
 
       - uses: pnpm/action-setup@v4
-        if: steps.when.outputs.run == 'true'
         with:
           version: 10.28.0
 
       - name: npm audit Cloud (Produktion, ab moderate)
         id: audit_cloud
-        if: steps.when.outputs.run == 'true'
         continue-on-error: true
         run: npm audit --omit=dev --audit-level=moderate 2>&1 | tee audit-cloud.txt
 
       - name: npm audit Hub (ab moderate)
         id: audit_hub
-        if: steps.when.outputs.run == 'true'
         continue-on-error: true
         working-directory: hub
         run: npm audit --omit=dev --audit-level=moderate 2>&1 | tee ../audit-hub.txt
 
       - name: pnpm audit Webcams (ab moderate)
         id: audit_webcams
-        if: steps.when.outputs.run == 'true'
         continue-on-error: true
         working-directory: webcams
         run: pnpm audit --prod --audit-level=moderate 2>&1 | tee ../audit-webcams.txt
 
       - name: Geheimnisse im Code suchen
         id: secrets
-        if: steps.when.outputs.run == 'true'
         continue-on-error: true
         run: |
           # Eindeutige Muster: private Schluessel, GitHub-/AWS-/Stripe-/Slack-
@@ -99,7 +80,6 @@ jobs:
           echo "Keine Geheimnisse gefunden." | tee secrets.txt
 
       - name: Ergebnis
-        if: steps.when.outputs.run == 'true'
         id: result
         run: |
           failed=""
@@ -120,7 +100,7 @@ jobs:
           echo "failed=${failed}" >> "$GITHUB_OUTPUT"
 
       - name: Issue anlegen oder ergaenzen
-        if: steps.when.outputs.run == 'true' && steps.result.outputs.failed != ''
+        if: steps.result.outputs.failed != ''
         uses: actions/github-script@v7
         with:
           script: |
@@ -139,7 +119,7 @@ jobs:
             }
 
       - name: Lauf als fehlgeschlagen melden
-        if: steps.when.outputs.run == 'true' && steps.result.outputs.failed != ''
+        if: steps.result.outputs.failed != ''
         run: |
           echo "Befunde: ${{ steps.result.outputs.failed }}"
           exit 1
