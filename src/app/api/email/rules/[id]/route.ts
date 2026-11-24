@@ -13,7 +13,7 @@ export async function PUT(
     return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
   }
 
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 
@@ -69,7 +69,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
   }
 
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 
@@ -98,7 +98,7 @@ export async function POST(
     return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
   }
 
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { accountId } = session;
 

@@ -4,7 +4,7 @@ import { optionsToJson, parseControlInput, queueSoundwebSync } from "@/lib/sound
 
 /** Regler zu einem Prozessor anlegen. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 

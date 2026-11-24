@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, isTenantAdminRole } from "@/lib/api-auth";
 import { emailConfigUpdateSchema } from "@/lib/validators";
 
 export async function GET() {
@@ -14,8 +14,9 @@ export async function GET() {
     return NextResponse.json({ config: null });
   }
 
-  // API-Key beim Lesen maskieren – nur erste 6 Zeichen + Länge.
-  const apiKeyMasked = config.apiKey
+  // API-Key beim Lesen maskieren – nur erste 6 Zeichen + Länge, und das
+  // nur fuer Verwaltungs-Rollen; USER erfaehrt nur, ob einer hinterlegt ist.
+  const apiKeyMasked = config.apiKey && isTenantAdminRole(session.session.user.role)
     ? `${config.apiKey.slice(0, 6)}${"•".repeat(Math.max(0, config.apiKey.length - 6))}`
     : null;
 

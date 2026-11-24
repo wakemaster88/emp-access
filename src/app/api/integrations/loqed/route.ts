@@ -33,7 +33,7 @@ function systemInfoFor(lock: LoqedLock, key: "importedAt" | "syncedAt") {
 }
 
 export async function POST() {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const { db, accountId } = session;

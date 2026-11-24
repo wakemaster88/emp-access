@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { adminRoleRequired, getSessionWithDb } from "@/lib/api-auth";
+import { personHasOpener } from "@/lib/role-guards";
 import { personSightingAssignSchema } from "@/lib/validators";
 import { assignPersonToSighting } from "@/lib/persons";
 
@@ -19,6 +20,17 @@ export async function PATCH(
   const parsed = personSightingAssignSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  // Wie bei der Sammel-Zuordnung: Ein weiteres Gesicht fuer eine Person mit
+  // automatischem Oeffner ist eine dauerhafte Freigabe – nur Verwaltung.
+  const target = await session.db.listedPerson.findFirst({
+    where: { id: parsed.data.listedPersonId, accountId: accountId! },
+    select: { triggerOnDetection: true, shellyDeviceId: true },
+  });
+  if (target && personHasOpener(target)) {
+    const denied = adminRoleRequired(session.session.user.role);
+    if (denied) return denied;
   }
 
   try {

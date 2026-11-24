@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { adminRoleRequired, getSessionWithDb } from "@/lib/api-auth";
 import { roomInclude, syncRoomEquipment } from "@/lib/keying-queries";
 import { keyRoomUpdateSchema } from "@/lib/validators";
 
@@ -26,6 +26,16 @@ export async function PUT(
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   const data = parsed.data;
+
+  // Die Betriebszeit eines Raums steuert Regeln mit Betriebsbeginn/-ende;
+  // sie umzuhaengen ist Verwaltung wie die Betriebszeiten selbst.
+  if (
+    data.operatingScheduleId !== undefined &&
+    (data.operatingScheduleId ?? null) !== (existing.operatingScheduleId ?? null)
+  ) {
+    const denied = adminRoleRequired(session.session.user.role);
+    if (denied) return denied;
+  }
 
   if (data.operatingScheduleId) {
     const schedule = await db.operatingSchedule.findFirst({

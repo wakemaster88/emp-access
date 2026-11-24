@@ -7,7 +7,7 @@ import { syncAnnyForAccount } from "@/lib/anny-sync";
 export const maxDuration = 300;
 
 export async function POST() {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
 
   const { accountId } = session;

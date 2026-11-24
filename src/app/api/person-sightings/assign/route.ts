@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { adminRoleRequired, getSessionWithDb } from "@/lib/api-auth";
+import { personHasOpener } from "@/lib/role-guards";
 import { personSightingsBulkAssignSchema } from "@/lib/validators";
 import { assignSightings } from "@/lib/unknown-persons";
 
@@ -16,6 +17,19 @@ export async function POST(request: NextRequest) {
   const parsed = personSightingsBulkAssignSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  // Eine Sichtung gibt der Person ein weiteres Gesicht. Hat die Person einen
+  // automatischen Oeffner, ist das eine dauerhafte Freigabe: nur Verwaltung.
+  if (parsed.data.listedPersonId) {
+    const target = await session.db.listedPerson.findFirst({
+      where: { id: parsed.data.listedPersonId, accountId: session.accountId! },
+      select: { triggerOnDetection: true, shellyDeviceId: true },
+    });
+    if (target && personHasOpener(target)) {
+      const denied = adminRoleRequired(session.session.user.role);
+      if (denied) return denied;
+    }
   }
 
   try {
