@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { createTicketBulk } from "@/lib/ticket-bulk";
 import { ticketBulkCreateSchema } from "@/lib/validators";
+
+/** Je Aufruf bis zu 100 Tickets; von Hand ausgeloest, daher reichen 30 pro Minute. */
+const BULK_LIMIT = { limit: 30, windowMs: 60_000 } as const;
 
 /**
  * Bulk-Erstellung am Shop-/Checkin-Monitor: Bon-Tickets in Serie oder ein
@@ -19,6 +23,8 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-tickets-bulk", BULK_LIMIT);
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });

@@ -8,6 +8,7 @@ import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 import { evaluateScanLock } from "@/lib/scan-lock";
 import { isDurationPastBerlinDay, isDurationTicket } from "@/lib/duration-ticket";
 import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
+import { checkVoucherAccess } from "@/lib/voucher-access";
 
 /**
  * Geteilte Scan-Check-Kernlogik fuer den authentifizierten Endpoint
@@ -172,7 +173,16 @@ export async function performScanCheck({
     // Gutschein-Einloesung: Code beginnt mit "GS-"
     if (code.startsWith("GS-")) {
       const voucher = await db.voucher.findUnique({ where: { code, accountId } });
-      if (voucher && !voucher.redeemedAt) {
+      // Leistungs-, deaktivierte, eingelöste und abgelaufene Gutscheine geben
+      // keinen Zutritt (gemeinsame Regel aller Einlasswege).
+      const access = voucher ? checkVoucherAccess(voucher) : null;
+      if (access && !access.ok) {
+        await db.scan.create({
+          data: { code, result: "DENIED", note: access.note, accountId, ...scanDeviceData },
+        });
+        return { granted: false, message: access.message };
+      }
+      if (voucher) {
         const locked = await denyIfLocked();
         if (locked) return locked;
         const today = new Date();
@@ -240,13 +250,6 @@ export async function performScanCheck({
             vereinName: null,
           },
         };
-      }
-
-      if (voucher?.redeemedAt) {
-        await db.scan.create({
-          data: { code, result: "DENIED", accountId, ...scanDeviceData },
-        });
-        return { granted: false, message: "Gutschein bereits eingelöst" };
       }
     }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import {
   resolveAnnyOrganizationId,
   fetchAllAnnyServices,
@@ -128,6 +129,10 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  // Jeder Abruf fragt ANNY; der Kiosk laedt einmal pro Minute und nach
+  // Aenderungen. Die Grenze reicht fuer mehrere Kioske hinter einer IP.
+  const limited = publicLinkRateLimit(request, token, "checkin-slot-overview", { limit: 300, windowMs: 60_000 });
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });

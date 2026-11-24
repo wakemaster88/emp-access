@@ -23,6 +23,8 @@ const SCAN_DENY_REASON_LABELS: Record<string, string> = {
   race_conflict: "Konflikt (parallel)",
   voucher_already_redeemed: "Gutschein eingelöst",
   voucher_benefit_only: "Gutschein gilt nur an der Kasse",
+  voucher_disabled: "Gutschein deaktiviert",
+  voucher_expired: "Gutschein abgelaufen",
   binarytec_denied: "Binarytec verweigert",
   scan_lock: "Zu schnell erneut gescannt",
   area_scan_lock: "Sperrzeit für diesen Bereich",

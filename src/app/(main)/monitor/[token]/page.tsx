@@ -1790,13 +1790,17 @@ function TicketAvatarLazy({
             `/api/monitor/public/${encodeURIComponent(token)}/photo?ticketId=${ticketId}`,
             { cache: "no-store" }
           )
-            .then((r) => r.json())
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
             .then((d) => {
               const img = (d?.profileImage as string | null) ?? null;
               lazyAvatarCache.set(ticketId, img);
               setSrc(img);
             })
-            .catch(() => {});
+            .catch(() => {
+              // Fehler (z. B. 429) nicht als „kein Foto“ merken: beim nächsten
+              // Einblenden der Zeile wird neu geladen.
+              loadedRef.current = false;
+            });
         }
       }
     }, { rootMargin: "200px" });

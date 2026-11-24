@@ -164,7 +164,7 @@ export async function POST(
   } catch (err) {
     console.error("checkin pause error:", err);
     return NextResponse.json(
-      { error: "Interner Fehler", detail: String(err) },
+      { error: "Interner Fehler" },
       { status: 500 }
     );
   }

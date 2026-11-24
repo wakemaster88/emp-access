@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 10;
 
 /** Quittiert eine Warnung — danach ist sie auf allen Monitoren weg. */
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string; id: string }> },
 ) {
   const { token, id } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-alert-ack");
+  if (limited) return limited;
   const alertId = Number(id);
   if (!Number.isInteger(alertId) || alertId <= 0) {
     return NextResponse.json({ error: "Ungueltige ID" }, { status: 400 });

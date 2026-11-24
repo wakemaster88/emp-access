@@ -1,18 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { runPublicMonitorPoll, parseMonitorIdList } from "@/lib/monitor-public-poll";
 
 /** Kurze Requests – kein Dauer-SSE mehr (Vercel 10s-Limit + Neon-Reconnect-Sturm) */
 export const maxDuration = 25;
 
+/**
+ * Ein Monitor fragt alle 5 s ab (12 pro Minute). Die Grenze reicht fuer
+ * Dutzende Geraete mit demselben Link hinter einer IP und bremst nur Schleifen.
+ */
+const POLL_LIMIT = { limit: 600, windowMs: 60_000 } as const;
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "monitor-poll", POLL_LIMIT);
+  if (limited) return limited;
 
   const monitor = await prisma.monitorConfig.findUnique({
     where: { token },
   });
 
-  if (!monitor || !monitor.isActive) {
+  // Die Abfrage gehoert zur Scan-Monitor-Seite; andere Link-Typen haben eigene Routen.
+  if (!monitor || !monitor.isActive || monitor.type !== "MONITOR") {
     return new Response("Monitor nicht gefunden oder inaktiv", { status: 404 });
   }
 

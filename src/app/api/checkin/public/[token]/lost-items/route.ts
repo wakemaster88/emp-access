@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { buildLostItemCreateData } from "@/lib/lost-item-data";
 import { lostItemCreateSchema } from "@/lib/validators";
 
@@ -61,6 +62,8 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-lost-items");
+  if (limited) return limited;
   const monitor = await resolveMonitor(token);
   if (!monitor) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 

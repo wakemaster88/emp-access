@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { buildLostItemUpdateData } from "@/lib/lost-item-data";
 import { lostItemUpdateSchema } from "@/lib/validators";
 
@@ -17,6 +18,8 @@ export async function PATCH(
   { params }: { params: Promise<{ token: string; id: string }> }
 ) {
   const { token, id } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-lost-items");
+  if (limited) return limited;
   const monitor = await resolveMonitor(token);
   if (!monitor) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
@@ -53,10 +56,12 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string; id: string }> }
 ) {
   const { token, id } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-lost-items");
+  if (limited) return limited;
   const monitor = await resolveMonitor(token);
   if (!monitor) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 

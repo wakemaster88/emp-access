@@ -3,6 +3,7 @@ import { publicRateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ticketCreateSchema } from "@/lib/validators";
+import { checkVoucherAccess } from "@/lib/voucher-access";
 import { resolveAnnyOrganizationId, fetchAnnyServiceMatch, resolveServiceResourceId } from "@/lib/anny-availability";
 import { createAnnyBookingV2 } from "@/lib/anny-bookings";
 import { aboEmailError } from "@/lib/abo-email";
@@ -393,14 +394,13 @@ export async function POST(
         if (!voucher || voucher.accountId !== monitor.accountId) {
           throw new Error("VOUCHER_NOT_FOUND");
         }
-        if (voucher.kind === "BENEFIT") {
+        // Gemeinsame Regel aller Einlasswege: nur offene Zutritts-Gutscheine.
+        const access = checkVoucherAccess(voucher);
+        if (!access.ok) {
           // Leistungs-Gutscheine werden nur entwertet, nie zu einem Ticket.
-          throw new Error("VOUCHER_NOT_FOUND");
-        }
-        if (voucher.disabledAt) {
-          throw new Error("VOUCHER_DISABLED");
-        }
-        if (voucher.redeemedAt) {
+          if (access.reason === "benefit") throw new Error("VOUCHER_NOT_FOUND");
+          if (access.reason === "disabled") throw new Error("VOUCHER_DISABLED");
+          if (access.reason === "expired") throw new Error("VOUCHER_EXPIRED");
           throw new Error("VOUCHER_ALREADY_REDEEMED");
         }
 
@@ -438,6 +438,12 @@ export async function POST(
       if (msg === "VOUCHER_DISABLED") {
         return NextResponse.json(
           { error: { formErrors: ["Gutschein wurde deaktiviert."] } },
+          { status: 409 },
+        );
+      }
+      if (msg === "VOUCHER_EXPIRED") {
+        return NextResponse.json(
+          { error: { formErrors: ["Gutschein ist abgelaufen."] } },
           { status: 409 },
         );
       }

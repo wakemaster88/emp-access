@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { rescheduleAnnyBooking } from "@/lib/anny-availability";
 import { dayTicketEmailChanged, normalizeEmail } from "@/lib/day-guest";
 import { aboEmailError } from "@/lib/abo-email";
@@ -13,6 +14,8 @@ export async function PUT(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-update");
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
