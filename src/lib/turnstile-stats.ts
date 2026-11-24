@@ -31,6 +31,13 @@ export interface TurnstileWeekScan {
   ticketId: number | null;
 }
 
+/** Summen eines Berliner Kalendertags im Wochenverlauf (aus der Datenbank gezaehlt). */
+export interface TurnstileWeekCount {
+  rides: number;
+  denied: number;
+  guests: number;
+}
+
 export interface TurnstileHourBucket {
   hour: string;
   granted: number;
@@ -94,6 +101,8 @@ export function summarizeTurnstileDay(args: {
   dateStr: string;
   dayScans: TurnstileDayScan[];
   weekScans: TurnstileWeekScan[];
+  /** Schon gezaehlte Tage (Schluessel YYYY-MM-DD); ersetzt dann `weekScans`. */
+  weekCounts?: Map<string, TurnstileWeekCount>;
   soldTickets: number;
   deviceIds?: number[];
   maxTicketTypes?: number;
@@ -200,21 +209,31 @@ export function summarizeTurnstileDay(args: {
       guests: 0,
     };
   });
-  const weekIdxByDate = new Map(weekTrend.map((d, i) => [d.date, i]));
-  const guestsPerDay = weekTrend.map(() => new Set<number>());
-  for (const scan of args.weekScans) {
-    const idx = weekIdxByDate.get(berlinYmd(scan.scanTime));
-    if (idx == null) continue;
-    if (scan.result === "GRANTED") {
-      weekTrend[idx].rides++;
-      if (scan.ticketId != null) guestsPerDay[idx].add(scan.ticketId);
-    } else if (scan.result === "DENIED") {
-      weekTrend[idx].denied++;
+  if (args.weekCounts) {
+    for (const d of weekTrend) {
+      const c = args.weekCounts.get(d.date);
+      if (!c) continue;
+      d.rides = c.rides;
+      d.denied = c.denied;
+      d.guests = c.guests;
     }
+  } else {
+    const weekIdxByDate = new Map(weekTrend.map((d, i) => [d.date, i]));
+    const guestsPerDay = weekTrend.map(() => new Set<number>());
+    for (const scan of args.weekScans) {
+      const idx = weekIdxByDate.get(berlinYmd(scan.scanTime));
+      if (idx == null) continue;
+      if (scan.result === "GRANTED") {
+        weekTrend[idx].rides++;
+        if (scan.ticketId != null) guestsPerDay[idx].add(scan.ticketId);
+      } else if (scan.result === "DENIED") {
+        weekTrend[idx].denied++;
+      }
+    }
+    weekTrend.forEach((d, i) => {
+      d.guests = guestsPerDay[i].size;
+    });
   }
-  weekTrend.forEach((d, i) => {
-    d.guests = guestsPerDay[i].size;
-  });
 
   // Vergleichsbasis: die sechs Tage VOR dem gewaehlten Tag.
   const previousDays = weekTrend.slice(0, 6);

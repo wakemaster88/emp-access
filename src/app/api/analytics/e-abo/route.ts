@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { deviceCountsByName, loadAboScanCounts } from "@/lib/dashboard-counts";
 
 function localDateStr(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-/** Scan zählt nur, wenn er im Gültigkeitsfenster des Abo-Tickets liegt. */
-function scanInTicketValidity(scanTime: Date, start: Date | null, end: Date | null): boolean {
-  if (start && scanTime < start) return false;
-  if (end && scanTime > end) return false;
-  return true;
 }
 
 function displayName(t: { name: string; firstName: string | null; lastName: string | null }): string {
@@ -77,8 +71,6 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  const ticketIds = tickets.map((t) => t.id);
-
   let scanTimeRange: { gte?: Date; lte?: Date } | undefined;
   if (tickets.length > 0) {
     const starts = tickets.map(t => effectiveValidityStart(t)).filter(Boolean) as Date[];
@@ -91,42 +83,38 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const scans =
-    ticketIds.length === 0
-      ? []
-      : await db.scan.findMany({
-          where: { ...whereAccount, ticketId: { in: ticketIds }, ...(scanTimeRange ? { scanTime: scanTimeRange } : {}) },
-          select: {
-            id: true,
-            ticketId: true,
-            scanTime: true,
-            result: true,
-            deviceId: true,
-          },
-        });
-
-  const ticketById = new Map(tickets.map((t) => [t.id, t]));
-
-  const validScans = scans.filter((s) => {
-    if (!s.ticketId) return false;
-    const t = ticketById.get(s.ticketId);
-    if (!t) return false;
-    return scanInTicketValidity(new Date(s.scanTime), effectiveValidityStart(t), effectiveValidityEnd(t));
-  });
-
-  const grantedScans = validScans.filter((s) => s.result === "GRANTED");
-  const deniedScans = validScans.filter((s) => s.result === "DENIED");
+  // Scans im Gültigkeitsfenster ihres Abo-Tickets, in der Datenbank gezählt:
+  // je Ticket, je UTC-Stunde (Tag und Wochentag in Ortszeit wie bisher) und je Gerät.
+  const scanCounts =
+    tickets.length === 0
+      ? { tickets: [], hours: [], devices: [] }
+      : await loadAboScanCounts(
+          db,
+          isSuperAdmin ? null : accountId!,
+          subscriptionId,
+          scanTimeRange?.gte ?? null,
+          scanTimeRange?.lte ?? null,
+        );
+  const countsByTicket = new Map(scanCounts.tickets.map((c) => [c.ticketId, c]));
+  const sumHours = (result: string | null) =>
+    scanCounts.hours.reduce((sum, h) => (result == null || h.result === result ? sum + h.count : sum), 0);
+  const validScanCount = sumHours(null);
+  const grantedScanCount = sumHours("GRANTED");
+  const deniedScanCount = sumHours("DENIED");
 
   const overview = subscriptions
     .map((sub) => {
       const subTickets = tickets.filter((t) => t.subscriptionId === sub.id);
-      const subTicketIds = new Set(subTickets.map((t) => t.id));
-      const subScans = validScans.filter((s) => s.ticketId && subTicketIds.has(s.ticketId));
-      const granted = subScans.filter((s) => s.result === "GRANTED").length;
-      const denied = subScans.filter((s) => s.result === "DENIED").length;
-      const uniqueHoldersWithVisits = new Set(
-        subScans.filter((s) => s.result === "GRANTED" && s.ticketId).map((s) => s.ticketId!),
-      ).size;
+      let granted = 0;
+      let denied = 0;
+      let uniqueHoldersWithVisits = 0;
+      for (const t of subTickets) {
+        const c = countsByTicket.get(t.id);
+        if (!c) continue;
+        granted += c.granted;
+        denied += c.denied;
+        if (c.granted > 0) uniqueHoldersWithVisits++;
+      }
       return {
         id: sub.id,
         name: sub.name,
@@ -143,15 +131,12 @@ export async function GET(request: NextRequest) {
   for (const t of tickets) {
     visitsByTicket.set(t.id, { granted: 0, denied: 0, lastVisit: null });
   }
-  for (const s of validScans) {
-    if (!s.ticketId) continue;
-    const v = visitsByTicket.get(s.ticketId);
+  for (const c of scanCounts.tickets) {
+    const v = visitsByTicket.get(c.ticketId);
     if (!v) continue;
-    if (s.result === "GRANTED") {
-      v.granted++;
-      const d = new Date(s.scanTime);
-      if (!v.lastVisit || d > v.lastVisit) v.lastVisit = d;
-    } else if (s.result === "DENIED") v.denied++;
+    v.granted = c.granted;
+    v.denied = c.denied;
+    v.lastVisit = c.lastGranted ? new Date(c.lastGranted) : null;
   }
 
   const ticketBreakdown = tickets
@@ -216,38 +201,32 @@ export async function GET(request: NextRequest) {
     cursor.setDate(cursor.getDate() + 1);
   }
 
-  for (const s of validScans) {
-    const key = localDateStr(new Date(s.scanTime));
+  for (const h of scanCounts.hours) {
+    const key = localDateStr(new Date(h.hour));
     const b = timelineMap.get(key);
     if (!b) continue;
-    if (s.result === "GRANTED") b.granted++;
-    else if (s.result === "DENIED") b.denied++;
+    if (h.result === "GRANTED") b.granted += h.count;
+    else if (h.result === "DENIED") b.denied += h.count;
   }
 
   const timeline = [...timelineMap.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([, v]) => v);
 
-  const deviceIds = [...new Set(validScans.map(s => s.deviceId).filter(Boolean))] as number[];
+  const deviceIds = [...new Set(scanCounts.devices.map(s => s.deviceId).filter(Boolean))] as number[];
   const deviceLookup = deviceIds.length > 0
     ? new Map((await db.device.findMany({ where: { id: { in: deviceIds } }, select: { id: true, name: true } })).map(d => [d.id, d.name]))
     : new Map<number, string>();
-  const deviceMap = new Map<string, { granted: number; denied: number }>();
-  for (const s of validScans) {
-    const name = (s.deviceId ? deviceLookup.get(s.deviceId) : null) ?? "Web / unbekannt";
-    const e = deviceMap.get(name) || { granted: 0, denied: 0 };
-    if (s.result === "GRANTED") e.granted++;
-    else if (s.result === "DENIED") e.denied++;
-    deviceMap.set(name, e);
-  }
-  const byDevice = [...deviceMap.entries()]
-    .map(([name, { granted, denied }]) => ({ name, granted, denied, total: granted + denied }))
-    .sort((a, b) => b.total - a.total);
+  // Bei gleicher Summe zuerst das Gerät mit dem früheren ersten Scan.
+  const byDevice = deviceCountsByName(
+    scanCounts.devices,
+    (deviceId) => (deviceId ? deviceLookup.get(deviceId) : null) ?? "Web / unbekannt",
+  );
 
-  const uniqueHolders = new Set(grantedScans.map((s) => s.ticketId).filter(Boolean)).size;
-  const totalVisits = grantedScans.length;
+  const uniqueHolders = scanCounts.tickets.filter((c) => c.granted > 0).length;
+  const totalVisits = grantedScanCount;
   const avgVisits = uniqueHolders > 0 ? Math.round((totalVisits / uniqueHolders) * 10) / 10 : 0;
-  const grantRate = validScans.length > 0 ? Math.round((grantedScans.length / validScans.length) * 100) : 0;
+  const grantRate = validScanCount > 0 ? Math.round((grantedScanCount / validScanCount) * 100) : 0;
 
   let busiestDay: string | null = null;
   let busiestDayCount = 0;
@@ -261,8 +240,8 @@ export async function GET(request: NextRequest) {
   if (busiestDayCount === 0) busiestDay = null;
 
   const weekdayCounts = [0, 0, 0, 0, 0, 0, 0];
-  for (const s of grantedScans) {
-    weekdayCounts[new Date(s.scanTime).getDay()]++;
+  for (const h of scanCounts.hours) {
+    if (h.result === "GRANTED") weekdayCounts[new Date(h.hour).getDay()] += h.count;
   }
   const weekdayLabels = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
   const byWeekday = weekdayLabels.map((label, i) => ({ label, visits: weekdayCounts[i] }));
@@ -271,7 +250,7 @@ export async function GET(request: NextRequest) {
     totalTickets: tickets.length,
     activeTickets: tickets.filter((t) => t.status === "VALID" || t.status === "PAUSED").length,
     totalVisits,
-    deniedCount: deniedScans.length,
+    deniedCount: deniedScanCount,
     uniqueHoldersWithVisits: uniqueHolders,
     avgVisitsPerHolder: avgVisits,
     grantRate,
