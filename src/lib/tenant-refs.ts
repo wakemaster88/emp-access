@@ -6,9 +6,9 @@ import type { TenantDb } from "./prisma";
  * Die Mandanten-Erweiterung (`tenantClient`) filtert nur die oberste Ebene
  * einer Abfrage. IDs, die als Fremdschluessel oder in verschachtelten
  * `connect`/`create`-Bloecken gespeichert werden, sieht sie nicht - ohne
- * diese Pruefung liessen sich Bereiche, Abos, Geraete oder Tickets eines
- * anderen Mandanten an eigene Datensaetze haengen und ueber `include`
- * wieder auslesen.
+ * diese Pruefung liessen sich Bereiche, Abos, Geraete, Personen, Playlists,
+ * Durchsagen, Kameras oder Tickets eines anderen Mandanten an eigene
+ * Datensaetze haengen und ueber `include` wieder auslesen.
  */
 export type TenantRefs = {
   accessAreaIds?: Array<number | null | undefined>;
@@ -16,6 +16,10 @@ export type TenantRefs = {
   serviceIds?: Array<number | null | undefined>;
   vereinIds?: Array<number | null | undefined>;
   deviceIds?: Array<number | null | undefined>;
+  riderProfileIds?: Array<number | null | undefined>;
+  audioPlaylistIds?: Array<number | null | undefined>;
+  audioAnnouncementIds?: Array<number | null | undefined>;
+  cameraIds?: Array<number | null | undefined>;
 };
 
 const LABELS: Record<keyof TenantRefs, string> = {
@@ -24,6 +28,10 @@ const LABELS: Record<keyof TenantRefs, string> = {
   serviceIds: "Ticket-Typ",
   vereinIds: "Verein",
   deviceIds: "Gerät",
+  riderProfileIds: "Person",
+  audioPlaylistIds: "Playlist",
+  audioAnnouncementIds: "Durchsage",
+  cameraIds: "Kamera",
 };
 
 /** Eindeutige, gueltige IDs einer Liste (null/undefined/NaN fallen weg). */
@@ -61,6 +69,10 @@ export async function foreignRefError(
     serviceIds: (ids) => db.service.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true } }),
     vereinIds: (ids) => db.verein.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true } }),
     deviceIds: (ids) => db.device.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true } }),
+    riderProfileIds: (ids) => db.riderProfile.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true } }),
+    audioPlaylistIds: (ids) => db.audioPlaylist.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true } }),
+    audioAnnouncementIds: (ids) => db.audioAnnouncement.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true } }),
+    cameraIds: (ids) => db.camera.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true } }),
   };
 
   const kinds = (Object.keys(lookups) as Array<keyof TenantRefs>).filter(

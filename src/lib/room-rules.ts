@@ -406,7 +406,7 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
       if (!musicAllowed) {
         return { ...base, target: zone.name, ok: false, error: "Außerhalb der Musikzeit der Zone" };
       }
-      const payload = await playlistPayload(prisma, action.audioPlaylistId);
+      const payload = await playlistPayload(prisma, rule.accountId, action.audioPlaylistId);
       if (!payload) {
         return { ...base, target: zone.name, ok: false, error: "Playlist ist leer" };
       }

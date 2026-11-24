@@ -60,6 +60,48 @@ test("Fremder accountId in data wirft", () => {
   );
 });
 
+test("Fremder accountId in update-data wirft", () => {
+  assert.throws(
+    () => scopeTenantArgs("Ticket", "update", { where: { id: 1 }, data: { accountId: 8 } }, 7),
+    /Mandanten-Verstoss/,
+  );
+  assert.throws(
+    () => scopeTenantArgs("Ticket", "update", { where: { id: 1 }, data: { accountId: { set: 8 } } }, 7),
+    /Mandanten-Verstoss/,
+  );
+  assert.throws(
+    () => scopeTenantArgs("Ticket", "updateMany", { where: { status: "VALID" }, data: { accountId: 8 } }, 7),
+    /Mandanten-Verstoss/,
+  );
+  assert.throws(
+    () => scopeTenantArgs("Ticket", "updateManyAndReturn", { where: {}, data: { accountId: 8 } }, 7),
+    /Mandanten-Verstoss/,
+  );
+  assert.throws(
+    () => scopeTenantArgs("Ticket", "update", { where: { id: 1 }, data: { account: { connect: { id: 8 } } } }, 7),
+    /Mandanten-Verstoss/,
+  );
+  assert.throws(
+    () => scopeTenantArgs("Ticket", "upsert", { where: { id: 1 }, create: { name: "x" }, update: { accountId: 8 } }, 7),
+    /Mandanten-Verstoss/,
+  );
+});
+
+test("Eigener oder fehlender accountId in update-data bleibt unveraendert", () => {
+  assert.deepEqual(scopeTenantArgs("Ticket", "update", { where: { id: 1 }, data: { name: "y", accountId: 7 } }, 7), {
+    where: { id: 1, accountId: 7 },
+    data: { name: "y", accountId: 7 },
+  });
+  assert.deepEqual(scopeTenantArgs("Ticket", "updateMany", { where: { status: "VALID" }, data: { name: "y" } }, 7), {
+    where: { AND: [{ accountId: 7 }, { status: "VALID" }] },
+    data: { name: "y" },
+  });
+  assert.deepEqual(
+    scopeTenantArgs("Ticket", "upsert", { where: { id: 1 }, create: { name: "x" }, update: { name: "y" } }, 7),
+    { where: { id: 1, accountId: 7 }, create: { name: "x", accountId: 7 }, update: { name: "y" } },
+  );
+});
+
 test("Modelle ohne accountId bleiben unangetastet", () => {
   const args = { where: { ticketId: 1 } };
   assert.equal(scopeTenantArgs("TicketArea", "findMany", args, 7), args);

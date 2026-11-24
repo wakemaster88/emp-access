@@ -84,6 +84,30 @@ function scopeData(model: string, data: unknown, accountId: number): unknown {
 }
 
 /**
+ * `data` eines Updates: ein gesetzter accountId (auch als `{ set }`) oder
+ * `account.connect` muss dem Mandanten entsprechen, sonst wird sofort
+ * geworfen. Ohne accountId bleibt `data` unveraendert.
+ */
+function checkUpdateData(model: string, data: unknown, accountId: number): unknown {
+  if (model === "Account" || !data || typeof data !== "object" || Array.isArray(data)) return data;
+  const d = data as Record<string, unknown>;
+  if (d.accountId !== undefined) {
+    const value =
+      d.accountId && typeof d.accountId === "object" && "set" in d.accountId
+        ? (d.accountId as { set: unknown }).set
+        : d.accountId;
+    if (value !== accountId) throw new TenantMismatchError(model, accountId, value);
+  }
+  if (d.account && typeof d.account === "object") {
+    const rel = d.account as { connect?: { id?: unknown } };
+    if (rel.connect && rel.connect.id !== undefined && rel.connect.id !== accountId) {
+      throw new TenantMismatchError(model, accountId, rel.connect.id);
+    }
+  }
+  return d;
+}
+
+/**
  * Haengt den Mandanten-Filter an die Argumente einer Prisma-Operation.
  *
  * Seit Prisma 5 duerfen `findUnique`/`update`/`delete` neben dem eindeutigen
@@ -106,20 +130,31 @@ export function scopeTenantArgs(
     case "count":
     case "aggregate":
     case "groupBy":
-    case "updateMany":
-    case "updateManyAndReturn":
     case "deleteMany":
       return { ...a, where: mergeWhere(a.where, scope) };
+    case "updateMany":
+    case "updateManyAndReturn":
+      return {
+        ...a,
+        where: mergeWhere(a.where, scope),
+        ...(a.data !== undefined ? { data: checkUpdateData(model, a.data, accountId) } : {}),
+      };
     case "findUnique":
     case "findUniqueOrThrow":
-    case "update":
     case "delete":
       return { ...a, where: { ...((a.where as Record<string, unknown>) ?? {}), ...scope } };
+    case "update":
+      return {
+        ...a,
+        where: { ...((a.where as Record<string, unknown>) ?? {}), ...scope },
+        ...(a.data !== undefined ? { data: checkUpdateData(model, a.data, accountId) } : {}),
+      };
     case "upsert":
       return {
         ...a,
         where: { ...((a.where as Record<string, unknown>) ?? {}), ...scope },
         create: scopeData(model, a.create, accountId),
+        ...(a.update !== undefined ? { update: checkUpdateData(model, a.update, accountId) } : {}),
       };
     case "create":
       return { ...a, data: scopeData(model, a.data, accountId) };

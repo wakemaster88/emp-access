@@ -130,14 +130,14 @@ export async function POST(
 
       const [service, accessArea] = await Promise.all([
         voucher.serviceId
-          ? prisma.service.findUnique({
-              where: { id: voucher.serviceId },
+          ? prisma.service.findFirst({
+              where: { id: voucher.serviceId, accountId: monitor.accountId },
               select: { name: true },
             })
           : Promise.resolve(null),
         voucher.accessAreaId
-          ? prisma.accessArea.findUnique({
-              where: { id: voucher.accessAreaId },
+          ? prisma.accessArea.findFirst({
+              where: { id: voucher.accessAreaId, accountId: monitor.accountId },
               select: { name: true },
             })
           : Promise.resolve(null),
