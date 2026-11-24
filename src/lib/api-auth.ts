@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient, type TenantDb } from "./prisma";
 import { auth, markedCrossSite } from "./auth";
+import { queryTokenLogLine, shouldLogQueryToken } from "./query-token-log";
 
 export function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -81,9 +82,8 @@ export async function validateApiToken(
   request: NextRequest,
   options: { allowDevice?: boolean } = {},
 ) {
-  const token =
-    request.headers.get("authorization")?.replace("Bearer ", "") ??
-    request.nextUrl.searchParams.get("token");
+  const headerToken = request.headers.get("authorization")?.replace("Bearer ", "");
+  const token = headerToken ?? request.nextUrl.searchParams.get("token");
 
   if (!token) {
     return { error: NextResponse.json({ error: "Missing API token" }, { status: 401 }) };
@@ -111,6 +111,10 @@ export async function validateApiToken(
         { status: 403 },
       ),
     };
+  }
+
+  if (headerToken == null && shouldLogQueryToken(request.nextUrl.pathname)) {
+    console.info(queryTokenLogLine(request.nextUrl.pathname, device ? "device" : "account"));
   }
 
   return { account, db: tenantClient(account.id), device };

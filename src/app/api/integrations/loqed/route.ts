@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { loqedListLocks, type LoqedLock } from "@/lib/loqed";
 import { loqedBatteryType } from "@/lib/loqed-constants";
+import { maskSecret } from "@/lib/secret-mask";
 
 /**
  * POST /api/integrations/loqed
@@ -12,7 +13,8 @@ import { loqedBatteryType } from "@/lib/loqed-constants";
  *
  * Anders als bei Nuki laesst sich der Webhook nicht von hier aus registrieren –
  * LOQED bietet dafuer keine Schnittstelle, die URL wird auf app.loqed.com
- * eingetragen. Die Antwort nennt sie deshalb.
+ * eingetragen. Die Antwort nennt sie deshalb, mit maskiertem Secret; das
+ * Secret selbst zeigt die Integrationskarte über „Anzeigen“.
  */
 
 /** Zustand und Ausstattung des Schlosses, wie sie am Geraet hinterlegt werden. */
@@ -145,8 +147,9 @@ export async function POST() {
       ? { message: `Bestehendes Gerät übernommen: ${adoptedNames.join(", ")} – Verlauf und Zuordnungen bleiben erhalten.` }
       : {}),
     // LOQED registriert den Webhook nicht selbst; die URL muss auf
-    // app.loqed.com unter API eingetragen werden.
-    webhookUrl: baseUrl && secret ? `${baseUrl}/api/integrations/loqed/webhook?secret=${secret}` : null,
+    // app.loqed.com unter API eingetragen werden. Das Secret steht hier nur
+    // maskiert drin.
+    webhookUrl: baseUrl && secret ? `${baseUrl}/api/integrations/loqed/webhook?secret=${maskSecret(secret)}` : null,
   });
 }
 

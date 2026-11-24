@@ -29,3 +29,38 @@ test("Name mit Tor/Tür macht auch einen Schalter zum Zutritt", () => {
   // "Motor" enthaelt "tor", ist aber kein Tor.
   assert.equal(deviceSwitchLevel(d("SHELLY", "SCHALTER", "Motor Pumpe")), "operate");
 });
+
+test("Komposita mit Tor/Tür zählen als Zutritt", () => {
+  for (const name of ["Schiebetor", "Rolltor", "Hoftor", "Gartentür", "Haustuer", "Nebeneingang", "Parkplatzschranke", "Torhaus"]) {
+    assert.equal(deviceSwitchLevel(d("SHELLY", "SCHALTER", name)), "access", name);
+  }
+  assert.equal(deviceSwitchLevel(d("HUE_LIGHT", null, "Einfahrt Laterne")), "access");
+});
+
+test("Schreibung mit ß, Pforte und Gatter zählen als Zutritt", () => {
+  for (const name of ["Schloß Halle", "Gartenschloß", "SCHLOß", "Pforte Süd", "Gartenpforte", "Gatter Weide", "Hofgatter"]) {
+    assert.equal(deviceSwitchLevel(d("SHELLY", "SCHALTER", name)), "access", name);
+  }
+});
+
+test("Zerlegte Umlaute (NFD) zählen wie zusammengesetzte", () => {
+  for (const name of ["Tür Halle".normalize("NFD"), "Gartentür".normalize("NFD")]) {
+    assert.notEqual(name, name.normalize("NFC"));
+    assert.equal(deviceSwitchLevel(d("SHELLY", "SCHALTER", name)), "access", name);
+  }
+});
+
+test("Wörter, die nur zufällig 'tor' enthalten, bleiben operate", () => {
+  for (const name of ["Motorraum-Licht", "Monitor-Steckdose", "Ventilator Halle", "Generator", "Kompressor", "Projektor Saal", "Hue Gateway"]) {
+    assert.equal(deviceSwitchLevel(d("SHELLY", "SCHALTER", name)), "operate", name);
+  }
+  // Ausnahme-Wort neben einem echten Tor: bleibt Zutritt
+  assert.equal(deviceSwitchLevel(d("SHELLY", "SCHALTER", "Motor Schiebetor")), "access");
+  assert.equal(deviceSwitchLevel(d("SHELLY", "SCHALTER", "Torantrieb Motor")), "access");
+});
+
+test("Geräte, die anderswo Zutritt öffnen, brauchen access", () => {
+  assert.equal(deviceSwitchLevel(d("SHELLY", "SCHALTER", "Relais 3"), true), "access");
+  assert.equal(deviceSwitchLevel(d("SHELLY", "BELEUCHTUNG", "Halle Licht"), true), "access");
+  assert.equal(deviceSwitchLevel(d("SHELLY", "BELEUCHTUNG", "Halle Licht"), false), "operate");
+});

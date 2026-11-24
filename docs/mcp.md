@@ -30,7 +30,13 @@ in der URL. Widerrufen wirkt sofort.
 | `access` | Zusätzlich Türen, Tore, Schlösser, Drehkreuze, Taster, Sirene (derzeit nicht freigeschaltet, siehe `MCP_OFFERED_LEVELS`) |
 
 Welche Stufe ein Gerät braucht, bestimmt `src/lib/mcp/device-level.ts`: Zutritt, Taster und Geräte
-ohne Kategorie brauchen `access`, ebenso Namen mit Tor/Tür/Schranke/Schloss. Netzwerkänderungen
+ohne Kategorie brauchen `access`, ebenso Namen, die irgendwo Tor/Tür/Schranke/Schloss (auch Schloß)/
+Drehkreuz/Einfahrt/Eingang/Zufahrt/Gate/Pforte/Gatter enthalten (auch in Komposita wie „Schiebetor“; Ausnahmen wie
+„Motor“ oder „Monitor“ stehen dort in einer Liste). Ebenfalls `access` brauchen Geräte, die
+anderswo Zutritt öffnen: Kennzeichen-Freigabe (`AllowedVehicle.shellyDeviceId`), Personen-Erkennung
+(`ListedPerson.shellyDeviceId`), Vereinsportal
+(`portalDeviceIds`), Rider-Skills, elektronische Schließpunkte (`KeyLock.deviceId`) und
+einzelne Ticket-Geräte (`TicketDevice`). Netzwerkänderungen
 (Router, Switches, VLANs, WLAN, Firewall) gibt es auf keiner Stufe. Jeder schaltende Aufruf wird
 in Telegram gemeldet.
 
@@ -38,6 +44,11 @@ in Telegram gemeldet.
 
 Cloud: `search_tickets`, `recent_scans`, `list_devices`, `hub_alerts`, `verein_bookings`,
 `vehicle_sightings`, `lost_items`, `camera_snapshot` (Bild), `switch_device`.
+
+`recent_scans` gibt den gescannten Code nie im Klartext aus, sondern gekürzt (`code`: erste
+Zeichen plus „…“, `codeLength`: Länge), mit oder ohne Ticket. `note` enthält nur feste
+Ablehnungsgründe (z. B. `ticket_not_found`, siehe `src/lib/scan-deny-reason.ts`); Notizen von
+Partner-Systemen fallen weg.
 
 Backend (nur lesen, seit 13.11.2026): `opening_hours` (Betriebszeiten heute und kommende Tage),
 `room_rules` (Raumregeln mit Auslöser, Bedingung, Aktionen), `rule_runs` (Regel-Protokoll),

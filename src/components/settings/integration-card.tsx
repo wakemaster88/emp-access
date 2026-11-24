@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, Copy, Search, XCircle } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
+import { isMaskedSecret, typedOverMask } from "@/lib/secret-mask";
 
 export interface ApiConfigData {
   id?: number;
@@ -28,6 +29,10 @@ export interface ApiConfigData {
   baseUrl?: string | null;
   extraConfig?: string | null;
   lastUpdate?: Date | string | null;
+  /** Vom Server: Token gespeichert (`token` kommt dann nur maskiert). */
+  tokenStored?: boolean;
+  /** Vom Server: geheime Angaben in `extraConfig` gespeichert (kommen nur maskiert). */
+  secretsStored?: Record<string, boolean>;
 }
 
 interface ProviderMeta {
@@ -165,6 +170,9 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  // Webhook-Geheimnis im Klartext, erst nach Klick auf „Anzeigen“ (POST ./reveal).
+  const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
   const [testCode, setTestCode] = useState("");
   const [testing, setTesting] = useState(false);
   const [merging, setMerging] = useState<number | null>(null);
@@ -189,9 +197,14 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
 
   const webhook = WEBHOOK_INFO[provider];
 
-  const webhookSecret = webhook && data.extraConfig
+  const storedWebhookSecret = webhook && data.extraConfig
     ? (() => { try { const e = JSON.parse(data.extraConfig); return e?.webhookSecret ?? null; } catch { return null; } })()
     : null;
+  // Maskiert, bis der Admin „Anzeigen“ klickt; Kopieren geht erst danach.
+  const secretHidden = isMaskedSecret(storedWebhookSecret) && !revealedSecret;
+  const webhookSecret: string | null = isMaskedSecret(storedWebhookSecret)
+    ? revealedSecret ?? storedWebhookSecret
+    : storedWebhookSecret;
   const webhookBaseUrl = typeof window !== "undefined" && webhook
     ? `${window.location.origin}${webhook.path}`
     : "";
@@ -239,6 +252,25 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
       <p>Der Webhook ordnet Buchungen automatisch Services, Abos oder Bereichen zu und erstellt/aktualisiert Tickets. Stornierte Buchungen werden ignoriert.</p>
     </div>
   );
+
+  async function handleReveal() {
+    setRevealing(true);
+    setError("");
+    try {
+      const res = await fetch("/api/settings/integrations/reveal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, field: "webhookSecret" }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || typeof json.value !== "string") setError(json.error || "Anzeigen fehlgeschlagen");
+      else setRevealedSecret(json.value);
+    } catch {
+      setError("Netzwerkfehler");
+    } finally {
+      setRevealing(false);
+    }
+  }
 
   function copyToClipboard(text: string, key: string) {
     navigator.clipboard.writeText(text);
@@ -420,6 +452,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     try {
       await fetch(`/api/settings/integrations?provider=${provider}`, { method: "DELETE" });
       setData({ provider, token: "", eventId: "", baseUrl: "", extraConfig: "" });
+      setRevealedSecret(null);
       setOpen(false);
     } finally {
       setDeleting(false);
@@ -502,9 +535,15 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 type="password"
                 placeholder="••••••••••••••••"
                 value={data.token}
-                onChange={(e) => setData({ ...data, token: e.target.value })}
+                onChange={(e) => setData({ ...data, token: typedOverMask(data.token, e.target.value) })}
+                onFocus={(e) => { if (isMaskedSecret(data.token)) e.currentTarget.select(); }}
                 className="font-mono"
               />
+              {isMaskedSecret(data.token) && (
+                <p className="text-[11px] text-muted-foreground">
+                  Gespeichert (endet wie angezeigt) – das Feld kann so bleiben. Zum Ändern den neuen Wert eingeben.
+                </p>
+              )}
             </div>
 
             {meta.fields.eventId !== undefined && (
@@ -539,9 +578,18 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   type="password"
                   placeholder="https://…/monitor?token=…"
                   value={String(readExtra(data.extraConfig).monitorUrl ?? "")}
-                  onChange={(e) => setData({ ...data, extraConfig: writeExtra(data.extraConfig, "monitorUrl", e.target.value.trim()) })}
+                  onChange={(e) => {
+                    const prev = String(readExtra(data.extraConfig).monitorUrl ?? "");
+                    setData({ ...data, extraConfig: writeExtra(data.extraConfig, "monitorUrl", typedOverMask(prev, e.target.value).trim()) });
+                  }}
+                  onFocus={(e) => { if (isMaskedSecret(readExtra(data.extraConfig).monitorUrl)) e.currentTarget.select(); }}
                   className="font-mono"
                 />
+                {isMaskedSecret(readExtra(data.extraConfig).monitorUrl) && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Link gespeichert (endet wie angezeigt) – das Feld kann so bleiben.
+                  </p>
+                )}
                 <p className="text-[11px] text-muted-foreground">
                   In emp-control unter Terminals &amp; Standorte einen Live-Monitor anlegen und dessen Link hier einfügen. Der Hub erfährt darüber, wer eingestempelt ist und wer heute noch Schicht hat; der Token bleibt in der Cloud.
                 </p>
@@ -701,6 +749,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                       size="icon"
                       className="shrink-0 max-sm:size-11"
                       onClick={() => copyToClipboard(webhookUrl, "wh-url")}
+                      // Bei anny/Nuki/LOQED steht das Geheimnis in der URL: erst nach „Anzeigen“ kopierbar.
+                      disabled={secretHidden && provider !== "EMP_CONTROL"}
                       title="URL kopieren"
                       aria-label="URL kopieren"
                     >
@@ -713,16 +763,29 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                       <>
                         <Input
                           readOnly
-                          type="password"
+                          type={revealedSecret ? "text" : "password"}
                           value={webhookSecret}
                           className="font-mono max-sm:h-11"
                         />
+                        {secretHidden && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0 max-sm:h-11"
+                            onClick={handleReveal}
+                            disabled={revealing}
+                          >
+                            {revealing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : "Anzeigen"}
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           variant="outline"
                           size="icon"
                           className="shrink-0 max-sm:size-11"
                           onClick={() => copyToClipboard(webhookSecret, "wh-secret")}
+                          disabled={secretHidden}
                           title="Secret kopieren"
                           aria-label="Secret kopieren"
                         >
@@ -733,6 +796,11 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                       <span className="text-xs text-muted-foreground">Nach dem Speichern wird ein Webhook-Secret erzeugt und hier angezeigt.</span>
                     )}
                   </div>
+                  {secretHidden && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Das Secret ist gespeichert und hier gekürzt. Zum Kopieren für das Partner-System „Anzeigen“ klicken.
+                    </p>
+                  )}
                 </div>
                 {provider === "EMP_CONTROL"
                   ? empControlApiDescription

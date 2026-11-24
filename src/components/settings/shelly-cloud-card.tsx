@@ -14,6 +14,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { StatusDot } from "@/components/ui/status-dot";
+import { isMaskedSecret, typedOverMask } from "@/lib/secret-mask";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -138,8 +139,10 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ server: effectiveServer, authKey }),
       });
-      if (!res.ok) setError("Fehler beim Speichern");
-      else router.refresh();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(typeof data.error === "string" ? data.error : "Fehler beim Speichern");
+      } else router.refresh();
     } catch {
       setError("Netzwerkfehler");
     } finally {
@@ -274,12 +277,14 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
             id="shelly-auth"
             type="password"
             value={authKey}
-            onChange={(e) => setAuthKey(e.target.value)}
+            onChange={(e) => setAuthKey(typedOverMask(authKey, e.target.value))}
+            onFocus={(e) => { if (isMaskedSecret(authKey)) e.currentTarget.select(); }}
             placeholder="••••••••••••••••••••"
             className="font-mono"
           />
           <p className="text-xs text-muted-foreground">
             Shelly Cloud → User Settings → Security → Auth Cloud Key
+            {isMaskedSecret(authKey) && " · Gespeichert – das Feld kann so bleiben."}
           </p>
         </div>
 
