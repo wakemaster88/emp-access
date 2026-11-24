@@ -437,6 +437,9 @@ model Device {
   valves               Device[]             @relation("ValvePump")
   isActive             Boolean              @default(true)
   task                 Int                  @default(0)
+  /// Zeitpunkt, zu dem task zuletzt auf einen Wert ungleich 0 gesetzt wurde
+  /// (null bei 0 oder alten Zeilen). Einmal-Oeffnen (1) verfaellt am Pi nach 60 s.
+  taskSetAt            DateTime?
   accessIn             Int?
   accessOut            Int?
   allowReentry         Boolean              @default(false)

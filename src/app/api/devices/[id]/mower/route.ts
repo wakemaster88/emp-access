@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { isMowerAction, readMowerState } from "@/lib/mower";
+import { hubTaskActor } from "@/lib/hub-task-rules";
 
 /**
  * POST (Session): Befehl an einen Mammotion-Maeher.
@@ -44,7 +45,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     data: {
       accountId,
       type: "MOWER_ACTION",
-      payload: { deviceId: device.id, mower: device.mowerName, action, ...(planId ? { planId } : {}) },
+      payload: {
+        deviceId: device.id,
+        mower: device.mowerName,
+        action,
+        ...(planId ? { planId } : {}),
+        by: hubTaskActor(session.session.user),
+      },
     },
     select: { id: true },
   });

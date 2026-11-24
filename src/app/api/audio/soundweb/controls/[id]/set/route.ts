@@ -3,13 +3,15 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { waitForHubTask } from "@/lib/hub-task-wait";
 import { formatControlValue, soundwebOnline, soundwebSetPayload } from "@/lib/soundweb";
 import { hubOnline } from "@/lib/soundweb-server";
+import { hubTaskActor } from "@/lib/hub-task-rules";
 
 /**
  * Ein Regler bedienen: Fader auf eine Position schieben, den Hub warten
  * lassen, bis der Prozessor den Wert bestätigt hat, und antworten. Länger als
- * zehn Sekunden wartet niemand an einem Fader – dann gilt der Hub als weg.
+ * sieben Sekunden wartet niemand an einem Fader – dann gilt der Hub als weg.
+ * So bleibt die Antwort unter dem Zeitlimit der Plattform (10 s).
  */
-const SET_WAIT_MS = 10_000;
+const SET_WAIT_MS = 7_000;
 
 /**
  * POST { value }: GAIN in dB, MUTE als true/false, PERCENT 0–100, SELECT als
@@ -61,6 +63,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         ...("raw" in payload ? { raw: payload.raw } : {}),
         ...("percent" in payload ? { percent: payload.percent } : {}),
         ...("preset" in payload ? { presetId: control.presetId } : {}),
+        by: hubTaskActor(session.session.user),
       },
       accountId: accountId!,
     },

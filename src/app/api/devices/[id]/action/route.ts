@@ -9,6 +9,7 @@ import {
 import { isAudioDevice } from "@/lib/device-controls";
 import { audioInputFromDeviceAction, controlAudioDevice } from "@/lib/audio-integration";
 import { runDeviceSwitchedRules } from "@/lib/room-rules";
+import { hubTaskActor, type HubTaskActor } from "@/lib/hub-task-rules";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -19,6 +20,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   let db, accountId: number;
+  let by: HubTaskActor | undefined;
   if (hasApiToken(request)) {
     const auth = await validateApiToken(request);
     if ("error" in auth) return auth.error;
@@ -29,6 +31,7 @@ export async function POST(
     if ("error" in session) return session.error;
     db = session.db;
     accountId = session.accountId!;
+    by = hubTaskActor(session.session.user);
   }
 
   const { id } = await params;
@@ -77,7 +80,7 @@ export async function POST(
     existing,
     accountId!,
     action,
-    { seconds },
+    { seconds, by },
   );
 
   // Raumregeln, die an diesem Schaltvorgang haengen. Nur bei Erfolg und

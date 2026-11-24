@@ -4,6 +4,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { deleteBlobs } from "@/lib/blob-store";
+import { EXPIRED_TASK_ERROR } from "@/lib/hub-task-rules";
 import { parseDataRetention, cutoffDate, type DataRetentionConfig, type RetentionKey } from "@/lib/data-retention-config";
 
 export * from "@/lib/data-retention-config";
@@ -13,6 +14,13 @@ export * from "@/lib/data-retention-config";
  * Lauf. Was uebrig bleibt, holt der Blob-GC im selben Cron nach.
  */
 const BLOB_BATCH = 5000;
+
+/**
+ * Hub-Auftraege, die so lange PENDING/RUNNING sind, holt kein Hub mehr ab
+ * bzw. meldet keiner mehr zurueck; sie werden auf FAILED gesetzt und fallen
+ * danach unter die normale Frist fuer Hub-Auftraege.
+ */
+const STALE_HUB_TASK_MS = 24 * 60 * 60 * 1000;
 
 export type RetentionPurgeResult = {
   accountId: number;
@@ -103,6 +111,16 @@ export async function purgeAccountRetention(
     return r.count;
   });
 
+  // Unabhaengig von der Frist: liegengebliebene Auftraege abschliessen.
+  await prisma.hubTask.updateMany({
+    where: {
+      accountId,
+      status: { in: ["PENDING", "RUNNING"] },
+      createdAt: { lt: new Date(now.getTime() - STALE_HUB_TASK_MS) },
+    },
+    data: { status: "FAILED", error: EXPIRED_TASK_ERROR, finishedAt: now },
+  });
+
   await del("hubTasks", async (cutoff) => {
     const r = await prisma.hubTask.deleteMany({
       where: {
@@ -148,13 +166,15 @@ export async function purgeAccountRetention(
   return { accountId, deleted };
 }
 
-/** Cron: alle Accounts mit gesetzten Fristen bereinigen. */
+/**
+ * Cron: alle Accounts mit gesetzten Fristen bereinigen – auch deaktivierte,
+ * damit deren Sichtungen und Bilder nicht unbegrenzt liegen bleiben.
+ */
 export async function purgeAllAccountsRetention(now = new Date()): Promise<{
   accounts: number;
   results: RetentionPurgeResult[];
 }> {
   const accounts = await prisma.account.findMany({
-    where: { isActive: true },
     select: { id: true, dataRetention: true },
   });
 

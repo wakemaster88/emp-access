@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { vehicleSightingCreateSchema } from "@/lib/validators";
 import { processVehicleSighting } from "@/lib/vehicles";
+import { hubTaskActor } from "@/lib/hub-task-rules";
 
 export async function GET(request: NextRequest) {
   const session = await getSessionWithDb();
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
     plate: parsed.data.plate,
     source: "MANUAL",
     seenAt: parsed.data.seenAt ? new Date(parsed.data.seenAt) : undefined,
+    by: hubTaskActor(session.session.user),
   });
 
   return NextResponse.json(result, { status: 201 });

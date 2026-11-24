@@ -222,7 +222,7 @@ async function switchDevices(
       on,
       on ? WATCHDOG_SEC : undefined,
     ).catch(() => false);
-    if (ok) await prisma.device.update({ where: { id: d.id }, data: { task: on ? 1 : 3 } });
+    if (ok) await prisma.device.update({ where: { id: d.id }, data: { task: on ? 1 : 3, taskSetAt: new Date() } });
     else failed.push(d.name);
     // Shelly Cloud erlaubt ~1 Anfrage pro Sekunde.
     await sleep(1100);
