@@ -472,6 +472,10 @@ model Device {
   /// Zeitpunkt, zu dem task zuletzt auf einen Wert ungleich 0 gesetzt wurde
   /// (null bei 0 oder alten Zeilen). Einmal-Oeffnen (1) verfaellt am Pi nach 60 s.
   taskSetAt            DateTime?
+  /// taskSetAt des Einmal-Oeffnens, das der Pi zuletzt abgeholt hat (GET oder
+  /// Antwort auf seine Meldung). Eine Meldung mit pis_task=0 setzt task=1 nur
+  /// zurueck, wenn beide gleich sind (null bei alten Zeilen).
+  taskFetchedSetAt     DateTime?
   accessIn             Int?
   accessOut            Int?
   allowReentry         Boolean              @default(false)

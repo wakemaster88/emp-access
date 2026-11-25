@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import { deviceTokenMismatch, validateApiToken } from "@/lib/api-token-auth";
 import { piStatusSchema } from "@/lib/validators";
 import { LATEST_PI_VERSION } from "@/lib/pi-version";
-import { piOpenTaskExpired } from "@/lib/hub-task-rules";
+import {
+  piOpenTaskExpired,
+  piOpenTaskNeedsFetchMark,
+  piReportClearsOpenTask,
+  piReportHoldsOpenTask,
+} from "@/lib/hub-task-rules";
 import type { TenantDb } from "@/lib/prisma";
 
 type PiStateFields = {
@@ -30,23 +35,40 @@ const PI_STATE_SELECT = {
   allowReentry: true,
   firmware: true,
   taskSetAt: true,
+  taskFetchedSetAt: true,
 } as const;
+
+type OpenTaskFields = { id: number; task: number; taskSetAt: Date | null; taskFetchedSetAt: Date | null };
 
 /**
  * Einmal-Oeffnen (task=1), das laenger als eine Minute auf den Pi wartet
  * (Pi stromlos oder offline), wird nicht mehr ausgeliefert, sondern auf 0
  * zurueckgesetzt. Ohne taskSetAt (alte Zeilen) bleibt alles wie bisher.
  */
-async function dropExpiredOpenTask<T extends { id: number; task: number; taskSetAt: Date | null }>(
-  db: TenantDb,
-  device: T,
-): Promise<T> {
+async function dropExpiredOpenTask<T extends OpenTaskFields>(db: TenantDb, device: T): Promise<T> {
   if (!piOpenTaskExpired(device.task, device.taskSetAt)) return device;
   await db.device.updateMany({
     where: { id: device.id, type: "RASPBERRY_PI", task: 1, taskSetAt: device.taskSetAt },
     data: { task: 0, taskSetAt: null },
   });
   return { ...device, task: 0, taskSetAt: null };
+}
+
+/**
+ * GET: verfallenes Einmal-Oeffnen zuruecksetzen, sonst ein noch nicht
+ * vermerktes als abgeholt vermerken (es geht mit dieser Antwort an den Pi).
+ * Hoechstens ein Schreibzugriff, und nur solange task=1 ansteht.
+ */
+async function settleOpenTaskForFetch<T extends OpenTaskFields>(db: TenantDb, found: T): Promise<T> {
+  const device = await dropExpiredOpenTask(db, found);
+  if (device !== found || !piOpenTaskNeedsFetchMark(device.task, device.taskSetAt, device.taskFetchedSetAt)) {
+    return device;
+  }
+  await db.device.updateMany({
+    where: { id: device.id, type: "RASPBERRY_PI", task: 1, taskSetAt: device.taskSetAt },
+    data: { taskFetchedSetAt: device.taskSetAt },
+  });
+  return { ...device, taskFetchedSetAt: device.taskSetAt };
 }
 
 function deviceToPiState(device: PiStateFields) {
@@ -110,7 +132,7 @@ export async function GET(request: NextRequest) {
   if (!found) {
     return NextResponse.json({ error: "Device not found" }, { status: 404 });
   }
-  const device = await dropExpiredOpenTask(db, found);
+  const device = await settleOpenTaskForFetch(db, found);
 
   const etag = piStateEtag(device);
   const ifNoneMatch = request.headers.get("if-none-match");
@@ -175,26 +197,46 @@ export async function POST(request: NextRequest) {
       data.systemInfo = update.system_info;
     }
     // Task nur zuruecksetzen, wenn Server task=1 (Einmal-Oeffnen) gesetzt
-    // hatte und der Pi bestaetigt (pis_task: 0). Alle anderen Faelle:
-    // Task bleibt unveraendert; nur lastUpdate/systemInfo wird gesetzt.
-    const resetTask = current.task === 1 && update.pis_task === 0;
+    // hatte, der Pi diesen Auftrag schon abgeholt hat und 0 meldet. Ein
+    // danach gesetzter Auftrag bleibt stehen; die Antwort traegt dann 0 wie
+    // bisher, ausgeliefert wird er nur per GET. Meldet der Pi etwas anderes
+    // als 0, geht task=1 wie bisher mit der Antwort raus und wird im selben
+    // Schreibzugriff als abgeholt vermerkt. Sonst: Task bleibt unveraendert;
+    // nur lastUpdate/systemInfo wird gesetzt.
+    const resetTask = piReportClearsOpenTask(current.task, update.pis_task, current.taskSetAt, current.taskFetchedSetAt);
+    const holdTask = piReportHoldsOpenTask(current.task, update.pis_task, current.taskSetAt, current.taskFetchedSetAt);
     if (resetTask) {
       data.task = 0;
       data.taskSetAt = null;
+    } else if (!holdTask && piOpenTaskNeedsFetchMark(current.task, current.taskSetAt, current.taskFetchedSetAt)) {
+      data.taskFetchedSetAt = current.taskSetAt;
     }
 
     // 1 Write: state-Update, ohne anschliessenden Re-Read. Wir kennen die
     // Felder bereits aus `current` und mergen das ggf. zurueckgesetzte Task.
-    const updated = await db.device.updateMany({
-      where: { id: update.pis_id, type: "RASPBERRY_PI" },
+    // Das Zuruecksetzen gilt nur fuer den gelesenen Auftrag; wurde inzwischen
+    // ein neuer gesetzt, bleibt er stehen und nur lastUpdate/systemInfo wird
+    // geschrieben.
+    let updated = await db.device.updateMany({
+      where: resetTask
+        ? { id: update.pis_id, type: "RASPBERRY_PI", task: 1, taskSetAt: current.taskSetAt }
+        : { id: update.pis_id, type: "RASPBERRY_PI" },
       data,
     });
+    if (updated.count === 0 && resetTask) {
+      delete data.task;
+      delete data.taskSetAt;
+      updated = await db.device.updateMany({
+        where: { id: update.pis_id, type: "RASPBERRY_PI" },
+        data,
+      });
+    }
     if (updated.count === 0) {
       results.push({ pis_id: update.pis_id, updated: false });
       continue;
     }
 
-    const merged: PiStateFields = resetTask ? { ...current, task: 0 } : current;
+    const merged: PiStateFields = resetTask || holdTask ? { ...current, task: 0 } : current;
     results.push({ ...deviceToPiState(merged), updated: true });
   }
 

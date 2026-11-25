@@ -72,6 +72,24 @@ export function blobPathFromUrl(url: string): string | null {
   }
 }
 
+/**
+ * Datei-URL eines neuen Audio-Titels (POST /api/audio/tracks): nur https.
+ * Uploads und gerenderte Ansagen liegen im Blob-Speicher und sind https.
+ * Liefert die getrimmte URL oder einen Fehlertext.
+ */
+export function parseAudioTrackUrl(value: unknown): { url: string } | { error: string } {
+  const url = typeof value === "string" ? value.trim() : "";
+  let parsed: URL | null = null;
+  try {
+    parsed = url ? new URL(url) : null;
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || !/^https?:$/.test(parsed.protocol)) return { error: "Gültige Datei-URL erforderlich" };
+  if (parsed.protocol !== "https:") return { error: "Datei-URL muss mit https:// beginnen" };
+  return { url };
+}
+
 /** Liegt der Pfad im Bereich des Mandanten (Upload oder Ansage)? */
 export function isOwnAudioBlobPath(pathname: string, accountId: number): boolean {
   for (const prefix of [audioUploadPrefix(accountId), ttsBlobPrefix(accountId)]) {

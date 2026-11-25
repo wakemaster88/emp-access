@@ -6,6 +6,7 @@ import {
   audioUploadPath,
   blobPathFromUrl,
   isAllowedAudioUploadPath,
+  parseAudioTrackUrl,
   ttsBlobPath,
 } from "./audio-blob-path";
 
@@ -71,4 +72,14 @@ test("Löschen: eigener Pfad, alter Pfad oder liegen lassen", () => {
     "keep",
   );
   assert.equal(audioBlobDeleteMode({ blobPathname: null, url: `${STORE}/a.mp3` }, 7), "keep");
+});
+
+test("Datei-URL neuer Titel: nur https", () => {
+  assert.deepEqual(parseAudioTrackUrl(`${STORE}/audio/7/Lied-abc.mp3`), { url: `${STORE}/audio/7/Lied-abc.mp3` });
+  assert.deepEqual(parseAudioTrackUrl(`  ${STORE}/audio/tts/7/${HASH}.mp3 `), { url: `${STORE}/audio/tts/7/${HASH}.mp3` });
+  assert.deepEqual(parseAudioTrackUrl("HTTPS://example.com/a.mp3"), { url: "HTTPS://example.com/a.mp3" });
+  assert.deepEqual(parseAudioTrackUrl("http://example.com/a.mp3"), { error: "Datei-URL muss mit https:// beginnen" });
+  for (const bad of ["", "   ", null, undefined, 5, "ftp://example.com/a.mp3", "file:///etc/x", "https://", "Lied.mp3"]) {
+    assert.deepEqual(parseAudioTrackUrl(bad), { error: "Gültige Datei-URL erforderlich" }, String(bad));
+  }
 });

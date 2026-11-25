@@ -6,7 +6,7 @@ import { parseScanLockSeconds } from "@/lib/scan-lock";
 import { withAudioDeviceInfo, AUDIO_ZONE_SELECT } from "@/lib/audio-integration";
 import { withoutDeviceSecrets } from "@/lib/role-guards";
 import { parseDeviceIp } from "@/lib/net-address";
-import { foreignRefError } from "@/lib/tenant-refs";
+import { foreignRefError, parseAreaRefUpdate } from "@/lib/tenant-refs";
 import { hubTaskActor } from "@/lib/hub-task-rules";
 import { recordDeviceAction } from "@/lib/device-action-log";
 
@@ -187,11 +187,18 @@ export async function PUT(
   }
 
   // Zutrittsbereiche muessen zum eigenen Mandanten gehoeren; geprueft werden
-  // nur neu gesetzte IDs.
+  // nur neu gesetzte IDs (auch 0). Ein unveraenderter gespeicherter Wert
+  // bleibt speicherbar, selbst wenn der Bereich nicht mehr existiert.
+  // Gespeichert wird nur die gelesene Zahl, nie der Request-Wert selbst.
+  const accessIn = parseAreaRefUpdate(body.accessIn, existing.accessIn);
+  const accessOut = parseAreaRefUpdate(body.accessOut, existing.accessOut);
+  if (!accessIn.ok || !accessOut.ok) {
+    return NextResponse.json({ error: "Ungültiger Bereich" }, { status: 400 });
+  }
   const refError = await foreignRefError(db, accountId, {
     accessAreaIds: [
-      body.accessIn && body.accessIn !== existing.accessIn ? Number(body.accessIn) : null,
-      body.accessOut && body.accessOut !== existing.accessOut ? Number(body.accessOut) : null,
+      accessIn.changed ? accessIn.value : null,
+      accessOut.changed ? accessOut.value : null,
     ],
   });
   if (refError) return NextResponse.json({ error: refError }, { status: 400 });
@@ -214,8 +221,8 @@ export async function PUT(
       nukiSmartlockId: body.nukiSmartlockId ?? existing.nukiSmartlockId,
       loqedLockId: body.loqedLockId ?? existing.loqedLockId,
       isActive: body.isActive ?? existing.isActive,
-      accessIn: body.accessIn ?? existing.accessIn,
-      accessOut: body.accessOut ?? existing.accessOut,
+      accessIn: accessIn.value,
+      accessOut: accessOut.value,
       allowReentry: body.allowReentry ?? existing.allowReentry,
       scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, existing.scanLockSeconds),
       offlineAlertsEnabled: typeof body.offlineAlertsEnabled === "boolean"
