@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { Button } from "@/components/ui/button";
 import { overlayScrimClass, overlaySheetClass } from "./checkin-ui";
 
@@ -36,29 +37,24 @@ export function TailgateAlertPopup({ token }: { token: string }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-
-    async function poll() {
+  // Pausiert, solange die Seite im Hintergrund ist (dann sieht das Popup
+  // ohnehin niemand); beim Zurueckkommen wird sofort abgefragt.
+  const poll = useCallback(
+    async (alive: () => boolean) => {
       try {
         const res = await fetch(`/api/checkin/public/${token}/alerts`, {
           cache: "no-store",
         });
-        if (!res.ok || !alive) return;
+        if (!res.ok || !alive()) return;
         const data = (await res.json()) as { alerts?: Alert[] };
-        if (alive && Array.isArray(data.alerts)) setAlerts(data.alerts);
+        if (alive() && Array.isArray(data.alerts)) setAlerts(data.alerts);
       } catch {
         /* Netzwerkaussetzer: beim naechsten Durchlauf erneut */
       }
-    }
-
-    void poll();
-    const timer = setInterval(() => void poll(), POLL_MS);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [token]);
+    },
+    [token],
+  );
+  useVisiblePolling(poll, POLL_MS);
 
   const current = alerts[0] ?? null;
 

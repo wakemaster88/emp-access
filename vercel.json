@@ -39,6 +39,14 @@
       "maxDuration": 60,
       "memory": 1024
     },
+    "src/app/api/gamification/backfill/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/gamification/beach-pass/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
     "src/app/api/cron/**/*.ts": {
       "maxDuration": 60,
       "memory": 1024

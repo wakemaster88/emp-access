@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -79,26 +80,22 @@ export function ParkingLot({
     setLive({ cameras, hubOnline, hubName, parking });
   }, [cameras, hubOnline, hubName, parking]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function tick() {
-      try {
-        const res = await fetch("/api/parking");
-        if (!res.ok) return;
-        const data = (await res.json()) as ParkingApi;
-        if (!cancelled) setLive(data);
-      } catch {
-        /* ignore */
-      }
+  // Alle 15 s, pausiert im Hintergrund-Tab (beim Zurückkommen sofort).
+  const tick = useCallback(async (active: () => boolean) => {
+    try {
+      const res = await fetch("/api/parking");
+      if (!res.ok) return;
+      const data = (await res.json()) as ParkingApi;
+      if (active()) setLive(data);
+    } catch {
+      /* ignore */
     }
-    void tick();
-    const t = setInterval(tick, 15_000);
+  }, []);
+  useVisiblePolling(tick, 15_000);
+
+  useEffect(() => {
     const clock = setInterval(() => setNow((n) => n + 1), 10_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-      clearInterval(clock);
-    };
+    return () => clearInterval(clock);
   }, []);
 
   const lots = live.parking?.lots ?? [];

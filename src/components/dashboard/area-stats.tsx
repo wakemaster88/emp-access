@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ArrowLeftRight,
   Ban,
@@ -34,6 +34,7 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { areaSeries } from "@/components/dashboard/area-colors";
 import { AREA_METRIC_LABEL, type AreaMetric } from "@/lib/dashboard-areas";
 import { cn } from "@/lib/utils";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 
 const AREA_STORAGE_KEY = "dashboard:turnstileAreaId";
 /** Ohne gespeicherte Wahl: die Seilbahn (jede Fahrt einzeln, aussagekräftigster Zählpunkt). */
@@ -435,12 +436,12 @@ export function AreaStats({ date }: { date: string }) {
   const [failed, setFailed] = useState(false);
   const [areaId, setAreaId] = useState<number | null>(storedAreaId);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
+  // Jede Minute, pausiert im Hintergrund-Tab (beim Zurückkommen sofort).
+  const load = useCallback(
+    async (active: () => boolean) => {
       try {
         const res = await fetch(`/api/dashboard/areas?date=${date}`);
-        if (cancelled) return;
+        if (!active()) return;
         if (!res.ok) {
           setFailed(true);
           return;
@@ -448,16 +449,12 @@ export function AreaStats({ date }: { date: string }) {
         setData(await res.json());
         setFailed(false);
       } catch {
-        if (!cancelled) setFailed(true);
+        if (active()) setFailed(true);
       }
-    }
-    load();
-    const t = setInterval(load, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [date]);
+    },
+    [date],
+  );
+  useVisiblePolling(load, 60_000);
 
   // Farbe je Bereich nach seiner festen Position in der Antwort.
   const colorIndex = useMemo(() => new Map((data?.areas ?? []).map((a, i) => [a.id, i])), [data]);

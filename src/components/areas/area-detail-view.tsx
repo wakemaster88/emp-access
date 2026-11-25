@@ -2,10 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import {
-  Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
-} from "recharts";
 import {
   ArrowLeft, ArrowLeftRight, Ban, BarChart3, Clock, Cpu, CreditCard, Eye, EyeOff, Layers, Link2,
   LogIn, LogOut, MapPin, Package, Pencil, Plus, Repeat, ScanLine, Ticket, Timer, Users,
@@ -88,15 +86,11 @@ interface Props {
   annyMappings: Record<string, number>;
 }
 
-// Diagramm nur aus Tokens (docs/design-regeln.md, Abschnitt 15), wie die Drehkreuz-Karte im Dashboard.
-const CHART_TOOLTIP_STYLE = {
-  backgroundColor: "var(--popover)",
-  border: "1px solid var(--border)",
-  borderRadius: "12px",
-  fontSize: "12px",
-  color: "var(--popover-foreground)",
-  padding: "6px 10px",
-};
+// recharts erst nachladen; der Platzhalter füllt die feste Diagrammhöhe.
+const AreaScanChart = dynamic(() => import("./area-scan-chart").then((m) => m.AreaScanChart), {
+  ssr: false,
+  loading: () => <div className="glass-tile h-full animate-pulse" />,
+});
 
 const TZ = "Europe/Berlin";
 
@@ -339,25 +333,10 @@ export function AreaDetailView({ data, allAreas, editorDevices, annyResources, a
                   <EmptyState compact title="Heute noch kein Scan an dieser Ressource." />
                 ) : (
                   <div className="h-[200px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={range === "day" ? hourly : data.weekTrend.map((d) => ({ ...d, label: d.dayName }))}
-                        margin={{ top: 5, right: 5, left: -25, bottom: 0 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                        <XAxis
-                          dataKey={range === "day" ? "hour" : "label"}
-                          tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-                          tickLine={false}
-                          axisLine={false}
-                          interval={range === "day" ? 1 : 0}
-                        />
-                        <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} allowDecimals={false} />
-                        <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: "var(--primary)", fillOpacity: 0.08 }} />
-                        <Bar dataKey={range === "day" ? "granted" : "rides"} name="Gültig" stackId="a" fill="var(--success)" isAnimationActive={false} />
-                        <Bar dataKey="denied" name="Abgelehnt" stackId="a" fill="var(--destructive)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <AreaScanChart
+                      range={range}
+                      data={range === "day" ? hourly : data.weekTrend.map((d) => ({ ...d, label: d.dayName }))}
+                    />
                   </div>
                 )}
               </CardContent>

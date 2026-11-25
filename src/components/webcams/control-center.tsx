@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import {
   Gamepad2, DoorOpen, Activity, User, Car, PawPrint, Bell, ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { WebRTCVideo } from "./webrtc-video";
 import { DoorHoldBadge, DoorHoldButton, useNow, type DoorHoldState } from "@/components/cameras/door-hold";
 import { isDoorHoldActive } from "@/lib/door-hold";
@@ -87,32 +88,23 @@ function fmtClock(iso: string): string {
 function useCameraEvents(): Record<number, CameraEventRow[]> {
   const [byCamera, setByCamera] = useState<Record<number, CameraEventRow[]>>({});
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function tick() {
-      try {
-        const res = await fetch("/api/camera-events?minutes=15", { cache: "no-store" });
-        if (!res.ok) return;
-        const events = (await res.json()) as CameraEventRow[];
-        if (cancelled) return;
-        const map: Record<number, CameraEventRow[]> = {};
-        for (const e of events) {
-          (map[e.cameraId] ??= []).push(e);
-        }
-        setByCamera(map);
-      } catch {
-        /* Netzwerkfehler still ignorieren – nächster Poll kommt. */
+  // Alle 15 s, pausiert im Hintergrund-Tab (beim Zurückkommen sofort).
+  const tick = useCallback(async (active: () => boolean) => {
+    try {
+      const res = await fetch("/api/camera-events?minutes=15", { cache: "no-store" });
+      if (!res.ok) return;
+      const events = (await res.json()) as CameraEventRow[];
+      if (!active()) return;
+      const map: Record<number, CameraEventRow[]> = {};
+      for (const e of events) {
+        (map[e.cameraId] ??= []).push(e);
       }
+      setByCamera(map);
+    } catch {
+      /* Netzwerkfehler still ignorieren – nächster Poll kommt. */
     }
-
-    tick();
-    const t = setInterval(tick, 15_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
   }, []);
+  useVisiblePolling(tick, 15_000);
 
   return byCamera;
 }
@@ -171,54 +163,50 @@ export interface ScanOverlayRow {
  */
 function useScanOverlays(): Record<number, ScanOverlayRow> {
   const [byCamera, setByCamera] = useState<Record<number, ScanOverlayRow>>({});
+  const rows = useRef<ScanOverlayRow[]>([]);
 
-  useEffect(() => {
-    let cancelled = false;
-    let rows: ScanOverlayRow[] = [];
-    let tickCount = 0;
-
-    function recompute() {
-      const cutoff = Date.now() - SCAN_OVERLAY_MS;
-      const map: Record<number, ScanOverlayRow> = {};
-      for (const r of rows) {
-        // Liste kommt absteigend sortiert – erster Treffer je Kamera ist der juengste.
-        if (new Date(r.scanTime).getTime() >= cutoff && !(r.cameraId in map)) {
-          map[r.cameraId] = r;
-        }
+  const recompute = useCallback(() => {
+    const cutoff = Date.now() - SCAN_OVERLAY_MS;
+    const map: Record<number, ScanOverlayRow> = {};
+    for (const r of rows.current) {
+      // Liste kommt absteigend sortiert – erster Treffer je Kamera ist der juengste.
+      if (new Date(r.scanTime).getTime() >= cutoff && !(r.cameraId in map)) {
+        map[r.cameraId] = r;
       }
-      setByCamera((prev) => {
-        const prevKeys = Object.keys(prev);
-        const nextKeys = Object.keys(map);
-        const unchanged =
-          prevKeys.length === nextKeys.length &&
-          nextKeys.every((k) => prev[Number(k)]?.id === map[Number(k)].id);
-        return unchanged ? prev : map;
-      });
     }
+    setByCamera((prev) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(map);
+      const unchanged =
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((k) => prev[Number(k)]?.id === map[Number(k)].id);
+      return unchanged ? prev : map;
+    });
+  }, []);
 
-    async function fetchScans() {
+  // Abruf alle 10 s, pausiert im Hintergrund-Tab (beim Zurückkommen sofort).
+  const fetchScans = useCallback(
+    async (active: () => boolean) => {
       try {
         const res = await fetch("/api/scans/recent?seconds=30", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as ScanOverlayRow[];
-        if (!cancelled) rows = data;
+        if (!active()) return;
+        rows.current = data;
+        recompute();
       } catch {
         /* Netzwerkfehler still ignorieren – nächster Poll kommt. */
       }
-    }
+    },
+    [recompute],
+  );
+  useVisiblePolling(fetchScans, 10_000);
 
-    fetchScans().then(recompute);
-    const t = setInterval(async () => {
-      tickCount += 1;
-      if (tickCount % 10 === 0) await fetchScans();
-      if (!cancelled) recompute();
-    }, 1_000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
+  // Ausblenden im Sekundentakt, ohne Netzwerk.
+  useEffect(() => {
+    const t = setInterval(recompute, 1_000);
+    return () => clearInterval(t);
+  }, [recompute]);
 
   return byCamera;
 }
@@ -385,31 +373,21 @@ function useDoorHolds(
   const [byCamera, setByCamera] = useState<Record<number, DoorHoldState>>({});
   const hasDoorbird = cameras.some((c) => c.kind === "DOORBIRD");
 
-  useEffect(() => {
-    if (!hasDoorbird) return;
-    let cancelled = false;
-
-    async function tick() {
-      try {
-        const res = await fetch("/api/cameras/door-holds", { cache: "no-store" });
-        if (!res.ok) return;
-        const rows = (await res.json()) as Array<DoorHoldState & { cameraId: number }>;
-        if (cancelled) return;
-        const map: Record<number, DoorHoldState> = {};
-        for (const r of rows) map[r.cameraId] = { until: r.until, pulseAt: r.pulseAt, error: r.error };
-        setByCamera(map);
-      } catch {
-        /* Netzwerkfehler still ignorieren – nächster Poll kommt. */
-      }
+  // Alle 10 s, pausiert im Hintergrund-Tab (beim Zurückkommen sofort).
+  const tick = useCallback(async (active: () => boolean) => {
+    try {
+      const res = await fetch("/api/cameras/door-holds", { cache: "no-store" });
+      if (!res.ok) return;
+      const rows = (await res.json()) as Array<DoorHoldState & { cameraId: number }>;
+      if (!active()) return;
+      const map: Record<number, DoorHoldState> = {};
+      for (const r of rows) map[r.cameraId] = { until: r.until, pulseAt: r.pulseAt, error: r.error };
+      setByCamera(map);
+    } catch {
+      /* Netzwerkfehler still ignorieren – nächster Poll kommt. */
     }
-
-    tick();
-    const t = setInterval(tick, 10_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [hasDoorbird]);
+  }, []);
+  useVisiblePolling(tick, hasDoorbird ? 10_000 : null);
 
   const setHold = useCallback((cameraId: number, hold: DoorHoldState) => {
     setByCamera((prev) => ({ ...prev, [cameraId]: hold }));

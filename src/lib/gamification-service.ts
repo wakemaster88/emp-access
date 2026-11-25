@@ -11,6 +11,7 @@ import { runChallenges } from "./challenge-service";
 import { notifyAward } from "./rider-push";
 import { grantSkill } from "./rider-skills";
 import { beachEntranceIds } from "./beach-occupancy";
+import { startScanSql } from "./gamification-sql";
 import { audiencesFor, beachOnlySubscriptionIds, isBeachSubscription, passKindOf } from "./rider-pass";
 import {
   aggregateScans,
@@ -606,30 +607,23 @@ export async function backfillYear(
   const from = new Date(`${year}-01-01T00:00:00+01:00`);
   const to = new Date(`${year + 1}-01-01T00:00:00+01:00`);
 
-  const scans: Array<{ ticketId: number; scanTime: Date }> = [];
-  if (startWhere && subscriptionIds.length > 0) {
-    const PAGE = 5000;
-    let cursor = 0;
-    for (;;) {
-      const page = await db.scan.findMany({
-        where: {
-          accountId,
-          id: { gt: cursor },
-          result: "GRANTED",
-          AND: [startWhere],
-          scanTime: { gte: from, lt: to },
-          ticket: { subscriptionId: { in: subscriptionIds } },
-        },
-        select: { id: true, ticketId: true, scanTime: true },
-        orderBy: { id: "asc" },
-        take: PAGE,
-      });
-      for (const s of page) {
-        if (s.ticketId != null) scans.push({ ticketId: s.ticketId, scanTime: s.scanTime });
-      }
-      if (page.length < PAGE) break;
-      cursor = page[page.length - 1].id;
-    }
+  // Gezählt wird in der Datenbank (je Ticket und Berliner Kalendertag), statt
+  // jeden Scan des Jahres in die Function zu laden. Gleiche Bedingungen wie
+  // `startScanWhere` bzw. der Strandbad-Eingang, gleiche Tagesgrenze wie
+  // `berlinYmd`.
+  const parts: Prisma.Sql[] = [];
+  const startSql = startScanSql(startWhere);
+  if (startSql && subscriptionIds.length > 0) {
+    parts.push(Prisma.sql`
+      SELECT s."ticketId", s."scanTime"
+      FROM "Scan" s
+      JOIN "Ticket" t ON t."id" = s."ticketId"
+      WHERE s."accountId" = ${accountId}
+        AND s."result" = 'GRANTED'
+        AND (${startSql})
+        AND s."scanTime" >= ${from} AND s."scanTime" < ${to}
+        AND t."subscriptionId" IN (${Prisma.join(subscriptionIds)})
+    `);
   }
 
   // Beach Pass: Eintritte am Strandbad-Eingang mit einem Strandbad-Abo.
@@ -638,31 +632,40 @@ export async function backfillYear(
     : [];
   const entrances = beachSubs.length > 0 ? await beachEntranceIds(accountId) : [];
   if (beachSubs.length > 0 && entrances.length > 0) {
-    const PAGE = 5000;
-    let cursor = 0;
-    for (;;) {
-      const page = await db.scan.findMany({
-        where: {
-          accountId,
-          id: { gt: cursor },
-          result: "GRANTED",
-          deviceId: { in: entrances },
-          scanTime: { gte: from, lt: to },
-          ticket: { subscriptionId: { in: beachSubs } },
-        },
-        select: { id: true, ticketId: true, scanTime: true },
-        orderBy: { id: "asc" },
-        take: PAGE,
-      });
-      for (const s of page) {
-        if (s.ticketId != null) scans.push({ ticketId: s.ticketId, scanTime: s.scanTime });
-      }
-      if (page.length < PAGE) break;
-      cursor = page[page.length - 1].id;
-    }
+    parts.push(Prisma.sql`
+      SELECT s."ticketId", s."scanTime"
+      FROM "Scan" s
+      JOIN "Ticket" t ON t."id" = s."ticketId"
+      WHERE s."accountId" = ${accountId}
+        AND s."result" = 'GRANTED'
+        AND s."deviceId" IN (${Prisma.join(entrances)})
+        AND s."scanTime" >= ${from} AND s."scanTime" < ${to}
+        AND t."subscriptionId" IN (${Prisma.join(beachSubs)})
+    `);
   }
 
-  const rows = aggregateScans(scans);
+  const grouped =
+    parts.length === 0
+      ? []
+      : await db.$queryRaw<Array<{ ticketId: number; day: string; starts: number; firstStartAt: Date; lastStartAt: Date }>>`
+          SELECT
+            x."ticketId",
+            to_char((x."scanTime" AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Berlin', 'YYYY-MM-DD') AS "day",
+            COUNT(*)::int AS "starts",
+            MIN(x."scanTime") AS "firstStartAt",
+            MAX(x."scanTime") AS "lastStartAt"
+          FROM (${Prisma.join(parts, " UNION ALL ")}) x
+          GROUP BY 1, 2
+        `;
+  const rows = grouped.map((r) => ({
+    ticketId: Number(r.ticketId),
+    day: r.day,
+    starts: Number(r.starts),
+    firstStartAt: r.firstStartAt,
+    lastStartAt: r.lastStartAt,
+  }));
+  const scanCount = rows.reduce((sum, r) => sum + r.starts, 0);
+
   const range = { gte: ymdToDbDate(`${year}-01-01`), lte: ymdToDbDate(`${year}-12-31`) };
   await db.$transaction([
     db.riderDayStat.deleteMany({ where: { accountId, day: range } }),
@@ -678,7 +681,7 @@ export async function backfillYear(
     }),
   ]);
 
-  return { scans: scans.length, days: rows.length, tickets: new Set(rows.map((r) => r.ticketId)).size };
+  return { scans: scanCount, days: rows.length, tickets: new Set(rows.map((r) => r.ticketId)).size };
 }
 
 /**

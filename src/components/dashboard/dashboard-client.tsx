@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import dynamic from "next/dynamic";
 import { setAppBadge } from "@/lib/app-badge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,12 +33,26 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { OpsCard, type DashboardOps } from "@/components/dashboard/ops-strip";
 import { LiveSection, type DashboardLive, fmtHm } from "@/components/dashboard/live-section";
 import { TrackingSection } from "@/components/dashboard/tracking-section";
-import { AreaStats } from "@/components/dashboard/area-stats";
+
+// Die Bereichs-Auswertung bringt recharts mit: erst nachladen, wenn sie
+// gezeigt wird. Der Platzhalter ist derselbe wie ihr eigener Ladezustand.
+const AreaStats = dynamic(() => import("@/components/dashboard/area-stats").then((m) => m.AreaStats), {
+  ssr: false,
+  loading: () => (
+    <Card>
+      <CardContent className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        Lädt …
+      </CardContent>
+    </Card>
+  ),
+});
 
 interface TicketEntry {
   id: number;
@@ -531,11 +546,11 @@ export function DashboardClient() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isToday(date)) return;
-    const t = setInterval(() => { fetchData(date, { quiet: true }); }, 60_000);
-    return () => clearInterval(t);
-  }, [date, fetchData]);
+  // Tagesdaten von heute jede Minute nachladen; pausiert im Hintergrund-Tab
+  // und lädt beim Zurückkommen sofort (der erste Abruf kommt oben).
+  const pollToday = useMemo(() => isToday(date), [date]);
+  const refreshToday = useCallback(() => fetchData(date, { quiet: true }), [date, fetchData]);
+  useVisiblePolling(refreshToday, pollToday ? 60_000 : null, { runOnStart: false });
 
   function ensureTicketOptions() {
     if (areas.length > 0 || subs.length > 0 || svcs.length > 0 || vereine.length > 0) return;
