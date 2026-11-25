@@ -10,13 +10,20 @@ const patchSchema = z
   .object({
     /** Neuen zufälligen Token erzeugen (empfohlen) */
     regenerate: z.boolean().optional(),
-    /** Eigenen Token setzen (min. 16 Zeichen) */
+    /**
+     * Eigenen Token setzen: neu gewählte Werte mit mindestens
+     * `MIN_CUSTOM_TOKEN_LENGTH` Zeichen; der bisherige Token darf unverändert
+     * gespeichert werden, auch wenn er kürzer ist (Prüfung im Handler).
+     */
     apiToken: z.string().min(16).max(256).optional(),
   })
   .refine((d) => d.regenerate === true || (d.apiToken != null && d.apiToken.trim().length >= 16), {
-    message: "Entweder regenerate: true oder apiToken (min. 16 Zeichen) angeben",
+    message: "Entweder regenerate: true oder apiToken (min. 32 Zeichen) angeben",
     path: ["apiToken"],
   });
+
+/** Mindestlänge für einen neu gewählten eigenen Token (erzeugte haben 64 Zeichen). */
+const MIN_CUSTOM_TOKEN_LENGTH = 32;
 
 export async function PATCH(request: NextRequest) {
   const session = await safeAuth();
@@ -46,6 +53,17 @@ export async function PATCH(request: NextRequest) {
     parsed.data.regenerate === true
       ? randomBytes(32).toString("hex")
       : parsed.data.apiToken!.trim();
+
+  if (parsed.data.regenerate !== true && newToken.length < MIN_CUSTOM_TOKEN_LENGTH) {
+    // Kürzere Tokens gelten weiter; nur ein neuer Wert braucht die Mindestlänge.
+    const current = await db.account.findUnique({ where: { id: accountId }, select: { apiToken: true } });
+    if (current?.apiToken !== newToken) {
+      return NextResponse.json(
+        { error: `Ein eigener Token braucht mindestens ${MIN_CUSTOM_TOKEN_LENGTH} Zeichen – oder „Neu generieren“ verwenden.` },
+        { status: 400 },
+      );
+    }
+  }
 
   try {
     const account = await db.account.update({

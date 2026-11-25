@@ -4,10 +4,23 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { adminRoleRequired } from "@/lib/api-auth";
 import { z } from "zod";
+import {
+  MASK_EDIT_ERROR,
+  hasEditedMaskInExtraConfig,
+  isEditedMask,
+  keepStoredIfMasked,
+  maskApiConfig,
+  restoreMaskedExtraConfig,
+} from "@/lib/secret-mask";
+
+/** Anbieter, bei denen das Token optional ist; ein leeres Feld entfernt es dort wie bisher. */
+const TOKEN_OPTIONAL = new Set(["WAKESYS", "EMP_CONTROL"]);
+
+const providerSchema = z.enum(["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED"]);
 
 const schema = z
   .object({
-    provider: z.enum(["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED"]),
+    provider: providerSchema,
     token: z.string(),
     eventId: z.string().optional().nullable(),
     baseUrl: z.string().url().optional().nullable().or(z.literal("")),
@@ -89,12 +102,16 @@ export async function GET(req: NextRequest) {
   if (denied) return denied;
 
   const db = tenantClient(session.user.accountId!);
+  // Nur die Anbieter der Integrationskarten; SHELLY und GARDENA haben eigene
+  // Einstellungen und Routen.
   const configs = await db.apiConfig.findMany({
-    where: { accountId: session.user.accountId! },
+    where: { accountId: session.user.accountId!, provider: { in: providerSchema.options } },
     orderBy: { provider: "asc" },
   });
 
-  return NextResponse.json(configs);
+  // Token und Geheimnisse gehen nur maskiert an den Browser; das Webhook-
+  // Geheimnis liefert bei Bedarf ./reveal.
+  return NextResponse.json(configs.map(maskApiConfig));
 }
 
 export async function POST(req: NextRequest) {
@@ -105,10 +122,36 @@ export async function POST(req: NextRequest) {
   if (denied) return denied;
 
   const body = await req.json();
+  const db = tenantClient(session.user.accountId!);
+
+  // Maskierte Werte (und beim Pflicht-Token ein leeres Feld) heißen
+  // „unverändert“: gespeicherte Werte wieder einsetzen, bevor geprüft wird.
+  const provider = providerSchema.safeParse(body?.provider);
+  const existing = provider.success
+    ? await db.apiConfig.findFirst({ where: { accountId: session.user.accountId!, provider: provider.data } })
+    : null;
+  if (
+    body && typeof body === "object" &&
+    (isEditedMask(body.token, existing?.token) ||
+      (typeof body.extraConfig === "string" && hasEditedMaskInExtraConfig(body.extraConfig, existing?.extraConfig)))
+  ) {
+    return NextResponse.json({ error: MASK_EDIT_ERROR }, { status: 400 });
+  }
+  if (existing && body && typeof body === "object") {
+    if (typeof body.token === "string") {
+      body.token = keepStoredIfMasked(body.token, existing.token);
+      if (!body.token.trim() && !TOKEN_OPTIONAL.has(existing.provider)) body.token = existing.token;
+    }
+    if (typeof body.extraConfig === "string") {
+      body.extraConfig = restoreMaskedExtraConfig(body.extraConfig, existing.extraConfig);
+    }
+  } else if (body && typeof body === "object" && typeof body.token === "string") {
+    // Ohne gespeicherten Datensatz gibt es nichts einzusetzen.
+    body.token = keepStoredIfMasked(body.token, "");
+  }
+
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-
-  const db = tenantClient(session.user.accountId!);
 
   const extraConfig = await prepareExtraConfig(
     db,
@@ -116,10 +159,6 @@ export async function POST(req: NextRequest) {
     parsed.data.provider,
     parsed.data.extraConfig ?? null,
   );
-
-  const existing = await db.apiConfig.findFirst({
-    where: { accountId: session.user.accountId!, provider: parsed.data.provider },
-  });
 
   if (existing) {
     const updated = await db.apiConfig.update({
@@ -132,7 +171,7 @@ export async function POST(req: NextRequest) {
         lastUpdate: new Date(),
       },
     });
-    return NextResponse.json(updated);
+    return NextResponse.json(maskApiConfig(updated));
   }
 
   const config = await db.apiConfig.create({
@@ -146,7 +185,7 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json(config, { status: 201 });
+  return NextResponse.json(maskApiConfig(config), { status: 201 });
 }
 
 export async function DELETE(req: NextRequest) {

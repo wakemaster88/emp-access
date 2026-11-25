@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, isTenantAdminRole } from "@/lib/api-auth";
 import { emailConfigUpdateSchema } from "@/lib/validators";
+import { maskSecret } from "@/lib/secret-mask";
 
 export async function GET() {
   const session = await getSessionWithDb();
@@ -14,10 +15,10 @@ export async function GET() {
     return NextResponse.json({ config: null });
   }
 
-  // API-Key beim Lesen maskieren – nur erste 6 Zeichen + Länge, und das
+  // API-Key beim Lesen maskieren („••••“ plus die letzten 4 Zeichen), und das
   // nur fuer Verwaltungs-Rollen; USER erfaehrt nur, ob einer hinterlegt ist.
   const apiKeyMasked = config.apiKey && isTenantAdminRole(session.session.user.role)
-    ? `${config.apiKey.slice(0, 6)}${"•".repeat(Math.max(0, config.apiKey.length - 6))}`
+    ? maskSecret(config.apiKey)
     : null;
 
   return NextResponse.json({
@@ -85,7 +86,7 @@ export async function PUT(request: NextRequest) {
   return NextResponse.json({
     config: {
       ...config,
-      apiKey: config.apiKey ? `${config.apiKey.slice(0, 6)}${"•".repeat(Math.max(0, config.apiKey.length - 6))}` : null,
+      apiKey: config.apiKey ? maskSecret(config.apiKey) : null,
       hasApiKey: !!config.apiKey,
     },
   });

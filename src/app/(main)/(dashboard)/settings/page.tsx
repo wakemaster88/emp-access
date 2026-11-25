@@ -19,6 +19,7 @@ import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { DataRetentionCard } from "@/components/settings/data-retention-card";
 import { parseDataRetention } from "@/lib/data-retention";
 import { isTenantAdminRole } from "@/lib/api-auth";
+import { maskApiConfig, maskSecret } from "@/lib/secret-mask";
 import { RepoAccessCard, type RepoAccessEntry } from "@/components/settings/repo-access-card";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED"] as const;
@@ -122,8 +123,9 @@ export default async function SettingsPage() {
       deviceCount: gardenaDevices.filter((d) => d.gardenaConfigId === c.id).length,
     }));
 
+  // Token und Geheimnisse nur maskiert an die Client-Komponenten.
   const configByProvider = Object.fromEntries(
-    apiConfigs.map((c) => [c.provider, c])
+    apiConfigs.map((c) => [c.provider, maskApiConfig(c)])
   );
 
   return (
@@ -197,7 +199,7 @@ export default async function SettingsPage() {
           <SectionHeading icon={Wifi} title="Shelly Cloud" aside={shellyConfig && ( <Badge variant="secondary" className="tabular-nums"> {existingShellyIds.length} Gerät{existingShellyIds.length !== 1 ? "e" : ""} importiert </Badge> )} />
           <ShellyCloudCard
             savedServer={shellyConfig?.baseUrl ?? null}
-            savedAuthKey={shellyConfig?.token ?? null}
+            savedAuthKey={shellyConfig?.token ? maskSecret(shellyConfig.token) : null}
             existingDeviceIds={existingShellyIds}
           />
         </section>

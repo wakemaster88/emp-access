@@ -210,7 +210,7 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="custom-api-token">
-              Eigenen Token speichern (min. 16 Zeichen)
+              Eigenen Token speichern (min. 32 Zeichen)
             </Label>
             <div className="flex flex-col sm:flex-row gap-2">
               <Input
@@ -225,7 +225,8 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
                 type="button"
                 size="sm"
                 className="h-9 shrink-0 max-sm:h-11"
-                disabled={busy || customToken.trim().length < 16}
+                // Neue Werte ab 32 Zeichen; der bisherige (ggf. kürzere) Token lässt sich unverändert speichern.
+                disabled={busy || (customToken.trim().length < 32 && customToken.trim() !== displayToken)}
                 onClick={() => askTokenChange({ apiToken: customToken.trim() })}
               >
                 <Save className="h-3.5 w-3.5" />

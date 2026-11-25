@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { isIpv4 } from "@/lib/net-address";
+import { MASK_EDIT_ERROR, SECRET_MASK, isEditedMask, isMaskedSecret, maskApiConfig } from "@/lib/secret-mask";
+import { withoutDeviceSecrets } from "@/lib/role-guards";
 
 // Fetch Shelly device list using saved credentials (no key required in request)
 export async function GET() {
@@ -68,7 +70,20 @@ export async function POST(request: NextRequest) {
   if ("error" in session) return session.error;
 
   const body = await request.json();
-  const { server, authKey } = body as { server: string; authKey: string };
+  const { server } = body as { server: string; authKey: string };
+  let { authKey } = body as { server: string; authKey: string };
+
+  // Die Einstellungsseite kennt den gespeicherten Key nur maskiert: dann den gespeicherten testen.
+  if (typeof authKey === "string" && authKey.includes(SECRET_MASK)) {
+    const saved = await session.db.apiConfig.findFirst({
+      where: { accountId: session.accountId!, provider: "SHELLY" },
+      select: { token: true },
+    });
+    if (isEditedMask(authKey, saved?.token)) {
+      return NextResponse.json({ error: MASK_EDIT_ERROR }, { status: 400 });
+    }
+    authKey = saved?.token ?? "";
+  }
 
   if (!server || !authKey) {
     return NextResponse.json({ error: "Server und Auth Key erforderlich" }, { status: 400 });
@@ -154,7 +169,8 @@ export async function PUT(request: NextRequest) {
   if ("error" in session) return session.error;
 
   const body = await request.json();
-  const { server, authKey } = body as { server: string; authKey: string };
+  const { server } = body as { server: string; authKey: string };
+  let { authKey } = body as { server: string; authKey: string };
 
   const { db, accountId } = session;
 
@@ -162,12 +178,18 @@ export async function PUT(request: NextRequest) {
     where: { accountId: accountId!, provider: "SHELLY" },
   });
 
+  // Maskierter Key = unverändert lassen; in die Maske getippt = ablehnen.
+  if (isEditedMask(authKey, existing?.token)) {
+    return NextResponse.json({ error: MASK_EDIT_ERROR }, { status: 400 });
+  }
+  if (isMaskedSecret(authKey)) authKey = existing?.token ?? "";
+
   if (existing) {
     const updated = await db.apiConfig.update({
       where: { id: existing.id },
       data: { token: authKey, baseUrl: server, lastUpdate: new Date() },
     });
-    return NextResponse.json(updated);
+    return NextResponse.json(maskApiConfig(updated));
   }
 
   const config = await db.apiConfig.create({
@@ -178,7 +200,7 @@ export async function PUT(request: NextRequest) {
       baseUrl: server,
     },
   });
-  return NextResponse.json(config);
+  return NextResponse.json(maskApiConfig(config));
 }
 
 // Import a single Shelly Cloud device OR sync names of all imported devices
@@ -295,7 +317,8 @@ export async function PATCH(request: NextRequest) {
     });
   }
 
-  return NextResponse.json(device, { status: existing ? 200 : 201 });
+  // Ohne Shelly-Key und Geräte-Token: die Karte liest die Antwort nicht.
+  return NextResponse.json(withoutDeviceSecrets(device), { status: existing ? 200 : 201 });
 }
 
 // Delete Shelly Cloud config
