@@ -27,8 +27,18 @@ export const LIVE_SEND_INTERVAL_MS = 400;
  */
 export const LIVE_MAX_BACKLOG_MS = 4_000;
 
-/** Obergrenze für ein einzelnes Stück (8 s Ton). */
-export const LIVE_MAX_CHUNK_BYTES = 8 * LIVE_BYTES_PER_SECOND;
+/**
+ * Obergrenze für ein einzelnes Stück. Im Normalfall schickt der Browser 400 ms;
+ * nach einem Netzaussetzer geht der ganze Stau (bis LIVE_MAX_BACKLOG_MS) als
+ * ein Stück raus. Dazu eine Sekunde Spielraum: 5 s Ton.
+ */
+export const LIVE_MAX_CHUNK_BYTES = (LIVE_MAX_BACKLOG_MS / 1000 + 1) * LIVE_BYTES_PER_SECOND;
+
+/**
+ * So weit darf eine Stück-Nummer der höchsten bisher empfangenen vorauslaufen.
+ * Der Browser zählt lückenlos hoch und wiederholt nur die letzte Nummer.
+ */
+export const LIVE_MAX_SEQ_AHEAD = 50;
 
 /**
  * Kommt so lange kein Ton mehr an, gilt die Sitzung als beendet: der Tab wurde
@@ -41,6 +51,19 @@ export const LIVE_STALE_AFTER_MS = 15_000;
 export const LIVE_KEEP_CHUNKS = 50;
 
 export type LiveSessionState = "LIVE" | "ENDED";
+
+/** Darf ein Stück mit dieser Nummer angenommen werden? */
+export function isLiveSeqAcceptable(seq: number, lastSeq: number): boolean {
+  return Number.isInteger(seq) && seq >= 1 && seq <= lastSeq + LIVE_MAX_SEQ_AHEAD;
+}
+
+/**
+ * Bis zu dieser Nummer (einschließlich) kann Ton weg: so alte Stücke holt kein
+ * Pi mehr. 0 heißt, es gibt noch nichts wegzuräumen.
+ */
+export function liveTrimThroughSeq(lastSeq: number): number {
+  return Math.max(0, lastSeq - LIVE_KEEP_CHUNKS);
+}
 
 /** Läuft die Sitzung noch? Beendet ist sie ausdrücklich oder durch Schweigen. */
 export function isLiveSessionOpen(

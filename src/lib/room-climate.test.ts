@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { climateDecision, climateTarget, inAfterrun, statusUpdatedAt, ventDecision } from "./room-climate";
+import { climateDecision, climateSwitchError, climateTarget, inAfterrun, statusUpdatedAt, ventDecision } from "./room-climate";
 import type { ScheduleSpec } from "./operating-hours";
 
 const base = { fresh: true, targetC: 21, hysteresisC: 0.5, heating: false as boolean | null };
@@ -127,4 +127,25 @@ test("Uebersteuern mit Ablauf geht vor dem Plan und laeuft ab", () => {
   const after = climateTarget(climate, schedule, new Date("2026-11-04T08:20:00Z"), tz);
   assert.equal(after.targetC, 16);
   assert.equal(after.override, false);
+});
+
+test("Klima-Schalter: neu zugeordnet nur Kategorie Schalter, Gespeichertes bleibt gültig", () => {
+  const devices = [
+    { id: 1, category: "SCHALTER" },
+    { id: 2, category: null },
+    { id: 3, category: "TUER" },
+    { id: 4, category: "MARKISE" },
+  ];
+  assert.equal(climateSwitchError([1], [], devices, null), null);
+  assert.match(climateSwitchError([2], [], devices, null) ?? "", /nur Schalter/);
+  assert.match(climateSwitchError([], [3], devices, null) ?? "", /nur Schalter/);
+  // Unverändert gespeicherte Zuordnung speichert weiter.
+  const stored = { heaterDeviceIds: [2], fanDeviceIds: [3] };
+  assert.equal(climateSwitchError([2, 1], [3], devices, stored), null);
+  // Rolle gewechselt zählt als neu.
+  assert.match(climateSwitchError([3], [2], devices, stored) ?? "", /nur Schalter/);
+  // Antriebe und Fühler nie, auch wenn gespeichert.
+  assert.match(climateSwitchError([4], [], devices, { heaterDeviceIds: [4], fanDeviceIds: [] }) ?? "", /nur Schalter/);
+  // Fremdes oder unbekanntes Gerät.
+  assert.match(climateSwitchError([9], [], devices, null) ?? "", /nicht gefunden/);
 });

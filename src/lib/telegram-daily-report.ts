@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { escapeTelegramHtml, truncateTelegramLines } from "@/lib/telegram-text";
+import { capTelegramList, escapeTelegramHtml, truncateTelegramLines } from "@/lib/telegram-text";
 
 function berlinNow() {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
@@ -378,10 +378,11 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
       entry.names.push(bookingPersonName(t));
       byKey.set(key, entry);
     }
-    return Array.from(byKey.values())
-      .sort((a, b) => a.time.localeCompare(b.time) || a.label.localeCompare(b.label))
-      .map((e) => `  • <b>${escapeTelegramHtml(e.time)}</b> ${escapeTelegramHtml(e.label)}: <b>${e.count}</b>`)
-      .join("\n");
+    return capTelegramList(
+      Array.from(byKey.values())
+        .sort((a, b) => a.time.localeCompare(b.time) || a.label.localeCompare(b.label))
+        .map((e) => `  • <b>${escapeTelegramHtml(e.time)}</b> ${escapeTelegramHtml(e.label)}: <b>${e.count}</b>`),
+    ).join("\n");
   }
 
   function fmtUnslotted(tickets: BookingTicket[]): string {
@@ -390,10 +391,11 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
       const label = bookingLabel(t);
       counts.set(label, (counts.get(label) ?? 0) + 1);
     }
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([label, count]) => `  • ${escapeTelegramHtml(label)}: <b>${count}</b>`)
-      .join("\n");
+    return capTelegramList(
+      Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, count]) => `  • ${escapeTelegramHtml(label)}: <b>${count}</b>`),
+    ).join("\n");
   }
 
   const dateStr = now.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -450,11 +452,12 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
   const todayAbos = bookingsToday.filter((t) => t.subscriptionId);
   msg += `<b>📋 Neue Abos heute</b> (${todayAbos.length})\n`;
   if (todayAbos.length > 0) {
-    for (const t of todayAbos) {
+    const lines = todayAbos.map((t) => {
       const personName = [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
       const aboName = t.subscription?.name ?? t.ticketTypeName ?? "Abo";
-      msg += `  • ${escapeTelegramHtml(personName)} (${escapeTelegramHtml(aboName)})\n`;
-    }
+      return `  • ${escapeTelegramHtml(personName)} (${escapeTelegramHtml(aboName)})`;
+    });
+    msg += capTelegramList(lines).join("\n") + "\n";
   } else {
     msg += `  • Keine\n`;
   }
@@ -483,13 +486,14 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
 
   if (expiringAbos.length > 0) {
     msg += `<b>⚠️ Ablaufende Abos (7 Tage)</b>\n`;
-    for (const t of expiringAbos) {
+    const lines = expiringAbos.map((t) => {
       const personName = [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
       const endStr = t.endDate
         ? new Date(t.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
         : "";
-      msg += `  • ${escapeTelegramHtml(personName)}${t.ticketTypeName ? ` (${escapeTelegramHtml(t.ticketTypeName)})` : ""} – ${endStr}\n`;
-    }
+      return `  • ${escapeTelegramHtml(personName)}${t.ticketTypeName ? ` (${escapeTelegramHtml(t.ticketTypeName)})` : ""} – ${endStr}`;
+    });
+    msg += capTelegramList(lines).join("\n") + "\n";
     msg += `\n`;
   }
 

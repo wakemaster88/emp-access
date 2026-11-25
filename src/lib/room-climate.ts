@@ -49,6 +49,36 @@ export const WATCHDOG_SEC = 15 * 60;
 /** Ab diesem Alter gilt ein Messwert als veraltet. */
 export const STALE_READING_MIN = 120;
 /** Grenzen fuer Eingaben. */
+/**
+ * Prüft die Schalter für Heizung und Lüftung eines Klimas. `devices` sind die
+ * gewählten Shelly-Geräte des Mandanten. Neu zugeordnete oder in die andere
+ * Rolle verschobene Geräte müssen Schalter (SCHALTER) sein; was schon so
+ * gespeichert ist, bleibt erlaubt, solange es kein Antrieb oder Fühler ist.
+ * Liefert die Fehlermeldung oder null.
+ */
+export function climateSwitchError(
+  heaterIds: number[],
+  fanIds: number[],
+  devices: { id: number; category: string | null }[],
+  stored: { heaterDeviceIds: number[]; fanDeviceIds: number[] } | null,
+): string | null {
+  const byId = new Map(devices.map((d) => [d.id, d.category]));
+  const check = (ids: number[], kept: number[]): string | null => {
+    for (const id of ids) {
+      if (!byId.has(id)) return "Heizung oder Lüftung nicht gefunden (nur Shelly-Schalter)";
+      const category = byId.get(id) ?? null;
+      if (category === "MARKISE" || category === "ROLLTOR" || category === "SENSOR") {
+        return "Für Heizung und Lüftung nur Schalter wählen";
+      }
+      if (!kept.includes(id) && category !== "SCHALTER") {
+        return "Für Heizung und Lüftung nur Schalter wählen (Gerätekategorie „Schalter“)";
+      }
+    }
+    return null;
+  };
+  return check(heaterIds, stored?.heaterDeviceIds ?? []) ?? check(fanIds, stored?.fanDeviceIds ?? []);
+}
+
 export const CLIMATE_LIMITS = {
   minC: 5,
   maxC: 30,

@@ -136,6 +136,7 @@ export default async function AudioPage({
       <Header title="Audio" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         <AudioClient
+          accountId={accountId}
           initialTab={tab}
           initialContentTab={bereich}
           zones={zones.map((z) => ({

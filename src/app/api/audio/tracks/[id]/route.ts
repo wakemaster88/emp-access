@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { audioBlobDeleteMode } from "@/lib/audio-blob-path";
+import { prisma } from "@/lib/prisma";
 
 export async function PUT(
   request: NextRequest,
@@ -50,7 +52,7 @@ export async function DELETE(
 
   const existing = await db.audioTrack.findFirst({
     where: { id: trackId, accountId: accountId! },
-    select: { id: true, blobPathname: true },
+    select: { id: true, blobPathname: true, url: true },
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
@@ -58,10 +60,19 @@ export async function DELETE(
 
   // Datei im Storage aufräumen. Schlägt das fehl, bleibt nur eine verwaiste
   // Datei zurück – der Track ist bereits weg, also kein harter Fehler.
-  if (existing.blobPathname && process.env.BLOB_READ_WRITE_TOKEN) {
+  // Gelöscht wird nur eine Datei, deren Pfad zur gespeicherten URL passt und
+  // dem Mandanten gehört (oder ein älterer Pfad ohne Mandant ist), und nur,
+  // wenn kein anderer Eintrag (auch keines anderen Mandanten) dieselbe Datei
+  // nutzt.
+  const mode = audioBlobDeleteMode(existing, accountId!);
+  if (existing.blobPathname && mode !== "keep" && process.env.BLOB_READ_WRITE_TOKEN) {
     try {
-      const { del } = await import("@vercel/blob");
-      await del(existing.blobPathname);
+      const stillUsed =
+        (await prisma.audioTrack.count({ where: { blobPathname: existing.blobPathname } })) > 0;
+      if (!stillUsed) {
+        const { del } = await import("@vercel/blob");
+        await del(existing.blobPathname);
+      }
     } catch {
       // bewusst ignoriert
     }

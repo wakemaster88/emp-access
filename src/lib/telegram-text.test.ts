@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { escapeTelegramHtml, truncateTelegramLines, TELEGRAM_MESSAGE_LIMIT } from "./telegram-text";
+import {
+  capTelegramList,
+  escapeTelegramHtml,
+  truncateTelegramLines,
+  TELEGRAM_LIST_LIMIT,
+  TELEGRAM_MESSAGE_LIMIT,
+} from "./telegram-text";
 
 test("escapeTelegramHtml maskiert &, < und >", () => {
   assert.equal(escapeTelegramHtml("Kinder <12 & Eltern >18"), "Kinder &lt;12 &amp; Eltern &gt;18");
@@ -28,4 +34,14 @@ test("truncateTelegramLines beachtet eine eigene Grenze", () => {
   const out = truncateTelegramLines("aaaa\nbbbb\ncccc", 11);
   assert.equal(out, "aaaa\nbbbb\n…");
   assert.equal(truncateTelegramLines("aaaa\nbbbb\ncccc", 10), "aaaa\n…");
+});
+
+test("capTelegramList zeigt höchstens 30 Einträge und nennt den Rest", () => {
+  const lines = Array.from({ length: 45 }, (_, i) => `  • Eintrag ${i}`);
+  const out = capTelegramList(lines);
+  assert.equal(out.length, TELEGRAM_LIST_LIMIT + 1);
+  assert.deepEqual(out.slice(0, TELEGRAM_LIST_LIMIT), lines.slice(0, TELEGRAM_LIST_LIMIT));
+  assert.equal(out[TELEGRAM_LIST_LIMIT], "  • … und 15 weitere");
+  assert.deepEqual(capTelegramList(lines.slice(0, 30)), lines.slice(0, 30));
+  assert.deepEqual(capTelegramList([]), []);
 });

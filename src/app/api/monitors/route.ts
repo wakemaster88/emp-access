@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, isTenantAdminRole } from "@/lib/api-auth";
 import { newPublicToken } from "@/lib/tokens";
 import { checkMonitorRefs, monitorIdList } from "@/lib/monitor-refs";
 
@@ -12,7 +12,15 @@ export async function GET() {
     where: { accountId: accountId! },
     orderBy: { createdAt: "desc" },
   });
-  return NextResponse.json(monitors);
+  // Der Link-Token öffnet den Monitor ohne Login: nur für die Verwaltungs-Rolle.
+  if (isTenantAdminRole(session.session.user.role)) return NextResponse.json(monitors);
+  return NextResponse.json(
+    monitors.map((monitor) => {
+      const view: Partial<typeof monitor> = { ...monitor };
+      delete view.token;
+      return view;
+    }),
+  );
 }
 
 export async function POST(request: NextRequest) {

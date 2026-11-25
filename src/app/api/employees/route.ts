@@ -163,7 +163,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getSessionWithDb();
+  // Mitarbeiter samt Türen und Geräten anlegen ist Verwaltung.
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 

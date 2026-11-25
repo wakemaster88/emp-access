@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { acceptedAudioBlobPath } from "@/lib/audio-blob-path";
 
 const TRACK_KINDS = ["MUSIC", "JINGLE", "CHIME", "ANNOUNCEMENT"] as const;
 type TrackKind = (typeof TRACK_KINDS)[number];
@@ -50,10 +51,8 @@ export async function POST(request: NextRequest) {
       artist: typeof body.artist === "string" && body.artist.trim() ? body.artist.trim() : null,
       kind: parseKind(body.kind),
       url,
-      blobPathname:
-        typeof body.blobPathname === "string" && body.blobPathname.trim()
-          ? body.blobPathname.trim()
-          : null,
+      // Nur ein Pfad, der zur URL passt und dem Mandanten gehört; sonst ohne.
+      blobPathname: acceptedAudioBlobPath(body.blobPathname, url, accountId!),
       contentType:
         typeof body.contentType === "string" && body.contentType.trim()
           ? body.contentType.trim()

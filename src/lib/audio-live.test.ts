@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  LIVE_BYTES_PER_SECOND,
+  LIVE_KEEP_CHUNKS,
+  LIVE_MAX_BACKLOG_MS,
+  LIVE_MAX_CHUNK_BYTES,
+  LIVE_MAX_SEQ_AHEAD,
   LIVE_STALE_AFTER_MS,
   PcmDownsampler,
   int16ToLittleEndian,
+  isLiveSeqAcceptable,
   isLiveSessionOpen,
+  liveTrimThroughSeq,
   meterLevel,
 } from "./audio-live";
 
@@ -62,4 +69,27 @@ test("Sitzung: beendet ausdrücklich oder nach Schweigen, sonst offen", () => {
     isLiveSessionOpen({ status: "LIVE", lastChunkAt: new Date(late.getTime() - 1_000), startedAt }, late),
     true
   );
+});
+
+test("Live-Stück: Nummern ab 1 und höchstens LIVE_MAX_SEQ_AHEAD voraus", () => {
+  assert.equal(isLiveSeqAcceptable(1, 0), true);
+  assert.equal(isLiveSeqAcceptable(LIVE_MAX_SEQ_AHEAD, 0), true);
+  assert.equal(isLiveSeqAcceptable(LIVE_MAX_SEQ_AHEAD + 1, 0), false);
+  // Wiederholung der letzten Nummer nach Netzfehler bleibt erlaubt.
+  assert.equal(isLiveSeqAcceptable(120, 120), true);
+  assert.equal(isLiveSeqAcceptable(121, 120), true);
+  assert.equal(isLiveSeqAcceptable(0, 0), false);
+  assert.equal(isLiveSeqAcceptable(1.5, 0), false);
+});
+
+test("Live-Stück: Obergrenze fasst den ganzen Browser-Stau", () => {
+  const backlogBytes = (LIVE_BYTES_PER_SECOND * LIVE_MAX_BACKLOG_MS) / 1000;
+  assert.ok(LIVE_MAX_CHUNK_BYTES >= backlogBytes + 3_200);
+  assert.ok(LIVE_MAX_CHUNK_BYTES >= 64_000);
+});
+
+test("Live-Stück: weggeräumt wird alles bis lastSeq - LIVE_KEEP_CHUNKS", () => {
+  assert.equal(liveTrimThroughSeq(0), 0);
+  assert.equal(liveTrimThroughSeq(LIVE_KEEP_CHUNKS), 0);
+  assert.equal(liveTrimThroughSeq(LIVE_KEEP_CHUNKS + 7), 7);
 });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, isTenantAdminRole } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { employeeUpdateSchema } from "@/lib/validators";
 import { foreignRefError } from "@/lib/tenant-refs";
@@ -46,7 +46,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({
     id: employee.id,
     uuid: employee.uuid,
-    mobileToken: employee.mobileToken,
+    // Der Türöffner-Link ist ein Zugang: nur für die Verwaltungs-Rolle.
+    mobileToken: isTenantAdminRole(session.session.user.role) ? employee.mobileToken : null,
     name: employee.name,
     firstName: employee.firstName,
     lastName: employee.lastName,
@@ -69,7 +70,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 
@@ -155,7 +156,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 

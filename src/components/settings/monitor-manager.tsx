@@ -390,7 +390,7 @@ function MonitorDialog({
           )}
         </div>}
 
-        {!isNew && (
+        {!isNew && monitor?.token && (
           <div className="space-y-1.5">
             <Label>Monitor-URL</Label>
             <div className="flex items-start gap-2 flex-wrap">
@@ -711,7 +711,7 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
                 </div>
               )}
 
-              <div className="flex items-start gap-2 flex-wrap">
+              {monitor.token && <div className="flex items-start gap-2 flex-wrap">
                 <Button
                   type="button"
                   variant="outline"
@@ -726,7 +726,7 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
                 <div className="flex-1 min-w-0 space-y-1">
                   <CopyUrl url={url} />
                 </div>
-              </div>
+              </div>}
             </CardContent>
           </Card>
         );

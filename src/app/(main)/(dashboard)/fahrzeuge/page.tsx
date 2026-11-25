@@ -86,7 +86,7 @@ export default async function FahrzeugePage() {
     const rows = await prisma.$queryRaw<{ id: number }[]>`
       SELECT id FROM "VehicleSighting"
       WHERE "accountId" = ${accountId}
-        AND snapshot IS NOT NULL
+        AND (snapshot IS NOT NULL OR "snapshotBlob" IS NOT NULL)
         AND id IN (${Prisma.join(uniqueIds)})
     `;
     for (const r of rows) snapIds.add(r.id);

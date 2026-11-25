@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { isAllowedAudioUploadPath } from "@/lib/audio-blob-path";
 
 const ALLOWED_CONTENT_TYPES = [
   "audio/mpeg",
@@ -38,13 +39,19 @@ export async function POST(request: NextRequest) {
     const result = await handleUpload({
       body,
       request,
-      onBeforeGenerateToken: async () => ({
-        allowedContentTypes: ALLOWED_CONTENT_TYPES,
-        addRandomSuffix: true,
-        maximumSizeInBytes: 50 * 1024 * 1024,
-        // Mandanten-Präfix, damit Dateien im Storage zuordenbar bleiben.
-        pathname: `audio/${accountId ?? "shared"}`,
-      }),
+      // Der Pfad kommt vom Browser: audio/<accountId>/<Dateiname>, aus noch
+      // offenen Tabs mit älterem Code auch nur der Dateiname. Alles andere
+      // wird abgelehnt.
+      onBeforeGenerateToken: async (pathname) => {
+        if (!isAllowedAudioUploadPath(pathname, accountId)) {
+          throw new Error("Ungültiger Dateipfad für den Upload");
+        }
+        return {
+          allowedContentTypes: ALLOWED_CONTENT_TYPES,
+          addRandomSuffix: true,
+          maximumSizeInBytes: 50 * 1024 * 1024,
+        };
+      },
       // Der Track-Datensatz wird vom Client registriert; dieser Callback ist
       // nur für Logging da und wird lokal ohnehin nicht aufgerufen.
       onUploadCompleted: async () => {},

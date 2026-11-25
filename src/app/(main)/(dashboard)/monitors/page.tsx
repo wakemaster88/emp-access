@@ -1,4 +1,5 @@
 import { safeAuth } from "@/lib/auth";
+import { isTenantAdminRole } from "@/lib/api-auth";
 import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
@@ -31,6 +32,8 @@ export default async function MonitorsPage() {
   ]);
 
   const baseUrl = process.env.AUTH_URL ?? "http://localhost:3000";
+  // Der Link öffnet den Monitor ohne Login: USER sieht die Monitore ohne Link und QR-Code.
+  const showLinks = isTenantAdminRole(session.user.role);
 
   return (
     <>
@@ -41,6 +44,7 @@ export default async function MonitorsPage() {
         <MonitorManager
           monitors={monitors.map((m) => ({
             ...m,
+            token: showLinks ? m.token : "",
             deviceIds: m.deviceIds as number[],
             areaIds: (m.areaIds as number[] | null) ?? [],
             controlDeviceIds: (m.controlDeviceIds as number[] | null) ?? [],

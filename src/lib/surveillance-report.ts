@@ -275,7 +275,7 @@ async function snapshotIdSet(
     const rows = await prisma.$queryRaw<{ id: number }[]>`
       SELECT id FROM "PersonSighting"
       WHERE "accountId" = ${accountId}
-        AND snapshot IS NOT NULL
+        AND (snapshot IS NOT NULL OR "snapshotBlob" IS NOT NULL)
         AND id IN (${Prisma.join(ids)})
     `;
     for (const r of rows) set.add(r.id);
@@ -283,7 +283,7 @@ async function snapshotIdSet(
     const rows = await prisma.$queryRaw<{ id: number }[]>`
       SELECT id FROM "VehicleSighting"
       WHERE "accountId" = ${accountId}
-        AND snapshot IS NOT NULL
+        AND (snapshot IS NOT NULL OR "snapshotBlob" IS NOT NULL)
         AND id IN (${Prisma.join(ids)})
     `;
     for (const r of rows) set.add(r.id);
