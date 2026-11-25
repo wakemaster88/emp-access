@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
-import { buildLostItemUpdateData } from "@/lib/lost-item-data";
+import { buildLostItemUpdateData, lostItemImageUpdateError } from "@/lib/lost-item-data";
+import { dropImageRouteRef } from "@/lib/list-images";
 import { lostItemUpdateSchema } from "@/lib/validators";
 
 async function resolveMonitor(token: string) {
@@ -27,7 +28,8 @@ export async function PATCH(
   if (isNaN(itemId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
 
   const body = await request.json();
-  const parsed = lostItemUpdateSchema.safeParse(body);
+  // Ältere Formulare schicken das angezeigte Bild als Adresse der Bild-Route zurück.
+  const parsed = lostItemUpdateSchema.safeParse(dropImageRouteRef(body));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -36,6 +38,8 @@ export async function PATCH(
     where: { id: itemId, accountId: monitor.accountId },
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+  const imageError = lostItemImageUpdateError(parsed.data.image, existing.image);
+  if (imageError) return NextResponse.json({ error: imageError }, { status: 400 });
 
   const item = await prisma.lostItem.update({
     where: { id: itemId },

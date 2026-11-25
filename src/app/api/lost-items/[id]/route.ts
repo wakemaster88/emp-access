@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveLostItemAuth } from "@/lib/lost-item-auth";
-import { buildLostItemUpdateData } from "@/lib/lost-item-data";
+import { buildLostItemUpdateData, lostItemImageUpdateError } from "@/lib/lost-item-data";
+import { dropImageRouteRef } from "@/lib/list-images";
 import { readRequestBody } from "@/lib/api-body";
 import { lostItemUpdateSchema } from "@/lib/validators";
 
@@ -42,7 +43,8 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  const parsed = lostItemUpdateSchema.safeParse(body);
+  // Ältere Formulare schicken das angezeigte Bild als Adresse der Bild-Route zurück.
+  const parsed = lostItemUpdateSchema.safeParse(dropImageRouteRef(body));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -52,6 +54,8 @@ export async function PATCH(
     where: { id: itemId, accountId },
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+  const imageError = lostItemImageUpdateError(parsed.data.image, existing.image);
+  if (imageError) return NextResponse.json({ error: imageError }, { status: 400 });
 
   const item = await db.lostItem.update({
     where: { id: itemId },

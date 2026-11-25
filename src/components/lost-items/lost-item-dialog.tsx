@@ -21,6 +21,7 @@ export interface LostItemData {
   kind: LostItemKind;
   description: string;
   foundDate: string;
+  /** Bildquelle zur Anzeige (Adresse der Bild-Route oder Data-URL). */
   image: string | null;
   contact: string | null;
   reporterName: string | null;
@@ -76,6 +77,8 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
   const [reporterName, setReporterName] = useState("");
   const [callbackPhone, setCallbackPhone] = useState("");
   const [image, setImage] = useState<string | null>(null);
+  // Nur ein neues oder entferntes Bild wird gespeichert; sonst bleibt das gespeicherte.
+  const [imageChanged, setImageChanged] = useState(false);
   const [pickedUp, setPickedUp] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -94,6 +97,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
       setReporterName(item?.reporterName ?? "");
       setCallbackPhone(item?.callbackPhone ?? "");
       setImage(item?.image ?? null);
+      setImageChanged(false);
       setPickedUp(item?.pickedUp ?? false);
     }
   }, [open, item]);
@@ -105,6 +109,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
     setError("");
     try {
       setImage(await resizeImageToDataUrl(file));
+      setImageChanged(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bild konnte nicht verarbeitet werden");
     }
@@ -131,7 +136,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
         contact: kind === "FOUND" ? (contact.trim() || null) : null,
         reporterName: kind === "LOST_REPORT" ? reporterName.trim() : null,
         callbackPhone: kind === "LOST_REPORT" ? (callbackPhone.trim() || null) : null,
-        image: kind === "FOUND" ? image : null,
+        ...((isNew || imageChanged) && { image: kind === "FOUND" ? image : null }),
         pickedUp,
       };
       const url = isNew ? "/api/lost-items" : `/api/lost-items/${item!.id}`;
@@ -143,7 +148,13 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        setError(typeof data?.error === "string" ? data.error : `Server-Fehler (${res.status})`);
+        // Beim Anlegen kommt ein abgelehntes Foto als Feldfehler (fieldErrors.image).
+        const imageMsg = data?.error?.fieldErrors?.image?.[0];
+        setError(
+          typeof data?.error === "string" ? data.error
+            : typeof imageMsg === "string" ? imageMsg
+              : `Server-Fehler (${res.status})`,
+        );
         return;
       }
       router.refresh();
@@ -296,7 +307,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
               />
               {image ? (
                 <div className="relative inline-block">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */}
+                  {/* eslint-disable-next-line @next/next/no-img-element -- Bild-Route oder Base64-Data-URL */}
                   <img
                     src={image}
                     alt="Fundsache"
@@ -304,7 +315,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   />
                   <button
                     type="button"
-                    onClick={() => setImage(null)}
+                    onClick={() => { setImage(null); setImageChanged(true); }}
                     // Unsichtbare Trefferfläche (after:-inset-1.5) bringt die 32-px-Taste auf 44 px.
                     className="absolute -top-2.5 -right-2.5 size-8 rounded-full bg-foreground text-background flex items-center justify-center hover:bg-destructive-fill hover:text-white transition-colors after:absolute after:-inset-1.5 after:rounded-full"
                     aria-label="Bild entfernen"

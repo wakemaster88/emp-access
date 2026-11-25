@@ -7,14 +7,24 @@ import { ArticlesView, CreateArticleButton } from "@/components/warenwirtschaft/
 import { formatEuro, valueCents } from "@/lib/warenwirtschaft";
 import { Boxes, Euro, ImageOff } from "lucide-react";
 import { wawiPageSession } from "../wawi-page";
+import { articleImageUrl, listImageSrcs } from "@/lib/list-images";
+import { inlineImageRows } from "@/lib/list-images-db";
 
 export default async function ArtikelPage() {
   const { session, accountId, db } = await wawiPageSession();
-  const articles = await db.article.findMany({
+  // Liste ohne Bildspalte; Fotos lädt der Browser einzeln über die Bild-Route.
+  const rows = await db.article.findMany({
     where: { accountId },
     orderBy: [{ category: "asc" }, { name: "asc" }],
-    omit: { imageSearchedAt: true, createdAt: true, updatedAt: true, accountId: true },
+    omit: { image: true, imageSearchedAt: true, createdAt: true, accountId: true },
   });
+  const [withImage, inline] = await Promise.all([
+    db.article.findMany({ where: { accountId, image: { not: null } }, select: { id: true } }),
+    inlineImageRows("article", rows.map((a) => a.id), { accountId }),
+  ]);
+  const versions = new Map(rows.map((a) => [a.id, a.updatedAt]));
+  const imageSrcs = listImageSrcs(withImage, inline, (id) => articleImageUrl(id, versions.get(id) ?? new Date(0)));
+  const articles = rows.map((a) => ({ ...a, image: imageSrcs.get(a.id) ?? null }));
   const categories = [...new Set(articles.map((a) => a.category))].sort((a, b) => a.localeCompare(b, "de"));
   const active = articles.filter((a) => a.active);
   const totalValue = active.reduce((sum, a) => sum + valueCents(Math.max(0, a.stock), a.purchasePriceCents), 0);

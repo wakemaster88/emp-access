@@ -6,7 +6,7 @@ type TenantDb = ReturnType<typeof tenantClient> | typeof prisma;
 
 export type LostItemAuthResult =
   | { error: NextResponse }
-  | { error?: never; db: TenantDb; accountId: number; viaToken: boolean };
+  | { error?: never; db: TenantDb; accountId: number; viaToken: boolean; isSuperAdmin: boolean };
 
 /**
  * Auth-Auflösung für die Fundsachen-API: wahlweise Dashboard-Session oder
@@ -20,10 +20,10 @@ export async function resolveLostItemAuth(request: NextRequest): Promise<LostIte
   if (hasToken) {
     const auth = await validateApiToken(request);
     if (auth.error) return { error: auth.error };
-    return { db: auth.db!, accountId: auth.account!.id, viaToken: true };
+    return { db: auth.db!, accountId: auth.account!.id, viaToken: true, isSuperAdmin: false };
   }
 
   const session = await getSessionWithDb();
   if (session.error) return { error: session.error };
-  return { db: session.db!, accountId: session.accountId!, viaToken: false };
+  return { db: session.db!, accountId: session.accountId!, viaToken: false, isSuperAdmin: session.isSuperAdmin! };
 }
