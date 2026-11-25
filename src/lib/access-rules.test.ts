@@ -382,7 +382,8 @@ test("Texte: Gutschein-Zuordnung über den Ticket-Typ und Kombi-Leser als Eingan
   assert.match(voucher, /ohne jede Zuordnung gelten weiter überall/);
   assert.doesNotMatch(voucher, /Gutscheine ohne Bereich gelten/);
   const ticket = ACCESS_RULE_TEXTS.ticketNeedsArea.confirm ?? "";
-  assert.match(ticket, /Eingang und Ausgang desselben Bereichs/);
+  assert.match(ticket, /als Eingang eines Bereichs eingetragen/);
+  assert.match(ticket, /auch wenn er zugleich als Ausgang eingetragen ist/);
   assert.match(ticket, /zählt als Eingang/);
   assert.match(ticket, /solange die Regel aus ist/);
 });

@@ -80,7 +80,7 @@ export const ACCESS_RULE_TEXTS: Record<AccessRuleKey, { title: string; effect: s
     effect:
       "Ein Ticket ohne jeden Bereich öffnet an einem Leser nur noch an der Hauptressource seines Service oder wenn der Bereich des Lesers dafür freigegeben ist (Haken im Bereich).",
     confirm:
-      "Setze vorher in den Bereichen, an denen solche Tickets weiter gelten sollen, den Haken „Tickets ohne Bereich gelten hier“. Der Haken lässt sich schon setzen, solange die Regel aus ist. Ohne Haken werden sie ab dem Einschalten an allen Lesern mit Bereich abgewiesen, außer an ihrer Hauptressource. Das gilt auch für Mitarbeiter-Tickets ohne Bereich und ohne Direkt-Zuweisung. Reine Ausgänge bleiben offen. Ein Leser, der zugleich Eingang und Ausgang desselben Bereichs ist, zählt als Eingang und weist sie ohne Haken ebenfalls ab.",
+      "Setze vorher in den Bereichen, an denen solche Tickets weiter gelten sollen, den Haken „Tickets ohne Bereich gelten hier“. Der Haken lässt sich schon setzen, solange die Regel aus ist. Ohne Haken werden sie ab dem Einschalten an allen Lesern mit Bereich abgewiesen, außer an ihrer Hauptressource. Das gilt auch für Mitarbeiter-Tickets ohne Bereich und ohne Direkt-Zuweisung. Reine Ausgänge bleiben offen. Ein Leser, der als Eingang eines Bereichs eingetragen ist, zählt als Eingang und weist sie ohne Haken ab, auch wenn er zugleich als Ausgang eingetragen ist.",
   },
   handscannerDenyRedeemed: {
     title: "Handscanner lehnt eingelöste Einzeltickets ab",
@@ -214,8 +214,8 @@ export function deniesUnassignedReader(
  * keinen Bereich ableitet. Vereinsmitglieder ohne Bereiche lehnt die Route
  * ohnehin schon ab. An der Hauptressource des Tickets (`mainAreaId`) bleibt
  * es gültig, ebenso bei Ausgängen (`isExit`): wer drin ist, darf raus. Ein
- * Leser, der Eingang und Ausgang desselben Bereichs zugleich ist, zählt als
- * Eingang (der Pi meldet keine Richtung).
+ * Leser mit eingetragenem Eingang zählt als Eingang, auch wenn er zugleich
+ * als Ausgang eingetragen ist (der Pi meldet keine Richtung).
  */
 export function deniesUnassignedTicket(
   rules: AccessRules,

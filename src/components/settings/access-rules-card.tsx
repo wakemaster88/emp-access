@@ -241,7 +241,9 @@ export function AccessRulesCard({ initial }: Props) {
                   <Switch
                     id={switchId}
                     checked={on || confirmKey === key}
-                    disabled={busyKey != null}
+                    // Gesperrt, solange gespeichert wird oder eine andere Regel
+                    // gerade auf ihre Bestätigung wartet: nie zwei Änderungen zugleich.
+                    disabled={busyKey != null || (confirmKey != null && confirmKey !== key)}
                     onCheckedChange={(next) => {
                       setError("");
                       if (next) {
@@ -278,7 +280,7 @@ export function AccessRulesCard({ initial }: Props) {
                     type="button"
                     variant="outline"
                     onClick={() => void saveMinutes()}
-                    disabled={busyKey != null || Number(minutesDraft) === rules.passbackMinutes}
+                    disabled={busyKey != null || confirmKey != null || Number(minutesDraft) === rules.passbackMinutes}
                     className="max-sm:h-11"
                   >
                     Übernehmen
