@@ -18,8 +18,10 @@
  *  3. Content-Type: application/json. Das erzwingt im Browser einen
  *     Preflight, den der Hub fremden Seiten nie beantwortet.
  *
- * GET bleibt unberuehrt – auch der Shelly-H&T-Webhook /api/climate/report,
- * der per GET meldet.
+ * GET/HEAD auf /api/* ohne gueltiges Token (also vom Hub-Rechner selbst):
+ * nur die Host-Pruefung (1). Seiten, Dateien und Anfragen mit Token bleiben
+ * unberuehrt – auch der Shelly-H&T-Webhook /api/climate/report, der per GET
+ * mit Token meldet.
  */
 
 export interface GuardRequest {
@@ -116,11 +118,8 @@ function mimeOf(contentType: string | undefined): string {
   return (contentType ?? "").split(";")[0].trim().toLowerCase();
 }
 
-export function checkDashboardRequest(req: GuardRequest, cfg: GuardConfig): GuardResult {
-  const method = req.method.toUpperCase();
-  if (method === "GET" || method === "HEAD") return { ok: true };
-
-  // 1) Host
+/** Host-Pruefung (1): Ablehnung oder null, wenn der Host passt. */
+function checkHost(req: GuardRequest, cfg: GuardConfig): GuardResult | null {
   const host = hostnameOf(req.host);
   if (!host) {
     return { ok: false, status: 403, reason: "host", error: "Anfrage abgelehnt: Host-Header fehlt oder ist ungültig" };
@@ -133,6 +132,20 @@ export function checkDashboardRequest(req: GuardRequest, cfg: GuardConfig): Guar
       error: `Anfrage abgelehnt: Host „${host}“ ist für das Dashboard nicht freigegeben (HUB_DASHBOARD_ALLOWED_HOSTS in hub/.env)`,
     };
   }
+  return null;
+}
+
+export function checkDashboardRequest(req: GuardRequest, cfg: GuardConfig): GuardResult {
+  const method = req.method.toUpperCase();
+  if (method === "GET" || method === "HEAD") {
+    if (req.tokenAuthenticated || !req.pathname.startsWith("/api/")) return { ok: true };
+    return checkHost(req, cfg) ?? { ok: true };
+  }
+
+  // 1) Host
+  const hostReject = checkHost(req, cfg);
+  if (hostReject) return hostReject;
+  const host = hostnameOf(req.host) as string;
 
   // 2) Origin
   if (req.origin !== undefined) {
