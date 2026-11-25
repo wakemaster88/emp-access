@@ -9,6 +9,7 @@ import { CONFIG, api, log } from "./config.js";
 import { improve, improveCount } from "./improve-log.js";
 import { STATE } from "./state.js";
 import { healthFresh, isTimeout, rankGallery, sidecarLogLines } from "./face-rules.js";
+import { ChangeLog } from "./change-log.js";
 
 const FACE_URL = process.env.FACE_URL || "http://127.0.0.1:8790";
 const FACE_PORT = Number(process.env.FACE_PORT || 8790);
@@ -53,6 +54,12 @@ let galleryLoadedAt = 0;
 let gallerySignature: string | null = null;
 /** Der letzte Abruf ist gescheitert: Der naechste Erfolg wird gemeldet. */
 let galleryFailed = false;
+/*
+ * Scheitert der Abruf, gilt der letzte Bestand weiter, und jeder Aufruf
+ * versucht es neu (je Personen-Lauf, je Klingeln, alle 15 min). Im Log steht
+ * das einmal, bei anderem Grund und dann alle 30 min, nicht bei jedem Versuch.
+ */
+const galleryFailLog = new ChangeLog(30 * 60_000);
 let sidecarProc: ChildProcess | null = null;
 let sidecarStarting: Promise<void> | null = null;
 /**
@@ -247,10 +254,15 @@ export async function refreshGallery(force = false): Promise<void> {
       log(`Face-Gallery: ${gallery.length} Embeddings${galleryFailed ? " (Abruf klappt wieder)" : ""}`);
     }
     gallerySignature = signature;
-    galleryFailed = false;
+    if (galleryFailed) {
+      galleryFailed = false;
+      // Derselbe Grund soll nach einer Erholung wieder im Log stehen.
+      galleryFailLog.shouldLog("fetch", "", Date.now());
+    }
   } catch (e) {
     galleryFailed = true;
-    log(`Face-Gallery Abruf fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    const reason = e instanceof Error ? e.message : String(e);
+    if (galleryFailLog.shouldLog("fetch", reason, Date.now())) log(`Face-Gallery Abruf fehlgeschlagen: ${reason}`);
   }
 }
 
