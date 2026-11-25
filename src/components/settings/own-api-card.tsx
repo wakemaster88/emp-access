@@ -66,7 +66,7 @@ const ENDPOINTS = [
   {
     method: "POST",
     path: "/api/lost-items",
-    desc: 'Eintrag anlegen – Fundsache: {"description","foundDate"}; Verlustmeldung: {"kind":"LOST_REPORT","description","reporterName"} (callbackPhone optional)',
+    desc: 'Eintrag anlegen – Fundsache: {"description","foundDate"}; Verlustmeldung: {"kind":"LOST_REPORT","description","reporterName"} (callbackPhone optional). Das Feld image nur als data:image/jpeg, data:image/png oder data:image/webp mit base64',
   },
   { method: "PATCH", path: "/api/lost-items/[id]", desc: 'Eintrag ändern, z. B. {"pickedUp": true}' },
 ];

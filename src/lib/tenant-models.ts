@@ -41,6 +41,7 @@ export const TENANT_MODELS = new Set<string>([
   "HubTask",
   "InfoFormTemplate",
   "InfoRequest",
+  "IntegrationToken",
   "InventoryAsset",
   "InventoryAssetCount",
   "InventoryCountLink",

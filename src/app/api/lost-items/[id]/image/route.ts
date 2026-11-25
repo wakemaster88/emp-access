@@ -13,7 +13,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await resolveLostItemAuth(request);
+  const auth = await resolveLostItemAuth(request, "/api/lost-items/[id]/image");
   if ("error" in auth) return auth.error;
 
   const itemId = Number((await params).id);

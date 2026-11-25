@@ -275,6 +275,7 @@ model Account {
   keyPolicyTemplates     KeyPolicyTemplate[]
   keySignatures          KeySignature[]
   mcpTokens              McpToken[]
+  integrationTokens      IntegrationToken[]
   eventPartners          EventPartner[]
   venueExtras            VenueExtra[]
   venueEvents            VenueEvent[]
@@ -3597,6 +3598,27 @@ model McpToken {
   lastUsedAt DateTime?
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
+
+  @@index([accountId])
+}
+
+/// Nur-Lese-Token fuer angebundene Systeme (emp-control, Website, Fundsachen-
+/// Dienste). Gespeichert wird nur der SHA-256 des Tokens; der Klartext steht
+/// einmal in der Antwort beim Anlegen. Was ein Token darf, legen die Scopes
+/// fest (src/lib/integration-token.ts). Gilt nur als Bearer-Header.
+model IntegrationToken {
+  id               Int       @id @default(autoincrement())
+  accountId        Int
+  account          Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name             String
+  tokenHash        String    @unique
+  /// Anfang des Tokens zur Wiedererkennung in der Liste.
+  prefix           String
+  scopes           String[]
+  createdByAdminId Int?
+  lastUsedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
 
   @@index([accountId])
 }

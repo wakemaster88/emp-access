@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiOrIntegrationToken } from "@/lib/api-auth";
 import { parseScanLockSeconds } from "@/lib/scan-lock";
 import { foreignRefError } from "@/lib/tenant-refs";
 
@@ -10,7 +10,7 @@ function hasApiToken(request: NextRequest) {
 export async function GET(request: NextRequest) {
   let db, accountId: number;
   if (hasApiToken(request)) {
-    const auth = await validateApiToken(request);
+    const auth = await validateApiOrIntegrationToken(request, "/api/areas");
     if ("error" in auth) return auth.error;
     db = auth.db;
     accountId = auth.account.id;

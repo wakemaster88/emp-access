@@ -12,6 +12,7 @@ import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { GardenaCard } from "@/components/settings/gardena-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
 import { McpCard } from "@/components/settings/mcp-card";
+import { IntegrationTokensCard } from "@/components/settings/integration-tokens-card";
 import { MCP_OFFERED_LEVELS } from "@/lib/mcp/protocol";
 import { TelegramCard } from "@/components/settings/telegram-card";
 import { PushCard } from "@/components/settings/push-card";
@@ -38,7 +39,7 @@ export default async function SettingsPage() {
   // erst geladen - die zugehoerigen API-Routen lehnen sie ebenfalls ab.
   const isAdmin = isTenantAdminRole(session.user.role);
 
-  const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig, updatingPis, hubAgents, mcpTokens] = await Promise.all([
+  const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig, updatingPis, hubAgents, mcpTokens, integrationTokens] = await Promise.all([
     isAdmin ? db.apiConfig.findMany({ where: { accountId: session.user.accountId } }) : [],
     db.account.findUnique({
       where: { id: session.user.accountId },
@@ -81,6 +82,13 @@ export default async function SettingsPage() {
       ? db.mcpToken.findMany({
           where: { accountId: session.user.accountId, revokedAt: null },
           select: { id: true, name: true, hint: true, level: true, createdBy: true, lastUsedAt: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        })
+      : [],
+    isAdmin
+      ? db.integrationToken.findMany({
+          where: { accountId: session.user.accountId, revokedAt: null },
+          select: { id: true, name: true, prefix: true, scopes: true, lastUsedAt: true, createdAt: true },
           orderBy: { createdAt: "desc" },
         })
       : [],
@@ -175,6 +183,18 @@ export default async function SettingsPage() {
           <OwnApiCard
             baseUrl={baseUrl}
             apiToken={account?.apiToken ?? ""}
+          />
+        </section>
+
+        {/* Integrations-Tokens mit Scopes fuer angebundene Systeme */}
+        <section className="space-y-2">
+          <SectionHeading icon={Key} title="Tokens für angebundene Systeme" />
+          <IntegrationTokensCard
+            initialTokens={integrationTokens.map((t) => ({
+              ...t,
+              lastUsedAt: t.lastUsedAt?.toISOString() ?? null,
+              createdAt: t.createdAt.toISOString(),
+            }))}
           />
         </section>
 

@@ -10,7 +10,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await resolveLostItemAuth(request);
+  const auth = await resolveLostItemAuth(request, "/api/lost-items/[id]");
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
@@ -29,7 +29,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await resolveLostItemAuth(request);
+  const auth = await resolveLostItemAuth(request, "/api/lost-items/[id]");
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
@@ -68,7 +68,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await resolveLostItemAuth(request);
+  const auth = await resolveLostItemAuth(request, "/api/lost-items/[id]");
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
