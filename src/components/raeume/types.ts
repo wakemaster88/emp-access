@@ -68,6 +68,16 @@ export interface RoomEvent {
   cameraName: string;
   type: string;
   startedAt: string;
+  /**
+   * Letzte Aktivität: bei laufendem Ereignis der Abrufzeitpunkt, sonst das Ende
+   * oder die letzte Meldung der Kamera (frühestens der Beginn).
+   */
+  at: string;
+  /**
+   * Das Ereignis lief beim Abruf noch (anhaltende Bewegung ist ein einziges
+   * langes Ereignis). Wie lange die Seite es so zeigt, sagt `shownAsRunning`.
+   */
+  running: boolean;
 }
 
 /**

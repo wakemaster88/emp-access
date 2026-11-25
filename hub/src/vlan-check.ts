@@ -14,7 +14,8 @@ import { CONFIG, api, log } from "./config.js";
 import { friendlySnmpError, oidSuffix, snmpGet, snmpTargets, snmpWalk } from "./snmp.js";
 import { analyzeVlans, Confirmer, parsePortList, type VlanIssue } from "./vlan-analyze.js";
 import { recordHubEvent } from "./state.js";
-import { improve } from "./improve-log.js";
+import { improve, improveCount } from "./improve-log.js";
+import { ChangeLog } from "./change-log.js";
 
 const OID_SYS_NAME = "1.3.6.1.2.1.1.5.0";
 const OID_BASE_PORT_IFINDEX = "1.3.6.1.2.1.17.1.4.1.2";
@@ -176,12 +177,19 @@ export function vlanCheckIntervalMs(): number {
 /** Fuer das lokale Dashboard: bestaetigte Befunde je Switch. */
 export function vlanCheckSummary(): {
   runs: number;
+  /** Beginn und Dauer des letzten Laufs (Abfrage der Switches), laengster Lauf seit dem Hub-Start. */
+  lastRunAt: string | null;
+  lastRunMs: number | null;
+  maxRunMs: number;
   reportError: string | null;
   hosts: Array<{ host: string; sysName: string | null; ok: boolean; checkedAt: string; issues: string[] }>;
   confirmed: AlertItem[];
 } {
   return {
     runs,
+    lastRunAt,
+    lastRunMs,
+    maxRunMs,
     reportError: lastReportError,
     hosts: [...lastResults.values()].map((r) => ({
       host: r.host,
@@ -194,9 +202,37 @@ export function vlanCheckSummary(): {
   };
 }
 
+/*
+ * Dauer der Laeufe: die Zeit, in der die Switches abgefragt werden, ohne die
+ * Meldung an die Cloud. Der Normalfall („alles in Ordnung“) wird nur gezaehlt;
+ * fuer den Vergleich mit Abbruechen der Livebilder (IMPROVE.md) reicht: Der
+ * erste Lauf beginnt 45 s nach dem Hub-Start, die weiteren alle `every`
+ * Sekunden ab dem Start (bei 300 s also nach 0:45, 5:00 und 10:00). Beginn
+ * und Dauer stehen in der Antwort von /api/network (`vlanCheck`), und ein
+ * langer Lauf kommt ins Log (hoechstens alle 30 min eine Zeile).
+ */
+const SLOW_RUN_MS = 15_000;
+const slowRunLog = new ChangeLog(30 * 60_000);
+let lastRunAt: string | null = null;
+let lastRunMs: number | null = null;
+let maxRunMs = 0;
+
+/** Beginn und Dauer eines Laufs festhalten; ein langer Lauf kommt ins Log. */
+function noteRunDuration(startedAt: number): void {
+  const ms = Date.now() - startedAt;
+  lastRunAt = new Date(startedAt).toISOString();
+  lastRunMs = ms;
+  maxRunMs = Math.max(maxRunMs, ms);
+  if (ms >= SLOW_RUN_MS && slowRunLog.shouldLog("run", "slow", Date.now())) {
+    log(`Netzwerk-Prüfung: Lauf dauerte ${Math.round(ms / 1000)} s`);
+  }
+}
+
 export async function runVlanCheck(): Promise<void> {
   if (busy) return;
   busy = true;
+  const startedAt = Date.now();
+  let measured = false;
   try {
     const hosts = snmpTargets();
     const all: AlertItem[] = [];
@@ -221,6 +257,10 @@ export async function runVlanCheck(): Promise<void> {
       lastResults.set(host, r);
       all.push(...toAlerts(r));
     }
+    // Die Dauer endet mit der Abfrage der Switches: Die Meldung an die Cloud
+    // danach (Zeitlimit 30 s) haengt an der Cloud, nicht an den Switches.
+    measured = true;
+    noteRunDuration(startedAt);
     runs++;
     const confirmedKeys = confirmer.update(
       all.map((a) => a.key),
@@ -243,7 +283,9 @@ export async function runVlanCheck(): Promise<void> {
       ...confirmed,
       ...lastConfirmed.filter((a) => !confirmedKeys.has(a.key) && silent.some((p) => a.key.startsWith(p))),
     ];
-    improve("snmp", confirmed.length ? "vlan_issues" : "vlan_ok", { issues: confirmed.length });
+    // „Alles in Ordnung“ alle 5 Minuten wird nur gezaehlt.
+    if (confirmed.length) improve("snmp", "vlan_issues", { issues: confirmed.length });
+    else improveCount("snmp", "vlan_ok");
 
     // Erst ab dem zweiten Lauf melden: Vorher ist nichts bestaetigt, die Cloud
     // wuerde offene Befunde nach jedem Hub-Neustart kurz „beheben“.
@@ -259,6 +301,8 @@ export async function runVlanCheck(): Promise<void> {
     log(`Netzwerk-Prüfung: ${lastReportError}`);
   } finally {
     busy = false;
+    // Brach die Abfrage vorher ab, zaehlt die Zeit bis hierher.
+    if (!measured) noteRunDuration(startedAt);
   }
 }
 

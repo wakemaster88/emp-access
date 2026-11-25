@@ -269,6 +269,16 @@ async function tick(): Promise<void> {
 
 /* -------------------------------------------------------------- Ereignisse */
 
+/**
+ * Kamera hat gerade einen Alarm aktiv (jede Messung, nicht nur der Beginn):
+ * Stand der letzten Bewegung fuer die Ruhe-Regeln im Notbetrieb. Ein langes
+ * Ereignis (Dauerbetrieb im Raum) galt sonst `idleMinutes` nach seinem Beginn
+ * als Ruhe, obwohl noch jemand da war.
+ */
+export function noteCameraActivity(cameraId: number, now = Date.now()): void {
+  lastMotion.set(cameraId, now);
+}
+
 /** Kamera meldet Beginn eines Ereignisses (MOTION, PERSON, VEHICLE, …). */
 export function onCameraEvent(cameraId: number, type: string): void {
   const now = Date.now();

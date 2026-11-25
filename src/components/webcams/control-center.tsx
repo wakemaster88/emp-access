@@ -111,8 +111,15 @@ function useCameraEvents(): Record<number, CameraEventRow[]> {
 
 /** Kleine Ereignis-Zeile für die Kachel: nur das aktuellste Ereignis, immer mit Uhrzeit. */
 function EventOverlay({ events }: { events: CameraEventRow[] }) {
-  // Laufendes Ereignis hat Vorrang, sonst das jüngste (Liste kommt absteigend sortiert).
-  const e = events.find((ev) => !ev.endedAt) ?? events[0];
+  // Laufendes Ereignis hat Vorrang, sonst das zuletzt beendete. Die Liste ist
+  // nach Beginn sortiert; ein langes Ereignis kann später geendet haben als
+  // ein kürzeres, das nach ihm begann.
+  const e =
+    events.find((ev) => !ev.endedAt) ??
+    events.reduce<CameraEventRow | undefined>(
+      (best, ev) => (!best || (ev.endedAt ?? "") > (best.endedAt ?? "") ? ev : best),
+      undefined,
+    );
   if (!e) return null;
 
   const meta = EVENT_META[e.type];
@@ -129,10 +136,16 @@ function EventOverlay({ events }: { events: CameraEventRow[] }) {
         meta.color,
         isActive && "animate-pulse"
       )}
-      title={`${meta.label} um ${fmtClock(e.startedAt)}${isActive ? " (läuft)" : ""}`}
+      title={
+        isActive
+          ? `${meta.label} seit ${fmtClock(e.startedAt)} (läuft)`
+          : `${meta.label} von ${fmtClock(e.startedAt)} bis ${fmtClock(e.endedAt!)}`
+      }
     >
       <Icon className="h-3 w-3 shrink-0" />
-      {`${meta.label} ${fmtClock(e.startedAt)}`}
+      {/* Läuft es noch: der Beginn. Ist es vorbei: das Ende, denn „zuletzt
+          um …“ soll auch nach stundenlanger Bewegung stimmen. */}
+      {`${meta.label} ${fmtClock(isActive ? e.startedAt : e.endedAt!)}`}
     </span>
   );
 }

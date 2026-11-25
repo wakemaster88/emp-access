@@ -264,7 +264,10 @@ export function buildLiveWarnings(input: LiveWarningInput): LiveWarning[] {
     .map(({ w }) => w);
 }
 
-/** Kamera-Ereignisse der letzten Stunde je Kamera zusammenzählen. */
+/**
+ * Kamera-Ereignisse der letzten Stunde je Kamera zusammenzählen. `at` ist die
+ * letzte Aktivität des Ereignisses (läuft es noch: jetzt, sonst sein Ende).
+ */
 export interface CameraActivity {
   id: number;
   name: string;
@@ -276,7 +279,7 @@ export interface CameraActivity {
 }
 
 export function summarizeCameraActivity(
-  events: { cameraId: number; cameraName: string; type: string; startedAt: Date }[],
+  events: { cameraId: number; cameraName: string; type: string; at: Date }[],
 ): CameraActivity[] {
   const byCam = new Map<number, CameraActivity & { last: number }>();
   for (const e of events) {
@@ -289,7 +292,7 @@ export function summarizeCameraActivity(
     if (e.type === "PERSON") c.person++;
     else if (e.type === "VEHICLE") c.vehicle++;
     else c.other++;
-    const t = e.startedAt.getTime();
+    const t = e.at.getTime();
     if (t > c.last) c.last = t;
   }
   return [...byCam.values()]

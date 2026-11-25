@@ -9,15 +9,16 @@ import { dashboardAccessMode } from "./dashboard-auth.js";
 import { autoScan } from "./scanner.js";
 import { onTaskKick } from "./task-kick.js";
 import { pollCameras, CAMERA_POLL_INTERVAL_MS, restoreCameraMotion } from "./cameras.js";
+import { ALIVE_INTERVAL_MS, markAlive } from "./alive-mark.js";
 import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
 import { alprWarmup } from "./alpr.js";
 import { STATE, recordHeartbeat, recordHubEvent, recordTask } from "./state.js";
 import { collectParkingSnapshot, ensureParkingCameras, uploadParkingTrackerFrames } from "./parking.js";
 import { checkNoParking, noParkingConfigSummary, NOPARK_INTERVAL_MS } from "./noparking.js";
-import { runSwitchSync, snmpConfigured } from "./snmp.js";
+import { AUTO_LABEL, runSwitchSync, snmpConfigured } from "./snmp.js";
 import { startVlanCheck } from "./vlan-check.js";
-import { improve, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
+import { improve, improveCount, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
 import { startSystemMetrics } from "./system-metrics.js";
 import { startSystemSetup } from "./system-setup.js";
 import { ensureFfmpeg } from "./ffmpeg-setup.js";
@@ -138,9 +139,9 @@ async function reportParking() {
       body: JSON.stringify({ name: CONFIG.name, parking }),
     });
     await uploadParkingTrackerFrames();
-    improve("parking", parking.trackerOnline ? "report" : "tracker_down", {
-      lots: parking.lots.length,
-    });
+    // Der Normalfall alle 30 s wird nur gezaehlt (keine Zeile in improve.jsonl).
+    if (parking.trackerOnline) improveCount("parking", "report");
+    else improve("parking", "tracker_down", { lots: parking.lots.length });
   } catch (e) {
     log(`Parkplatz-Report: ${e instanceof Error ? e.message : e}`);
     improve("parking", "fail", { error: e instanceof Error ? e.message : String(e) });
@@ -305,9 +306,9 @@ if (snmpConfigured()) {
   const snmpMs = (Number(process.env.HUB_SNMP_INTERVAL) > 0
     ? Number(process.env.HUB_SNMP_INTERVAL)
     : 900) * 1000;
-  void runSwitchSync("SNMP-Auto");
+  void runSwitchSync(AUTO_LABEL);
   setInterval(() => {
-    void runSwitchSync("SNMP-Auto");
+    void runSwitchSync(AUTO_LABEL);
   }, snmpMs);
 }
 // VLAN-Soll/Ist je Switch-Port (nur lesend) – meldet halb umgesetzte
@@ -316,6 +317,10 @@ startVlanCheck();
 // Folgen/Nahaufnahme, die ein Neustart unterbrochen hat: Kameras zurueckstellen.
 void restoreCameraMotion();
 setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
+// Lebenszeichen auf der Platte: Nach einem Neustart ist bekannt, bis wann der
+// Vorgaenger lief (fuer das Ende der Ereignisse, die dabei offen blieben).
+markAlive();
+setInterval(() => markAlive(), ALIVE_INTERVAL_MS);
 // Soundweb London: Konfiguration aus der Cloud, dann je Prozessor eine
 // DI-Verbindung mit Abonnements. Ohne eingerichtete Geräte ein Leerlauf.
 startSoundweb();

@@ -27,7 +27,7 @@ import {
   listCameraConfigs,
   type CameraConfig,
 } from "./cameras.js";
-import { improve } from "./improve-log.js";
+import { improve, improveCount } from "./improve-log.js";
 import { recordHubEvent } from "./state.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 import { detectVehicles, inside, type VehicleBox } from "./vision.js";
@@ -410,11 +410,11 @@ async function checkCamera(cam: CameraConfig): Promise<void> {
     const hits = track(state, relevant, now, minutesFor(cam));
     if (hits.length > 0) {
       await report(cam.id, cam.name, jpeg, hits, now);
+    } else if (relevant.length > 0) {
+      improve("noparking", "waiting", { cam: cam.name, inZone: relevant.length });
     } else {
-      improve("noparking", relevant.length > 0 ? "waiting" : "clear", {
-        cam: cam.name,
-        inZone: relevant.length,
-      });
+      // Der Normalfall alle 20 s: nur zaehlen, keine Zeile in improve.jsonl.
+      improveCount("noparking", "clear");
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

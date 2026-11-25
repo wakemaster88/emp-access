@@ -3,6 +3,7 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { isPlayerOnline } from "@/lib/audio-constants";
 import { berlinDayStart } from "@/lib/berlin-day";
 import { buildLiveWarnings, summarizeCameraActivity, type LiveAreaOccupancy } from "@/lib/dashboard-live";
+import { activityAt, recentActivityWhere } from "@/lib/camera-events";
 import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
 import { parseParkingSnapshot } from "@/lib/parking";
@@ -157,9 +158,17 @@ export async function GET() {
       orderBy: { seenAt: "desc" },
       take: 6,
     }),
+    // Auch Ereignisse, die frueher begannen und noch laufen oder erst in
+    // dieser Stunde endeten: Anhaltende Bewegung ist ein einziges Ereignis.
     db.cameraEvent.findMany({
-      where: { ...where, startedAt: { gte: hourAgo } },
-      select: { cameraId: true, type: true, startedAt: true, camera: { select: { name: true } } },
+      where: { ...where, ...recentActivityWhere(hourAgo, now) },
+      select: {
+        cameraId: true,
+        type: true,
+        startedAt: true,
+        endedAt: true,
+        camera: { select: { name: true, lastSeenAt: true } },
+      },
       orderBy: { startedAt: "desc" },
       take: 500,
     }),
@@ -265,7 +274,7 @@ export async function GET() {
       cameraId: e.cameraId,
       cameraName: e.camera.name,
       type: e.type,
-      startedAt: e.startedAt,
+      at: activityAt(e, e.camera.lastSeenAt, now),
     })),
   );
 

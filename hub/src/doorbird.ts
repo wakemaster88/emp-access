@@ -409,26 +409,45 @@ export async function uploadDoorbirdSnapshot(cameraId: number): Promise<{ bytes:
   return { bytes: buf.length };
 }
 
+/**
+ * Ein Ende, dessen Meldung scheitert, noch dreimal versuchen. Ohne das Ende
+ * bleibt das Ereignis in der Cloud offen und gilt dort als laufend. Ein
+ * Beginn wird nicht wiederholt: Er loest Regeln und den Klingel-Push aus,
+ * und die sollen nicht Minuten spaeter kommen.
+ */
+const END_RETRY_MS = [10_000, 60_000, 300_000];
+
 /** Event an die Cloud melden (DOORBELL/MOTION start/end). */
 async function reportEvent(
   cameraId: number,
   type: string,
-  phase: "start" | "end"
+  phase: "start" | "end",
+  at = new Date().toISOString(),
+  attempt = 0
 ): Promise<void> {
-  if (phase === "start") onCameraEvent(cameraId, type);
+  if (phase === "start" && attempt === 0) onCameraEvent(cameraId, type);
   try {
     const res = await api("/api/hub/camera-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        seen: [cameraId],
-        events: [{ cameraId, type, phase, at: new Date().toISOString() }],
+        // Erreichbar war die DoorBird zum Zeitpunkt des Ereignisses, nicht der Wiederholung.
+        ...(attempt === 0 ? { seen: [cameraId] } : {}),
+        events: [{ cameraId, type, phase, at }],
       }),
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     // Regel ausgelöst (z. B. Klingel → Kamera auf Preset): Tasks sofort holen.
     await kickIfRulesTriggered(res);
   } catch (e) {
-    log(`DoorBird Event-Meldung fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    const retryIn = phase === "end" ? END_RETRY_MS[attempt] : undefined;
+    log(
+      `DoorBird Event-Meldung fehlgeschlagen: ${e instanceof Error ? e.message : e}` +
+        (retryIn ? ` – Ende wird in ${Math.round(retryIn / 1000)} s noch einmal gemeldet` : "")
+    );
+    if (retryIn) {
+      setTimeout(() => void reportEvent(cameraId, type, phase, at, attempt + 1), retryIn);
+    }
   }
 }
 

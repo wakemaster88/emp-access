@@ -5,10 +5,15 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { CONFIG, api, log } from "./config.js";
-import { improve } from "./improve-log.js";
+import { improve, improveCount } from "./improve-log.js";
 import { noteSwitchPoll } from "./health-trends.js";
+import { ChangeLog } from "./change-log.js";
 
 const execFileAsync = promisify(execFile);
+/** Kennung des regelmaessigen Laufs (index.ts). */
+export const AUTO_LABEL = "SNMP-Auto";
+/** Routinezeilen nur bei Aenderung, sonst einmal am Tag. */
+const routineLog = new ChangeLog(24 * 3_600_000);
 
 const OID_SYS_NAME = "1.3.6.1.2.1.1.5.0";
 const OID_SYS_DESCR = "1.3.6.1.2.1.1.1.0";
@@ -263,10 +268,17 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
         switches.push(snap);
         lastSnapshots.set(host, { ...snap, error: null });
         noteSwitchPoll(host, snap, null);
-        log(`${label}: ${host} ${snap.sysName ?? ""} – ${snap.ports.length} Ports, ${snap.macTable.length} MACs`);
+        // Der Lauf alle 15 Minuten meldet einen Switch nur, wenn sich Name oder
+        // Port-Zahl aendern oder die MAC-Tabelle leer wird oder sich wieder
+        // fuellt (und einmal am Tag); ein Abruf von Hand immer. Die MAC-Zahl
+        // steht in der Zeile, zaehlt aber nicht zum Vergleich: Sie wandert
+        // mit jedem Geraet, das sendet oder verstummt.
+        const line = `${snap.sysName ?? ""} – ${snap.ports.length} Ports, ${snap.macTable.length} MACs`;
+        const compared = JSON.stringify([snap.sysName, snap.ports.length, snap.macTable.length > 0]);
+        if (label !== AUTO_LABEL || routineLog.shouldLog(host, compared, Date.now())) log(`${label}: ${host} ${line}`);
       } catch (e) {
         const error = friendlySnmpError(e);
-        log(`${label} ${host}: ${error}`);
+        if (label !== AUTO_LABEL || routineLog.shouldLog(host, `Fehler: ${error}`, Date.now())) log(`${label} ${host}: ${error}`);
         const prev = lastSnapshots.get(host);
         lastSnapshots.set(host, {
           ...(prev ?? { host, sysName: null, ports: [], macTable: [] }),
@@ -288,7 +300,7 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
       improve("snmp", "fail", { error: `HTTP ${res.status}` });
       return { ok: false, switches: switches.length, error: `HTTP ${res.status}` };
     }
-    improve("snmp", "ok", { switches: switches.length });
+    improveCount("snmp", "ok");
     return { ok: true, switches: switches.length };
   } catch (e) {
     return { ok: false, switches: 0, error: friendlySnmpError(e) };

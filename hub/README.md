@@ -225,7 +225,11 @@ Es werden keine Bilder gespeichert, nur die Tagesspitzen (`hub/.cache/occupancy.
 
 Der Hub ist ein reines Deployment-Target: er fährt `origin/main` aus dem
 GitHub-Repo und hält sich selbst aktuell. Mehrere Hubs an einem Account sind
-vorgesehen, sie unterscheiden sich nur über `HUB_NAME`.
+vorgesehen, sie unterscheiden sich nur über `HUB_NAME`. Die Kamera-Liste gilt
+dabei für den ganzen Account: Jeder Hub fragt alle aktivierten Kameras ab und
+führt ihre Ereignisse (Beginn, Ende, Aufräumen nach einem Neustart). Eine
+Zuordnung von Kameras zu einem Hub gibt es noch nicht; sie gehört dazu, bevor
+ein zweiter Hub Kameras übernimmt.
 
 Voraussetzungen: **macOS** (launchd, `vm_stat`, Vision-OCR), Node.js ≥ 20,
 git. Optional Python 3.12 (Face + ALPR) und `net-snmp` für SWITCH_SYNC.

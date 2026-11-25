@@ -35,6 +35,7 @@ import type {
   RoomPanel as RoomPanelData,
   RoomZone,
 } from "@/components/raeume/types";
+import { shownAsRunning } from "@/lib/camera-events";
 import { deviceControlModel, isLatchingSwitchDevice } from "@/lib/device-controls";
 import { RoomIcon } from "@/components/raeume/room-icons";
 import { TechTable } from "@/components/raeume/tech-table";
@@ -239,7 +240,10 @@ export function RoomPanel({
         wide={wide}
       />
     );
-  const eventLabel = room.lastEvent ? `${eventTypeLabel(room.lastEvent.type)} ${fmtAgo(room.lastEvent.startedAt, nowMs)}` : null;
+  // "läuft" nur kurz nach dem Abruf: Bleibt die Seite offen, steht danach das Alter der Angabe.
+  const eventLabel = room.lastEvent
+    ? `${eventTypeLabel(room.lastEvent.type)} ${shownAsRunning(room.lastEvent, nowMs) ? "läuft" : fmtAgo(room.lastEvent.at, nowMs)}`
+    : null;
   // Die Kamera mit dem juengsten Ereignis steht vorn und wird gross.
   const eventCamera = room.cameras.find((c) => c.id === room.lastEvent?.cameraId) ?? null;
   const cameras = eventCamera ? [eventCamera, ...room.cameras.filter((c) => c.id !== eventCamera.id)] : room.cameras;

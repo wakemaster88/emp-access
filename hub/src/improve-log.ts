@@ -33,6 +33,8 @@ const counts = new Map<string, number>();
 const since = new Date().toISOString();
 let lastSnapAt = 0;
 let writing = false;
+/** Zuletzt geloggter Hinweis – die Zeile kommt nur, wenn er sich aendert. */
+let lastLoggedHint: string | null = null;
 
 function enabled(): boolean {
   return process.env.HUB_IMPROVE_LOG !== "0";
@@ -192,7 +194,15 @@ export async function flushImproveSnapshot(reason = "interval"): Promise<void> {
   try {
     await mkdir(cacheDir(), { recursive: true });
     await writeFile(latestPath(), renderMd(snap), "utf8");
-    log(`Improve-Snapshot (${reason}): ${snap.hint}`);
+    // Der Snapshot wird weiter alle 5 Minuten geschrieben; ins Log kommt er
+    // beim Start, beim Beenden und wenn sich der oberste Hinweis aendert.
+    // Verglichen wird ohne Zahlen: Zaehler im Hinweis („46/141“) wandern mit
+    // jedem Durchlauf, die Aussage bleibt dieselbe.
+    const hintKey = snap.hint.replace(/\d+/g, "#");
+    if (reason !== "interval" || hintKey !== lastLoggedHint) {
+      log(`Improve-Snapshot (${reason}): ${snap.hint}`);
+    }
+    lastLoggedHint = hintKey;
   } catch {
     // Diagnose darf den Hub nicht stören.
   }
@@ -206,6 +216,18 @@ async function rotateIfNeeded(): Promise<void> {
   } catch {
     // Datei fehlt noch.
   }
+}
+
+/**
+ * Nur zaehlen, keine Zeile in improve.jsonl: fuer Routine im Sekunden- bis
+ * Minutentakt („Halteverbot frei“, „Parkplatz gemeldet“, reine Bewegung).
+ * Diese Zeilen fuellten die Datei zu mehr als der Haelfte und verdraengten in
+ * der Diagnose-Ansicht (letzte 80 Zeilen) alles, was etwas aussagt.
+ */
+export function improveCount(kind: ImproveKind, event: string): void {
+  if (!enabled()) return;
+  bump(kind, event);
+  if (Date.now() - lastSnapAt >= SNAP_INTERVAL_MS) void flushImproveSnapshot("interval");
 }
 
 export function improve(

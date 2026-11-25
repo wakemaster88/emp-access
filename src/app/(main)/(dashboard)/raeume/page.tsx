@@ -21,6 +21,7 @@ import { deviceControls } from "@/lib/device-controls";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 import { climateView } from "@/lib/room-climate";
 import { buildRoomActivity, dayStart } from "@/lib/room-activity";
+import { latestActivityByRoom, roomEventInputs } from "@/lib/camera-events";
 import { readMowerMap, readMowerState } from "@/lib/mower";
 import { getWeather } from "@/lib/weather";
 import { getIrrigationRecommendation, parseRunState, parseValveSequence } from "@/lib/irrigation";
@@ -59,6 +60,17 @@ const zoneSelect = {
   currentTitle: true,
   lastStateAt: true,
   device: { select: { lastUpdate: true } },
+} as const;
+
+/**
+ * Was die Raum-Karte von einem Kamera-Ereignis braucht. Raum, Name und letzte
+ * Meldung der Kamera stehen schon bei den Kameras der Raeume.
+ */
+const eventSelect = {
+  cameraId: true,
+  type: true,
+  startedAt: true,
+  endedAt: true,
 } as const;
 
 type DeviceRecord = {
@@ -144,7 +156,19 @@ export default async function RaeumePage() {
   const since = new Date(now);
   since.setHours(since.getHours() - EVENT_LOOKBACK_HOURS);
 
-  const [rooms, looseDevices, looseCameras, looseZones, events, schedules, account, netDevices, netClients] = await Promise.all([
+  const [
+    rooms,
+    looseDevices,
+    looseCameras,
+    looseZones,
+    events,
+    schedules,
+    account,
+    netDevices,
+    netClients,
+    openEvents,
+    lastEndedGroups,
+  ] = await Promise.all([
     db.keyRoom.findMany({
       where: accountFilter,
       include: {
@@ -229,12 +253,7 @@ export default async function RaeumePage() {
         startedAt: { gte: since },
         camera: { keyRoomId: { not: null } },
       },
-      select: {
-        cameraId: true,
-        type: true,
-        startedAt: true,
-        camera: { select: { name: true, keyRoomId: true } },
-      },
+      select: eventSelect,
       orderBy: { startedAt: "desc" },
       distinct: ["cameraId"],
     }),
@@ -267,6 +286,36 @@ export default async function RaeumePage() {
         device: { select: { keyRoomId: true } },
       },
       orderBy: { name: "asc" },
+    }),
+    // Offene Ereignisse: Bei anhaltender Bewegung meldet eine Kamera ein
+    // einziges langes Ereignis. Sein Beginn kann Stunden zurueckliegen und
+    // steht dann hinter kuerzeren, juengeren Ereignissen derselben Kamera.
+    // Ob es noch laeuft oder mit der letzten Meldung seiner Kamera endete,
+    // entscheidet `latestActivityByRoom`.
+    db.cameraEvent.findMany({
+      where: {
+        ...accountFilter,
+        startedAt: { gte: since },
+        endedAt: null,
+        camera: { keyRoomId: { not: null } },
+      },
+      select: eventSelect,
+      orderBy: { startedAt: "desc" },
+      take: 200,
+    }),
+    // Je Kamera und Art das spaeteste Ende: Ein langes Ereignis kann nach
+    // einem kuerzeren geendet haben, das spaeter begann, und stuende dann in
+    // keiner der beiden Listen. Die Datenbank fasst das Fenster zusammen und
+    // liefert je Kamera und Art eine Zeile statt aller Ereignisse des Tages.
+    db.cameraEvent.groupBy({
+      by: ["cameraId", "type"],
+      where: {
+        ...accountFilter,
+        startedAt: { gte: since },
+        endedAt: { not: null },
+        camera: { keyRoomId: { not: null } },
+      },
+      _max: { startedAt: true, endedAt: true },
     }),
   ]);
 
@@ -435,17 +484,13 @@ export default async function RaeumePage() {
     motions,
   );
 
-  const lastEventByRoom = new Map<number, RoomEvent>();
-  for (const e of events) {
-    const roomId = e.camera.keyRoomId;
-    if (roomId == null || lastEventByRoom.has(roomId)) continue;
-    lastEventByRoom.set(roomId, {
-      cameraId: e.cameraId,
-      cameraName: e.camera.name,
-      type: e.type,
-      startedAt: e.startedAt.toISOString(),
-    });
-  }
+  // Letzte Aktivitaet je Raum aus drei Listen: je Kamera das zuletzt begonnene
+  // Ereignis, die offenen und je Kamera und Art das zuletzt beendete. Warum es
+  // alle drei braucht, steht bei `roomEventInputs`.
+  const lastEventByRoom: Map<number, RoomEvent> = latestActivityByRoom(
+    roomEventInputs({ lastStarted: events, open: openEvents, lastEnded: lastEndedGroups }, rooms),
+    now,
+  );
 
   const roomPanels: RoomPanel[] = rooms.map((room) => ({
     id: room.id,

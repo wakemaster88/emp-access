@@ -27,6 +27,7 @@ import { ruleInclude } from "@/lib/room-rule-queries";
 import { DEFAULT_TIMEZONE, addDaysToYmd, tzYmd } from "@/lib/tz-time";
 import { McpToolError, type McpLevel, type McpTool } from "./protocol";
 import { equalsInsensitive } from "@/lib/like-escape";
+import { activityAt, isRunning, recentActivityWhere, withOpenEvents } from "@/lib/camera-events";
 
 export interface McpCtx {
   db: TenantDb;
@@ -735,6 +736,11 @@ export function describeWeekdays(mask: number): string {
   return days.length ? days.join(", ") : "nie";
 }
 
+/** So viele Ereignisse nennt camera_events höchstens. */
+const CAMERA_EVENTS_MAX = 200;
+/** So viele offene Ereignisse behalten darin ihren Platz, auch wenn sie früh begannen. */
+const CAMERA_EVENTS_OPEN_MAX = 50;
+
 const backendTools: Tool[] = [
   {
     name: "opening_hours",
@@ -1024,7 +1030,8 @@ const backendTools: Tool[] = [
   {
     name: "camera_events",
     title: "Kamera-Ereignisse",
-    description: "Ereignisse der Kameras (Bewegung, Person, Fahrzeug …) mit Beginn und Ende, optional für eine Kamera.",
+    description:
+      "Ereignisse der Kameras (Bewegung, Person, Fahrzeug …) mit Beginn und Ende, optional für eine Kamera. Ob ein Ereignis noch läuft, sagt running; ein fehlendes Ende allein heißt das nicht, die Kamera kann sich seither nicht mehr gemeldet haben. lastActivityAt nennt die letzte gesicherte Aktivität: bei laufenden Ereignissen jetzt, sonst das Ende oder die letzte Meldung der Kamera, ohne Ende spätestens einen Tag nach dem Beginn.",
     inputSchema: obj({
       camera: str("Optional: Kamera-ID oder Name"),
       type: str("Optional: Ereignistyp, z. B. motion, person, vehicle"),
@@ -1036,24 +1043,50 @@ const backendTools: Tool[] = [
       const ref = argStr(args, "camera", { max: 80 });
       const type = argStr(args, "type", { max: 40 });
       const cam = ref ? await findCamera(ctx, ref) : null;
-      const rows = await ctx.db.cameraEvent.findMany({
-        where: {
-          accountId: ctx.accountId,
-          startedAt: { gte: new Date(Date.now() - hours * 3_600_000) },
-          ...(cam ? { cameraId: cam.id } : {}),
-          ...(type ? { type: equalsInsensitive(type) } : {}),
-        },
-        select: { type: true, startedAt: true, endedAt: true, camera: { select: { name: true } } },
-        orderBy: { startedAt: "desc" },
-        take: 200,
-      });
+      // Auch Ereignisse, die vor dem Zeitraum begannen und noch laufen oder
+      // erst darin endeten (anhaltende Bewegung ist ein einziges Ereignis).
+      const now = new Date();
+      const where = {
+        accountId: ctx.accountId,
+        ...recentActivityWhere(new Date(now.getTime() - hours * 3_600_000), now),
+        ...(cam ? { cameraId: cam.id } : {}),
+        ...(type ? { type: equalsInsensitive(type) } : {}),
+      };
+      const select = {
+        id: true,
+        type: true,
+        startedAt: true,
+        endedAt: true,
+        camera: { select: { name: true, lastSeenAt: true } },
+      } as const;
+      // Die Liste ist nach Beginn sortiert und begrenzt. Offene Ereignisse
+      // kommen deshalb eigens dazu: Was früh begann und noch läuft, stünde an
+      // einem vollen Tag sonst hinter der Grenze. Von ihnen zuerst die am
+      // längsten offenen; die jüngsten stehen ohnehin in der Liste.
+      const [recent, open] = await Promise.all([
+        ctx.db.cameraEvent.findMany({ where, select, orderBy: { startedAt: "desc" }, take: CAMERA_EVENTS_MAX }),
+        ctx.db.cameraEvent.findMany({
+          where: { ...where, endedAt: null },
+          select,
+          orderBy: { startedAt: "asc" },
+          take: CAMERA_EVENTS_OPEN_MAX,
+        }),
+      ]);
+      const rows = withOpenEvents(recent, open, CAMERA_EVENTS_MAX);
       const byType: Record<string, number> = {};
       for (const e of rows) byType[e.type] = (byType[e.type] ?? 0) + 1;
       return {
         hours,
         count: rows.length,
         byType,
-        events: rows.map((e) => ({ camera: e.camera.name, type: e.type, startedAt: iso(e.startedAt), endedAt: iso(e.endedAt) })),
+        events: rows.map((e) => ({
+          camera: e.camera.name,
+          type: e.type,
+          startedAt: iso(e.startedAt),
+          endedAt: iso(e.endedAt),
+          running: isRunning(e, e.camera.lastSeenAt, now),
+          lastActivityAt: iso(activityAt(e, e.camera.lastSeenAt, now)),
+        })),
       };
     },
   },
