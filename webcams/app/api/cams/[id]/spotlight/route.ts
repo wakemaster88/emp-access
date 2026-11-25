@@ -9,9 +9,10 @@ import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+// Helligkeit nur, wenn der Aufrufer sie angibt; sonst bleibt die der Kamera.
 const Body = z.object({
   on: z.boolean(),
-  brightness: z.number().int().min(1).max(100).default(100),
+  brightness: z.number().int().min(1).max(100).optional(),
 });
 
 interface RouteCtx {

@@ -1409,3 +1409,40 @@ Ein unabhängiger Durchgang über den ganzen Stand fand 8 Punkte, einen mittlere
 - Zustellung: `camera.sentinel_send_*` gegen die Zeilen „AUFFÄLLIG“ halten, `camera.sentinel_alarm_lost` und „NICHT zugestellt“ bei 0. Nach jedem „Hub startet“ eine Zeile „Zustands-Wächter: Stand von vor N min übernommen“ und keine zweite Meldung zu einem schon gemeldeten Schlüssel.
 - Bildmodell: aus den Zeilen „Bildmodell Übersicht …“ Median und p90 bestimmen und danach über die Punkte 2 bis 5 von WAE-5 entscheiden.
 - Belegung: nach einigen Betriebstagen die Zeilen „(Probelauf, nichts gesendet)“ gegen den Andrang halten; passen die Schwellen, `HUB_OCCUPANCY_ALERTS=on` setzen.
+
+## 2026-11-25 (Gesamtprüfung Hub und Kamera-Erkennung, Kennzeichen und Tor: Nachtlicht, Fahrzeugliste, Mehrheit, Lichtmodus, Kreise mit Umlaut, DoorBird-Zuweisung)
+
+### Befund
+
+Hub-Log 22.11. 11:58 bis 24.11. 17:42 UTC, Sichtungen ab 13.11.2026, Fahrzeugliste vom 25.11.:
+- Nacht: Alle 6 Bursts mit Hub-Licht endeten 1,35 bis 2,31 s nach dem Einschalten mit „nicht mehr aktiv“, ohne ausgewertetes Bild; das Licht brannte 1,6 bis 2,6 s und war danach 5 min gesperrt. Von 35 Bursts im Dunkelfenster liefen 23 ohne Licht und ohne Zeile mit Grund. Keine Sichtung zwischen 17 und 7 Uhr trug ein Kennzeichen (0 von 86).
+- 16 von 54 Bursts endeten beim ersten Bild, das Bild wurde ungelesen verworfen. Nach einer Toröffnung nahm der Hub noch 9 bis 16 s Bilder auf; Upload im Median 20,0 s nach Burst-Start.
+- Fahrzeugliste ohne Höchstalter. Bei hängender Cloud wartete jedes Bild bis zu 30 s auf einen eigenen Abruf (Versuch: 20 Bilder, 20 Abrufe). Ein Nachladen überschrieb den lokalen Schaltzeitpunkt.
+- Mehrheit: Eine einzelne Lesung mit einem Zeichen zu viel (0,82) sammelte fünf richtige Bilder ein.
+- Weißlicht: Jeder Schaltbefehl setzte Lichtmodus 1 und eine Helligkeit, beim Ausschalten 100.
+- Kreise mit Umlaut: Die Texterkennung liefert nur A bis Z, LÜD, LÜN, BÜR oder GÖ waren in keiner Schreibweise bekannt (1 Lesung ab 0,8 mit Kreis „GO“ verworfen).
+- DoorBird: Ohne Zuweisung nahm der Hub die einzige DoorBird, die Telegram-Genehmigung legte Fahrzeuge ohne DoorBird an. Seit 25.11. 08:59 UTC haben alle 14 aktiven Fahrzeuge eine Zuweisung.
+
+Entscheidungen vom 25.11.2026: nachts 7 s Licht, Lichtmodus nicht überschreiben, Kreise mit Umlaut, „Keine Türöffnung“ gilt, Fahrzeugliste ohne Cloud höchstens 7 Tage.
+
+### Änderungen
+
+- `vehicle-light-rules.ts`, `vehicle-burst-rules.ts`, `cameras.ts`: Im Licht-Burst mindestens 8 Bilder (`HUB_VEHICLE_LIGHT_MIN_FRAMES`, 0 = wie bisher); das erste Bild wird nie ungelesen verworfen; Licht aus direkt nach dem letzten Bild; Sperre erst nach 8 ausgewerteten Bildern ohne Kennzeichen und ohne Fahrzeug ab Mindestfläche. „Kennzeichen sicher“ beendet einen Licht-Burst erst ab der Mindestzahl, eine Schaltung zwei Bilder später. Im Dunkeln je Burst eine Zeile „dunkel – Weißlicht an“ oder „kein Weißlicht (Grund)“, ohne zusätzliche Kamera-Abfrage; je Burst eine Endzeile mit Bildzahl und Grund; je Licht-Burst „mit Weißlicht N von M Bildern mit Lesung“.
+- Mehrheit: Eine längere Lesung bekommt die Bilder der kürzeren nur, wenn sie selbst auf mindestens 2 Bildern oder so vielen wie die kürzere steht; Abweichungen von der früheren Regel stehen im Log (`alpr.consensus_longer_single`). Einzelbilder unter 0,95 ohne Mehrheit werden nur gezählt (`alpr.single_weak`).
+- `whitelist-rules.ts` (neu), `plate.ts`, `vehicle-actuate.ts`: ein gemeinsamer Abruf mit 8 s Frist, alle Bilder warten zusammen höchstens 1,5 s, nach einem Fehler 60 s nicht; Cache mit Zeitpunkt des letzten gelungenen Abrufs; Fehler mit Ursache und Alter im Log; der neuere Schaltzeitpunkt je Fahrzeug bleibt (Werte über 5 min in der Zukunft zählen nicht). Nach `HUB_WHITELIST_MAX_AGE_H` (Standard 168) ohne gelungenen Abruf öffnet kein Kennzeichen mehr, auch nicht ersatzweise über die Cloud; Befund an die Cloud (Push und Telegram), sobald sie erreichbar ist, Entwarnung beim ersten Abruf.
+- `spotlight-rules.ts` (neu), Kiosk `webcams/lib/spotlight-param.ts`, Steuerzentrale und Kiosk-Bedienfeld: Schalten ändert nur an und aus, Lichtmodus und Helligkeit gehen so zurück, wie die Kamera sie meldet. Ohne lesbaren Stand der frühere Befehl mit stündlicher Zeile (`camera.spotlight_fallback`); `HUB_SPOTLIGHT_LEGACY` bzw. `WEBCAMS_SPOTLIGHT_LEGACY` stellt ihn ganz her.
+- `plate-cities.ts`, `plate-match.ts`, Cloud `src/lib/plate-match.ts`, `src/lib/vehicles.ts`: 30 Kreise mit Umlaut werden ohne Umlaut gelesen erkannt und mit Umlaut angezeigt; ein Listen-Eintrag mit Umlaut trifft die Lesung ohne Umlaut nur bei allen Zeichen gleich, genau einem passenden Eintrag und ohne mögliche Verwechslung mit einem anderen Kreis. Hub und Cloud prüfen dieselben 21 Fälle.
+- `vehicle-actuate-rules.ts` (neu), `agent/vehicle-approval-rules.ts` (neu), Cloud `allowed-vehicle-service.ts` und POST `/api/hub/allowed-vehicles`: Das Tor öffnet nur die zugewiesene DoorBird (`HUB_DOORBIRD_FALLBACK` stellt den Rückfall her); ohne DoorBird und ohne Shelly eine Zeile je Fahrzeug und Stunde (`alpr.no_actuator`). Die Telegram-Genehmigung schickt bei genau einer DoorBird deren ID mit und verspricht das Öffnen nur, wenn die Cloud sie bestätigt. Lieferdienst, Aufträge aus der Cloud und Offenhalten bleiben unverändert.
+- Upload-Zeile mit gesendeter und Original-Größe, Warnung über 4 MB.
+- Gegengelesen aus zwei Blickwinkeln (11 Punkte, 10 behoben), danach Stand von main zusammengeführt und die Nachbesserungen noch einmal gegengelesen (7 niedrige Punkte, 6 behoben): Quelle des Befunds „Fahrzeugliste zu alt“ je Hub, damit ein zweiter Hub ihn nicht schließt; nach einer Zeitüberschreitung gilt sein Stand als unbekannt, die Entwarnung geht vorsorglich hinaus; Push-Texte nennen bei Befunden des Hubs nicht mehr die Netzwerk-Prüfung; eine vorgemerkte Kennzeichen-Frage lädt vorher die Kamera-Liste; ein Schaltzeitpunkt mehr als 5 min in der Zukunft sperrt das Fahrzeug nicht; „Shelly zugewiesen“ gilt nur mit IP-Adresse oder Shelly-Cloud-Daten. 651 Hub-Tests, 650 grün, 1 übersprungen.
+
+### Nächster Schritt
+
+Nach einer Woche Betrieb am Hub-Log zählen:
+- Bursts im Dunkeln: Zeilen „dunkel – Weißlicht an“ und „kein Weißlicht (…)“ zusammen gleich der Zahl der Bursts im Dunkeln (vorher 23 von 35 ohne Angabe); der gemeldete Lichtmodus soll über eine Nacht gleich bleiben, `camera.spotlight_fallback` bei 0.
+- Nutzen des Lichts: `alpr.light_frames` und Sichtungen 17 bis 7 Uhr mit Kennzeichen (vorher 0 von 86). Bleiben beleuchtete Bilder ohne Lesung, `HUB_SPOTLIGHT_LEGACY=1` versuchen und den Lichtmodus in der Reolink-App prüfen.
+- `alpr.first_frame_seen` gegen `alpr.first_frame_empty` (vorher 16 von 54 verworfen); „geschaltet (Frame n)“ und Abstand Öffnung bis Upload (vorher Median 20 s).
+- `alpr.consensus_longer_single` und `alpr.single_weak`, danach über Einzelbilder unter 0,95 entscheiden.
+- `alpr.whitelist_stale` und `alpr.no_actuator` bei 0; nach einer Telegram-Genehmigung „genehmigt (DoorBird 11)“ im Log.
+- Nachts `alpr.burst_end_error` beobachten: Bricht ein Licht-Burst regelmäßig vor dem 8. Bild ab, greift die 5-Minuten-Sperre des Lichts nicht; dann nach zwei solchen Bursts in Folge sperren.
+- Danach: Sperrzeit eines Fahrzeugs auch setzen, wenn die Cloud ersatzweise geöffnet hat; erst dann die 60-s-Regel aus den Schalt-Pfaden nehmen.

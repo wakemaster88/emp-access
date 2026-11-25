@@ -1,6 +1,6 @@
 import type { TenantDb } from "@/lib/prisma";
 import { allowedVehicleCreateSchema, allowedVehicleUpdateSchema } from "@/lib/validators";
-import { formatPlateDisplay, normalizePlate } from "@/lib/vehicles";
+import { formatPlateDisplay, normalizePlate } from "@/lib/plate-match";
 
 /**
  * Freigegebene Fahrzeuge anlegen, aendern, loeschen. Gemeinsam fuer die
@@ -44,6 +44,31 @@ async function checkRefs(
     if (!doorbird) return "DoorBird nicht gefunden";
   }
   return null;
+}
+
+/**
+ * Body der Genehmigung durch den Hub (POST /api/hub/allowed-vehicles) als
+ * Eingabe für createAllowedVehicle. `doorbirdCameraId` schickt der Hub mit,
+ * wenn genau eine DoorBird eingerichtet ist; fehlt sie, bleibt das Fahrzeug
+ * ohne Türöffnung. Eine unbekannte, fremde oder ungültige ID lehnt
+ * createAllowedVehicle ab (Schema und checkRefs), statt das Fahrzeug ohne
+ * DoorBird anzulegen. Andere Felder des Bodys zählen nicht.
+ */
+export function hubApprovalInput(body: unknown): {
+  plate: string;
+  name: string;
+  notes: string;
+  cameraId?: number;
+  doorbirdCameraId?: unknown;
+} {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const plate = typeof b.plate === "string" ? b.plate.trim() : "";
+  const name = typeof b.name === "string" && b.name.trim() ? b.name.trim().slice(0, 80) : `Genehmigt ${plate}`;
+  const notes = typeof b.notes === "string" ? b.notes.slice(0, 500) : "Per Telegram vom Hub-Assistenten genehmigt.";
+  const cameraId = typeof b.cameraId === "number" && Number.isInteger(b.cameraId) ? b.cameraId : undefined;
+  const input: ReturnType<typeof hubApprovalInput> = { plate, name, notes, cameraId };
+  if (b.doorbirdCameraId !== undefined && b.doorbirdCameraId !== null) input.doorbirdCameraId = b.doorbirdCameraId;
+  return input;
 }
 
 export async function listAllowedVehicles(db: TenantDb, accountId: number) {

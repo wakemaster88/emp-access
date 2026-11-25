@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
-import { createAllowedVehicle } from "@/lib/allowed-vehicle-service";
+import { createAllowedVehicle, hubApprovalInput } from "@/lib/allowed-vehicle-service";
 
 /**
  * GET (Hub): aktive Fahrzeuge inkl. Aktoren, damit Erkennung und Schaltung
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       shellyAction: true,
       timerSeconds: true,
       shellyDevice: {
-        select: { ipAddress: true },
+        select: { ipAddress: true, shellyId: true, shellyAuthKey: true },
       },
     },
     orderBy: { id: "asc" },
@@ -45,6 +45,12 @@ export async function GET(request: NextRequest) {
       shellyAction: v.shellyAction,
       timerSeconds: v.timerSeconds,
       shellyIp: v.shellyDevice?.ipAddress ?? null,
+      // Shelly zugewiesen, den die Cloud schalten kann (IP-Adresse oder
+      // Shelly-Cloud-Daten): Der Hub meldet ihn nicht als fehlenden Aktor.
+      // Die Zugangsdaten bleiben auf dem Server, die Antwort trägt nur ja/nein.
+      shellyLinked:
+        v.shellyDevice != null &&
+        (!!v.shellyDevice.ipAddress || (!!v.shellyDevice.shellyId && !!v.shellyDevice.shellyAuthKey)),
     })),
   });
 }
@@ -53,22 +59,16 @@ export async function GET(request: NextRequest) {
  * POST (Hub): Fahrzeug auf die genehmigte Liste setzen – der Hub-Assistent
  * fragt per Telegram, wenn ein unbekanntes Kennzeichen mehrfach da war, und
  * legt es nach „Genehmigen“ an, beschraenkt auf die Kamera, an der es gesehen
- * wurde. Shelly/DoorBird-Zuordnung bleibt der Fahrzeugverwaltung in der Cloud.
+ * wurde. Ist genau eine DoorBird eingerichtet, schickt der Hub ihre ID mit
+ * (doorbirdCameraId); sie muss zum Konto gehoeren und eine DoorBird sein
+ * (checkRefs), sonst wird abgelehnt. Die Shelly-Zuordnung bleibt der
+ * Fahrzeugverwaltung in der Cloud.
  */
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
   if ("error" in auth) return auth.error;
   const { db, account } = auth;
-  const body = (await request.json().catch(() => ({}))) as {
-    plate?: unknown;
-    name?: unknown;
-    notes?: unknown;
-    cameraId?: unknown;
-  };
-  const plate = typeof body.plate === "string" ? body.plate.trim() : "";
-  const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 80) : `Genehmigt ${plate}`;
-  const notes = typeof body.notes === "string" ? body.notes.slice(0, 500) : "Per Telegram vom Hub-Assistenten genehmigt.";
-  const cameraId = typeof body.cameraId === "number" && Number.isInteger(body.cameraId) ? body.cameraId : undefined;
-  const r = await createAllowedVehicle(db, account.id, { plate, name, notes, cameraId });
+  const body = await request.json().catch(() => ({}));
+  const r = await createAllowedVehicle(db, account.id, hubApprovalInput(body));
   return NextResponse.json(r.body, { status: r.status });
 }

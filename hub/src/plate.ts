@@ -16,12 +16,26 @@ import {
   normalizePlate,
   pickPlate,
   plateMayActuate,
+  readsAs,
+  whitelistLookup,
   type OcrCandidate,
   type OcrResult,
   type PlateMatchKind,
 } from "./plate-match.js";
 import { LOCAL_CITY_CODES } from "./plate-cities.js";
 import { ChangeLog } from "./change-log.js";
+import { recordHubEvent } from "./state.js";
+import {
+  agoText,
+  cacheOkAt,
+  cacheWriteDue,
+  mergeTriggeredAt,
+  staleAlertSource,
+  staleAlertStep,
+  whitelistMaxAgeMs,
+  whitelistState,
+  whitelistWait,
+} from "./whitelist-rules.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -41,6 +55,20 @@ const ALPR_ACTUATE_MIN_CONF = Number(process.env.HUB_ALPR_ACTUATE_MIN_CONF || 0.
 const OCR_TIMEOUT_MS = Number(process.env.HUB_PLATE_TIMEOUT_MS || 45_000);
 // 5 min: Whitelist aendert sich selten – weniger Cloud-Requests bei Bursts.
 const WHITELIST_TTL_MS = 300_000;
+/** Abruf, den die Kennzeichen-Suche bei alter Liste anstoesst: Zeitlimit … */
+const WHITELIST_SHARED_TIMEOUT_MS = 8_000;
+/** … und so lange wartet ein Bild hoechstens darauf. */
+const WHITELIST_MAX_WAIT_MS = 1_500;
+/** Nach einem gescheiterten Abruf so lange kein Warten (Abruf nur im Hintergrund). */
+const WHITELIST_RETRY_MS = 60_000;
+/** Der Abruf-Zeitpunkt in der Cache-Datei ist hoechstens so alt (Alter nach Neustart ohne Cloud). */
+const WHITELIST_STAMP_MS = 3_600_000;
+/**
+ * Hoechstalter der Liste ohne Cloud (HUB_WHITELIST_MAX_AGE_H, Standard 168 h,
+ * 0 = unbegrenzt; Entscheidung vom 25.11.2026). Danach schaltet kein
+ * Kennzeichen mehr, bis ein Abruf wieder gelingt (whitelistMayActuate).
+ */
+const WHITELIST_MAX_AGE_MS = whitelistMaxAgeMs(process.env.HUB_WHITELIST_MAX_AGE_H);
 
 export interface CachedVehicle {
   id: number;
@@ -54,12 +82,25 @@ export interface CachedVehicle {
   shellyAction: string;
   timerSeconds: number | null;
   shellyIp: string | null;
+  /**
+   * Ein Shelly ist zugewiesen, auch ohne IP-Adresse (dann schaltet ihn die
+   * Cloud); null = die Cloud liefert die Angabe nicht (älterer Stand).
+   */
+  shellyLinked: boolean | null;
 }
 
 type WhitelistEntry = CachedVehicle;
 
 let whitelist: WhitelistEntry[] = [];
+/** Wann die Liste im Speicher gesetzt wurde (Cloud oder Cache-Datei); 0 = noch nie. */
 let whitelistLoadedAt = 0;
+/** Letzter GELUNGENER Abruf aus der Cloud, ueber Neustarts aus der Cache-Datei; null = unbekannt. */
+let whitelistOkAt: number | null = null;
+/** Letzter gescheiterter Abruf (0 = keiner seit dem letzten gelungenen). */
+let whitelistFailedAt = 0;
+/** Laufender Abruf der Liste – hoechstens einer gleichzeitig – und sein Beginn. */
+let whitelistFetch: Promise<void> | null = null;
+let whitelistFetchStartedAt: number | null = null;
 let localActuators = false;
 let building: Promise<boolean> | null = null;
 
@@ -86,6 +127,7 @@ function hydrateVehicle(v: Partial<CachedVehicle> | Record<string, unknown>): Ca
     shellyAction: String(r.shellyAction ?? "ON"),
     timerSeconds: r.timerSeconds == null ? null : Number(r.timerSeconds),
     shellyIp: r.shellyIp ? String(r.shellyIp) : null,
+    shellyLinked: typeof r.shellyLinked === "boolean" ? r.shellyLinked : null,
   };
 }
 
@@ -119,66 +161,210 @@ async function ensureBinary(): Promise<boolean> {
 let whitelistSignature: string | null = null;
 /** Inhalt, der sicher in der Datei steht; weicht er ab, wird beim naechsten Abruf wieder geschrieben. */
 let whitelistPersisted: string | null = null;
+/** Abruf-Zeitpunkt, der sicher in der Datei steht (null = noch keiner geschrieben). */
+let persistedOkAt: number | null = null;
 
-/** Liste fuer den Betrieb ohne Cloud sichern; true = geschrieben. */
+/**
+ * Liste fuer den Betrieb ohne Cloud sichern; true = geschrieben. `fetchedAt`
+ * ist der letzte gelungene Abruf, `at` nur der Zeitpunkt des Schreibens
+ * (auch eine lokale Oeffnung schreibt die Datei).
+ */
 function persistWhitelist(): Promise<boolean> {
+  const okAt = whitelistOkAt;
   return fs
     .mkdir(path.dirname(CACHE_FILE), { recursive: true })
     .then(() =>
       fs.writeFile(
         CACHE_FILE,
-        JSON.stringify({ at: Date.now(), localActuators, vehicles: whitelist })
+        JSON.stringify({ at: Date.now(), fetchedAt: okAt, localActuators, vehicles: whitelist })
       )
     )
     .then(
-      () => true,
+      () => {
+        if (okAt != null) persistedOkAt = okAt;
+        return true;
+      },
       () => false
     );
 }
 
-async function loadWhitelistFromDisk(): Promise<boolean> {
+/** Inhalt der Cache-Datei; null = keine Datei oder unlesbar. */
+async function readWhitelistCache(): Promise<{
+  vehicles: CachedVehicle[];
+  localActuators: boolean;
+  okAt: number | null;
+} | null> {
   try {
-    const raw = JSON.parse(await fs.readFile(CACHE_FILE, "utf8")) as {
-      vehicles?: CachedVehicle[];
-      localActuators?: boolean;
+    const [text, st] = await Promise.all([fs.readFile(CACHE_FILE, "utf8"), fs.stat(CACHE_FILE)]);
+    const raw = JSON.parse(text) as { vehicles?: unknown; localActuators?: boolean; fetchedAt?: unknown };
+    if (!Array.isArray(raw.vehicles)) return null;
+    return {
+      vehicles: raw.vehicles.map((v) => hydrateVehicle(v as CachedVehicle)),
+      localActuators: raw.localActuators === true,
+      okAt: cacheOkAt({ fetchedAt: raw.fetchedAt, mtimeMs: st.mtimeMs }),
     };
-    if (!Array.isArray(raw.vehicles) || raw.vehicles.length === 0) return false;
-    whitelist = raw.vehicles.map((v) => hydrateVehicle(v as CachedVehicle));
-    localActuators = raw.localActuators === true;
-    whitelistLoadedAt = Date.now();
-    log(
-      `Fahrzeuge: ${whitelist.length} Einträge aus Cache (offline${
-        localActuators ? ", lokale Aktoren" : ""
-      })`
-    );
-    return true;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function loadWhitelistFromDisk(): Promise<boolean> {
+  // Schon eine Liste gesetzt (auch eine in der Cloud geleerte): die gilt.
+  if (whitelistLoadedAt > 0) return whitelist.length > 0;
+  const cached = await readWhitelistCache();
+  if (!cached || cached.vehicles.length === 0) return false;
+  // Waehrend des Lesens ist ein Abruf gelungen: dessen Liste gilt.
+  if (whitelistLoadedAt > 0) return whitelist.length > 0;
+  whitelist = cached.vehicles;
+  localActuators = cached.localActuators;
+  whitelistLoadedAt = Date.now();
+  if (cached.okAt != null && (whitelistOkAt == null || cached.okAt > whitelistOkAt)) whitelistOkAt = cached.okAt;
+  log(
+    `Fahrzeuge: ${whitelist.length} Einträge aus Cache (offline, ${listAgeText(Date.now())}${
+      localActuators ? ", lokale Aktoren" : ""
+    })`
+  );
+  return true;
+}
+
+/** „Stand vor 2 Stunden“ – Alter der Liste nach dem letzten gelungenen Abruf. */
+function listAgeText(now: number): string {
+  return whitelistOkAt == null ? "Stand unbekannt" : `Stand vor ${agoText(now - whitelistOkAt)}`;
 }
 
 /*
  * Scheitert der Abruf, gilt die letzte Liste weiter. Das steht im Log:
- * einmal, bei anderem Grund und dann alle 30 min, dazu der erste Erfolg
- * danach. Ohne diese Zeilen saehe „Abruf scheitert seit Tagen“ im Log aus
- * wie „Liste unveraendert“.
+ * sofort und dann hoechstens alle 30 min, mit Ursache und Alter der Liste,
+ * dazu einmal der erste Erfolg danach. Ohne diese Zeilen saehe „Abruf
+ * scheitert seit Tagen“ im Log aus wie „Liste unveraendert“.
  */
 const whitelistFailLog = new ChangeLog(30 * 60_000);
 let whitelistFailing = false;
 
+/*
+ * Liste zu alt (HUB_WHITELIST_MAX_AGE_H): Zeile beim Eintritt und dann
+ * hoechstens alle 30 min, ein Hub-Ereignis beim Eintritt, beim ersten
+ * gelungenen Abruf einmal die Entwarnung.
+ */
+const staleLog = new ChangeLog(30 * 60_000);
+let staleNoted = false;
+
+/*
+ * Dieselbe Meldung geht als Befund an die Cloud (POST /api/hub/alerts,
+ * Quelle „fahrzeugliste“, dort Push und Telegram), sobald sie erreichbar ist:
+ * Faellt nur der Abruf der Liste aus, erfaehrt der Betreiber so davon. Der
+ * erste gelungene Abruf nimmt den Befund zurueck (nach einem Neustart einmal
+ * vorsorglich). Was zu senden ist, entscheidet staleAlertStep; nach einem
+ * gescheiterten Versuch fruehestens 30 min spaeter wieder.
+ */
+// Quelle und Schluessel je Hub: Die Cloud schliesst, was eine Quelle nicht
+// mehr meldet; ein zweiter Hub am selben Konto schliesst so nicht den Befund
+// eines anderen.
+const STALE_ALERT_SOURCE = staleAlertSource(CONFIG.name);
+const STALE_ALERT_KEY = `${STALE_ALERT_SOURCE}:zu-alt`;
+const STALE_ALERT_RETRY_MS = 30 * 60_000;
+/** Was die Cloud bestaetigt hat: true = Befund offen, false = keiner, null = unbekannt (nach dem Start). */
+let staleAlertReported: boolean | null = null;
+let staleAlertFailedAt = 0;
+let staleAlertSending = false;
+
+function syncStaleAlert(stale: boolean, now: number, since: string): void {
+  if (staleAlertSending) return;
+  const step = staleAlertStep({
+    stale,
+    reported: staleAlertReported,
+    now,
+    failedAt: staleAlertFailedAt,
+    retryMs: STALE_ALERT_RETRY_MS,
+  });
+  if (!step) return;
+  staleAlertSending = true;
+  const alerts =
+    step === "open"
+      ? [
+          {
+            key: STALE_ALERT_KEY,
+            title: "Fahrzeugliste zu alt – automatische Öffnung ausgesetzt",
+            detail:
+              `Der Hub konnte die Fahrzeugliste seit ${since} nicht aus der Cloud abrufen. ` +
+              "Kennzeichen öffnen Tor, Tür und Shelly erst wieder, wenn ein Abruf gelingt.",
+            severity: "warn",
+          },
+        ]
+      : [];
+  void api("/api/hub/alerts", {
+    method: "POST",
+    body: JSON.stringify({ hubName: CONFIG.name, source: STALE_ALERT_SOURCE, alerts }),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      staleAlertReported = step === "open";
+      staleAlertFailedAt = 0;
+      if (step === "open") log("Fahrzeugliste zu alt: an die Cloud gemeldet (Push und Telegram)");
+    })
+    .catch(() => {
+      // Die Zeile zur Sperre steht ohnehin alle 30 min im Log. Ob die Cloud
+      // den Befund trotzdem gespeichert hat (Zeitueberschreitung), ist offen:
+      // Dann geht beim naechsten Anlass die Entwarnung vorsorglich hinaus.
+      staleAlertFailedAt = Date.now();
+      staleAlertReported = null;
+    })
+    .finally(() => {
+      staleAlertSending = false;
+    });
+}
+
+function noteStale(now: number): void {
+  const since = whitelistOkAt == null ? "unbekannter Zeit" : agoText(now - whitelistOkAt);
+  if (!staleNoted) {
+    staleNoted = true;
+    recordHubEvent({
+      kind: "system",
+      severity: "warn",
+      where: "Fahrzeugliste",
+      title: "Fahrzeugliste zu alt – automatische Öffnung ausgesetzt",
+      detail: `seit ${since} nicht erneuert`,
+    });
+  }
+  if (staleLog.shouldLog("stale", "zu alt", now)) {
+    log(`Fahrzeugliste seit ${since} nicht erneuert, automatische Öffnung ausgesetzt`);
+  }
+  syncStaleAlert(true, now, since);
+}
+
+/**
+ * Darf ein Kennzeichen-Treffer noch Tor, Tuer oder Shelly schalten? Nein,
+ * wenn der letzte gelungene Abruf der Liste aelter als
+ * HUB_WHITELIST_MAX_AGE_H ist (Standard 7 Tage). Erkennung, Sichtungen und
+ * Anzeige arbeiten mit der Liste weiter; der erste gelungene Abruf hebt die
+ * Sperre auf.
+ */
+export function whitelistMayActuate(now = Date.now()): boolean {
+  if (whitelistState({ now, lastOkAt: whitelistOkAt, maxAgeMs: WHITELIST_MAX_AGE_MS }) !== "stale") return true;
+  noteStale(now);
+  return false;
+}
+
 async function whitelistFetchFailed(reason: string): Promise<void> {
   if (whitelist.length === 0) await loadWhitelistFromDisk();
+  const now = Date.now();
   whitelistFailing = true;
-  if (!whitelistFailLog.shouldLog("fetch", reason, Date.now())) return;
+  whitelistFailedAt = now;
+  // Auch ohne Fahrzeug an der Kamera: Die Sperre steht im Log, sobald sie gilt.
+  if (whitelist.length > 0) whitelistMayActuate(now);
+  if (!whitelistFailLog.shouldLog("fetch", "fehlgeschlagen", now)) return;
   log(
     `Fahrzeuge: Abruf der Liste fehlgeschlagen (${reason}), ` +
-      (whitelist.length > 0 ? `die letzte Liste mit ${whitelist.length} Einträgen gilt weiter` : "keine Liste geladen")
+      (whitelist.length > 0
+        ? `die letzte Liste mit ${whitelist.length} Einträgen gilt weiter (${listAgeText(now)})`
+        : "keine Liste geladen")
   );
 }
 
-export async function refreshVehicleWhitelist(): Promise<void> {
+/** Ein Abruf der Liste; scheitert nie (Fehler landen in whitelistFetchFailed). */
+async function fetchWhitelist(timeoutMs?: number): Promise<void> {
   try {
-    const res = await api("/api/hub/allowed-vehicles");
+    const res = await api("/api/hub/allowed-vehicles", timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : undefined);
     if (!res.ok) {
       await whitelistFetchFailed(`HTTP ${res.status}`);
       return;
@@ -187,19 +373,36 @@ export async function refreshVehicleWhitelist(): Promise<void> {
       vehicles?: CachedVehicle[];
       localActuators?: boolean;
     };
-    whitelist = (json.vehicles ?? []).map((v) => hydrateVehicle(v));
+    // Lokale Oeffnungen sind der Cloud erst mit dem Upload bekannt: je
+    // Fahrzeug den neueren Schaltzeitpunkt behalten, nach einem Neustart den
+    // aus der Cache-Datei. Sonst vergaesse das Nachladen die Sperrzeit. Ein
+    // lokaler Wert weit in der Zukunft (Uhr ging vor) zaehlt dabei nicht.
+    const local = whitelist.length > 0 ? whitelist : ((await readWhitelistCache())?.vehicles ?? []);
+    const now = Date.now();
+    const previousOkAt = whitelistOkAt;
+    whitelist = mergeTriggeredAt(local, (json.vehicles ?? []).map((v) => hydrateVehicle(v)), now);
     localActuators = json.localActuators === true;
-    whitelistLoadedAt = Date.now();
+    whitelistLoadedAt = now;
+    whitelistOkAt = now;
+    whitelistFailedAt = 0;
     const recovered = whitelistFailing;
     if (recovered) {
       whitelistFailing = false;
-      whitelistFailLog.shouldLog("fetch", "", Date.now());
+      whitelistFailLog.shouldLog("fetch", "", now);
     }
+    if (staleNoted) {
+      staleNoted = false;
+      staleLog.shouldLog("stale", "", now);
+      log("Fahrzeugliste erneuert, automatische Öffnung wieder aktiv");
+      recordHubEvent({ kind: "system", severity: "info", where: "Fahrzeugliste", title: "Fahrzeugliste erneuert – automatische Öffnung wieder aktiv" });
+    }
+    syncStaleAlert(false, now, "");
     // Alle 5 Minuten abgeholt; Datei und Log-Zeile nur, wenn sich etwas
     // geaendert hat (vorher 288 gleiche Zeilen und Schreibvorgaenge am Tag)
-    // oder der Abruf davor gescheitert war.
+    // oder der Abruf davor gescheitert war. Die Datei zusaetzlich einmal je
+    // Stunde, damit ihr Abruf-Zeitpunkt nach einem Neustart ohne Cloud stimmt.
     const signature = JSON.stringify([localActuators, json.vehicles ?? []]);
-    if (signature !== whitelistPersisted) {
+    if (cacheWriteDue({ changed: signature !== whitelistPersisted, now, persistedOkAt, stampMs: WHITELIST_STAMP_MS })) {
       void persistWhitelist().then((ok) => {
         if (ok) whitelistPersisted = signature;
       });
@@ -209,24 +412,86 @@ export async function refreshVehicleWhitelist(): Promise<void> {
     log(
       `Fahrzeuge: ${whitelist.length} Whitelist-Einträge vom Server${
         localActuators ? " (lokale Aktoren)" : ""
-      }${recovered ? " (Abruf klappt wieder)" : ""}`
+      }${recovered ? ` (Abruf klappt wieder${previousOkAt == null ? "" : `, letzter Abruf vor ${agoText(now - previousOkAt)}`})` : ""}`
     );
   } catch (e) {
     await whitelistFetchFailed(e instanceof Error ? e.message : String(e));
   }
 }
 
+function startWhitelistFetch(timeoutMs?: number): Promise<void> {
+  const run = fetchWhitelist(timeoutMs);
+  whitelistFetch = run;
+  whitelistFetchStartedAt = Date.now();
+  const done = (): void => {
+    if (whitelistFetch !== run) return;
+    whitelistFetch = null;
+    whitelistFetchStartedAt = null;
+  };
+  run.then(done, done);
+  return run;
+}
+
+/**
+ * Liste aus der Cloud holen (alle 5 min und nach Aenderungen). Laeuft schon
+ * ein Abruf, folgt danach ein eigener: Wer nach einer Aenderung (Telegram,
+ * Dashboard) nachlaedt, braucht den Stand danach. Nie zwei gleichzeitig.
+ */
+export function refreshVehicleWhitelist(): Promise<void> {
+  const before = whitelistFetch;
+  if (!before) return startWhitelistFetch();
+  return before.then(() => (whitelistFetch && whitelistFetch !== before ? whitelistFetch : startWhitelistFetch()));
+}
+
 /** Für Offline-Backfill: Whitelist ohne Cloud-API setzen. */
 export function setVehicleWhitelist(entries: WhitelistEntry[]): void {
   whitelist = entries.map((v) => hydrateVehicle(v));
   whitelistLoadedAt = Date.now();
+  whitelistOkAt = whitelistLoadedAt;
 }
 
+/** Auf `work` warten, aber hoechstens `maxMs`. */
+function atMost(work: Promise<unknown>, maxMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, maxMs);
+    work.then(
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      () => {
+        clearTimeout(timer);
+        resolve();
+      }
+    );
+  });
+}
+
+/**
+ * Liste fuer den Abgleich eines Bilds. Die Kennzeichen-Suche wartet nie
+ * lange: Ist die Liste aelter als 5 min, laeuft ein gemeinsamer Abruf
+ * (Zeitlimit 8 s), auf den alle Bilder zusammen hoechstens 1,5 s ab seinem
+ * Beginn warten; nach einem gescheiterten Abruf eine Minute lang gar nicht
+ * (whitelistWait). Nur ohne jede Liste (Start ohne Cache-Datei) wartet sie
+ * bis zum Ende des Abrufs.
+ */
 async function ensureWhitelist(): Promise<WhitelistEntry[]> {
   if (whitelist.length === 0) await loadWhitelistFromDisk();
-  if (Date.now() - whitelistLoadedAt > WHITELIST_TTL_MS) {
-    await refreshVehicleWhitelist();
-  }
+  const plan = whitelistWait({
+    now: Date.now(),
+    hasList: whitelistLoadedAt > 0,
+    loadedAt: whitelistLoadedAt,
+    ttlMs: WHITELIST_TTL_MS,
+    failedAt: whitelistFailedAt,
+    retryMs: WHITELIST_RETRY_MS,
+    maxWaitMs: WHITELIST_MAX_WAIT_MS,
+    fetchStartedAt: whitelistFetch ? whitelistFetchStartedAt : null,
+  });
+  if (!plan.fetch) return whitelist;
+  const hasList = whitelistLoadedAt > 0;
+  const run = whitelistFetch ?? startWhitelistFetch(hasList ? WHITELIST_SHARED_TIMEOUT_MS : undefined);
+  if (!Number.isFinite(plan.waitMs)) await run;
+  else if (plan.waitMs > 0) await atMost(run, plan.waitMs);
   return whitelist;
 }
 
@@ -253,10 +518,15 @@ export function listWhitelistPublic(): Array<{
     .sort((a, b) => a.plate.localeCompare(b.plate, "de"));
 }
 
+/**
+ * Listen-Fahrzeug zu einem Kennzeichen: Zeichen für Zeichen, ein Kreis mit
+ * Umlaut auch in der Schreibweise ohne Umlaut (whitelistLookup in
+ * plate-match.ts, Entscheidung vom 25.11.2026).
+ */
 export function findAllowedVehicle(plate: string): CachedVehicle | null {
   const n = normalizePlate(plate);
   if (n.length < 4) return null;
-  return whitelist.find((v) => v.plateNormalized === n) ?? null;
+  return whitelistLookup(whitelist)(n);
 }
 
 /** True, wenn die Cloud-API Aktoren mitliefert und skipActuators versteht. */
@@ -451,9 +721,8 @@ export async function scorePlateFromJpeg(
         alprProbable = pick.probable;
         if (plate) {
           const exact = pick.matchKind === "exact";
-          const match = result.candidates.find(
-            (c) => normalizePlate(c.plate) === normalizePlate(plate)
-          );
+          // readsAs: auch die Lesung ohne Umlaut hinter einem Kennzeichen mit Umlaut.
+          const match = result.candidates.find((c) => readsAs(c.plate, plate));
           return {
             plate,
             confidence: match?.confidence ?? result.confidence,
@@ -495,9 +764,7 @@ export async function scorePlateFromJpeg(
     const viaWhitelist = pick.matchKind === "exact";
     let confidence = 0;
     if (plate) {
-      const match = result.candidates.find(
-        (c) => normalizePlate(c.plate) === normalizePlate(plate)
-      );
+      const match = result.candidates.find((c) => readsAs(c.plate, plate));
       confidence = match?.confidence ?? result.confidence;
       if (viaWhitelist && confidence < 0.5) confidence = 0.5;
     } else if (result.candidates[0]) {

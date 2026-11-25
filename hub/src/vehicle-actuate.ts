@@ -1,17 +1,31 @@
 /**
  * Lokale Ausführung nach Kennzeichen-Match: DoorBird und Shelly im LAN,
  * ohne Cloud-Roundtrip. Die Cloud speichert danach nur Historie/Push.
+ * Geöffnet wird nur die dem Fahrzeug zugewiesene DoorBird
+ * (vehicle-actuate-rules.ts, Rückschalter HUB_DOORBIRD_FALLBACK).
  */
+import { ChangeLog } from "./change-log.js";
 import { log } from "./config.js";
 import { listDoorbirdIds, openDoorbirdDoor } from "./doorbird.js";
+import { improveCount } from "./improve-log.js";
 import {
   findAllowedVehicle,
   markVehicleTriggered,
   plateActuationAllowed,
   plateActuationMinConf,
   vehicleLocalActuatorsEnabled,
+  whitelistMayActuate,
   type CachedVehicle,
 } from "./plate.js";
+import { cooldownActive, doorbirdFallback, lacksActuator, resolveDoorbirdId } from "./vehicle-actuate-rules.js";
+import { TRIGGERED_MAX_AHEAD_MS } from "./whitelist-rules.js";
+
+export { resolveDoorbirdId };
+
+/** HUB_DOORBIRD_FALLBACK=1: ohne Zuweisung die einzige DoorBird (früheres Verhalten). */
+const DOORBIRD_FALLBACK = doorbirdFallback(process.env.HUB_DOORBIRD_FALLBACK);
+/** Hinweise je Fahrzeug höchstens stündlich. */
+const doorbirdLog = new ChangeLog(60 * 60_000);
 
 export interface LocalActuation {
   vehicle: CachedVehicle;
@@ -54,12 +68,6 @@ async function switchShellyLocal(
   }
 }
 
-function resolveDoorbirdId(vehicle: CachedVehicle): number | null {
-  if (vehicle.doorbirdCameraId) return vehicle.doorbirdCameraId;
-  const ids = listDoorbirdIds();
-  return ids.length === 1 ? ids[0] : null;
-}
-
 /**
  * Schaltet Tor/Shelly fuer ein freigegebenes Kennzeichen.
  *
@@ -70,6 +78,10 @@ function resolveDoorbirdId(vehicle: CachedVehicle): number | null {
  * Erkennung) zaehlt der exakte Treffer. Ist der Treffer zu unsicher, meldet
  * das Ergebnis `skipCloud`, damit auch die Cloud nicht ersatzweise einen
  * Tueroeffner-Task anlegt.
+ *
+ * Ist die Fahrzeugliste aelter als HUB_WHITELIST_MAX_AGE_H (Standard 7 Tage
+ * ohne gelungenen Abruf), schaltet kein Kennzeichen, ebenfalls mit
+ * `skipCloud`; plate.ts loggt das beim Eintritt und dann alle 30 min.
  */
 export async function actuateIfAllowed(opts: {
   cameraId: number;
@@ -92,6 +104,16 @@ export async function actuateIfAllowed(opts: {
       shellyOk: null,
     };
   }
+  if (!whitelistMayActuate()) {
+    improveCount("alpr", "whitelist_stale");
+    return {
+      vehicle,
+      skipCloud: true,
+      doorOpened: false,
+      shellyTriggered: false,
+      shellyOk: null,
+    };
+  }
   if (!vehicleLocalActuatorsEnabled()) return null;
 
   if (vehicle.cameraId != null && vehicle.cameraId !== opts.cameraId) {
@@ -101,10 +123,27 @@ export async function actuateIfAllowed(opts: {
     return null;
   }
 
-  const doorId = resolveDoorbirdId(vehicle);
+  const doorId = resolveDoorbirdId(vehicle, listDoorbirdIds(), DOORBIRD_FALLBACK);
   const canAct = doorId != null || !!vehicle.shellyIp;
+  if (doorId != null && !vehicle.doorbirdCameraId) {
+    improveCount("alpr", "doorbird_fallback");
+    if (doorbirdLog.shouldLog(`fallback:${vehicle.id}`, "", Date.now())) {
+      log(`Fahrzeug ${vehicle.name}: ${opts.plate} ohne zugewiesene DoorBird – Ziel ist die einzige DoorBird ${doorId} (HUB_DOORBIRD_FALLBACK)`);
+    }
+  }
   if (!canAct) {
-    // Alte Cloud-API ohne Aktoren: Cloud darf den Hub-Task noch anlegen.
+    // Ein Shelly ohne IP-Adresse fehlt nicht: Ihn schaltet die Cloud.
+    if (lacksActuator(vehicle, doorId)) {
+      improveCount("alpr", "no_actuator");
+      if (doorbirdLog.shouldLog(`none:${vehicle.id}`, "", Date.now())) {
+        log(
+          `Fahrzeug ${vehicle.name}: ${opts.plate} auf der Liste, ohne zugewiesene DoorBird und ohne Shelly – keine lokale Schaltung (DoorBird in der Fahrzeugverwaltung zuweisen)`
+        );
+      }
+    }
+    // Alte Cloud-API ohne Aktoren: Cloud darf den Hub-Task noch anlegen
+    // (sie legt ihn nur für eine dem Fahrzeug zugewiesene DoorBird an) und
+    // schaltet einen Shelly ohne IP-Adresse über die Shelly-Cloud.
     return {
       vehicle,
       skipCloud: false,
@@ -115,7 +154,7 @@ export async function actuateIfAllowed(opts: {
   }
 
   const cooldownMs = Math.max(1, vehicle.cooldownMinutes) * 60_000;
-  if (vehicle.lastTriggeredAt && Date.now() - vehicle.lastTriggeredAt < cooldownMs) {
+  if (cooldownActive(vehicle.lastTriggeredAt, Date.now(), cooldownMs, TRIGGERED_MAX_AHEAD_MS)) {
     log(`Fahrzeug ${vehicle.name}: Cooldown, keine lokale Schaltung`);
     return {
       vehicle,

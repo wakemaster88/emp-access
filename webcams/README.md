@@ -114,6 +114,11 @@ zuweisen.
 
 Das Steuer-Panel blendet automatisch nur die Buttons ein, die das Modell beherrscht.
 
+Der Spotlight-Knopf schaltet nur an und aus: Lichtmodus und Helligkeit bleiben,
+wie die Kamera sie meldet (`lib/spotlight-param.ts`, dieselbe Regel wie im
+Hub). `WEBCAMS_SPOTLIGHT_LEGACY=1` (z. B. in `.env.local`, danach Neustart)
+stellt den früheren Befehl her (Lichtmodus 1, Helligkeit 100).
+
 ## Sicherheit
 
 - **Admin-PIN** (Einstellungen → PIN): sobald gesetzt, verlangen alle Seiten

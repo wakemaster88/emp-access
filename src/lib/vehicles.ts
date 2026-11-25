@@ -6,24 +6,12 @@ import { sendPushToAccount } from "@/lib/web-push";
 import { storeSightingSnapshot } from "@/lib/blob-store";
 import type { HubTaskActor } from "@/lib/hub-task-rules";
 import { recordDeviceAction, type DeviceActionBy } from "@/lib/device-action-log";
+import { formatPlateDisplay, matchAllowedPlate, normalizePlate } from "@/lib/plate-match";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 
-/** Kennzeichen normalisieren: Grossbuchstaben, ohne Leerzeichen/Bindestriche/Punkte. */
-export function normalizePlate(plate: string): string {
-  return plate
-    .trim()
-    .toUpperCase()
-    .replace(/[Ä]/g, "AE")
-    .replace(/[Ö]/g, "OE")
-    .replace(/[Ü]/g, "UE")
-    .replace(/ß/g, "SS")
-    .replace(/[^A-Z0-9]/g, "");
-}
-
-export function formatPlateDisplay(plate: string): string {
-  return plate.trim().replace(/\s+/g, " ").toUpperCase();
-}
+/** Kennzeichen normalisieren und anzeigen: plate-match.ts (reine Logik, ohne Datenbank). */
+export { formatPlateDisplay, normalizePlate };
 
 /**
  * Verarbeitet eine Fahrzeug-Sichtung: Historie anlegen, bei bekanntem
@@ -83,6 +71,21 @@ export async function processVehicleSighting(opts: {
       : null;
 
   if (vehicle && !vehicle.isActive) vehicle = null;
+
+  // Kreis mit Umlaut, ohne Umlaut gelesen (LUD-AB 123 für LÜD-AB 123): wie am
+  // Hub nur bei gleichen Zeichen und ohne Verwechslung mit einem anderen Kreis
+  // (matchAllowedPlate), unter den aktiven Fahrzeugen wie in der Hub-Liste.
+  if (!vehicle && plateNormalized) {
+    const withUmlaut = await prisma.allowedVehicle.findMany({
+      where: {
+        accountId: opts.accountId,
+        isActive: true,
+        OR: [{ plate: { contains: "Ä" } }, { plate: { contains: "Ö" } }, { plate: { contains: "Ü" } }],
+      },
+      include: { shellyDevice: true },
+    });
+    vehicle = matchAllowedPlate(plateNormalized, withUmlaut);
+  }
 
   const cameraAllowed =
     !vehicle ||

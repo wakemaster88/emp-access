@@ -64,6 +64,11 @@ export function weatherError(): string | null {
   return lastError;
 }
 
+/** Zuletzt geladener Wetterbericht, ohne neuen Abruf (null = noch keiner im Speicher). */
+export function lastForecast(): Forecast | null {
+  return cached?.data ?? null;
+}
+
 /** Aktueller Wetterbericht; null, wenn Open-Meteo nicht erreichbar war und nichts im Speicher liegt. */
 export async function getForecast(): Promise<Forecast | null> {
   const loc = location();

@@ -44,13 +44,84 @@ ein Mac Studio im Technikraum, Betrieb siehe
   Standard 0,5). Ein unscharfer Treffer
   (gleiche Ziffern, ein bis zwei Zeichen daneben) steht nur als Hinweis
   „vermutlich …“ in Log und Ereignis und schaltet nie – weder lokal noch
-  ersatzweise über die Cloud (`plate-match.ts`). Ohne lesbares Kennzeichen
+  ersatzweise über die Cloud (`plate-match.ts`). Das Tor öffnet nur die dem
+  Fahrzeug in der Fahrzeugverwaltung zugewiesene DoorBird
+  (`vehicle-actuate-rules.ts`). Wird ein Fahrzeug der Liste ohne DoorBird und
+  ohne Shelly gelesen, steht das höchstens stündlich je Fahrzeug im Log
+  („… ohne zugewiesene DoorBird und ohne Shelly – keine lokale Schaltung“),
+  Zähler `alpr.no_actuator`. Ein Shelly ohne IP-Adresse zählt nicht dazu:
+  Ihn schaltet die Cloud über die Shelly-Cloud (Feld `shellyLinked` der
+  Liste). `HUB_DOORBIRD_FALLBACK=1` (auch `true`, `ja`,
+  `on`) stellt den früheren Rückfall her: ohne Zuweisung die DoorBird, wenn
+  genau eine eingerichtet ist (Log höchstens stündlich je Fahrzeug, Zähler
+  `alpr.doorbird_fallback`). Die Genehmigung per Telegram schickt die
+  DoorBird mit, wenn genau eine eingerichtet ist. Lieferdienst-Öffnung
+  (`HUB_DELIVERY_DOORBIRD_ID`, sonst die einzige DoorBird), Aufträge aus der
+  Cloud und Offenhaltung bleiben unberührt. Kreise mit Umlaut (LÜD,
+  LÜN, BÜR, GÖ …) liest die Erkennung ohne Umlaut: Der Abgleich vergleicht
+  zusätzlich die Schreibweise ohne Umlaut des Listen-Eintrags, weiter Zeichen
+  für Zeichen und nur, wenn sich diese Zeichen nicht auch als Kennzeichen
+  eines anderen Kreises lesen lassen (BÖ und BO, GÖ-AB und GOA-B); die Cloud
+  entscheidet gleich (`src/lib/plate-match.ts`). Eine Lesung mit einem
+  solchen Kreis gilt als bekannter Kreis und erscheint mit Umlaut
+  (`UMLAUT_CITY_BY_PLAIN` in `plate-cities.ts`). Ohne lesbares Kennzeichen
   entscheidet der YOLO-Tracker, ob überhaupt ein Auto an der Einfahrt steht:
   Boxen unter der Mindestgröße (Standard 2 % Bildfläche) oder außerhalb der
   Einfahrtszone gelten als Hintergrundverkehr. Beides wird pro Kamera in der
   Cloud eingestellt (Kameras → Bearbeiten → „Fahrzeug ohne Kennzeichen“, Zone
   per Klick auf den Schnappschuss); `HUB_VEHICLE_MIN_AREA` und
   `HUB_VEHICLE_ZONE(_<id>)` in `.env` sind nur noch der Fallback.
+  Ist der Fahrzeug-Alarm beim ersten Bild schon wieder aus, wird das schon
+  geholte Bild trotzdem gelesen (Kennzeichen, Fahrzeug-Prüfung); nur ohne
+  Fund endet der Burst dort. Hat der Listen-Treffer eines Bilds Tor oder
+  Shelly geschaltet, endet der Burst zwei Bilder danach. Jeder Burst endet
+  mit einer Zeile mit Bildzahl und Grund.
+- **Fahrzeugliste** (`plate.ts`, Regeln in `whitelist-rules.ts`): kommt alle
+  5 min aus der Cloud und liegt für den Betrieb ohne Cloud in
+  `.cache/allowed-vehicles.json` (mit Zeitpunkt des letzten gelungenen
+  Abrufs). Ist sie älter als 5 min, warten die Bilder eines Bursts zusammen
+  höchstens 1,5 s auf einen gemeinsamen Abruf (Zeitlimit 8 s), nach einem
+  gescheiterten Abruf eine Minute lang gar nicht. Ein gescheiterter Abruf steht sofort und
+  dann alle 30 min mit Ursache und Alter der Liste im Log, der erste Erfolg
+  danach einmal. Gelingt `HUB_WHITELIST_MAX_AGE_H` (Standard 168 = 7 Tage,
+  0 = unbegrenzt) lang kein Abruf, öffnet kein Kennzeichen mehr Tor, Tür
+  oder Shelly („Fahrzeugliste seit … nicht erneuert, automatische Öffnung
+  ausgesetzt“, Hub-Ereignis, dazu ein Befund an die Cloud über
+  `/api/hub/alerts`, Quelle `fahrzeugliste-<Hub-Name>`, also Push und Alarm-Telegram,
+  sobald sie erreichbar ist); Erkennung, Sichtungen und Anzeige laufen
+  weiter, der nächste gelungene Abruf hebt das auf und nimmt den Befund
+  zurück. Vor Ort ohne Cloud:
+  `HUB_WHITELIST_MAX_AGE_H=0` in `hub/.env` und den Hub neu starten.
+  Lieferdienst-Öffnung und Offenhaltung nutzen die Fahrzeugliste nicht und
+  bleiben unberührt.
+- **Weißlicht nachts** (`vehicle-light-rules.ts`, `vehicle-light.ts`): Im
+  Dunkeln (Sonnenzeiten von Open-Meteo, sonst 17–8 Uhr) schaltet der Hub an
+  der Zufahrtskamera (Name mit Eingang/Einfahrt/Tor/Zufahrt oder
+  `HUB_VEHICLE_SPOTLIGHT=<IDs>`, `=0` aus) für den Burst das Weißlicht ein.
+  Ein Burst mit Licht nimmt die ersten `HUB_VEHICLE_LIGHT_MIN_FRAMES` Bilder
+  (Standard 8, rund 7 Sekunden Licht; 0 = der Alarm entscheidet wie ohne
+  Licht) unabhängig vom Alarm auf, auch wenn das Kennzeichen schon vorher
+  sicher gelesen ist. Früher endet er nur zwei Bilder nach einer Schaltung
+  durch einen Listen-Treffer. Das Licht geht direkt nach dem letzten Bild aus,
+  spätestens nach 60 s und beim Beenden des Hubs. Zeigte keines der
+  ausgewerteten Bilder Kennzeichen oder Fahrzeug, bleibt das Licht
+  `HUB_VEHICLE_SPOTLIGHT_MUTE_MS` (5 min) aus; mit Mindestzahl erst, wenn
+  mindestens so viele Bilder ausgewertet sind (bricht der Burst vorher ab,
+  weil ein Bild nicht abrufbar war, gibt es keine Sperre). Im Dunkeln nennt das Log je
+  Burst „Weißlicht an“ oder „kein Weißlicht (Grund)“, dazu den Lichtmodus,
+  wie die Kamera ihn gemeldet hat („Lichtmodus laut Kamera mode=…“).
+- **Weißlicht schalten** (`spotlight-rules.ts`; Burst, Aufträge aus Cloud,
+  Dashboard und Assistent, Wächter-Knopf „Licht an“): Der Hub schaltet nur
+  an und aus. Vor dem Schalten liest er `GetWhiteLed` (der Burst nutzt seine
+  Abfrage von eben) und schickt Lichtmodus und Helligkeit so zurück, wie die
+  Kamera sie meldet; Zeitplan und Erkennungsarten stehen nicht im Befehl.
+  Eine Helligkeit aus dem Auftrag gilt nur beim Einschalten. Meldet die
+  Kamera keinen brauchbaren Stand, geht für diesen Befehl der frühere hinaus
+  (Lichtmodus 1, Helligkeit 100), Logzeile höchstens stündlich je Kamera,
+  Zähler `camera.spotlight_fallback`. `HUB_SPOTLIGHT_LEGACY=1` (auch `true`,
+  `ja`, `on`) stellt den früheren Befehl für jedes Schalten her. Dieselbe
+  Regel gilt im Kiosk (`webcams/lib/spotlight-param.ts`, dort
+  `WEBCAMS_SPOTLIGHT_LEGACY=1`).
 - **Lieferdienste** (`delivery.ts`): DHL/Deutsche Post, UPS, GLS, DPD, Hermes,
   Amazon an der Aufschrift, mindestens auf 2 Bildern des Bursts. Steht die
   Marke auf einem Bild und ist das Kennzeichen sicher gelesen (ab 90 %),
