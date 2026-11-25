@@ -1920,6 +1920,10 @@ export async function refreshCameraClocks(force = false): Promise<void> {
       log(`Kamera ${cam.config.name}: Uhrzeit nicht lesbar (${e instanceof Error ? e.message : e})`);
     }
   }
+  // Der letzte Stand einer entfernten Kamera zaehlt nicht mehr mit.
+  for (const id of clockCache.keys()) {
+    if (!cameras.has(id)) clockCache.delete(id);
+  }
   // Ohne gelesene Uhr gibt es nichts zu melden („alle im Takt“ waere geraten).
   // War noch keine Kamera erreichbar (kurz nach dem Start), gleich beim
   // naechsten Abruf wieder versuchen statt erst in 30 min.
@@ -1941,7 +1945,9 @@ export async function refreshCameraClocks(force = false): Promise<void> {
         .join(", ")}`
     );
   } else {
-    log(`Kamera-Uhren: alle ${clockCache.size} im Takt`);
+    // Die Zahl der eben gelesenen Uhren: Im Zwischenspeicher steht auch der
+    // letzte Stand von Kameras, die gerade nicht erreichbar sind.
+    log(`Kamera-Uhren: alle ${read} im Takt`);
   }
 }
 
