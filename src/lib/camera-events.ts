@@ -248,6 +248,31 @@ export function recentActivityWhere(since: Date, now: Date) {
   };
 }
 
+/**
+ * Liste fuer eine Auskunft: die juengsten Ereignisse eines Zeitraums, dazu
+ * die noch offenen. Die juengsten kommen nach Beginn sortiert und begrenzt
+ * aus der Datenbank. Ein Ereignis, das frueh begann und noch laeuft, stuende
+ * an einem vollen Tag hinter dieser Grenze. Offene Ereignisse behalten
+ * deshalb ihren Platz, dafuer weichen die aeltesten uebrigen. `open` darf
+ * Ereignisse aus `recent` wiederholen. Das Ergebnis nennt jedes einmal, nach
+ * Beginn absteigend, hoechstens `limit`.
+ */
+export function withOpenEvents<T extends { id: number; startedAt: Date }>(recent: T[], open: T[], limit: number): T[] {
+  const seen = new Set<number>();
+  const out: T[] = [];
+  const add = (list: T[]) => {
+    for (const e of list) {
+      if (out.length >= limit) return;
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      out.push(e);
+    }
+  };
+  add(open);
+  add(recent);
+  return out.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime() || b.id - a.id);
+}
+
 export interface RoomEventInput {
   roomId: number;
   cameraId: number;

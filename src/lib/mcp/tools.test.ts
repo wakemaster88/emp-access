@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MCP_HUB_TOOL_LEVELS, MCP_TOOLS, argInt, argStr, describeWeekdays } from "./tools";
+import { MCP_HUB_TOOL_LEVELS, MCP_TOOLS, argInt, argStr, describeWeekdays, type McpCtx } from "./tools";
 import { MCP_BRIDGE_TOOLS } from "../../../hub/src/agent/mcp-bridge-rules";
 
 test("Hub-Werkzeuge der Cloud passen zur Freigabeliste des Hubs", () => {
@@ -41,6 +41,67 @@ test("Backend-Werkzeuge sind reine Lese-Werkzeuge", () => {
   for (const n of ["opening_hours", "room_rules", "rule_runs", "irrigation", "keys_issued", "lockers", "camera_events", "improve_report"]) {
     assert.equal(level[n], "read", n);
   }
+});
+
+test("camera_events: je Ereignis laufend und letzte Aktivitaet, offene Ereignisse kommen eigens dazu", async () => {
+  const tool = MCP_TOOLS.find((t) => t.name === "camera_events")!;
+  const start = Date.now();
+  const ago = (minutes: number) => new Date(start - minutes * 60_000);
+  const halle = { name: "Halle", lastSeenAt: ago(1) };
+  // Diese Kamera meldet der Hub seit drei Stunden nicht mehr.
+  const hof = { name: "Hof", lastSeenAt: ago(180) };
+  const person = { id: 4, type: "PERSON", startedAt: ago(30), endedAt: ago(29), camera: halle };
+  const openSilent = { id: 3, type: "MOTION", startedAt: ago(200), endedAt: null, camera: hof };
+  const openRunning = { id: 1, type: "MOTION", startedAt: ago(240), endedAt: null, camera: halle };
+
+  const calls: Array<{ where: Record<string, unknown>; take: number }> = [];
+  const db = {
+    cameraEvent: {
+      findMany: async (args: { where: Record<string, unknown>; take: number }) => {
+        calls.push(args);
+        // Die zweite Abfrage holt nur offene; das laufende Ereignis 1 steht
+        // in der ersten nicht mehr (dort greift die Grenze).
+        return args.where.endedAt === null ? [openSilent, openRunning] : [person, openSilent];
+      },
+    },
+  } as unknown as McpCtx["db"];
+
+  const out = (await tool.run({}, { db, accountId: 7, tokenName: "test" })) as {
+    hours: number;
+    count: number;
+    byType: Record<string, number>;
+    events: Array<Record<string, unknown>>;
+  };
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(
+    calls.map((c) => c.take),
+    [200, 50],
+  );
+  // Beide Abfragen mit derselben Bedingung, die zweite zusaetzlich nur offene.
+  assert.equal(calls[0].where.accountId, 7);
+  assert.equal("endedAt" in calls[0].where, false);
+  assert.deepEqual(calls[1].where, { ...calls[0].where, endedAt: null });
+
+  assert.equal(out.hours, 6);
+  assert.equal(out.count, 3);
+  assert.deepEqual(out.byType, { PERSON: 1, MOTION: 2 });
+  assert.deepEqual(
+    out.events.map((e) => [e.camera, e.type, e.endedAt === null, e.running]),
+    [
+      ["Halle", "PERSON", false, false],
+      // Offen, aber die Kamera schweigt: laeuft nicht mehr.
+      ["Hof", "MOTION", true, false],
+      ["Halle", "MOTION", true, true],
+    ],
+  );
+  assert.equal(out.events[0].lastActivityAt, ago(29).toISOString());
+  assert.equal(out.events[1].lastActivityAt, ago(180).toISOString());
+  // Laeuft: letzte Aktivitaet ist der Zeitpunkt der Auskunft.
+  const last = Date.parse(String(out.events[2].lastActivityAt));
+  assert.ok(last >= start && last <= Date.now());
+  // Die letzte Meldung der Kamera selbst steht nicht in der Auskunft.
+  assert.deepEqual(Object.keys(out.events[0]), ["camera", "type", "startedAt", "endedAt", "running", "lastActivityAt"]);
 });
 
 test("Wochentage aus der Bitmaske", () => {

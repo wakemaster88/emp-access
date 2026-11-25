@@ -14,6 +14,7 @@ import {
   recentActivityWhere,
   shownEndedAt,
   staleOpen,
+  withOpenEvents,
 } from "./camera-events";
 
 const now = new Date("2026-11-24T12:00:00Z");
@@ -109,6 +110,54 @@ test("Ruhe im Raum: ein laufendes oder eben beendetes Ereignis zaehlt als Bewegu
   // Ruhezeit laenger als ein Tag: die Suche reicht bis dorthin zurueck.
   const longAgo = new Date("2026-11-22T00:00:00Z");
   assert.equal(recentActivityWhere(longAgo, now).startedAt.gte.toISOString(), longAgo.toISOString());
+});
+
+test("Auskunft ueber einen Zeitraum: offene Ereignisse behalten ihren Platz, jedes steht einmal", () => {
+  const ev = (id: number, startedAt: string, endedAt: string | null = null) => ({
+    id,
+    startedAt: new Date(startedAt),
+    endedAt: endedAt ? new Date(endedAt) : null,
+  });
+  // Die vier juengsten nach Beginn, so weit reicht die Abfrage. 14 ist noch offen.
+  const recent = [
+    ev(14, "2026-11-24T11:58:00Z"),
+    ev(13, "2026-11-24T11:40:00Z", "2026-11-24T11:41:00Z"),
+    ev(12, "2026-11-24T11:30:00Z", "2026-11-24T11:30:20Z"),
+    ev(11, "2026-11-24T11:20:00Z", "2026-11-24T11:21:00Z"),
+  ];
+  // Offen: 14 steht auch oben, 3 laeuft seit 08:03 und begann vor allen anderen.
+  const open = [ev(14, "2026-11-24T11:58:00Z"), ev(3, "2026-11-24T08:03:00Z")];
+  // Vier Plaetze: Das aelteste beendete (11) weicht dem laufenden (3).
+  assert.deepEqual(
+    withOpenEvents(recent, open, 4).map((e) => e.id),
+    [14, 13, 12, 3],
+  );
+  // Platz genug: alle, nach Beginn absteigend.
+  assert.deepEqual(
+    withOpenEvents(recent, open, 200).map((e) => e.id),
+    [14, 13, 12, 11, 3],
+  );
+  // Nichts offen: Die Liste bleibt, wie sie ist.
+  assert.deepEqual(
+    withOpenEvents(recent, [], 4).map((e) => e.id),
+    [14, 13, 12, 11],
+  );
+  assert.deepEqual(withOpenEvents([], [], 4), []);
+  // Mehr offene als Plaetze: Die zuerst genannten bleiben.
+  assert.deepEqual(
+    withOpenEvents(recent, open, 1).map((e) => e.id),
+    [14],
+  );
+  // Gleicher Beginn: Die hoehere ID steht vorn.
+  assert.deepEqual(
+    withOpenEvents([ev(20, "2026-11-24T11:00:00Z"), ev(21, "2026-11-24T11:00:00Z")], [], 5).map((e) => e.id),
+    [21, 20],
+  );
+  // Die Eingaben bleiben unveraendert.
+  assert.deepEqual(
+    recent.map((e) => e.id),
+    [14, 13, 12, 11],
+  );
 });
 
 test("closeOpen: Lebenszeichen des alten Prozesses nur von vor dem Start", () => {
