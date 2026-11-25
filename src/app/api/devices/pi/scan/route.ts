@@ -27,6 +27,7 @@ import {
   voucherAreaIds,
 } from "@/lib/access-rules";
 import { loadAccessRules, loadAreaHasExitReader, type LoadedAccessRules } from "@/lib/access-rules-cache";
+import { shouldQueueScanSnapshot } from "@/lib/scan-snapshot-hub";
 
 /**
  * Meldung des Raspberry Pi, dass das Relais per Dashboard-Button geoeffnet
@@ -272,19 +273,22 @@ export async function POST(request: NextRequest) {
   // /api/hub/scan-snapshots hoch; dort wird es dem zeitlich naechsten Scan
   // dieses Geraets zugeordnet. Ab hier erzeugt jeder Pfad einen Scan-Eintrag
   // (Debounce-Treffer sind oben bereits zurueckgekehrt).
-  // `after`: der Task wird nach der Antwort ans Drehkreuz angelegt.
+  // `after`: der Task wird nach der Antwort ans Drehkreuz angelegt, und nur,
+  // wenn sich in den letzten 5 Minuten ein Hub gemeldet hat (lib/scan-snapshot-hub,
+  // 60 s im Speicher je Account).
   if (device.cameraId != null) {
     const cameraId = device.cameraId;
     const at = new Date().toISOString();
-    after(() =>
-      db.hubTask.create({
+    after(async () => {
+      if (!(await shouldQueueScanSnapshot(db, accountId))) return;
+      await db.hubTask.create({
         data: {
           type: "SCAN_SNAPSHOT",
           payload: { cameraId, deviceId, at },
           accountId,
         },
-      }).catch(() => { /* Snapshot ist Best-Effort – Scan-Verarbeitung nicht blockieren. */ }),
-    );
+      }).catch(() => { /* Snapshot ist Best-Effort – Scan-Verarbeitung nicht blockieren. */ });
+    });
   }
 
   // Dashboard-Oeffnung: das Relais wurde bereits per Button geoeffnet, hier

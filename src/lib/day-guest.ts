@@ -11,8 +11,7 @@ import { berlinYmd } from "./berlin-day";
 import { buildScanCodeVariants } from "./scan-code-variants";
 import { awardMilestones, loadGamiConfig, syncDayTicketStat } from "./gamification-service";
 import { runChallenges } from "./challenge-service";
-import { equalsInsensitive } from "./like-escape";
-import { ticketIdsByEmail } from "./ticket-email";
+import { ticketEmailWhere, ticketIdsByEmail } from "./ticket-email";
 
 const USABLE = ["VALID", "REDEEMED"] as const;
 const MAX_TICKETS = 200;
@@ -130,37 +129,26 @@ interface Candidate {
   gamificationOptOut: boolean;
 }
 
-/** Tagestickets dieser Saison mit dieser Adresse, die in der App mitmachen dürfen. */
-export async function dayTicketsByEmail(accountId: number, email: string, now: Date): Promise<Candidate[]> {
+/**
+ * Tagestickets dieser Saison mit dieser Adresse, die in der App mitmachen
+ * dürfen. `email` ist eine gesäuberte Adresse (`normalizeEmail`); gesucht wird
+ * über den Index (`ticketIdsByEmail`). `ids` sind die schon gesuchten Tickets
+ * der Adresse, wenn der Aufrufer sie hat.
+ */
+export async function dayTicketsByEmail(accountId: number, email: string, now: Date, ids?: number[]): Promise<Candidate[]> {
   const config = await loadGamiConfig(tenantClient(accountId), accountId);
   if (!config.enabled || config.dayServiceIds.length === 0) return [];
-  const year = berlinYmd(now).slice(0, 4);
-  const rows = await prisma.ticket.findMany({
-    where: {
-      accountId,
-      subscriptionId: null,
-      serviceId: { in: config.dayServiceIds },
-      status: { in: [...USABLE] },
-      email: equalsInsensitive(email),
-    },
-    select: { id: true, riderProfileId: true, gamificationOptOut: true, startDate: true, createdAt: true },
-    orderBy: { id: "desc" },
-    take: MAX_TICKETS,
-  });
-  return rows.filter((t) => berlinYmd(t.startDate ?? t.createdAt).startsWith(year));
+  return dayTicketsOf(accountId, email, ids ?? (await ticketIdsByEmail(accountId, email)), config.dayServiceIds, now);
 }
 
-/**
- * Wie `dayTicketsByEmail`, für das Zuordnen bei jedem Öffnen der App: die
- * Adresse wird über den Index gesucht (`ticketIdsByEmail`), dieselben Tickets.
- */
-async function dayTicketsOf(accountId: number, ids: number[], dayServiceIds: number[], now: Date): Promise<Candidate[]> {
+/** Tagestickets dieser Saison unter den Tickets `ids` (alle mit der Adresse `email`). */
+async function dayTicketsOf(accountId: number, email: string, ids: number[], dayServiceIds: number[], now: Date): Promise<Candidate[]> {
   if (ids.length === 0) return [];
   const year = berlinYmd(now).slice(0, 4);
   const rows = await prisma.ticket.findMany({
     where: {
       accountId,
-      id: { in: ids },
+      ...ticketEmailWhere(ids, email),
       subscriptionId: null,
       serviceId: { in: dayServiceIds },
       status: { in: [...USABLE] },
@@ -195,7 +183,7 @@ export async function adoptDayTickets(accountId: number, email: string | null | 
   const config = await loadGamiConfig(tenantClient(accountId), accountId);
   if (!config.enabled || config.dayServiceIds.length === 0) return 0;
   const ids = await ticketIdsByEmail(accountId, clean);
-  const tickets = await dayTicketsOf(accountId, ids, config.dayServiceIds, now);
+  const tickets = await dayTicketsOf(accountId, clean, ids, config.dayServiceIds, now);
   const open = tickets.filter((t) => t.riderProfileId == null && !t.gamificationOptOut).map((t) => t.id);
   if (open.length === 0) return 0;
   const owner = tickets.find((t) => t.riderProfileId != null)
@@ -205,7 +193,7 @@ export async function adoptDayTickets(accountId: number, email: string | null | 
       orderBy: { id: "asc" },
     }).then((p) => (p ? { riderProfileId: p.id } : null)))
     ?? (await prisma.ticket.findFirst({
-      where: { accountId, id: { in: ids }, riderProfileId: { not: null } },
+      where: { accountId, ...ticketEmailWhere(ids, clean), riderProfileId: { not: null } },
       select: { riderProfileId: true },
       orderBy: { id: "desc" },
     }));

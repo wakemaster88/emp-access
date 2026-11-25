@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
  * Statt einer Datenbank ein Ersatz-Client: lib/prisma nimmt außerhalb der
  * Produktion den Client aus `globalThis.prisma`. Jede Abfrage wird als
  * "modell.operation" mitgeschrieben; Antworten kommen aus `answers`, sonst
- * 0 (count), [] (findMany) oder null.
+ * 0 (count), [] (findMany, $queryRaw) oder null.
  */
 type Call = { op: string; args: unknown };
 const calls: Call[] = [];
@@ -37,6 +37,14 @@ const fakePrisma: unknown = new Proxy(
     get(_target, prop) {
       if (typeof prop !== "string" || prop === "then") return undefined;
       if (prop === "$extends") return () => fakePrisma;
+      // Rohe Abfragen (lib/ticket-email): mitschreiben, Antwort aus `answers`, sonst keine Zeilen.
+      if (prop === "$queryRaw") {
+        return async (...args: unknown[]) => {
+          calls.push({ op: prop, args });
+          const answer = answers[prop];
+          return answer ? answer(args) : [];
+        };
+      }
       return fakeModel(prop);
     },
   },
