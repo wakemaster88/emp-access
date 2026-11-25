@@ -193,7 +193,10 @@ export function isRunning(
 /**
  * Zeitpunkt der letzten Aktivitaet: laufend = jetzt, beendet = das Ende. Ein
  * offenes Ereignis, dessen Kamera der Hub nicht mehr meldet, lief nachweislich
- * bis zu deren letzter Meldung (nie vor seinem Beginn).
+ * bis zu deren letzter Meldung (nie vor seinem Beginn). Es zaehlt dabei nur
+ * den einen Tag, den es als laufend gelten kann: Ein aelteres offenes Ereignis
+ * laeuft nicht mehr, auch wenn sich seine Kamera weiter meldet, und seine
+ * letzte Aktivitaet rueckt deshalb nicht mit jeder Meldung weiter.
  */
 export function activityAt(
   e: { startedAt: Date; endedAt: Date | null },
@@ -202,7 +205,9 @@ export function activityAt(
 ): Date {
   if (e.endedAt) return e.endedAt;
   if (isRunning(e, cameraLastSeenAt, now)) return now;
-  const seen = cameraLastSeenAt ? Math.min(cameraLastSeenAt.getTime(), now.getTime()) : 0;
+  const seen = cameraLastSeenAt
+    ? Math.min(cameraLastSeenAt.getTime(), now.getTime(), e.startedAt.getTime() + OPEN_EVENT_MAX_AGE_MS)
+    : 0;
   return new Date(Math.max(e.startedAt.getTime(), seen));
 }
 

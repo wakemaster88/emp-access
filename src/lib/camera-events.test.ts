@@ -267,6 +267,14 @@ test("Laeuft noch: offen, hoechstens einen Tag alt, Kamera frisch gemeldet", () 
   assert.equal(activityAt(open, new Date("2026-11-24T11:40:00Z"), now).toISOString(), "2026-11-24T11:40:00.000Z");
   // Letzte Meldung der Kamera vor dem Beginn (Zeile nachgetragen): nie vor dem Beginn.
   assert.equal(activityAt(open, new Date("2026-11-24T07:00:00Z"), now).toISOString(), "2026-11-24T08:03:00.000Z");
+  // Seit zwei Tagen offen, die Kamera meldet sich weiter: Das Ereignis zaehlt
+  // den einen Tag, den es als laufend galt. Mit der naechsten Meldung der
+  // Kamera rueckt seine letzte Aktivitaet nicht weiter.
+  const old = { startedAt: new Date("2026-11-22T10:00:00Z"), endedAt: null };
+  assert.equal(activityAt(old, fresh, now).toISOString(), "2026-11-23T10:00:00.000Z");
+  assert.equal(activityAt(old, new Date("2026-11-24T11:59:50Z"), now).toISOString(), "2026-11-23T10:00:00.000Z");
+  // Fiel die Kamera schon vorher aus, bleibt deren letzte Meldung.
+  assert.equal(activityAt(old, new Date("2026-11-22T18:00:00Z"), now).toISOString(), "2026-11-22T18:00:00.000Z");
 });
 
 test("Ende fuer die Anzeige: ohne Ende laeuft ein Ereignis nur, solange der Hub die Kamera meldet", () => {
@@ -281,13 +289,14 @@ test("Ende fuer die Anzeige: ohne Ende laeuft ein Ereignis nur, solange der Hub 
   // Kamera nie gemeldet: Es bleibt der Beginn.
   assert.equal(shownEndedAt(open, null, now)?.toISOString(), "2026-11-24T09:00:00.000Z");
   // Aelter als ein Tag: laeuft nicht mehr, auch bei frisch gemeldeter Kamera.
+  // Es endet fuer die Anzeige nach dem einen Tag, den es als laufend galt.
   assert.equal(
     shownEndedAt(
       { startedAt: new Date("2026-11-23T11:00:00Z"), endedAt: null },
       new Date("2026-11-24T11:59:10Z"),
       now,
     )?.toISOString(),
-    "2026-11-24T11:59:10.000Z",
+    "2026-11-24T11:00:00.000Z",
   );
   // Ein gemeldetes Ende bleibt, wie es ist.
   const ended = { ...open, endedAt: new Date("2026-11-24T09:30:00Z") };

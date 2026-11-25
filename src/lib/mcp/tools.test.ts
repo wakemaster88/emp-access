@@ -112,6 +112,29 @@ test("camera_events: je Ereignis laufend und letzte Aktivitaet, offene Ereigniss
   assert.deepEqual(Object.keys(out.events[0]), ["camera", "type", "startedAt", "endedAt", "running", "lastActivityAt"]);
 });
 
+test("camera_events: ein seit ueber einem Tag offenes Ereignis laeuft nicht mehr, seine letzte Aktivitaet bleibt stehen", async () => {
+  const tool = MCP_TOOLS.find((t) => t.name === "camera_events")!;
+  const start = Date.now();
+  const ago = (minutes: number) => new Date(start - minutes * 60_000);
+  // Seit 30 Stunden offen; die Kamera meldet der Hub weiter jede Minute.
+  const tor = { name: "Tor", lastSeenAt: ago(1) };
+  const bell = { id: 9, type: "DOORBELL", startedAt: ago(30 * 60), endedAt: null, camera: tor };
+  const db = { cameraEvent: { findMany: async () => [bell] } } as unknown as McpCtx["db"];
+
+  const out = (await tool.run({ hours: 48 }, { db, accountId: 7, tokenName: "test" })) as {
+    hours: number;
+    count: number;
+    events: Array<Record<string, unknown>>;
+  };
+
+  assert.equal(out.hours, 48);
+  assert.equal(out.count, 1);
+  assert.equal(out.events[0].endedAt, null);
+  assert.equal(out.events[0].running, false);
+  // Ein Tag nach dem Beginn, nicht die letzte Meldung der Kamera.
+  assert.equal(out.events[0].lastActivityAt, ago(6 * 60).toISOString());
+});
+
 test("Wochentage aus der Bitmaske", () => {
   assert.equal(describeWeekdays(127), "täglich");
   assert.equal(describeWeekdays(0), "nie");

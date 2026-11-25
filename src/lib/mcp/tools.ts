@@ -960,7 +960,7 @@ const backendTools: Tool[] = [
     name: "camera_events",
     title: "Kamera-Ereignisse",
     description:
-      "Ereignisse der Kameras (Bewegung, Person, Fahrzeug …) mit Beginn und Ende, optional für eine Kamera. Ob ein Ereignis noch läuft, sagt running; ein fehlendes Ende allein heißt das nicht, die Kamera kann sich seither nicht mehr gemeldet haben. lastActivityAt nennt die letzte gesicherte Aktivität: bei laufenden Ereignissen jetzt, sonst das Ende oder die letzte Meldung der Kamera.",
+      "Ereignisse der Kameras (Bewegung, Person, Fahrzeug …) mit Beginn und Ende, optional für eine Kamera. Ob ein Ereignis noch läuft, sagt running; ein fehlendes Ende allein heißt das nicht, die Kamera kann sich seither nicht mehr gemeldet haben. lastActivityAt nennt die letzte gesicherte Aktivität: bei laufenden Ereignissen jetzt, sonst das Ende oder die letzte Meldung der Kamera, ohne Ende spätestens einen Tag nach dem Beginn.",
     inputSchema: obj({
       camera: str("Optional: Kamera-ID oder Name"),
       type: str("Optional: Ereignistyp, z. B. motion, person, vehicle"),
