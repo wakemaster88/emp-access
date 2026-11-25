@@ -486,8 +486,9 @@ export default async function RaeumePage() {
 
   // Letzte Aktivitaet je Raum aus drei Listen: je Kamera das zuletzt begonnene
   // Ereignis, die offenen und je Kamera und Art das zuletzt beendete. Der Hub
-  // fuehrt je Kamera und Art hoechstens ein Ereignis: Unter den beendeten
-  // gehoeren der spaeteste Beginn und das spaeteste Ende deshalb zum selben.
+  // fuehrt je Kamera und Art hoechstens ein laufendes Ereignis, die Ereignisse
+  // einer Kamera und Art folgen also aufeinander: Unter den beendeten gehoeren
+  // der spaeteste Beginn und das spaeteste Ende deshalb zum selben.
   const lastEnded = lastEndedGroups.flatMap((g) =>
     g._max.startedAt && g._max.endedAt
       ? [{ cameraId: g.cameraId, type: g.type, startedAt: g._max.startedAt, endedAt: g._max.endedAt }]
