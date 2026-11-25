@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { berlinDayStart } from "@/lib/berlin-day";
 import { summarizeAreaRates } from "@/lib/turnstile-rate";
 

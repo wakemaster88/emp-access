@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
 const CATEGORIES = new Set([

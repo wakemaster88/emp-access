@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { ingestSwitchSnapshots, type SwitchIngestPayload } from "@/lib/snmp-ingest";
 import { mergeHubAgentStatus } from "@/lib/hub-agent-status";
 

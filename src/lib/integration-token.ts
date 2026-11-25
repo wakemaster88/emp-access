@@ -5,7 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
  * Fundsachen-Dienste). Anders als das Account-Token gilt ein solches Token
  * nur fuer die Routen seiner Scopes und nur als `Authorization: Bearer`.
  * Die Pruefung gegen die Datenbank steht in `validateApiOrIntegrationToken`
- * (src/lib/api-auth.ts); hier liegen die reinen Helfer.
+ * (src/lib/api-token-auth.ts); hier liegen die reinen Helfer.
  */
 
 export * from "./integration-scopes";

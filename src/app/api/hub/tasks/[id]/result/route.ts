@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { ingestHubScanDevices } from "@/lib/network-scan-ingest";
 import { queueFaceAnalysis } from "@/lib/unknown-persons";
 

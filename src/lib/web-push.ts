@@ -8,8 +8,23 @@
  *
  * Key-Paar erzeugen: `npx web-push generate-vapid-keys`
  */
-import webpush from "web-push";
 import { prisma } from "./prisma";
+
+// Die Bibliothek `web-push` wird erst beim ersten Versand geladen; viele
+// Routen importieren dieses Modul, senden aber selten oder nie.
+type WebPushLib = typeof import("web-push");
+let webpushLib: Promise<WebPushLib> | null = null;
+function loadWebPush(): Promise<WebPushLib> {
+  // Schlaegt das Laden fehl, wird beim naechsten Versand neu geladen.
+  webpushLib ??= import("web-push").then(
+    (m) => (m as { default?: WebPushLib }).default ?? m,
+    (err) => {
+      webpushLib = null;
+      throw err;
+    },
+  );
+  return webpushLib;
+}
 
 export interface PushPayload {
   title: string;
@@ -31,18 +46,19 @@ export function isWebPushConfigured(): boolean {
   return !!(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
 }
 
-function ensureVapid(): boolean {
-  if (vapidConfigured) return true;
+async function ensureVapid(): Promise<WebPushLib | null> {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
-  if (!publicKey || !privateKey) return false;
+  if (!vapidConfigured && (!publicKey || !privateKey)) return null;
+  const webpush = await loadWebPush();
+  if (vapidConfigured) return webpush;
   webpush.setVapidDetails(
     process.env.VAPID_SUBJECT ?? "mailto:info@tuttenbrocksee.com",
-    publicKey,
-    privateKey,
+    publicKey!,
+    privateKey!,
   );
   vapidConfigured = true;
-  return true;
+  return webpush;
 }
 
 export interface PushTarget {
@@ -60,7 +76,9 @@ export async function deliverPush(
   targets: PushTarget[],
   payload: PushPayload,
 ): Promise<{ sent: number; failed: number; staleIds: number[] }> {
-  if (targets.length === 0 || !ensureVapid()) return { sent: 0, failed: 0, staleIds: [] };
+  if (targets.length === 0) return { sent: 0, failed: 0, staleIds: [] };
+  const webpush = await ensureVapid();
+  if (!webpush) return { sent: 0, failed: 0, staleIds: [] };
 
   const body = JSON.stringify(payload);
   let sent = 0;
