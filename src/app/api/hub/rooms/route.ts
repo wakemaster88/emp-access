@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { isOperatingAt } from "@/lib/operating-hours";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";

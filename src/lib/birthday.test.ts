@@ -105,3 +105,28 @@ test("Musik-Auswahl im Schema", () => {
   assert.equal(birthdayAnnounceSchema.safeParse({ ...base, announceMusic: null }).success, true);
   assert.equal(birthdayAnnounceSchema.safeParse({ ...base, announceMusic: "x" }).success, false);
 });
+
+test("spokenName: nur Buchstaben, Leerzeichen, Bindestrich und Apostroph, höchstens 40 Zeichen", async () => {
+  const { spokenName, SPOKEN_NAME_MAX } = await import("./birthday");
+  assert.equal(spokenName("Jörg"), "Jörg");
+  assert.equal(spokenName("Anna-Lena"), "Anna-Lena");
+  assert.equal(spokenName("O’Brien"), "O’Brien");
+  assert.equal(spokenName("D'Angelo"), "D'Angelo");
+  assert.equal(spokenName("Zoë  Marie"), "Zoë Marie");
+  assert.equal(spokenName("Mia2!"), "Mia");
+  assert.equal(spokenName("Mäx"), "Mäx");
+  assert.equal(spokenName("Lea, bitte zur Kasse: 0815"), "Lea bitte zur Kasse");
+  assert.equal(spokenName("1234"), null);
+  assert.equal(spokenName("--"), null);
+  assert.equal(spokenName(null), null);
+  assert.equal(spokenName("a".repeat(60))?.length, SPOKEN_NAME_MAX);
+});
+
+test("birthdayAnnounceText: Name nur gereinigt in der Durchsage", async () => {
+  const { birthdayAnnounceText } = await import("./birthday");
+  assert.equal(
+    birthdayAnnounceText({ announceText: "Alles Gute, {vorname}!", announceName: true }, "Mia <3"),
+    "Alles Gute, Mia!",
+  );
+  assert.equal(birthdayAnnounceText({ announceText: "Alles Gute, {vorname}!", announceName: true }, "123"), "Alles Gute!");
+});

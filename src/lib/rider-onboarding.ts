@@ -2,8 +2,8 @@
  * Anmeldung an der Kunden-App per E-Mail.
  *
  * Der Kunde gibt auf `/app` nur seine Adresse ein und bekommt einen Link
- * (`/app/mail/<schlüssel>`, signiert, 48 Stunden gültig). Erst wenn er den Link
- * öffnet, ist die Adresse bestätigt.
+ * (`/app/mail/<schlüssel>`, signiert, 48 Stunden gültig, mit eingerichtetem
+ * Zugang eine Stunde). Erst wenn er den Link öffnet, ist die Adresse bestätigt.
  *
  * - Gehört die Adresse zu einem Kundenkonto (lib/customers), wählt der Kunde
  *   einmal, wer er ist: eine Person des Kontos oder „fahre selbst nicht“.
@@ -17,13 +17,17 @@
 import { prisma } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { openMailWithinCap } from "./rider-mail-cap";
-import { countLinked, dayTicketsByEmail, mailLinkKey, MAIL_LINK_HOURS, MAIL_MAX_PER_DAY, MAIL_PAUSE_MINUTES, normalizeEmail, DAY_GUEST_MAIL_SUBJECT } from "./day-guest";
+import {
+  countLinked, dayTicketsByEmail, mailLinkKey, mailLinkTarget, MAIL_LINK_HOURS, MAIL_LINK_HOURS_WITH_ACCESS, MAIL_MAX_PER_DAY,
+  MAIL_PAUSE_MINUTES, normalizeEmail, DAY_GUEST_MAIL_SUBJECT,
+} from "./day-guest";
 import { newRiderToken } from "./rider-app";
 import { samePersonAbos } from "./abo-person";
 import { customerIdForEmail, kontoLogin, syncKontoFamily, type LoginPerson } from "./customers";
 import { sendEmail } from "./email-sender";
 import { riderLinkMail } from "./rider-mail-template";
 import { equalsInsensitive } from "./like-escape";
+import { ticketEmailWhere, ticketIdsByEmail } from "./ticket-email";
 
 const ABO_STATUS = ["VALID", "REDEEMED", "PAUSED"] as const;
 const MAX_ABOS = 20;
@@ -57,12 +61,15 @@ async function confirmedProfile(accountId: number, email: string): Promise<{ id:
 
 /** Ohne Konto: Profil über ein zugeordnetes Ticket mit dieser Adresse (aus der Zeit vor den Konten). */
 async function profileViaTicket(accountId: number, email: string): Promise<{ id: number; token: string; email: string | null } | null> {
+  // Tickets der Adresse über den Index (lib/ticket-email).
+  const ids = await ticketIdsByEmail(accountId, email);
+  if (ids.length === 0) return null;
   const viaTicket = await prisma.ticket.findFirst({
-    where: { accountId, riderProfileId: { not: null }, email: equalsInsensitive(email) },
+    where: { accountId, ...ticketEmailWhere(ids, email), riderProfileId: { not: null } },
     select: { email: true, riderProfile: { select: { id: true, token: true, email: true } } },
     orderBy: { id: "desc" },
   });
-  // Zweite Sicherung neben dem maskierten Vergleich: Ein Profil gibt es nur
+  // Zweite Sicherung neben der Suche: Ein Profil gibt es nur
   // über ein Ticket, das genau diese Adresse trägt.
   if (!viaTicket || normalizeEmail(viaTicket.email) !== email) return null;
   return viaTicket.riderProfile ?? null;
@@ -71,13 +78,15 @@ async function profileViaTicket(accountId: number, email: string): Promise<{ id:
 /** Abos mit dieser Adresse, die noch niemand in die App geholt hat. */
 async function openAbos(accountId: number, email: string, now: Date): Promise<OnboardingAbo[]> {
   const config = await prisma.gamificationConfig.findUnique({ where: { accountId }, select: { subscriptionIds: true } });
+  const ids = await ticketIdsByEmail(accountId, email);
+  if (ids.length === 0) return [];
   const rows = await prisma.ticket.findMany({
     where: {
       accountId,
+      ...ticketEmailWhere(ids, email),
       subscriptionId: config?.subscriptionIds.length ? { in: config.subscriptionIds } : { not: null },
       riderProfileId: null,
       status: { in: [...ABO_STATUS] },
-      email: equalsInsensitive(email),
       OR: [{ endDate: null }, { endDate: { gte: new Date(now.getTime() - 365 * 86_400_000) } }],
     },
     select: {
@@ -231,6 +240,26 @@ async function adoptDay(accountId: number, email: string, profileId: number, now
   await countLinked(accountId, day).catch((err) => console.error("[rider] count day tickets failed:", err));
 }
 
+/**
+ * Kennt das Konto die Adresse: Profil, Abo oder zugeordnetes Ticket mit ihr,
+ * oder ein Tagesticket dieser Saison? Die Tickets der Adresse werden einmal
+ * über den Index gesucht (lib/ticket-email); ohne Ticket trifft keine der
+ * beiden Ticket-Prüfungen.
+ */
+async function addressKnownIn(accountId: number, email: string, now: Date): Promise<boolean> {
+  if ((await prisma.riderProfile.count({ where: { accountId, email } })) > 0) return true;
+  const ids = await ticketIdsByEmail(accountId, email);
+  if (ids.length === 0) return false;
+  const linked = await prisma.ticket.count({
+    where: {
+      accountId,
+      ...ticketEmailWhere(ids, email),
+      OR: [{ subscriptionId: { not: null } }, { riderProfileId: { not: null } }],
+    },
+  });
+  return linked > 0 || (await dayTicketsByEmail(accountId, email, now, ids)).length > 0;
+}
+
 /** Konten, für die eine Adresse einen Link bekommt. */
 async function targetAccounts(email: string, now: Date): Promise<Array<{ accountId: number; name: string; known: boolean }>> {
   const configs = await prisma.gamificationConfig.findMany({
@@ -240,16 +269,7 @@ async function targetAccounts(email: string, now: Date): Promise<Array<{ account
   });
   const known: Array<{ accountId: number; name: string; known: boolean }> = [];
   for (const c of configs) {
-    const hit =
-      (await prisma.riderProfile.count({ where: { accountId: c.accountId, email } })) > 0 ||
-      (await prisma.ticket.count({
-        where: {
-          accountId: c.accountId,
-          email: equalsInsensitive(email),
-          OR: [{ subscriptionId: { not: null } }, { riderProfileId: { not: null } }],
-        },
-      })) > 0 ||
-      (await dayTicketsByEmail(c.accountId, email, now)).length > 0;
+    const hit = await addressKnownIn(c.accountId, email, now);
     if (hit) known.push({ accountId: c.accountId, name: c.account.name, known: true });
   }
   if (known.length > 0) return known;
@@ -284,8 +304,11 @@ export async function requestAppLink(rawEmail: unknown, origin: string, now: Dat
     // erfährt davon nichts, die Antwort bleibt dieselbe.
     if (!target.known && !(await openMailWithinCap(target.accountId, email, now))) continue;
 
-    const url = `${origin}/app/mail/${mailLinkKey(target.accountId, email, now)}`;
-    const content = riderLinkMail({ url, accountName: target.name, origin, hours: MAIL_LINK_HOURS });
+    // Mit eingerichtetem Zugang gilt der Link nur kurz; die Version bindet ihn an die Sitzungen des Profils.
+    const profile = await mailLinkTarget(target.accountId, email);
+    const hours = profile.hasAccess ? MAIL_LINK_HOURS_WITH_ACCESS : MAIL_LINK_HOURS;
+    const url = `${origin}/app/mail/${mailLinkKey(target.accountId, email, now, hours, profile.version)}`;
+    const content = riderLinkMail({ url, accountName: target.name, origin, hours });
     const result = await sendEmail({
       config: mail,
       to: email,

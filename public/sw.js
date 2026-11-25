@@ -2,9 +2,10 @@
  * Service Worker von EMP Access.
  *
  *  - Offline-Fallback: Seitenaufrufe gehen immer ans Netz; ohne Verbindung
- *    erscheint /offline statt der Browser-Fehlerseite. Navigation Preload
- *    startet die Anfrage schon, waehrend der Service Worker noch aufwacht
- *    (spuerbar schnellerer Start der installierten App).
+ *    erscheint /offline.html statt der Browser-Fehlerseite (eigenstaendige
+ *    Datei mit Stil inline, braucht ohne Netz nichts weiter aus dem Cache).
+ *    Navigation Preload startet die Anfrage schon, waehrend der Service
+ *    Worker noch aufwacht (spuerbar schnellerer Start der installierten App).
  *  - Statische Dateien (/_next/static, Icons, Manifest, Splash) kommen aus
  *    dem Cache. /_next/static traegt den Inhalt im Namen und wird nie neu
  *    geholt, alles andere im Hintergrund aufgefrischt. Hoechstens
@@ -34,7 +35,7 @@
  * bindet die App per Skew Protection an das alte Deployment, das dann an
  * der neuen Datenbank scheitert (20.11.2026, Awards mit ALL_TIME).
  */
-const VERSION = "2026-11-24-tempo";
+const VERSION = "2026-11-24-tempo2";
 const STATIC_CACHE = `emp-static-${VERSION}`;
 // Name muss zu RIDER_CACHE_PREFIX in src/lib/rider-local.ts passen (Abmelden loescht danach).
 const RIDER_CACHE = `emp-rider-${VERSION}`;
@@ -46,7 +47,7 @@ const STATIC_MAX_ENTRIES = 200;
 /** Wird dieselbe Seite so kurz nach einer Cache-Antwort erneut geladen, geht es ans Netz (Neuladen, neuer Build). */
 const RIDER_RELOAD_MS = 10_000;
 const CACHED_AT = "x-emp-cached-at";
-const OFFLINE_URL = "/offline";
+const OFFLINE_URL = "/offline.html";
 // Nur was ohne Netz gebraucht wird: die Offline-Seite und die App-Icons.
 const PRECACHE = [OFFLINE_URL, "/icon-192.png", "/apple-icon.png"];
 
@@ -128,7 +129,7 @@ function keep(event, promise) {
 
 /**
  * Haelt einen Cache bei hoechstens `max` Eintraegen; cache.keys() liefert die
- * aeltesten zuerst. Die vorab geladenen Dateien (PRECACHE, u. a. /offline)
+ * aeltesten zuerst. Die vorab geladenen Dateien (PRECACHE, u. a. /offline.html)
  * bleiben immer und zaehlen nicht mit.
  */
 async function trimCache(cache, max) {

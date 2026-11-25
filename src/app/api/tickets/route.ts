@@ -8,6 +8,8 @@ import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
 import { linkAboCustomerSafe } from "@/lib/customers";
 import { foreignRefError } from "@/lib/tenant-refs";
 import { aboEmailError, cleanEmail } from "@/lib/abo-email";
+import { ticketPhotoUrl, wantsPhotoUrls, withPhotoRef } from "@/lib/photo-url";
+import { ticketIdsWithPhoto } from "@/lib/ticket-photo";
 
 // Backoffice: gleiche Schema-Erweiterung wie im Public-Endpoint, damit
 // auch hier ein "Baendchen umhaengen" moeglich ist (transferCode=true).
@@ -44,6 +46,22 @@ export async function GET(request: NextRequest) {
   // Wer inkrementell synchronisiert, nutzt ohnehin `since`.
   const limitParam = Number(request.nextUrl.searchParams.get("limit") ?? "");
   const take = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 20_000) : 5_000;
+
+  // `?fotos=url`: Liste ohne Base64-Foto und ohne Mobil-Link, dafuer hasPhoto
+  // und photoUrl. Ohne den Parameter bleibt die Antwort wie bisher. Nur fuer
+  // angemeldete Browser: die Foto-Route verlangt eine Sitzung, Abrufer mit
+  // Account-Token bekommen die Liste wie bisher.
+  if (!hasToken && wantsPhotoUrls(request.nextUrl.searchParams)) {
+    const lean = await db.ticket.findMany({
+      where,
+      include: { accessArea: true },
+      omit: { profileImage: true, mobileToken: true },
+      orderBy: { updatedAt: "desc" },
+      take,
+    });
+    const photoIds = await ticketIdsWithPhoto(db, lean.map((t) => t.id));
+    return NextResponse.json(lean.map((t) => withPhotoRef(t, photoIds, ticketPhotoUrl)));
+  }
 
   const tickets = await db.ticket.findMany({
     where,

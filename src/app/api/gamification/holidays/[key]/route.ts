@@ -5,6 +5,9 @@ import { skillRewardAllowed } from "@/lib/rider-skills";
 import { HOLIDAY_BY_KEY } from "@/lib/holidays";
 import { runAccountAnnouncements } from "@/lib/rider-announce";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 /** PUT: Einstellung eines Feiertags speichern (anlegen oder ändern). Gilt jedes Jahr. */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ key: string }> }) {
   const session = await gamiAdminSession();

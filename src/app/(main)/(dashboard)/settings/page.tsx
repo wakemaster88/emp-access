@@ -7,18 +7,22 @@ import { Card, CardContent } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
-import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone, GitBranch, Bot } from "lucide-react";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone, GitBranch, Bot, ShieldCheck } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { GardenaCard } from "@/components/settings/gardena-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
 import { McpCard } from "@/components/settings/mcp-card";
+import { IntegrationTokensCard } from "@/components/settings/integration-tokens-card";
 import { MCP_OFFERED_LEVELS } from "@/lib/mcp/protocol";
 import { TelegramCard } from "@/components/settings/telegram-card";
 import { PushCard } from "@/components/settings/push-card";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { DataRetentionCard } from "@/components/settings/data-retention-card";
 import { parseDataRetention } from "@/lib/data-retention";
+import { AccessRulesCard } from "@/components/settings/access-rules-card";
+import { parseAccessRules } from "@/lib/access-rules";
 import { isTenantAdminRole } from "@/lib/api-auth";
+import { maskApiConfig, maskSecret } from "@/lib/secret-mask";
 import { RepoAccessCard, type RepoAccessEntry } from "@/components/settings/repo-access-card";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED"] as const;
@@ -37,7 +41,7 @@ export default async function SettingsPage() {
   // erst geladen - die zugehoerigen API-Routen lehnen sie ebenfalls ab.
   const isAdmin = isTenantAdminRole(session.user.role);
 
-  const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig, updatingPis, hubAgents, mcpTokens] = await Promise.all([
+  const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig, updatingPis, hubAgents, mcpTokens, integrationTokens] = await Promise.all([
     isAdmin ? db.apiConfig.findMany({ where: { accountId: session.user.accountId } }) : [],
     db.account.findUnique({
       where: { id: session.user.accountId },
@@ -47,6 +51,7 @@ export default async function SettingsPage() {
         subdomain: true,
         apiToken: isAdmin,
         dataRetention: true,
+        accessRules: true,
       },
     }),
     db.device.findMany({
@@ -83,6 +88,13 @@ export default async function SettingsPage() {
           orderBy: { createdAt: "desc" },
         })
       : [],
+    isAdmin
+      ? db.integrationToken.findMany({
+          where: { accountId: session.user.accountId, revokedAt: null },
+          select: { id: true, name: true, prefix: true, scopes: true, lastUsedAt: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        })
+      : [],
   ]);
 
   type RepoAccessRaw = { mode?: unknown; public_key?: unknown; publicKey?: unknown } | undefined;
@@ -107,6 +119,7 @@ export default async function SettingsPage() {
   ];
 
   const dataRetention = parseDataRetention(account?.dataRetention);
+  const accessRules = parseAccessRules(account?.accessRules);
 
   const baseUrl = process.env.AUTH_URL ?? "http://localhost:3000";
   const shellyConfig = apiConfigs.find((c) => c.provider === "SHELLY");
@@ -122,8 +135,9 @@ export default async function SettingsPage() {
       deviceCount: gardenaDevices.filter((d) => d.gardenaConfigId === c.id).length,
     }));
 
+  // Token und Geheimnisse nur maskiert an die Client-Komponenten.
   const configByProvider = Object.fromEntries(
-    apiConfigs.map((c) => [c.provider, c])
+    apiConfigs.map((c) => [c.provider, maskApiConfig(c)])
   );
 
   return (
@@ -176,6 +190,18 @@ export default async function SettingsPage() {
           />
         </section>
 
+        {/* Integrations-Tokens mit Scopes fuer angebundene Systeme */}
+        <section className="space-y-2">
+          <SectionHeading icon={Key} title="Tokens für angebundene Systeme" />
+          <IntegrationTokensCard
+            initialTokens={integrationTokens.map((t) => ({
+              ...t,
+              lastUsedAt: t.lastUsedAt?.toISOString() ?? null,
+              createdAt: t.createdAt.toISOString(),
+            }))}
+          />
+        </section>
+
         {/* MCP-Schnittstelle fuer KI-Assistenten */}
         <section className="space-y-2">
           <SectionHeading icon={Bot} title="MCP-Schnittstelle (KI-Assistenten)" />
@@ -197,7 +223,7 @@ export default async function SettingsPage() {
           <SectionHeading icon={Wifi} title="Shelly Cloud" aside={shellyConfig && ( <Badge variant="secondary" className="tabular-nums"> {existingShellyIds.length} Gerät{existingShellyIds.length !== 1 ? "e" : ""} importiert </Badge> )} />
           <ShellyCloudCard
             savedServer={shellyConfig?.baseUrl ?? null}
-            savedAuthKey={shellyConfig?.token ?? null}
+            savedAuthKey={shellyConfig?.token ? maskSecret(shellyConfig.token) : null}
             existingDeviceIds={existingShellyIds}
           />
         </section>
@@ -218,6 +244,12 @@ export default async function SettingsPage() {
         <section className="space-y-2">
           <SectionHeading icon={GitBranch} title="Update-Zugang der Geräte" />
           <RepoAccessCard entries={repoAccessEntries} />
+        </section>
+
+        {/* Einlass-Regeln: strengere Prüfungen am Einlass, ab Werk aus */}
+        <section className="space-y-2">
+          <SectionHeading icon={ShieldCheck} title="Einlass" />
+          <AccessRulesCard initial={accessRules} />
         </section>
 
         {/* Löschfristen / Datenschutz */}

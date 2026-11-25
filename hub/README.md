@@ -352,7 +352,19 @@ uebersteuerbar) und verlangt das Token bei jedem Zugriff von aussen: einmal
 Ohne Token bleibt das Dashboard strikt auf `127.0.0.1`. Es gibt keine
 Benutzerverwaltung – nur im vertrauenswuerdigen Netz (LAN/VPN) nutzen.
 Das Cookie gilt ein Jahr und verlaengert sich bei jedem Aufruf; das Token
-wird nach der Anmeldung aus der Adresse entfernt.
+wird nach der Anmeldung aus der Adresse entfernt. Im Cookie steht nicht das
+Token selbst, sondern ein daraus abgeleiteter Wert (`src/dashboard-auth.ts`);
+aeltere Cookies mit dem Token gelten weiter und werden beim naechsten
+Seitenaufruf ersetzt. Ueber HTTPS kommt zusaetzlich `__Secure-hub_dash` mit
+`Secure`. Wird das Token geaendert, sind alle Geraete abgemeldet.
+
+Nach 20 falschen Anmeldedaten (Token in Adresse, Header oder Cookie) in
+15 Minuten antwortet das Dashboard dieser Adresse 15 Minuten lang mit 429
+(„Zu viele Fehlversuche“, gleitendes Fenster); derselbe falsche Wert zaehlt
+dabei nur einmal, Zugriffe vom Hub-Rechner selbst nie. Eine Anmeldung ueber
+`?token=` setzt den Zaehler der Adresse zurueck. Bindet das Dashboard ans Netz ohne
+Token, steht beim Start eine Warnung im Log; der Heartbeat meldet die
+Zugriffsart als `system.dashboardAccess` (`local`, `lan-token`, `lan-open`).
 
 **Schutz der schreibenden Routen** (`src/dashboard-guard.ts`): Anfragen vom
 Hub-Rechner selbst (127.0.0.1) brauchen kein Token. Damit keine fremde
@@ -369,6 +381,10 @@ prueft der Hub jede Anfrage ausser GET/HEAD:
   IP-Adressen sowie alles aus `HUB_DASHBOARD_TLS_NAMES` und
   `HUB_DASHBOARD_ALLOWED_HOSTS`. Geraete im LAN, die sich mit Token
   angemeldet haben, erreichen den Hub weiter unter jedem Namen.
+
+Lesende Anfragen auf `/api/*` vom Hub-Rechner ohne Token (GET/HEAD) pruefen
+nur den `Host` nach derselben Liste. Seiten, Icons, `/ca.crt` und Anfragen
+mit Token sind davon nicht betroffen.
 
 Abgelehnte Anfragen antworten mit 403/415 und stehen (gedrosselt) als
 „Dashboard: … abgelehnt“ im Log. Wird das Dashboard **am Hub-Rechner

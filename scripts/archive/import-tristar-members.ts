@@ -3,7 +3,7 @@
  * fuegt alle Mitglieder aus der ODS-Mitgliederliste als Mitglieds-Tickets
  * hinzu (ohne RFID/QR/Barcode, ohne Tickettyp).
  *
- * Quelle: /Users/aaronarmborst/Downloads/Mitgliederliste-2026-Tutti.ods
+ * Quelle: ~/Downloads/Mitgliederliste-2026-Tutti.ods
  * (Spalten: M/W | Name (Nachname) | Vorname)
  *
  * Idempotent: erneutes Ausfuehren erzeugt keine Duplikate – existierende

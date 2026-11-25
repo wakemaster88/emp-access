@@ -24,7 +24,7 @@ function LinkQr({ url }: { url: string }) {
 }
 
 /** Zähl-Link einer Inventur (wird beim Anlegen erzeugt). */
-export function StocktakeLinkCard({ stocktakeId, token, expiresAt }: { stocktakeId: number; token: string | null; expiresAt: string | null }) {
+export function StocktakeLinkCard({ stocktakeId, token, expiresAt, canCreate }: { stocktakeId: number; token: string | null; expiresAt: string | null; canCreate: boolean }) {
   return (
     <CountLinkCard
       token={token}
@@ -34,6 +34,7 @@ export function StocktakeLinkCard({ stocktakeId, token, expiresAt }: { stocktake
       revokeUrl={`/api/warenwirtschaft/stocktakes/${stocktakeId}/link`}
       description="Mitarbeiter scannen den Code oder öffnen den Link und zählen ohne Anmeldung. Sie sehen nur diese Inventur, keine Preise und keinen Soll-Bestand, und können fehlende Artikel und Fotos ergänzen."
       validity="oder bis zum Festschreiben"
+      canCreate={canCreate}
     />
   );
 }
@@ -52,6 +53,7 @@ export function CountLinkCard({
   description,
   validity,
   title = "Zählen am Handy",
+  canCreate = true,
 }: {
   token: string | null;
   expiresAt: string | null;
@@ -62,6 +64,8 @@ export function CountLinkCard({
   description: string;
   validity?: string;
   title?: string;
+  /** Neue Links erzeugt nur die Verwaltung; sperren darf jeder. */
+  canCreate?: boolean;
 }) {
   const [token, setToken] = useState(initialToken);
   const [expiresAt, setExpiresAt] = useState(initialExpires);
@@ -139,10 +143,12 @@ export function CountLinkCard({
                   <Share2 className="h-4 w-4" />
                   Teilen
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => setConfirmRenew(true)} disabled={busy} className="max-sm:h-11">
-                  <RefreshCw className="h-4 w-4" />
-                  Neuer Link
-                </Button>
+                {canCreate && (
+                  <Button type="button" variant="ghost" onClick={() => setConfirmRenew(true)} disabled={busy} className="max-sm:h-11">
+                    <RefreshCw className="h-4 w-4" />
+                    Neuer Link
+                  </Button>
+                )}
                 <Button type="button" variant="ghost" onClick={() => setConfirmRevoke(true)} className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive max-sm:h-11">
                   <Ban className="h-4 w-4" />
                   Sperren
@@ -153,11 +159,16 @@ export function CountLinkCard({
           </div>
         ) : (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">{expired ? "Der Link ist abgelaufen." : "Es gibt gerade keinen Zähl-Link."}</p>
-            <Button type="button" onClick={() => void create().catch(() => {})} disabled={busy} className="max-sm:h-11">
-              <Link2 className="h-4 w-4" />
-              Link erzeugen
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              {expired ? "Der Link ist abgelaufen." : "Es gibt gerade keinen Zähl-Link."}
+              {!canCreate && " Einen neuen Link erzeugt ein Admin."}
+            </p>
+            {canCreate && (
+              <Button type="button" onClick={() => void create().catch(() => {})} disabled={busy} className="max-sm:h-11">
+                <Link2 className="h-4 w-4" />
+                Link erzeugen
+              </Button>
+            )}
           </div>
         )}
       </CardContent>

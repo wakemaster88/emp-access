@@ -3,6 +3,9 @@ import { gamiAdminSession } from "@/lib/gamification-session";
 import { birthdaySchema, normalizeBirthday } from "@/lib/gamification-input";
 import { runAccountAnnouncements } from "@/lib/rider-announce";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 /** PUT: Geburtstag in der Kunden-App einstellen (Gruß, Geschenk, Push). Gilt jedes Jahr. */
 export async function PUT(request: NextRequest) {
   const session = await gamiAdminSession();

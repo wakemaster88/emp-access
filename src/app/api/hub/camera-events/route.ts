@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import type { TenantDb } from "@/lib/prisma";
 import { runMotionRules } from "@/lib/room-rules";
 import { sendDoorbellPush } from "@/lib/doorbell-push";

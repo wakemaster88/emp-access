@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { StocktakeCount } from "./stocktake-count";
 import type { TenantDb } from "@/lib/prisma";
+import { articleImageUrl, listImageSrcs } from "@/lib/list-images";
+import { inlineImageRows } from "@/lib/list-images-db";
 import { ChevronLeft } from "lucide-react";
 
 /** Zählseite einer Inventur, geteilt von laufender und Stichtagsinventur. */
@@ -13,6 +15,7 @@ export async function StocktakeDetailPage({
   accountId,
   accountName,
   adminId,
+  isAdmin,
 }: {
   id: number;
   kind: "ROLLING" | "CUTOFF";
@@ -21,6 +24,8 @@ export async function StocktakeDetailPage({
   accountName: string | null;
   /** Angemeldeter Login (für die eigene Bestätigung). */
   adminId: number | null;
+  /** Rolle mit Verwaltungsrechten (Korrekturen, Zähl-Links). */
+  isAdmin: boolean;
 }) {
   const listPath = kind === "CUTOFF" ? "/warenwirtschaft/stichtag" : "/warenwirtschaft/inventur";
   if (!Number.isInteger(id)) notFound();
@@ -29,7 +34,8 @@ export async function StocktakeDetailPage({
     include: {
       lines: {
         orderBy: [{ category: "asc" }, { name: "asc" }],
-        include: { article: { select: { image: true } } },
+        // Ohne Bildspalte: die Seite gleicht alle 30 s ab, Fotos kommen einzeln über die Bild-Route.
+        include: { article: { select: { id: true, updatedAt: true } } },
       },
       signatures: { orderBy: { role: "asc" } },
       events: { orderBy: { id: "desc" }, take: 2000 },
@@ -37,6 +43,13 @@ export async function StocktakeDetailPage({
     },
   });
   if (!st) notFound();
+  const articleIds = [...new Set(st.lines.flatMap((l) => (l.article ? [l.article.id] : [])))];
+  const [withImage, inline] = await Promise.all([
+    db.article.findMany({ where: { id: { in: articleIds }, accountId, image: { not: null } }, select: { id: true } }),
+    inlineImageRows("article", articleIds, { accountId }),
+  ]);
+  const versions = new Map(st.lines.flatMap((l) => (l.article ? [[l.article.id, l.article.updatedAt] as const] : [])));
+  const imageSrcs = listImageSrcs(withImage, inline, (articleId) => articleImageUrl(articleId, versions.get(articleId) ?? new Date(0)));
 
   return (
     <>
@@ -48,6 +61,7 @@ export async function StocktakeDetailPage({
         </Link>
         <StocktakeCount
           listPath={listPath}
+          isAdmin={isAdmin}
           info={{
             id: st.id,
             kind: st.kind,
@@ -94,7 +108,7 @@ export async function StocktakeDetailPage({
             counted: l.counted,
             broken: l.broken,
             countedBy: l.countedBy,
-            image: l.article?.image ?? null,
+            image: l.article ? (imageSrcs.get(l.article.id) ?? null) : null,
           }))}
         />
       </div>

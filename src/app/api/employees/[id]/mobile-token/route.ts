@@ -12,8 +12,9 @@ import { getSessionWithDb } from "@/lib/api-auth";
  *     Bildschirm-Shortcut wird damit ungueltig (gewuenscht, falls jemand
  *     den Mitarbeiter verlassen hat).
  */
+/** Erzeugen, Erneuern und Widerrufen verlangt die Verwaltungs-Rolle. */
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 
@@ -39,7 +40,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSessionWithDb();
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 

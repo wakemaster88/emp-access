@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiOrIntegrationToken } from "@/lib/api-auth";
 import { parseScanLockSeconds } from "@/lib/scan-lock";
 import { foreignRefError } from "@/lib/tenant-refs";
 
@@ -10,7 +10,7 @@ function hasApiToken(request: NextRequest) {
 export async function GET(request: NextRequest) {
   let db, accountId: number;
   if (hasApiToken(request)) {
-    const auth = await validateApiToken(request);
+    const auth = await validateApiOrIntegrationToken(request, "/api/areas");
     if ("error" in auth) return auth.error;
     db = auth.db;
     accountId = auth.account.id;
@@ -49,6 +49,10 @@ export async function POST(request: NextRequest) {
       allowReentry: body.allowReentry ?? false,
       personLimit: body.personLimit ? Number(body.personLimit) : null,
       scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, null),
+      // Einlass-Regel „Tickets ohne Bereich …“: nur gesetzt, wenn mitgeschickt.
+      ...(typeof body.allowUnassignedTickets === "boolean"
+        ? { allowUnassignedTickets: body.allowUnassignedTickets }
+        : {}),
       showOnDashboard: body.showOnDashboard ?? true,
       openingHours: body.openingHours || null,
       accountId: accountId!,

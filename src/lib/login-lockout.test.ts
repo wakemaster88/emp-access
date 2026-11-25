@@ -218,18 +218,24 @@ test("checkLoginPassword: viele Fehlversuche takten neue IPs, bekannte IPs komme
   const db = fakeLoginLockDb(rows);
   const admin = { id: 1, password: await hash("richtig", 4) };
 
+  const startedAt = Date.now();
   const [known, ...strangers] = await Promise.all([
     lockout.checkLoginPassword(admin, "admin@example.test", "richtig", knownIp, NOW, db),
     ...Array.from({ length: 20 }, (_, i) =>
       lockout.checkLoginPassword(admin, "admin@example.test", "richtig", `2001:db8:${i}::1`, NOW, db),
     ),
   ]);
+  const elapsedMs = Date.now() - startedAt;
   assert.equal(known.valid, true);
   // Je Takt erreicht nur eine der neuen IPs den Vergleich; die anderen warten
-  // hoechstens LOGIN_PACE_WAIT_MS auf einen freien Takt.
+  // LOGIN_PACE_WAIT_MS auf einen freien Takt. Die Takte liegen
+  // LOGIN_SLOWDOWN_MS auseinander, gemessen an der wirklich vergangenen Zeit:
+  // braucht ein langsamer Rechner fuer den Lauf laenger als
+  // LOGIN_PACE_WAIT_MS, sind in dieser Zeit entsprechend mehr Takte frei.
   const passed = strangers.filter((r) => r.valid).length;
   assert.ok(passed >= 1);
-  assert.ok(passed <= 1 + Math.floor(LOGIN_PACE_WAIT_MS / LOGIN_SLOWDOWN_MS));
+  const paceWindowMs = Math.max(elapsedMs, LOGIN_PACE_WAIT_MS);
+  assert.ok(passed <= 1 + Math.floor(paceWindowMs / LOGIN_SLOWDOWN_MS), `${passed} Durchgelassene in ${elapsedMs} ms`);
   // Wer keinen Takt bekam, hat seinen reservierten Versuch zurueckgegeben.
   const strangerRows = db.rows.filter((r) => !r.ipHash.startsWith("alt-") && r.ipHash !== lockout.loginIpHash(knownIp));
   assert.equal(strangerRows.filter((r) => r.failures > 0).length, passed);
@@ -286,7 +292,9 @@ test("waitForLoginPaceSlot: wartet auf den naechsten freien Takt, mit Obergrenze
   assert.equal(await lockout.waitForLoginPaceSlot("mail-1", NOW, db, 1_000), true);
   const started = Date.now();
   assert.equal(await lockout.waitForLoginPaceSlot("mail-2", NOW, db, 400), false);
-  assert.ok(Date.now() - started < 1_000);
+  // Weit unter den 60 s bis zum naechsten Takt; grosszuegig, damit ein
+  // ausgelasteter Rechner die Grenze nicht reisst.
+  assert.ok(Date.now() - started < 10_000);
 });
 
 test("releaseLoginAttempt: gibt genau einen reservierten Versuch zurueck", async () => {

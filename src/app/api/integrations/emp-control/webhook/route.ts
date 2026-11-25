@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { secretsEqual } from "@/lib/cron-auth";
 import { isUniqueConstraintError } from "@/lib/db-errors";
+import { FULL_SYNC_PREVIEW_MAX, isPresenceMarker, isSyncedEmployeeUuid, planFullSync } from "@/lib/emp-control-sync";
+
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
 
 /**
  * Zahlen aus einem Payload-Feld einsammeln und dabei in bekannt und unbekannt
@@ -33,6 +37,29 @@ function collectIds(
  *   ohne dafuer einen eigenen Bereich anzulegen. Wirkt additiv zu den Bereichen
  *   und gilt in der Mitarbeiter-App wie am RFID-Leser. IDs kommen aus
  *   `GET /api/devices`.
+ *
+ * Ein Eintrag mit `active: false` fuer einen Mitarbeiter, der hier noch kein
+ * Ticket hat, wird uebersprungen (kein Ticket angelegt, nicht gezaehlt).
+ *
+ * Voll-Abgleich (nur Objektform): `{ "fullSync": true, "employees": [...] }`
+ * heisst, die Liste ist vollstaendig (aktive und inaktive Mitarbeiter). Nach
+ * der normalen Verarbeitung werden alle VALID-Tickets dieses Mandanten mit
+ * Quelle EMP_CONTROL und uuid `emp-<id>` (nicht `emp-manual-…` aus dem
+ * Dashboard), die nicht in der Liste stehen und seit Beginn des Aufrufs nicht
+ * geaendert wurden, auf INVALID gesetzt; sonst bleibt am Ticket alles stehen. Antwort zusaetzlich
+ * mit `deactivated` und `deactivatedIds`. Abgelehnt (409, `wouldDeactivate`)
+ * wird der Abgleich bei leerer Liste, bei einem Eintrag ohne ID und, ausser
+ * mit `fullSyncForce: true`, wenn mehr als 3 Tickets und mehr als 30 Prozent
+ * der gueltigen Mitarbeiter-Tickets gesperrt wuerden (siehe
+ * `src/lib/emp-control-sync.ts`). Fuer den taeglichen Abgleich reicht je
+ * Mitarbeiter `{ "id": …, "active": true|false }`: Ein solcher Eintrag ohne
+ * weitere Felder legt im Voll-Abgleich kein Ticket an und aendert an einem
+ * vorhandenen nichts. Mit `active: false` gilt der Mitarbeiter als nicht
+ * mehr gemeldet, sein gueltiges Ticket wird wie ein fehlendes gesperrt
+ * (zaehlt bei den Schutzregeln mit und steht in `deactivatedIds`). Eine
+ * Ablehnung nennt in `wouldDeactivateEmployees` (ID und Name, hoechstens 50)
+ * die Mitarbeiter, deren Ticket gesperrt worden waere, damit der Absender
+ * sie anzeigen kann.
  */
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -96,6 +123,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const bodyObject = !Array.isArray(body) && body != null && typeof body === "object"
+    ? (body as { fullSync?: unknown; fullSyncForce?: unknown })
+    : null;
+  const fullSync = bodyObject?.fullSync === true;
+  const fullSyncForce = bodyObject?.fullSyncForce === true;
+
+  // Fuer den Voll-Abgleich: Zeitpunkt und Anzahl der gueltigen Webhook-Tickets
+  // vor der Verarbeitung. Gesperrt werden nur Tickets, die seit diesem
+  // Zeitpunkt nicht geaendert wurden (ein parallel eingetroffener Einzel-Sync
+  // bleibt so stehen); der Nenner der Prozent-Regel zaehlt im selben Aufruf
+  // neu angelegte Tickets nicht mit.
+  const fullSyncStartedAt = new Date();
+  const validBefore = fullSync
+    ? (await db.ticket.findMany({
+        where: { accountId, source: "EMP_CONTROL", status: "VALID" },
+        select: { uuid: true },
+      })).filter((t) => isSyncedEmployeeUuid(t.uuid)).length
+    : 0;
+
   let created = 0;
   let updated = 0;
   /**
@@ -111,6 +157,17 @@ export async function POST(request: NextRequest) {
    * Mitarbeiter laufen weiter; gemeldet wird je Mitarbeiter.
    */
   const failed: { employeeId: string; error: string }[] = [];
+
+  // Bestehende Tickets aller Mitarbeiter mit einer Abfrage statt je Mitarbeiter.
+  const uuids = employees.flatMap((emp) => {
+    const id = emp?.id ?? emp?.employeeId;
+    return id == null ? [] : [`emp-${id}`];
+  });
+  const ticketIdByUuid = new Map<string, number>();
+  if (uuids.length > 0) {
+    const rows = await db.ticket.findMany({ where: { uuid: { in: [...new Set(uuids)] } }, select: { id: true, uuid: true } });
+    for (const r of rows) if (r.uuid && !ticketIdByUuid.has(r.uuid)) ticketIdByUuid.set(r.uuid, r.id);
+  }
 
   for (const emp of employees) {
     const id = emp.id ?? emp.employeeId;
@@ -142,6 +199,20 @@ export async function POST(request: NextRequest) {
     const deviceIds = [...new Set(deviceKnown)];
     const devicesInPayload = Array.isArray(emp.deviceIds) || emp.deviceId != null;
 
+    const uuid = `emp-${id}`;
+    const existingId = ticketIdByUuid.get(uuid);
+
+    // Inaktiver Mitarbeiter ohne Ticket: nichts anlegen. Ein gesperrtes
+    // Ticket fuer jemanden, der hier nie Zutritt hatte, braucht niemand.
+    if (existingId == null && emp.active === false) continue;
+
+    // Voll-Abgleich: Ein Eintrag nur mit ID (und active) ist eine reine
+    // Anwesenheitsmeldung. Er legt nichts an und laesst ein vorhandenes
+    // Ticket, wie es ist (Chip, Namen, Bereiche, Status). Mit active false
+    // gilt der Mitarbeiter als nicht mehr gemeldet: Sein Ticket wird unten
+    // zusammen mit den fehlenden gesperrt, unter denselben Schutzregeln.
+    if (fullSync && isPresenceMarker(emp)) continue;
+
     if (areaUnknown.length > 0 || deviceUnknown.length > 0) {
       unknown.push({
         employeeId: String(id),
@@ -149,9 +220,6 @@ export async function POST(request: NextRequest) {
         ...(deviceUnknown.length > 0 ? { deviceIds: [...new Set(deviceUnknown)] } : {}),
       });
     }
-
-    const uuid = `emp-${id}`;
-    const existing = await db.ticket.findFirst({ where: { uuid } });
 
     // Inkrementeller Sync: Nur Felder schreiben, die der Webhook
     // tatsaechlich mitgeschickt hat. Frueher hat ein Sync ohne
@@ -196,17 +264,39 @@ export async function POST(request: NextRequest) {
     // Wert in Ruhe.
     if (areasInPayload) updateData.accessAreaId = primaryAreaId;
 
-    let ticketId: number;
+    // Ticket, Bereiche und Geraete eines Mitarbeiters gehen gemeinsam in die
+    // Datenbank (eine Transaktion): ganz oder gar nicht.
+    // Areas-Sync ist nicht-destruktiv: Wenn der Webhook keine Areas
+    // mitgeschickt hat (areasInPayload=false), wird die bestehende
+    // ticketArea-Liste nicht angefasst. Sendet er eine leere Liste,
+    // bedeutet das "alle Bereiche entfernen" - das ist legitim.
+    // Direkt zugewiesene Geraete nach derselben Regel.
     try {
-      if (existing) {
-        if (Object.keys(updateData).length > 0) {
-          await db.ticket.update({ where: { id: existing.id }, data: updateData });
-        }
-        ticketId = existing.id;
+      if (existingId != null) {
+        const ticketId = existingId;
+        await db.$transaction([
+          db.ticket.update({ where: { id: ticketId }, data: updateData }),
+          ...(areasInPayload
+            ? [
+                db.ticketArea.deleteMany({ where: { ticketId } }),
+                ...(areaIds.length > 0
+                  ? [db.ticketArea.createMany({ data: areaIds.map((accessAreaId) => ({ ticketId, accessAreaId })), skipDuplicates: true })]
+                  : []),
+              ]
+            : []),
+          ...(devicesInPayload
+            ? [
+                db.ticketDevice.deleteMany({ where: { ticketId } }),
+                ...(deviceIds.length > 0
+                  ? [db.ticketDevice.createMany({ data: deviceIds.map((deviceId) => ({ ticketId, deviceId })), skipDuplicates: true })]
+                  : []),
+              ]
+            : []),
+        ]);
         updated++;
       } else {
         // Neuanlage: vollstaendige Defaults setzen, damit das Ticket
-        // konsistent startet.
+        // konsistent startet; Bereiche und Geraete gleich mit.
         const t = await db.ticket.create({
           data: {
             uuid,
@@ -221,9 +311,17 @@ export async function POST(request: NextRequest) {
             ticketTypeName: "Mitarbeiter",
             source: "EMP_CONTROL",
             accessAreaId: primaryAreaId,
+            ...(areasInPayload && areaIds.length > 0
+              ? { ticketAreas: { createMany: { data: areaIds.map((accessAreaId) => ({ accessAreaId })), skipDuplicates: true } } }
+              : {}),
+            ...(devicesInPayload && deviceIds.length > 0
+              ? { ticketDevices: { createMany: { data: deviceIds.map((deviceId) => ({ deviceId })), skipDuplicates: true } } }
+              : {}),
           },
+          select: { id: true },
         });
-        ticketId = t.id;
+        // Kommt derselbe Mitarbeiter im Aufruf noch einmal, wird er aktualisiert.
+        ticketIdByUuid.set(uuid, t.id);
         created++;
       }
     } catch (e) {
@@ -232,30 +330,64 @@ export async function POST(request: NextRequest) {
       failed.push({ employeeId: String(id), error: "Kennung oder Code ist bereits vergeben" });
       continue;
     }
+  }
 
-    // Areas-Sync ist nicht-destruktiv: Wenn der Webhook keine Areas
-    // mitgeschickt hat (areasInPayload=false), wird die bestehende
-    // ticketArea-Liste nicht angefasst. Sendet er eine leere Liste,
-    // bedeutet das "alle Bereiche entfernen" - das ist legitim.
-    if (areasInPayload) {
-      await db.ticketArea.deleteMany({ where: { ticketId } });
-      if (areaIds.length > 0) {
-        await db.ticketArea.createMany({
-          data: areaIds.map((accessAreaId) => ({ ticketId, accessAreaId })),
-          skipDuplicates: true,
-        });
-      }
-    }
-
-    // Direkt zugewiesene Geraete, nach derselben Regel wie die Bereiche.
-    if (devicesInPayload) {
-      await db.ticketDevice.deleteMany({ where: { ticketId } });
-      if (deviceIds.length > 0) {
-        await db.ticketDevice.createMany({
-          data: deviceIds.map((deviceId) => ({ ticketId, deviceId })),
-          skipDuplicates: true,
-        });
-      }
+  // Voll-Abgleich: Erst nach der Verarbeitung oben, damit gerade gemeldete
+  // Mitarbeiter schon ihren neuen Stand haben. Gesperrt wird nur der Status
+  // VALID; Bereiche, Geraete, Chip und Daten bleiben, ein spaeterer Aufruf
+  // mit active true gibt das Ticket wieder frei.
+  let fullSyncResult: { deactivated: number; deactivatedIds: string[] } | null = null;
+  let fullSyncRefusal: {
+    error: string;
+    wouldDeactivate: number;
+    wouldDeactivateEmployees: { id: string; name: string }[];
+  } | null = null;
+  if (fullSync) {
+    const validTickets = await db.ticket.findMany({
+      where: { accountId, source: "EMP_CONTROL", status: "VALID", updatedAt: { lt: fullSyncStartedAt } },
+      select: { id: true, uuid: true, name: true },
+    });
+    const plan = planFullSync({ employees, validTickets, validBefore, force: fullSyncForce });
+    if (plan.action === "refuse") {
+      const names = new Map(validTickets.map((t) => [t.id, t.name]));
+      fullSyncRefusal = {
+        error: plan.error,
+        wouldDeactivate: plan.wouldDeactivate,
+        wouldDeactivateEmployees: plan.ticketIds.slice(0, FULL_SYNC_PREVIEW_MAX).map((ticketId, i) => ({
+          id: plan.employeeIds[i],
+          name: names.get(ticketId) ?? "",
+        })),
+      };
+      console.info("[emp-control/webhook] Voll-Abgleich abgelehnt", {
+        accountId,
+        employees: employees.length,
+        reason: plan.reason,
+        wouldDeactivate: plan.wouldDeactivate,
+        valid: plan.total,
+      });
+    } else {
+      const changed = plan.ticketIds.length > 0
+        ? await db.ticket.updateManyAndReturn({
+            where: {
+              id: { in: plan.ticketIds },
+              accountId,
+              source: "EMP_CONTROL",
+              status: "VALID",
+              updatedAt: { lt: fullSyncStartedAt },
+            },
+            data: { status: "INVALID" },
+            select: { id: true, uuid: true },
+          })
+        : [];
+      const deactivatedIds = changed
+        .sort((a, b) => a.id - b.id)
+        .map((t) => (t.uuid ?? "").slice(4));
+      fullSyncResult = { deactivated: changed.length, deactivatedIds };
+      console.info("[emp-control/webhook] Voll-Abgleich", {
+        accountId,
+        employees: employees.length,
+        deactivated: changed.length,
+      });
     }
   }
 
@@ -267,6 +399,25 @@ export async function POST(request: NextRequest) {
   // Konflikte sollen in emp-control sichtbar bleiben: Der Abgleich dort
   // wertet nur den HTTP-Status und das Feld error aus. Die uebrigen
   // Mitarbeiter sind zu diesem Zeitpunkt bereits gespeichert.
+  if (fullSyncRefusal) {
+    const failedText = failed.length > 0
+      ? ` ${failed.length} Mitarbeiter nicht gespeichert, Kennung oder Code ist bereits vergeben (ID ${failed.map((f) => f.employeeId).join(", ")})`
+      : "";
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `${fullSyncRefusal.error}${failedText}`,
+        wouldDeactivate: fullSyncRefusal.wouldDeactivate,
+        wouldDeactivateEmployees: fullSyncRefusal.wouldDeactivateEmployees,
+        created,
+        updated,
+        ...(unknown.length > 0 ? { unknown } : {}),
+        ...(failed.length > 0 ? { failed } : {}),
+      },
+      { status: 409 },
+    );
+  }
+
   if (failed.length > 0) {
     const ids = failed.map((f) => f.employeeId).join(", ");
     return NextResponse.json(
@@ -277,6 +428,7 @@ export async function POST(request: NextRequest) {
         updated,
         ...(unknown.length > 0 ? { unknown } : {}),
         failed,
+        ...(fullSyncResult ?? {}),
       },
       { status: 409 },
     );
@@ -287,5 +439,6 @@ export async function POST(request: NextRequest) {
     created,
     updated,
     ...(unknown.length > 0 ? { unknown } : {}),
+    ...(fullSyncResult ?? {}),
   });
 }

@@ -7,7 +7,7 @@
  * zugleich `X-Api-Key`-Header) und Application Secret (= client_secret) werden
  * gegen ein kurzlebiges Access-Token getauscht (~24 h gueltig). Das Token
  * cachen wir pro warmer Function-Instanz im Speicher, analog zum API-Token-
- * Cache in `lib/api-auth.ts`.
+ * Cache in `lib/api-token-auth.ts`.
  *
  * Beide Credentials legt ein Account im Developer Portal an und speichert sie
  * bei uns in `ApiConfig` (provider = GARDENA): `token` = Application Key,

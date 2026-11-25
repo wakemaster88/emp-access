@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { BatteryCharging, CalendarClock, ChevronDown, Home, Loader2, Maximize2, Pause, Play, Square, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import {
   canStartTask,
   describeMower,
@@ -73,14 +74,14 @@ export function useMowerStates(enabled: boolean): { live: Map<number, MowerLive>
   useEffect(() => {
     if (!enabled) return;
     const first = setTimeout(() => void load(), 1_000);
-    const timer = setInterval(() => void load(), POLL_MS);
     const pending = timers.current;
     return () => {
       clearTimeout(first);
-      clearInterval(timer);
       pending.forEach(clearTimeout);
     };
   }, [enabled, load]);
+  // Takt pausiert im Hintergrund-Tab; beim Zurückkommen sofort abfragen.
+  useVisiblePolling(load, enabled ? POLL_MS : null, { runOnStart: false });
 
   // Der Hub holt den Befehl in ~5 s ab, der Maeher meldet sich danach.
   const refreshSoon = useCallback(() => {

@@ -103,13 +103,34 @@ export function fillName(text: string, firstName: string | null): string {
     .trim();
 }
 
-/** Text der Geburtstags-Durchsage für eine Person. */
+/** Längster Name in einer Durchsage. */
+export const SPOKEN_NAME_MAX = 40;
+
+/**
+ * Name für gesprochene Texte: nur Buchstaben (auch Umlaute und andere
+ * Schriften), Leerzeichen, Bindestriche und Apostrophe, höchstens
+ * SPOKEN_NAME_MAX Zeichen. Der gespeicherte Name bleibt, wie er ist.
+ * Null, wenn nichts übrig bleibt.
+ */
+export function spokenName(name: string | null | undefined): string | null {
+  const clean = (name ?? "")
+    .normalize("NFC")
+    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{M} '’-]/gu, "")
+    .replace(/ {2,}/g, " ")
+    .trim()
+    .slice(0, SPOKEN_NAME_MAX)
+    .trim();
+  return /\p{L}/u.test(clean) ? clean : null;
+}
+
+/** Text der Geburtstags-Durchsage für eine Person; der Name nur über `spokenName`. */
 export function birthdayAnnounceText(
   s: { announceText: string | null; announceName: boolean },
   firstName: string | null,
 ): string {
   const template = s.announceText?.trim() || BIRTHDAY_DEFAULT_ANNOUNCE;
-  return fillName(template, s.announceName ? firstName : null).slice(0, BIRTHDAY_ANNOUNCE_MAX);
+  return fillName(template, s.announceName ? spokenName(firstName) : null).slice(0, BIRTHDAY_ANNOUNCE_MAX);
 }
 
 function sentence(t: string): string {

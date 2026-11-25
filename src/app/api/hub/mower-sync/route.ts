@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { sanitizeMowerMap, sanitizeMowerState } from "@/lib/mower";
 
 /**

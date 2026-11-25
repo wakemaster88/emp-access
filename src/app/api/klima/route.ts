@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionOrApiToken } from "@/lib/api-auth";
-import { CLIMATE_LIMITS, climateView } from "@/lib/room-climate";
+import { CLIMATE_LIMITS, climateSwitchError, climateView } from "@/lib/room-climate";
 import { isOperatingExtent } from "@/lib/operating-extent";
 
 /**
@@ -72,10 +72,13 @@ export async function PUT(request: NextRequest) {
     where: { id: { in: [...heaterIds, ...fanIds] }, accountId, type: "SHELLY" },
     select: { id: true, category: true },
   });
-  if (switches.length !== new Set([...heaterIds, ...fanIds]).size) return bad("Heizung oder Lüftung nicht gefunden (nur Shelly-Schalter)");
-  if (switches.some((h) => h.category === "MARKISE" || h.category === "ROLLTOR" || h.category === "SENSOR")) {
-    return bad("Für Heizung und Lüftung nur Schalter wählen");
-  }
+  // Neu zugeordnete Geräte nur mit Kategorie Schalter; gespeicherte bleiben gültig.
+  const stored = await db.roomClimate.findFirst({
+    where: { roomId, accountId },
+    select: { heaterDeviceIds: true, fanDeviceIds: true },
+  });
+  const switchError = climateSwitchError(heaterIds, fanIds, switches, stored);
+  if (switchError) return bad(switchError);
   if (heaterIds.includes(sensorDeviceId) || fanIds.includes(sensorDeviceId)) {
     return bad("Fühler und Schalter müssen verschiedene Geräte sein");
   }

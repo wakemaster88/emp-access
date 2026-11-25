@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EditTicketDialog, statusBadge, type TicketData } from "./edit-ticket-dialog";
+import { photoSrc } from "@/lib/photo-url";
 import { fmtDateShort, fmtDateTimeShort, isDateOnly } from "@/lib/utils";
 import { UserCheck, MapPin, CreditCard, Package, SearchX, Ticket } from "lucide-react";
 
@@ -380,8 +381,8 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                     {/* w-full + max-w-0: Namensspalte nimmt den Rest, lange Zeilen kürzen statt die Tabelle zu verbreitern. */}
                     <TableCell className="w-full max-w-0">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        {ticket.profileImage ? (
-                          <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                        {photoSrc(ticket) ? (
+                          <img src={photoSrc(ticket)!} alt="" loading="lazy" decoding="async" className="h-8 w-8 rounded-full object-cover shrink-0" />
                         ) : null}
                         <div className="min-w-0">
                           <p className="font-medium text-foreground truncate">
@@ -464,8 +465,8 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                     >
                       <TableCell className="w-full max-w-0">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          {ticket.profileImage ? (
-                            <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                          {photoSrc(ticket) ? (
+                            <img src={photoSrc(ticket)!} alt="" loading="lazy" decoding="async" className="h-8 w-8 rounded-full object-cover shrink-0" />
                           ) : (
                             <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                               <span className="text-xs font-bold text-muted-foreground">

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { waitForHubTask } from "@/lib/hub-task-wait";
 import { hubTaskActor } from "@/lib/hub-task-rules";
+import { recordDeviceAction } from "@/lib/device-action-log";
 
 /**
  * Kamera-Steuerung (Kontrollzentrum): legt einen Hub-Task an und wartet
@@ -38,7 +39,7 @@ export async function POST(
 
   const camera = await db.camera.findFirst({
     where: { id: cameraId, accountId: accountId! },
-    select: { id: true, kind: true, enabled: true },
+    select: { id: true, name: true, kind: true, enabled: true },
   });
   if (!camera) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   if (!camera.enabled) {
@@ -67,15 +68,27 @@ export async function POST(
       ? (body.payload as Record<string, unknown>)
       : {};
 
+  const by = hubTaskActor(session.session.user);
   const task = await db.hubTask.create({
     data: {
       type: taskType,
-      payload: { ...payload, cameraId, by: hubTaskActor(session.session.user) },
+      payload: { ...payload, cameraId, by },
       accountId: accountId!,
     },
   });
 
   const outcome = await waitForHubTask(db, task.id);
+  if (taskType === "DOORBIRD_OPEN") {
+    // Kamera-Tueren haben keine Device-Zeile: deviceId 0, Kamera im Namen.
+    recordDeviceAction({
+      accountId: accountId!,
+      deviceId: 0,
+      deviceName: `${camera.name ?? "Kamera"} (Kamera ${camera.id})`,
+      action: "doorbird_open",
+      result: outcome.status === "FAILED" ? "fehler" : "ok",
+      by: { source: "admin", actorId: by.adminId },
+    });
+  }
   if (outcome.status === "DONE") {
     return NextResponse.json({ ok: true, taskId: task.id, result: outcome.result });
   }

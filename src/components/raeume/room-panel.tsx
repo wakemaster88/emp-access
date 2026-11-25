@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import {
   CalendarClock,
@@ -41,7 +42,7 @@ import { TechTable } from "@/components/raeume/tech-table";
 import { IrrigationWidget } from "@/components/raeume/irrigation-widget";
 import { ClimateOverride } from "@/components/raeume/climate-override";
 import { SceneTiles } from "@/components/raeume/scene-tiles";
-import { ClimateHistory, type HistoryRange } from "@/components/raeume/climate-history";
+import type { HistoryRange } from "@/components/raeume/climate-history";
 import { AutomationWidget } from "@/components/raeume/automation-widget";
 import { fmtWhen, ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
 import { operatingSpanState } from "@/lib/operating-hours";
@@ -49,6 +50,18 @@ import { ActivityChart, CameraTile, ClimateHero, DeviceTile, GroupTile, PulseTil
 import { MowerCard, type MowerLive } from "@/components/raeume/mower-card";
 import type { MowerAction } from "@/lib/mower";
 import { cn } from "@/lib/utils";
+
+// Der Klimaverlauf bringt recharts mit: erst nachladen. Der Platzhalter hat
+// die Höhe des eigenen Ladezustands (Zeitraum-Leiste und Diagrammfläche).
+const ClimateHistory = dynamic(() => import("@/components/raeume/climate-history").then((m) => m.ClimateHistory), {
+  ssr: false,
+  loading: () => (
+    <div className="space-y-3">
+      <div className="glass-strip h-[34px] w-[13.5rem] max-w-full" />
+      <div className="glass-tile h-36 animate-pulse" />
+    </div>
+  ),
+});
 
 const FAN_RE = /l(ü|ue)ft|ventil/i;
 

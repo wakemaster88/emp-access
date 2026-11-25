@@ -10,9 +10,11 @@ export const metadata: Metadata = {
 };
 
 /**
- * Fallback-Seite des Service Workers: erscheint, wenn eine Seite ohne
+ * Fallback-Seite aelterer Service Worker: erscheint, wenn eine Seite ohne
  * Netz aufgerufen wird. Bewusst ohne Datenzugriff, damit sie sich beim
- * Installieren des Service Workers cachen laesst.
+ * Installieren des Service Workers cachen laesst. Der aktuelle Service
+ * Worker nimmt stattdessen public/offline.html (gleiches Aussehen, ohne
+ * Skripte); diese Seite bleibt fuer Geraete, die ihn noch nicht haben.
  *
  * Folgt Hell/Dunkel des Geräts: eine Glaskarte auf dem Farbgrund, wie die
  * Anmeldung.

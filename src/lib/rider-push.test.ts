@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { awardPushText, isPushServiceUrl } from "./rider-push";
+import { awardPushText, familyJoinPushText, isPushServiceUrl } from "./rider-push";
 
 test("isPushServiceUrl: nur die Push-Dienste der Browser", () => {
   assert.equal(isPushServiceUrl("https://fcm.googleapis.com/fcm/send/abc"), true);
@@ -25,5 +25,12 @@ test("awardPushText: für die Person selbst und für die Eltern", () => {
   assert.deepEqual(awardPushText("Hooked", "Ein Eis nach Wahl", "Mia"), {
     title: "Award für Mia: Hooked",
     body: "Der Gutschein wartet in der App: Ein Eis nach Wahl",
+  });
+});
+
+test("familyJoinPushText: nennt die Person, die beigetreten ist", () => {
+  assert.deepEqual(familyJoinPushText("Alex"), {
+    title: "Neu in deiner Familie",
+    body: "Alex ist deiner Familie beigetreten. Schau im Profil unter Familie nach.",
   });
 });

@@ -7,6 +7,8 @@
 export const CHALLENGE_PHOTO_MAX_CHARS = 2_000_000;
 /** Längste Kante, auf die die App ein Foto vor dem Hochladen verkleinert. */
 export const CHALLENGE_PHOTO_PX = 1600;
+/** Größere Bilder nimmt der Server beim Neu-Kodieren nicht an (40 Megapixel). */
+export const CHALLENGE_PHOTO_MAX_INPUT_PIXELS = 40_000_000;
 /** Längste Kante des Vorschaubilds im Raster (2 Spalten, Retina). */
 export const CHALLENGE_THUMB_PX = 480;
 /** So viele Tage nach dem Endtag zeigt die App eine Challenge noch (lib/rider-challenges). */

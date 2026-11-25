@@ -5,6 +5,7 @@ import { executeTask, type HubTask } from "./tasks.js";
 import { checkForUpdate, repoAccessStatus } from "./updater.js";
 import { PREFLIGHT_OK, isPreflightRun } from "./updater-rules.js";
 import { startDashboard } from "./dashboard.js";
+import { dashboardAccessMode } from "./dashboard-auth.js";
 import { autoScan } from "./scanner.js";
 import { onTaskKick } from "./task-kick.js";
 import { pollCameras, CAMERA_POLL_INTERVAL_MS, restoreCameraMotion } from "./cameras.js";
@@ -156,8 +157,12 @@ async function heartbeat() {
         hostname: CONFIG.hostname,
         version: CONFIG.version,
         modules: CONFIG.modules,
-        // Auto-Login/Ruhezustand/Einschaltplan des Hub-Macs fuer die Hub-Karte.
-        system: STATE.system ?? undefined,
+        // Auto-Login/Ruhezustand/Einschaltplan des Hub-Macs fuer die Hub-Karte,
+        // dazu, wie das lokale Dashboard erreichbar ist ("local", "lan-token",
+        // "lan-open"); die Cloud legt system unveraendert in HubAgent.status ab.
+        system: STATE.system
+          ? { ...STATE.system, dashboardAccess: dashboardAccessMode(CONFIG.dashboardHost, CONFIG.dashboardToken) }
+          : undefined,
         // Deploy-Key/Update-Zugang fuer die Liste in den Cloud-Einstellungen.
         repoAccess: repoAccessStatus() ?? undefined,
       }),

@@ -4,7 +4,8 @@
  *
  * Eine Erwachsene der Familie gibt im Profil eine Adresse ein; dorthin geht
  * eine Mail im Look der App. Ihr Link ist der Anmelde-Link
- * (`/app/mail/<schlüssel>`, 7 Tage gültig) mit dem Einladungsschlüssel der
+ * (`/app/mail/<schlüssel>`, 7 Tage gültig, für Adressen mit eingerichtetem
+ * Zugang eine Stunde) mit dem Einladungsschlüssel der
  * Familie (`?familie=<schlüssel>`): Wer ihn öffnet, belegt damit seine Adresse
  * und ist angemeldet (beim ersten Mal nach dem Einrichten). Der Familie tritt
  * die Person erst bei, wenn sie es auf der Einladungsseite per Knopf bestätigt:
@@ -18,10 +19,10 @@
  * (lib/rider-family-link), Kinder ohne Adresse die Kasse (lib/rider-kasse-link).
  */
 import { prisma } from "./prisma";
-import { mailLinkKey, normalizeEmail } from "./day-guest";
+import { mailLinkKey, mailLinkTarget, MAIL_LINK_HOURS_WITH_ACCESS, normalizeEmail } from "./day-guest";
 import { sendEmail } from "./email-sender";
 import {
-  FAMILY_INVITE_DAYS, FamilyError, assertRoom, ensureFamily, familyInviteInfo, familyInviteKey, memberName,
+  FAMILY_INVITE_DAYS, FamilyError, assertRoom, ensureFamily, familyInviteInfo, familyInviteKey, familyInviteVersion, memberName,
   type FamilyPerson,
 } from "./rider-family";
 import { familyInviteMail } from "./rider-mail-template";
@@ -90,8 +91,12 @@ export async function inviteFamilyByMail(
   }
 
   const familyId = await ensureFamily(viewer);
-  const key = familyInviteKey(familyId, viewer.id, now);
-  const url = `${origin}/app/mail/${mailLinkKey(viewer.accountId, email, now, FAMILY_INVITE_DAYS * 24)}?familie=${key}`;
+  const key = familyInviteKey(familyId, viewer.id, now, await familyInviteVersion(familyId));
+  // Hat die Adresse schon einen eigenen Zugang, meldet der Link nur eine Stunde
+  // lang an; die Einladung selbst gilt weiter (lib/rider-family, /app/mail).
+  const target = await mailLinkTarget(viewer.accountId, email);
+  const hours = target.hasAccess ? MAIL_LINK_HOURS_WITH_ACCESS : FAMILY_INVITE_DAYS * 24;
+  const url = `${origin}/app/mail/${mailLinkKey(viewer.accountId, email, now, hours, target.version)}?familie=${key}`;
   const content = familyInviteMail({ url, accountName: account.name, origin, inviterName: memberName(inviter), days: FAMILY_INVITE_DAYS });
   // Tagesgrenze je Konto (lib/rider-mail-cap): darüber nur an bekannte
   // Adressen. Die App bekommt dieselbe Antwort wie nach dem Senden.

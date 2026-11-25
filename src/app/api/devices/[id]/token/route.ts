@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { newDeviceApiToken } from "@/lib/tokens";
+import { hubTaskActor } from "@/lib/hub-task-rules";
+import { recordDeviceAction } from "@/lib/device-action-log";
 
 const TOKEN_DEVICE_TYPES = new Set(["RASPBERRY_PI", "AUDIO_PLAYER"]);
 
@@ -14,13 +16,30 @@ async function loadDevice(request: NextRequest, params: Promise<{ id: string }>)
   }
   const device = await session.db.device.findFirst({
     where: { id: deviceId, accountId: session.accountId! },
-    select: { id: true, type: true },
+    select: { id: true, name: true, type: true },
   });
   if (!device) return { error: NextResponse.json({ error: "Nicht gefunden" }, { status: 404 }) };
   if (!TOKEN_DEVICE_TYPES.has(device.type)) {
     return { error: NextResponse.json({ error: "Nur Scanner- und Audio-Pis haben ein eigenes Token" }, { status: 400 }) };
   }
-  return { db: session.db, device };
+  return {
+    db: session.db,
+    device,
+    accountId: session.accountId!,
+    actorId: hubTaskActor(session.session.user).adminId,
+  };
+}
+
+/** Protokoll-Eintrag fuer eine Token-Aenderung (wird nicht abgewartet). */
+function logTokenChange(loaded: { device: { id: number; name: string }; accountId: number; actorId: number | null }, action: string) {
+  recordDeviceAction({
+    accountId: loaded.accountId,
+    deviceId: loaded.device.id,
+    deviceName: loaded.device.name,
+    action,
+    result: "ok",
+    by: { source: "admin", actorId: loaded.actorId },
+  });
 }
 
 /**
@@ -37,6 +56,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     data: { apiToken },
     select: { id: true },
   });
+  logTokenChange(loaded, "token_neu");
   return NextResponse.json({ apiToken });
 }
 
@@ -49,5 +69,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     data: { apiToken: null },
     select: { id: true },
   });
+  logTokenChange(loaded, "token_entfernt");
   return NextResponse.json({ ok: true });
 }

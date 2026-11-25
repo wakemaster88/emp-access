@@ -28,8 +28,8 @@ export async function GET(
   return new NextResponse(new Uint8Array(bytes), {
     headers: {
       "Content-Type": "image/jpeg",
-      // Bild ist pro Sichtung unveraenderlich – Browser darf lange cachen.
-      "Cache-Control": "private, max-age=86400, immutable",
+      // Gesichts- bzw. Kennzeichenbild: nur kurz im Browser-Cache halten.
+      "Cache-Control": "private, max-age=300",
       "Last-Modified": sighting.seenAt.toUTCString(),
     },
   });

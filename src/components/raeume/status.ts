@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SensorReading } from "@/lib/shelly-sensor";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 
 /** Antwortform von `GET /api/devices/shelly-statuses`. */
 export interface DeviceStatus {
@@ -85,18 +86,9 @@ export function useDeviceStatuses(deviceIds: number[]): {
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const tick = () => {
-      if (!cancelled) void load(keyRef.current);
-    };
-    tick();
-    const timer = setInterval(tick, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [key, load]);
+  // Pausiert im Hintergrund-Tab; beim Zurückkommen sofort neu abfragen.
+  const tick = useCallback(() => load(key), [key, load]);
+  useVisiblePolling(tick, POLL_INTERVAL_MS);
 
   const refresh = useCallback(() => void load(keyRef.current), [load]);
 

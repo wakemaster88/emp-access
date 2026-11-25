@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 
 /**
  * GET (Hub, Token-Auth): Kamera-Konfiguration inklusive Zugangsdaten fuer

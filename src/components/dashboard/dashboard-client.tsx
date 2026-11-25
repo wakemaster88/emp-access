@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import dynamic from "next/dynamic";
 import { setAppBadge } from "@/lib/app-badge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,12 +33,27 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PHOTO_URL_QUERY, photoSrc } from "@/lib/photo-url";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { OpsCard, type DashboardOps } from "@/components/dashboard/ops-strip";
 import { LiveSection, type DashboardLive, fmtHm } from "@/components/dashboard/live-section";
 import { TrackingSection } from "@/components/dashboard/tracking-section";
-import { AreaStats } from "@/components/dashboard/area-stats";
+
+// Die Bereichs-Auswertung bringt recharts mit: erst nachladen, wenn sie
+// gezeigt wird. Der Platzhalter ist derselbe wie ihr eigener Ladezustand.
+const AreaStats = dynamic(() => import("@/components/dashboard/area-stats").then((m) => m.AreaStats), {
+  ssr: false,
+  loading: () => (
+    <Card>
+      <CardContent className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        Lädt …
+      </CardContent>
+    </Card>
+  ),
+});
 
 interface TicketEntry {
   id: number;
@@ -51,7 +67,10 @@ interface TicketEntry {
   validityType: string;
   slotStart: string | null;
   slotEnd: string | null;
-  profileImage: string | null;
+  /** Nur in alten Antworten (ohne `fotos=url`): das Foto selbst. */
+  profileImage?: string | null;
+  /** Foto über /api/tickets/[id]/photo (Antwort mit `fotos=url`). */
+  photoUrl?: string | null;
   source: string | null;
   bookingStart: string | null;
   bookingEnd: string | null;
@@ -86,7 +105,8 @@ interface NewTicket {
   name: string;
   typeName: string | null;
   source: string | null;
-  profileImage: string | null;
+  profileImage?: string | null;
+  photoUrl?: string | null;
   createdAt: string;
 }
 
@@ -172,8 +192,8 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
       className="flex w-full items-center gap-2 py-1.5 sm:py-1 text-left rounded-[10px] px-1 -mx-1 outline-none hover:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-ring/50 transition-colors"
       onClick={onClick}
     >
-      {ticket.profileImage ? (
-        <img src={ticket.profileImage} alt="" className="h-6 w-6 rounded-full object-cover shrink-0" />
+      {photoSrc(ticket) ? (
+        <img src={photoSrc(ticket)!} alt="" loading="lazy" decoding="async" className="h-6 w-6 rounded-full object-cover shrink-0" />
       ) : (
         <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center shrink-0">
           <span className="text-[10px] font-bold text-muted-foreground">
@@ -473,7 +493,8 @@ export function DashboardClient() {
   const fetchData = useCallback(async (d: string, opts?: { quiet?: boolean }) => {
     if (!opts?.quiet && !hasLoaded.current) setLoading(true);
     try {
-      const res = await fetch(`/api/dashboard?date=${d}`);
+      // `fotos=url`: Avatare als URL, jedes Bild lädt der Browser nur einmal.
+      const res = await fetch(`/api/dashboard?date=${d}&${PHOTO_URL_QUERY}`);
       if (res.ok) {
         setData(await res.json());
         hasLoaded.current = true;
@@ -531,11 +552,11 @@ export function DashboardClient() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isToday(date)) return;
-    const t = setInterval(() => { fetchData(date, { quiet: true }); }, 60_000);
-    return () => clearInterval(t);
-  }, [date, fetchData]);
+  // Tagesdaten von heute jede Minute nachladen; pausiert im Hintergrund-Tab
+  // und lädt beim Zurückkommen sofort (der erste Abruf kommt oben).
+  const pollToday = useMemo(() => isToday(date), [date]);
+  const refreshToday = useCallback(() => fetchData(date, { quiet: true }), [date, fetchData]);
+  useVisiblePolling(refreshToday, pollToday ? 60_000 : null, { runOnStart: false });
 
   function ensureTicketOptions() {
     if (areas.length > 0 || subs.length > 0 || svcs.length > 0 || vereine.length > 0) return;
@@ -945,8 +966,8 @@ export function DashboardClient() {
                       className="flex w-full min-h-11 items-center gap-2.5 px-2 py-2 text-left outline-none hover:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-ring/50 transition-colors"
                       onClick={() => openTicket(ticket.id)}
                     >
-                      {ticket.profileImage ? (
-                        <img src={ticket.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                      {photoSrc(ticket) ? (
+                        <img src={photoSrc(ticket)!} alt="" loading="lazy" decoding="async" className="h-7 w-7 rounded-full object-cover shrink-0" />
                       ) : (
                         // Neutral wie die Personenzeilen der Bereichskarten: Akzent-Initiale auf
                         // Akzent-Tönung erreicht im Dunkeln nur 3,7:1.

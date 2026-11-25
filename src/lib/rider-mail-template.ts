@@ -106,7 +106,7 @@ function riderMailHtml(l: MailLayout): string {
 
 /** Mail mit dem Anmelde-Link. `origin` dient für das App-Icon. */
 export function riderLinkMail(args: { url: string; accountName: string; origin: string; hours: number }): RiderLinkMail {
-  const note = `Der Link gilt ${args.hours} Stunden. Beim ersten Öffnen wählst du dein Abo aus und richtest einen Passkey oder ein Passwort ein. Noch kein Abo? Dann geht es auch ohne.`;
+  const note = `Der Link gilt ${args.hours === 1 ? "eine Stunde" : `${args.hours} Stunden`}. Beim ersten Öffnen wählst du dein Abo aus und richtest einen Passkey oder ein Passwort ein. Noch kein Abo? Dann geht es auch ohne.`;
   const footer = "Du hast nichts angefordert? Dann musst du nichts tun, ohne Klick passiert nichts.";
   const html = riderMailHtml({
     title: "Dein Link zur App",

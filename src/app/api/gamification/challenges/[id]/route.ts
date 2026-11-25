@@ -4,6 +4,9 @@ import { challengeSchema, normalizeChallenge, pollOptions, pushPlanPatch } from 
 import { skillRewardAllowed } from "@/lib/rider-skills";
 import { runAccountAnnouncements } from "@/lib/rider-announce";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 async function resolve(params: Promise<{ id: string }>) {
   const session = await gamiAdminSession();
   if ("error" in session) return session;

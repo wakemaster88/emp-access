@@ -29,16 +29,18 @@ import {
 import { Loader2, Music, Pause, Play, Search, Trash2, Upload } from "lucide-react";
 import { TRACK_KIND_LABELS as KIND_LABELS, formatDuration } from "./labels";
 import type { AudioTrackKind, TrackRow } from "./types";
+import { audioUploadPath } from "@/lib/audio-blob-path";
 
 /** Ab dieser Anzahl lohnt sich die Suche – darunter nur unnötiges Bedienelement. */
 const SEARCH_THRESHOLD = 8;
 
 interface Props {
+  accountId: number;
   tracks: TrackRow[];
   onChanged: () => void;
 }
 
-export function LibraryPanel({ tracks, onChanged }: Props) {
+export function LibraryPanel({ accountId, tracks, onChanged }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<AudioTrackKind>("MUSIC");
   const [uploading, setUploading] = useState(false);
@@ -97,7 +99,7 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
         const file = files[i];
         const durationSec = await readDuration(file);
 
-        const uploaded = await upload(file.name, file, {
+        const uploaded = await upload(audioUploadPath(accountId, file.name), file, {
           access: "public",
           handleUploadUrl: "/api/audio/upload",
           contentType: file.type || "audio/mpeg",

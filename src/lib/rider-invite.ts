@@ -20,7 +20,7 @@
  * Der Link ist der Anmelde-Link (`/app/mail/<schlüssel>`), nur länger gültig.
  */
 import { prisma } from "./prisma";
-import { mailLinkKey, normalizeEmail } from "./day-guest";
+import { mailLinkKey, mailLinkTarget, normalizeEmail } from "./day-guest";
 import { sendEmail } from "./email-sender";
 import { riderInviteMail } from "./rider-mail-template";
 import { berlinHour } from "./berlin-day";
@@ -124,7 +124,8 @@ async function sendInvite(
   now: Date,
   send: typeof sendEmail,
 ): Promise<boolean> {
-  const url = `${ctx.origin}/app/mail/${mailLinkKey(ctx.accountId, email, now, INVITE_LINK_DAYS * 24)}`;
+  const { version } = await mailLinkTarget(ctx.accountId, email);
+  const url = `${ctx.origin}/app/mail/${mailLinkKey(ctx.accountId, email, now, INVITE_LINK_DAYS * 24, version)}`;
   const content = riderInviteMail({
     url,
     accountName: ctx.accountName,

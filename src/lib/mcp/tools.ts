@@ -15,10 +15,12 @@
 import type { TenantDb } from "@/lib/prisma";
 import { waitForHubTask } from "@/lib/hub-task-wait";
 import { isValidDeviceAction, isActionAllowedForDevice, triggerDeviceAction, deviceSendsRemoteCommand } from "@/lib/device-open";
+import { recordDeviceAction } from "@/lib/device-action-log";
 import { availableDeviceActions, isAudioDevice } from "@/lib/device-controls";
 import { audioInputFromDeviceAction, controlAudioDevice } from "@/lib/audio-integration";
 import { runDeviceSwitchedRules } from "@/lib/room-rules";
 import { deviceSwitchLevel } from "./device-level";
+import { maskScanCode, mcpScanNote } from "./scan-mask";
 import { describeDay, isOperatingAt, openingForDay } from "@/lib/operating-hours";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { ruleInclude } from "@/lib/room-rule-queries";
@@ -31,9 +33,16 @@ export interface McpCtx {
   db: TenantDb;
   accountId: number;
   tokenName: string;
+  /** McpToken.id – fuers Geraete-Protokoll. */
+  tokenId?: number;
 }
 
 type Tool = McpTool<McpCtx>;
+
+/** Kennung des MCP-Tokens fuers Geraete-Protokoll (ID und Name, nie das Token). */
+function mcpActorLabel(ctx: McpCtx): string {
+  return ctx.tokenId != null ? `mcp:${ctx.tokenId} ${ctx.tokenName}` : ctx.tokenName;
+}
 type Args = Record<string, unknown>;
 
 // ---------- kleine Eingabe-Helfer ----------
@@ -147,7 +156,23 @@ function hubTool(def: {
     levelFor: def.levelFor,
     run: async (args, ctx) => {
       const need = (def.levelFor ? await def.levelFor(args, ctx) : null) ?? level;
-      return runHubTask(ctx, "AGENT_TOOL", { tool: def.name, args, level: need });
+      if (def.name !== "open_gate") return runHubTask(ctx, "AGENT_TOOL", { tool: def.name, args, level: need });
+      // Tor-Oeffnung ins Geraete-Protokoll: deviceId 0, die DoorBird loest der Hub auf.
+      let failed = true;
+      try {
+        const result = await runHubTask(ctx, "AGENT_TOOL", { tool: def.name, args, level: need });
+        failed = false;
+        return result;
+      } finally {
+        recordDeviceAction({
+          accountId: ctx.accountId,
+          deviceId: 0,
+          deviceName: `DoorBird ${String(args.camera ?? "")}`,
+          action: "doorbird_open",
+          result: failed ? "fehler" : "ok",
+          by: { source: "mcp", actorLabel: mcpActorLabel(ctx) },
+        });
+      }
     },
   };
 }
@@ -193,6 +218,38 @@ async function findDevice(ctx: McpCtx, ref: string) {
     throw new McpToolError(`Mehrdeutig: ${hits.map((d) => `${d.id} ${d.name}`).join(", ")}. Bitte die ID angeben.`);
   }
   throw new McpToolError(`Gerät „${ref}“ nicht gefunden – erst list_devices aufrufen.`);
+}
+
+/**
+ * IDs der Geräte, die anderswo Zutritt öffnen: Kennzeichen-Freigabe
+ * (AllowedVehicle.shellyDeviceId), Personen-Erkennung
+ * (ListedPerson.shellyDeviceId), Vereinsportal (portalDeviceIds),
+ * Rider-Skills, elektronische Schließpunkte (KeyLock.deviceId) und
+ * einzelne Ticket-Geräte (TicketDevice). Eine Abfrage für alle Geräte des
+ * Mandanten.
+ */
+async function loadAccessDeviceIds(ctx: McpCtx): Promise<Set<number>> {
+  const rows = await ctx.db.$queryRaw<Array<{ id: number }>>`
+    SELECT "shellyDeviceId" AS "id" FROM "AllowedVehicle"
+      WHERE "accountId" = ${ctx.accountId} AND "shellyDeviceId" IS NOT NULL
+    UNION
+    SELECT "shellyDeviceId" AS "id" FROM "ListedPerson"
+      WHERE "accountId" = ${ctx.accountId} AND "shellyDeviceId" IS NOT NULL
+    UNION
+    SELECT unnest("portalDeviceIds") AS "id" FROM "Verein"
+      WHERE "accountId" = ${ctx.accountId}
+    UNION
+    SELECT "deviceId" AS "id" FROM "RiderSkill"
+      WHERE "accountId" = ${ctx.accountId} AND "deviceId" IS NOT NULL
+    UNION
+    SELECT "deviceId" AS "id" FROM "KeyLock"
+      WHERE "accountId" = ${ctx.accountId} AND "deviceId" IS NOT NULL
+    UNION
+    SELECT td."deviceId" AS "id" FROM "TicketDevice" td
+      JOIN "Device" d ON d."id" = td."deviceId"
+      WHERE d."accountId" = ${ctx.accountId}
+  `;
+  return new Set(rows.map((r) => Number(r.id)));
 }
 
 const MCP_DEVICE_ACTIONS = ["open", "deactivate", "close", "stop"] as const;
@@ -283,7 +340,7 @@ const cloudTools: Tool[] = [
     name: "recent_scans",
     title: "Letzte Zutritte",
     description:
-      "Scans an Drehkreuzen, Türen und Scannern der letzten Minuten: Ergebnis (GRANTED/DENIED/PROTECTED), Gerät, Ticket, Zeit. Dazu Summen je Ergebnis und Gerät.",
+      "Scans an Drehkreuzen, Türen und Scannern der letzten Minuten: Ergebnis (GRANTED/DENIED/PROTECTED), Gerät, Ticket, Zeit, Ablehnungsgrund (note). Der gescannte Code kommt nur gekürzt (erste Zeichen plus Länge). Dazu Summen je Ergebnis und Gerät.",
     inputSchema: obj({
       minutes: int("Zeitraum in Minuten, Vorgabe 60 (max. 1440)", 1, 1440),
       result: str("Optional: nur dieses Ergebnis", { enum: SCAN_RESULTS }),
@@ -335,14 +392,18 @@ const cloudTools: Tool[] = [
         total: Object.values(byResult).reduce((a, b) => a + b, 0),
         byResult,
         byDevice,
-        scans: scans.map((s) => ({
-          at: s.scanTime.toISOString(),
-          result: s.result,
-          device: s.deviceId != null ? devName.get(s.deviceId) ?? s.deviceId : null,
-          ticket: s.ticket ? { id: s.ticket.id, name: s.ticket.name, status: s.ticket.status } : null,
-          code: s.ticket ? undefined : s.code,
-          note: s.note,
-        })),
+        scans: scans.map((s) => {
+          const masked = maskScanCode(s.code);
+          return {
+            at: s.scanTime.toISOString(),
+            result: s.result,
+            device: s.deviceId != null ? devName.get(s.deviceId) ?? s.deviceId : null,
+            ticket: s.ticket ? { id: s.ticket.id, name: s.ticket.name, status: s.ticket.status } : null,
+            code: masked?.code ?? null,
+            codeLength: masked?.length ?? 0,
+            note: mcpScanNote(s.note),
+          };
+        }),
       };
     },
   },
@@ -361,15 +422,18 @@ const cloudTools: Tool[] = [
     run: async (args, ctx) => {
       const q = argStr(args, "query", { max: 80 });
       const category = argStr(args, "category");
-      const devices = await ctx.db.device.findMany({
-        where: {
-          accountId: ctx.accountId,
-          ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
-          ...(category ? { category: category as never } : {}),
-        },
-        select: { id: true, name: true, type: true, category: true, isActive: true, lastUpdate: true, task: true },
-        orderBy: { name: "asc" },
-      });
+      const [devices, accessIds] = await Promise.all([
+        ctx.db.device.findMany({
+          where: {
+            accountId: ctx.accountId,
+            ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
+            ...(category ? { category: category as never } : {}),
+          },
+          select: { id: true, name: true, type: true, category: true, isActive: true, lastUpdate: true, task: true },
+          orderBy: { name: "asc" },
+        }),
+        loadAccessDeviceIds(ctx),
+      ]);
       return {
         count: devices.length,
         devices: devices.map((d) => ({
@@ -380,7 +444,7 @@ const cloudTools: Tool[] = [
           active: d.isActive,
           lastContact: iso(d.lastUpdate),
           actions: availableDeviceActions(d).filter((a) => (MCP_DEVICE_ACTIONS as readonly string[]).includes(a)),
-          switchLevel: deviceSwitchLevel(d),
+          switchLevel: deviceSwitchLevel(d, accessIds.has(d.id)),
         })),
       };
     },
@@ -601,7 +665,7 @@ const cloudTools: Tool[] = [
     name: "switch_device",
     title: "Gerät schalten",
     description:
-      "Gerät schalten wie in der Oberfläche: open = ein/öffnen/Start (bei Tür/Taster ein Impuls), deactivate = aus, close/stop = Markise/Rolltor zu bzw. anhalten. Licht, Markisen, Steckdosen, Audio und Bewässerung brauchen Stufe operate; Türen, Tore, Schlösser, Drehkreuze und Taster brauchen Stufe access. Vorher mit list_devices die ID holen und im Zweifel den Nutzer fragen.",
+      "Gerät schalten wie in der Oberfläche: open = ein/öffnen/Start (bei Tür/Taster ein Impuls), deactivate = aus, close/stop = Markise/Rolltor zu bzw. anhalten. Licht, Markisen, Steckdosen, Audio und Bewässerung brauchen Stufe operate; Türen, Tore, Schlösser, Drehkreuze, Taster und Geräte, die über Kennzeichen, Personen-Erkennung, Vereinsportal oder Rider-Skill Zutritt öffnen, brauchen Stufe access (siehe switchLevel in list_devices). Vorher mit list_devices die ID holen und im Zweifel den Nutzer fragen.",
     inputSchema: obj(
       {
         device: str("Geräte-ID oder exakter Name"),
@@ -611,7 +675,13 @@ const cloudTools: Tool[] = [
       ["device", "action"],
     ),
     level: "operate",
-    levelFor: async (args, ctx) => deviceSwitchLevel(await findDevice(ctx, argStr(args, "device", { required: true })!)),
+    levelFor: async (args, ctx) => {
+      const [device, accessIds] = await Promise.all([
+        findDevice(ctx, argStr(args, "device", { required: true })!),
+        loadAccessDeviceIds(ctx),
+      ]);
+      return deviceSwitchLevel(device, accessIds.has(device.id));
+    },
     run: async (args, ctx) => {
       const action = argEnum(args, "action", MCP_DEVICE_ACTIONS);
       if (!action || !isValidDeviceAction(action)) throw new McpToolError("action fehlt");
@@ -632,6 +702,7 @@ const cloudTools: Tool[] = [
       const minutes = args.minutes != null ? argInt(args, "minutes", 0, 1, 240) : undefined;
       const r = await triggerDeviceAction(ctx.db, device, ctx.accountId, action, {
         seconds: minutes ? minutes * 60 : undefined,
+        actor: { source: "mcp", actorLabel: mcpActorLabel(ctx) },
       });
       if (!r.error) {
         void runDeviceSwitchedRules(ctx.accountId, device.id, action).catch((err) => {

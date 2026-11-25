@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiOrIntegrationToken } from "@/lib/api-auth";
 import { employeeCreateSchema } from "@/lib/validators";
 import { randomBytes } from "crypto";
 import { foreignRefError } from "@/lib/tenant-refs";
+import { photoServable, ticketPhotoUrl, wantsPhotoUrls } from "@/lib/photo-url";
+import { ticketIdsWithPhoto } from "@/lib/ticket-photo";
 
 /**
  * Mitarbeiter sind Tickets mit `source = EMP_CONTROL` und `uuid = "emp-<id>"`.
@@ -24,11 +26,14 @@ function hasApiToken(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   let db, accountId: number;
+  // Integrations-Token (Scope `employees:read`): Liste ohne Foto.
+  let viaIntegration = false;
   if (hasApiToken(request)) {
-    const auth = await validateApiToken(request);
+    const auth = await validateApiOrIntegrationToken(request, "/api/employees");
     if ("error" in auth) return auth.error;
     db = auth.db;
     accountId = auth.account.id;
+    viaIntegration = auth.integration !== null;
   } else {
     const session = await getSessionWithDb();
     if ("error" in session) return session.error;
@@ -40,6 +45,10 @@ export async function GET(request: NextRequest) {
   const q = url.searchParams.get("q")?.trim().toLowerCase() ?? "";
   const status = url.searchParams.get("status"); // VALID | INVALID | EXPIRED | ""
   const areaId = url.searchParams.get("areaId");
+  // `?fotos=url`: Foto als URL (hasPhoto/photoUrl) statt als Base64. Nur
+  // fuer angemeldete Browser: die Foto-Route verlangt eine Sitzung, Abrufer
+  // mit Account-Token bekommen die Liste wie bisher.
+  const photoUrls = !hasApiToken(request) && wantsPhotoUrls(url.searchParams);
 
   const where: Record<string, unknown> = {
     accountId,
@@ -86,7 +95,7 @@ export async function GET(request: NextRequest) {
       startDate: true,
       endDate: true,
       status: true,
-      profileImage: true,
+      profileImage: !photoUrls && !viaIntegration,
       ticketTypeName: true,
       weekSchedule: true,
       accessAreaId: true,
@@ -122,6 +131,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const photoIds = photoUrls ? await ticketIdsWithPhoto(db, ids) : null;
+
   return NextResponse.json(
     employees.map((e) => ({
       id: e.id,
@@ -133,7 +144,14 @@ export async function GET(request: NextRequest) {
       startDate: e.startDate,
       endDate: e.endDate,
       status: e.status,
-      profileImage: e.profileImage,
+      ...(photoIds
+        ? {
+            hasPhoto: photoIds.has(e.id),
+            photoUrl: photoServable(photoIds, e.id) ? ticketPhotoUrl(e.id, e.updatedAt) : null,
+          }
+        : viaIntegration
+          ? {}
+          : { profileImage: e.profileImage }),
       ticketTypeName: e.ticketTypeName ?? EMPLOYEE_TICKET_TYPE,
       hasSchedule: !!e.weekSchedule,
       areas: e.ticketAreas.map((ta) => ({ id: ta.accessAreaId, name: ta.accessArea?.name ?? `#${ta.accessAreaId}` })),
@@ -150,7 +168,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getSessionWithDb();
+  // Mitarbeiter samt Türen und Geräten anlegen ist Verwaltung.
+  const session = await getSessionWithDb({ requireAdmin: true });
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 

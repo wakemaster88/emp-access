@@ -26,8 +26,14 @@ const SCAN_DENY_REASON_LABELS: Record<string, string> = {
   voucher_disabled: "Gutschein deaktiviert",
   voucher_expired: "Gutschein abgelaufen",
   binarytec_denied: "Binarytec verweigert",
+  partner_timeout: "Partner-System antwortet nicht rechtzeitig",
   scan_lock: "Zu schnell erneut gescannt",
   area_scan_lock: "Sperrzeit für diesen Bereich",
+  // Einlass-Regeln (Einstellungen), ab Werk aus.
+  device_unassigned: "Leser ohne Bereich",
+  ticket_unassigned: "Ticket ohne Bereich",
+  voucher_wrong_area: "Gutschein für anderen Bereich",
+  area_passback: "Bereits drin – Wartezeit",
 };
 
 export function isScanDenyReasonCode(note: string | null | undefined): boolean {

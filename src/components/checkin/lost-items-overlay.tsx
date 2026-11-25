@@ -11,6 +11,8 @@
  *
  * Datenlieferant ist /api/checkin/public/[token]/lost-items – dieselbe
  * Tenant-Auflösung über den Monitor-Token wie bei den anderen Overlays.
+ * Die Liste kommt mit `fotos=url` ohne Bilder; jedes Foto lädt einzeln über
+ * die Bild-Route und bleibt im Browser-Cache.
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
@@ -41,7 +43,11 @@ interface LostItemApi {
   kind: "FOUND" | "LOST_REPORT";
   description: string;
   foundDate: string;
-  image: string | null;
+  /** Base64-Bild; nur in Einzel-Antworten (Anlegen, Ändern). */
+  image?: string | null;
+  /** Liste mit `fotos=url`: ob ein Foto da ist und wo es liegt. */
+  hasImage?: boolean;
+  imageUrl?: string | null;
   contact: string | null;
   reporterName: string | null;
   callbackPhone: string | null;
@@ -95,7 +101,7 @@ export function LostItemsOverlay({ token, onClose }: LostItemsOverlayProps) {
     if (silent) setRefreshing(true); else setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/checkin/public/${token}/lost-items`, { cache: "no-store" });
+      const res = await fetch(`/api/checkin/public/${token}/lost-items?fotos=url`, { cache: "no-store" });
       if (!res.ok) throw new Error(`Fehler ${res.status}`);
       const json = (await res.json()) as { items: LostItemApi[] };
       setItems(json.items);
@@ -284,6 +290,9 @@ function ListView({
   // Eintrag, dessen Löschen gerade bestätigt wird (destruktive Rückfrage im
   // selben Sheet statt Browser-Dialog, docs/design-regeln.md, Abschnitt 18).
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  // Bild-Adressen, die nicht geladen werden konnten: Platzhalter statt kaputtem Bild.
+  // Eine neue Version (?v=) wird wieder versucht.
+  const [failedImageSrcs, setFailedImageSrcs] = useState<Set<string>>(() => new Set());
   // Filter als Segmentwahl; die Anzahl steht als kleine Zahl im Segment.
   const filters: SegmentedOption<Filter>[] = [
     { value: "open", label: "Offen", count: openCount },
@@ -327,6 +336,8 @@ function ListView({
             ? [item.reporterName, item.callbackPhone].filter(Boolean).join(" · ")
             : item.contact;
           const confirmingDelete = confirmDeleteId === item.id;
+          const rawImageSrc = item.imageUrl ?? item.image ?? null;
+          const imageSrc = rawImageSrc && !failedImageSrcs.has(rawImageSrc) ? rawImageSrc : null;
           return (
           <div
             key={item.id}
@@ -338,11 +349,13 @@ function ListView({
           >
             {/* Erledigt: Text und Tasten bleiben lesbar, gedimmt wird nur das Bild (Abschnitt 17);
                 den Zustand sagt „Erledigt am …“. */}
-            {item.image ? (
-              /* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */
+            {imageSrc ? (
+              /* eslint-disable-next-line @next/next/no-img-element -- Bild-Route oder Base64-Data-URL */
               <img
-                src={item.image}
+                src={imageSrc}
                 alt={item.description}
+                loading="lazy"
+                onError={() => setFailedImageSrcs((prev) => new Set(prev).add(imageSrc))}
                 className={cn("h-20 w-20 rounded-xl object-cover border border-border shrink-0", item.pickedUp && "opacity-60")}
               />
             ) : (
@@ -503,7 +516,13 @@ function AddForm({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        setLocalError(typeof data?.error === "string" ? data.error : `Server-Fehler (${res.status})`);
+        // Ein abgelehntes Foto kommt als Feldfehler (fieldErrors.image).
+        const imageMsg = data?.error?.fieldErrors?.image?.[0];
+        setLocalError(
+          typeof data?.error === "string" ? data.error
+            : typeof imageMsg === "string" ? imageMsg
+              : `Server-Fehler (${res.status})`,
+        );
         return;
       }
       onCreated((await res.json()) as LostItemApi);

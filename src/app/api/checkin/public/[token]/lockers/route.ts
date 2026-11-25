@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { checkinPhotoUrl, photoServable, wantsPhotoUrls } from "@/lib/photo-url";
+import { CHECKIN_PHOTO_TYPES, ticketIdsWithPhoto } from "@/lib/ticket-photo";
 
 /// Aktuelles Vermietungsjahr in Berlin-Zeit (Default-Zone der App).
 function currentYearBerlin(): number {
@@ -11,6 +13,8 @@ function currentYearBerlin(): number {
 /// Liste aller Schließfächer für einen Checkin-Monitor inklusive der
 /// Vermietung des aktuellen Jahres (= aktueller Mieter) und ein paar
 /// Stamm-Infos zum Mieter-Ticket. Optional ?withHistory=1 für Historie.
+/// Mit ?fotos=url statt des Base64-Fotos hasPhoto und photoUrl (Foto-Route
+/// des Check-in-Monitors).
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
@@ -25,6 +29,7 @@ export async function GET(
   }
 
   const year = currentYearBerlin();
+  const photoUrls = wantsPhotoUrls(request.nextUrl.searchParams);
 
   const [lockers, aboTickets] = await Promise.all([
     prisma.locker.findMany({
@@ -43,7 +48,8 @@ export async function GET(
                 ticketTypeName: true,
                 status: true,
                 endDate: true,
-                profileImage: true,
+                profileImage: !photoUrls,
+                updatedAt: photoUrls,
                 subscription: { select: { id: true, name: true } },
               },
             },
@@ -68,13 +74,27 @@ export async function GET(
         ticketTypeName: true,
         status: true,
         endDate: true,
-        profileImage: true,
+        profileImage: !photoUrls,
+        updatedAt: photoUrls,
         subscription: { select: { id: true, name: true } },
       },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { name: "asc" }],
       take: 1000,
     }),
   ]);
+
+  const photoIds = photoUrls
+    ? await ticketIdsWithPhoto(prisma, [
+        ...aboTickets.map((t) => t.id),
+        ...lockers.flatMap((l) => l.rentals.flatMap((r) => (r.ticket ? [r.ticket.id] : []))),
+      ], CHECKIN_PHOTO_TYPES)
+    : null;
+  /** Foto des Tickets: alt als Base64, mit `fotos=url` als URL. */
+  const photo = (t: { id: number; profileImage?: string | null; updatedAt?: Date }) => {
+    if (!photoIds) return { profileImage: t.profileImage ?? null };
+    const hasPhoto = photoIds.has(t.id);
+    return { hasPhoto, photoUrl: photoServable(photoIds, t.id) && t.updatedAt ? checkinPhotoUrl(token, t.id, t.updatedAt) : null };
+  };
 
   const data = lockers.map((l) => ({
     id: l.id,
@@ -104,7 +124,7 @@ export async function GET(
             ticketTypeName: r.ticket.ticketTypeName,
             status: r.ticket.status,
             endDate: r.ticket.endDate ? r.ticket.endDate.toISOString() : null,
-            profileImage: r.ticket.profileImage,
+            ...photo(r.ticket),
             subscription: r.ticket.subscription,
           }
         : null,
@@ -119,7 +139,7 @@ export async function GET(
     ticketTypeName: t.ticketTypeName,
     status: t.status,
     endDate: t.endDate ? t.endDate.toISOString() : null,
-    profileImage: t.profileImage,
+    ...photo(t),
     subscription: t.subscription,
   }));
 

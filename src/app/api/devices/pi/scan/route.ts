@@ -1,7 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { announceBirthdayOnScan } from "@/lib/rider-birthday";
 import { paymentOpenInfo, paymentOpenScanMessage } from "@/lib/payment-open";
-import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
+import { deviceTokenMismatch, validateApiToken } from "@/lib/api-token-auth";
 import { prisma } from "@/lib/prisma";
 import { checkWakesys } from "@/lib/wakesys";
 import { checkBinarytec } from "@/lib/binarytec";
@@ -14,9 +14,20 @@ import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } fro
 import { runScanRules } from "@/lib/room-rules";
 import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
 import { recordStart } from "@/lib/gamification-service";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { adoptDayTickets } from "@/lib/day-guest";
 import { riderView } from "@/lib/customer-person";
 import { checkVoucherAccess } from "@/lib/voucher-access";
+import {
+  ACCESS_RULES_OFF,
+  deniesUnassignedReader,
+  deniesUnassignedTicket,
+  deniesVoucherArea,
+  evaluatePassback,
+  voucherAreaIds,
+} from "@/lib/access-rules";
+import { loadAccessRules, loadAreaHasExitReader, type LoadedAccessRules } from "@/lib/access-rules-cache";
+import { shouldQueueScanSnapshot } from "@/lib/scan-snapshot-hub";
 
 /**
  * Meldung des Raspberry Pi, dass das Relais per Dashboard-Button geoeffnet
@@ -57,7 +68,33 @@ const MIN_CODE_LENGTH = 6;
 const ANNY_BARCODE_PREFIX = "!TIX";
 const ANNY_BARCODE_LENGTH = 20;
 
+/**
+ * Zeitbudget fuer Binarytec bzw. Wakesys, gemessen ab Eingang der Anfrage.
+ * Der Pi wartet 5 s ab dem Absenden auf die Antwort (TIMEOUT_SCAN in
+ * raspberry-pi/emp_scanner/api_client.py). Er beginnt vor dem Eingang hier
+ * zu warten; eine Antwort, die erst nach 5 s Serverzeit fertig ist, kommt
+ * bei ihm also in keinem Fall mehr rechtzeitig an.
+ */
+const PARTNER_DEADLINE_MS = 5_000;
+
+/**
+ * Anfragebremse je Geraet. Ein Drehkreuz schafft nur wenige Scans pro
+ * Minute; die Grenze liegt weit darueber und greift nur bei einem Client,
+ * der in einer Schleife sendet.
+ */
+const SCAN_RATE_LIMIT = { limit: 300, windowMs: 60_000 } as const;
+
+/** Ablehnung der Einlass-Regel „Leser ohne Bereich öffnet nicht“. */
+const UNASSIGNED_READER_MESSAGE = "Leser keinem Bereich zugeordnet";
+
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+  const partnerTimeoutMs = () => PARTNER_DEADLINE_MS - (Date.now() - startedAt);
+  // Nach Ablauf der Frist abgelehnte Partner-Pruefungen bekommen eine eigene
+  // Note, damit sie in Statistik und Monitor nicht wie ein unbekannter Code
+  // aussehen. Antwort und Entscheidung sind davon unabhaengig.
+  const partnerDeadlinePassed = () => partnerTimeoutMs() <= 0;
+
   const auth = await validateApiToken(request, { allowDevice: true });
   if ("error" in auth) return auth.error;
 
@@ -113,6 +150,55 @@ export async function POST(request: NextRequest) {
   const mismatch = deviceTokenMismatch(auth, deviceId);
   if (mismatch) return mismatch;
 
+  // Geraete-Token (Scanner-Pi) bekommen keine Personennamen: der Pi braucht
+  // fuer die Entscheidung nur granted/message.
+  const withNames = auth.device == null;
+
+  // Debounce-Abfrage (siehe unten) laeuft parallel zur Geraete-Abfrage; sie
+  // liest nur. Ausgewertet wird sie erst nach den Geraete-Pruefungen.
+  const recentPromise = reservedCode
+    ? Promise.resolve(null)
+    : db.scan.findFirst({
+        where: {
+          code,
+          deviceId,
+          scanTime: { gte: new Date(Date.now() - DEBOUNCE_WINDOW_MS) },
+        },
+        orderBy: { scanTime: "desc" },
+        select: {
+          result: true,
+          scanTime: true,
+          ticket: {
+            select: {
+              name: true,
+              firstName: true,
+              lastName: true,
+              birthDate: true,
+              ticketTypeName: true,
+              subscriptionId: true,
+              customerId: true,
+              riderProfileId: true,
+              riderProfile: { select: { firstName: true, lastName: true, birthDate: true } },
+              subscription: { select: { name: true } },
+              service: { select: { name: true } },
+            },
+          },
+        },
+      });
+  // Bei frueher Rueckkehr wird das Ergebnis nicht mehr gebraucht.
+  recentPromise.catch(() => {});
+
+  // Einlass-Regeln aus den Einstellungen (60-s-Zwischenspeicher je Instanz,
+  // also im Normalfall ohne Abfrage). Ab Werk sind alle Regeln aus. Kann die
+  // Konfiguration nicht gelesen werden, gelten alle Regeln als aus.
+  const rulesPromise: Promise<LoadedAccessRules> = loadAccessRules(
+    db as unknown as Parameters<typeof loadAccessRules>[0],
+    accountId,
+  ).catch((err) => {
+    console.error("[scan] access rules failed:", err);
+    return { rules: ACCESS_RULES_OFF, openAreaIds: [] };
+  });
+
   const device = await db.device.findFirst({
     where: { id: deviceId, accountId, type: "RASPBERRY_PI" },
   });
@@ -145,33 +231,7 @@ export async function POST(request: NextRequest) {
   // soll auch dann als separater Scan registriert werden, wenn er kurz
   // hintereinander erfolgt.
   if (!reservedCode) {
-    const recent = await db.scan.findFirst({
-      where: {
-        code,
-        deviceId,
-        scanTime: { gte: new Date(Date.now() - DEBOUNCE_WINDOW_MS) },
-      },
-      orderBy: { scanTime: "desc" },
-      select: {
-        result: true,
-        scanTime: true,
-        ticket: {
-          select: {
-            name: true,
-            firstName: true,
-            lastName: true,
-            birthDate: true,
-            ticketTypeName: true,
-            subscriptionId: true,
-            customerId: true,
-            riderProfileId: true,
-            riderProfile: { select: { firstName: true, lastName: true, birthDate: true } },
-            subscription: { select: { name: true } },
-            service: { select: { name: true } },
-          },
-        },
-      },
-    });
+    const recent = await recentPromise;
     if (recent) {
       const decision = resolveDebounce({
         previousResult: recent.result,
@@ -189,8 +249,8 @@ export async function POST(request: NextRequest) {
           ? {
               name: recent.ticket.name,
               // Abo: Name der Person, die damit fährt (lib/customer-person).
-              firstName: riderView(recent.ticket).firstName,
-              lastName: riderView(recent.ticket).lastName,
+              firstName: withNames ? riderView(recent.ticket).firstName : null,
+              lastName: withNames ? riderView(recent.ticket).lastName : null,
               ticketTypeName: recent.ticket.ticketTypeName,
               subscriptionName: recent.ticket.subscription?.name ?? null,
               serviceName: recent.ticket.service?.name ?? null,
@@ -200,20 +260,35 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Anfragebremse: gezaehlt werden nur Anfragen bekannter, aktiver Geraete,
+  // die nicht entprellt wurden. Antwort wie ein abgelehnter Scan, ohne
+  // Scan-Eintrag.
+  if (!checkRateLimit(`pi-scan:${accountId}:${deviceId}`, SCAN_RATE_LIMIT).allowed) {
+    return NextResponse.json({ granted: false, message: "Zu viele Scans – bitte kurz warten" });
+  }
+
   // Kamera-Schnappschuss zum Scan-Zeitpunkt: Hat das Geraet eine verknuepfte
   // Kamera (Device.cameraId), legen wir sofort einen Hub-Task an. Der Hub
   // nimmt das Bild binnen weniger Sekunden auf und laedt es zu
   // /api/hub/scan-snapshots hoch; dort wird es dem zeitlich naechsten Scan
   // dieses Geraets zugeordnet. Ab hier erzeugt jeder Pfad einen Scan-Eintrag
   // (Debounce-Treffer sind oben bereits zurueckgekehrt).
+  // `after`: der Task wird nach der Antwort ans Drehkreuz angelegt, und nur,
+  // wenn sich in den letzten 5 Minuten ein Hub gemeldet hat (lib/scan-snapshot-hub,
+  // 60 s im Speicher je Account).
   if (device.cameraId != null) {
-    await db.hubTask.create({
-      data: {
-        type: "SCAN_SNAPSHOT",
-        payload: { cameraId: device.cameraId, deviceId, at: new Date().toISOString() },
-        accountId,
-      },
-    }).catch(() => { /* Snapshot ist Best-Effort – Scan-Verarbeitung nicht blockieren. */ });
+    const cameraId = device.cameraId;
+    const at = new Date().toISOString();
+    after(async () => {
+      if (!(await shouldQueueScanSnapshot(db, accountId))) return;
+      await db.hubTask.create({
+        data: {
+          type: "SCAN_SNAPSHOT",
+          payload: { cameraId, deviceId, at },
+          accountId,
+        },
+      }).catch(() => { /* Snapshot ist Best-Effort – Scan-Verarbeitung nicht blockieren. */ });
+    });
   }
 
   // Dashboard-Oeffnung: das Relais wurde bereits per Button geoeffnet, hier
@@ -233,8 +308,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Ungültiger Code" });
   }
 
-  async function lockedResponse(ticketId?: number | null) {
-    const lock = await evaluateScanLock(db, {
+  // Regel „Leser ohne Bereich öffnet nicht“ fuer Treffer ohne EMP-Ticket
+  // (Binarytec, Wakesys, Gutschein): die haben nie eine Direkt-Zuweisung.
+  const readerHasArea = !!(device.accessIn || device.accessOut);
+  async function unassignedReaderDenied(scanCode: string) {
+    const { rules } = await rulesPromise;
+    if (!deniesUnassignedReader(rules, { readerHasArea, hasDirectDeviceMatch: false })) {
+      return null;
+    }
+    await db.scan.create({
+      data: { code: scanCode, deviceId, result: "DENIED", note: "device_unassigned", accountId },
+    });
+    return NextResponse.json({ granted: false, message: UNASSIGNED_READER_MESSAGE });
+  }
+
+  function scanLockFor(ticketId?: number | null) {
+    return evaluateScanLock(db, {
       accountId,
       deviceId,
       lockSeconds: scanLockSeconds,
@@ -242,6 +331,13 @@ export async function POST(request: NextRequest) {
       ticketId,
       isExit: isExitScan,
     });
+  }
+
+  async function lockedResponse(
+    ticketId?: number | null,
+    pendingLock: ReturnType<typeof scanLockFor> = scanLockFor(ticketId),
+  ) {
+    const lock = await pendingLock;
     if (!lock) return null;
     if (!lock.silent) {
       await db.scan.create({
@@ -263,9 +359,12 @@ export async function POST(request: NextRequest) {
     db as unknown as Parameters<typeof checkBinarytec>[0],
     accountId,
     code,
+    { timeoutMs: partnerTimeoutMs() },
   );
   if (binarytec !== null) {
     if (binarytec.valid) {
+      const unassigned = await unassignedReaderDenied(code);
+      if (unassigned) return unassigned;
       const locked = await lockedResponse();
       if (locked) return locked;
       await db.scan.create({
@@ -277,7 +376,13 @@ export async function POST(request: NextRequest) {
       });
     }
     await db.scan.create({
-      data: { code, deviceId, result: "DENIED", note: "binarytec_denied", accountId },
+      data: {
+        code,
+        deviceId,
+        result: "DENIED",
+        note: partnerDeadlinePassed() ? "partner_timeout" : "binarytec_denied",
+        accountId,
+      },
     });
     return NextResponse.json({ granted: false, message: "Zutritt verweigert (Binarytec)" });
   }
@@ -301,6 +406,8 @@ export async function POST(request: NextRequest) {
           { uuid: c },
         ],
       },
+      // Das Foto (Base64) braucht der Scan nicht.
+      omit: { profileImage: true },
       include: {
         service: {
           select: {
@@ -358,6 +465,33 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ granted: false, message: access.message });
       }
       if (voucher) {
+        const unassigned = await unassignedReaderDenied(code);
+        if (unassigned) return unassigned;
+        // Regel „Gutscheine gelten nur an Lesern ihres Bereichs“: Bereiche des
+        // Gutscheins (eigener Bereich, Bereiche und Hauptressource seines
+        // Service) gegen die des
+        // Lesers, bevor eingeloest wird.
+        const { rules } = await rulesPromise;
+        const readerAreas = [device.accessIn, device.accessOut].filter(Boolean) as number[];
+        if (rules.voucherNeedsArea && readerAreas.length > 0) {
+          const service = voucher.serviceId != null
+            ? await db.service.findFirst({
+                where: { id: voucher.serviceId, accountId },
+                select: { mainAccessAreaId: true, serviceAreas: { select: { accessAreaId: true } } },
+              })
+            : null;
+          const areas = voucherAreaIds(voucher, [
+            ...(service?.mainAccessAreaId ? [service.mainAccessAreaId] : []),
+            ...(service?.serviceAreas.map((sa) => sa.accessAreaId) ?? []),
+          ]);
+          if (deniesVoucherArea(rules, { voucherAreaIds: areas, deviceAreaIds: readerAreas })) {
+            await db.scan.create({
+              data: { code, deviceId, result: "DENIED", note: "voucher_wrong_area", accountId },
+            });
+            return NextResponse.json({ granted: false, message: "Gutschein gilt nicht an diesem Leser" });
+          }
+        }
+
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0);
         const todayEnd = new Date(today);
@@ -429,6 +563,7 @@ export async function POST(request: NextRequest) {
       db as unknown as Parameters<typeof checkWakesys>[0],
       accountId,
       stripped || code,
+      { timeoutMs: partnerTimeoutMs() },
     );
     if (wakesys?.valid) {
       const noteData: Record<string, string | number> = {};
@@ -436,6 +571,9 @@ export async function POST(request: NextRequest) {
       if (wakesys.picture) noteData.picture = wakesys.picture;
       if (wakesys.age) noteData.age = wakesys.age;
       const note = Object.keys(noteData).length > 0 ? JSON.stringify(noteData) : wakesys.name || null;
+
+      const unassigned = await unassignedReaderDenied(stripped || code);
+      if (unassigned) return unassigned;
 
       const locked = await lockedResponse();
       if (locked) return locked;
@@ -455,7 +593,13 @@ export async function POST(request: NextRequest) {
       });
     }
     await db.scan.create({
-      data: { code: stripped || code, deviceId, result: "DENIED", note: "ticket_not_found", accountId },
+      data: {
+        code: stripped || code,
+        deviceId,
+        result: "DENIED",
+        note: wakesys !== null && partnerDeadlinePassed() ? "partner_timeout" : "ticket_not_found",
+        accountId,
+      },
     });
     return NextResponse.json({ granted: false, message: "Ticket nicht gefunden" });
   }
@@ -464,8 +608,8 @@ export async function POST(request: NextRequest) {
   const rider = riderView(ticket);
   const ticketInfo = {
     name: ticket.name,
-    firstName: rider.firstName,
-    lastName: rider.lastName,
+    firstName: withNames ? rider.firstName : null,
+    lastName: withNames ? rider.lastName : null,
     ticketTypeName: ticket.ticketTypeName,
     subscriptionName: ticket.subscription?.name ?? null,
     serviceName: ticket.service?.name ?? null,
@@ -627,6 +771,51 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const isEmployee = ticket.source === "EMP_CONTROL";
+  const ticketId = ticket.id;
+
+  // Bereichs- und Geraete-Sperre (unten ausgewertet) lesen nur und haengen
+  // nur vom Ticket ab, das ab hier feststeht. Sie laufen deshalb parallel zu
+  // den folgenden Pruefungen; ausgewertet wird in der bisherigen Reihenfolge.
+  const areaLockPromise =
+    !isExitScan && !isEmployee && device.accessIn != null
+      ? (async (areaId: number) => {
+          const area = await db.accessArea.findFirst({
+            where: { id: areaId, accountId },
+            select: { scanLockSeconds: true },
+          });
+          return evaluateAreaScanLock(db, {
+            accountId,
+            areaId,
+            lockSeconds: area?.scanLockSeconds,
+            ticketId,
+            now,
+          });
+        })(device.accessIn)
+      : Promise.resolve(null);
+  const scanLockPromise = scanLockFor(ticketId);
+  // Regel „Wiedereintritt erst nach Ausgang oder Wartezeit“: gleiche
+  // Bedingungen wie die Bereichssperre, und nur in Bereichen mit aktivem
+  // Ausgangs-Leser. Ist die Regel aus, gibt es keine Abfrage.
+  const passbackPromise =
+    !isExitScan && !isEmployee && device.accessIn != null
+      ? rulesPromise.then(({ rules }) =>
+          evaluatePassback(db, {
+            accountId,
+            areaId: device.accessIn,
+            ticketId,
+            minutes: rules.passbackMinutes,
+            now,
+            areaHasExitReader: (areaId) =>
+              loadAreaHasExitReader(db as unknown as Parameters<typeof loadAreaHasExitReader>[0], accountId, areaId),
+          }),
+        )
+      : Promise.resolve(null);
+  // Bei frueher Rueckkehr werden die Ergebnisse nicht mehr gebraucht.
+  areaLockPromise.catch(() => {});
+  scanLockPromise.catch(() => {});
+  passbackPromise.catch(() => {});
+
   // DURATION-Ablauf greift nur bei Eintritten an der HAUPTRESSOURCE. Wer
   // drin ist, darf raus, auch wenn die gebuchte Stunde inzwischen abgelaufen
   // ist. Transit-Scans an Nebenressourcen (z.B. Strandbad-Drehkreuz fuer
@@ -662,8 +851,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const isEmployee = ticket.source === "EMP_CONTROL";
-
   // Direkt-Geraete-Match (additiv zu Bereichen): Wenn das Ticket fuer dieses
   // konkrete Geraet whitelisted ist, ueberspringen wir die Bereichs-Pruefung.
   const directDeviceIds = ticket.ticketDevices?.map((td) => td.deviceId) ?? [];
@@ -695,6 +882,31 @@ export async function POST(request: NextRequest) {
         data: { code, deviceId, result: "DENIED", note: "wrong_resource", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({ granted: false, message: "Resource nicht erlaubt", ticket: ticketInfo });
+    }
+    // Regel „Tickets ohne Bereich gelten nur an freigegebenen Bereichen“.
+    const { rules, openAreaIds } = await rulesPromise;
+    if (deniesUnassignedTicket(rules, {
+      ticketAreaCount: allTicketAreas.length,
+      isVereinMember,
+      deviceAreaIds: deviceAreas,
+      openAreaIds,
+      mainAreaId,
+      isExit: isExitScan,
+    })) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", note: "ticket_unassigned", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({ granted: false, message: "Ticket ohne Bereich – hier nicht gültig", ticket: ticketInfo });
+    }
+  } else if (!hasDirectDeviceMatch) {
+    // Leser ohne Bereich: ohne Regel gilt hier jedes Ticket. Regel „Leser
+    // ohne Bereich öffnet nicht“: nur noch Tickets mit Direkt-Zuweisung.
+    const { rules } = await rulesPromise;
+    if (deniesUnassignedReader(rules, { readerHasArea: false, hasDirectDeviceMatch })) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", note: "device_unassigned", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({ granted: false, message: UNASSIGNED_READER_MESSAGE, ticket: ticketInfo });
     }
   }
 
@@ -849,18 +1061,10 @@ export async function POST(request: NextRequest) {
   // mehrfach pro Minute (Aufsicht, Materialwege) und wuerden sich sonst selbst
   // aussperren.
   if (!isExitScan && !isEmployee && device.accessIn != null) {
-    const area = await db.accessArea.findFirst({
-      where: { id: device.accessIn, accountId },
-      select: { scanLockSeconds: true },
-    });
-    const areaLock = await evaluateAreaScanLock(db, {
-      accountId,
-      areaId: device.accessIn,
-      lockSeconds: area?.scanLockSeconds,
-      ticketId: ticket.id,
-      now,
-    });
-    if (areaLock) {
+    const areaLock = await areaLockPromise;
+    // Sperren beide, gilt die laengere.
+    const passback = await passbackPromise;
+    if (areaLock && (!passback || areaLock.remainingMs >= passback.remainingMs)) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", note: "area_scan_lock", ticketId: ticket.id, accountId },
       });
@@ -871,50 +1075,66 @@ export async function POST(request: NextRequest) {
         ticket: ticketInfo,
       });
     }
+    if (passback) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", note: "area_passback", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({
+        granted: false,
+        message: passback.message,
+        locked: true,
+        ticket: ticketInfo,
+      });
+    }
   }
 
-  const locked = await lockedResponse(ticket.id);
+  const locked = await lockedResponse(ticket.id, scanLockPromise);
   if (locked) return locked;
 
-  const txResult = await prisma.$transaction(async (tx) => {
+  // Ohne Statuswechsel ist nur der Scan-Eintrag zu schreiben – dafuer braucht
+  // es keine Transaktion.
+  const txResult = !shouldRedeem && !shouldResetValid
+    ? await db.scan
+        .create({ data: { code, deviceId, result: "GRANTED", ticketId: ticket.id, accountId } })
+        .then(() => ({ conflict: false as const }))
+    : await prisma.$transaction(async (tx) => {
+        if (shouldRedeem) {
+          const data: { status: "REDEEMED"; version: { increment: number }; firstScanAt?: Date } = {
+            status: "REDEEMED",
+            version: { increment: 1 },
+          };
+          if (isDurationTicket(ticket) && !ticket.firstScanAt) {
+            data.firstScanAt = now;
+          }
+          const res = await tx.ticket.updateMany({
+            where: { id: ticket.id, status: "VALID", version: ticket.version },
+            data,
+          });
+          if (res.count === 0) {
+            return { conflict: true as const };
+          }
+        } else if (shouldResetValid) {
+          const data: { status: "VALID"; version: { increment: number }; firstScanAt?: null } = {
+            status: "VALID",
+            version: { increment: 1 },
+          };
+          if (isDurationTicket(ticket)) {
+            data.firstScanAt = null;
+          }
+          const res = await tx.ticket.updateMany({
+            where: { id: ticket.id, status: "REDEEMED", version: ticket.version },
+            data,
+          });
+          if (res.count === 0) {
+            return { conflict: true as const };
+          }
+        }
 
-    if (shouldRedeem) {
-      const data: { status: "REDEEMED"; version: { increment: number }; firstScanAt?: Date } = {
-        status: "REDEEMED",
-        version: { increment: 1 },
-      };
-      if (isDurationTicket(ticket) && !ticket.firstScanAt) {
-        data.firstScanAt = now;
-      }
-      const res = await tx.ticket.updateMany({
-        where: { id: ticket.id, status: "VALID", version: ticket.version },
-        data,
+        await tx.scan.create({
+          data: { code, deviceId, result: "GRANTED", ticketId: ticket.id, accountId },
+        });
+        return { conflict: false as const };
       });
-      if (res.count === 0) {
-        return { conflict: true as const };
-      }
-    } else if (shouldResetValid) {
-      const data: { status: "VALID"; version: { increment: number }; firstScanAt?: null } = {
-        status: "VALID",
-        version: { increment: 1 },
-      };
-      if (isDurationTicket(ticket)) {
-        data.firstScanAt = null;
-      }
-      const res = await tx.ticket.updateMany({
-        where: { id: ticket.id, status: "REDEEMED", version: ticket.version },
-        data,
-      });
-      if (res.count === 0) {
-        return { conflict: true as const };
-      }
-    }
-
-    await tx.scan.create({
-      data: { code, deviceId, result: "GRANTED", ticketId: ticket.id, accountId },
-    });
-    return { conflict: false as const };
-  });
 
   if (txResult.conflict) {
     // Paralleler Scan hat den Status bereits geändert → als DENIED loggen (außerhalb
@@ -930,13 +1150,16 @@ export async function POST(request: NextRequest) {
   }
 
   // Raumregeln mit Scan-Trigger anstossen, ohne den Scan zu verzoegern: das
-  // Drehkreuz wartet auf diese Antwort. Fehler bleiben im Log.
+  // Drehkreuz wartet auf diese Antwort. `after` laesst die Function laufen,
+  // bis die Nacharbeit fertig ist. Fehler bleiben im Log.
   const scanAreaIds = [device.accessIn, device.accessOut].filter(
     (id): id is number => id != null,
   );
-  void runScanRules(accountId, scanAreaIds, isExitScan ? "OUT" : "IN", now).catch((err) => {
-    console.error("[scan] room rules failed:", err);
-  });
+  after(() =>
+    runScanRules(accountId, scanAreaIds, isExitScan ? "OUT" : "IN", now).catch((err) => {
+      console.error("[scan] room rules failed:", err);
+    }),
+  );
 
   // Gamification: Start am Start-Gerät verbuchen, ebenfalls ohne zu warten.
   // Abo-Tickets auch an anderen Eingängen: für den Beach Pass zählt der
@@ -947,7 +1170,7 @@ export async function POST(request: NextRequest) {
       ? ticket.subscriptionId != null || ticket.riderProfileId != null
       : ticket.subscriptionId != null && device.accessIn != null)
   ) {
-    void recordStart({
+    const start = {
       accountId,
       ticketId: ticket.id,
       subscriptionId: ticket.subscriptionId,
@@ -957,14 +1180,20 @@ export async function POST(request: NextRequest) {
       at: now,
       countsAsStart: device.countsAsStart,
       deviceId: device.id,
-    }).catch((err) => {
-      console.error("[scan] gamification failed:", err);
-    });
+    };
+    after(() =>
+      recordStart(start).catch((err) => {
+        console.error("[scan] gamification failed:", err);
+      }),
+    );
   } else if (device.countsAsStart && !isExitScan && ticket.subscriptionId == null && ticket.serviceId != null && ticket.email && !ticket.gamificationOptOut) {
     // Tagesticket mit E-Mail: gibt es zu der Adresse schon ein App-Profil, zählt es ab jetzt mit.
-    void adoptDayTickets(accountId, ticket.email, now).catch((err) => {
-      console.error("[scan] adopt day ticket failed:", err);
-    });
+    const email = ticket.email;
+    after(() =>
+      adoptDayTickets(accountId, email, now).catch((err) => {
+        console.error("[scan] adopt day ticket failed:", err);
+      }),
+    );
   }
 
   // Geburtstag: einmal am Tag eine Durchsage, wenn das Geburtstagskind am

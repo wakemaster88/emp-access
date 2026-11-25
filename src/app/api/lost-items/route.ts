@@ -3,6 +3,8 @@ import { resolveLostItemAuth } from "@/lib/lost-item-auth";
 import { buildLostItemCreateData } from "@/lib/lost-item-data";
 import { readRequestBody } from "@/lib/api-body";
 import { lostItemCreateSchema } from "@/lib/validators";
+import { listImageSrcs, lostItemImageUrl, wantsImageUrls } from "@/lib/list-images";
+import { inlineImageRows } from "@/lib/list-images-db";
 
 /**
  * GET /api/lost-items
@@ -12,9 +14,11 @@ import { lostItemCreateSchema } from "@/lib/validators";
  *  - q=...                   – Volltextsuche
  *  - withImages=1            – Base64-Bilder mitliefern (bei Token-Zugriff
  *                              standardmäßig weggelassen)
+ *  - fotos=url               – statt des Bildes `hasImage` und `imageUrl`
+ *                              (Bild-Route /api/lost-items/[id]/image)
  */
 export async function GET(request: NextRequest) {
-  const auth = await resolveLostItemAuth(request);
+  const auth = await resolveLostItemAuth(request, "/api/lost-items");
   if ("error" in auth) return auth.error;
   const { db, accountId, viaToken } = auth;
 
@@ -22,38 +26,56 @@ export async function GET(request: NextRequest) {
   const filter = params.get("filter");
   const kindParam = params.get("kind");
   const q = params.get("q")?.trim();
-  const withImages = !viaToken || params.get("withImages") === "1";
+  const imageUrls = wantsImageUrls(params);
+  const withImages = !imageUrls && (!viaToken || params.get("withImages") === "1");
 
-  const items = await db.lostItem.findMany({
-    where: {
-      accountId,
-      ...(filter === "open" && { pickedUp: false }),
-      ...(filter === "pickedUp" && { pickedUp: true }),
-      ...(kindParam === "found" && { kind: "FOUND" }),
-      ...(kindParam === "lostReport" && { kind: "LOST_REPORT" }),
-      ...(q && {
-        OR: [
-          { description: { contains: q, mode: "insensitive" as const } },
-          { contact: { contains: q, mode: "insensitive" as const } },
-          { reporterName: { contains: q, mode: "insensitive" as const } },
-          { callbackPhone: { contains: q, mode: "insensitive" as const } },
-        ],
-      }),
-    },
-    orderBy: { foundDate: "desc" },
-    take: 500,
-  });
+  const where = {
+    accountId,
+    ...(filter === "open" && { pickedUp: false }),
+    ...(filter === "pickedUp" && { pickedUp: true }),
+    ...(kindParam === "found" && { kind: "FOUND" as const }),
+    ...(kindParam === "lostReport" && { kind: "LOST_REPORT" as const }),
+    ...(q && {
+      OR: [
+        { description: { contains: q, mode: "insensitive" as const } },
+        { contact: { contains: q, mode: "insensitive" as const } },
+        { reporterName: { contains: q, mode: "insensitive" as const } },
+        { callbackPhone: { contains: q, mode: "insensitive" as const } },
+      ],
+    }),
+  };
+  const orderBy = { foundDate: "desc" } as const;
 
-  if (withImages) return NextResponse.json(items);
+  if (withImages) {
+    const items = await db.lostItem.findMany({ where, orderBy, take: 500 });
+    return NextResponse.json(items);
+  }
 
+  // Ohne Bilder: Bildspalte gar nicht erst laden, nur ob eines da ist.
+  const items = await db.lostItem.findMany({ where, orderBy, take: 500, omit: { image: true } });
+  const ids = items.map((i) => i.id);
+  const [withImage, inline] = await Promise.all([
+    db.lostItem.findMany({ where: { id: { in: ids }, accountId, image: { not: null } }, select: { id: true } }),
+    imageUrls
+      ? inlineImageRows("lostItem", ids, { accountId })
+      : Promise.resolve([]),
+  ]);
+  const hasImage = new Set(withImage.map((r) => r.id));
+
+  if (!imageUrls) {
+    return NextResponse.json(items.map((it) => ({ ...it, hasImage: hasImage.has(it.id) })));
+  }
+
+  const versions = new Map(items.map((i) => [i.id, i.updatedAt]));
+  const srcs = listImageSrcs(withImage, inline, (id) => lostItemImageUrl(id, versions.get(id)!));
   return NextResponse.json(
-    items.map(({ image, ...rest }) => ({ ...rest, hasImage: image != null }))
+    items.map((it) => ({ ...it, hasImage: hasImage.has(it.id), imageUrl: srcs.get(it.id) ?? null }))
   );
 }
 
 /** POST /api/lost-items – Fundsache oder Verlustmeldung anlegen. */
 export async function POST(request: NextRequest) {
-  const auth = await resolveLostItemAuth(request);
+  const auth = await resolveLostItemAuth(request, "/api/lost-items");
   if ("error" in auth) return auth.error;
   const { db, accountId } = auth;
 

@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
+import { PHOTO_URL_QUERY, photoSrc } from "@/lib/photo-url";
 
 /**
  * Segmente am Kiosk 44 px hoch (Segmented kennt keine große Stufe); auf dem Handy
@@ -42,7 +43,10 @@ interface PickerTicket {
   ticketTypeName: string | null;
   status: string;
   endDate: string | null;
-  profileImage: string | null;
+  /** Alte Antworten und Einzel-Antworten (Vermietung speichern): das Foto selbst. */
+  profileImage?: string | null;
+  /** Liste mit `fotos=url`: Foto über die Foto-Route des Check-in-Monitors. */
+  photoUrl?: string | null;
   subscription: { id: number; name: string } | null;
 }
 
@@ -116,7 +120,7 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
     if (silent) setRefreshing(true); else setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/checkin/public/${token}/lockers`, { cache: "no-store" });
+      const res = await fetch(`/api/checkin/public/${token}/lockers?${PHOTO_URL_QUERY}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`Fehler ${res.status}`);
       const json = (await res.json()) as ApiResponse;
       setData(json);
@@ -811,10 +815,10 @@ function DetailView({
         <div className="glass-tile p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              {current.ticket?.profileImage ? (
+              {photoSrc(current.ticket) ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={current.ticket.profileImage}
+                  src={photoSrc(current.ticket)!}
                   alt=""
                   className="h-12 w-12 rounded-full object-cover ring-2 ring-success/30 shrink-0"
                 />
@@ -1093,9 +1097,9 @@ function DetailView({
                       : "bg-glass-tile border-glass-border hover:bg-glass-strong active:scale-[0.99] text-foreground"
                   )}
                 >
-                  {t.profileImage ? (
+                  {photoSrc(t) ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={t.profileImage} alt="" className="h-8 w-8 rounded-full object-cover ring-1 ring-glass-border shrink-0" />
+                    <img src={photoSrc(t)!} alt="" loading="lazy" decoding="async" className="h-8 w-8 rounded-full object-cover ring-1 ring-glass-border shrink-0" />
                   ) : (
                     <div className="h-8 w-8 rounded-full bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border flex items-center justify-center shrink-0">
                       <TicketIcon className="h-4 w-4" />

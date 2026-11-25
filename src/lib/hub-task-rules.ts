@@ -3,6 +3,7 @@
  * (ohne Datenbank, damit testbar).
  */
 import { z } from "zod";
+import { DOOR_HOLD_MAX_MINUTES } from "./door-hold";
 
 /** Nach dieser Zeit wird ein augenblicksgebundener Schaltbefehl nicht mehr ausgeliefert. */
 export const SWITCH_COMMAND_MAX_AGE_MS = 60_000;
@@ -95,6 +96,93 @@ export function piOpenTaskExpired(
   return now.getTime() - taskSetAt.getTime() > SWITCH_COMMAND_MAX_AGE_MS;
 }
 
+function sameInstant(a: Date | null | undefined, b: Date | null | undefined): boolean {
+  return !!a && !!b && a.getTime() === b.getTime();
+}
+
+/**
+ * Einmal-Oeffnen am Pi: Der Server vermerkt in Device.taskFetchedSetAt den
+ * taskSetAt-Wert des Auftrags, den er dem Pi zuletzt ausgeliefert hat (GET,
+ * oder Antwort auf eine Meldung, die nicht 0 meldet). true = der aktuelle
+ * Auftrag ist noch nicht vermerkt und wird mit dieser Antwort ausgeliefert.
+ * Ohne taskSetAt (alte Zeilen) gibt es nichts zu vermerken.
+ */
+export function piOpenTaskNeedsFetchMark(
+  task: number,
+  taskSetAt: Date | null | undefined,
+  taskFetchedSetAt: Date | null | undefined,
+): boolean {
+  return task === 1 && !!taskSetAt && !sameInstant(taskFetchedSetAt, taskSetAt);
+}
+
+/**
+ * Meldung des Pis (POST /api/devices/pi) mit pis_task: Setzt sie task=1 auf 0
+ * zurueck? Nur wenn der Pi 0 meldet und den aktuellen Auftrag schon abgeholt
+ * hat. Ein Auftrag, der nach der letzten Abholung gesetzt wurde, bleibt
+ * stehen (siehe piReportHoldsOpenTask). Ohne taskSetAt (alte Zeilen) wie
+ * bisher. NOT-AUF und Deaktiviert (2, 3) setzt eine Meldung nie zurueck.
+ */
+export function piReportClearsOpenTask(
+  task: number,
+  reportedTask: number,
+  taskSetAt: Date | null | undefined,
+  taskFetchedSetAt: Date | null | undefined,
+): boolean {
+  if (task !== 1 || reportedTask !== 0) return false;
+  if (!taskSetAt) return true;
+  return sameInstant(taskFetchedSetAt, taskSetAt);
+}
+
+/**
+ * Meldung mit pis_task 0, waehrend ein noch nicht abgeholtes task=1 ansteht:
+ * Der Auftrag bleibt in der Datenbank stehen, wird aber weder vermerkt noch
+ * mit dieser Antwort ausgeliefert (die Antwort traegt 0 wie bisher). Der Pi
+ * holt ihn mit dem naechsten GET ab, sodass genau ein Abruf ihn ausloest.
+ */
+export function piReportHoldsOpenTask(
+  task: number,
+  reportedTask: number,
+  taskSetAt: Date | null | undefined,
+  taskFetchedSetAt: Date | null | undefined,
+): boolean {
+  return task === 1 && reportedTask === 0 && !piReportClearsOpenTask(task, reportedTask, taskSetAt, taskFetchedSetAt);
+}
+
+/**
+ * Was eine Meldung des Pis (POST /api/devices/pi) am Einmal-Oeffnen schreibt
+ * und welchen Task die Antwort traegt.
+ *
+ * `guarded`: Der Schreibzugriff aendert task oder den Abhol-Vermerk und darf
+ * deshalb nur den gelesenen Auftrag treffen (Bedingung task=1 und taskSetAt
+ * wie gelesen). Trifft er nicht, weil inzwischen ein neuer Auftrag gesetzt
+ * oder der Task geaendert wurde, wird nur der Status geschrieben. Ohne diese
+ * Bedingung koennte eine spaete Meldung den Vermerk eines neueren Auftrags
+ * ueberschreiben, und der ginge ein zweites Mal an den Pi.
+ */
+export type PiReportWrite = {
+  data: { task?: 0; taskSetAt?: null; taskFetchedSetAt?: Date };
+  guarded: boolean;
+  answerTask: number;
+};
+
+export function piReportWrite(
+  task: number,
+  reportedTask: number,
+  taskSetAt: Date | null | undefined,
+  taskFetchedSetAt: Date | null | undefined,
+): PiReportWrite {
+  if (piReportClearsOpenTask(task, reportedTask, taskSetAt, taskFetchedSetAt)) {
+    return { data: { task: 0, taskSetAt: null }, guarded: true, answerTask: 0 };
+  }
+  if (piReportHoldsOpenTask(task, reportedTask, taskSetAt, taskFetchedSetAt)) {
+    return { data: {}, guarded: false, answerTask: 0 };
+  }
+  if (taskSetAt && piOpenTaskNeedsFetchMark(task, taskSetAt, taskFetchedSetAt)) {
+    return { data: { taskFetchedSetAt: taskSetAt }, guarded: true, answerTask: task };
+  }
+  return { data: {}, guarded: false, answerTask: task };
+}
+
 /** Zeitpunkt, der zusammen mit Device.task gespeichert wird (null bei 0). */
 export function deviceTaskSetAt(task: number, now: Date = new Date()): Date | null {
   return task === 0 ? null : now;
@@ -156,6 +244,24 @@ const PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
 
 const anyCameraPayload = z.looseObject({ cameraId });
 
+/**
+ * Tor offen halten ueber POST /api/hub/tasks: payload.until als Text darf
+ * hoechstens DOOR_HOLD_MAX_MINUTES in der Zukunft liegen, wie bei
+ * /api/cameras/[id]/door-hold. Ohne until (oder nicht als Text) beendet der
+ * Auftrag das Offenhalten, wie der Hub es liest; das bleibt erlaubt, ebenso
+ * ein Zeitpunkt in der Vergangenheit (der Hub beendet dann).
+ */
+export function doorHoldUntilError(payload: unknown, now: Date = new Date()): string | null {
+  const raw = (payload as { until?: unknown } | null | undefined)?.until;
+  if (typeof raw !== "string" || !raw) return null;
+  const until = Date.parse(raw);
+  if (!Number.isFinite(until)) return "Ungültige Auftragsdaten (until)";
+  if (until - now.getTime() > DOOR_HOLD_MAX_MINUTES * 60_000) {
+    return `Offen halten höchstens ${DOOR_HOLD_MAX_MINUTES} Minuten`;
+  }
+  return null;
+}
+
 export type HubTaskPayloadCheck =
   | { ok: true; payload: unknown; cameraId: number | null }
   | { ok: false; error: string };
@@ -165,13 +271,17 @@ export type HubTaskPayloadCheck =
  * zurueck (kein Umschreiben der Felder) und die cameraId, die gegen den
  * Mandanten geprueft werden muss.
  */
-export function checkHubTaskPayload(type: string, payload: unknown): HubTaskPayloadCheck {
+export function checkHubTaskPayload(type: string, payload: unknown, now: Date = new Date()): HubTaskPayloadCheck {
   const schema = PAYLOAD_SCHEMAS[type] ?? (CAMERA_HUB_TASK_TYPES.has(type) ? anyCameraPayload : null);
   if (!schema) return { ok: true, payload, cameraId: null };
   const parsed = schema.safeParse(payload ?? {});
   if (!parsed.success) {
     const field = parsed.error.issues[0]?.path.join(".") || "payload";
     return { ok: false, error: `Ungültige Auftragsdaten (${field})` };
+  }
+  if (type === "DOORBIRD_HOLD") {
+    const error = doorHoldUntilError(payload, now);
+    if (error) return { ok: false, error };
   }
   const id = CAMERA_HUB_TASK_TYPES.has(type) ? Number((parsed.data as { cameraId: unknown }).cameraId) : null;
   return { ok: true, payload, cameraId: id };

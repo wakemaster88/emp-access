@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanIds, foreignRefError, missingIds } from "./tenant-refs";
+import { cleanIds, foreignRefError, missingIds, parseAreaRefUpdate } from "./tenant-refs";
 import type { TenantDb } from "./prisma";
 
 test("cleanIds: entfernt null, undefined, NaN und Duplikate", () => {
@@ -86,4 +86,23 @@ test("foreignRefError: ohne Mandant (Super-Admin) nur Existenzpruefung", async (
   const { db, calls } = fakeDb({ camera: [40] });
   assert.equal(await foreignRefError(db, null, { cameraIds: [40] }), null);
   assert.deepEqual(calls, [{ model: "camera", where: { id: { in: [40] } } }]);
+});
+
+test("parseAreaRefUpdate: fehlend oder null behaelt den gespeicherten Wert", () => {
+  assert.deepEqual(parseAreaRefUpdate(undefined, 7), { ok: true, value: 7, changed: false });
+  assert.deepEqual(parseAreaRefUpdate(null, 7), { ok: true, value: 7, changed: false });
+  assert.deepEqual(parseAreaRefUpdate(undefined, null), { ok: true, value: null, changed: false });
+});
+
+test("parseAreaRefUpdate: unveraenderte Zahl wird nicht geprueft, neue schon (auch 0)", () => {
+  assert.deepEqual(parseAreaRefUpdate(7, 7), { ok: true, value: 7, changed: false });
+  assert.deepEqual(parseAreaRefUpdate(8, 7), { ok: true, value: 8, changed: true });
+  assert.deepEqual(parseAreaRefUpdate(0, 7), { ok: true, value: 0, changed: true });
+  assert.deepEqual(parseAreaRefUpdate(3, null), { ok: true, value: 3, changed: true });
+});
+
+test("parseAreaRefUpdate: alles ausser ganzen Zahlen ist ungueltig", () => {
+  for (const raw of [{ set: 4 }, { increment: 1 }, [4], "4", "", false, true, 1.5, Number.NaN]) {
+    assert.deepEqual(parseAreaRefUpdate(raw, 7), { ok: false }, JSON.stringify(raw));
+  }
 });

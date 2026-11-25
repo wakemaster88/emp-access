@@ -56,6 +56,7 @@ export async function POST(
     where: { id: deviceId, accountId: monitor.accountId },
     select: {
       id: true,
+      name: true,
       type: true,
       category: true,
       shellyId: true,
@@ -95,6 +96,7 @@ export async function POST(
     device,
     monitor.accountId,
     action,
+    { actor: { source: "monitor", actorLabel: `monitor:${monitor.id}` } },
   );
 
   const hasRemoteAction = deviceSendsRemoteCommand(device.type);

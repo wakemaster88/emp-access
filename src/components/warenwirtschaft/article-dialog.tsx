@@ -26,6 +26,7 @@ export interface ArticleData {
   supplier: string | null;
   purchasePriceCents: number | null;
   stock: number;
+  /** Bildquelle zur Anzeige (Adresse der Bild-Route, Web-Adresse oder Data-URL). */
   image: string | null;
   imageSource: string | null;
   active: boolean;
@@ -56,11 +57,14 @@ export function ArticleDialog({
   open,
   onClose,
   categories,
+  canDelete = false,
 }: {
   article: ArticleData | null;
   open: boolean;
   onClose: () => void;
   categories: string[];
+  /** Löschen nur für die Verwaltung. */
+  canDelete?: boolean;
 }) {
   const router = useRouter();
   const isNew = !article;
@@ -154,7 +158,8 @@ export function ArticleDialog({
         stock: stockNum ?? 0,
         active,
         note: note.trim() || null,
-        image,
+        // Die Liste zeigt das Bild über die Bild-Route; gespeichert wird nur ein neues oder entferntes Bild.
+        ...((isNew || image !== (article?.image ?? null)) && { image }),
         imageSource,
       };
       const res = await fetch(isNew ? "/api/warenwirtschaft/articles" : `/api/warenwirtschaft/articles/${article!.id}`, {
@@ -327,7 +332,7 @@ export function ArticleDialog({
           ) : (
             <DialogFooter
               className="pt-2"
-              start={!isNew ? (
+              start={!isNew && canDelete ? (
                 <Button type="button" variant="ghost" onClick={() => setConfirmDelete(true)} disabled={saving} className="h-11 gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:h-9">
                   <Trash2 className="h-4 w-4" />
                   Löschen

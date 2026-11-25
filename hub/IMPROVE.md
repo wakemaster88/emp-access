@@ -433,7 +433,7 @@ Snapshot über den neuen Task `HUB_LOG` gelesen (Hub auf `df15676`), nicht vom i
 
 ## 2026-09-05 (Hub-Mac fertig eingerichtet)
 
-- 13:53 Uhr per `SYSTEM_CHECK` bestätigt: FileVault aus, Auto-Login `aaronarmnborst`, kein Ruhezustand, Neustart nach Stromausfall, Einschalten täglich 06:00, sudo-Regel für pmset, caffeinate an – keine Hinweise mehr. Auto-Login wurde über die Systemeinstellungen gesetzt, nachdem der zweite Lauf des Setup-Skripts bei `sysadminctl` abgebrochen war (Skript-Ausgabe nicht gesehen).
+- 13:53 Uhr per `SYSTEM_CHECK` bestätigt: FileVault aus, Auto-Login dem Benutzer des Hub-Rechners, kein Ruhezustand, Neustart nach Stromausfall, Einschalten täglich 06:00, sudo-Regel für pmset, caffeinate an – keine Hinweise mehr. Auto-Login wurde über die Systemeinstellungen gesetzt, nachdem der zweite Lauf des Setup-Skripts bei `sysadminctl` abgebrochen war (Skript-Ausgabe nicht gesehen).
 - Damit überlebt der Hub Herunterfahren und Neustart des iMac ohne Zutun; der Ausfall vom 3./4.9. kann so nicht mehr entstehen.
 
 ## 2026-09-07 (Audio und Shelly an Räume und Betriebszeiten gekoppelt)
@@ -1245,6 +1245,29 @@ Log-Abruf nach PR #233 (Hub 9a9c42c, Zentrale in Safari neu geladen 11:29 UTC):
 
 - Beobachten, wie oft Rückfragen zu `remember` kommen und wie oft sie abgebrochen werden.
 - Kopplung neuer Chats zusätzlich von einem schon gekoppelten Chat bestätigen lassen und Anfragen je Chat begrenzen (offen, ändert die Bedienung).
+
+## 2026-11-25 (Dashboard: Cookie ohne Token, Begrenzung der Fehlversuche, Host-Prüfung beim Lesen)
+
+### Befund
+
+- Das Cookie `hub_dash` enthielt das Token selbst, also denselben Wert, der auch im Header X-Hub-Token und in `?token=` gilt. Es lief gleitend ein Jahr, ohne Secure, auch über HTTPS.
+- Fehlversuche bei der Anmeldung waren nicht begrenzt.
+- Lesende Anfragen (GET/HEAD) vom Hub-Rechner ohne Token prüften den Host nicht (stand im Eintrag vom 24.11. unter „Offen“).
+- Lokale Aufrufer der Dashboard-API am Hub-Rechner: die Oberfläche selbst (relative Pfade), das Kontrollzentrum (`webcams/lib/service-status.ts`, GET `http://127.0.0.1:8787/api/status`, sofern HUB_DASHBOARD_URL nicht gesetzt ist) und die Cursor-Regel (`/api/improve` über 127.0.0.1). Alle nutzen erlaubte Namen.
+
+### Änderung
+
+- Neu: `dashboard-auth.ts` (reine Logik, 11 Tests). Der Cookie-Wert ist ein HMAC-SHA256 aus dem Token, base64url. Alte Cookies mit dem Token gelten weiter und werden beim nächsten Seitenaufruf ersetzt. Über HTTPS kommt zusätzlich `__Secure-hub_dash` mit Secure, mit eigenem Namen, damit derselbe Browser über HTTP angemeldet bleibt. Über HTTP bleibt `hub_dash` mit denselben Attributen wie bisher.
+- Fehlversuche je Client-Adresse: 20 ungültige Werte in 15 min (gleitendes Fenster) führen zu 15 min 429 für diese Adresse. Derselbe falsche Wert zählt nur einmal (offener Tab mit altem Cookie). Loopback wird nie begrenzt. Nur eine Anmeldung über `?token=` setzt den Zähler zurück, eine gültige Cookie-Anfrage nicht (NAT). Höchstens 1.000 Adressen, alles nur im Speicher. Im Log steht dann: „Dashboard: zu viele Fehlversuche von <Adresse> – 15 min gesperrt“.
+- `dashboard-guard.ts`: GET/HEAD auf /api/* ohne Token (vom Hub-Rechner) prüfen den Host nach derselben Liste wie schreibende Anfragen (2 neue Tests). Seiten, Icons, /ca.crt und Anfragen mit Token sind unverändert.
+- Start im Netz ohne Token: weiterhin kein Startverbot, aber eine Warnzeile im Log. Der Heartbeat meldet `system.dashboardAccess` (`local`, `lan-token`, `lan-open`), nur zusammen mit einem vollständigen system-Objekt, weil die Cloud `system` als Ganzes ersetzt.
+- Geprüft: `tsc -p hub` und `tsc` ohne Fehler, `dashboard-auth.test.ts` und `dashboard-guard.test.ts` 26/26 grün. Laufzeit-Probe mit Test-Token in einer Sandbox über HTTP und HTTPS: Anmeldung, altes Cookie wird ersetzt, Kopfzeile, Sperre nach 20 Fehlversuchen, Hub-Rechner selbst bleibt frei. Am Hub nicht geprüft.
+
+### Nächster Schritt
+
+- Nach dem Update im Log nach „zu viele Fehlversuche“ und „abgelehnt (host)“ suchen. Taucht dort ein eigener Name auf, ihn in `HUB_DASHBOARD_ALLOWED_HOSTS` eintragen.
+- Die Startzeile „Lokales Dashboard … (…)“ lesen. Steht dort „im LAN OHNE Token“, mit dem Betreiber ein Token setzen.
+- `dashboardAccess` in der Hub-Karte der Cloud anzeigen, eventuell als eigener Schlüssel unabhängig von STATE.system (eigenes Paket in src/).
 
 ## 2026-11-24 (Gesamtprüfung Hub und Kamera-Erkennung, Teil 1: Personen-Start, Ereignisfluss, Log)
 

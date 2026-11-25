@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { publicRateLimit } from "@/lib/rate-limit";
-import { verifyMailLinkKey } from "@/lib/day-guest";
+import { verifyCurrentMailLinkKey } from "@/lib/day-guest";
 import { completeOnboarding } from "@/lib/rider-onboarding";
 import { riderAppPath } from "@/lib/rider-app";
 import { mailLinkSession, setRiderCookie } from "@/lib/rider-auth";
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Ungültige Anfrage." }, { status: 400 });
-  const link = verifyMailLinkKey(parsed.data.key);
+  const link = await verifyCurrentMailLinkKey(parsed.data.key);
   if (!link) return NextResponse.json({ error: "Dieser Link gilt nicht mehr. Fordere einfach einen neuen an." }, { status: 401 });
 
   const token = await completeOnboarding(link.accountId, link.email, {
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   // Ohne Anmeldedaten zuerst einrichten, die App zeigt die Einladung danach.
   const cookie = request.cookies.get(FAMILY_INVITE_COOKIE)?.value;
   const invite = await pendingFamilyInvite(token, cookie);
-  const session = await mailLinkSession(token, link.email);
+  const session = await mailLinkSession(token, link.email, link.version);
   const url = invite && session ? `/app/familie/${encodeURIComponent(invite.key)}` : riderAppPath(token);
   const res = NextResponse.json({ url });
   if (cookie && !invite) res.cookies.delete(FAMILY_INVITE_COOKIE);

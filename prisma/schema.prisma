@@ -167,6 +167,9 @@ model Account {
   /// Keys: vehicleSightings, personSightings, cameraEvents, scans,
   /// irrigationRuns, automationRuns, emailSends, hubTasks, discoveredDevices
   dataRetention          Json?
+  /// JSON: Einlass-Regeln (Schalter in den Einstellungen), siehe
+  /// src/lib/access-rules.ts. NULL oder fehlende Schlüssel = Regel aus.
+  accessRules            Json?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   admins                 Admin[]
@@ -201,6 +204,7 @@ model Account {
   inventoryCountLinks    InventoryCountLink[]
   irrigationSchedules    IrrigationSchedule[]
   irrigationRuns         IrrigationRun[]
+  deviceActionLogs       DeviceActionLog[]
   pushSubscriptions      PushSubscription[]
   infoFormTemplates      InfoFormTemplate[]
   infoRequests           InfoRequest[]
@@ -274,6 +278,7 @@ model Account {
   keyPolicyTemplates     KeyPolicyTemplate[]
   keySignatures          KeySignature[]
   mcpTokens              McpToken[]
+  integrationTokens      IntegrationToken[]
   eventPartners          EventPartner[]
   venueExtras            VenueExtra[]
   venueEvents            VenueEvent[]
@@ -470,6 +475,10 @@ model Device {
   /// Zeitpunkt, zu dem task zuletzt auf einen Wert ungleich 0 gesetzt wurde
   /// (null bei 0 oder alten Zeilen). Einmal-Oeffnen (1) verfaellt am Pi nach 60 s.
   taskSetAt            DateTime?
+  /// taskSetAt des Einmal-Oeffnens, das der Pi zuletzt abgeholt hat (GET oder
+  /// Antwort auf seine Meldung). Eine Meldung mit pis_task=0 setzt task=1 nur
+  /// zurueck, wenn beide gleich sind (null bei alten Zeilen).
+  taskFetchedSetAt     DateTime?
   accessIn             Int?
   accessOut            Int?
   allowReentry         Boolean              @default(false)
@@ -541,6 +550,38 @@ model Device {
   @@index([accessOut])
   @@index([pumpDeviceId])
   @@index([cameraId])
+}
+
+/// Protokoll: wer ein Geraet von Hand oder automatisch geschaltet, sein Token
+/// geaendert oder es geloescht hat. deviceId bewusst ohne Fremdschluessel,
+/// damit die Zeilen das Loeschen des Geraets ueberdauern (deviceName haelt den
+/// Namen fest). Geschrieben von src/lib/device-action-log.ts.
+model DeviceActionLog {
+  id         Int      @id @default(autoincrement())
+  accountId  Int
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Device.id; 0 bei Kamera-Tueren (DoorBird), die keine Device-Zeile haben.
+  deviceId   Int
+  deviceName String
+  /// open, emergency, deactivate, reset, close, stop, on, off, toggle,
+  /// doorbird_open, doorbird_hold, doorbird_hold_ende, token_neu,
+  /// token_entfernt, geloescht
+  action     String
+  /// ok, fehler oder abgelehnt. ok = Befehl gesendet bzw. Auftrag erteilt
+  /// (bei Pi und Hub nicht: ausgefuehrt).
+  result     String
+  /// admin (angemeldeter Benutzer, jede Rolle), kiosk, monitor, mobil, verein,
+  /// skill, regel, mcp oder unbekannt
+  source     String
+  /// Admin.id, wenn ein angemeldeter Benutzer geschaltet hat.
+  actorId    Int?
+  /// Kennung der Quelle, z. B. Monitor-ID, Name des MCP-Tokens, Regel-ID oder
+  /// "ticket:<id>". Nie ein Token und nie ein Kundenname.
+  actorLabel String?
+  createdAt  DateTime @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([accountId, deviceId, createdAt])
 }
 
 model Ticket {
@@ -755,6 +796,10 @@ model AccessArea {
   ///
   /// NULL oder 0 = keine bereichsweite Sperre.
   scanLockSeconds    Int?
+  /// Einlass-Regel „Tickets ohne Bereich gelten nur an freigegebenen
+  /// Bereichen“: an Lesern dieses Bereichs gelten Tickets ohne jeden Bereich
+  /// weiter. Wirkt nur, solange die Regel in den Einstellungen an ist.
+  allowUnassignedTickets Boolean      @default(false)
   showOnDashboard    Boolean            @default(true)
   openingHours       String?
   /// Veranstaltungsraum (z. B. Rooftop Lounge): Belegung ueber
@@ -3568,6 +3613,27 @@ model McpToken {
   @@index([accountId])
 }
 
+/// Nur-Lese-Token fuer angebundene Systeme (emp-control, Website, Fundsachen-
+/// Dienste). Gespeichert wird nur der SHA-256 des Tokens; der Klartext steht
+/// einmal in der Antwort beim Anlegen. Was ein Token darf, legen die Scopes
+/// fest (src/lib/integration-token.ts). Gilt nur als Bearer-Header.
+model IntegrationToken {
+  id               Int       @id @default(autoincrement())
+  accountId        Int
+  account          Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name             String
+  tokenHash        String    @unique
+  /// Anfang des Tokens zur Wiedererkennung in der Liste.
+  prefix           String
+  scopes           String[]
+  createdByAdminId Int?
+  lastUsedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([accountId])
+}
+
 /// Gamification je Mandant. Ohne Zeile oder mit enabled=false wird nichts gezaehlt.
 /// Was ein Skill der Kunden-App tut.
 enum RiderSkillKind {
@@ -4194,6 +4260,9 @@ model RiderProfile {
   firstName         String?
   lastName          String?
   birthDate         DateTime?
+  /// Letzte Aenderung des Geburtsdatums durch die Person in der App; danach
+  /// geht es dort 365 Tage lang nur noch an der Kasse (lib/rider-person).
+  birthDateChangedAt DateTime?
   /// Jahr der ersten Saison am Lift (traegt das Personal ein). Fuer die
   /// Treue-Awards: Saisons vor der ersten gezaehlten zaehlen so mit.
   ridingSince       Int?
@@ -4303,11 +4372,17 @@ model ChipEvent {
 
 /// Familie in der Kunden-App: buendelt Profile, gezaehlt wird weiter je Person.
 model RiderFamily {
-  id        Int            @id @default(autoincrement())
-  members   RiderProfile[]
-  accountId Int
-  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt DateTime       @default(now())
+  id            Int            @id @default(autoincrement())
+  members       RiderProfile[]
+  accountId     Int
+  account       Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+  /// Zaehler der Einladungslinks: ein neuer Link erhoeht ihn, aeltere gelten
+  /// dann nicht mehr (lib/rider-family `familyInviteKey`).
+  inviteVersion Int            @default(0)
+  /// Profile, die nachts beigetreten sind: die Meldung an die Erwachsenen
+  /// geht morgens raus (lib/rider-push `runFamilyJoinNoticeTick`).
+  joinNoticeIds Int[]          @default([])
 
   @@index([accountId])
 }

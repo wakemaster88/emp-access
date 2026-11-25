@@ -223,25 +223,37 @@ async function renewedTicketIds(accountId: number, candidates: TicketCandidate[]
   return renewed;
 }
 
-async function isWithinCooldown(args: {
+/**
+ * Status eines EmailSend-Eintrags, der vor dem Versand angelegt wird. Nach
+ * dem Versand steht dort SENT oder FAILED. Bleibt er stehen (Lauf
+ * abgebrochen), zählt er für den Cooldown wie SENT: Ob die Mail rausging,
+ * ist dann unbekannt, und eine zweite Mail samt Gutschein soll es nicht geben.
+ */
+export const EMAIL_SEND_PENDING = "PENDING";
+/** Status, die den Cooldown einer Regel auslösen. */
+export const COOLDOWN_STATUSES = ["SENT", EMAIL_SEND_PENDING];
+
+/** Tickets einer Regel, die im Cooldown sind – eine Abfrage für alle Kandidaten. */
+async function cooldownTicketIds(args: {
   accountId: number;
   ruleId: number;
-  ticketId: number;
+  ticketIds: number[];
   cooldownDays: number;
   now: Date;
-}): Promise<boolean> {
+}): Promise<Set<number>> {
+  if (args.ticketIds.length === 0) return new Set();
   const cooldownStart = addDays(args.now, -args.cooldownDays);
-  const last = await prisma.emailSend.findFirst({
+  const rows = await prisma.emailSend.findMany({
     where: {
       accountId: args.accountId,
       ruleId: args.ruleId,
-      ticketId: args.ticketId,
-      status: "SENT",
+      ticketId: { in: args.ticketIds },
+      status: { in: COOLDOWN_STATUSES },
       sentAt: { gte: cooldownStart },
     },
-    select: { id: true },
+    select: { ticketId: true },
   });
-  return last != null;
+  return new Set(rows.flatMap((r) => (r.ticketId != null ? [r.ticketId] : [])));
 }
 
 interface RuleRunStats {
@@ -381,6 +393,14 @@ export async function processAccountEmailRules(
       const expiry = rule.trigger === "SUBSCRIPTION_EXPIRING" || rule.trigger === "SUBSCRIPTION_EXPIRED";
       const renewed = expiry ? await renewedTicketIds(accountId, candidates) : new Set<number>();
 
+      const cooldown = await cooldownTicketIds({
+        accountId,
+        ruleId: rule.id,
+        ticketIds: candidates.filter((c) => mailRecipient(c.ticket) && !renewed.has(c.ticket.id)).map((c) => c.ticket.id),
+        cooldownDays: rule.cooldownDays,
+        now,
+      });
+
       for (const candidate of candidates) {
         const ticket = candidate.ticket;
         const to = mailRecipient(ticket);
@@ -389,79 +409,97 @@ export async function processAccountEmailRules(
           continue;
         }
 
-        const inCooldown = await isWithinCooldown({
-          accountId,
-          ruleId: rule.id,
-          ticketId: ticket.id,
-          cooldownDays: rule.cooldownDays,
-          now,
-        });
-        if (inCooldown) {
+        if (cooldown.has(ticket.id)) {
           stats.skipped++;
           continue;
         }
 
-        let voucher: { code: string; expiresAt: Date | null; discountPercent: number | null; id: number } | null = null;
-        if (rule.createVoucher) {
-          const expiresAt = rule.voucherValidDays
-            ? addDays(startOfDay(now), rule.voucherValidDays)
-            : null;
-          const code = buildVoucherCode("EMP");
-          const v = await prisma.voucher.create({
-            data: {
-              accountId,
-              code,
-              ticketTypeName: rule.voucherTicketTypeName,
-              discountPercent: rule.voucherDiscountPercent,
-              expiresAt,
-              sourceTicketId: ticket.id,
-              notes: `Email-Regel: ${rule.name}`,
-            },
-            select: { id: true, code: true, expiresAt: true, discountPercent: true },
-          });
-          voucher = v;
-        }
-
-        const vars = buildTemplateVars({
-          candidate,
-          accountName: account.name,
-          rule,
-          voucher,
-          brand: {
-            color: config.brandColor,
-            logo: config.logoUrl,
-            website: config.websiteUrl,
-          },
-        });
-
-        const subject = renderTemplate(rule.subject, vars);
-        const innerHtml = renderTemplateHtml(rule.bodyHtml, vars);
-        const html = wrapEmailHtml({
-          innerHtml,
-          brandColor: config.brandColor,
-          logoUrl: config.logoUrl,
-          websiteUrl: config.websiteUrl,
-          accountName: account.name,
-          preheader: subject,
-        });
-
-        const result = await sendEmail({
-          config: provider,
-          to,
-          subject,
-          html,
-        });
-
-        await prisma.emailSend.create({
+        // Eintrag vor Gutschein und Versand: bricht der Lauf ab, greift der
+        // Cooldown trotzdem und es gibt keine zweite Mail und keinen zweiten Gutschein.
+        const send = await prisma.emailSend.create({
           data: {
             accountId,
             ruleId: rule.id,
             ticketId: ticket.id,
-            voucherId: voucher?.id ?? null,
             to,
+            subject: rule.subject,
+            status: EMAIL_SEND_PENDING,
+          },
+          select: { id: true },
+        });
+
+        let voucher: { code: string; expiresAt: Date | null; discountPercent: number | null; id: number } | null = null;
+        let result: Awaited<ReturnType<typeof sendEmail>>;
+        let subject: string;
+        try {
+          if (rule.createVoucher) {
+            const expiresAt = rule.voucherValidDays
+              ? addDays(startOfDay(now), rule.voucherValidDays)
+              : null;
+            const code = buildVoucherCode("EMP");
+            const v = await prisma.voucher.create({
+              data: {
+                accountId,
+                code,
+                ticketTypeName: rule.voucherTicketTypeName,
+                discountPercent: rule.voucherDiscountPercent,
+                expiresAt,
+                sourceTicketId: ticket.id,
+                notes: `Email-Regel: ${rule.name}`,
+              },
+              select: { id: true, code: true, expiresAt: true, discountPercent: true },
+            });
+            voucher = v;
+          }
+
+          const vars = buildTemplateVars({
+            candidate,
+            accountName: account.name,
+            rule,
+            voucher,
+            brand: {
+              color: config.brandColor,
+              logo: config.logoUrl,
+              website: config.websiteUrl,
+            },
+          });
+
+          subject = renderTemplate(rule.subject, vars);
+          const innerHtml = renderTemplateHtml(rule.bodyHtml, vars);
+          const html = wrapEmailHtml({
+            innerHtml,
+            brandColor: config.brandColor,
+            logoUrl: config.logoUrl,
+            websiteUrl: config.websiteUrl,
+            accountName: account.name,
+            preheader: subject,
+          });
+
+          result = await sendEmail({
+            config: provider,
+            to,
+            subject,
+            html,
+          });
+        } catch (err) {
+          // Wie bisher bricht ein Fehler die Regel ab; der Eintrag zählt dann
+          // als fehlgeschlagen (kein Cooldown, der nächste Lauf versucht es neu).
+          const msg = err instanceof Error ? err.message : String(err);
+          await prisma.emailSend.update({
+            where: { id: send.id },
+            data: { status: "FAILED", errorMessage: msg.slice(0, 500), voucherId: voucher?.id ?? null, sentAt: new Date() },
+          });
+          throw err;
+        }
+
+        await prisma.emailSend.update({
+          where: { id: send.id },
+          data: {
+            voucherId: voucher?.id ?? null,
             subject,
             status: result.ok ? "SENT" : "FAILED",
             errorMessage: result.ok ? null : (result.error?.slice(0, 500) ?? "unbekannter Fehler"),
+            sentAt: new Date(),
           },
         });
 

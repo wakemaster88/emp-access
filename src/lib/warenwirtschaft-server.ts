@@ -3,17 +3,20 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { COUNT_LINK_DAYS } from "@/lib/warenwirtschaft";
 import { CORRECTION_REASON_MIN } from "@/lib/stocktake-log";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, isTenantAdminRole } from "@/lib/api-auth";
 import type { TenantDb } from "@/lib/prisma";
 
 /**
  * Sitzung mit Mandanten-Datenbank für die Warenwirtschaft. Der Super-Admin
  * hat kein eigenes Konto und bekommt hier keinen Schreibzugriff.
+ * Zählen, Bestätigen und Artikel anlegen darf jedes Team-Konto; Löschen,
+ * Import, Korrekturen festgeschriebener Inventuren und neue Zähl-Links nur
+ * die Verwaltung (`requireAdmin`).
  */
-export async function wawiSession(): Promise<
-  { error: NextResponse } | { db: TenantDb; accountId: number; userName: string; adminId: number | null; email: string | null }
+export async function wawiSession(options: { requireAdmin?: boolean } = {}): Promise<
+  { error: NextResponse } | { db: TenantDb; accountId: number; userName: string; adminId: number | null; email: string | null; isAdmin: boolean }
 > {
-  const s = await getSessionWithDb();
+  const s = await getSessionWithDb(options);
   if ("error" in s) return { error: s.error! };
   if (s.isSuperAdmin || !s.accountId) {
     return { error: NextResponse.json({ error: "Nur innerhalb eines Kontos möglich" }, { status: 403 }) };
@@ -25,6 +28,7 @@ export async function wawiSession(): Promise<
     userName: s.session.user.name || s.session.user.email || "Unbekannt",
     adminId: Number.isInteger(adminId) ? adminId : null,
     email: s.session.user.email ?? null,
+    isAdmin: isTenantAdminRole(s.session.user.role),
   };
 }
 
@@ -168,11 +172,14 @@ export const inventoryLinkSchema = z.object({
   year: z.number().int().min(2000).max(2100).optional(),
 });
 
+/** Größte Data-URL, die die Handy-Seiten zeigen. */
+export const PUBLIC_IMAGE_MAX_CHARS = 400_000;
+
 /** Bilder für die Handy-Seiten: Web-Adressen und kleine eigene Fotos, keine großen Data-URLs. */
 export function publicImage(image: string | null | undefined): string | null {
   if (!image) return null;
   if (image.startsWith("https://")) return image;
-  if (image.startsWith("data:image/") && image.length <= 400_000) return image;
+  if (image.startsWith("data:image/") && image.length <= PUBLIC_IMAGE_MAX_CHARS) return image;
   return null;
 }
 

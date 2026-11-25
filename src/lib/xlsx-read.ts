@@ -14,6 +14,15 @@ export interface Sheet {
 }
 
 const MAX_UNZIPPED = 50 * 1024 * 1024;
+/** Höchste Zeilennummer, die gelesen wird (Listen-Importe brauchen weit weniger). */
+export const MAX_ROW = 200_000;
+/** Spalten wie in Excel: A bis XFD. */
+export const MAX_COLS = 16_384;
+/** Höchstens so viele `<row>`-Einträge über alle Blätter. */
+export const MAX_ROWS_TOTAL = 200_000;
+/** Höchstens so viele Zellen im Ergebnis (Lücken mitgezählt). */
+export const MAX_CELLS = 5_000_000;
+const TOO_BIG = "Excel-Datei ist zu groß";
 
 function unzip(buf: Buffer, wanted: (name: string) => boolean): Map<string, string> {
   // Ende des zentralen Verzeichnisses suchen (Signatur 0x06054b50).
@@ -71,7 +80,10 @@ function textOf(xml: string): string {
 function colIndex(ref: string): number {
   const letters = ref.match(/^[A-Z]+/)?.[0] ?? "A";
   let n = 0;
-  for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64);
+  for (const ch of letters) {
+    n = n * 26 + (ch.charCodeAt(0) - 64);
+    if (n > MAX_COLS) throw new Error(TOO_BIG);
+  }
   return n - 1;
 }
 
@@ -97,15 +109,26 @@ export function readXlsx(buf: Buffer): Sheet[] {
   }
 
   const sheets: Sheet[] = [];
+  let rowsRead = 0;
+  let cells = 0;
   for (const m of wb.matchAll(/<sheet\b[^>]*>/g)) {
     const name = decode(attr(m[0], "name") ?? "");
     const rid = attr(m[0], "r:id");
     const xml = rid ? files.get(target.get(rid) ?? "") : undefined;
     if (!xml) continue;
-    const rows: Cell[][] = [];
+    // Zeilen nach Nummer (1-basiert) in einer Map statt per Index: die
+    // Nummern stehen in der Datei und werden erst hier begrenzt.
+    const rows = new Map<number, Cell[]>();
+    let lastRow = 0;
     for (const r of xml.matchAll(/<row\b([^>]*)>([\s\S]*?)<\/row>/g)) {
-      const rowNum = Number(attr(r[0], "r")) || rows.length + 1;
-      const row: Cell[] = [];
+      if (++rowsRead > MAX_ROWS_TOTAL) throw new Error(TOO_BIG);
+      const rowNum = Number(attr(r[0], "r")) || lastRow + 1;
+      // Ungültige Nummern (negativ, Bruchzahl) fielen schon bisher weg.
+      if (!Number.isInteger(rowNum) || rowNum < 1) continue;
+      if (rowNum > MAX_ROW) throw new Error(TOO_BIG);
+      lastRow = Math.max(lastRow, rowNum);
+      const values = new Map<number, Cell>();
+      let width = 0;
       for (const c of r[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
         const tag = `<c${c[1]}>`;
         const ref = attr(tag, "r");
@@ -118,11 +141,20 @@ export function readXlsx(buf: Buffer): Sheet[] {
         else if (type === "str" || type === "e") value = v != null ? decode(v) : null;
         else if (type === "b") value = v === "1" ? 1 : 0;
         else if (v != null && v !== "") value = Number(v);
-        row[ref ? colIndex(ref) : row.length] = value;
+        const col = ref ? colIndex(ref) : width;
+        values.set(col, value);
+        width = Math.max(width, col + 1);
       }
-      rows[rowNum - 1] = Array.from(row, (x) => x ?? null);
+      // Zellen fortlaufend zählen, bevor die Zeile dicht aufgebaut wird
+      // (Lücken bis zur höchsten Zeilennummer mitgezählt).
+      cells += width;
+      if (cells + lastRow > MAX_CELLS) throw new Error(TOO_BIG);
+      rows.set(rowNum, Array.from({ length: width }, (_, i) => values.get(i) ?? null));
     }
-    sheets.push({ name, rows: Array.from(rows, (x) => x ?? []) });
+    // Lücken als leere Zeilen auffüllen wie bisher.
+    cells += lastRow;
+    if (cells > MAX_CELLS) throw new Error(TOO_BIG);
+    sheets.push({ name, rows: Array.from({ length: lastRow }, (_, i) => rows.get(i + 1) ?? []) });
   }
   return sheets;
 }

@@ -12,7 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * unverändert (es kann schon spätere Zählungen geben).
  */
 export async function POST(request: NextRequest, { params }: Ctx) {
-  const s = await wawiSession();
+  const s = await wawiSession({ requireAdmin: true });
   if ("error" in s) return s.error;
   const id = Number((await params).id);
   const parsed = stocktakeCorrectionSchema.safeParse(await request.json().catch(() => null));

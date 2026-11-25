@@ -3,6 +3,9 @@ import { gamiAdminSession } from "@/lib/gamification-session";
 import { offerSchema, normalizeOffer } from "@/lib/gamification-input";
 import { runAccountAnnouncements } from "@/lib/rider-announce";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 /**
  * POST: Angebot oder News (`kind: "NEWS"`) für die Kunden-App anlegen; mit
  * `push` geht eine Meldung an die Kunden. News gelten ohne Angabe für beide Pässe.

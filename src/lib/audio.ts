@@ -20,6 +20,7 @@ import {
   type TtsVoice,
 } from "@/lib/audio-constants";
 import { hasPlaceholders, resolveAnnouncementText, type AnnouncementContext } from "./announcement-text";
+import { ttsBlobPath } from "./audio-blob-path";
 import { scheduleSpecInclude, toScheduleSpec } from "./operating-queries";
 
 type Db = TenantDb;
@@ -362,10 +363,13 @@ export async function renderTtsTrack(
 
   const audio = await readTtsAudio(response);
   const { put } = await import("@vercel/blob");
-  const blob = await put(`audio/tts/${hash}.mp3`, audio, {
+  // Je Mandant ein eigener Pfad; überschreiben ist erlaubt, falls eine frühere
+  // Ansage hochgeladen, der Eintrag aber nicht mehr gespeichert wurde.
+  const blob = await put(ttsBlobPath(accountId, hash), audio, {
     access: "public",
     contentType: "audio/mpeg",
     addRandomSuffix: false,
+    allowOverwrite: true,
   });
 
   const track = await db.audioTrack.create({

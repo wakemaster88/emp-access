@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { berlinDayStart } from "@/lib/berlin-day";
+import { ticketPhotoUrl, wantsPhotoUrls, withPhotoRef } from "@/lib/photo-url";
+import { ticketIdsWithPhoto } from "@/lib/ticket-photo";
 
 /**
  * Live-Daten fuer den Dashboard-Leitstand – kurzes Polling statt SSE.
@@ -10,7 +12,8 @@ import { berlinDayStart } from "@/lib/berlin-day";
  * darin alle fuenf Sekunden die Datenbank. Jetzt holt der Client alle paar
  * Sekunden nur die Scans seit `since`; der Rest bleibt gleich.
  *
- * Query: since=<letzte Scan-ID> (0 = heutige Scans), devices=1,2, areas=1,2
+ * Query: since=<letzte Scan-ID> (0 = heutige Scans), devices=1,2, areas=1,2,
+ * fotos=url (Ticket ohne Base64-Foto, dafuer hasPhoto und photoUrl)
  */
 export async function GET(request: NextRequest) {
   const session = await getSessionWithDb();
@@ -20,6 +23,7 @@ export async function GET(request: NextRequest) {
   const areaIds = request.nextUrl.searchParams.get("areas")?.split(",").map(Number).filter(Boolean);
   const deviceIds = request.nextUrl.searchParams.get("devices")?.split(",").map(Number).filter(Boolean);
   const since = Number(request.nextUrl.searchParams.get("since") ?? "0") || 0;
+  const photoUrls = wantsPhotoUrls(request.nextUrl.searchParams);
 
   const scanWhere: Record<string, unknown> = {
     accountId: accountId!,
@@ -32,7 +36,7 @@ export async function GET(request: NextRequest) {
     select: {
       id: true, code: true, note: true, scanTime: true, result: true, deviceId: true, ticketId: true,
       device: { select: { id: true, name: true, type: true, accessIn: true, accessOut: true } },
-      ticket: { select: { id: true, name: true, firstName: true, lastName: true, ticketTypeName: true, status: true, accessAreaId: true, subscriptionId: true, profileImage: true, startDate: true, endDate: true, accessArea: { select: { name: true } } } },
+      ticket: { select: { id: true, name: true, firstName: true, lastName: true, ticketTypeName: true, status: true, accessAreaId: true, subscriptionId: true, profileImage: !photoUrls, updatedAt: photoUrls, startDate: true, endDate: true, accessArea: { select: { name: true } } } },
     },
     orderBy: { id: "desc" },
     take: since === 0 ? 100 : 50,
@@ -82,8 +86,15 @@ export async function GET(request: NextRequest) {
 
   const lastScanId = scans.length > 0 ? Math.max(...scans.map((s) => s.id)) : since;
 
+  // Mit `fotos=url`: Foto-Kennzeichen über eine schlanke ID-Abfrage.
+  let scansOut: unknown[] = scans;
+  if (photoUrls) {
+    const photoIds = await ticketIdsWithPhoto(db, scans.flatMap((s) => (s.ticket ? [s.ticket.id] : [])));
+    scansOut = scans.map((s) => ({ ...s, ticket: s.ticket ? withPhotoRef(s.ticket, photoIds, ticketPhotoUrl) : null }));
+  }
+
   return NextResponse.json(
-    { scans, counts, devices, lastScanId },
+    { scans: scansOut, counts, devices, lastScanId },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

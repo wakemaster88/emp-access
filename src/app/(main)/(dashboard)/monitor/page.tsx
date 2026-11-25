@@ -22,6 +22,7 @@ import { Check, ChevronDown, MapPin, Maximize, Minimize, Pause, Play, ScanLine, 
 import { fmtTime } from "@/lib/utils";
 import { berlinYmd, isSameBerlinDay } from "@/lib/berlin-day";
 import { parseScanDisplayNote, scanDenyReasonLabel } from "@/lib/scan-deny-reason";
+import { PHOTO_URL_QUERY, photoSrc } from "@/lib/photo-url";
 
 interface MonitorScan {
   id: number;
@@ -39,6 +40,8 @@ interface MonitorScan {
     validityDurationMinutes?: number | null;
     firstScanAt?: string | null;
     profileImage?: string | null;
+    /** Mit `fotos=url`: Foto über /api/tickets/[id]/photo. */
+    photoUrl?: string | null;
     accessArea?: { name: string } | null;
   } | null;
 }
@@ -120,7 +123,7 @@ export default function MonitorPage() {
 
     async function poll() {
       try {
-        const res = await fetch(`/api/monitor?since=${since}&areas=&devices=${devicesParam}`, { cache: "no-store" });
+        const res = await fetch(`/api/monitor?since=${since}&areas=&devices=${devicesParam}&${PHOTO_URL_QUERY}`, { cache: "no-store" });
         if (!res.ok || cancelled) return;
         const msg = (await res.json()) as {
           scans: MonitorScan[];
@@ -319,7 +322,7 @@ export default function MonitorPage() {
                 // Wakesys-Treffer: GRANTED-Scan ohne lokales Ticket, dafuer aber
                 // angereicherte Note vom Wakesys-Fallback (siehe pi/scan/route.ts).
                 const isWakesys = !scan.ticket && scan.result === "GRANTED" && !!scan.note;
-                const displayImage = scan.ticket?.profileImage || noteData.picture || null;
+                const displayImage = photoSrc(scan.ticket) || noteData.picture || null;
                 const displayName =
                   [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ")
                   || scan.ticket?.name
@@ -343,7 +346,7 @@ export default function MonitorPage() {
                   <div className="flex items-center gap-3 min-w-0">
                     {displayImage ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={displayImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-glass-border" />
+                      <img src={displayImage} alt="" loading="lazy" decoding="async" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-glass-border" />
                     ) : (
                       // Ergebnis als Symbol-Chip in der Zustandsfarbe, so groß wie ein Foto, damit die Zeilen fluchten.
                       <IconChip

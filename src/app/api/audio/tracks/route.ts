@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { acceptedAudioBlobPath, parseAudioTrackUrl } from "@/lib/audio-blob-path";
 
 const TRACK_KINDS = ["MUSIC", "JINGLE", "CHIME", "ANNOUNCEMENT"] as const;
 type TrackKind = (typeof TRACK_KINDS)[number];
@@ -33,10 +34,12 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const body = await request.json();
 
-  const url = typeof body.url === "string" ? body.url.trim() : "";
-  if (!/^https?:\/\//i.test(url)) {
-    return NextResponse.json({ error: "Gültige Datei-URL erforderlich" }, { status: 400 });
+  // Neue Titel nur mit https-Adresse; der Audio-Pi laedt sie herunter.
+  const parsedUrl = parseAudioTrackUrl(body.url);
+  if ("error" in parsedUrl) {
+    return NextResponse.json({ error: parsedUrl.error }, { status: 400 });
   }
+  const { url } = parsedUrl;
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!title) {
@@ -50,10 +53,8 @@ export async function POST(request: NextRequest) {
       artist: typeof body.artist === "string" && body.artist.trim() ? body.artist.trim() : null,
       kind: parseKind(body.kind),
       url,
-      blobPathname:
-        typeof body.blobPathname === "string" && body.blobPathname.trim()
-          ? body.blobPathname.trim()
-          : null,
+      // Nur ein Pfad, der zur URL passt und dem Mandanten gehört; sonst ohne.
+      blobPathname: acceptedAudioBlobPath(body.blobPathname, url, accountId!),
       contentType:
         typeof body.contentType === "string" && body.contentType.trim()
           ? body.contentType.trim()

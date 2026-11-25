@@ -6,6 +6,9 @@ import { cleanIds, foreignRefError } from "@/lib/tenant-refs";
 import { berlinYmd } from "@/lib/berlin-day";
 import { ensureBeachAwards } from "@/lib/beach-awards";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 const schema = z.object({
   enabled: z.boolean(),
   subscriptionIds: z.array(z.number().int()).max(100),

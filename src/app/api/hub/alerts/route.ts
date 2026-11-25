@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { diffAlerts, sanitizeReportedAlerts } from "@/lib/hub-alerts";
 import { notifyOutage } from "@/lib/outage-notify";
 

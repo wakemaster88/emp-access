@@ -224,9 +224,6 @@ class EmpScanner:
 
         if granted:
             logger.info("GRANTED: %s", message)
-            ticket = result.get("ticket", {})
-            if ticket.get("firstName") or ticket.get("lastName"):
-                logger.info("  Ticket: %s %s", ticket.get("firstName", ""), ticket.get("lastName", ""))
             if self.relay:
                 self.relay.grant()
         elif result.get("offline"):
