@@ -268,10 +268,14 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
         switches.push(snap);
         lastSnapshots.set(host, { ...snap, error: null });
         noteSwitchPoll(host, snap, null);
-        // Der Lauf alle 15 Minuten meldet einen Switch nur, wenn sich Ports
-        // oder Geraetezahl aendern (und einmal am Tag); ein Abruf von Hand immer.
+        // Der Lauf alle 15 Minuten meldet einen Switch nur, wenn sich Name oder
+        // Port-Zahl aendern oder die MAC-Tabelle leer wird oder sich wieder
+        // fuellt (und einmal am Tag); ein Abruf von Hand immer. Die MAC-Zahl
+        // steht in der Zeile, zaehlt aber nicht zum Vergleich: Sie wandert
+        // mit jedem Geraet, das sendet oder verstummt.
         const line = `${snap.sysName ?? ""} – ${snap.ports.length} Ports, ${snap.macTable.length} MACs`;
-        if (label !== AUTO_LABEL || routineLog.shouldLog(host, line, Date.now())) log(`${label}: ${host} ${line}`);
+        const compared = JSON.stringify([snap.sysName, snap.ports.length, snap.macTable.length > 0]);
+        if (label !== AUTO_LABEL || routineLog.shouldLog(host, compared, Date.now())) log(`${label}: ${host} ${line}`);
       } catch (e) {
         const error = friendlySnmpError(e);
         if (label !== AUTO_LABEL || routineLog.shouldLog(host, `Fehler: ${error}`, Date.now())) log(`${label} ${host}: ${error}`);
