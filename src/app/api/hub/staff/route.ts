@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { fetchStaffLive, parseMonitorUrl } from "@/lib/emp-control-live";
 
 export const dynamic = "force-dynamic";

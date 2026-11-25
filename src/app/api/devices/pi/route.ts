@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
+import { deviceTokenMismatch, validateApiToken } from "@/lib/api-token-auth";
 import { piStatusSchema } from "@/lib/validators";
 import { LATEST_PI_VERSION } from "@/lib/pi-version";
 import { piOpenTaskExpired } from "@/lib/hub-task-rules";

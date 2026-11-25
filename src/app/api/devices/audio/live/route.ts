@@ -14,7 +14,7 @@
  *   X-Live-Rate   Abtastrate
  */
 import { NextRequest, NextResponse } from "next/server";
-import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
+import { deviceTokenMismatch, validateApiToken } from "@/lib/api-token-auth";
 import { endLiveSession } from "@/lib/audio";
 import { isLiveSessionOpen } from "@/lib/audio-live";
 

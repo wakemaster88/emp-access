@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { deleteAllowedVehicle, updateAllowedVehicle } from "@/lib/allowed-vehicle-service";
 
 /** PUT/DELETE eines Fahrzeugs aus dem lokalen Hub-Dashboard (Token-Auth). */

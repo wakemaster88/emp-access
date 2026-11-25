@@ -7,7 +7,7 @@
  * Auth läuft wie bei den Scanner-Pis über das Account-API-Token.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
+import { deviceTokenMismatch, validateApiToken } from "@/lib/api-token-auth";
 import { clampVolume, musicWindowState, pairableSeconds, parseExternalKind } from "@/lib/audio";
 import { scheduleSpecInclude } from "@/lib/operating-queries";
 import { zoneMusicSpec } from "@/lib/operating-extent-queries";

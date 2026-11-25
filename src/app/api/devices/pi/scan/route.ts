@@ -1,7 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { announceBirthdayOnScan } from "@/lib/rider-birthday";
 import { paymentOpenInfo, paymentOpenScanMessage } from "@/lib/payment-open";
-import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
+import { deviceTokenMismatch, validateApiToken } from "@/lib/api-token-auth";
 import { prisma } from "@/lib/prisma";
 import { checkWakesys } from "@/lib/wakesys";
 import { checkBinarytec } from "@/lib/binarytec";

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 
 // Sub-Stream-JPEGs liegen bei ~100-500 KB, Main-Stream bis ~2 MB.
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;

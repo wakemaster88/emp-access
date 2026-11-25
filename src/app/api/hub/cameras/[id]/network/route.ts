@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 
 const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
 const IP_RE = /^(\d{1,3}\.){3}\d{1,3}$/;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { isValidDeviceAction } from "@/lib/device-open";
 import { runDeviceSwitchedRules } from "@/lib/room-rules";
 import { deviceTaskSetAt } from "@/lib/hub-task-rules";

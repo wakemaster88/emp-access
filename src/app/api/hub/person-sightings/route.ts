@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken } from "@/lib/api-token-auth";
 import { parseEmbeddingHeader, processCameraPersonEvent } from "@/lib/persons";
 
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
