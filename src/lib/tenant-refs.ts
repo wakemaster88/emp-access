@@ -44,6 +44,21 @@ export function cleanIds(ids: Array<number | null | undefined> | undefined): num
   return [...out];
 }
 
+/**
+ * Bereichs-ID (Device.accessIn/accessOut) aus einem Aenderungs-Request:
+ * fehlt sie oder ist sie null, bleibt der gespeicherte Wert. Sonst muss sie
+ * eine ganze Zahl sein; `changed` sagt, ob sie gegen den Mandanten zu
+ * pruefen ist. Alles andere (Text, Objekt, Kommazahl, ...) ist ungueltig.
+ */
+export function parseAreaRefUpdate(
+  raw: unknown,
+  current: number | null,
+): { ok: true; value: number | null; changed: boolean } | { ok: false } {
+  if (raw === undefined || raw === null) return { ok: true, value: current, changed: false };
+  if (typeof raw !== "number" || !Number.isInteger(raw)) return { ok: false };
+  return { ok: true, value: raw, changed: raw !== current };
+}
+
 /** IDs aus `requested`, die in `found` fehlen. */
 export function missingIds(requested: number[], found: number[]): number[] {
   const have = new Set(found);
