@@ -8,6 +8,7 @@ import {
 } from "@/lib/device-open";
 import { loadEmployeeByMobileToken } from "@/lib/employee-access";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
+import { MOBILE_ACTION_DENIED_MESSAGE, mobileActionNeedsGrant } from "@/lib/link-rules";
 
 /**
  * Mitarbeiter-PWA: Schaltbefehl an ein Geraet aus der eigenen Whitelist.
@@ -23,6 +24,8 @@ import { publicLinkRateLimit } from "@/lib/rate-limit";
  *   - Jeder Aufruf wird als Scan gespeichert
  *     (`code = "mobile:<ticketId>:<action>"`, deviceId gesetzt). Damit
  *     taucht die Aktion in Scans/Live-Monitor wie ein normaler Zutritt auf.
+ *   - NOT-AUF und Sperren nur mit Freischaltung am Mitarbeiter, solange die
+ *     Regel dafuer in den Einstellungen an ist (lib/link-rules).
  *   - Anfragegrenze je Link und Anschluss: ein Handy schaltet von Hand ein
  *     paar Mal pro Minute; die Grenze laesst ein Vielfaches davon zu, auch
  *     fuer mehrere Handys hinter derselben IP.
@@ -107,6 +110,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       { error: "Aktion ist fuer dieses Geraet nicht vorgesehen" },
       { status: 400 },
     );
+  }
+  if (!profile.mayUseEmergency && mobileActionNeedsGrant(action, fullDevice)) {
+    return NextResponse.json({ error: MOBILE_ACTION_DENIED_MESSAGE }, { status: 403 });
   }
 
   const db = tenantClient(profile.accountId);

@@ -51,5 +51,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     scheduleCheck: profile.scheduleCheck,
     contractOk: profile.contractOk,
     contractReason: profile.contractReason,
+    // Nur zusaetzlich und nur, wenn NOT-AUF und Sperren fehlen (lib/link-rules);
+    // fehlt das Feld, sind sie erlaubt.
+    ...(profile.mayUseEmergency ? {} : { mayUseEmergency: false }),
   });
 }

@@ -5,18 +5,26 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import {
   PASSBACK_MAX_MINUTES,
   PASSBACK_MIN_MINUTES,
-  mergeAccessRulesPatch,
   parseAccessRuleChanges,
   parseAccessRules,
 } from "@/lib/access-rules";
 import { clearAccessRulesCache } from "@/lib/access-rules-cache";
 import { countAccessRulesAffected } from "@/lib/access-rules-affected";
+import { parseLinkRuleChanges, parseLinkRules } from "@/lib/link-rules";
+import { clearLinkRulesCache } from "@/lib/link-rules-cache";
+import { countLinkRulesAffected } from "@/lib/link-rules-affected";
+import { mergeSettingsRulesPatch } from "@/lib/settings-rules-patch";
 
 /**
  * Einlass-Regeln (Einstellungen › Einlass-Regeln). Lesen und Ändern nur mit
  * Admin-Zugang. Jede Änderung eines Schalters wird mit dem Admin im
  * Änderungsverlauf (`Account.accessRules.changes`, die letzten 50) und im
  * Server-Log festgehalten.
+ *
+ * Dieselbe Karte trägt die Regeln für Links und Monitore (lib/link-rules,
+ * Verlauf unter `Account.accessRules.linkChanges`). Beide Gruppen liegen im
+ * selben JSON und werden nur hier geschrieben, über denselben Vergleich mit
+ * dem gelesenen Stand; ein Speichern behält die jeweils andere Gruppe bei.
  */
 
 /** So oft wird bei parallelem Speichern neu gelesen, dann kommt 409. */
@@ -31,6 +39,11 @@ const accessRulesPatchSchema = z
       .union([z.literal(0), z.number().int().min(PASSBACK_MIN_MINUTES).max(PASSBACK_MAX_MINUTES)])
       .optional(),
     voucherNeedsArea: z.boolean().optional(),
+    mobileEmergencyNeedsGrant: z.boolean().optional(),
+    kioskDoorsAssignedOnly: z.boolean().optional(),
+    monitorHideNames: z.boolean().optional(),
+    resumeOnlyOwnPause: z.boolean().optional(),
+    riderShortIntro: z.boolean().optional(),
   })
   .strict();
 
@@ -48,10 +61,17 @@ export async function GET() {
     select: { accessRules: true },
   });
 
+  const [affected, linkAffected] = await Promise.all([
+    countAccessRulesAffected(db, accountId),
+    countLinkRulesAffected(db, accountId),
+  ]);
   return NextResponse.json({
     rules: parseAccessRules(account?.accessRules),
     changes: parseAccessRuleChanges(account?.accessRules),
-    affected: await countAccessRulesAffected(db, accountId),
+    affected,
+    links: parseLinkRules(account?.accessRules),
+    linkChanges: parseLinkRuleChanges(account?.accessRules),
+    linkAffected,
   });
 }
 
@@ -76,38 +96,42 @@ export async function PUT(request: NextRequest) {
 
   // Lesen, zusammenführen, schreiben: geschrieben wird nur, wenn
   // `accessRules` noch genau dem gelesenen Stand entspricht (Vergleich in der
-  // Datenbank per jsonb-Gleichheit). Sonst hat ein paralleler PUT dazwischen
-  // gespeichert, und es geht mit dessen Stand von vorn los. So geht keine
-  // Änderung und kein Eintrag im Verlauf verloren, ohne Transaktion (gleich
-  // mit Neon- und pg-Adapter und durch den Mandanten-Client). Noch nie
-  // gespeichert (null) vergleicht mit `AnyNull`.
+  // Datenbank per jsonb-Gleichheit über den ganzen Wert, beide Gruppen). Sonst
+  // hat ein paralleler PUT dazwischen gespeichert, und es geht mit dessen
+  // Stand von vorn los. So geht keine Änderung und kein Eintrag im Verlauf
+  // verloren, ohne Transaktion (gleich mit Neon- und pg-Adapter und durch den
+  // Mandanten-Client). Noch nie gespeichert (null) vergleicht mit `AnyNull`.
   for (let attempt = 0; attempt < ACCESS_RULES_SAVE_ATTEMPTS; attempt++) {
     const existing = await db.account.findUnique({
       where: { id: accountId },
       select: { accessRules: true },
     });
     const raw = existing?.accessRules ?? null;
-    const { rules, changes, newChanges } = mergeAccessRulesPatch(raw, parsed.data, {
-      at: new Date().toISOString(),
-      adminId,
-      admin,
-    });
-    if (newChanges.length === 0) return NextResponse.json({ rules, changes });
+    const { rules, changes, newChanges, links, linkChanges, newLinkChanges, stored } = mergeSettingsRulesPatch(
+      raw,
+      parsed.data,
+      { at: new Date().toISOString(), adminId, admin },
+    );
+    if (stored === null) return NextResponse.json({ rules, changes, links, linkChanges });
 
     const written = await db.account.updateMany({
       where: {
         id: accountId,
         accessRules: raw === null ? { equals: Prisma.AnyNull } : { equals: raw as Prisma.InputJsonValue },
       },
-      data: { accessRules: { ...rules, changes } as unknown as Prisma.InputJsonValue },
+      data: { accessRules: stored as unknown as Prisma.InputJsonValue },
     });
     if (written.count === 0) continue;
 
     for (const c of newChanges) {
       console.info("[einlass-regeln] geändert", { accountId, adminId, key: c.key, from: c.from, to: c.to });
     }
+    for (const c of newLinkChanges) {
+      console.info("[link-regeln] geändert", { accountId, adminId, key: c.key, from: c.from, to: c.to });
+    }
     clearAccessRulesCache();
-    return NextResponse.json({ rules, changes });
+    clearLinkRulesCache();
+    return NextResponse.json({ rules, changes, links, linkChanges });
   }
 
   return NextResponse.json(

@@ -3,8 +3,8 @@
  * Ausgelagert aus src/app/checkin/[token]/page.tsx.
  */
 import { printPdfBlob, downloadBlob, type PrintResult } from "@/lib/print-tickets";
-import type { CheckinTicket, GuestInfoSummary, TicketExtra } from "./checkin-types";
-import { classifyInfoLabel, formatSetup, isYes, personName, sortSummaryValues } from "./checkin-utils";
+import type { CheckinTicket, GuestInfoSummary } from "./checkin-types";
+import { classifyInfoLabel, formatSetup, isYes, personName, printableExtraLines, sortSummaryValues } from "./checkin-utils";
 
 // Farbpalette des Kursblatts (angelehnt an den Shop-Monitor: Slate + Cyan).
 export const PDF_SLATE_900: [number, number, number] = [15, 23, 42];
@@ -380,8 +380,7 @@ export async function printTicket(ticket: CheckinTicket, accountName: string): P
       ? `${dateStr} – ${new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}`
       : dateStr
     : "";
-  const extras = ((ticket.extras ?? []) as TicketExtra[])
-    .map((ex) => (ex.quantity > 1 ? `${ex.quantity}x ${ex.name}` : ex.name));
+  const extras = printableExtraLines(ticket.extras);
 
   const pw = 72;
   const margin = 4;

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Plus, Trash2, Copy, Check, ExternalLink, Monitor,
-  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid, ScanLine, Power, Gift,
+  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid, ScanLine, Power, Gift, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DeviceCategory } from "@prisma/client";
@@ -528,6 +529,17 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
   // solange der Dialog ausblendet.
   const [toDelete, setToDelete] = useState<MonitorConfigData | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // „Link erneuern“: Rückfrage als Ebene auf der Seite; der alte Link gilt danach nicht mehr.
+  const [toRotate, setToRotate] = useState<MonitorConfigData | null>(null);
+
+  async function handleRotate(monitor: MonitorConfigData) {
+    const res = await fetch(`/api/monitors/${monitor.id}/token`, { method: "POST" });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(typeof json.error === "string" ? json.error : "Link erneuern hat nicht geklappt.");
+    }
+    router.refresh();
+  }
 
   function askDelete(monitor: MonitorConfigData) {
     setToDelete(monitor);
@@ -726,6 +738,17 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
                 <div className="flex-1 min-w-0 space-y-1">
                   <CopyUrl url={url} />
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0 text-muted-foreground hover:text-foreground max-sm:size-11"
+                  onClick={() => setToRotate(monitor)}
+                  title="Link erneuern"
+                  aria-label="Link erneuern"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
               </div>}
             </CardContent>
           </Card>
@@ -751,6 +774,17 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ConfirmDialog
+        open={toRotate != null}
+        onOpenChange={(o) => { if (!o) setToRotate(null); }}
+        title={`Link von „${toRotate?.name ?? ""}“ erneuern?`}
+        description="Der Monitor bekommt einen neuen Link. Der alte Link funktioniert ab sofort nicht mehr: Bildschirme, Tablets und Lesezeichen mit dem alten Link zeigen nichts mehr an, bis sie den neuen Link bekommen."
+        confirmLabel="Link erneuern"
+        onConfirm={async () => {
+          if (toRotate) await handleRotate(toRotate);
+        }}
+      />
 
       <QrCodeDialog url={qrDialogUrl ?? ""} open={!!qrDialogUrl} onOpenChange={(o) => !o && setQrDialogUrl(null)} />
     </div>

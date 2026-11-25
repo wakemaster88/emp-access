@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { isWithinSchedule } from "@/lib/schedule";
+import { mayUseMobileEmergency, parseLinkRules } from "@/lib/link-rules";
 
 /**
  * Loads a "mobile-ready" employee profile by mobile token. Returns the
@@ -41,6 +42,10 @@ export interface EmployeeMobileProfile {
   /// Vertragspruefung jetzt: ok wenn aktiv und im Zeitraum.
   contractOk: boolean;
   contractReason: string | null;
+  /// Darf NOT-AUF und Sperren ausloesen: immer, solange die Regel
+  /// „… nur fuer freigeschaltete Mitarbeiter“ aus ist, sonst nur mit
+  /// `Ticket.mobileEmergencyGrant` (lib/link-rules).
+  mayUseEmergency: boolean;
 }
 
 export async function loadEmployeeByMobileToken(
@@ -49,7 +54,7 @@ export async function loadEmployeeByMobileToken(
   const employee = await prisma.ticket.findFirst({
     where: { mobileToken: token, source: "EMP_CONTROL" },
     include: {
-      account: { select: { name: true } },
+      account: { select: { name: true, accessRules: true } },
       ticketAreas: { select: { accessAreaId: true } },
       ticketDevices: {
         include: {
@@ -184,6 +189,10 @@ export async function loadEmployeeByMobileToken(
     scheduleCheck: isWithinSchedule(employee.weekSchedule, now),
     contractOk,
     contractReason,
+    mayUseEmergency: mayUseMobileEmergency(
+      parseLinkRules(employee.account?.accessRules),
+      employee.mobileEmergencyGrant,
+    ),
   };
 }
 

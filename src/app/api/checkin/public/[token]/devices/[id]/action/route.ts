@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { triggerDeviceAction } from "@/lib/device-open";
+import { KIOSK_DOOR_DENIED_MESSAGE, kioskDoorAllowed } from "@/lib/link-rules";
+import { loadLinkRulesOrStrict } from "@/lib/link-rules-cache";
 
 /**
  * Quick-Open-Endpoint für den oeffentlichen Check-In Monitor. Validiert
@@ -12,6 +14,10 @@ import { triggerDeviceAction } from "@/lib/device-open";
  * ausloesen. NOT-AUF ("emergency") und Sperren ("deactivate") bleiben dem
  * angemeldeten Dashboard vorbehalten: bei NOT-AUF laesst der Pi jeden Scan
  * ohne Serverpruefung durch.
+ *
+ * Ist die Regel „Kiosk-Link oeffnet nur zugeordnete Tueren“ an
+ * (lib/link-rules), oeffnet der Kiosk nur die Geraete aus
+ * `MonitorConfig.deviceIds`.
  */
 const KIOSK_ACTIONS = ["open"] as const;
 type KioskAction = (typeof KIOSK_ACTIONS)[number];
@@ -24,7 +30,7 @@ export async function POST(
   if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({
     where: { token },
-    select: { id: true, accountId: true, isActive: true, type: true },
+    select: { id: true, accountId: true, isActive: true, type: true, deviceIds: true },
   });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
@@ -58,6 +64,10 @@ export async function POST(
   // Schalter/Beleuchtung – das passt zur UX "Reinlassen".
   if (device.category !== "TUER" && device.category !== "DREHKREUZ") {
     return NextResponse.json({ error: "Gerät nicht öffnenbar" }, { status: 400 });
+  }
+  const linkRules = await loadLinkRulesOrStrict(prisma, monitor.accountId);
+  if (!kioskDoorAllowed(linkRules, monitor.deviceIds, device.id)) {
+    return NextResponse.json({ error: KIOSK_DOOR_DENIED_MESSAGE }, { status: 403 });
   }
 
   const { task, sent } = await triggerDeviceAction(

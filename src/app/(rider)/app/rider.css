@@ -536,6 +536,15 @@
 @keyframes rd-intro-out {
   to { opacity: 0; transform: scale(1.12); visibility: hidden; }
 }
+/* Kurze Fassung (Schalter in den Einstellungen): alle Zeiten halbiert, Ende
+   nach 0,65 s statt 1,3 s. Der Timer in rider-intro.tsx (DONE_MS_SHORT) passt dazu. */
+.rd-intro.rd-intro-short { animation-duration: 0.175s; animation-delay: 0.475s; }
+.rd-intro-short .rd-intro-stripe { animation-duration: 0.35s; animation-delay: 0.025s; }
+.rd-intro-short .rd-intro-lines { animation-duration: 0.3s; animation-delay: 0.1s; }
+.rd-intro-short .rd-intro-mark { animation-duration: 0.25s; animation-delay: 0.05s; }
+.rd-intro-short .rd-intro-word { animation-duration: 0.225s; animation-delay: 0.125s; }
+.rd-intro-short .rd-intro-word-accent { animation-delay: 0.165s; }
+.rd-intro-short .rd-intro-bar { animation-duration: 0.175s; animation-delay: 0.25s; }
 html[data-rd-intro="skip"] .rd-intro { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .rd-intro { display: none; }

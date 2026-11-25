@@ -51,6 +51,11 @@ interface EmployeeDetail {
   weekSchedule: WeekSchedule;
   scheduleEnabled: boolean;
   mobileToken: string | null;
+  /// NOT-AUF und Sperren über den Handy-Link erlaubt.
+  mobileEmergencyGrant: boolean;
+  /// Regel „NOT-AUF und Sperren … nur für freigeschaltete Mitarbeiter“ an:
+  /// nur dann zeigt der Dialog den Haken und schickt ihn mit.
+  mobileEmergencyNeedsGrant: boolean;
 }
 
 function toDateInput(value: string | Date | null | undefined): string {
@@ -80,6 +85,8 @@ function emptyEmployee(): EmployeeDetail {
     weekSchedule: emptySchedule(),
     scheduleEnabled: false,
     mobileToken: null,
+    mobileEmergencyGrant: false,
+    mobileEmergencyNeedsGrant: false,
   };
 }
 
@@ -132,6 +139,8 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
           weekSchedule: parsedSchedule,
           scheduleEnabled: hasAnySchedule(parsedSchedule),
           mobileToken: typeof data.mobileToken === "string" ? data.mobileToken : null,
+          mobileEmergencyGrant: data.mobileEmergencyGrant === true,
+          mobileEmergencyNeedsGrant: data.mobileEmergencyNeedsGrant === true,
         });
       })
       .catch((err) => { if (!cancelled) setError(err.message || "Laden fehlgeschlagen"); })
@@ -221,6 +230,8 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
         areaIds: form.areaIds,
         deviceIds: form.deviceIds,
         weekSchedule: form.scheduleEnabled && hasAnySchedule(form.weekSchedule) ? form.weekSchedule : null,
+        // Nur solange die Regel an ist (sonst gibt es den Haken nicht).
+        ...(form.mobileEmergencyNeedsGrant ? { mobileEmergencyGrant: form.mobileEmergencyGrant } : {}),
       };
 
       const res = await fetch(
@@ -557,6 +568,22 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                           <p className="text-[11px] text-muted-foreground">
                             Wer den Link hat, hat Zugriff. Bei Verlust &bdquo;Neuen Link erzeugen&ldquo; klicken &mdash; alter Link wird sofort unguelig.
                           </p>
+                          {form.mobileEmergencyNeedsGrant && (
+                            // Regel in den Einstellungen (Links und Monitore); wirkt erst beim Speichern.
+                            <label className="flex items-start gap-2 text-sm text-foreground cursor-pointer max-sm:min-h-11">
+                              <Checkbox
+                                className="mt-0.5"
+                                checked={form.mobileEmergencyGrant}
+                                onCheckedChange={(v) => setForm({ ...form, mobileEmergencyGrant: v === true })}
+                              />
+                              <span>
+                                NOT-AUF und Sperren erlaubt
+                                <span className="block text-[11px] text-muted-foreground">
+                                  Ohne Haken fehlt die NOT-AUF-Taste auf dem Handy; Öffnen und Schalten gehen weiter.
+                                </span>
+                              </span>
+                            </label>
+                          )}
                         </div>
                       </div>
                     </div>
