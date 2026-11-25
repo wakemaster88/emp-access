@@ -8,11 +8,6 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-export const gateCheckSchema = z.object({
-  hardware: z.coerce.number().int(),
-  id: z.string().min(1),
-});
-
 export const scanPostSchema = z.array(
   z.object({
     sca_code: z.string(),

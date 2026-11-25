@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { sendTelegramMessage, getMe, getUpdates } from "@/lib/telegram";
 import { buildTelegramDailyReport } from "@/lib/telegram-daily-report";
 import { truncateTelegramLines } from "@/lib/telegram-text";
+import { ensureTelegramWebhook } from "@/lib/telegram-webhook";
 
 export async function GET() {
   const session = await getSessionWithDb({ requireAdmin: true });
@@ -63,7 +64,9 @@ export async function POST(request: NextRequest) {
       where: { accountId: session.accountId! },
     });
 
+    let configId: number;
     if (existing) {
+      configId = existing.id;
       await session.db.telegramConfig.update({
         where: { id: existing.id },
         data: {
@@ -75,7 +78,7 @@ export async function POST(request: NextRequest) {
         },
       });
     } else {
-      await session.db.telegramConfig.create({
+      const created = await session.db.telegramConfig.create({
         data: {
           botToken,
           chatId: String(chatId),
@@ -83,8 +86,15 @@ export async function POST(request: NextRequest) {
           dailyReportTime: dailyReportTime ?? "20:00",
           accountId: session.accountId!,
         },
+        select: { id: true },
       });
+      configId = created.id;
     }
+
+    // Alte Webhook-Registrierung (Bot-Token in der URL) nach der Antwort auf
+    // die id-Form umstellen; wirft nie (siehe ensureTelegramWebhook).
+    const token = String(botToken);
+    after(() => ensureTelegramWebhook({ id: configId, botToken: token }).catch(() => undefined));
 
     return NextResponse.json({ ok: true });
   }

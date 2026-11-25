@@ -165,6 +165,14 @@ export async function setTelegramWebhook(
   return res.json();
 }
 
+/** Aktuelle Webhook-Registrierung des Bots abfragen (leere URL = keine). */
+export async function getTelegramWebhookInfo(
+  botToken: string,
+): Promise<{ ok: boolean; description?: string; result?: { url?: string } }> {
+  const res = await fetch(`${BASE}${botToken}/getWebhookInfo`, { signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS) });
+  return res.json();
+}
+
 export async function getMe(botToken: string): Promise<{ ok: boolean; result?: { username: string } }> {
   const res = await fetch(`${BASE}${botToken}/getMe`, { signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS) });
   return res.json();
