@@ -21,7 +21,9 @@ export type ImproveKind =
   | "heartbeat"
   | "snmp"
   | "soundweb"
-  | "delivery";
+  | "delivery"
+  | "occupancy"
+  | "agent";
 
 const SECRET_KEYS = /password|token|embedding|authorization|apikey|secret|pin|bot/i;
 const MAX_JSONL_BYTES = 8 * 1024 * 1024;

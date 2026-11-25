@@ -12,6 +12,8 @@
  * wieder passieren.
  */
 import { noteModelWork } from "./ai-load.js";
+import { visionErrorText } from "./vision-rules.js";
+import { readVisionTiming, type VisionTiming } from "./vision-timing-rules.js";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import { promisify } from "node:util";
@@ -102,8 +104,13 @@ async function hasModel(model = AGENT_MODEL): Promise<boolean> {
   return (body.models ?? []).some((m) => m.name === want || m.model === want);
 }
 
-async function pullModel(model = AGENT_MODEL): Promise<void> {
-  log(`Assistent: lade Modell ${model} (einmalig, mehrere GB) …`);
+/**
+ * `quiet`: ohne die Zeile „lade Modell“. Der Wiederanlauf des Bildmodells
+ * versucht es alle 5 min; die Zeile kommt nur beim ersten Versuch seit dem
+ * letzten Erfolg, danach steht nur ein geaenderter Grund im Log.
+ */
+async function pullModel(model = AGENT_MODEL, opts: { quiet?: boolean } = {}): Promise<void> {
+  if (!opts.quiet) log(`Assistent: lade Modell ${model} (einmalig, mehrere GB) …`);
   LLM.phase = "Modell wird geladen";
   LLM.pullPct = 0;
   const res = await fetch(`${OLLAMA_URL}/api/pull`, {
@@ -259,40 +266,105 @@ export function refreshLoadedModel(): void {
 /** Bildmodell fuer Kamerabilder und Fotos (~6 GB, passt neben das Chatmodell). */
 export const VISION_MODEL = process.env.HUB_AGENT_VISION_MODEL?.trim() || "qwen3-vl:8b";
 const VISION_KEEP_ALIVE = process.env.HUB_AGENT_VISION_KEEP_ALIVE?.trim() || "10m";
+/** Kontextfenster des Bildmodells in Token (Bild, Prompt und Antwort zusammen). */
+export const VISION_NUM_CTX = 8192;
 
 export const VISION = {
+  /** Das Bildmodell ist eingeschaltet (HUB_AGENT_VISION=0 schaltet es ab). */
+  enabled: process.env.HUB_AGENT_VISION !== "0",
   ready: false,
+  /** Seit wann `ready` so steht (ms): Grundlage fuer den Befund „Bildmodell nicht bereit“. */
+  since: Date.now(),
   installing: false,
+  /** Woran das Bereitstellen zuletzt gescheitert ist. */
   error: null as string | null,
   model: VISION_MODEL,
   lastMs: null as number | null,
+  /** Gescheiterte Aufrufe in Folge (askVision); der erste gelungene setzt auf 0. */
+  failStreak: 0,
+  /** Fehlertext des letzten gescheiterten Aufrufs. */
+  lastError: null as string | null,
 };
 
+function setVisionReady(ready: boolean): void {
+  if (VISION.ready === ready) return;
+  VISION.ready = ready;
+  VISION.since = Date.now();
+  // Neu bereitgestellt: Die Fehler davor zaehlen nicht mehr.
+  if (ready) {
+    VISION.failStreak = 0;
+    VISION.lastError = null;
+  }
+}
+
+/** Die Zeile „lade Modell“ fuer das Bildmodell steht seit dem letzten Erfolg schon im Log. */
+let visionPullAnnounced = false;
+
+/**
+ * Bildmodell bereitstellen: Ollama muss antworten, das Modell wird geladen,
+ * wenn es fehlt. Laeuft schon ein Versuch, kommt sofort false zurueck (nie
+ * zwei Downloads zugleich). Woran es scheitert, steht in VISION.error und im
+ * Log, dort nur, wenn sich der Grund aendert.
+ */
 export async function ensureVisionModel(): Promise<boolean> {
   if (VISION.ready) return true;
-  if (VISION.installing || process.env.HUB_AGENT_VISION === "0" || !(await serverUp())) return false;
+  if (VISION.installing || !VISION.enabled) return false;
   VISION.installing = true;
   try {
-    if (!(await hasModel(VISION_MODEL))) await pullModel(VISION_MODEL);
-    VISION.ready = true;
+    if (!(await serverUp())) throw new Error(`Ollama antwortet nicht unter ${OLLAMA_URL}`);
+    if (!(await hasModel(VISION_MODEL))) {
+      const quiet = visionPullAnnounced;
+      visionPullAnnounced = true;
+      await pullModel(VISION_MODEL, { quiet });
+    }
+    setVisionReady(true);
     VISION.error = null;
+    visionPullAnnounced = false;
     recordHubEvent({ kind: "system", severity: "info", where: "Assistent", title: `Bildmodell bereit (${VISION_MODEL})` });
     return true;
   } catch (e) {
-    VISION.error = e instanceof Error ? e.message.split("\n")[0] : String(e);
-    log(`Assistent: Bildmodell: ${VISION.error}`);
+    const error = e instanceof Error ? e.message.split("\n")[0] : String(e);
+    if (error !== VISION.error) log(`Assistent: Bildmodell: ${error}`);
+    VISION.error = error;
     return false;
   } finally {
     VISION.installing = false;
   }
 }
 
+/** Antwort des Bildmodells mit den Zeitangaben von Ollama (vision-timing-rules.ts). */
+export interface VisionAnswer {
+  text: string;
+  timing: VisionTiming;
+}
+
 /**
  * Ein Bild (JPEG) mit einer Frage an das Bildmodell. `json` = Antwort als
- * JSON-Objekt erzwingen (fuer die Ereignis-Bewertung).
+ * JSON-Objekt erzwingen (fuer die Ereignis-Bewertung). Jeder gescheiterte
+ * Aufruf des bereiten Modells zaehlt in VISION.failStreak, der erste
+ * gelungene setzt den Zaehler zurueck (Befund „Bildmodell antwortet nicht“,
+ * vision-rules.ts).
  */
 export async function askVision(jpeg: Buffer, prompt: string, json = false): Promise<string> {
+  return (await askVisionTimed(jpeg, prompt, json)).text;
+}
+
+/** Wie askVision, dazu die Zeitangaben der Antwort: Der Waechter schreibt sie je Bewertung ins Log. */
+export async function askVisionTimed(jpeg: Buffer, prompt: string, json = false): Promise<VisionAnswer> {
   if (!(await ensureVisionModel())) throw new Error(VISION.error ?? "Bildmodell wird noch eingerichtet");
+  try {
+    const answer = await callVision(jpeg, prompt, json);
+    VISION.failStreak = 0;
+    VISION.lastError = null;
+    return answer;
+  } catch (e) {
+    VISION.failStreak++;
+    VISION.lastError = visionErrorText(e);
+    throw e;
+  }
+}
+
+async function callVision(jpeg: Buffer, prompt: string, json: boolean): Promise<VisionAnswer> {
   const started = Date.now();
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: "POST",
@@ -303,16 +375,17 @@ export async function askVision(jpeg: Buffer, prompt: string, json = false): Pro
       think: false,
       format: json ? "json" : undefined,
       keep_alive: VISION_KEEP_ALIVE,
-      options: { temperature: 0.1, num_ctx: 8192 },
+      options: { temperature: 0.1, num_ctx: VISION_NUM_CTX },
     }),
     signal: AbortSignal.timeout(120_000),
   });
   const body = (await res.json().catch(() => ({}))) as { message?: { content?: string }; error?: string };
   if (!res.ok || !body.message) {
-    if (res.status === 404) VISION.ready = false;
+    // Modell weg (z. B. geloescht): Der Takt des Waechters stellt es neu bereit (sentinel.ts).
+    if (res.status === 404) setVisionReady(false);
     throw new Error(body.error ?? `Ollama HTTP ${res.status}`);
   }
   VISION.lastMs = Date.now() - started;
   noteModelWork(started, Date.now());
-  return (body.message.content ?? "").trim();
+  return { text: (body.message.content ?? "").trim(), timing: readVisionTiming(body, VISION.lastMs) };
 }
