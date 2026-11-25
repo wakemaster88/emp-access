@@ -8,6 +8,8 @@ import {
 import { sendPushToAccount } from "@/lib/web-push";
 import { storeSightingSnapshot } from "@/lib/blob-store";
 import { recordDeviceAction } from "@/lib/device-action-log";
+import { NO_FACE_QUALITY, type SightingFaceQuality } from "@/lib/face-quality";
+import { MANUAL_SAMPLE_LOG_TAG, pickManualSamples, sampleRank, type SampleRank } from "@/lib/face-clusters";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 export const PERSON_LIST_TYPES = ["WHITELIST", "BLACKLIST"] as const;
@@ -179,8 +181,14 @@ export async function processCameraPersonEvent(opts: {
    * schweigen; fehlt er (auch bei einem aelteren Hub), meldet sie selbst.
    */
   sentinelVouched?: boolean;
+  /**
+   * Guete des Gesichts laut Hub (face-quality.ts), wird an der Sichtung
+   * gespeichert. Fehlt sie (aelterer Hub), bleiben die Spalten null.
+   */
+  faceQuality?: SightingFaceQuality | null;
 }): Promise<{ sightings: number; triggered: number }> {
   const seenAt = opts.seenAt ?? new Date();
+  const faceQuality = opts.faceQuality ?? NO_FACE_QUALITY;
   const snapshot =
     opts.snapshot?.length ? new Uint8Array(opts.snapshot) : null;
   // Bild in den Blob-Speicher; die Bytes bleiben nur fuer Telegram/Push im Speicher.
@@ -239,6 +247,7 @@ export async function processCameraPersonEvent(opts: {
           shellyOk,
           seenAt,
           faceEmbedding: opts.faceEmbedding ?? null,
+          ...faceQuality,
           ...storedSnapshot,
         },
         // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
@@ -246,7 +255,8 @@ export async function processCameraPersonEvent(opts: {
       });
       sightings++;
 
-      // Sicherer Treffer aus neuem Blickwinkel: Profil lernt mit (best effort).
+      // Klarer Treffer aus neuem Blickwinkel: Profil lernt mit (best effort,
+      // nicht bei gesperrten Personen, face-clusters.ts autoLearnDecision).
       // Abgewartet statt im Hintergrund: serverlos endet die Funktion mit der Antwort.
       if (opts.matchMethod !== "MANUAL" && opts.faceEmbedding?.length) {
         try {
@@ -254,9 +264,12 @@ export async function processCameraPersonEvent(opts: {
           await maybeAutoLearn({
             accountId: opts.accountId,
             listedPersonId: person.id,
+            listType: person.listType,
+            cameraId: opts.cameraId,
             sightingId: created.id,
             embedding: opts.faceEmbedding,
             matchScore: opts.matchScore,
+            quality: faceQuality,
           });
         } catch (err) {
           console.error("[persons] auto-learn failed:", err);
@@ -303,6 +316,7 @@ export async function processCameraPersonEvent(opts: {
       matchMethod: null,
       seenAt,
       faceEmbedding: opts.faceEmbedding ?? null,
+      ...faceQuality,
       ...storedSnapshot,
     },
     // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
@@ -393,7 +407,7 @@ export async function assignPersonToSighting(opts: {
 }> {
   const sighting = await prisma.personSighting.findFirst({
     where: { id: opts.sightingId, accountId: opts.accountId },
-    select: { id: true, snapshotBlob: true, faceEmbedding: true },
+    select: { id: true, snapshotBlob: true, faceEmbedding: true, faceSize: true, faceUpscaled: true },
   });
   if (!sighting) throw new Error("Sichtung nicht gefunden");
   const hasSnapshot =
@@ -430,12 +444,22 @@ export async function assignPersonToSighting(opts: {
     : null;
   if (stored && stored.length >= 64) {
     // Embedding liegt schon vor: direkt als Sample speichern, kein Hub-Umweg.
-    await storePersonFaceEmbedding({
-      accountId: opts.accountId,
-      listedPersonId: person.id,
-      embedding: stored,
-      sourceSightingId: sighting.id,
-    });
+    // Ein hochgerechnetes Gesicht nur, wenn das Profil nichts Besseres hat
+    // (face-clusters.ts pickManualSamples); die Sichtung ist so oder so zugeordnet.
+    const rank = sampleRank(sighting);
+    const profile = rank === 2 ? await profileSampleRanks(opts.accountId, person.id) : [];
+    if (pickManualSamples([{ id: sighting.id, embedding: stored, rank }], 1, profile).length > 0) {
+      await storePersonFaceEmbedding({
+        accountId: opts.accountId,
+        listedPersonId: person.id,
+        embedding: stored,
+        sourceSightingId: sighting.id,
+      });
+    } else {
+      console.log(
+        `${MANUAL_SAMPLE_LOG_TAG} account=${opts.accountId} Sichtung ${sighting.id}: hochgerechnetes Gesicht nicht als Sample übernommen, Profil hat bessere`
+      );
+    }
   } else if (hasSnapshot) {
     const task = await prisma.hubTask.create({
       data: {
@@ -458,6 +482,27 @@ export async function assignPersonToSighting(opts: {
     matched: updated.matched,
     enrollTaskId,
   };
+}
+
+/**
+ * Rang der vorhandenen Samples einer Person (face-clusters.ts sampleRank),
+ * ueber die Sichtung, aus der ein Sample stammt. Ohne Quelle oder ohne
+ * Guete-Angaben an der Sichtung: Rang 1 (unbekannt).
+ */
+export async function profileSampleRanks(accountId: number, listedPersonId: number): Promise<SampleRank[]> {
+  const samples = await prisma.personFaceEmbedding.findMany({
+    where: { accountId, listedPersonId },
+    select: { sourceSightingId: true },
+  });
+  const ids = [...new Set(samples.map((s) => s.sourceSightingId).filter((id): id is number => id != null))];
+  const rows = ids.length
+    ? await prisma.personSighting.findMany({
+        where: { accountId, id: { in: ids } },
+        select: { id: true, faceSize: true, faceUpscaled: true },
+      })
+    : [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return samples.map((s) => sampleRank(s.sourceSightingId != null ? byId.get(s.sourceSightingId) : null));
 }
 
 export async function storePersonFaceEmbedding(opts: {

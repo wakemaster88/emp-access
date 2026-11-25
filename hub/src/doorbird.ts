@@ -13,7 +13,8 @@ import { onCameraEvent } from "./rules.js";
 import { kickIfRulesTriggered } from "./task-kick.js";
 import { api, log } from "./config.js";
 import { recordHubEvent } from "./state.js";
-import { embedJpeg, embeddingHeader, scoreGallery, refreshGallery } from "./face.js";
+import { embedJpeg, embeddingHeader, noteOtherWay, scoreGallery, refreshGallery } from "./face.js";
+import { faceLabel, galleryMargin, sightingQualityNote, sightingQualityParams } from "./face-rules.js";
 import { jpegContainsVehicle } from "./vision.js";
 import type { CameraConfig, LastPerson } from "./cameras.js";
 import { updateLocalStreams } from "./streams.js";
@@ -550,7 +551,11 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
   }
 
   await refreshGallery();
-  const scored = scoreGallery(face.embedding, { upscaled: face.upscaled });
+  // Wie bei den Kameras: in Stufe on bleibt ein Sperrlisten-Treffer, den nur
+  // das bisherige Merkmal liefert (noteOtherWay); dann geht dessen Merkmal hoch.
+  const applied = noteOtherWay(`DoorBird ${c.name}`, face, scoreGallery(face.embedding, { upscaled: face.upscaled }));
+  const scored = applied.scored;
+  if (applied.embedding !== face.embedding) face = { ...face, embedding: applied.embedding };
   const match = scored.match;
   const qs = new URLSearchParams({ cameraId: String(c.id) });
   if (match) {
@@ -561,7 +566,7 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
   } else {
     const near = scored.nearest;
     log(
-      `DoorBird ${c.name}: klares Gesicht (det=${face.detScore.toFixed(2)}), kein Gallery-Match` +
+      `DoorBird ${c.name}: ${faceLabel(face)}, kein Gallery-Match` +
         (near
           ? ` (best ${near.score.toFixed(3)} „${near.name}“, n=${scored.gallery}, ≥${scored.threshold.toFixed(2)})`
           : ` (Gallery leer)`)
@@ -594,6 +599,10 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
     score: match?.score ?? scored.nearest?.score,
   });
 
+  // Guete des Gesichts wie bei den Kameras (face-rules.ts sightingQualityParams):
+  // Die Cloud lernt nur aus klaren, nicht hochgerechneten Treffern dazu.
+  const quality = sightingQualityParams(face, galleryMargin(scored));
+  for (const [k, v] of Object.entries(quality)) qs.set(k, v);
   try {
     const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT.maxPx, PERSON_SNAPSHOT.quality);
     const upload = await api(`/api/hub/person-sightings?${qs}`, {
@@ -603,7 +612,11 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
       signal: AbortSignal.timeout(60_000),
     });
     if (!upload.ok) throw new Error(`HTTP ${upload.status}`);
-    log(`DoorBird ${c.name}: Personen-Sichtung hochgeladen (${buf.length} bytes)`);
+    log(
+      `DoorBird ${c.name}: Personen-Sichtung hochgeladen (${uploadBuf.length} bytes` +
+        (uploadBuf.length !== buf.length ? `, Original ${buf.length}` : "") +
+        `, Gesicht ${sightingQualityNote(quality)})`
+    );
   } catch (e) {
     log(`DoorBird ${c.name}: Sichtungs-Upload fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
   }

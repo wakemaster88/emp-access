@@ -6,8 +6,20 @@ import { prisma } from "@/lib/prisma";
 import {
   embeddingBytesToFloats,
   floatsToEmbeddingBytes,
+  profileSampleRanks,
 } from "@/lib/persons";
-import { chooseProfile, cosine, shouldAutoLearn, type FaceItem } from "@/lib/face-clusters";
+import {
+  autoLearnDecision,
+  autoLearnLine,
+  autoLearnPrecheck,
+  chooseProfile,
+  cosine,
+  MANUAL_SAMPLE_LOG_TAG,
+  pickDiverseSamples,
+  sampleRank,
+  type AutoLearnQuality,
+  type FaceItem,
+} from "@/lib/face-clusters";
 
 /** Ab hier werden Unbekannte als moegliche Treffer gezeigt. */
 const SEARCH_MIN = 0.3;
@@ -90,6 +102,10 @@ export async function findSimilarUnknown(
 /**
  * Profil aus bisherigen Samples + allen zugeordneten Sichtungen neu waehlen:
  * Fehlgriffe (passen nicht zum Rest) raus, bis zu 12 verschiedene behalten.
+ * Wie bei der Zuordnung von Hand kommen hochgerechnete Gesichter nur dazu,
+ * wenn weder das Profil noch die uebrigen Sichtungen etwas Besseres haben
+ * (sampleRank, profileSampleRanks). Fehlgriffe werden mit allen Sichtungen
+ * bestimmt; die Auswahl beschraenkt nur, was neu dazukommt.
  */
 export async function optimizePersonProfile(
   accountId: number,
@@ -107,24 +123,38 @@ export async function optimizePersonProfile(
   });
   const sightings = await prisma.personSighting.findMany({
     where: { accountId, listedPersonId, faceEmbedding: { not: null } },
-    select: { id: true, faceEmbedding: true },
+    select: { id: true, faceEmbedding: true, faceSize: true, faceUpscaled: true },
     orderBy: { seenAt: "desc" },
     take: 500,
   });
 
   // Samples mit negativer ID, Sichtungen positiv – so bleiben beide unterscheidbar.
   const sampleSources = new Set(existing.map((e) => e.sourceSightingId).filter(Boolean));
+  const fresh = sightings.filter((s) => s.faceEmbedding && s.faceEmbedding.length >= 256 && !sampleSources.has(s.id));
+  const profileBetter = existing.length > 0 && (await profileSampleRanks(accountId, listedPersonId)).some((r) => r < 2);
+  const better = profileBetter || fresh.some((s) => sampleRank(s) < 2);
+  const allowed = new Set((better ? fresh.filter((s) => sampleRank(s) < 2) : fresh).map((s) => s.id));
+  if (allowed.size < fresh.length) {
+    console.log(
+      `${MANUAL_SAMPLE_LOG_TAG} account=${accountId}: Profil optimieren ohne ${fresh.length - allowed.size} hochgerechnete Gesichter, ` +
+        (allowed.size > 0 ? "bessere vorhanden" : "Profil hat bessere")
+    );
+  }
   const items: FaceItem[] = [
     ...existing.map((e) => ({ id: -e.id, embedding: embeddingBytesToFloats(e.embedding) })),
-    ...sightings
-      .filter((s) => s.faceEmbedding && s.faceEmbedding.length >= 256 && !sampleSources.has(s.id))
-      .map((s) => ({ id: s.id, embedding: embeddingBytesToFloats(s.faceEmbedding!) })),
+    ...fresh.map((s) => ({ id: s.id, embedding: embeddingBytesToFloats(s.faceEmbedding!) })),
   ];
   if (items.length === 0) {
     return { before: 0, after: 0, removed: 0, added: 0, candidates: 0 };
   }
 
-  const { keep } = chooseProfile(items, PROFILE_MAX);
+  // Fehlgriffe mit allen Sichtungen bestimmen, auswaehlen nur aus Samples und erlaubten Sichtungen.
+  const { outliers } = chooseProfile(items, PROFILE_MAX);
+  const outlierSet = new Set(outliers);
+  const keep = pickDiverseSamples(
+    items.filter((i) => !outlierSet.has(i.id) && (i.id < 0 || allowed.has(i.id))),
+    PROFILE_MAX
+  );
   const keepSet = new Set(keep);
   const drop = existing.filter((e) => !keepSet.has(-e.id)).map((e) => e.id);
   const add = items.filter((i) => i.id > 0 && keepSet.has(i.id));
@@ -153,22 +183,40 @@ export async function optimizePersonProfile(
   };
 }
 
-/** Nach sicherem Auto-Match ggf. ein neues Sample lernen (best effort). */
+/**
+ * Nach einem Treffer des Hubs ggf. ein neues Sample lernen (best effort):
+ * nur aus einem klaren Treffer und nie bei gesperrten Personen
+ * (face-clusters.ts autoLearnDecision). Jede Gelegenheit steht mit Grund im
+ * Log (AUTO_LEARN_LOG_TAG), ohne Namen.
+ */
 export async function maybeAutoLearn(opts: {
   accountId: number;
   listedPersonId: number;
+  /** Liste der Person (WHITELIST | BLACKLIST). */
+  listType: string | null;
+  cameraId: number | null;
   sightingId: number;
   embedding: Uint8Array | null | undefined;
   matchScore: number | null | undefined;
+  /** Guete des Gesichts an der Sichtung; null = ohne Angaben (aelterer Hub). */
+  quality: AutoLearnQuality | null | undefined;
 }): Promise<boolean> {
-  if (!opts.embedding || opts.embedding.length < 256 || opts.matchScore == null) return false;
-  const e = embeddingBytesToFloats(opts.embedding);
-  const rows = await prisma.personFaceEmbedding.findMany({
-    where: { accountId: opts.accountId, listedPersonId: opts.listedPersonId },
-    select: { embedding: true },
-  });
-  const samples = rows.map((r) => embeddingBytesToFloats(r.embedding));
-  if (!shouldAutoLearn({ embedding: e, samples, matchScore: opts.matchScore })) return false;
+  const e = opts.embedding && opts.embedding.length >= 256 ? embeddingBytesToFloats(opts.embedding) : [];
+  const input = { embedding: e, matchScore: opts.matchScore, listType: opts.listType, quality: opts.quality };
+  const ctx = { accountId: opts.accountId, cameraId: opts.cameraId, sightingId: opts.sightingId };
+  // Erst ohne Datenbank pruefen: Die meisten Treffer scheiden hier aus.
+  let decision = autoLearnPrecheck(input);
+  if (!decision.skip) {
+    const rows = await prisma.personFaceEmbedding.findMany({
+      where: { accountId: opts.accountId, listedPersonId: opts.listedPersonId },
+      select: { embedding: true },
+    });
+    decision = autoLearnDecision({ ...input, samples: rows.map((r) => embeddingBytesToFloats(r.embedding)) });
+  }
+  if (decision.skip || !opts.embedding) {
+    console.log(autoLearnLine(ctx, decision));
+    return false;
+  }
   await prisma.personFaceEmbedding.create({
     data: {
       accountId: opts.accountId,
@@ -179,5 +227,6 @@ export async function maybeAutoLearn(opts: {
     },
     select: { id: true },
   });
+  console.log(autoLearnLine(ctx, decision));
   return true;
 }

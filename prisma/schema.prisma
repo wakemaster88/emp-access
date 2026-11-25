@@ -2258,6 +2258,17 @@ model PersonSighting {
   /// Leere Bytes = analysiert, aber kein Gesicht gefunden. Basis fuer das
   /// Gruppieren unbekannter Personen und fuer Ein-Klick-Zuordnung.
   faceEmbedding   Bytes?
+  /// Guete des Gesichts laut Hub (lib/face-quality.ts), null ohne Angabe
+  /// (aelterer Hub, Sichtung von Hand, Merkmal nachgetragen):
+  /// Kantenlaenge in dem Bild, aus dem das Merkmal stammt (direkt
+  /// gefundene Gesichter: Suchbild bis 1920 px; hochgerechnete: Kamerabild).
+  faceSize        Float?
+  /// Fuer die Erkennung hochgerechnet (Mini-Gesicht, Kopf-Ausschnitt).
+  faceUpscaled    Boolean?
+  /// Sicherheit des Gesichts-Detektors 0..1.
+  faceDetScore    Float?
+  /// Abstand des besten Galerie-Werts zur zweitbesten Person (Kosinus).
+  faceMargin      Float?
   seenAt          DateTime      @default(now())
   createdAt       DateTime      @default(now())
 

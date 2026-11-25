@@ -8,7 +8,19 @@ import { existsSync } from "node:fs";
 import { CONFIG, api, log } from "./config.js";
 import { improve, improveCount } from "./improve-log.js";
 import { STATE } from "./state.js";
-import { healthFresh, isTimeout, rankGallery, sidecarLogLines } from "./face-rules.js";
+import {
+  compareWays,
+  faceLabel,
+  healthFresh,
+  isTimeout,
+  oneWayFaceCounter,
+  otherOnlyVerdict,
+  rankGallery,
+  sidecarLogLines,
+  type OtherFace,
+  type OtherWay,
+  type SeriesQuality,
+} from "./face-rules.js";
 import { ChangeLog } from "./change-log.js";
 
 const FACE_URL = process.env.FACE_URL || "http://127.0.0.1:8790";
@@ -31,13 +43,50 @@ export interface FaceEmbedResult {
   bbox: number[];
   model: string;
   upscaled: boolean;
-  /** Kantenlaenge in Originalpixeln, Frontal-/Schaerfewert 0..1 (neuer Face-Dienst). */
+  /**
+   * Kantenlaenge in Pixeln des eingebetteten Bildes vor dem Verkleinern im
+   * Dienst (jede Sorte), Frontal-/Schaerfewert 0..1 (neuer Face-Dienst).
+   */
   size?: number;
+  /** Groesse im verkleinerten Suchbild (bis 1920 px), dort entsteht das Merkmal eines direkt gefundenen Gesichts. */
+  sizeScaled?: number;
   frontal?: number;
   sharp?: number;
+  /** Sorte laut Dienst: full … right (direkt), rescue_zoom, small_keep, zoom_upper, zoom_center. */
+  region?: string;
+  /** Aus einem vergroesserten Kopf-Ausschnitt (person-crop.ts): `size` zaehlt in dessen Pixeln. */
+  headCrop?: boolean;
+  /**
+   * Zweites Merkmal desselben Gesichts vom anderen Rechenweg (FACE_NATIVE
+   * shadow oder on). Verwendet wird immer `embedding`; das zweite dient nur
+   * dem Mitmessen (noteOtherWay). Fehlt bei direkt gefundenen Gesichtern.
+   */
+  other?: OtherFace;
+  /**
+   * Gemittelte Serie (pickBestFace): das schwaechste Bild, das ins Merkmal
+   * einging; fuer die Guete-Angaben der Sichtung (sightingQualityParams).
+   * Schwelle und Log richten sich weiter nach dem besten Bild.
+   */
+  series?: SeriesQuality;
   /** Groesse des eingebetteten Bildes (Bezug fuer `bbox`). */
   imageW?: number;
   imageH?: number;
+}
+
+/** Ein Gesicht in der Antwort des Dienstes. */
+interface SidecarFace {
+  embedding: number[];
+  det_score: number;
+  bbox: number[];
+  size?: number;
+  /** Groesse im verkleinerten Suchbild. */
+  size_scaled?: number;
+  frontal?: number;
+  sharp?: number;
+  /** compared "native": Merkmal aus dem Originalbild neben dem bisherigen. */
+  embedding_native?: number[];
+  /** compared "scaled": bisheriges Merkmal neben dem aus dem Originalbild. */
+  embedding_scaled?: number[];
 }
 
 interface GalleryEntry {
@@ -190,20 +239,38 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
     const data = (await res.json()) as {
       ok?: boolean;
       model?: string;
-      faces?: { embedding: number[]; det_score: number; bbox: number[]; size?: number; frontal?: number; sharp?: number }[];
-      rejected?: { det_score: number; size: number; need: number }[];
+      faces?: SidecarFace[];
+      /** `size` im Originalbild, `size_scaled` und `need` im verkleinerten Suchbild (aelterer Dienst: nur `size`, dort verkleinert). */
+      rejected?: { det_score: number; size: number; size_scaled?: number; need: number }[];
       image?: { w?: number; h?: number; min_side?: number };
       upscaled?: boolean;
       region?: string;
+      /** Der Dienst hat fuer dieses Bild beide Rechenwege gerechnet; Wert = der zweite Weg. */
+      compared?: string;
+      /** Sorte, die der zweite Weg fand (null = dort kein Gesicht). */
+      other_region?: string | null;
+      /** Gesichter, die nur der zweite Weg fand (dann ist `faces` leer). */
+      faces_native?: SidecarFace[];
+      faces_scaled?: SidecarFace[];
+      /** Der Weg ueber das Originalbild ist gescheitert: Es gilt der bisherige, ohne Vergleich. */
+      native_error?: boolean;
     };
+    // Je Bild; die Ursache steht in der Zeile „[face] Weg über das Originalbild fehlgeschlagen: …“.
+    if (data.native_error === true) improveCount("face", "native_error");
+    const otherWay: OtherWay | undefined =
+      data.compared === "native" || data.compared === "scaled" ? data.compared : undefined;
     const best = data.faces?.[0];
     if (!best?.embedding?.length) {
+      if (otherWay) {
+        noteOtherOnlyFace(otherWay, (otherWay === "native" ? data.faces_native : data.faces_scaled)?.[0], data.other_region);
+      }
       const r = data.rejected?.[0];
       if (r) {
         log(
-          `Face verworfen: det=${r.det_score.toFixed(2)} size=${r.size}px (min ${r.need}px)`
+          `Face verworfen: det=${r.det_score.toFixed(2)} size=${r.size}px` +
+            (r.size_scaled != null ? ` (verkleinert ${r.size_scaled}px, min ${r.need}px)` : ` (min ${r.need}px)`)
         );
-        improve("face", "rejected", { det: r.det_score, size: r.size, need: r.need });
+        improve("face", "rejected", { det: r.det_score, size: r.size, scaled: r.size_scaled, need: r.need });
       } else {
         const img = data.image;
         const nRej = data.rejected?.length ?? 0;
@@ -229,6 +296,13 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
     } else {
       improve("face", "ok", { det: best.det_score, size: best.size, region: data.region });
     }
+    let other: OtherFace | undefined;
+    if (otherWay) {
+      const second = otherWay === "native" ? best.embedding_native : best.embedding_scaled;
+      other = { way: otherWay, embedding: second?.length ? second : null };
+      // Dieses Gesicht fand nur der verwendete Weg.
+      if (!other.embedding) improveCount("face", oneWayFaceCounter(otherWay, "used"));
+    }
     return {
       embedding: best.embedding,
       detScore: best.det_score,
@@ -236,8 +310,11 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
       model: data.model ?? "buffalo_l",
       upscaled: Boolean(data.upscaled),
       size: typeof best.size === "number" ? best.size : undefined,
+      sizeScaled: typeof best.size_scaled === "number" ? best.size_scaled : undefined,
       frontal: typeof best.frontal === "number" ? best.frontal : undefined,
       sharp: typeof best.sharp === "number" ? best.sharp : undefined,
+      region: typeof data.region === "string" ? data.region : undefined,
+      other,
       imageW: typeof data.image?.w === "number" ? data.image.w : undefined,
       imageH: typeof data.image?.h === "number" ? data.image.h : undefined,
     };
@@ -304,6 +381,69 @@ export function matchEmbedding(
   opts?: { upscaled?: boolean }
 ): { listedPersonId: number; name: string; score: number } | null {
   return scoreGallery(embedding, opts).match;
+}
+
+/**
+ * Mitmessen des zweiten Rechenwegs (FACE_NATIVE shadow oder on): Das zweite
+ * Merkmal des Gesichts mit derselben Schwelle gegen die Gallery werten und
+ * neben das Ergebnis halten, das fuer die Sichtung gilt (`used`, aus
+ * `face.embedding`). Gezaehlt wird jede Sichtung (`face.native_*`), ins Log
+ * kommt nur eine Abweichung. Zurueck kommt, was fuer die Sichtung gilt:
+ * Ergebnis und Merkmal des verwendeten Wegs, ausser in Stufe on trifft nur
+ * das bisherige Merkmal eine Person der Sperrliste (compareWays
+ * `applyOther`, Zaehler `face.native_blacklist_kept`); dann Ergebnis und
+ * Merkmal des bisherigen Wegs, damit Person, Score und hochgeladenes
+ * Merkmal zusammenpassen.
+ */
+export function noteOtherWay(
+  where: string,
+  face: FaceEmbedResult,
+  used: ReturnType<typeof scoreGallery>
+): AppliedScore {
+  if (!face.other) return { scored: used, embedding: face.embedding };
+  const other = face.other.embedding ? scoreGallery(face.other.embedding, { upscaled: face.upscaled }) : null;
+  const verdict = compareWays(face.other.way, used, other, used.threshold, faceLabel(face));
+  improveCount("face", verdict.counter);
+  if (verdict.line) log(`${where}: ${verdict.line}`);
+  if (verdict.applyOther && other && face.other.embedding) {
+    improveCount("face", "native_blacklist_kept");
+    return { scored: other, embedding: face.other.embedding };
+  }
+  return { scored: used, embedding: face.embedding };
+}
+
+/** Was fuer ein Gesicht gilt: Ergebnis des Abgleichs und das Merkmal dazu. */
+export interface AppliedScore {
+  scored: ReturnType<typeof scoreGallery>;
+  embedding: number[];
+}
+
+/**
+ * Dieselbe Regel wie noteOtherWay, ohne Zaehler und Log: fuer Pruefungen vor
+ * der eigentlichen Sichtung (Treffer vor dem Zoom, Nahaufnahme). So zaehlt
+ * auch dort ein Sperrlisten-Treffer, den in Stufe on nur das bisherige
+ * Merkmal liefert.
+ */
+export function appliedScore(face: FaceEmbedResult): AppliedScore {
+  const used = scoreGallery(face.embedding, { upscaled: face.upscaled });
+  if (!face.other?.embedding) return { scored: used, embedding: face.embedding };
+  const other = scoreGallery(face.other.embedding, { upscaled: face.upscaled });
+  return compareWays(face.other.way, used, other, used.threshold).applyOther
+    ? { scored: other, embedding: face.other.embedding }
+    : { scored: used, embedding: face.embedding };
+}
+
+/**
+ * Ein Bild, in dem nur der zweite Rechenweg ein Gesicht fand. Der Hub
+ * verwendet es nicht: Fuer die Pipeline bleibt das Bild ohne Gesicht.
+ */
+function noteOtherOnlyFace(way: OtherWay, f: SidecarFace | undefined, region?: string | null): void {
+  if (!f?.embedding?.length) return;
+  const scored = scoreGallery(f.embedding, { upscaled: true });
+  const label = faceLabel({ detScore: f.det_score, size: f.size, upscaled: true, region: region ?? undefined });
+  const verdict = otherOnlyVerdict(way, scored, scored.threshold, label);
+  for (const c of verdict.counters) improveCount("face", c);
+  if (verdict.line) log(verdict.line);
 }
 
 /** Sighting-JPEG vom Cloud laden, embedden, Embedding speichern. */

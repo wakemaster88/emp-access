@@ -13,13 +13,18 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { STATE, recordHubEvent } from "./state.js";
-import { embedJpeg, embeddingHeader, scoreGallery, refreshGallery, type FaceEmbedResult } from "./face.js";
+import { appliedScore, embedJpeg, embeddingHeader, noteOtherWay, scoreGallery, refreshGallery, type FaceEmbedResult } from "./face.js";
 import {
   bestShot,
+  faceLabel,
   faceQuality,
   fuseEmbeddings,
+  fuseOther,
+  galleryMargin,
   rememberSighting,
   shouldStoreSighting,
+  sightingQualityNote,
+  sightingQualityParams,
   type FaceShot,
   type SightingCandidate,
   type SightingUpload,
@@ -738,9 +743,12 @@ const asShot = (f: FaceEmbedResult): FaceShot => ({
   embedding: f.embedding,
   detScore: f.detScore,
   size: f.size,
+  sizeScaled: f.sizeScaled,
   frontal: f.frontal,
   sharp: f.sharp,
   upscaled: f.upscaled,
+  region: f.region,
+  other: f.other,
 });
 
 /**
@@ -770,10 +778,23 @@ async function pickBestFace(
   const best = shots[i];
   log(
     `Personen-Snapshot ${cam.config.name}: bestes von ${shots.length} Gesichtern ist Bild ${i + 1}` +
+      (best.face.region ? ` (${best.face.region})` : "") +
       (fused ? `, Merkmale aus ${fused.used} gemittelt` : "")
   );
-  improve("face", "bestshot", { cam: cam.config.name, shots: shots.length, pick: i + 1, fused: fused?.used ?? 1 });
-  return { buf: best.buf, face: fused ? { ...best.face, embedding: fused.embedding } : best.face };
+  improve("face", "bestshot", {
+    cam: cam.config.name,
+    shots: shots.length,
+    pick: i + 1,
+    fused: fused?.used ?? 1,
+    region: best.face.region,
+  });
+  // Das zweite Merkmal (FACE_NATIVE) wird ueber dieselbe Serie gemittelt, damit
+  // der Vergleich am Ende dieselbe Grundlage hat wie die Sichtung. `series`
+  // haelt fest, was ins gemittelte Merkmal einging (Guete an die Cloud).
+  return {
+    buf: best.buf,
+    face: fused ? { ...best.face, embedding: fused.embedding, other: fuseOther(list), series: fused.series } : best.face,
+  };
 }
 
 async function uploadPersonSnapshotBody(
@@ -863,7 +884,7 @@ async function uploadPersonSnapshotBody(
   let optical = false;
   if (buf) {
     await refreshGallery();
-    const direct = face ? scoreGallery(face.embedding, { upscaled: face.upscaled }).match : null;
+    const direct = face ? appliedScore(face).scored.match : null;
     if (!direct) {
       // Der optische Zoom braucht die Kamera: nicht, wenn ein Fahrzeug wartet.
       // Er faehrt nur, wenn das Gesicht danach voraussichtlich gross genug ist
@@ -874,7 +895,7 @@ async function uploadPersonSnapshotBody(
         improve("face", "optical", { cam: cam.config.name, gain: Number(close.gain.toFixed(2)), persons: close.persons });
         const got = (await embedJpeg(close.jpeg)) ?? (await faceViaZoom(close.jpeg, close.boxes).catch(() => null))?.face ?? null;
         // Das neue Gesicht ersetzt das bisherige nur mit Treffer oder hoeherer Guete.
-        const hit = got ? scoreGallery(got.embedding, { upscaled: got.upscaled }).match != null : false;
+        const hit = got ? appliedScore(got).scored.match != null : false;
         if (got && takeOpticalFace({ matched: hit, before: face ? asShot(face) : null, after: asShot(got) })) {
           log(`Personen-Snapshot ${cam.config.name}: Gesicht über optischen Zoom ×${close.gain.toFixed(1)}`);
           improve("face", "optical_face", { cam: cam.config.name, upscaled: got.upscaled });
@@ -908,7 +929,16 @@ async function uploadPersonSnapshotBody(
   }
 
   await refreshGallery();
-  const scored = scoreGallery(face.embedding, { upscaled: face.upscaled });
+  // Es gilt das Ergebnis des verwendeten Merkmals; in Stufe on bleibt ein
+  // Sperrlisten-Treffer, den nur das bisherige Merkmal liefert (noteOtherWay).
+  // Dann geht auch dessen Merkmal hoch.
+  const applied = noteOtherWay(
+    `Personen-Snapshot ${cam.config.name}`,
+    face,
+    scoreGallery(face.embedding, { upscaled: face.upscaled })
+  );
+  const scored = applied.scored;
+  if (applied.embedding !== face.embedding) face = { ...face, embedding: applied.embedding };
   const match = scored.match;
   if (match && optical) improve("face", "optical_match", { cam: cam.config.name, score: match.score });
   const qs = new URLSearchParams({ cameraId: String(cameraId) });
@@ -922,7 +952,7 @@ async function uploadPersonSnapshotBody(
   } else {
     const near = scored.nearest;
     log(
-      `Personen-Snapshot ${cam.config.name}: klares Gesicht (det=${face.detScore.toFixed(2)}), kein Gallery-Match` +
+      `Personen-Snapshot ${cam.config.name}: ${faceLabel(face)}, kein Gallery-Match` +
         (scored.ambiguous && scored.second
           ? ` – zu knapp: „${scored.nearest?.name}“ ${scored.nearest?.score.toFixed(3)} gegen „${scored.second.name}“ ${scored.second.score.toFixed(3)}`
           : "") +
@@ -957,7 +987,9 @@ async function uploadPersonSnapshotBody(
         : "Gallery leer",
     score: match?.score ?? scored.nearest?.score,
     list: match?.listType,
-    upscaled: face.upscaled,
+    // Steckt ein hochgerechnetes Bild im gemittelten Merkmal, gilt die Sichtung
+    // fuer den Waechter als hochgerechnet (strengere Entwarnung).
+    upscaled: face.upscaled || face.series?.upscaled === true,
     pos: facePos ?? undefined,
   });
   improve("face", match ? "person_match" : scored.ambiguous ? "ambiguous" : nearMiss ? "near_miss" : "person_nomatch", {
@@ -965,7 +997,7 @@ async function uploadPersonSnapshotBody(
     score: match?.score ?? scored.nearest?.score,
     threshold: scored.threshold,
     gallery: scored.gallery,
-    upscaled: face.upscaled,
+    upscaled: face.upscaled || face.series?.upscaled === true,
   });
 
   // Wiederholung eines Uploads dieser Kamera (shouldStoreSighting)? Erst hier,
@@ -1028,6 +1060,11 @@ async function uploadPersonSnapshotBody(
   if (vouch.send) qs.set("sentinel", "1");
   improveCount("face", vouch.counter);
   const vouchNote = vouch.note;
+  // Guete des Gesichts mit jeder Sichtung (face-rules.ts sightingQualityParams):
+  // Die Cloud lernt nur aus klaren, nicht hochgerechneten Treffern dazu. Der
+  // Abstand zur zweitbesten Person stammt aus demselben Abgleich wie matchScore.
+  const quality = sightingQualityParams(face, galleryMargin(scored));
+  for (const [k, v] of Object.entries(quality)) qs.set(k, v);
   try {
     const upload = await api(`/api/hub/person-sightings?${qs}`, {
       method: "POST",
@@ -1041,7 +1078,12 @@ async function uploadPersonSnapshotBody(
         `Personen-Snapshot fehlgeschlagen: HTTP ${upload.status} ${errText.slice(0, 120)}`
       );
     }
-    log(`Personen-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes${vouchNote})`);
+    log(
+      `Personen-Snapshot ${cam.config.name}: Upload OK (${uploadBuf.length} bytes` +
+        (uploadBuf.length !== buf.length ? `, Original ${buf.length}` : "") +
+        `, Gesicht ${sightingQualityNote(quality)}` +
+        `${vouchNote})`
+    );
     if (sighting && remember) recentSightings.set(cameraId, rememberSighting(recentSightings.get(cameraId) ?? [], sighting, Date.now()));
   } finally {
     // Die Drossel gilt, sobald ein Gesicht ausgewertet ist, auch wenn der
@@ -1049,7 +1091,7 @@ async function uploadPersonSnapshotBody(
     // Personen-Alarm sofort wieder anlaufen (Bilder, Gesichts-Dienst).
     cam.lastSnapshotAt = Date.now();
   }
-  return { bytes: buf.length };
+  return { bytes: uploadBuf.length };
 }
 
 /** Ein Fahrzeug-Burst aus Sicht des Weißlichts: was der Body für Licht und Sperre meldet. */

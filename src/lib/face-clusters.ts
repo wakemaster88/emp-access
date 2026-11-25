@@ -226,23 +226,191 @@ export function chooseProfile(
   return { keep: pickDiverseSamples(rest, max), outliers };
 }
 
+/** Festes Kuerzel der Log-Zeilen zum automatischen Dazulernen (autoLearnLine). */
+export const AUTO_LEARN_LOG_TAG = "[face auto-learn]";
 /**
- * Neues Sample nach sicherem Auto-Match lernen? Nur wenn der Match deutlich
- * ist (kein Grenzfall, der falsch sein koennte) und das Gesicht den
- * vorhandenen Samples noch nicht stark gleicht (neuer Winkel / neues Licht).
+ * Kleinste Kantenlaenge des Gesichts in dem Bild, aus dem sein Merkmal stammt
+ * (faceSize, beim Hub embedSize: direkt gefundene Gesichter im Suchbild bis
+ * 1920 px).
  */
-export function shouldAutoLearn(opts: {
-  embedding: number[];
-  samples: number[][];
-  matchScore: number;
-  maxSamples?: number;
-  minScore?: number;
-  maxSimilarity?: number;
-}): boolean {
-  const { embedding, samples, matchScore } = opts;
-  if (embedding.length < 64) return false;
-  if (matchScore < (opts.minScore ?? 0.5)) return false;
-  if (samples.length >= (opts.maxSamples ?? 20)) return false;
-  const nearest = samples.reduce((m, s) => Math.max(m, cosine(embedding, s)), -1);
-  return nearest < (opts.maxSimilarity ?? 0.8);
+export const AUTO_LEARN_MIN_SIZE = 64;
+/** Kleinster Treffer-Score. */
+export const AUTO_LEARN_MIN_SCORE = 0.6;
+/** Kleinster Abstand des Treffers zur zweitbesten Person der Galerie. */
+export const AUTO_LEARN_MIN_MARGIN = 0.1;
+/** Ab so vielen Samples lernt ein Profil nicht mehr von selbst. */
+export const AUTO_LEARN_MAX_SAMPLES = 20;
+/** Ab dieser Aehnlichkeit zu einem vorhandenen Sample bringt ein neues nichts. */
+export const AUTO_LEARN_MAX_SIMILARITY = 0.8;
+
+/** Grund, aus dem ein Treffer kein neues Sample wird (fest, fuers Zaehlen im Log). */
+export type AutoLearnSkip =
+  | "merkmal"
+  | "sperrliste"
+  | "guete_fehlt"
+  | "hochgerechnet"
+  | "zu_klein"
+  | "score"
+  | "abstand"
+  | "voll"
+  | "bekannt";
+
+/** Guete des Gesichts, wie sie an der Sichtung steht (face-quality.ts). */
+export interface AutoLearnQuality {
+  faceSize: number | null;
+  faceUpscaled: boolean | null;
+  faceMargin: number | null;
 }
+
+export interface AutoLearnInput {
+  embedding: number[];
+  /** Treffer-Score des Hubs. */
+  matchScore: number | null | undefined;
+  /** Liste der erkannten Person (WHITELIST | BLACKLIST). */
+  listType: string | null | undefined;
+  /** null/undefined: Sichtung ohne Guete-Angaben (aelterer Hub). */
+  quality: AutoLearnQuality | null | undefined;
+}
+
+export interface AutoLearnDecision {
+  /** null: lernen. */
+  skip: AutoLearnSkip | null;
+  /** Kurz fuers Log, ohne Namen. */
+  detail: string;
+}
+
+const fmt = (n: number, digits: number) => n.toFixed(digits);
+
+/**
+ * Alles, was ohne die vorhandenen Samples zu pruefen ist. Gelernt wird nur
+ * aus einem klaren Treffer: Gesicht direkt gefunden (nicht hochgerechnet),
+ * mindestens AUTO_LEARN_MIN_SIZE Pixel im Bild des Merkmals, Score mindestens
+ * AUTO_LEARN_MIN_SCORE und mindestens AUTO_LEARN_MIN_MARGIN vor der
+ * zweitbesten Person. Ein falsch gelerntes Gesicht zieht aehnliche Gesichter
+ * an; Mini-Gesichter und knappe Treffer bleiben deshalb draussen. Von selbst
+ * lernen nur Personen der Whitelist: Personen der Sperrliste (und jede andere
+ * oder fehlende Liste) nie (Samples nur von Hand), und ohne Guete-Angaben
+ * wird nicht gelernt.
+ */
+export function autoLearnPrecheck(opts: AutoLearnInput): AutoLearnDecision {
+  if (opts.embedding.length < 64) return { skip: "merkmal", detail: "kein brauchbares Merkmal" };
+  if (opts.listType !== "WHITELIST") {
+    return {
+      skip: "sperrliste",
+      detail: opts.listType === "BLACKLIST" ? "gesperrte Person, Samples nur von Hand" : "nicht auf der Whitelist, Samples nur von Hand",
+    };
+  }
+  const q = opts.quality;
+  if (q?.faceUpscaled === true) {
+    return { skip: "hochgerechnet", detail: "Gesicht hochgerechnet" + (q.faceSize != null ? `, ${Math.round(q.faceSize)} px` : "") };
+  }
+  if (!q || q.faceUpscaled == null || q.faceSize == null || q.faceMargin == null) {
+    // Fehlt nur ein Teil, nennt die Zeile ihn (Abstand fehlt z. B. ohne zweite Person in der Galerie).
+    const missing = [
+      q?.faceUpscaled == null ? "hochgerechnet" : null,
+      q?.faceSize == null ? "Größe" : null,
+      q?.faceMargin == null ? "Abstand" : null,
+    ].filter((m): m is string => m !== null);
+    return { skip: "guete_fehlt", detail: "Güte-Angaben fehlen" + (missing.length < 3 ? ` (${missing.join(", ")})` : "") };
+  }
+  if (q.faceSize < AUTO_LEARN_MIN_SIZE) {
+    return { skip: "zu_klein", detail: `Gesicht ${Math.round(q.faceSize)} px unter ${AUTO_LEARN_MIN_SIZE}` };
+  }
+  const score = opts.matchScore;
+  if (score == null || !Number.isFinite(score) || score < AUTO_LEARN_MIN_SCORE) {
+    return {
+      skip: "score",
+      detail: score == null || !Number.isFinite(score) ? "Score fehlt" : `Score ${fmt(score, 3)} unter ${fmt(AUTO_LEARN_MIN_SCORE, 2)}`,
+    };
+  }
+  if (q.faceMargin < AUTO_LEARN_MIN_MARGIN) {
+    return { skip: "abstand", detail: `Abstand ${fmt(q.faceMargin, 3)} unter ${fmt(AUTO_LEARN_MIN_MARGIN, 2)}` };
+  }
+  return {
+    skip: null,
+    detail: `Score ${fmt(score, 3)}, ${Math.round(q.faceSize)} px, Abstand ${fmt(q.faceMargin, 3)}`,
+  };
+}
+
+/**
+ * Neues Sample nach einem Treffer lernen? Erst autoLearnPrecheck, dann nur,
+ * solange das Profil weniger als AUTO_LEARN_MAX_SAMPLES hat und das Gesicht
+ * den vorhandenen noch nicht stark gleicht (neuer Winkel / neues Licht).
+ */
+export function autoLearnDecision(opts: AutoLearnInput & { samples: number[][] }): AutoLearnDecision {
+  const pre = autoLearnPrecheck(opts);
+  if (pre.skip) return pre;
+  if (opts.samples.length >= AUTO_LEARN_MAX_SAMPLES) {
+    return { skip: "voll", detail: `Profil hat ${opts.samples.length} Samples` };
+  }
+  const nearest = opts.samples.reduce((m, s) => Math.max(m, cosine(opts.embedding, s)), -1);
+  if (nearest >= AUTO_LEARN_MAX_SIMILARITY) {
+    return { skip: "bekannt", detail: `gleicht vorhandenem Sample (${fmt(nearest, 3)})` };
+  }
+  return pre;
+}
+
+/** Kurzform von autoLearnDecision. */
+export function shouldAutoLearn(opts: AutoLearnInput & { samples: number[][] }): boolean {
+  return autoLearnDecision(opts).skip === null;
+}
+
+/**
+ * Log-Zeile je Gelegenheit zum Dazulernen, mit festem Kuerzel und Grund
+ * (`grund=…`), ohne Namen: Gelernte und uebersprungene lassen sich so im
+ * Log zaehlen.
+ */
+export function autoLearnLine(
+  ctx: { accountId: number; cameraId: number | null; sightingId: number },
+  d: AutoLearnDecision
+): string {
+  const where = `${AUTO_LEARN_LOG_TAG} account=${ctx.accountId} Kamera ${ctx.cameraId ?? "?"} Sichtung ${ctx.sightingId}`;
+  return d.skip ? `${where}: nicht gelernt, grund=${d.skip} (${d.detail})` : `${where}: gelernt (${d.detail})`;
+}
+
+/**
+ * Rang eines Gesichts als Sample fuer die Zuordnung von Hand, kleiner ist
+ * besser (Guete an der Sichtung, face-quality.ts):
+ *  0 – gut: direkt gefunden, mindestens AUTO_LEARN_MIN_SIZE px
+ *  1 – ohne Angaben (Sichtung eines aelteren Hubs, Sample ohne Quelle) oder
+ *      direkt gefunden, aber kleiner
+ *  2 – hochgerechnet (Mini-Gesicht, Kopf-Ausschnitt)
+ */
+export type SampleRank = 0 | 1 | 2;
+
+export function sampleRank(
+  q: { faceSize: number | null; faceUpscaled: boolean | null } | null | undefined
+): SampleRank {
+  if (q?.faceUpscaled === true) return 2;
+  if (q?.faceUpscaled === false && q.faceSize != null && q.faceSize >= AUTO_LEARN_MIN_SIZE) return 0;
+  return 1;
+}
+
+export interface RankedFace extends FaceItem {
+  rank: SampleRank;
+}
+
+/**
+ * Samples fuer eine Zuordnung von Hand waehlen, hoechstens `max`: gute
+ * Gesichter zuerst (moeglichst verschiedene), danach solche ohne Angaben oder
+ * kleine direkte. Hochgerechnete nur, wenn nichts Besseres da ist: weder
+ * unter den zugeordneten Sichtungen noch im Profil der Person (`profile`:
+ * Raenge der vorhandenen Samples). Ein hochgerechnetes Mini-Gesicht ist
+ * verrauscht und zieht fremde Mini-Gesichter an; als erstes Sample einer
+ * Person ist es besser als keines. Vorhandene Samples bleiben, wie sie sind.
+ */
+export function pickManualSamples(
+  items: RankedFace[],
+  max: number,
+  profile: readonly SampleRank[] = []
+): number[] {
+  if (max <= 0) return [];
+  const ofRank = (rank: SampleRank) => items.filter((i) => i.rank === rank);
+  const chosen = pickDiverseSamples(ofRank(0), max);
+  if (chosen.length < max) chosen.push(...pickDiverseSamples(ofRank(1), max - chosen.length));
+  if (chosen.length > 0 || profile.some((r) => r < 2)) return chosen;
+  return pickDiverseSamples(ofRank(2), max);
+}
+
+/** Festes Kuerzel der Log-Zeilen zu Samples aus der Zuordnung von Hand. */
+export const MANUAL_SAMPLE_LOG_TAG = "[face zuordnung]";
