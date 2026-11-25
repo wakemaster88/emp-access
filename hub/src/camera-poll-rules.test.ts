@@ -428,6 +428,9 @@ test("Beginne aus gescheiterten Meldungen: erledigt, sobald ein Ende ab ihrem Ze
   const end = (ageS: number) => queued(5, "MOTION", "end", ageS);
   // Nichts gemerkt: Kein Ende zaehlt.
   assert.equal(unconfirmed.upTo(end(100)), 0);
+  // Ein Ende in einer gescheiterten Meldung ist kein Beginn.
+  unconfirmed.failed([end(900)]);
+  assert.equal(unconfirmed.upTo(end(100)), 0);
 
   unconfirmed.failed([queued(5, "MOTION", "start", 800), queued(5, "MOTION", "start", 700)]);
   // Dieselbe Meldung noch einmal und ein unlesbarer Zeitpunkt aendern nichts.
@@ -447,6 +450,10 @@ test("Beginne aus gescheiterten Meldungen: erledigt, sobald ein Ende ab ihrem Ze
   assert.equal(unconfirmed.upTo(end(650)), 1);
   unconfirmed.delivered([end(650)]);
   assert.equal(unconfirmed.upTo(end(100)), 0);
+  // Ein Ende genau am Beginn erledigt ihn ebenfalls.
+  unconfirmed.failed([queued(5, "MOTION", "start", 50)]);
+  unconfirmed.delivered([end(50)]);
+  assert.equal(unconfirmed.upTo(end(10)), 0);
 });
 
 test("Warteschlange: unter der Obergrenze bleibt alles in seiner Reihenfolge", () => {
