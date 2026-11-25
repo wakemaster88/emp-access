@@ -485,6 +485,7 @@ test("Geoeffnete Seite: ein laufendes Ereignis gilt nur kurz nach dem Abruf noch
   assert.equal(shownAsRunning(running, fetched), true);
   assert.equal(shownAsRunning(running, fetched + 119_000), true);
   // Zwei Minuten nach dem Abruf und spaeter: Die Seite nennt das Alter der Angabe.
+  // Geht die Uhr des Browsers so weit vor, gilt dasselbe von Anfang an.
   assert.equal(shownAsRunning(running, fetched + 120_000), false);
   assert.equal(shownAsRunning(running, fetched + 3 * 3_600_000), false);
   // Die Uhr des Browsers geht nach: wie eben abgerufen.

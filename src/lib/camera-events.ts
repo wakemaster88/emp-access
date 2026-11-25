@@ -391,8 +391,10 @@ export const RUNNING_SHOWN_MS = 2 * 60_000;
  * Stand beim Abruf, `at` bei einem laufenden Ereignis dessen Zeitpunkt. Liegt
  * der Abruf laenger zurueck, weiss die Seite nicht mehr, ob das Ereignis noch
  * laeuft: Sie nennt dann wie bei einem beendeten das Alter der Angabe, statt
- * ueber Stunden „laeuft“ zu zeigen. Geht die Uhr des Browsers nach, zaehlt
- * der Abruf als eben geschehen.
+ * ueber Stunden „laeuft“ zu zeigen. Das Alter misst die Uhr des Browsers
+ * gegen den Zeitpunkt des Servers, wie bei den uebrigen Zeitangaben der
+ * Seite: Geht sie nach, zaehlt der Abruf als eben geschehen; geht sie um die
+ * Frist oder mehr vor, gilt die Angabe von Anfang an als gealtert.
  */
 export function shownAsRunning(e: Pick<RoomLastEvent, "at" | "running">, nowMs: number): boolean {
   return e.running && nowMs - Date.parse(e.at) < RUNNING_SHOWN_MS;
