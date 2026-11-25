@@ -80,4 +80,23 @@ test("Fehlermeldung von git: die Ursache, nicht der Schluss des Hinweistexts", (
   assert.equal(gitErrorLine("irgendwas\nanderes"), "irgendwas");
   assert.equal(gitErrorLine("  \n"), null);
   assert.equal(gitErrorLine(undefined), null);
+  // Der Nachsatz von git ueber SSH ist nie die Ursache.
+  const tail = "fatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.";
+  assert.equal(
+    gitErrorLine(`ssh: connect to host ssh.github.com port 443: Network is unreachable\n${tail}`),
+    "ssh: connect to host ssh.github.com port 443: Network is unreachable"
+  );
+  assert.equal(
+    gitErrorLine(`ssh: connect to host ssh.github.com port 443: No route to host\n${tail}`),
+    "ssh: connect to host ssh.github.com port 443: No route to host"
+  );
+  assert.equal(gitErrorLine(`kex_exchange_identification: unbekannter Fehler\n${tail}`), "kex_exchange_identification: unbekannter Fehler");
+  assert.equal(
+    gitErrorLine(
+      `@@@@@@@@@@@\n@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @\n@@@@@@@@@@@\nIt is also possible that a host key has just been changed.\nHost key verification failed.\n${tail}`
+    ),
+    "Host key verification failed."
+  );
+  // Nur der Nachsatz: dann eben der.
+  assert.equal(gitErrorLine("fatal: Could not read from remote repository."), "fatal: Could not read from remote repository.");
 });

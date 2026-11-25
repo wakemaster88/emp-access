@@ -8,6 +8,7 @@ import { startDashboard } from "./dashboard.js";
 import { autoScan } from "./scanner.js";
 import { onTaskKick } from "./task-kick.js";
 import { pollCameras, CAMERA_POLL_INTERVAL_MS, restoreCameraMotion } from "./cameras.js";
+import { ALIVE_INTERVAL_MS, markAlive } from "./alive-mark.js";
 import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
 import { alprWarmup } from "./alpr.js";
@@ -311,6 +312,10 @@ startVlanCheck();
 // Folgen/Nahaufnahme, die ein Neustart unterbrochen hat: Kameras zurueckstellen.
 void restoreCameraMotion();
 setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
+// Lebenszeichen auf der Platte: Nach einem Neustart ist bekannt, bis wann der
+// Vorgaenger lief (fuer das Ende der Ereignisse, die dabei offen blieben).
+markAlive();
+setInterval(() => markAlive(), ALIVE_INTERVAL_MS);
 // Soundweb London: Konfiguration aus der Cloud, dann je Prozessor eine
 // DI-Verbindung mit Abonnements. Ohne eingerichtete Geräte ein Leerlauf.
 startSoundweb();

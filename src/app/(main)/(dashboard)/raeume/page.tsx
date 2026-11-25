@@ -21,6 +21,7 @@ import { deviceControls } from "@/lib/device-controls";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 import { climateView } from "@/lib/room-climate";
 import { buildRoomActivity, dayStart } from "@/lib/room-activity";
+import { OPEN_EVENT_FRESH_MS, latestActivityByRoom } from "@/lib/camera-events";
 import { readMowerMap, readMowerState } from "@/lib/mower";
 import { getWeather } from "@/lib/weather";
 import { getIrrigationRecommendation, parseRunState, parseValveSequence } from "@/lib/irrigation";
@@ -144,7 +145,7 @@ export default async function RaeumePage() {
   const since = new Date(now);
   since.setHours(since.getHours() - EVENT_LOOKBACK_HOURS);
 
-  const [rooms, looseDevices, looseCameras, looseZones, events, schedules, account, netDevices, netClients] = await Promise.all([
+  const [rooms, looseDevices, looseCameras, looseZones, events, schedules, account, netDevices, netClients, runningEvents] = await Promise.all([
     db.keyRoom.findMany({
       where: accountFilter,
       include: {
@@ -233,7 +234,8 @@ export default async function RaeumePage() {
         cameraId: true,
         type: true,
         startedAt: true,
-        camera: { select: { name: true, keyRoomId: true } },
+        endedAt: true,
+        camera: { select: { name: true, keyRoomId: true, lastSeenAt: true } },
       },
       orderBy: { startedAt: "desc" },
       distinct: ["cameraId"],
@@ -267,6 +269,26 @@ export default async function RaeumePage() {
         device: { select: { keyRoomId: true } },
       },
       orderBy: { name: "asc" },
+    }),
+    // Laufende Ereignisse: Bei anhaltender Bewegung meldet eine Kamera ein
+    // einziges langes Ereignis. Sein Beginn kann Stunden zurueckliegen und
+    // steht dann hinter kuerzeren, juengeren Ereignissen derselben Kamera.
+    db.cameraEvent.findMany({
+      where: {
+        ...accountFilter,
+        startedAt: { gte: since },
+        endedAt: null,
+        camera: { keyRoomId: { not: null }, lastSeenAt: { gte: new Date(now.getTime() - OPEN_EVENT_FRESH_MS) } },
+      },
+      select: {
+        cameraId: true,
+        type: true,
+        startedAt: true,
+        endedAt: true,
+        camera: { select: { name: true, keyRoomId: true, lastSeenAt: true } },
+      },
+      orderBy: { startedAt: "desc" },
+      take: 200,
     }),
   ]);
 
@@ -435,17 +457,20 @@ export default async function RaeumePage() {
     motions,
   );
 
-  const lastEventByRoom = new Map<number, RoomEvent>();
-  for (const e of events) {
-    const roomId = e.camera.keyRoomId;
-    if (roomId == null || lastEventByRoom.has(roomId)) continue;
-    lastEventByRoom.set(roomId, {
-      cameraId: e.cameraId,
-      cameraName: e.camera.name,
-      type: e.type,
-      startedAt: e.startedAt.toISOString(),
-    });
-  }
+  const lastEventByRoom: Map<number, RoomEvent> = latestActivityByRoom(
+    [...events, ...runningEvents]
+      .filter((e) => e.camera.keyRoomId != null)
+      .map((e) => ({
+        roomId: e.camera.keyRoomId!,
+        cameraId: e.cameraId,
+        cameraName: e.camera.name,
+        type: e.type,
+        startedAt: e.startedAt,
+        endedAt: e.endedAt,
+        cameraLastSeenAt: e.camera.lastSeenAt,
+      })),
+    now,
+  );
 
   const roomPanels: RoomPanel[] = rooms.map((room) => ({
     id: room.id,

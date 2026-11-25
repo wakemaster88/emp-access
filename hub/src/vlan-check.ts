@@ -15,6 +15,7 @@ import { friendlySnmpError, oidSuffix, snmpGet, snmpTargets, snmpWalk } from "./
 import { analyzeVlans, Confirmer, parsePortList, type VlanIssue } from "./vlan-analyze.js";
 import { recordHubEvent } from "./state.js";
 import { improve, improveCount } from "./improve-log.js";
+import { ChangeLog } from "./change-log.js";
 
 const OID_SYS_NAME = "1.3.6.1.2.1.1.5.0";
 const OID_BASE_PORT_IFINDEX = "1.3.6.1.2.1.17.1.4.1.2";
@@ -176,12 +177,19 @@ export function vlanCheckIntervalMs(): number {
 /** Fuer das lokale Dashboard: bestaetigte Befunde je Switch. */
 export function vlanCheckSummary(): {
   runs: number;
+  /** Beginn und Dauer des letzten Laufs, laengster Lauf seit dem Hub-Start. */
+  lastRunAt: string | null;
+  lastRunMs: number | null;
+  maxRunMs: number;
   reportError: string | null;
   hosts: Array<{ host: string; sysName: string | null; ok: boolean; checkedAt: string; issues: string[] }>;
   confirmed: AlertItem[];
 } {
   return {
     runs,
+    lastRunAt,
+    lastRunMs,
+    maxRunMs,
     reportError: lastReportError,
     hosts: [...lastResults.values()].map((r) => ({
       host: r.host,
@@ -194,9 +202,23 @@ export function vlanCheckSummary(): {
   };
 }
 
+/*
+ * Dauer der Laeufe. Der Normalfall („alles in Ordnung“) wird nur gezaehlt;
+ * fuer den Vergleich mit Abbruechen der Livebilder (IMPROVE.md) reicht: Die
+ * Laeufe beginnen 45 s nach dem Hub-Start und dann alle `every` Sekunden,
+ * die Dauer steht hier, und ein langer Lauf kommt ins Log (hoechstens alle
+ * 30 min eine Zeile).
+ */
+const SLOW_RUN_MS = 15_000;
+const slowRunLog = new ChangeLog(30 * 60_000);
+let lastRunAt: string | null = null;
+let lastRunMs: number | null = null;
+let maxRunMs = 0;
+
 export async function runVlanCheck(): Promise<void> {
   if (busy) return;
   busy = true;
+  const startedAt = Date.now();
   try {
     const hosts = snmpTargets();
     const all: AlertItem[] = [];
@@ -261,6 +283,13 @@ export async function runVlanCheck(): Promise<void> {
     log(`Netzwerk-Prüfung: ${lastReportError}`);
   } finally {
     busy = false;
+    const ms = Date.now() - startedAt;
+    lastRunAt = new Date(startedAt).toISOString();
+    lastRunMs = ms;
+    maxRunMs = Math.max(maxRunMs, ms);
+    if (ms >= SLOW_RUN_MS && slowRunLog.shouldLog("run", "slow", Date.now())) {
+      log(`Netzwerk-Prüfung: Lauf dauerte ${Math.round(ms / 1000)} s`);
+    }
   }
 }
 

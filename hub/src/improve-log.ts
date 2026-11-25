@@ -196,10 +196,13 @@ export async function flushImproveSnapshot(reason = "interval"): Promise<void> {
     await writeFile(latestPath(), renderMd(snap), "utf8");
     // Der Snapshot wird weiter alle 5 Minuten geschrieben; ins Log kommt er
     // beim Start, beim Beenden und wenn sich der oberste Hinweis aendert.
-    if (reason !== "interval" || snap.hint !== lastLoggedHint) {
+    // Verglichen wird ohne Zahlen: Zaehler im Hinweis („46/141“) wandern mit
+    // jedem Durchlauf, die Aussage bleibt dieselbe.
+    const hintKey = snap.hint.replace(/\d+/g, "#");
+    if (reason !== "interval" || hintKey !== lastLoggedHint) {
       log(`Improve-Snapshot (${reason}): ${snap.hint}`);
     }
-    lastLoggedHint = snap.hint;
+    lastLoggedHint = hintKey;
   } catch {
     // Diagnose darf den Hub nicht stören.
   }

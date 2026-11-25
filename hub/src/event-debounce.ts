@@ -16,6 +16,8 @@ export interface DebounceState {
   reported: Record<string, boolean>;
   /** Letzter Poll, in dem der Alarm aktiv war (ms). */
   lastActiveAt: Record<string, number>;
+  /** Beginn des gemeldeten, noch laufenden Ereignisses (ms). */
+  since: Record<string, number>;
 }
 
 export interface DebouncedEvent {
@@ -25,7 +27,33 @@ export interface DebouncedEvent {
 }
 
 export function newDebounceState(): DebounceState {
-  return { reported: {}, lastActiveAt: {} };
+  return { reported: {}, lastActiveAt: {}, since: {} };
+}
+
+/** Was fuer diese Kamera gerade als laufend gemeldet ist, mit seinem Beginn. */
+export function runningOf(st: DebounceState): Array<{ type: string; at: number }> {
+  const out: Array<{ type: string; at: number }> = [];
+  for (const [type, on] of Object.entries(st.reported)) {
+    const at = st.since[type];
+    if (on && at !== undefined) out.push({ type, at });
+  }
+  return out;
+}
+
+/**
+ * Die Kamera wird nicht mehr abgefragt (entfernt oder deaktiviert): Was noch
+ * als laufend gemeldet ist, endet mit seiner letzten aktiven Messung. Der
+ * Zustand ist danach leer.
+ */
+export function endAll(st: DebounceState): DebouncedEvent[] {
+  const out: DebouncedEvent[] = [];
+  for (const [type, on] of Object.entries(st.reported)) {
+    if (!on) continue;
+    out.push({ type, phase: "end", at: st.lastActiveAt[type] ?? st.since[type] ?? 0 });
+  }
+  st.reported = {};
+  st.since = {};
+  return out.filter((e) => e.at > 0);
 }
 
 /**
@@ -47,6 +75,7 @@ export function debounceEvents(
       st.lastActiveAt[type] = now;
       if (!was) {
         st.reported[type] = true;
+        st.since[type] = now;
         out.push({ type, phase: "start", at: now });
       }
     } else if (was) {
@@ -54,6 +83,7 @@ export function debounceEvents(
       const hold = typeof holdMs === "function" ? holdMs(type) : holdMs;
       if (now - last >= hold) {
         st.reported[type] = false;
+        delete st.since[type];
         out.push({ type, phase: "end", at: last });
       }
     }

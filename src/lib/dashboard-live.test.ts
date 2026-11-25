@@ -105,10 +105,10 @@ test("ANNY: Fehler oder alter Stand melden, frischer Stand nicht", () => {
 
 test("Kamera-Aktivität: je Kamera gezählt, jüngste zuerst", () => {
   const cams = summarizeCameraActivity([
-    { cameraId: 1, cameraName: "Eingang", type: "PERSON", startedAt: ago(30) },
-    { cameraId: 2, cameraName: "Halle", type: "VEHICLE", startedAt: ago(5) },
-    { cameraId: 1, cameraName: "Eingang", type: "MOTION", startedAt: ago(20) },
-    { cameraId: 1, cameraName: "Eingang", type: "PERSON", startedAt: ago(40) },
+    { cameraId: 1, cameraName: "Eingang", type: "PERSON", at: ago(30) },
+    { cameraId: 2, cameraName: "Halle", type: "VEHICLE", at: ago(5) },
+    { cameraId: 1, cameraName: "Eingang", type: "MOTION", at: ago(20) },
+    { cameraId: 1, cameraName: "Eingang", type: "PERSON", at: ago(40) },
   ]);
   assert.deepEqual(
     cams.map((c) => [c.name, c.person, c.vehicle, c.other, c.total]),

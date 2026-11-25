@@ -1,6 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eventKey, orphanEndedAt, parseCloseOpen, planOrphanClose, recentActivityWhere } from "./camera-events";
+import {
+  activityAt,
+  eventKey,
+  isRunning,
+  lastKnownAlive,
+  latestActivityByRoom,
+  missingRunning,
+  orphanEndedAt,
+  parseCloseOpen,
+  parseRunning,
+  planOrphanClose,
+  recentActivityWhere,
+  staleOpen,
+} from "./camera-events";
 
 const now = new Date("2026-11-24T12:00:00Z");
 
@@ -81,8 +94,187 @@ test("Ruhe im Raum: ein laufendes oder eben beendetes Ereignis zaehlt als Bewegu
   const since = new Date("2026-11-24T11:30:00Z");
   const w = recentActivityWhere(since, now);
   assert.equal(w.startedAt.gte.toISOString(), "2026-11-23T12:00:00.000Z");
-  assert.deepEqual(w.OR, [{ startedAt: { gte: since } }, { endedAt: { gte: since } }, { endedAt: null }]);
+  // Offen zaehlt, solange der Hub die Kamera im Zeitraum noch gemeldet hat:
+  // Faellt sie um 11:35 aus, gilt der Raum bei 30 min Ruhezeit ab 12:05 als ruhig.
+  assert.deepEqual(w.OR, [
+    { startedAt: { gte: since } },
+    { endedAt: { gte: since } },
+    { endedAt: null, camera: { lastSeenAt: { gte: since } } },
+  ]);
+  // Sehr kurzer Zeitraum (1 min): Der Hub meldet nur einmal je Minute, ein
+  // laufendes Ereignis darf nicht herausfallen. Grenze dann 5 Minuten.
+  const short = recentActivityWhere(new Date("2026-11-24T11:59:00Z"), now);
+  assert.deepEqual(short.OR[2], { endedAt: null, camera: { lastSeenAt: { gte: new Date("2026-11-24T11:55:00Z") } } });
   // Ruhezeit laenger als ein Tag: die Suche reicht bis dorthin zurueck.
   const longAgo = new Date("2026-11-22T00:00:00Z");
   assert.equal(recentActivityWhere(longAgo, now).startedAt.gte.toISOString(), longAgo.toISOString());
+});
+
+test("closeOpen: Lebenszeichen des alten Prozesses nur von vor dem Start", () => {
+  const before = "2026-11-24T11:21:00Z";
+  const ok = parseCloseOpen({ cameraIds: [7], before, lastAlive: "2026-11-24T06:04:30Z" }, now);
+  assert.equal(ok?.lastAlive?.toISOString(), "2026-11-24T06:04:30.000Z");
+  // Nach dem Start, unlesbar oder nicht angegeben: keine Angabe.
+  assert.equal(parseCloseOpen({ cameraIds: [7], before, lastAlive: "2026-11-24T11:21:05Z" }, now)?.lastAlive, null);
+  assert.equal(parseCloseOpen({ cameraIds: [7], before, lastAlive: "gestern" }, now)?.lastAlive, null);
+  assert.equal(parseCloseOpen({ cameraIds: [7], before }, now)?.lastAlive, null);
+});
+
+test("Letzter sicherer Zeitpunkt: Kamera-Meldung nur von vor dem Start, sonst das Lebenszeichen", () => {
+  const before = new Date("2026-11-24T11:21:00Z");
+  const alive = new Date("2026-11-24T06:04:30Z");
+  // Der neue Prozess hat die Kamera schon gemeldet (Bild, Tor): zaehlt nicht.
+  const byNewProcess = new Date("2026-11-24T11:21:02Z");
+  assert.equal(lastKnownAlive(before, byNewProcess, alive)?.toISOString(), alive.toISOString());
+  assert.equal(lastKnownAlive(before, byNewProcess, null), null);
+  // Kamera fiel vor dem Hub aus: ihr Zeitpunkt gilt.
+  const camDown = new Date("2026-11-24T05:50:00Z");
+  assert.equal(lastKnownAlive(before, camDown, alive)?.toISOString(), camDown.toISOString());
+  // Aelterer Hub ohne Lebenszeichen: wie bisher die Kamera-Meldung.
+  assert.equal(lastKnownAlive(before, camDown, null)?.toISOString(), camDown.toISOString());
+  assert.equal(lastKnownAlive(before, null, null), null);
+});
+
+test("Langer Stillstand: das Ereignis endet beim Ausfall, auch wenn der neue Prozess die Kamera schon gemeldet hat", () => {
+  const before = new Date("2026-11-24T07:30:00Z");
+  const open = [{ id: 1, cameraId: 3, type: "MOTION", startedAt: new Date("2026-11-24T01:59:00Z") }];
+  const newest = new Map([["3:MOTION", 1]]);
+  const seen = new Map<number, Date | null>([[3, new Date("2026-11-24T07:30:03Z")]]);
+  const alive = new Date("2026-11-24T02:00:10Z");
+  assert.equal(planOrphanClose(open, newest, before, seen, alive)[0].endedAt.toISOString(), "2026-11-24T02:01:10.000Z");
+  // Ohne Lebenszeichen bleibt nur der Neustart.
+  assert.equal(planOrphanClose(open, newest, before, seen)[0].endedAt.toISOString(), before.toISOString());
+});
+
+const TYPES = ["MOTION", "PERSON", "VEHICLE"];
+
+test("Laufende Ereignisse: nur brauchbare Angaben, je Kamera und Art eine", () => {
+  const r = parseRunning(
+    [
+      { cameraId: 7, type: "MOTION", at: "2026-11-24T09:00:00Z" },
+      { cameraId: "8", type: "PERSON", at: "2026-11-24T11:59:30Z" },
+      { cameraId: 7, type: "MOTION", at: "2026-11-24T10:00:00Z" }, // doppelt
+      { cameraId: 7, type: "UFO", at: "2026-11-24T09:00:00Z" }, // unbekannte Art
+      { cameraId: 1.5, type: "MOTION", at: "2026-11-24T09:00:00Z" },
+      { cameraId: 9, type: "MOTION", at: "2026-11-24T12:05:00Z" }, // Zukunft
+      { cameraId: 9, type: "MOTION", at: "2026-11-22T09:00:00Z" }, // aelter als ein Tag
+      { cameraId: 9, type: "VEHICLE", at: "irgendwann" },
+      { cameraId: 9, type: "VEHICLE" },
+      null,
+      "x",
+    ],
+    now,
+    TYPES,
+  );
+  assert.deepEqual(
+    r?.map((e) => [e.cameraId, e.type, e.startedAt.toISOString()]),
+    [
+      [7, "MOTION", "2026-11-24T09:00:00.000Z"],
+      [8, "PERSON", "2026-11-24T11:59:30.000Z"],
+    ],
+  );
+  // Keine Angabe (aelterer Hub) ist etwas anderes als eine leere Liste.
+  assert.equal(parseRunning(undefined, now, TYPES), null);
+  assert.equal(parseRunning({ cameraId: 7 }, now, TYPES), null);
+  assert.deepEqual(parseRunning([], now, TYPES), []);
+});
+
+test("Laufende Ereignisse: nachgetragen wird nur, was die Cloud nicht offen hat", () => {
+  const running = parseRunning(
+    [
+      { cameraId: 7, type: "MOTION", at: "2026-11-24T09:00:00Z" },
+      { cameraId: 7, type: "PERSON", at: "2026-11-24T11:58:00Z" },
+      { cameraId: 8, type: "MOTION", at: "2026-11-24T11:50:00Z" },
+    ],
+    now,
+    TYPES,
+  )!;
+  const missing = missingRunning(running, new Set(["7:MOTION"]));
+  assert.deepEqual(missing.map(eventKey), ["7:PERSON", "8:MOTION"]);
+  assert.deepEqual(missingRunning(running, new Set(["7:MOTION", "7:PERSON", "8:MOTION"])), []);
+});
+
+test("Laeuft noch: offen, hoechstens einen Tag alt, Kamera frisch gemeldet", () => {
+  const open = { startedAt: new Date("2026-11-24T08:03:00Z"), endedAt: null };
+  const fresh = new Date("2026-11-24T11:59:10Z");
+  assert.equal(isRunning(open, fresh, now), true);
+  // Kamera seit 20 Minuten nicht gemeldet oder nie: nicht mehr laufend.
+  assert.equal(isRunning(open, new Date("2026-11-24T11:40:00Z"), now), false);
+  assert.equal(isRunning(open, null, now), false);
+  // Beendet oder aelter als ein Tag.
+  assert.equal(isRunning({ ...open, endedAt: new Date("2026-11-24T11:10:00Z") }, fresh, now), false);
+  assert.equal(isRunning({ startedAt: new Date("2026-11-23T11:00:00Z"), endedAt: null }, fresh, now), false);
+
+  assert.equal(activityAt(open, fresh, now).toISOString(), now.toISOString());
+  assert.equal(
+    activityAt({ ...open, endedAt: new Date("2026-11-24T11:10:00Z") }, fresh, now).toISOString(),
+    "2026-11-24T11:10:00.000Z",
+  );
+  // Offen, aber Kamera nie gemeldet: Es bleibt der Beginn.
+  assert.equal(activityAt(open, null, now).toISOString(), "2026-11-24T08:03:00.000Z");
+  // Offen, Kamera seit 11:40 still: Das Ereignis lief nachweislich bis dahin.
+  assert.equal(activityAt(open, new Date("2026-11-24T11:40:00Z"), now).toISOString(), "2026-11-24T11:40:00.000Z");
+  // Letzte Meldung der Kamera vor dem Beginn (Zeile nachgetragen): nie vor dem Beginn.
+  assert.equal(activityAt(open, new Date("2026-11-24T07:00:00Z"), now).toISOString(), "2026-11-24T08:03:00.000Z");
+});
+
+test("Mehrere offene Ereignisse derselben Kamera und Art: nur das juengste kann noch laufen", () => {
+  const open = [
+    { id: 1, cameraId: 7, type: "MOTION", startedAt: new Date("2026-11-24T09:00:00Z") },
+    { id: 2, cameraId: 7, type: "MOTION", startedAt: new Date("2026-11-24T11:00:00Z") },
+    { id: 3, cameraId: 7, type: "PERSON", startedAt: new Date("2026-11-24T10:00:00Z") },
+    { id: 4, cameraId: 8, type: "MOTION", startedAt: new Date("2026-11-24T08:00:00Z") },
+    // Gleicher Beginn: die hoehere ID gilt als juenger.
+    { id: 5, cameraId: 9, type: "MOTION", startedAt: new Date("2026-11-24T11:30:00Z") },
+    { id: 6, cameraId: 9, type: "MOTION", startedAt: new Date("2026-11-24T11:30:00Z") },
+  ];
+  assert.deepEqual(staleOpen(open).map((e) => e.id), [1, 5]);
+  assert.deepEqual(staleOpen([]), []);
+  assert.deepEqual(staleOpen([open[2]]), []);
+});
+
+test("Letztes Ereignis je Raum: laufende Bewegung geht vor einem juengeren, beendeten Ereignis", () => {
+  const fresh = new Date("2026-11-24T11:59:30Z");
+  const ev = (
+    roomId: number,
+    cameraId: number,
+    type: string,
+    startedAt: string,
+    endedAt: string | null,
+    seen: Date | null = fresh,
+  ) => ({
+    roomId,
+    cameraId,
+    cameraName: `Kamera ${cameraId}`,
+    type,
+    startedAt: new Date(startedAt),
+    endedAt: endedAt ? new Date(endedAt) : null,
+    cameraLastSeenAt: seen,
+  });
+  const byRoom = latestActivityByRoom(
+    [
+      // Raum 1: Kamera 1 meldet seit 09:00 Bewegung, Kamera 2 hatte um 11:30 kurz eine Person.
+      ev(1, 2, "PERSON", "2026-11-24T11:30:00Z", "2026-11-24T11:30:20Z"),
+      ev(1, 1, "MOTION", "2026-11-24T09:00:00Z", null),
+      ev(1, 1, "MOTION", "2026-11-24T09:00:00Z", null), // doppelt (aus beiden Abfragen)
+      // Raum 2: langes Ereignis endete um 11:10, ein kuerzeres davor begann spaeter.
+      ev(2, 3, "MOTION", "2026-11-24T08:03:00Z", "2026-11-24T11:10:00Z"),
+      ev(2, 4, "PERSON", "2026-11-24T10:00:00Z", "2026-11-24T10:00:30Z"),
+      // Raum 3: offen, aber die Kamera meldet sich seit 07:05 nicht mehr: zaehlt bis dahin.
+      ev(3, 5, "MOTION", "2026-11-24T07:00:00Z", null, new Date("2026-11-24T07:05:00Z")),
+      // Raum 4: zwei laufende, das zuletzt begonnene steht vorn.
+      ev(4, 6, "MOTION", "2026-11-24T09:00:00Z", null),
+      ev(4, 7, "PERSON", "2026-11-24T11:58:00Z", null),
+    ],
+    now,
+  );
+  assert.deepEqual(
+    [...byRoom].map(([room, e]) => [room, e.cameraId, e.type, e.running, e.at]),
+    [
+      [1, 1, "MOTION", true, now.toISOString()],
+      [2, 3, "MOTION", false, "2026-11-24T11:10:00.000Z"],
+      [3, 5, "MOTION", false, "2026-11-24T07:05:00.000Z"],
+      [4, 7, "PERSON", true, now.toISOString()],
+    ],
+  );
 });

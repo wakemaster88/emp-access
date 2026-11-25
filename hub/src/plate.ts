@@ -21,6 +21,7 @@ import {
   type PlateMatchKind,
 } from "./plate-match.js";
 import { LOCAL_CITY_CODES } from "./plate-cities.js";
+import { ChangeLog } from "./change-log.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -116,16 +117,23 @@ async function ensureBinary(): Promise<boolean> {
 
 /** Inhalt der zuletzt uebernommenen Liste (fuer „hat sich etwas geaendert?“). */
 let whitelistSignature: string | null = null;
+/** Inhalt, der sicher in der Datei steht; weicht er ab, wird beim naechsten Abruf wieder geschrieben. */
+let whitelistPersisted: string | null = null;
 
-function persistWhitelist(): void {
-  fs.mkdir(path.dirname(CACHE_FILE), { recursive: true })
+/** Liste fuer den Betrieb ohne Cloud sichern; true = geschrieben. */
+function persistWhitelist(): Promise<boolean> {
+  return fs
+    .mkdir(path.dirname(CACHE_FILE), { recursive: true })
     .then(() =>
       fs.writeFile(
         CACHE_FILE,
         JSON.stringify({ at: Date.now(), localActuators, vehicles: whitelist })
       )
     )
-    .catch(() => undefined);
+    .then(
+      () => true,
+      () => false
+    );
 }
 
 async function loadWhitelistFromDisk(): Promise<boolean> {
@@ -149,11 +157,30 @@ async function loadWhitelistFromDisk(): Promise<boolean> {
   }
 }
 
+/*
+ * Scheitert der Abruf, gilt die letzte Liste weiter. Das steht im Log:
+ * einmal, bei anderem Grund und dann alle 30 min, dazu der erste Erfolg
+ * danach. Ohne diese Zeilen saehe „Abruf scheitert seit Tagen“ im Log aus
+ * wie „Liste unveraendert“.
+ */
+const whitelistFailLog = new ChangeLog(30 * 60_000);
+let whitelistFailing = false;
+
+async function whitelistFetchFailed(reason: string): Promise<void> {
+  if (whitelist.length === 0) await loadWhitelistFromDisk();
+  whitelistFailing = true;
+  if (!whitelistFailLog.shouldLog("fetch", reason, Date.now())) return;
+  log(
+    `Fahrzeuge: Abruf der Liste fehlgeschlagen (${reason}), ` +
+      (whitelist.length > 0 ? `die letzte Liste mit ${whitelist.length} Einträgen gilt weiter` : "keine Liste geladen")
+  );
+}
+
 export async function refreshVehicleWhitelist(): Promise<void> {
   try {
     const res = await api("/api/hub/allowed-vehicles");
     if (!res.ok) {
-      if (whitelist.length === 0) await loadWhitelistFromDisk();
+      await whitelistFetchFailed(`HTTP ${res.status}`);
       return;
     }
     const json = (await res.json()) as {
@@ -163,19 +190,29 @@ export async function refreshVehicleWhitelist(): Promise<void> {
     whitelist = (json.vehicles ?? []).map((v) => hydrateVehicle(v));
     localActuators = json.localActuators === true;
     whitelistLoadedAt = Date.now();
+    const recovered = whitelistFailing;
+    if (recovered) {
+      whitelistFailing = false;
+      whitelistFailLog.shouldLog("fetch", "", Date.now());
+    }
     // Alle 5 Minuten abgeholt; Datei und Log-Zeile nur, wenn sich etwas
-    // geaendert hat (vorher 288 gleiche Zeilen und Schreibvorgaenge am Tag).
+    // geaendert hat (vorher 288 gleiche Zeilen und Schreibvorgaenge am Tag)
+    // oder der Abruf davor gescheitert war.
     const signature = JSON.stringify([localActuators, json.vehicles ?? []]);
-    if (signature === whitelistSignature) return;
+    if (signature !== whitelistPersisted) {
+      void persistWhitelist().then((ok) => {
+        if (ok) whitelistPersisted = signature;
+      });
+    }
+    if (signature === whitelistSignature && !recovered) return;
     whitelistSignature = signature;
-    persistWhitelist();
     log(
       `Fahrzeuge: ${whitelist.length} Whitelist-Einträge vom Server${
         localActuators ? " (lokale Aktoren)" : ""
-      }`
+      }${recovered ? " (Abruf klappt wieder)" : ""}`
     );
-  } catch {
-    if (whitelist.length === 0) await loadWhitelistFromDisk();
+  } catch (e) {
+    await whitelistFetchFailed(e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -230,7 +267,7 @@ export function vehicleLocalActuatorsEnabled(): boolean {
 export function markVehicleTriggered(id: number): void {
   const v = whitelist.find((x) => x.id === id);
   if (v) v.lastTriggeredAt = Date.now();
-  persistWhitelist();
+  void persistWhitelist();
 }
 
 function runOcr(imagePath: string): Promise<OcrResult> {

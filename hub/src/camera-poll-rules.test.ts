@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EndRetry, clockDriftKey, endHoldFor, snapshotJobFor, type EventRef, type SnapshotGate } from "./camera-poll-rules.js";
+import { CameraLease, RunningReport, clockDriftKey, endHoldFor, endsToRetry, snapshotJobFor, type SnapshotGate } from "./camera-poll-rules.js";
 
 const gate = (o: Partial<SnapshotGate> = {}): SnapshotGate => ({
   inFlight: false,
@@ -58,35 +58,143 @@ test("Kamera-Uhren: wandernde Sekunden aendern die Aussage nicht, ein Sprung sch
   assert.notEqual(a, c);
 });
 
-const ev = (cameraId: number, type: string, phase: "start" | "end"): EventRef => ({ cameraId, type, phase });
+const ev = (cameraId: number, type: string, phase: "start" | "end", at = 0) => ({ cameraId, type, phase, at });
 
-test("Gescheiterte Meldung: ein Ende geht nur noch einmal mit, wenn die Cloud den Beginn kennt", () => {
-  const r = new EndRetry();
-  r.delivered([ev(7, "MOTION", "start")]);
-  // Ende von Kamera 7 scheitert, dazu ein Beginn und ein Ende von Kamera 9,
-  // deren Beginn die Cloud nie gesehen hat.
-  const kept = r.failed([ev(7, "MOTION", "end"), ev(9, "PERSON", "start"), ev(9, "PERSON", "end")]);
-  assert.deepEqual(kept, [ev(7, "MOTION", "end")]);
+test("Gescheiterte Meldung: jedes Ende geht noch einmal mit, kein Beginn", () => {
+  // Ende von Kamera 7, dazu Beginn und Ende von Kamera 9 und ein zweites
+  // Ereignis von Kamera 7. Ob die Cloud die Beginne kennt, weiss der Hub nicht
+  // sicher (Zeitlimit), also gehen alle Enden noch einmal mit.
+  const batch = [
+    ev(7, "MOTION", "end", 20),
+    ev(9, "PERSON", "start", 25),
+    ev(9, "PERSON", "end", 30),
+    ev(7, "MOTION", "start", 35),
+    ev(7, "MOTION", "end", 40),
+  ];
+  const kept = endsToRetry(batch);
+  assert.deepEqual(kept, [ev(7, "MOTION", "end", 20), ev(9, "PERSON", "end", 30), ev(7, "MOTION", "end", 40)]);
+  // Dieselben Objekte in derselben Reihenfolge: Sie gehen vorn in die Warteschlange zurueck.
+  assert.equal(kept[0], batch[0]);
+  assert.equal(kept[2], batch[4]);
 });
 
-test("Gescheiterte Meldung: je Kamera und Art bleibt nur das erste Ende, auch ueber mehrere Versuche", () => {
-  const r = new EndRetry();
-  r.delivered([ev(7, "MOTION", "start")]);
-  const first = r.failed([ev(7, "MOTION", "end"), ev(7, "MOTION", "start")]);
-  assert.equal(first.length, 1);
-  // Zweiter Versuch: das zurueckgelegte Ende vorn, dahinter ein Ende, dessen
-  // Beginn im ersten Versuch entfiel.
-  const second = r.failed([...first, ev(7, "MOTION", "end")]);
-  assert.equal(second.length, 1);
-  assert.equal(second[0], first[0]);
+test("Gescheiterte Meldung: auch nach mehreren Versuchen bleibt jedes Ende genau einmal stehen", () => {
+  const first = endsToRetry([ev(7, "MOTION", "end", 20), ev(7, "MOTION", "start", 35)]);
+  // Zweiter Versuch: das zurueckgelegte Ende vorn, dahinter Neues.
+  const second = endsToRetry([...first, ev(8, "VEHICLE", "start", 50), ev(7, "MOTION", "end", 60)]);
+  assert.deepEqual(second, [ev(7, "MOTION", "end", 20), ev(7, "MOTION", "end", 60)]);
+  assert.deepEqual(endsToRetry([ev(8, "VEHICLE", "start", 50)]), []);
+  assert.deepEqual(endsToRetry([]), []);
 });
 
-test("Angekommene Meldung: Ende traegt aus, ein neuer Beginn danach zaehlt wieder", () => {
-  const r = new EndRetry();
-  r.delivered([ev(7, "MOTION", "start"), ev(7, "MOTION", "end")]);
-  assert.deepEqual(r.failed([ev(7, "MOTION", "end")]), []);
-  r.delivered([ev(7, "MOTION", "end"), ev(7, "MOTION", "start")]);
-  assert.equal(r.failed([ev(7, "MOTION", "end")]).length, 1);
-  // Andere Art an derselben Kamera ist unabhaengig.
-  assert.deepEqual(r.failed([ev(7, "PERSON", "end")]), []);
+/** Kamera-Vergabe mit einem Fahrzeug, das ab `waiting = true` wartet. */
+function lease() {
+  const st = { waiting: false, released: 0 };
+  const l = new CameraLease(
+    () => st.waiting,
+    () => {
+      st.released++;
+    }
+  );
+  return { st, l };
+}
+
+test("Kamera-Vergabe: ohne Fahrzeug laeuft jeder Zugriff, am Ende wird einmal freigegeben", async () => {
+  const { st, l } = lease();
+  assert.equal(await l.use(async () => "bild"), "bild");
+  l.check();
+  assert.equal(l.lost(), false);
+  assert.equal(st.released, 0);
+  l.release();
+  l.release();
+  assert.equal(st.released, 1);
+  assert.equal(l.lost(), true);
+});
+
+test("Kamera-Vergabe: wartet ein Fahrzeug, gibt die Pipeline ab und macht kein Bild mehr", async () => {
+  const { st, l } = lease();
+  st.waiting = true;
+  let ran = false;
+  assert.equal(
+    await l.use(async () => {
+      ran = true;
+      return "bild";
+    }),
+    null
+  );
+  assert.equal(ran, false);
+  assert.equal(st.released, 1);
+  // Auch wenn das Fahrzeug laengst durch ist: Dieser Lauf bekommt die Kamera nicht zurueck.
+  st.waiting = false;
+  assert.equal(l.lost(), true);
+  assert.equal(await l.use(async () => "bild"), null);
+  l.release();
+  assert.equal(st.released, 1);
+});
+
+test("Kamera-Vergabe: ein laufendes Bild wird fertig, direkt danach bekommt das Fahrzeug die Kamera", async () => {
+  const { st, l } = lease();
+  let finish: (v: string) => void = () => undefined;
+  const shot = l.use(() => new Promise<string>((r) => (finish = r)));
+  st.waiting = true;
+  // Der Takt prueft waehrend des Bildes: noch nicht abgeben.
+  l.check();
+  assert.equal(st.released, 0);
+  finish("bild");
+  assert.equal(await shot, "bild");
+  assert.equal(st.released, 1);
+  assert.equal(l.lost(), true);
+});
+
+test("Kamera-Vergabe: scheitert das Bild, bleibt die Kamera nicht belegt", async () => {
+  const { st, l } = lease();
+  await assert.rejects(
+    l.use(async () => {
+      throw new Error("Kamera antwortet nicht");
+    })
+  );
+  st.waiting = true;
+  l.check();
+  assert.equal(st.released, 1);
+});
+
+test("Kamera-Vergabe: der Takt gibt zwischen zwei Bildern ab, sobald ein Fahrzeug wartet", () => {
+  const { st, l } = lease();
+  l.check();
+  assert.equal(st.released, 0);
+  st.waiting = true;
+  l.check();
+  l.check();
+  assert.equal(st.released, 1);
+});
+
+test("Liste der laufenden Ereignisse: geht nur mit der Meldung, die genau ihren Stand traegt", () => {
+  const r = new RunningReport<string>();
+  // Nichts festgehalten: nichts mitsenden.
+  assert.equal(r.take(true), null);
+
+  // Festgehalten, Meldung leert die Warteschlange: mitsenden, aber nur einmal.
+  r.enqueued();
+  r.capture(["7:MOTION"]);
+  assert.deepEqual(r.take(true), ["7:MOTION"]);
+  assert.equal(r.take(true), null);
+
+  // Die Meldung nimmt nur einen Teil mit (mehr als 100 Ereignisse): noch nicht.
+  r.capture(["7:MOTION"]);
+  assert.equal(r.take(false), null);
+  // Die naechste leert die Warteschlange, nichts Neues kam dazu: jetzt.
+  assert.deepEqual(r.take(true), ["7:MOTION"]);
+
+  // Nach dem Festhalten kam ein neues Ereignis dazu (die Meldung davor war
+  // noch unterwegs): Die Liste ist ueberholt und entfaellt.
+  r.capture(["7:MOTION"]);
+  r.enqueued();
+  assert.equal(r.take(true), null);
+  // Mit der naechsten Minute gibt es einen neuen Stand.
+  r.capture(["7:MOTION", "8:PERSON"]);
+  assert.deepEqual(r.take(true), ["7:MOTION", "8:PERSON"]);
+
+  // Leere Liste ist eine Aussage (nichts laeuft), kein „nicht mitsenden“.
+  r.capture([]);
+  assert.deepEqual(r.take(true), []);
 });

@@ -84,7 +84,9 @@ export async function ensureKey(keyDir: string, onCreate?: (pub: string) => void
  * Aussagekraeftige Zeile aus der Fehlerausgabe von git. Die letzte Zeile ist
  * bei einem abgelehnten Schluessel nur der Schluss des Hinweistexts („and the
  * repository exists.“); die Ursache steht davor („Permission denied
- * (publickey).“).
+ * (publickey).“). Auch „fatal: Could not read from remote repository.“ ist
+ * nur der allgemeine Nachsatz von git ueber SSH: Die Ursache nennt ssh in der
+ * Zeile davor.
  */
 export function gitErrorLine(stderr: string | undefined | null): string | null {
   const lines = (stderr ?? "")
@@ -92,9 +94,14 @@ export function gitErrorLine(stderr: string | undefined | null): string | null {
     .map((l) => l.trim())
     .filter(Boolean);
   if (lines.length === 0) return null;
+  const general = /could not read from remote repository/i;
   return (
-    lines.find((l) => /permission denied|host key|timed out|could not resolve|connection (refused|closed|reset)/i.test(l)) ??
-    lines.find((l) => /^(fatal|error):/i.test(l)) ??
+    lines.find((l) => /host key verification failed/i.test(l)) ??
+    lines.find((l) =>
+      /permission denied|host key|timed out|could not resolve|unreachable|no route to host|connection (refused|closed|reset)/i.test(l)
+    ) ??
+    lines.find((l) => /^(fatal|error):/i.test(l) && !general.test(l)) ??
+    lines.find((l) => !l.startsWith("@") && !general.test(l)) ??
     lines[0]
   );
 }

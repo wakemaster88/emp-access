@@ -6,7 +6,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { CONFIG, api, log } from "./config.js";
-import { improve } from "./improve-log.js";
+import { improve, improveCount } from "./improve-log.js";
 import { STATE } from "./state.js";
 import { healthFresh, isTimeout, rankGallery, sidecarLogLines } from "./face-rules.js";
 
@@ -49,6 +49,10 @@ interface GalleryEntry {
 
 let gallery: GalleryEntry[] = [];
 let galleryLoadedAt = 0;
+/** Geladener Bestand (welche Merkmale, nicht nur wie viele); null = noch nie geladen. */
+let gallerySignature: string | null = null;
+/** Der letzte Abruf ist gescheitert: Der naechste Erfolg wird gemeldet. */
+let galleryFailed = false;
 let sidecarProc: ChildProcess | null = null;
 let sidecarStarting: Promise<void> | null = null;
 /**
@@ -151,6 +155,11 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
       if (isTimeout(e)) throw e;
       healthyAt = 0;
       if (!(await ensureFaceSidecar())) throw e;
+      // Sichtbar machen, auch wenn der zweite Versuch gelingt: Sonst bliebe
+      // ein Dienst, der immer wieder abbricht, in der Diagnose unbemerkt.
+      const cause = e instanceof Error ? ((e.cause as { code?: string } | undefined)?.code ?? e.message) : String(e);
+      log(`Face-Embed: Verbindung zum Gesichts-Dienst verloren (${cause}), Bild wird wiederholt`);
+      improveCount("face", "retry");
       res = await post();
     }
     healthyAt = Date.now();
@@ -228,13 +237,19 @@ export async function refreshGallery(force = false): Promise<void> {
     const res = await api("/api/hub/person-embeddings");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as { embeddings?: GalleryEntry[] };
-    const before = galleryLoadedAt === 0 ? -1 : gallery.length;
     gallery = Array.isArray(data.embeddings) ? data.embeddings : [];
     galleryLoadedAt = Date.now();
     STATE.face.gallery = gallery.length;
-    // Nur melden, wenn sich die Zahl aendert (vorher alle 5 Minuten dieselbe Zeile).
-    if (gallery.length !== before) log(`Face-Gallery: ${gallery.length} Embeddings`);
+    // Nur melden, wenn sich der Bestand aendert (vorher alle 5 Minuten dieselbe
+    // Zeile) oder der Abruf davor gescheitert war.
+    const signature = gallery.map((e) => `${e.id}:${e.listType}:${e.name}`).join("|");
+    if (signature !== gallerySignature || galleryFailed) {
+      log(`Face-Gallery: ${gallery.length} Embeddings${galleryFailed ? " (Abruf klappt wieder)" : ""}`);
+    }
+    gallerySignature = signature;
+    galleryFailed = false;
   } catch (e) {
+    galleryFailed = true;
     log(`Face-Gallery Abruf fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
   }
 }

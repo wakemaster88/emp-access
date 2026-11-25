@@ -226,7 +226,9 @@ export function RoomPanel({
         wide={wide}
       />
     );
-  const eventLabel = room.lastEvent ? `${eventTypeLabel(room.lastEvent.type)} ${fmtAgo(room.lastEvent.startedAt, nowMs)}` : null;
+  const eventLabel = room.lastEvent
+    ? `${eventTypeLabel(room.lastEvent.type)} ${room.lastEvent.running ? "läuft" : fmtAgo(room.lastEvent.at, nowMs)}`
+    : null;
   // Die Kamera mit dem juengsten Ereignis steht vorn und wird gross.
   const eventCamera = room.cameras.find((c) => c.id === room.lastEvent?.cameraId) ?? null;
   const cameras = eventCamera ? [eventCamera, ...room.cameras.filter((c) => c.id !== eventCamera.id)] : room.cameras;

@@ -25,6 +25,7 @@ import { ruleInclude } from "@/lib/room-rule-queries";
 import { DEFAULT_TIMEZONE, addDaysToYmd, tzYmd } from "@/lib/tz-time";
 import { McpToolError, type McpLevel, type McpTool } from "./protocol";
 import { equalsInsensitive } from "@/lib/like-escape";
+import { recentActivityWhere } from "@/lib/camera-events";
 
 export interface McpCtx {
   db: TenantDb;
@@ -965,10 +966,13 @@ const backendTools: Tool[] = [
       const ref = argStr(args, "camera", { max: 80 });
       const type = argStr(args, "type", { max: 40 });
       const cam = ref ? await findCamera(ctx, ref) : null;
+      // Auch Ereignisse, die vor dem Zeitraum begannen und noch laufen oder
+      // erst darin endeten (anhaltende Bewegung ist ein einziges Ereignis).
+      const now = new Date();
       const rows = await ctx.db.cameraEvent.findMany({
         where: {
           accountId: ctx.accountId,
-          startedAt: { gte: new Date(Date.now() - hours * 3_600_000) },
+          ...recentActivityWhere(new Date(now.getTime() - hours * 3_600_000), now),
           ...(cam ? { cameraId: cam.id } : {}),
           ...(type ? { type: equalsInsensitive(type) } : {}),
         },

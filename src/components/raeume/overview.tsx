@@ -198,7 +198,7 @@ function RoomTile({
   if (s.camerasTotal > 0) {
     chips.push({
       Icon: Cctv,
-      text: `${s.camerasTotal} ${s.camerasTotal === 1 ? "Kamera" : "Kameras"}${lastEvent ? ` · ${ago(lastEvent.startedAt, nowMs)}` : ""}`,
+      text: `${s.camerasTotal} ${s.camerasTotal === 1 ? "Kamera" : "Kameras"}${lastEvent ? ` · ${lastEvent.running ? "jetzt" : ago(lastEvent.at, nowMs)}` : ""}`,
       tone: s.camerasStale > 0 ? "text-destructive" : undefined,
     });
   }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { debounceEvents, newDebounceState } from "./event-debounce.js";
+import { debounceEvents, endAll, newDebounceState, runningOf } from "./event-debounce.js";
 
 const HOLD = 6000;
 
@@ -52,4 +52,45 @@ test("Nachlauf je Typ: Bewegung verschmilzt über 60 s, die Person endet nach 6 
   assert.deepEqual(debounceEvents(st, { MOTION: false, PERSON: false }, 100_000, hold), [
     { type: "MOTION", phase: "end", at: 40_000 },
   ]);
+});
+
+test("Laufende Ereignisse: mit ihrem Beginn, nach dem Ende nicht mehr", () => {
+  const st = newDebounceState();
+  assert.deepEqual(runningOf(st), []);
+  debounceEvents(st, { MOTION: true, PERSON: false }, 1000, HOLD);
+  debounceEvents(st, { MOTION: true, PERSON: true }, 3000, HOLD);
+  // Flackern aendert den Beginn nicht.
+  debounceEvents(st, { MOTION: false, PERSON: true }, 5000, HOLD);
+  debounceEvents(st, { MOTION: true, PERSON: true }, 7000, HOLD);
+  assert.deepEqual(runningOf(st), [
+    { type: "MOTION", at: 1000 },
+    { type: "PERSON", at: 3000 },
+  ]);
+  debounceEvents(st, { MOTION: false, PERSON: true }, 20000, HOLD);
+  assert.deepEqual(runningOf(st), [{ type: "PERSON", at: 3000 }]);
+  // Ein neues Ereignis derselben Art traegt seinen eigenen Beginn.
+  debounceEvents(st, { MOTION: true, PERSON: true }, 30000, HOLD);
+  assert.deepEqual(
+    runningOf(st).find((r) => r.type === "MOTION"),
+    { type: "MOTION", at: 30000 },
+  );
+});
+
+test("Kamera entfernt: laufende Ereignisse enden mit ihrer letzten aktiven Messung", () => {
+  const st = newDebounceState();
+  debounceEvents(st, { MOTION: true, PERSON: true }, 1_000, HOLD);
+  debounceEvents(st, { MOTION: true, PERSON: false }, 5_000, HOLD);
+  // PERSON laeuft noch nach (Nachlauf), MOTION ist aktiv.
+  assert.deepEqual(endAll(st), [
+    { type: "MOTION", phase: "end", at: 5_000 },
+    { type: "PERSON", phase: "end", at: 1_000 },
+  ]);
+  // Danach laeuft nichts mehr, ein zweiter Aufruf meldet nichts.
+  assert.deepEqual(runningOf(st), []);
+  assert.deepEqual(endAll(st), []);
+  // Schon beendete Ereignisse werden nicht noch einmal beendet.
+  const st2 = newDebounceState();
+  debounceEvents(st2, { MOTION: true }, 1_000, HOLD);
+  debounceEvents(st2, { MOTION: false }, 10_000, HOLD);
+  assert.deepEqual(endAll(st2), []);
 });
