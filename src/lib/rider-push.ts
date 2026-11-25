@@ -7,6 +7,10 @@
 import { z } from "zod";
 import { prisma } from "./prisma";
 import { riderAppPath } from "./rider-app";
+import { berlinHour } from "./berlin-day";
+import { inAnnounceHours, isTestTitle } from "./rider-announce-rules";
+import { memberName } from "./rider-family";
+import { spokenName } from "./birthday";
 import { deliverPush, isWebPushConfigured, type PushPayload } from "./web-push";
 
 /** Mehr Geräte je Fahrer braucht niemand; schützt die Tabelle vor Müll. */
@@ -138,4 +142,92 @@ export function notifyAward(accountId: number, ticketId: number, name: string, v
     own: awardPushText(name, voucherLabel),
     forChild: (who) => awardPushText(name, voucherLabel, who),
   });
+}
+
+/** Text der Nachricht an die Erwachsenen, wenn jemand der Familie beitritt. */
+export function familyJoinPushText(name: string): { title: string; body: string } {
+  return { title: "Neu in deiner Familie", body: `${name} ist deiner Familie beigetreten. Schau im Profil unter Familie nach.` };
+}
+
+/**
+ * Jemand ist der Familie beigetreten: die übrigen Erwachsenen bekommen einen
+ * Push. Wie die übrigen Meldungen an alle nur tagsüber; nachts wird der
+ * Beitritt an der Familie vorgemerkt und `runFamilyJoinNoticeTick` meldet ihn
+ * am Morgen. Probedaten („TEST:“) erkennt die Regel am Namen der Erwachsenen,
+ * die die Meldung bekäme, nicht am selbst gewählten Namen der beitretenden
+ * Person. Gibt die Zahl der Geräte zurück.
+ */
+export async function notifyFamilyJoin(accountId: number, familyId: number, joinerId: number, now: Date = new Date()): Promise<number> {
+  if (!isWebPushConfigured()) return 0;
+  if (!inAnnounceHours(berlinHour(now))) {
+    await prisma.riderFamily.updateMany({ where: { id: familyId, accountId }, data: { joinNoticeIds: { push: joinerId } } });
+    return 0;
+  }
+  return sendFamilyJoinPush(accountId, familyId, joinerId);
+}
+
+async function sendFamilyJoinPush(accountId: number, familyId: number, joinerId: number): Promise<number> {
+  const joiner = await prisma.riderProfile.findFirst({
+    where: { id: joinerId, accountId, familyId },
+    select: {
+      firstName: true,
+      nickname: true,
+      tickets: { select: { firstName: true, name: true, endDate: true, subscriptionId: true }, orderBy: { id: "desc" }, take: 20 },
+    },
+  });
+  if (!joiner) return 0;
+  const name = spokenName(memberName(joiner)) ?? "Jemand";
+  const adults = await prisma.riderProfile.findMany({
+    where: { accountId, familyId, familyAdult: true, id: { not: joinerId } },
+    select: {
+      id: true,
+      token: true,
+      firstName: true,
+      nickname: true,
+      tickets: { select: { firstName: true, name: true, endDate: true, subscriptionId: true }, orderBy: { id: "desc" }, take: 20 },
+    },
+  });
+  let sent = 0;
+  for (const adult of adults) {
+    if (isTestTitle(memberName(adult))) continue;
+    sent += await sendPushToRider(adult.id, accountId, {
+      ...familyJoinPushText(name),
+      url: `${riderAppPath(adult.token)}/profil`,
+      tag: `rider-family-join-${familyId}`,
+    });
+  }
+  return sent;
+}
+
+/**
+ * Nachts vorgemerkte Beitritte tagsüber melden (Cron alle fünf Minuten).
+ * Jede Familie wird vor dem Senden geleert, damit zwei Läufe nicht doppelt melden;
+ * eine Meldung, deren Senden scheitert, wird nicht wiederholt.
+ */
+export async function runFamilyJoinNoticeTick(now: Date = new Date()): Promise<{ families: number; sent: number }> {
+  if (!isWebPushConfigured() || !inAnnounceHours(berlinHour(now))) return { families: 0, sent: 0 };
+  const pending = await prisma.riderFamily.findMany({
+    where: { NOT: { joinNoticeIds: { isEmpty: true } } },
+    select: { id: true, accountId: true, joinNoticeIds: true },
+    take: 50,
+  });
+  let families = 0;
+  let sent = 0;
+  for (const f of pending) {
+    const claimed = await prisma.riderFamily.updateMany({
+      where: { id: f.id, accountId: f.accountId, joinNoticeIds: { equals: f.joinNoticeIds } },
+      data: { joinNoticeIds: { set: [] } },
+    });
+    if (claimed.count === 0) continue;
+    families += 1;
+    for (const joinerId of [...new Set(f.joinNoticeIds)]) {
+      try {
+        sent += await sendFamilyJoinPush(f.accountId, f.id, joinerId);
+      } catch (err) {
+        // Ein Fehler trifft nur diesen Beitritt, die übrigen der Familie gehen raus.
+        console.error(`[rider-push] Beitrittsmeldung Familie ${f.id} fehlgeschlagen:`, err);
+      }
+    }
+  }
+  return { families, sent };
 }

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
-  checkRiderPassword, hasCredential, hashRiderPassword, mayManageCredentials, setRiderCookie,
+  checkRiderPassword, hasCredential, hashRiderPassword, mayManageCredentials, resetRiderLoginLocks, riderPasswordLimitResponse,
+  setRiderCookie,
 } from "@/lib/rider-auth";
 import { NOT_ALLOWED, riderAuthContext } from "@/lib/rider-auth-api";
 import { endOtherSessions, riderResetKeyValid } from "@/lib/rider-reset";
@@ -11,7 +12,8 @@ import { riderPasswordError } from "@/lib/rider-session";
  * POST: Passwort setzen. Beim Einrichten reicht der Einladungslink, später
  * braucht es die Sitzung und (falls schon eines gesetzt ist) das bisherige Passwort.
  * Mit dem Schlüssel aus der Mail „Passwort vergessen“ (`resetKey`) geht es ohne
- * beides; danach enden alle anderen Sitzungen.
+ * beides. Nach jedem Wechsel des Passworts enden alle anderen Sitzungen; dieses
+ * Gerät bleibt angemeldet.
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const ctx = await riderAuthContext(request, params, "password");
@@ -28,10 +30,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
   if (!viaReset && hasCredential(profile) && profile.passwordHash) {
-    const check = await checkRiderPassword(profile, body?.current);
-    if (check === "locked") {
-      return NextResponse.json({ error: "Zu viele Versuche. Bitte in 15 Minuten noch einmal." }, { status: 429 });
-    }
+    const check = await checkRiderPassword(profile, body?.current, ctx.ip);
+    if (check === "locked" || check === "slow") return riderPasswordLimitResponse(check);
     if (check !== "ok") return NextResponse.json({ error: "Das bisherige Passwort stimmt nicht." }, { status: 400 });
   }
 
@@ -39,6 +39,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     where: { id: profile.id },
     data: { passwordHash: await hashRiderPassword(body!.password as string), loginFailures: 0, loginLockedUntil: null },
   });
-  const sessionVersion = viaReset ? await endOtherSessions(profile.id) : profile.sessionVersion;
+  await resetRiderLoginLocks(profile.id);
+  // Passwort geändert (oder per Mail neu festgelegt): alle anderen Geräte
+  // werden abgemeldet, dieses bekommt ein neues Cookie. Das erste Passwort
+  // (auch neben einem Passkey) lässt die übrigen Sitzungen stehen.
+  const sessionVersion = viaReset || profile.passwordHash != null ? await endOtherSessions(profile.id) : profile.sessionVersion;
   return setRiderCookie(NextResponse.json({ ok: true }), { id: profile.id, sessionVersion });
 }

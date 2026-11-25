@@ -2,8 +2,8 @@
  * Anmeldung an der Kunden-App per E-Mail.
  *
  * Der Kunde gibt auf `/app` nur seine Adresse ein und bekommt einen Link
- * (`/app/mail/<schlüssel>`, signiert, 48 Stunden gültig). Erst wenn er den Link
- * öffnet, ist die Adresse bestätigt.
+ * (`/app/mail/<schlüssel>`, signiert, 48 Stunden gültig, mit eingerichtetem
+ * Zugang eine Stunde). Erst wenn er den Link öffnet, ist die Adresse bestätigt.
  *
  * - Gehört die Adresse zu einem Kundenkonto (lib/customers), wählt der Kunde
  *   einmal, wer er ist: eine Person des Kontos oder „fahre selbst nicht“.
@@ -17,7 +17,10 @@
 import { prisma } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { openMailWithinCap } from "./rider-mail-cap";
-import { countLinked, dayTicketsByEmail, mailLinkKey, MAIL_LINK_HOURS, MAIL_MAX_PER_DAY, MAIL_PAUSE_MINUTES, normalizeEmail, DAY_GUEST_MAIL_SUBJECT } from "./day-guest";
+import {
+  countLinked, dayTicketsByEmail, mailLinkKey, mailLinkTarget, MAIL_LINK_HOURS, MAIL_LINK_HOURS_WITH_ACCESS, MAIL_MAX_PER_DAY,
+  MAIL_PAUSE_MINUTES, normalizeEmail, DAY_GUEST_MAIL_SUBJECT,
+} from "./day-guest";
 import { newRiderToken } from "./rider-app";
 import { samePersonAbos } from "./abo-person";
 import { customerIdForEmail, kontoLogin, syncKontoFamily, type LoginPerson } from "./customers";
@@ -284,8 +287,11 @@ export async function requestAppLink(rawEmail: unknown, origin: string, now: Dat
     // erfährt davon nichts, die Antwort bleibt dieselbe.
     if (!target.known && !(await openMailWithinCap(target.accountId, email, now))) continue;
 
-    const url = `${origin}/app/mail/${mailLinkKey(target.accountId, email, now)}`;
-    const content = riderLinkMail({ url, accountName: target.name, origin, hours: MAIL_LINK_HOURS });
+    // Mit eingerichtetem Zugang gilt der Link nur kurz; die Version bindet ihn an die Sitzungen des Profils.
+    const profile = await mailLinkTarget(target.accountId, email);
+    const hours = profile.hasAccess ? MAIL_LINK_HOURS_WITH_ACCESS : MAIL_LINK_HOURS;
+    const url = `${origin}/app/mail/${mailLinkKey(target.accountId, email, now, hours, profile.version)}`;
+    const content = riderLinkMail({ url, accountName: target.name, origin, hours });
     const result = await sendEmail({
       config: mail,
       to: email,

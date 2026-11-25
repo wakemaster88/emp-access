@@ -41,25 +41,84 @@ function sign(payload: string): string {
   return createHmac("sha256", secret()).update(`day-guest-mail:${payload}`).digest("base64url");
 }
 
-/** Schlüssel im Mail-Link `/app/mail/<schlüssel>`: Konto, Adresse und Ablauf, signiert. */
-export function mailLinkKey(accountId: number, email: string, now: Date = new Date(), hours: number = MAIL_LINK_HOURS): string {
-  const payload = Buffer.from(
-    JSON.stringify({ a: accountId, e: email, x: now.getTime() + hours * 3_600_000 }),
-  ).toString("base64url");
+/** So lange gilt der Link, wenn das Profil zur Adresse schon ein Passwort oder einen Passkey hat. */
+export const MAIL_LINK_HOURS_WITH_ACCESS = 1;
+
+/**
+ * Schlüssel im Mail-Link `/app/mail/<schlüssel>`: Konto, Adresse und Ablauf,
+ * signiert. `version` ist die `sessionVersion` des Profils zur Adresse beim
+ * Versand (`mailLinkTarget`): Steigt sie (Passwort geändert, „Auf allen
+ * Geräten abmelden“), meldet der Link nicht mehr an (`mailLinkSession`).
+ * Schlüssel ohne Version stammen aus der Zeit davor und gelten bis zu ihrem
+ * Ablauf wie bisher.
+ */
+export function mailLinkKey(
+  accountId: number,
+  email: string,
+  now: Date = new Date(),
+  hours: number = MAIL_LINK_HOURS,
+  version?: number,
+): string {
+  const data: { a: number; e: string; x: number; v?: number } = { a: accountId, e: email, x: now.getTime() + hours * 3_600_000 };
+  if (version !== undefined) data.v = version;
+  const payload = Buffer.from(JSON.stringify(data)).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
 
-export function verifyMailLinkKey(value: string, now: Date = new Date()): { accountId: number; email: string } | null {
+/**
+ * Profil, das die Adresse bestätigt hat (wie beim Einlösen des Links): seine
+ * `sessionVersion` für den Schlüssel und ob es schon einen eigenen Zugang hat.
+ * Ohne Profil Version 0, so starten neue Profile (`exists` false).
+ */
+export async function mailLinkTarget(
+  accountId: number,
+  email: string,
+): Promise<{ version: number; hasAccess: boolean; exists: boolean }> {
+  const p = await prisma.riderProfile.findFirst({
+    where: { accountId, email },
+    select: { sessionVersion: true, passwordHash: true, _count: { select: { passkeys: true } } },
+    orderBy: { id: "asc" },
+  });
+  if (!p) return { version: 0, hasAccess: false, exists: false };
+  return { version: p.sessionVersion, hasAccess: p.passwordHash != null || p._count.passkeys > 0, exists: true };
+}
+
+/**
+ * Ist die Version im Link überholt? Nur wenn der Link eine trägt und es das
+ * Profil zur Adresse gibt; dann muss sie dessen `sessionVersion` entsprechen.
+ */
+export function mailLinkStale(version: number | undefined, current: { version: number } | null): boolean {
+  return version !== undefined && current !== null && current.version !== version;
+}
+
+/**
+ * Wie `verifyMailLinkKey`, dazu die Version: Wurde seit dem Versand das
+ * Passwort geändert, überall abgemeldet oder der Zugang zurückgesetzt, gilt
+ * der Link nicht mehr (null), die Person fordert einen neuen an.
+ */
+export async function verifyCurrentMailLinkKey(
+  value: string,
+  now: Date = new Date(),
+): Promise<{ accountId: number; email: string; version?: number } | null> {
+  const link = verifyMailLinkKey(value, now);
+  if (!link || link.version === undefined) return link;
+  const target = await mailLinkTarget(link.accountId, link.email);
+  return mailLinkStale(link.version, target.exists ? target : null) ? null : link;
+}
+
+export function verifyMailLinkKey(value: string, now: Date = new Date()): { accountId: number; email: string; version?: number } | null {
   const m = /^([A-Za-z0-9_-]{1,600})\.([A-Za-z0-9_-]{43})$/.exec(value);
   if (!m || !secret()) return null;
   const a = Buffer.from(m[2]);
   const b = Buffer.from(sign(m[1]));
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
-    const data = JSON.parse(Buffer.from(m[1], "base64url").toString("utf8")) as { a?: unknown; e?: unknown; x?: unknown };
+    const data = JSON.parse(Buffer.from(m[1], "base64url").toString("utf8")) as { a?: unknown; e?: unknown; x?: unknown; v?: unknown };
     const email = normalizeEmail(data.e);
     if (typeof data.a !== "number" || typeof data.x !== "number" || !email || data.x < now.getTime()) return null;
-    return { accountId: data.a, email };
+    if (data.v === undefined) return { accountId: data.a, email };
+    if (typeof data.v !== "number" || !Number.isInteger(data.v)) return null;
+    return { accountId: data.a, email, version: data.v };
   } catch {
     return null;
   }

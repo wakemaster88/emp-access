@@ -383,3 +383,53 @@ export function RiderLogout({ token }: { token: string }) {
     <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" disabled={busy} onClick={logout}><span>Abmelden</span></button>
   );
 }
+
+/**
+ * Auf allen Geräten abmelden, auch auf diesem. Mit Rückfrage auf der Seite;
+ * danach geht es zur Anmeldung.
+ */
+export function RiderLogoutEverywhere({ token }: { token: string }) {
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function logoutAll() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await post(`/api/rider/${encodeURIComponent(token)}/auth/logout-all`);
+    } catch (e) {
+      setError(messageOf(e) ?? "Das hat nicht geklappt.");
+      setBusy(false);
+      return;
+    }
+    await clearRiderLocalData();
+    window.location.assign(`/app/${encodeURIComponent(token)}`);
+  }
+
+  if (!confirm) {
+    return (
+      <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={() => setConfirm(true)}>
+        <span>Auf allen Geräten abmelden</span>
+      </button>
+    );
+  }
+  return (
+    <div className="rd-card" style={{ gap: 10 }}>
+      <b>Auf allen Geräten abmelden?</b>
+      <span className="rd-muted">
+        Alle Handys und Browser mit deinem Zugang werden abgemeldet, auch dieses. Danach meldest du dich mit Passkey oder Passwort neu an.
+      </span>
+      {error && <div className="rd-msg rd-msg-err" role="alert">{error}</div>}
+      <div className="rd-row">
+        <button type="button" className="rd-btn rd-btn-danger rd-grow" disabled={busy} onClick={logoutAll}>
+          <span>{busy ? "Einen Moment …" : "Überall abmelden"}</span>
+        </button>
+        <button type="button" className="rd-btn rd-btn-ghost rd-grow" disabled={busy} onClick={() => { setConfirm(false); setError(""); }}>
+          <span>Abbrechen</span>
+        </button>
+      </div>
+    </div>
+  );
+}

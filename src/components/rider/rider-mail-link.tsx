@@ -49,7 +49,7 @@ export function RiderMailLink() {
         <span className="rd-wl-sent-icon">{MAIL_ICON}</span>
         <h2 className="rd-display rd-h3">Schau in dein Postfach</h2>
         <p className="rd-soft" style={{ margin: 0 }}>
-          Wir haben dir den Link an <b className="rd-wl-mail">{email}</b> geschickt. Tipp ihn an, dann bist du drin. Er gilt 48 Stunden.
+          Wir haben dir den Link an <b className="rd-wl-mail">{email}</b> geschickt. Tipp ihn an, dann bist du drin. Er gilt bis zu 48 Stunden.
         </p>
         <p className="rd-muted" style={{ margin: 0 }}>Nichts da? Schau im Spam-Ordner nach.</p>
         <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={() => setDone(false)}>

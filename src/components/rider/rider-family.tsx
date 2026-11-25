@@ -41,6 +41,9 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
   const url = `/api/rider/${encodeURIComponent(token)}/family`;
   const others = members.filter((m) => m.profileId !== selfId);
   const ownKonto = members.find((m) => m.profileId === selfId)?.customerId ?? null;
+  const fromKonto = (m: FamilyMemberItem) => ownKonto != null && m.customerId === ownKonto;
+  // Beim Verlassen kommen die Kinder aus dem eigenen Konto mit, außer eine weitere Erwachsene gehört zum selben Konto.
+  const kidsLeaving = others.some((m) => m.adult && fromKonto(m)) ? [] : others.filter((m) => !m.adult && fromKonto(m));
 
   async function call(body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
     setBusy(true);
@@ -214,20 +217,27 @@ export function RiderFamily({ token, selfId, members, childOfFamily }: Props) {
         <div className="rd-field">
           <label htmlFor="rd-fam-invite">Einladungslink</label>
           <input id="rd-fam-invite" className="rd-input" readOnly value={invite} onFocus={(e) => e.currentTarget.select()} />
-          <span className="rd-muted">Gilt 7 Tage. Wer den Link öffnet, meldet sich mit seinem eigenen Zugang an und tritt bei.</span>
+          <span className="rd-muted">Gilt 7 Tage. Wer den Link öffnet, meldet sich mit seinem eigenen Zugang an und tritt bei. Ein neuer Link ersetzt ältere Einladungen.</span>
           <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={share}><span>{copied ? "Kopiert" : "Link teilen"}</span></button>
         </div>
       ) : (
         <button type="button" className="rd-btn rd-btn-ghost rd-btn-wide" onClick={makeInvite} disabled={busy}><span>Stattdessen Link teilen</span></button>
       )}
 
-      {/* Mit Personen aus dem eigenen Konto gibt es nichts zu verlassen: sie gehören dazu. */}
-      {members.length > 0 && !others.some((m) => !m.adult && ownKonto != null && m.customerId === ownKonto) &&
+      {/* Nur mit Personen aus dem eigenen Konto gibt es nichts zu verlassen: sie gehören dazu. */}
+      {members.length > 0 && (others.some((m) => m.adult) || !others.some((m) => !m.adult && fromKonto(m))) &&
         (confirm === "leave" ? (
-          <div className="rd-row">
-            <button type="button" className="rd-btn rd-btn-danger rd-grow" onClick={leave} disabled={busy}><span>Wirklich verlassen</span></button>
-            <button type="button" className="rd-btn rd-btn-ghost rd-grow" onClick={() => setConfirm(null)} disabled={busy}><span>Abbrechen</span></button>
-          </div>
+          <>
+            {kidsLeaving.length > 0 && (
+              <span className="rd-muted">
+                {kidsLeaving.map((m) => m.name).join(", ")} {kidsLeaving.length === 1 ? "kommt" : "kommen"} aus deinem Kundenkonto mit und {kidsLeaving.length === 1 ? "bleibt" : "bleiben"} bei dir.
+              </span>
+            )}
+            <div className="rd-row">
+              <button type="button" className="rd-btn rd-btn-danger rd-grow" onClick={leave} disabled={busy}><span>Wirklich verlassen</span></button>
+              <button type="button" className="rd-btn rd-btn-ghost rd-grow" onClick={() => setConfirm(null)} disabled={busy}><span>Abbrechen</span></button>
+            </div>
+          </>
         ) : (
           <button type="button" className="rd-btn rd-btn-danger rd-btn-wide" onClick={() => setConfirm("leave")}><span>Familie verlassen</span></button>
         ))}

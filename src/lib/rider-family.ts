@@ -48,20 +48,36 @@ function sign(payload: string): string {
   return createHmac("sha256", secret()).update(`rider-family-invite:${payload}`).digest("base64url");
 }
 
-/** Schlüssel im Einladungslink `/app/familie/<schlüssel>` für den Partner. */
-export function familyInviteKey(familyId: number, inviterId: number, now: Date = new Date()): string {
-  const payload = `${familyId}.${inviterId}.${Math.floor(now.getTime() / 1000) + FAMILY_INVITE_DAYS * 86_400}`;
+/**
+ * Schlüssel im Einladungslink `/app/familie/<schlüssel>` für den Partner.
+ * `version` ist der Zähler `RiderFamily.inviteVersion`: Ein neuer geteilter
+ * Link erhöht ihn, ältere Schlüssel gelten dann nicht mehr. Schlüssel ohne
+ * Version stammen aus der Zeit davor und gelten, solange der Zähler auf 0 steht.
+ */
+export function familyInviteKey(familyId: number, inviterId: number, now: Date = new Date(), version?: number): string {
+  const exp = Math.floor(now.getTime() / 1000) + FAMILY_INVITE_DAYS * 86_400;
+  const payload = version === undefined ? `${familyId}.${inviterId}.${exp}` : `${familyId}.${inviterId}.${exp}.${version}`;
   return `${payload}.${sign(payload)}`;
 }
 
-export function verifyFamilyInviteKey(value: string, now: Date = new Date()): { familyId: number; inviterId: number } | null {
-  const m = /^(\d{1,12})\.(\d{1,12})\.(\d{1,12})\.([A-Za-z0-9_-]{43})$/.exec(value);
+export function verifyFamilyInviteKey(
+  value: string,
+  now: Date = new Date(),
+): { familyId: number; inviterId: number; version?: number } | null {
+  const m = /^(\d{1,12})\.(\d{1,12})\.(\d{1,12})(?:\.(\d{1,9}))?\.([A-Za-z0-9_-]{43})$/.exec(value);
   if (!m || !secret()) return null;
-  const a = Buffer.from(m[4]);
-  const b = Buffer.from(sign(`${m[1]}.${m[2]}.${m[3]}`));
+  const payload = m[4] === undefined ? `${m[1]}.${m[2]}.${m[3]}` : `${m[1]}.${m[2]}.${m[3]}.${m[4]}`;
+  const a = Buffer.from(m[5]);
+  const b = Buffer.from(sign(payload));
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   if (Number(m[3]) * 1000 <= now.getTime()) return null;
-  return { familyId: Number(m[1]), inviterId: Number(m[2]) };
+  const link = { familyId: Number(m[1]), inviterId: Number(m[2]) };
+  return m[4] === undefined ? link : { ...link, version: Number(m[4]) };
+}
+
+/** Gilt ein Schlüssel mit dieser Version (ohne: aus der Zeit vor dem Zähler) beim aktuellen Zählerstand? */
+export function inviteVersionMatches(keyVersion: number | undefined, current: number): boolean {
+  return (keyVersion ?? 0) === current;
 }
 
 export interface FamilyMember {
@@ -181,10 +197,25 @@ export async function addFamilyChild(viewer: FamilyPerson, targetProfileId: numb
   });
 }
 
-/** Einladungslink für den Partner; legt die Familie an, wenn es noch keine gibt. */
+/**
+ * Einladungslink für den Partner; legt die Familie an, wenn es noch keine
+ * gibt. Jeder neue Link erhöht den Zähler der Familie: ältere Einladungslinks
+ * (auch die aus Einladungs-Mails) gelten danach nicht mehr.
+ */
 export async function createFamilyInvite(viewer: FamilyPerson): Promise<string> {
   const familyId = await ensureFamily(viewer);
-  return `/app/familie/${familyInviteKey(familyId, viewer.id)}`;
+  const family = await prisma.riderFamily.update({
+    where: { id: familyId },
+    data: { inviteVersion: { increment: 1 } },
+    select: { inviteVersion: true },
+  });
+  return `/app/familie/${familyInviteKey(familyId, viewer.id, new Date(), family.inviteVersion)}`;
+}
+
+/** Aktueller Zähler der Einladungslinks einer Familie (für die Einladung per Mail). */
+export async function familyInviteVersion(familyId: number): Promise<number> {
+  const family = await prisma.riderFamily.findUnique({ where: { id: familyId }, select: { inviteVersion: true } });
+  return family?.inviteVersion ?? 0;
 }
 
 /** Wer lädt ein? Für die Seite hinter dem Einladungslink; null, wenn er nicht mehr gilt. */
@@ -193,9 +224,10 @@ export async function familyInviteInfo(key: string): Promise<{ familyId: number;
   if (!link) return null;
   const inviter = await prisma.riderProfile.findFirst({
     where: { id: link.inviterId, familyId: link.familyId, familyAdult: true },
-    select: { accountId: true, firstName: true, nickname: true, email: true, tickets: MEMBER_SELECT.tickets },
+    select: { accountId: true, firstName: true, nickname: true, email: true, tickets: MEMBER_SELECT.tickets, family: { select: { inviteVersion: true } } },
   });
   if (!inviter || (inviter.tickets.length === 0 && !inviter.email)) return null;
+  if (!inviter.family || !inviteVersionMatches(link.version, inviter.family.inviteVersion)) return null;
   return { familyId: link.familyId, accountId: inviter.accountId, inviterName: memberName(inviter) };
 }
 
@@ -203,14 +235,16 @@ export async function familyInviteInfo(key: string): Promise<{ familyId: number;
  * Der Einladung folgen: die angemeldete Person wird Erwachsene der Familie.
  * Verwaltet sie schon eine eigene Familie nur mit Kindern (etwa die Personen
  * ihres Kundenkontos), kommen die Kinder mit; mit weiteren Erwachsenen muss
- * sie die alte Familie zuerst verlassen.
+ * sie die alte Familie zuerst verlassen. Gibt die Familie zurück, wenn sich
+ * etwas geändert hat (für die Nachricht an die übrigen Erwachsenen), sonst null.
  */
-export async function joinFamily(person: FamilyPerson, key: string): Promise<void> {
+export async function joinFamily(person: FamilyPerson, key: string): Promise<number | null> {
   const invite = await familyInviteInfo(key);
   if (!invite || invite.accountId !== person.accountId) throw new FamilyError("Diese Einladung gilt nicht mehr.");
   if (person.familyId === invite.familyId) {
-    if (!person.familyAdult) await prisma.riderProfile.update({ where: { id: person.id }, data: { familyAdult: true } });
-    return;
+    if (person.familyAdult) return null;
+    await prisma.riderProfile.update({ where: { id: person.id }, data: { familyAdult: true } });
+    return invite.familyId;
   }
   const others = person.familyId != null
     ? await prisma.riderProfile.findMany({
@@ -231,13 +265,57 @@ export async function joinFamily(person: FamilyPerson, key: string): Promise<voi
     }),
   ]);
   if (old != null) await tidyFamily(old, person.accountId);
+  return invite.familyId;
 }
 
-/** Die Familie verlassen. Geht die letzte Erwachsene, löst sich die Familie auf. */
+/**
+ * Kinder, die eine Erwachsene beim Verlassen mitnimmt: Mitglieder ohne
+ * Erwachsenen-Rolle aus ihrem Kundenkonto. Gehört eine weitere Erwachsene
+ * der Familie zum selben Konto, bleiben sie (sie gehören beiden).
+ */
+export function childrenLeavingWith(
+  me: { id: number; customerId: number | null },
+  others: Array<{ id: number; familyAdult: boolean; customerId: number | null }>,
+): number[] {
+  if (me.customerId == null) return [];
+  const rest = others.filter((o) => o.id !== me.id);
+  if (rest.some((o) => o.familyAdult && o.customerId === me.customerId)) return [];
+  return rest.filter((o) => !o.familyAdult && o.customerId === me.customerId).map((o) => o.id);
+}
+
+/**
+ * Die Familie verlassen. Eine Erwachsene nimmt die Kinder aus ihrem
+ * Kundenkonto mit (`childrenLeavingWith`), sie bilden dann ihre eigene
+ * Familie. Geht die letzte Erwachsene, löst sich die Familie auf.
+ */
 export async function leaveFamily(person: FamilyPerson): Promise<void> {
   if (person.familyId == null) return;
-  await prisma.riderProfile.update({ where: { id: person.id }, data: { familyId: null, familyAdult: false } });
-  await tidyFamily(person.familyId, person.accountId);
+  const familyId = person.familyId;
+  let kids: number[] = [];
+  if (person.familyAdult) {
+    const members = await prisma.riderProfile.findMany({
+      where: { familyId, accountId: person.accountId },
+      select: { id: true, familyAdult: true, customerId: true },
+    });
+    const me = members.find((m) => m.id === person.id);
+    if (me) kids = childrenLeavingWith(me, members);
+  }
+  if (kids.length === 0) {
+    await prisma.riderProfile.update({ where: { id: person.id }, data: { familyId: null, familyAdult: false } });
+  } else {
+    const ownId = await prisma.$transaction(async (tx) => {
+      const own = await tx.riderFamily.create({ data: { accountId: person.accountId }, select: { id: true } });
+      await tx.riderProfile.update({ where: { id: person.id }, data: { familyId: own.id, familyAdult: true } });
+      await tx.riderProfile.updateMany({
+        where: { id: { in: kids }, accountId: person.accountId, familyId, familyAdult: false },
+        data: { familyId: own.id },
+      });
+      return own.id;
+    });
+    // Kam inzwischen keins der Kinder mit, bleibt keine Familie aus einer Person.
+    await tidyFamily(ownId, person.accountId);
+  }
+  await tidyFamily(familyId, person.accountId);
 }
 
 /**

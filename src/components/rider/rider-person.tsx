@@ -18,6 +18,8 @@ interface Props {
   editable: boolean;
   /** Eltern bearbeiten die Daten ihres Kindes. */
   managed?: boolean;
+  /** Geburtsdatum wurde in der App schon geändert; jetzt nur an der Kasse. */
+  birthDateLocked?: boolean;
 }
 
 type Msg = { ok: boolean; text: string } | null;
@@ -60,7 +62,7 @@ async function shrink(file: File): Promise<string> {
 }
 
 /** Kopf des Profils: Bild, Name und die persönlichen Daten zum Bearbeiten. */
-export function RiderPerson({ token, firstName, lastName, birthDate, photoUrl, subtitle, editable, managed = false }: Props) {
+export function RiderPerson({ token, firstName, lastName, birthDate, photoUrl, subtitle, editable, managed = false, birthDateLocked = false }: Props) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   // `photo`: Adresse des gespeicherten Bilds, nach dem Hochladen die neue Data-URL.
@@ -161,6 +163,9 @@ export function RiderPerson({ token, firstName, lastName, birthDate, photoUrl, s
         </div>
         <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden onChange={pickPhoto} />
       </div>
+      {editable && (
+        <span className="rd-muted rd-note">Ein neues Profilbild prüft vorher automatisch ein KI-Dienst (xAI), erst danach erscheint es.</span>
+      )}
 
       {editing ? (
         <form className="rd-card" onSubmit={save} style={{ gap: 12 }}>
@@ -175,7 +180,12 @@ export function RiderPerson({ token, firstName, lastName, birthDate, photoUrl, s
           </div>
           <div className="rd-field">
             <label htmlFor="rd-birth">Geburtsdatum</label>
-            <input id="rd-birth" className="rd-input" type="date" min="1900-01-01" max={today} autoComplete={managed ? "off" : "bday"} value={form.birthDate} onChange={(e) => setForm((f) => ({ ...f, birthDate: e.target.value }))} />
+            <input id="rd-birth" className="rd-input" type="date" min="1900-01-01" max={today} autoComplete={managed ? "off" : "bday"} disabled={birthDateLocked} value={form.birthDate} onChange={(e) => setForm((f) => ({ ...f, birthDate: e.target.value }))} />
+            {birthDateLocked ? (
+              <span className="rd-muted">Das Geburtsdatum wurde in der App schon geändert. Ändern kann es jetzt die Kasse.</span>
+            ) : data.birthDate ? (
+              <span className="rd-muted">Ein eingetragenes Geburtsdatum kannst du hier einmal im Jahr ändern, sonst an der Kasse.</span>
+            ) : null}
           </div>
           <span className="rd-muted">{managed ? "So steht dein Kind an der Kasse und auf seinen Abos." : "So stehst du an der Kasse und auf deinen Abos."} Für andere bleibt nur der Spitzname sichtbar.</span>
           {msg && <div className={`rd-msg ${msg.ok ? "rd-msg-ok" : "rd-msg-err"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</div>}

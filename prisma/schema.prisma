@@ -4253,6 +4253,9 @@ model RiderProfile {
   firstName         String?
   lastName          String?
   birthDate         DateTime?
+  /// Letzte Aenderung des Geburtsdatums durch die Person in der App; danach
+  /// geht es dort 365 Tage lang nur noch an der Kasse (lib/rider-person).
+  birthDateChangedAt DateTime?
   /// Jahr der ersten Saison am Lift (traegt das Personal ein). Fuer die
   /// Treue-Awards: Saisons vor der ersten gezaehlten zaehlen so mit.
   ridingSince       Int?
@@ -4362,11 +4365,17 @@ model ChipEvent {
 
 /// Familie in der Kunden-App: buendelt Profile, gezaehlt wird weiter je Person.
 model RiderFamily {
-  id        Int            @id @default(autoincrement())
-  members   RiderProfile[]
-  accountId Int
-  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt DateTime       @default(now())
+  id            Int            @id @default(autoincrement())
+  members       RiderProfile[]
+  accountId     Int
+  account       Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+  /// Zaehler der Einladungslinks: ein neuer Link erhoeht ihn, aeltere gelten
+  /// dann nicht mehr (lib/rider-family `familyInviteKey`).
+  inviteVersion Int            @default(0)
+  /// Profile, die nachts beigetreten sind: die Meldung an die Erwachsenen
+  /// geht morgens raus (lib/rider-push `runFamilyJoinNoticeTick`).
+  joinNoticeIds Int[]          @default([])
 
   @@index([accountId])
 }
