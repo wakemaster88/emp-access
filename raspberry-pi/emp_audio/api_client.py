@@ -41,6 +41,11 @@ class ApiClient:
         # weder auf den Job-Poll warten noch ihn aufhalten.
         self._live_session = requests.Session()
         self._live_session.headers.update({"Authorization": f"Bearer {api_token}"})
+        # ETag der letzten Antwort auf den Zonen-Poll und die Antwort selbst
+        # (ohne Jobs). Nur im Speicher: nach einem Neustart fragt der Pi ohne
+        # If-None-Match und bekommt wieder die volle Antwort.
+        self._state_etag: Optional[str] = None
+        self._state_cache: Optional[dict] = None
 
     def fetch_state(self) -> Optional[dict]:
         """
@@ -48,16 +53,30 @@ class ApiClient:
         gelieferten Jobs sofort als SENT – sie werden also nur einmal
         ausgeliefert und müssen hier zuverlässig verarbeitet werden.
         Returns: {"zone": {...}, "jobs": [...]} oder None.
+        Mit ETag: antwortet der Server mit 304 (nichts geändert, keine offenen
+        Jobs), gilt die zuletzt gelesene Zone weiter, ohne Jobs.
         """
         try:
+            headers = {"If-None-Match": self._state_etag} if self._state_etag else None
             resp = self._session.get(
                 f"{self.server_url}/api/devices/audio",
                 params={"id": self.device_id},
                 timeout=TIMEOUT,
+                headers=headers,
             )
+            if resp.status_code == 304:
+                if self._state_cache is not None:
+                    return {**self._state_cache, "jobs": []}
+                # 304 ohne gemerkte Antwort: beim nächsten Mal wieder voll abrufen.
+                self._state_etag = None
+                return None
             if resp.status_code == 200:
-                return resp.json()
+                payload = resp.json()
+                self._remember_state(resp, payload)
+                return payload
             if resp.status_code == 404:
+                self._state_etag = None
+                self._state_cache = None
                 logger.warning("Keine Zone für Gerät #%d hinterlegt", self.device_id)
             else:
                 logger.warning("Statusabruf fehlgeschlagen: HTTP %d", resp.status_code)
@@ -66,6 +85,20 @@ class ApiClient:
         except Exception as e:
             logger.warning("Statusabruf: %s", e)
         return None
+
+    def _remember_state(self, resp, payload) -> None:
+        """ETag und Antwort für den nächsten Poll merken; ohne ETag nichts merken."""
+        try:
+            etag = resp.headers.get("ETag") if resp.headers is not None else None
+            if isinstance(etag, str) and etag and isinstance(payload, dict):
+                self._state_etag = etag
+                self._state_cache = {k: v for k, v in payload.items() if k != "jobs"}
+            else:
+                self._state_etag = None
+                self._state_cache = None
+        except Exception:
+            self._state_etag = None
+            self._state_cache = None
 
     def fetch_live(self, session_id: int, after: Optional[int]) -> Optional[LiveAudio]:
         """
