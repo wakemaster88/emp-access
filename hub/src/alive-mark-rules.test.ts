@@ -31,9 +31,11 @@ test("Lebenszeichen: Scheitert das Schreiben, wird der alte Stand entfernt", () 
     log: `Lebenszeichen: Schreiben fehlgeschlagen (${full})`,
   });
   assert.deepEqual(w.after(full, now + 60_000), { removeOld: true, log: null });
-  assert.deepEqual(w.after(full, now + 24 * 3_600_000), { removeOld: true, log: null });
+  // Auch Tage spaeter nicht noch einmal, solange der Grund derselbe bleibt.
+  const later = now + 7 * 24 * 3_600_000;
+  assert.deepEqual(w.after(full, later), { removeOld: true, log: null });
   // Ein anderer Grund ist eine neue Zeile.
-  assert.deepEqual(w.after(denied, now + 24 * 3_600_000 + 30_000), {
+  assert.deepEqual(w.after(denied, later + 30_000), {
     removeOld: true,
     log: `Lebenszeichen: Schreiben fehlgeschlagen (${denied})`,
   });
