@@ -12,15 +12,10 @@ Standort.
 - `HUB_NAME` ist unverändert der des iMac, damit der Hub-Eintrag in der
   Cloud bleibt. Der alte Cloud-Eintrag des iMac ist verwaist und kann
   gelöscht werden.
-- Headless: automatische Anmeldung (FileVault aus), Bildschirmfreigabe/VNC
-  und SSH. Bei aktivem „Entfernte Verwaltung“ funktionierte die
-  Bildschirmfreigabe nicht, deshalb ist sie aus.
-- Remote Control für Claude startet nach der Anmeldung über
-  `~/repos/start-remote-control.command` (Anmeldeobjekt, wartet auf DNS,
-  läuft in einer Schleife). Repo liegt unter `~/repos/emp-access`, Claude
-  CLI unter `~/.local/bin/claude`.
-- Auf dem Mac Studio blockiert die Sicherheitsprüfung von Remote Control
-  Downloads und das Installieren von LaunchAgents. Solche Schritte führt
+- Läuft ohne Bildschirm. Details zur Anmeldung, zur Absicherung und zum
+  Fernzugang liegen nicht im öffentlichen Repository, sondern im privaten
+  Projektwissen.
+- Downloads und das Installieren von LaunchAgents auf dem Mac Studio führt
   Aaron selbst im Terminal aus. Der Hub-Prozess selbst darf Pakete laden
   (Ollama, Modelle, ffmpeg).
 - Der Hub hat keine GitHub-Schreibrechte; er zieht nur `main`.

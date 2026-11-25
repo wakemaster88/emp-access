@@ -8,10 +8,7 @@ Stand 8. November 2026. Erledigtes bitte streichen.
   umstellen (nach Durchsicht der Treffer).
 - NTP an den Kameras einschalten; alle Substreams von 10 auf 15 fps;
   Hauptstreams der RLC-811A von H.265 auf H.264.
-- Netzwerk-Audit vom 03.11.: Traffic-Regel Verwaltung → Management sperren,
-  Switch-Adressen in Client-VLANs entfernen, SSIDs zusammenlegen
-  (Kassensystem2, Sound), NETGEAR-Supportzugriff in Insight beenden,
-  DHCP-Snooping.
+- Netzwerk-Audit vom 03.11.: SSIDs zusammenlegen (Kassensystem2, Sound).
 - SSIDs TwinCable und Sound nach VLAN 41 verschieben (erst klären, welche
   Geräte in TwinCable hängen).
 - Verhaltens-Befunde aus dem Design-Durchgang: Kiosk „Stornieren &
@@ -36,10 +33,7 @@ Stand 8. November 2026. Erledigtes bitte streichen.
 
 ## Hub-Maschine
 
-- Time Machine hat kein Ziel; `.env`, `.tls` und Kamera-Konfiguration sind
-  nicht gesichert (Vorschlag: Freigabe auf der Synology).
-- Log-Kürzung als LaunchAgent laden, SSH-Schlüssel hinterlegen und dann
-  Passwort-Login per SSH abschalten.
+- Log-Kürzung als LaunchAgent laden.
 - Zentrale-Kacheln bleiben in Safari schwarz (Chrome zeigt Bild), Ursache
   offen.
 - iMac nach einer Woche ohne Probleme löschen; verwaisten Hub-Eintrag des
