@@ -27,6 +27,42 @@
       "maxDuration": 300,
       "memory": 1024
     },
+    "src/app/api/email/rules/[id]/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/webhook/**/*.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/integrations/emp-control/webhook/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/gamification/offers/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/gamification/offers/[id]/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/gamification/challenges/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/gamification/challenges/[id]/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/gamification/holidays/[key]/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/gamification/birthday/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
     "src/app/api/monitor/public/[token]/route.ts": {
       "maxDuration": 30,
       "memory": 1024

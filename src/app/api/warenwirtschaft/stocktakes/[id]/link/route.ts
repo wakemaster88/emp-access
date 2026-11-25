@@ -9,7 +9,7 @@ type Ctx = { params: Promise<{ id: string }> };
  *   DELETE – Link sperren
  */
 export async function POST(request: NextRequest, { params }: Ctx) {
-  const s = await wawiSession();
+  const s = await wawiSession({ requireAdmin: true });
   if ("error" in s) return s.error;
   const id = Number((await params).id);
   const parsed = countLinkCreateSchema.safeParse(await request.json().catch(() => ({})));

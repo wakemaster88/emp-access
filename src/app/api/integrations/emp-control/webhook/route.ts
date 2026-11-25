@@ -4,6 +4,9 @@ import { secretsEqual } from "@/lib/cron-auth";
 import { isUniqueConstraintError } from "@/lib/db-errors";
 import { FULL_SYNC_PREVIEW_MAX, isPresenceMarker, isSyncedEmployeeUuid, planFullSync } from "@/lib/emp-control-sync";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 /**
  * Zahlen aus einem Payload-Feld einsammeln und dabei in bekannt und unbekannt
  * trennen. Nimmt einzelne Werte genauso wie Listen, weil emp-control je Feld
@@ -155,6 +158,17 @@ export async function POST(request: NextRequest) {
    */
   const failed: { employeeId: string; error: string }[] = [];
 
+  // Bestehende Tickets aller Mitarbeiter mit einer Abfrage statt je Mitarbeiter.
+  const uuids = employees.flatMap((emp) => {
+    const id = emp?.id ?? emp?.employeeId;
+    return id == null ? [] : [`emp-${id}`];
+  });
+  const ticketIdByUuid = new Map<string, number>();
+  if (uuids.length > 0) {
+    const rows = await db.ticket.findMany({ where: { uuid: { in: [...new Set(uuids)] } }, select: { id: true, uuid: true } });
+    for (const r of rows) if (r.uuid && !ticketIdByUuid.has(r.uuid)) ticketIdByUuid.set(r.uuid, r.id);
+  }
+
   for (const emp of employees) {
     const id = emp.id ?? emp.employeeId;
     if (id == null) continue;
@@ -186,11 +200,11 @@ export async function POST(request: NextRequest) {
     const devicesInPayload = Array.isArray(emp.deviceIds) || emp.deviceId != null;
 
     const uuid = `emp-${id}`;
-    const existing = await db.ticket.findFirst({ where: { uuid } });
+    const existingId = ticketIdByUuid.get(uuid);
 
     // Inaktiver Mitarbeiter ohne Ticket: nichts anlegen. Ein gesperrtes
     // Ticket fuer jemanden, der hier nie Zutritt hatte, braucht niemand.
-    if (!existing && emp.active === false) continue;
+    if (existingId == null && emp.active === false) continue;
 
     // Voll-Abgleich: Ein Eintrag nur mit ID (und active) ist eine reine
     // Anwesenheitsmeldung. Er legt nichts an und laesst ein vorhandenes
@@ -250,17 +264,39 @@ export async function POST(request: NextRequest) {
     // Wert in Ruhe.
     if (areasInPayload) updateData.accessAreaId = primaryAreaId;
 
-    let ticketId: number;
+    // Ticket, Bereiche und Geraete eines Mitarbeiters gehen gemeinsam in die
+    // Datenbank (eine Transaktion): ganz oder gar nicht.
+    // Areas-Sync ist nicht-destruktiv: Wenn der Webhook keine Areas
+    // mitgeschickt hat (areasInPayload=false), wird die bestehende
+    // ticketArea-Liste nicht angefasst. Sendet er eine leere Liste,
+    // bedeutet das "alle Bereiche entfernen" - das ist legitim.
+    // Direkt zugewiesene Geraete nach derselben Regel.
     try {
-      if (existing) {
-        if (Object.keys(updateData).length > 0) {
-          await db.ticket.update({ where: { id: existing.id }, data: updateData });
-        }
-        ticketId = existing.id;
+      if (existingId != null) {
+        const ticketId = existingId;
+        await db.$transaction([
+          db.ticket.update({ where: { id: ticketId }, data: updateData }),
+          ...(areasInPayload
+            ? [
+                db.ticketArea.deleteMany({ where: { ticketId } }),
+                ...(areaIds.length > 0
+                  ? [db.ticketArea.createMany({ data: areaIds.map((accessAreaId) => ({ ticketId, accessAreaId })), skipDuplicates: true })]
+                  : []),
+              ]
+            : []),
+          ...(devicesInPayload
+            ? [
+                db.ticketDevice.deleteMany({ where: { ticketId } }),
+                ...(deviceIds.length > 0
+                  ? [db.ticketDevice.createMany({ data: deviceIds.map((deviceId) => ({ ticketId, deviceId })), skipDuplicates: true })]
+                  : []),
+              ]
+            : []),
+        ]);
         updated++;
       } else {
         // Neuanlage: vollstaendige Defaults setzen, damit das Ticket
-        // konsistent startet.
+        // konsistent startet; Bereiche und Geraete gleich mit.
         const t = await db.ticket.create({
           data: {
             uuid,
@@ -275,9 +311,17 @@ export async function POST(request: NextRequest) {
             ticketTypeName: "Mitarbeiter",
             source: "EMP_CONTROL",
             accessAreaId: primaryAreaId,
+            ...(areasInPayload && areaIds.length > 0
+              ? { ticketAreas: { createMany: { data: areaIds.map((accessAreaId) => ({ accessAreaId })), skipDuplicates: true } } }
+              : {}),
+            ...(devicesInPayload && deviceIds.length > 0
+              ? { ticketDevices: { createMany: { data: deviceIds.map((deviceId) => ({ deviceId })), skipDuplicates: true } } }
+              : {}),
           },
+          select: { id: true },
         });
-        ticketId = t.id;
+        // Kommt derselbe Mitarbeiter im Aufruf noch einmal, wird er aktualisiert.
+        ticketIdByUuid.set(uuid, t.id);
         created++;
       }
     } catch (e) {
@@ -285,31 +329,6 @@ export async function POST(request: NextRequest) {
       console.warn("[emp-control/webhook] Ticket nicht gespeichert (eindeutiger Wert vergeben)", { employeeId: String(id) });
       failed.push({ employeeId: String(id), error: "Kennung oder Code ist bereits vergeben" });
       continue;
-    }
-
-    // Areas-Sync ist nicht-destruktiv: Wenn der Webhook keine Areas
-    // mitgeschickt hat (areasInPayload=false), wird die bestehende
-    // ticketArea-Liste nicht angefasst. Sendet er eine leere Liste,
-    // bedeutet das "alle Bereiche entfernen" - das ist legitim.
-    if (areasInPayload) {
-      await db.ticketArea.deleteMany({ where: { ticketId } });
-      if (areaIds.length > 0) {
-        await db.ticketArea.createMany({
-          data: areaIds.map((accessAreaId) => ({ ticketId, accessAreaId })),
-          skipDuplicates: true,
-        });
-      }
-    }
-
-    // Direkt zugewiesene Geraete, nach derselben Regel wie die Bereiche.
-    if (devicesInPayload) {
-      await db.ticketDevice.deleteMany({ where: { ticketId } });
-      if (deviceIds.length > 0) {
-        await db.ticketDevice.createMany({
-          data: deviceIds.map((deviceId) => ({ ticketId, deviceId })),
-          skipDuplicates: true,
-        });
-      }
     }
   }
 

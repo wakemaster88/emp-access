@@ -3,6 +3,9 @@ import { gamiAdminSession } from "@/lib/gamification-session";
 import { backfillYear } from "@/lib/gamification-service";
 import { berlinYmd } from "@/lib/berlin-day";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 /**
  * POST: Tagessummen des laufenden Jahres aus den vorhandenen Scans neu
  * berechnen. Nur das laufende Jahr, weil ältere Scans den Löschfristen

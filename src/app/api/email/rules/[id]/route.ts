@@ -3,6 +3,9 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { emailRuleUpdateSchema } from "@/lib/validators";
 import { processAccountEmailRules } from "@/lib/email-automation";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },

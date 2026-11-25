@@ -8,7 +8,7 @@ import { badRequest, countTokenExpiry, inventoryLinkSchema, newCountToken, wawiS
  *   DELETE ?group=…       – Link sperren
  */
 export async function POST(request: NextRequest) {
-  const s = await wawiSession();
+  const s = await wawiSession({ requireAdmin: true });
   if ("error" in s) return s.error;
   const parsed = inventoryLinkSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return badRequest(parsed.error.flatten());

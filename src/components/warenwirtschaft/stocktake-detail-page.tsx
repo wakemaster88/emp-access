@@ -15,6 +15,7 @@ export async function StocktakeDetailPage({
   accountId,
   accountName,
   adminId,
+  isAdmin,
 }: {
   id: number;
   kind: "ROLLING" | "CUTOFF";
@@ -23,6 +24,8 @@ export async function StocktakeDetailPage({
   accountName: string | null;
   /** Angemeldeter Login (für die eigene Bestätigung). */
   adminId: number | null;
+  /** Rolle mit Verwaltungsrechten (Korrekturen, Zähl-Links). */
+  isAdmin: boolean;
 }) {
   const listPath = kind === "CUTOFF" ? "/warenwirtschaft/stichtag" : "/warenwirtschaft/inventur";
   if (!Number.isInteger(id)) notFound();
@@ -58,6 +61,7 @@ export async function StocktakeDetailPage({
         </Link>
         <StocktakeCount
           listPath={listPath}
+          isAdmin={isAdmin}
           info={{
             id: st.id,
             kind: st.kind,

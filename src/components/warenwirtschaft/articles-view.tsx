@@ -26,7 +26,7 @@ export function CreateArticleButton({ categories }: { categories: string[] }) {
   );
 }
 
-export function ArticlesView({ articles, categories }: { articles: ArticleData[]; categories: string[] }) {
+export function ArticlesView({ articles, categories, canDelete }: { articles: ArticleData[]; categories: string[]; canDelete: boolean }) {
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [selected, setSelected] = useState<ArticleData | null>(null);
@@ -91,7 +91,7 @@ export function ArticlesView({ articles, categories }: { articles: ArticleData[]
         </Table>
       </div>
 
-      <ArticleDialog article={selected} open={!!selected} onClose={() => setSelected(null)} categories={categories} />
+      <ArticleDialog article={selected} open={!!selected} onClose={() => setSelected(null)} categories={categories} canDelete={canDelete} />
     </>
   );
 }

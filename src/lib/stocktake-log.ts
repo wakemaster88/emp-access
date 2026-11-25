@@ -149,3 +149,19 @@ export function signBlockedReason(signatures: SignatureLike[], role: StocktakeRo
   }
   return null;
 }
+
+/**
+ * Vier-Augen-Prinzip beim Festschreiben: Die gültigen Bestätigungen von
+ * Zähler und Schreiber müssen von zwei verschiedenen persönlichen Logins
+ * stammen. Gibt die Fehlermeldung zurück oder null.
+ */
+export function signersBlockedReason(valid: SignatureLike[]): string | null {
+  const ids = STOCKTAKE_ROLES.map((r) => valid.find((s) => s.role === r)?.adminId ?? null);
+  if (ids.some((id) => id == null)) {
+    return "Zum Festschreiben müssen Zähler und Schreiber mit zwei verschiedenen persönlichen Logins bestätigen.";
+  }
+  if (ids[0] === ids[1]) {
+    return "Zähler und Schreiber sind dieselbe Person. Zum Festschreiben müssen zwei verschiedene Personen bestätigen.";
+  }
+  return null;
+}

@@ -11,7 +11,7 @@ import { articleImageUrl, listImageSrcs } from "@/lib/list-images";
 import { inlineImageRows } from "@/lib/list-images-db";
 
 export default async function ArtikelPage() {
-  const { session, accountId, db } = await wawiPageSession();
+  const { session, accountId, db, isAdmin } = await wawiPageSession();
   // Liste ohne Bildspalte; Fotos lädt der Browser einzeln über die Bild-Route.
   const rows = await db.article.findMany({
     where: { accountId },
@@ -53,14 +53,14 @@ export default async function ArtikelPage() {
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
             <div className="space-y-3 px-4 pb-4 sm:px-[18px]">
-              <WawiImportButton hint="Inventurliste mit Bezeichnung, Einheit und EK netto. Ein Datum im Kopf wird als Stichtagsinventur übernommen." />
+              {isAdmin && <WawiImportButton hint="Inventurliste mit Bezeichnung, Einheit und EK netto. Ein Datum im Kopf wird als Stichtagsinventur übernommen." />}
               {pendingSearch > 0 && (
                 <Notice tone="info" compact title={`Für ${pendingSearch} Artikel wird im Hintergrund ein Produktfoto gesucht.`}>
                   Etwa 70 Artikel pro Stunde, Quelle Open Food Facts (CC BY-SA). Ohne eindeutigen Treffer bleibt das Symbol; im Artikel kannst du unter „Bild suchen“ selbst wählen oder ein Foto hochladen.
                 </Notice>
               )}
             </div>
-            <ArticlesView articles={articles} categories={categories} />
+            <ArticlesView articles={articles} categories={categories} canDelete={isAdmin} />
           </CardContent>
         </Card>
       </div>

@@ -64,12 +64,27 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   }
 
   const contentHash = await stocktakeHash(s.db, id, s.accountId);
+  let created: { id: number };
   try {
-    await s.db.stocktakeSignature.create({
+    created = await s.db.stocktakeSignature.create({
       data: { accountId: s.accountId, stocktakeId: id, role, adminId, name: s.userName.slice(0, 120), email: s.email, method, contentHash },
+      select: { id: true },
     });
   } catch {
     return NextResponse.json({ error: `Die Zählung ist als ${ROLE_LABEL[role]} schon bestätigt.` }, { status: 409 });
+  }
+  // Zwei gleichzeitige Bestätigungen derselben Person für beide Rollen: nach
+  // dem Anlegen noch einmal lesen und die eigene wieder entfernen.
+  const other = await s.db.stocktakeSignature.findFirst({
+    where: { stocktakeId: id, accountId: s.accountId, role: role === "COUNTER" ? "WRITER" : "COUNTER" },
+    select: { role: true, adminId: true },
+  });
+  if (other && other.adminId === adminId) {
+    await s.db.stocktakeSignature.deleteMany({ where: { id: created.id, accountId: s.accountId } });
+    return NextResponse.json(
+      { error: `Du hast schon als ${ROLE_LABEL[other.role]} bestätigt. Zähler und Schreiber müssen zwei verschiedene Personen sein.` },
+      { status: 409 },
+    );
   }
   await logEvents(s.db, id, s.accountId, actor, [{ type: "SIGNED", note: `${ROLE_LABEL[role]} (${method === "passkey" ? "Passkey" : "Passwort"})` }]);
   return NextResponse.json({ ok: true, method, contentHash });

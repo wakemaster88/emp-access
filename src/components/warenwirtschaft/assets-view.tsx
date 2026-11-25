@@ -46,6 +46,7 @@ function AssetDialog({
   groups,
   locations,
   years,
+  canDelete = false,
 }: {
   asset: AssetData | null;
   open: boolean;
@@ -54,6 +55,8 @@ function AssetDialog({
   groups: string[];
   locations: string[];
   years: number[];
+  /** Löschen nur für die Verwaltung. */
+  canDelete?: boolean;
 }) {
   const router = useRouter();
   const isNew = !asset;
@@ -177,7 +180,7 @@ function AssetDialog({
           ) : (
             <DialogFooter
               className="pt-2"
-              start={!isNew ? (
+              start={!isNew && canDelete ? (
                 <Button type="button" variant="ghost" onClick={() => setConfirmDelete(true)} disabled={saving} className="h-11 gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:h-9">
                   <Trash2 className="h-4 w-4" />
                   Löschen
@@ -256,11 +259,13 @@ export function AssetsView({
   group,
   groups,
   defaultYear,
+  canDelete,
 }: {
   assets: AssetData[];
   group: string;
   groups: string[];
   defaultYear: number;
+  canDelete: boolean;
 }) {
   const [assets, setAssets] = useState(initial);
   useEffect(() => setAssets(initial), [initial]);
@@ -360,7 +365,7 @@ export function AssetsView({
         </Table>
       </div>
 
-      <AssetDialog asset={selected} open={!!selected} onClose={() => setSelected(null)} group={group} groups={groups} locations={locations} years={years} />
+      <AssetDialog asset={selected} open={!!selected} onClose={() => setSelected(null)} group={group} groups={groups} locations={locations} years={years} canDelete={canDelete} />
     </>
   );
 }
