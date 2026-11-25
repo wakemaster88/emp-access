@@ -113,20 +113,20 @@ test("Ruhe im Raum: ein laufendes oder eben beendetes Ereignis zaehlt als Bewegu
 });
 
 test("Auskunft ueber einen Zeitraum: offene Ereignisse behalten ihren Platz, jedes steht einmal", () => {
-  const ev = (id: number, startedAt: string, endedAt: string | null = null) => ({
+  const item = (id: number, startedAt: string, endedAt: string | null = null) => ({
     id,
     startedAt: new Date(startedAt),
     endedAt: endedAt ? new Date(endedAt) : null,
   });
   // Die vier juengsten nach Beginn, so weit reicht die Abfrage. 14 ist noch offen.
   const recent = [
-    ev(14, "2026-11-24T11:58:00Z"),
-    ev(13, "2026-11-24T11:40:00Z", "2026-11-24T11:41:00Z"),
-    ev(12, "2026-11-24T11:30:00Z", "2026-11-24T11:30:20Z"),
-    ev(11, "2026-11-24T11:20:00Z", "2026-11-24T11:21:00Z"),
+    item(14, "2026-11-24T11:58:00Z"),
+    item(13, "2026-11-24T11:40:00Z", "2026-11-24T11:41:00Z"),
+    item(12, "2026-11-24T11:30:00Z", "2026-11-24T11:30:20Z"),
+    item(11, "2026-11-24T11:20:00Z", "2026-11-24T11:21:00Z"),
   ];
   // Offen: 14 steht auch oben, 3 laeuft seit 08:03 und begann vor allen anderen.
-  const open = [ev(14, "2026-11-24T11:58:00Z"), ev(3, "2026-11-24T08:03:00Z")];
+  const open = [item(14, "2026-11-24T11:58:00Z"), item(3, "2026-11-24T08:03:00Z")];
   // Vier Plaetze: Das aelteste beendete (11) weicht dem laufenden (3).
   assert.deepEqual(
     withOpenEvents(recent, open, 4).map((e) => e.id),
@@ -150,7 +150,7 @@ test("Auskunft ueber einen Zeitraum: offene Ereignisse behalten ihren Platz, jed
   );
   // Gleicher Beginn: Die hoehere ID steht vorn.
   assert.deepEqual(
-    withOpenEvents([ev(20, "2026-11-24T11:00:00Z"), ev(21, "2026-11-24T11:00:00Z")], [], 5).map((e) => e.id),
+    withOpenEvents([item(20, "2026-11-24T11:00:00Z"), item(21, "2026-11-24T11:00:00Z")], [], 5).map((e) => e.id),
     [21, 20],
   );
   // Die Eingaben bleiben unveraendert.
@@ -309,24 +309,25 @@ test("Mehrere offene Ereignisse derselben Kamera und Art: nur das juengste kann 
   assert.deepEqual(staleOpen([open[2]]), []);
 });
 
+/** Ereignis einer Kamera im Raum; ohne Angabe hat der Hub die Kamera eben noch gemeldet. */
+const ev = (
+  roomId: number,
+  cameraId: number,
+  type: string,
+  startedAt: string,
+  endedAt: string | null,
+  seen: Date | null = new Date("2026-11-24T11:59:30Z"),
+) => ({
+  roomId,
+  cameraId,
+  cameraName: `Kamera ${cameraId}`,
+  type,
+  startedAt: new Date(startedAt),
+  endedAt: endedAt ? new Date(endedAt) : null,
+  cameraLastSeenAt: seen,
+});
+
 test("Letztes Ereignis je Raum: laufende Bewegung geht vor einem juengeren, beendeten Ereignis", () => {
-  const fresh = new Date("2026-11-24T11:59:30Z");
-  const ev = (
-    roomId: number,
-    cameraId: number,
-    type: string,
-    startedAt: string,
-    endedAt: string | null,
-    seen: Date | null = fresh,
-  ) => ({
-    roomId,
-    cameraId,
-    cameraName: `Kamera ${cameraId}`,
-    type,
-    startedAt: new Date(startedAt),
-    endedAt: endedAt ? new Date(endedAt) : null,
-    cameraLastSeenAt: seen,
-  });
   const byRoom = latestActivityByRoom(
     [
       // Raum 1: Kamera 1 meldet seit 09:00 Bewegung, Kamera 2 hatte um 11:30 kurz eine Person.
@@ -353,4 +354,33 @@ test("Letztes Ereignis je Raum: laufende Bewegung geht vor einem juengeren, been
       [4, 7, "PERSON", true, now.toISOString()],
     ],
   );
+});
+
+test("Letztes Ereignis je Raum: unter mehreren Ereignissen derselben Kamera zaehlt die juengste Aktivitaet", () => {
+  const events = [
+    // Raum 1, eine Kamera: Die Bewegung lief von 08:03 bis 11:10. Die Person
+    // begann spaeter (10:00) und war nach 30 s vorbei.
+    ev(1, 1, "PERSON", "2026-11-24T10:00:00Z", "2026-11-24T10:00:30Z"),
+    ev(1, 1, "MOTION", "2026-11-24T08:03:00Z", "2026-11-24T11:10:00Z"),
+    // Raum 2, eine Kamera, seit 11:50 nicht mehr gemeldet: Die offene Bewegung
+    // lief nachweislich bis dahin, die Person war schon um 11:41 vorbei.
+    ev(2, 2, "PERSON", "2026-11-24T11:40:00Z", "2026-11-24T11:41:00Z", new Date("2026-11-24T11:50:00Z")),
+    ev(2, 2, "MOTION", "2026-11-24T09:00:00Z", null, new Date("2026-11-24T11:50:00Z")),
+    // Raum 3, eine Kamera, letzte Meldung 11:40:30: Die Person endete danach
+    // (11:41:10) und ist damit die juengste gesicherte Aktivitaet.
+    ev(3, 3, "MOTION", "2026-11-24T09:00:00Z", null, new Date("2026-11-24T11:40:30Z")),
+    ev(3, 3, "PERSON", "2026-11-24T11:40:00Z", "2026-11-24T11:41:10Z", new Date("2026-11-24T11:40:30Z")),
+  ];
+  const expected = [
+    [1, 1, "MOTION", false, "2026-11-24T11:10:00.000Z"],
+    [2, 2, "MOTION", false, "2026-11-24T11:50:00.000Z"],
+    [3, 3, "PERSON", false, "2026-11-24T11:41:10.000Z"],
+  ];
+  const picked = (list: typeof events) =>
+    [...latestActivityByRoom(list, now)]
+      .sort(([a], [b]) => a - b)
+      .map(([room, e]) => [room, e.cameraId, e.type, e.running, e.at]);
+  assert.deepEqual(picked(events), expected);
+  // In welcher Reihenfolge die Ereignisse ankommen, aendert die Auswahl nicht.
+  assert.deepEqual(picked([...events].reverse()), expected);
 });
