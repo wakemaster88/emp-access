@@ -6,6 +6,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { acceptedAudioBlobPath } from "@/lib/audio-blob-path";
 import {
   MAX_ANNOUNCEMENT_CHARS,
   TtsNotConfiguredError,
@@ -48,10 +49,8 @@ export async function POST(request: NextRequest) {
         title: `Live-Durchsage ${new Date().toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}`,
         kind: "ANNOUNCEMENT",
         url: body.url.trim(),
-        blobPathname:
-          typeof body.blobPathname === "string" && body.blobPathname.trim()
-            ? body.blobPathname.trim()
-            : null,
+        // Nur ein Pfad, der zur URL passt und dem Mandanten gehört; sonst ohne.
+        blobPathname: acceptedAudioBlobPath(body.blobPathname, body.url.trim(), accountId!),
         contentType:
           typeof body.contentType === "string" && body.contentType.trim()
             ? body.contentType.trim()

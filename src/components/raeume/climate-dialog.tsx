@@ -58,8 +58,12 @@ export function ClimateDialog({
   const inRoom = new Set(roomDevices.map((d) => d.id));
   const shellys = [...allShellys].sort((a, b) => Number(inRoom.has(b.id)) - Number(inRoom.has(a.id)));
   const sensorChoices = shellys.filter((d) => d.category === "SENSOR" || /temperatur|fühler|thermo/i.test(d.name));
+  // Neu wählbar sind nur Schalter; schon zugeordnete Geräte bleiben in der Liste.
+  const assigned = new Set([...(climate?.heaterDeviceIds ?? []), ...(climate?.fanDeviceIds ?? [])]);
   const heaterChoices = shellys.filter(
-    (d) => !["SENSOR", "MARKISE", "ROLLTOR", "BELEUCHTUNG", "TUER", "DREHKREUZ", "TASTER"].includes(d.category ?? ""),
+    (d) =>
+      d.category === "SCHALTER" ||
+      (assigned.has(d.id) && !["SENSOR", "MARKISE", "ROLLTOR"].includes(d.category ?? "")),
   );
   const suggestedSensor = sensorChoices.find((d) => inRoom.has(d.id))?.id ?? null;
   const suggestedHeaters = heaterChoices.filter((d) => inRoom.has(d.id) && HEATER_RE.test(d.name)).map((d) => d.id);

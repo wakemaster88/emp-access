@@ -29,3 +29,19 @@ export function truncateTelegramLines(text: string, limit = TELEGRAM_MESSAGE_LIM
   const head = cut > 0 ? text.slice(0, cut) : text.slice(0, budget);
   return head.replace(/\s+$/, "") + marker;
 }
+
+/** So viele Einträge zeigt eine Liste im Tagesbericht höchstens. */
+export const TELEGRAM_LIST_LIMIT = 30;
+
+/**
+ * Begrenzt die Zeilen einer Liste auf `limit` Einträge; der Rest steht als
+ * "… und N weitere" in einer eigenen Zeile mit derselben Einrückung.
+ */
+export function capTelegramList(
+  lines: string[],
+  limit = TELEGRAM_LIST_LIMIT,
+  indent = "  ",
+): string[] {
+  if (lines.length <= limit) return lines;
+  return [...lines.slice(0, limit), `${indent}• … und ${lines.length - limit} weitere`];
+}

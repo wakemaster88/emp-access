@@ -104,6 +104,8 @@ import type {
 } from "./types";
 
 interface Props {
+  /** Mandant – Uploads landen unter seinem Pfad im Blob-Speicher. */
+  accountId: number;
   zones: ZoneRow[];
   tracks: TrackRow[];
   playlists: PlaylistRow[];
@@ -208,6 +210,7 @@ function nextRunLabel(
 }
 
 export function AudioClient({
+  accountId,
   zones,
   tracks,
   playlists,
@@ -670,7 +673,7 @@ export function AudioClient({
 
         {/* ── MEDIATHEK ────────────────────────────────────────────────────── */}
         <TabsContent value="library">
-          <LibraryPanel tracks={tracks} onChanged={refresh} />
+          <LibraryPanel accountId={accountId} tracks={tracks} onChanged={refresh} />
         </TabsContent>
 
         {/* ── PLAYLISTS ────────────────────────────────────────────────────── */}

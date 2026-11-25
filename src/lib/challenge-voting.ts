@@ -18,7 +18,8 @@ import { prisma, tenantClient } from "./prisma";
 import { deleteBlobs, resolveBinary, storeBlob } from "./blob-store";
 import { challengeOver, rankStandings, type ChallengeKind, type ChallengePhase } from "./gamification";
 import { berlinHm } from "./berlin-day";
-import { CHALLENGE_THUMB_PX, decodePhotoDataUrl, pollPercents, seededOrder } from "./challenge-voting-rules";
+import { decodePhotoDataUrl, pollPercents, seededOrder } from "./challenge-voting-rules";
+import { encodeChallengePhoto, encodeChallengeThumb } from "./challenge-photo-encode";
 
 export interface PhotoEntryView {
   id: number;
@@ -262,11 +263,17 @@ export async function saveEntry(
 ): Promise<{ ok: true; id: number } | Fail> {
   const run = await runningChallenge(accountId, challengeId, "PHOTO", todayYmd);
   if ("error" in run) return { error: run.error, status: run.status };
-  const photo = decodePhotoDataUrl(dataUrl);
-  if (!photo) return { error: "Bitte ein Foto als JPG oder PNG wählen.", status: 400 };
+  const decoded = decodePhotoDataUrl(dataUrl);
+  if (!decoded) return { error: "Bitte ein Foto als JPG oder PNG wählen.", status: 400 };
+
+  // Gespeichert wird nur das neu kodierte Foto (JPEG, ohne Metadaten), nie die hochgeladene Datei.
+  const photo = await encodeChallengePhoto(decoded.bytes);
+  if (!photo) {
+    return { error: "Dieses Foto konnte nicht verarbeitet werden. Bitte ein anderes Foto wählen.", status: 400 };
+  }
 
   // Vorschaubild rechnet der Server aus dem geprüften Foto; klappt das nicht, zeigt die App das Foto selbst.
-  const thumb = await makeThumb(photo.bytes);
+  const thumb = await encodeChallengeThumb(photo.bytes);
 
   const db = tenantClient(accountId);
   const blob = await storeBlob("challenge-photos", accountId, photo.bytes, photo.contentType, photo.ext);
@@ -290,22 +297,6 @@ export async function saveEntry(
   });
   if (old) await deleteBlobs([old.imageBlob, old.thumbBlob]);
   return { ok: true, id: created.id };
-}
-
-/** JPEG mit höchstens `CHALLENGE_THUMB_PX` an der längsten Kante, oder null. */
-async function makeThumb(bytes: Uint8Array): Promise<{ bytes: Uint8Array<ArrayBuffer>; contentType: "image/jpeg"; ext: "jpg" } | null> {
-  try {
-    const sharp = (await import("sharp")).default;
-    const out = await sharp(bytes)
-      .rotate()
-      .resize(CHALLENGE_THUMB_PX, CHALLENGE_THUMB_PX, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 78, mozjpeg: true })
-      .toBuffer();
-    return { bytes: new Uint8Array(out), contentType: "image/jpeg", ext: "jpg" };
-  } catch (e) {
-    console.error("[challenge] Vorschaubild fehlgeschlagen:", e instanceof Error ? e.message : e);
-    return null;
-  }
 }
 
 /** Eigenes Foto zurückziehen, solange die Challenge läuft. */

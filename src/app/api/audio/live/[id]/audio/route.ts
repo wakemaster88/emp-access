@@ -5,14 +5,19 @@
  * braucht dafür keine eigene Statusabfrage.
  *
  * Doppelt geschickte Nummern (Wiederholung nach Netzfehler) werden verworfen.
+ * Eine Nummer darf der höchsten bisher empfangenen höchstens
+ * LIVE_MAX_SEQ_AHEAD vorauslaufen; Ton, den kein Pi mehr holt, wird bei jedem
+ * Stück weggeräumt.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { endLiveSession, liveZoneStates } from "@/lib/audio";
-import { LIVE_KEEP_CHUNKS, LIVE_MAX_CHUNK_BYTES, isLiveSessionOpen } from "@/lib/audio-live";
-
-/** Alle so viele Stücke wird Ton weggeräumt, den kein Pi mehr holt. */
-const TRIM_EVERY = 25;
+import {
+  LIVE_MAX_CHUNK_BYTES,
+  isLiveSeqAcceptable,
+  isLiveSessionOpen,
+  liveTrimThroughSeq,
+} from "@/lib/audio-live";
 
 export async function POST(
   request: NextRequest,
@@ -31,7 +36,7 @@ export async function POST(
 
   const live = await db.audioLiveSession.findFirst({
     where: { id: sessionId, ...(accountId ? { accountId } : {}) },
-    select: { status: true, lastChunkAt: true, startedAt: true },
+    select: { status: true, lastChunkAt: true, startedAt: true, lastSeq: true },
   });
   if (!live) return NextResponse.json({ error: "Sitzung nicht gefunden" }, { status: 404 });
 
@@ -39,6 +44,10 @@ export async function POST(
   if (!isLiveSessionOpen(live, now)) {
     if (live.status === "LIVE") await endLiveSession(db, sessionId, now);
     return NextResponse.json({ state: "ENDED", zones: await liveZoneStates(db, sessionId) });
+  }
+
+  if (!isLiveSeqAcceptable(seq, live.lastSeq)) {
+    return NextResponse.json({ error: "Ungültige Sitzung oder Nummer" }, { status: 400 });
   }
 
   const data = new Uint8Array(await request.arrayBuffer());
@@ -54,9 +63,10 @@ export async function POST(
     where: { id: sessionId, lastSeq: { lt: seq } },
     data: { lastSeq: seq, lastChunkAt: now },
   });
-  if (seq % TRIM_EVERY === 0) {
+  const trimThrough = liveTrimThroughSeq(Math.max(live.lastSeq, seq));
+  if (trimThrough > 0) {
     await db.audioLiveChunk.deleteMany({
-      where: { sessionId, seq: { lte: seq - LIVE_KEEP_CHUNKS } },
+      where: { sessionId, seq: { lte: trimThrough } },
     });
   }
 
