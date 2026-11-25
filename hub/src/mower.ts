@@ -127,6 +127,12 @@ function spawnSidecar(): void {
   };
   child.stdout?.on("data", pipe);
   child.stderr?.on("data", pipe);
+  // Startfehler: ohne Abnehmer beendete eine unbehandelte Ausnahme den Hub.
+  // Kam der Prozess gar nicht zustande, folgt kein "exit": hier aufraeumen.
+  child.on("error", (e) => {
+    log(`Mäher-Dienst: ${e.message}`);
+    if (proc === child && child.pid === undefined) proc = null;
+  });
   child.on("exit", (code) => {
     if (proc === child) proc = null;
     if (stopping) return;

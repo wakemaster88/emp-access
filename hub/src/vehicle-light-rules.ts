@@ -60,3 +60,61 @@ export function spotlightWanted(
   }
   return /eingang|einfahrt|\btor\b|zufahrt/i.test(cam.name);
 }
+
+/**
+ * Ob der Burst das Weißlicht selbst schaltet (ein, und am Ende wieder aus).
+ * Ein Licht, das schon brennt, hat jemand von Hand eingeschaltet: Der Burst
+ * nutzt es und lässt es, wie es ist. Anders, wenn der Hub es in diesem
+ * Augenblick selbst ausschaltet (ein gemerktes Licht, dessen Ausschalten
+ * nachgeholt wird): Die Kamera meldet es dann noch als brennend, beim ersten
+ * Bild wäre es aus und das Kennzeichen im Dunkeln nicht lesbar.
+ */
+export function burstSwitchesLight(s: {
+  /** Die Kamera meldet das Licht als brennend. */
+  lit: boolean;
+  /** Der Hub schaltet an dieser Kamera gerade ein gemerktes Licht aus. */
+  goingOff: boolean;
+}): boolean {
+  return !s.lit || s.goingOff;
+}
+
+/**
+ * So lange gilt der Merker „Weißlicht vom Hub eingeschaltet“. Danach wird er
+ * verworfen: Was nach einem Tag an der Kamera brennt, hat jemand anderes
+ * eingeschaltet.
+ */
+export const LIGHT_MARK_MAX_AGE_MS = 24 * 3_600_000;
+/** Abstand der Versuche, ein gemerktes Licht auszuschalten. */
+export const LIGHT_MARK_RETRY_MS = 60_000;
+
+export interface LightMarkState {
+  now: number;
+  /** Wann der Hub das Licht laut Merker eingeschaltet hat. */
+  markedAt: number;
+  /** Die Kamera steht in der Kamera-Liste. */
+  known: boolean;
+  /** Ihre letzte Abfrage hat geantwortet. */
+  reachable: boolean;
+  /** An der Kamera läuft gerade ein Burst: Er braucht das Licht. */
+  inUse: boolean;
+  /** Letzter Versuch, dieses Licht auszuschalten (0 = noch keiner). */
+  lastTryAt: number;
+}
+
+/**
+ * Was mit einem gemerkten Licht geschieht, das zu keinem laufenden Burst
+ * mehr gehört (nach einem Neustart: die Lichter des vorigen Prozesses):
+ * - `off`: jetzt ausschalten – die Kamera ist bekannt und antwortet;
+ * - `wait`: später wieder fragen (Burst läuft, Kamera unbekannt oder nicht
+ *   erreichbar, letzter Versuch keine Minute her);
+ * - `drop`: Merker verwerfen, ohne die Kamera anzufassen (älter als 24 h).
+ * Nur Lichter mit Merker kommen hierher: Eines, das der Hub nicht
+ * eingeschaltet hat, wird nie ausgeschaltet.
+ */
+export function lightMarkStep(s: LightMarkState): "off" | "wait" | "drop" {
+  if (s.inUse) return "wait";
+  if (s.now - s.markedAt > LIGHT_MARK_MAX_AGE_MS) return "drop";
+  if (!s.known || !s.reachable) return "wait";
+  if (s.lastTryAt > 0 && s.now - s.lastTryAt < LIGHT_MARK_RETRY_MS) return "wait";
+  return "off";
+}

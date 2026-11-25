@@ -1043,7 +1043,17 @@ export async function startDashboard(): Promise<void> {
 
   // HTTPS nur, wenn das Dashboard ins LAN darf – lokal braucht es keins.
   tls = CONFIG.dashboardHost === "127.0.0.1" ? null : await loadDashboardTls();
-  const httpsServer = tls ? https.createServer({ key: tls.key, cert: tls.cert }, onRequest) : null;
+  let httpsServer: https.Server | null = null;
+  if (tls) {
+    try {
+      httpsServer = https.createServer({ key: tls.key, cert: tls.cert }, onRequest);
+    } catch (e) {
+      // Beschaedigter Schluessel in hub/.tls: createServer wirft sofort. Ohne
+      // Auffangen endete das als Neustart-Schleife des Hubs.
+      log(`Dashboard-HTTPS nicht verfuegbar (nur HTTP): ${e instanceof Error ? e.message : e}`);
+      tls = null;
+    }
+  }
   httpsServer?.on("tlsClientError", () => {
     // Geraete ohne installierte CA brechen den Handshake ab – kein Log-Spam.
   });

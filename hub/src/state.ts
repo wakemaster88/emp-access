@@ -98,6 +98,12 @@ export const STATE = {
     reachable: 0,
     openEvents: 0,
     error: null as string | null,
+    /** Laengste Abfrage einer Kamera im laufenden 5-Minuten-Fenster (ms). */
+    pollMaxMs: 0,
+    /** Abfragen ueber 4 s im selben Fenster. */
+    pollSlow: 0,
+    /** Kamera mit der laengsten Abfrage. */
+    pollSlowest: null as string | null,
   },
   face: { ready: false, gallery: 0 },
   alpr: { ready: false },

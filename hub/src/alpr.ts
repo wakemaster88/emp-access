@@ -109,6 +109,11 @@ function startDaemon(): Promise<boolean> {
       resolve(false);
     }, STARTUP_TIMEOUT_MS);
 
+    // Schreiben an einen gerade beendeten Daemon (EPIPE) meldet der Stream
+    // als "error"; ohne Abnehmer beendete das den Hub. Die Anfrage selbst
+    // laeuft ueber "close" bzw. ihr Zeitlimit ab.
+    proc.stdin.on("error", (e) => log(`ALPR: Daemon nimmt keine Eingabe an: ${e.message}`));
+
     let stderrBuf = "";
     proc.stderr.on("data", (d: Buffer) => {
       stderrBuf += d.toString("utf8");

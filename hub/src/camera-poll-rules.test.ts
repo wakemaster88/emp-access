@@ -8,13 +8,23 @@ import {
   UnconfirmedStarts,
   aiAlarmState,
   clockDriftKey,
+  configRefreshPlan,
   endHoldFor,
   endsToRetry,
+  failStreakAfter,
+  pollDue,
+  pollOrder,
+  relocateAtStart,
+  relocateByLoginAllowed,
+  relocateIntervalMs,
   snapshotJobFor,
   tidyOutbox,
+  type ConfigRefreshState,
+  type PollGate,
   type QueuedEvent,
   type SnapshotGate,
 } from "./camera-poll-rules.js";
+import { assessTrends, linkStats, newHealthStore, recordLink } from "./agent/early-warning.js";
 
 const gate = (o: Partial<SnapshotGate> = {}): SnapshotGate => ({
   inFlight: false,
@@ -211,6 +221,352 @@ test("Liste der laufenden Ereignisse: geht nur mit der Meldung, die genau ihren 
   // Leere Liste ist eine Aussage (nichts laeuft), kein „nicht mitsenden“.
   r.capture([]);
   assert.deepEqual(r.take(true), []);
+});
+
+const cfg = (o: Partial<ConfigRefreshState> = {}): ConfigRefreshState => ({
+  now: 1_000_000,
+  loadedAt: 990_000,
+  failedAt: 0,
+  running: false,
+  haveCameras: true,
+  refreshMs: 60_000,
+  retryMs: 15_000,
+  ...o,
+});
+
+test("Kamera-Liste: frisch geladen wird nichts nachgeladen", () => {
+  assert.equal(configRefreshPlan(cfg()), "none");
+});
+
+test("Kamera-Liste: faellig und Kameras bekannt, dann im Hintergrund (die Abfrage wartet nicht auf die Cloud)", () => {
+  assert.equal(configRefreshPlan(cfg({ loadedAt: 930_000 })), "background");
+  // Als veraltet markiert (z. B. neue Parkkamera): sofort, aber ohne Warten.
+  assert.equal(configRefreshPlan(cfg({ loadedAt: 0 })), "background");
+});
+
+test("Kamera-Liste: ohne bekannte Kamera wartet der Poll auf den Abruf", () => {
+  assert.equal(configRefreshPlan(cfg({ loadedAt: 0, haveCameras: false })), "wait");
+  // Ein anderer Aufrufer (Auftrag aus der Cloud) laedt schon: mitwarten.
+  assert.equal(configRefreshPlan(cfg({ loadedAt: 0, haveCameras: false, running: true })), "wait");
+});
+
+test("Kamera-Liste: nach einem Fehlschlag erst nach der Wartezeit wieder, auch beim Start ohne Cloud", () => {
+  assert.equal(configRefreshPlan(cfg({ loadedAt: 900_000, failedAt: 990_000 })), "none");
+  assert.equal(configRefreshPlan(cfg({ loadedAt: 900_000, failedAt: 985_000 })), "background");
+  assert.equal(configRefreshPlan(cfg({ loadedAt: 0, haveCameras: false, failedAt: 990_000 })), "none");
+  assert.equal(configRefreshPlan(cfg({ loadedAt: 0, haveCameras: false, failedAt: 985_000 })), "wait");
+});
+
+test("Kamera-Liste: laeuft ein Abruf schon, startet kein zweiter", () => {
+  assert.equal(configRefreshPlan(cfg({ loadedAt: 900_000, running: true })), "none");
+});
+
+const poll = (o: Partial<PollGate> = {}): PollGate => ({
+  now: 1_000_000,
+  lastStartAt: 998_000,
+  inFlight: false,
+  baseMs: 2_000,
+  ...o,
+});
+
+test("Abfrage: erreichbare Kamera in jedem Takt, auch wenn der Timer etwas frueh kommt", () => {
+  assert.equal(pollDue(poll()), true);
+  assert.equal(pollDue(poll({ lastStartAt: 998_040 })), true);
+  assert.equal(pollDue(poll({ lastStartAt: 0 })), true);
+});
+
+test("Abfrage: eine haengende Kamera wird uebersprungen, bis ihre Antwort da ist", () => {
+  assert.equal(pollDue(poll({ inFlight: true, lastStartAt: 990_000 })), false);
+  // Antwort kam spaet (z. B. nach 7 s): im naechsten Takt wieder dabei.
+  assert.equal(pollDue(poll({ lastStartAt: 993_000 })), true);
+});
+
+test("Abfrage: nur lange Fehlversuche zaehlen fuer die Reihenfolge, ein schneller setzt die Kamera wieder nach vorn", () => {
+  // Dreimal in Folge ins Zeitlimit (8 s).
+  let streak = 0;
+  for (let i = 0; i < 3; i++) streak = failStreakAfter(streak, 8_000, 4_000);
+  assert.equal(streak, 3);
+  // Die Kamera faehrt hoch und lehnt sofort ab (HTTP 503 nach 40 ms).
+  streak = failStreakAfter(streak, 40, 4_000);
+  assert.equal(streak, 0);
+  // Schnell scheiternd bleibt sie vorn, egal wie lange der Ausfall dauert.
+  for (let i = 0; i < 500; i++) streak = failStreakAfter(streak, 40, 4_000);
+  assert.equal(streak, 0);
+  // Genau an der Schwelle zaehlt der Versuch als lang.
+  assert.equal(failStreakAfter(0, 4_000, 4_000), 1);
+  assert.equal(failStreakAfter(0, 3_999, 4_000), 0);
+});
+
+test("Abfrage: Kameras ohne langen Fehlversuch kommen im Takt zuerst an die Reihe", () => {
+  const cams = [
+    { id: 1, failStreak: 4 },
+    { id: 2, failStreak: 0 },
+    { id: 3, failStreak: 1 },
+    { id: 4, failStreak: 0 },
+  ];
+  const ordered = pollOrder(cams);
+  assert.deepEqual(ordered.map((c) => c.id), [2, 4, 1, 3]);
+  // Dieselben Kameras, keine verloren und keine doppelt.
+  assert.deepEqual([...ordered].sort((a, b) => a.id - b.id), cams);
+  assert.equal(ordered[0], cams[1]);
+  // Ohne haengende Kamera bleibt die Reihenfolge der Liste.
+  const fine = [{ id: 7, failStreak: 0 }, { id: 5, failStreak: 0 }];
+  assert.deepEqual(pollOrder(fine), fine);
+  assert.deepEqual(pollOrder([]), []);
+});
+
+/**
+ * Eine Stunde Abfragen im 2-Sekunden-Takt mit einem Ausfall in der Mitte, so
+ * wie pollCameras und pollOne sie fahren (faellig nach pollDue). Die Abfrage
+ * beginnt `startMs` nach dem Takt (negativ: Ihr Ende faellt knapp vor einen
+ * Takt statt knapp dahinter). Liefert, was die Frueherkennung daraus liest,
+ * und wie lange nach dem Ende des Ausfalls die erste Abfrage begann.
+ */
+function hourWithOutage(
+  outageMin: number,
+  failTookMs: number,
+  startMs = 1
+): { fails: number; warned: boolean; backMs: number } {
+  const store = newHealthStore();
+  const t0 = Date.UTC(2026, 10, 24, 12);
+  const end = t0 + 3_600_000;
+  const downFrom = t0 + 30 * 60_000;
+  const downTo = downFrom + Math.round(outageMin * 60_000);
+  let lastStartAt = 0;
+  let backMs = -1;
+  let running: { doneAt: number; ok: boolean } | null = null;
+  for (let now = t0; now < end; now += 2_000) {
+    if (running && running.doneAt <= now) {
+      recordLink(store, "cam:1", "Kamera 1", "camera", running.ok, running.doneAt);
+      running = null;
+    }
+    if (!pollDue({ now, lastStartAt, inFlight: running !== null, baseMs: 2_000 })) continue;
+    lastStartAt = now;
+    const ok = now < downFrom || now >= downTo;
+    if (ok && now >= downTo && backMs < 0) backMs = now - downTo;
+    running = { doneAt: now + startMs + (ok ? 50 : failTookMs), ok };
+  }
+  return {
+    fails: linkStats("cam:1", store.links["cam:1"], end).fail1h,
+    warned: assessTrends(store, end).some((f) => f.key === "trend:link:cam:1"),
+    backMs,
+  };
+}
+
+/** Zaehlung der Frueherkennung fuer einen Ausfall, ohne die Zeit bis zur ersten Abfrage. */
+function counted(outageMin: number, failTookMs: number, startMs = 1): { fails: number; warned: boolean } {
+  const { fails, warned } = hourWithOutage(outageMin, failTookMs, startMs);
+  return { fails, warned };
+}
+
+/** Laengste Zeit vom Ende eines Ausfalls bis zur ersten Abfrage, ueber alle Lagen des Endes zum Takt (100-ms-Schritte). */
+function worstBackMs(failTookMs: number, startMs = 1): number {
+  let worst = 0;
+  for (let shiftMs = 0; shiftMs < 20_000; shiftMs += 100) {
+    worst = Math.max(worst, hourWithOutage(10 + shiftMs / 60_000, failTookMs, startMs).backMs);
+  }
+  return worst;
+}
+
+test("Frueherkennung: lehnt eine Kamera minutenlang sofort ab, zaehlt jeder Takt und die Vorwarnung kommt", () => {
+  // 3 min in einer Stunde, alle 2 s gefragt: 90 Fehlversuche, 5 %.
+  assert.deepEqual(counted(3, 50), { fails: 90, warned: true });
+  assert.deepEqual(counted(10, 50), { fails: 300, warned: true });
+});
+
+test("Frueherkennung: eine haengende Kamera zaehlt je Abfrage, also alle 8 bis 10 s", () => {
+  // Jede Abfrage wartet 8 s auf das Zeitlimit. Laeuft es knapp nach einem
+  // Takt ab, ist die Kamera alle 10 s dran: 6 Fehlversuche je Minute.
+  assert.deepEqual(counted(3, 8_000), { fails: 18, warned: false });
+  assert.deepEqual(counted(20, 8_000), { fails: 120, warned: true });
+});
+
+test("Frueherkennung: scheitert eine Kamera erst nach Sekunden, zaehlt jede Abfrage im Takt nach ihrem Ende", () => {
+  // HTTP-Fehler nach 5 s: alle 6 s gefragt, 10 Fehlversuche je Minute.
+  assert.deepEqual(counted(10, 5_000), { fails: 100, warned: true });
+  // Nach 7 s: alle 8 s.
+  assert.deepEqual(counted(12, 7_000), { fails: 90, warned: true });
+  // Haengend, und das Zeitlimit laeuft knapp vor einem Takt ab: ebenfalls alle 8 s.
+  assert.deepEqual(counted(12, 8_000, -1), { fails: 90, warned: true });
+});
+
+test("Abfrage: nach der Rueckkehr einer Kamera kommt die erste Abfrage im Takt nach dem Ende ihres letzten Fehlversuchs", () => {
+  // Dann kann schon ein Fahrzeug vor dem Tor stehen: Mehr als die Dauer
+  // eines Fehlversuchs plus einen Takt wartet es nie, egal wie lange die
+  // Kamera weg war.
+  assert.ok(worstBackMs(50) < 2_000); // lehnt sofort ab
+  assert.ok(worstBackMs(3_000) <= 4_000);
+  assert.ok(worstBackMs(5_000) <= 6_000);
+  assert.ok(worstBackMs(7_000) <= 8_000);
+  assert.ok(worstBackMs(8_000) < 10_000); // Zeitlimit knapp nach einem Takt
+  assert.ok(worstBackMs(8_000, -1) <= 8_000); // Zeitlimit knapp vor einem Takt
+  // Auch nach Stunden ohne Antwort.
+  assert.ok(hourWithOutage(29, 8_000).backMs < 10_000);
+});
+
+test("Abfrage: ein langsamer eingestellter Takt wird nie unterschritten", () => {
+  // Die Abfrage begann erst 5 s vor diesem Takt (sie wartete auf einen Platz).
+  assert.equal(pollDue(poll({ baseMs: 15_000, lastStartAt: 995_000 })), false);
+  assert.equal(pollDue(poll({ baseMs: 15_000, lastStartAt: 985_000 })), true);
+});
+
+test("Suche nach neuer Adresse: erst jede Minute, nach einer Stunde nur noch alle 15 min", () => {
+  assert.equal(relocateIntervalMs(0), 60_000);
+  assert.equal(relocateIntervalMs(9 * 60_000), 60_000);
+  assert.equal(relocateIntervalMs(10 * 60_000), 5 * 60_000);
+  assert.equal(relocateIntervalMs(59 * 60_000), 5 * 60_000);
+  assert.equal(relocateIntervalMs(10 * 24 * 3_600_000), 15 * 60_000);
+});
+
+test("Suche per Anmeldung bei anderen Geraeten: nur in der ersten Stunde", () => {
+  assert.equal(relocateByLoginAllowed(5 * 60_000), true);
+  assert.equal(relocateByLoginAllowed(60 * 60_000), false);
+});
+
+test("Suche nach neuer Adresse nach einem Neustart: ein gemerkter Ausfall laeuft in seiner Stufe weiter, die naechste Suche kommt im Raster ab Ausfallbeginn", () => {
+  const now = Date.parse("2026-11-25T18:00:00Z");
+  const min = 60_000;
+  // Die Kamera antwortete zuletzt (oder ist neu in der Liste): Faellt sie aus, beginnt die Suche sofort.
+  assert.deepEqual(relocateAtStart(null, now), { downSince: null, lastRelocateAt: 0 });
+  // Seit 3 h 10 min weg: Es bleibt bei alle 15 min ohne Anmeldung. Der letzte
+  // Punkt des Rasters liegt 10 min zurueck, die naechste Suche kommt in 5 min.
+  const since = now - 190 * min;
+  assert.deepEqual(relocateAtStart(since, now), { downSince: since, lastRelocateAt: now - 10 * min });
+  assert.equal(relocateIntervalMs(now - since), 15 * min);
+  assert.equal(relocateByLoginAllowed(now - since), false);
+  // Startet der Hub 4 min spaeter noch einmal, bleibt es bei derselben naechsten Suche.
+  assert.equal(relocateAtStart(since, now + 4 * min).lastRelocateAt, now - 10 * min);
+  // Genau auf einem Punkt des Rasters gilt dieser als der letzte.
+  assert.equal(relocateAtStart(now - 180 * min, now).lastRelocateAt, now);
+  // Seit 27 min weg: alle 5 min, die naechste Suche in 3 min.
+  assert.equal(relocateAtStart(now - 27 * min, now).lastRelocateAt, now - 2 * min);
+  // Seit 5 min 20 s weg: weiter jede Minute, auch per Anmeldung; die naechste Suche in 40 s.
+  const short = now - 5 * min - 20_000;
+  assert.deepEqual(relocateAtStart(short, now), { downSince: short, lastRelocateAt: now - 20_000 });
+  assert.equal(relocateByLoginAllowed(now - short), true);
+  // Gemerkte Zeit knapp voraus (Uhr nachgestellt): Der Ausfall beginnt jetzt, nicht in der Zukunft.
+  assert.deepEqual(relocateAtStart(now + 30_000, now), { downSince: now, lastRelocateAt: now });
+});
+
+interface DeadCameraSearches {
+  /** Suchen unter neuer Adresse je Stunde. */
+  searches: number[];
+  /** Davon mit Anmeldung bei anderen Geraeten. */
+  byLogin: number[];
+  /** Laengste Pause zwischen zwei Suchen nach der ersten Stunde, auf ganze Minuten aufgerundet. */
+  longestPauseMin: number;
+  /** Die meisten Suchen in 60 Minuten nach der ersten Stunde. */
+  mostIn60Min: number;
+}
+
+/**
+ * Eine Kamera, die dauerhaft nicht antwortet (jede Abfrage laeuft ins
+ * Zeitlimit von 8 s), ueber sechs Stunden; der Hub startet dazwischen neu
+ * (Stunden als Kommazahl). Virtuelle Uhr, Takt 2 s, die echten Regeln.
+ */
+function deadCameraSearches(restartsAtHour: number[]): DeadCameraSearches {
+  const base = 2_000;
+  const hour = 3_600_000;
+  const end = 6 * hour;
+  const searches: number[] = [];
+  const byLogin: number[] = [];
+  /** Was ueber den Neustart gemerkt ist (Ausfallbeginn). */
+  let remembered: number | null = null;
+  const start = (now: number) => ({ lastStartAt: 0, inFlight: false, doneAt: -1, ...relocateAtStart(remembered, now) });
+  let cam = start(0);
+  const restarts = restartsAtHour.map((h) => Math.round(h * hour));
+  for (let t = base; t <= end; t += base) {
+    if (restarts.length > 0 && t >= restarts[0]) {
+      restarts.shift();
+      cam = start(t);
+    }
+    if (cam.inFlight && t >= cam.doneAt) {
+      const doneAt = cam.doneAt;
+      cam.inFlight = false;
+      if (cam.downSince === null) {
+        cam.downSince = doneAt;
+        remembered = doneAt;
+      }
+      const downFor = doneAt - cam.downSince;
+      if (doneAt - cam.lastRelocateAt >= relocateIntervalMs(downFor)) {
+        cam.lastRelocateAt = doneAt;
+        searches.push(doneAt);
+        if (relocateByLoginAllowed(downFor)) byLogin.push(doneAt);
+      }
+    }
+    if (pollDue({ now: t, lastStartAt: cam.lastStartAt, inFlight: cam.inFlight, baseMs: base })) {
+      cam.inFlight = true;
+      cam.lastStartAt = t;
+      // Die Abfrage beginnt wenige Millisekunden nach dem Takt.
+      cam.doneAt = t + 3 + 8_000;
+    }
+  }
+  const perHour = (times: number[]) =>
+    Array.from({ length: 6 }, (_, h) => times.filter((x) => x >= h * hour && x < (h + 1) * hour).length);
+  // Auch die Zeit von der letzten Suche bis zum Ende zaehlt als Pause.
+  let longestPause = end - searches[searches.length - 1];
+  for (let i = 1; i < searches.length; i++) {
+    if (searches[i] >= hour) longestPause = Math.max(longestPause, searches[i] - searches[i - 1]);
+  }
+  const late = searches.filter((x) => x >= hour);
+  return {
+    searches: perHour(searches),
+    byLogin: perHour(byLogin),
+    longestPauseMin: Math.ceil(longestPause / 60_000),
+    mostIn60Min: Math.max(0, ...late.map((x) => late.filter((y) => y >= x && y < x + hour).length)),
+  };
+}
+
+/** Neustarts im festen Abstand (Minuten) zwischen zwei Zeitpunkten (Stunden). */
+function restartsEvery(everyMin: number, fromHour: number, toHour: number): number[] {
+  const out: number[] = [];
+  for (let m = fromHour * 60; m <= toHour * 60; m += everyMin) out.push(m / 60);
+  return out;
+}
+
+test("Suche nach neuer Adresse: eine stumme Kamera wird nach der ersten Stunde viermal je Stunde gesucht, mit Neustarts hoechstens fuenfmal", () => {
+  // Die erste Stunde des Ausfalls reicht bis kurz nach der vollen Stunde: daher die eine Anmeldung in Stunde 2.
+  assert.deepEqual(deadCameraSearches([]), {
+    searches: [19, 4, 4, 4, 4, 4],
+    byLogin: [19, 1, 0, 0, 0, 0],
+    longestPauseMin: 15,
+    mostIn60Min: 4,
+  });
+  // Zwei Updates am Nachmittag: Die Suche laeuft durch.
+  assert.deepEqual(deadCameraSearches([2 + 20 / 60, 4 + 50 / 60]), {
+    searches: [19, 4, 4, 4, 4, 4],
+    byLogin: [19, 1, 0, 0, 0, 0],
+    longestPauseMin: 16,
+    mostIn60Min: 4,
+  });
+  // Vier Updates, das erste schon in der ersten halben Stunde. Nach einem
+  // Start kommt die naechste Suche am naechsten Punkt des Rasters; zur letzten
+  // davor koennen einmal bis zu zwei Abstaende liegen, nie mehr.
+  const four = deadCameraSearches([0.5, 2.1, 2.6, 3.3]);
+  assert.deepEqual(four.searches, [19, 4, 3, 4, 4, 4]);
+  assert.deepEqual(four.byLogin, [19, 0, 0, 0, 0, 0]);
+  assert.ok(four.longestPauseMin < 30);
+  assert.ok(four.mostIn60Min <= 5);
+});
+
+test("Suche nach neuer Adresse: startet der Hub oefter neu, als die Stufe lang ist, laeuft die Suche weiter und wird nicht haeufiger", () => {
+  // Ein Tag mit vielen Updates: zwei Stunden lang alle 10 min ein Neustart,
+  // ebenso alle 5 min (so oft prueft der Hub auf Updates).
+  for (const everyMin of [10, 5]) {
+    const serie = deadCameraSearches(restartsEvery(everyMin, 1, 3));
+    assert.deepEqual(serie.searches, [19, 3, 4, 4, 4, 4]);
+    assert.deepEqual(serie.byLogin, [19, 0, 0, 0, 0, 0]);
+    // Der erste Neustart faellt in den Wechsel der Stufe: Von der letzten
+    // Suche im 5-Minuten-Abstand bis zum ersten Punkt des 15-Minuten-Rasters
+    // vergehen einmal gut 20 min, danach sind es 15.
+    assert.ok(serie.longestPauseMin <= 21);
+    assert.equal(serie.mostIn60Min, 4);
+  }
+  // Alle 14 min, drei Stunden lang: knapp unter dem Abstand der Stufe.
+  const fast = deadCameraSearches(restartsEvery(14, 1, 4));
+  assert.deepEqual(fast.searches, [19, 4, 4, 4, 4, 4]);
+  assert.equal(fast.longestPauseMin, 16);
+  assert.ok(fast.mostIn60Min <= 5);
 });
 
 test("KI-Alarm: abgeschaltete Fahrzeug-Erkennung heisst nicht aktiv, eine unbekannte Art bleibt ungemessen", () => {

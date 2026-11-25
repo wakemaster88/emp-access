@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { CONFIG, gitHubCodeRevision, gitVersion, log } from "./config.js";
 import { ensureRepoAccess, type RepoAccessStatus } from "./repo-access.js";
+import { exitHub } from "./shutdown.js";
 import {
   PREFLIGHT_ENV,
   PREFLIGHT_OK,
@@ -315,7 +316,8 @@ async function runUpdateCheck(): Promise<void> {
   }
 
   log("Neuer Stand installiert und geprueft – Prozess wird beendet (launchd startet neu).");
-  process.exit(0);
+  // Mit Aufraeumen (hoechstens 3 s): Diagnose-Stand sichern, Weisslicht aus.
+  exitHub(0);
 }
 
 export async function checkForUpdate(): Promise<void> {

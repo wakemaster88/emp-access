@@ -342,6 +342,8 @@ const OID_ARP_PHYS = "1.3.6.1.2.1.4.22.1.2";
 const ROUTER_ARP_TTL_MS = 120_000;
 let routerArpCache: { at: number; map: Map<string, string> } | null = null;
 let routerArpWarned = false;
+/** Letzter gescheiterter Abruf: so lange gilt der alte Stand, ohne neuen Versuch. */
+let routerArpFailedAt = 0;
 
 export function routerHost(): string | null {
   return (process.env.HUB_SNMP_ROUTER || "").trim() || null;
@@ -354,6 +356,12 @@ export async function readRouterArp(force = false): Promise<Map<string, string>>
   if (!force && routerArpCache && Date.now() - routerArpCache.at < ROUTER_ARP_TTL_MS) {
     return routerArpCache.map;
   }
+  // Antwortet der Router nicht, wartet jeder Abruf mehrere Sekunden auf sein
+  // Zeitlimit. Den Fehlschlag ebenso lange merken wie einen Erfolg, sonst
+  // zahlt jeder Aufrufer (Kamera-Suche, Geraete-Abgleich) die Wartezeit neu.
+  if (!force && routerArpFailedAt > 0 && Date.now() - routerArpFailedAt < ROUTER_ARP_TTL_MS) {
+    return routerArpCache?.map ?? new Map();
+  }
   const map = new Map<string, string>();
   try {
     const rows = await snmpWalk(host, OID_ARP_PHYS);
@@ -365,7 +373,9 @@ export async function readRouterArp(force = false): Promise<Map<string, string>>
       if (mac && mac !== "FF:FF:FF:FF:FF:FF" && mac !== "00:00:00:00:00:00") map.set(ip, mac);
     }
     routerArpWarned = false;
+    routerArpFailedAt = 0;
   } catch (e) {
+    routerArpFailedAt = Date.now();
     if (!routerArpWarned) {
       log(
         `Router-ARP per SNMP (${host}, Community ${community() === "public" ? "public" : "gesetzt"}) fehlgeschlagen: ${friendlySnmpError(e)}`
