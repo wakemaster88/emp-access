@@ -2404,7 +2404,9 @@ const OUTBOX_LOSS_LOG_FAILING_MS = 60 * 60_000;
 
 /**
  * Verluste der Warteschlange ins Log: gesammelt in einer Zeile, nicht je
- * Vorfall, und in jedem Fall einmal, wenn die Cloud wieder da ist.
+ * Vorfall. Nach einer Stoerung in jedem Fall (`force`): einmal, wenn die
+ * Cloud wieder da ist, und noch einmal, wenn die Warteschlange abgearbeitet
+ * ist. Bis dahin koennen wartende Beginne noch zu alt werden.
  */
 function logOutboxLoss(force = false): void {
   const { staleStarts, staleEnds, cutStarts, cutEnds } = outboxLoss;
@@ -2481,6 +2483,8 @@ function runningEvents(): Array<{ cameraId: number; type: string; at: string }> 
 
 async function drainEventUploads(): Promise<void> {
   eventUploadRunning = true;
+  /** In diesem Durchlauf kam nach einer Stoerung wieder eine Meldung an. */
+  let recovered = false;
   try {
     while (eventOutbox.length > 0 || seenOutbox.size > 0) {
       // Erst jetzt entscheiden, was noch hinausgeht: Seit dem Einreihen kann
@@ -2542,6 +2546,7 @@ async function drainEventUploads(): Promise<void> {
             uploadFailLog.shouldLog("upload", "", Date.now());
             log("Kamera-Event-Upload: Cloud wieder erreichbar");
             logOutboxLoss(true);
+            recovered = true;
           }
           // Regel ausgeloest (z. B. Kamera auf Preset): Tasks sofort holen.
           if ((body?.rulesTriggered ?? 0) > 0) kickTaskPoll();
@@ -2553,6 +2558,10 @@ async function drainEventUploads(): Promise<void> {
       // Internet weg): Der naechste faellige Durchlauf nimmt den Rest mit.
       if (!ok) break;
     }
+    // Was nach der Zeile zur Erholung noch entfiel, waehrend der Rest der
+    // Warteschlange hinausging. Scheiterte dabei wieder eine Meldung, bleibt
+    // die Summe stehen, bis die Cloud das naechste Mal wieder da ist.
+    if (recovered && !eventUploadFailing) logOutboxLoss(true);
   } finally {
     eventUploadRunning = false;
   }
