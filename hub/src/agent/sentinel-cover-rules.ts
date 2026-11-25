@@ -303,12 +303,31 @@ export function coverageShrank(prev: readonly number[], next: readonly number[])
 /**
  * Log-Zeile, wenn sich die Liste aendert; null sonst. `prev` = null beim
  * ersten Takt: Dann gibt es eine Zeile nur, wenn die Liste nicht leer ist.
+ * `quietOn` = HUB_SENTINEL_CLOUD_QUIET: Nur wenn der Schalter an ist, schweigt
+ * die Cloud an den gemeldeten Kameras; sonst meldet sie dort weiter selbst.
  */
-export function coverageLine(prev: readonly number[] | null, next: Cover, names: ReadonlyMap<number, string>): string | null {
+export function coverageLine(
+  prev: readonly number[] | null,
+  next: Cover,
+  names: ReadonlyMap<number, string>,
+  quietOn = true,
+): string | null {
   const same = prev !== null && prev.length === next.cameras.length && prev.every((id, k) => id === next.cameras[k]);
   if (same || (prev === null && next.cameras.length === 0)) return null;
   const name = (id: number) => names.get(id) ?? `#${id}`;
   const held = next.held.map((h) => `${name(h.id)} – ${DUTY_TEXT[h.duty]}`).join("; ");
+  if (!quietOn) {
+    if (next.cameras.length === 0) {
+      const why = next.blocked ?? held;
+      return `Wächter: meldet der Cloud keine bewachte Kamera mehr${why ? ` (${why})` : ""}`;
+    }
+    return (
+      `Wächter: meldet der Cloud ${next.cameras.length} bewachte Kamera(s): ` +
+      next.cameras.map(name).join(", ") +
+      (held ? ` (ohne laufende Bewertung: ${held})` : "") +
+      " – die Cloud meldet unbekannte Personen weiter selbst (HUB_SENTINEL_CLOUD_QUIET aus)"
+    );
+  }
   if (next.cameras.length === 0) {
     const why = next.blocked ?? held;
     return `Wächter: Cloud meldet unbekannte Personen wieder an allen Kameras selbst${why ? ` (${why})` : ""}`;

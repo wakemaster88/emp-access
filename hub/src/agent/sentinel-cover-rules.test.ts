@@ -150,6 +150,36 @@ test("coverageLine: eine Zeile je Änderung, beim Start nur mit Kameras", () => 
   );
 });
 
+test("coverageLine: bei ausgeschaltetem HUB_SENTINEL_CLOUD_QUIET sagt die Zeile, dass die Cloud weiter selbst meldet", () => {
+  const names = new Map([
+    [8, "Umkleide"],
+    [9, "Eingang"],
+  ]);
+  const off = false;
+  assert.equal(coverageLine(null, { cameras: [], blocked: null, held: [] }, names, off), null);
+  assert.equal(coverageLine([9], { cameras: [9], blocked: null, held: [] }, names, off), null);
+  assert.equal(
+    coverageLine(null, { cameras: [8, 9], blocked: null, held: [] }, names, off),
+    "Wächter: meldet der Cloud 2 bewachte Kamera(s): Umkleide, Eingang – die Cloud meldet unbekannte Personen weiter selbst (HUB_SENTINEL_CLOUD_QUIET aus)"
+  );
+  assert.equal(
+    coverageLine([8, 9], { cameras: [9], blocked: null, held: [{ id: 8, duty: "offen" }] }, names, off),
+    "Wächter: meldet der Cloud 1 bewachte Kamera(s): Eingang (ohne laufende Bewertung: Umkleide – Person ohne laufende Bewertung)" +
+      " – die Cloud meldet unbekannte Personen weiter selbst (HUB_SENTINEL_CLOUD_QUIET aus)"
+  );
+  assert.equal(
+    coverageLine([8, 9], { cameras: [], blocked: "Bildmodell nicht bereit", held: [] }, names, off),
+    "Wächter: meldet der Cloud keine bewachte Kamera mehr (Bildmodell nicht bereit)"
+  );
+  // Keine Zeile darf bei ausgeschaltetem Schalter „nur noch über den Wächter“ behaupten.
+  for (const next of [
+    { cameras: [9], blocked: null, held: [] },
+    { cameras: [8, 9], blocked: null, held: [{ id: 12, duty: "gesperrt" as const }] },
+  ]) {
+    assert.doesNotMatch(coverageLine(null, next, names, off) ?? "", /nur noch über den Wächter/);
+  }
+});
+
 /* ------------------------------------------------ Stand je Kamera (cameraDuty) */
 
 test("cameraDuty: gemeldet wird nur, was der Wächter bewertet oder sofort bewerten würde", () => {

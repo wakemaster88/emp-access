@@ -97,6 +97,7 @@ import {
   type Vouch,
 } from "./sentinel-cover-rules.js";
 import { setSentinelVouch } from "../sentinel-vouch.js";
+import { sentinelNightWindow, setCameraRoomClosed } from "../camera-room.js";
 import { ROOMS_MAX_AGE_MS, roomsClosed, type RoomsClosed } from "./sentinel-rooms-rules.js";
 import { berlinClock, guardChangeLines, guardState, guardTodayLine, type GuardCamera } from "./sentinel-guard-rules.js";
 import {
@@ -148,7 +149,7 @@ import { newVisionUpkeep, onVisionError, unverifiedText, visionUpkeepStep } from
 import { inspectionCounters, timingLine, type VisionCall } from "./vision-timing-rules.js";
 
 const MODE = (process.env.HUB_AGENT_SENTINEL || "on").trim().toLowerCase();
-const NIGHT = (process.env.HUB_AGENT_SENTINEL_NIGHT || "22-6").trim();
+const NIGHT = sentinelNightWindow();
 const MAX_PER_HOUR = Number(process.env.HUB_AGENT_SENTINEL_MAX_PER_HOUR) > 0 ? Number(process.env.HUB_AGENT_SENTINEL_MAX_PER_HOUR) : 30;
 /** So viele Bewertungen laufen hoechstens gleichzeitig. */
 const MAX_BUSY = 2;
@@ -801,7 +802,12 @@ function noteCoverage(now: number, hour: number, cams: readonly GuardCamera[]): 
     cams: cams.map((c) => ({ id: c.id, mode: c.mode, roomClosed: c.rooms.closed, duty: dutyOf(c.id, now) })),
   });
   const prev = coverage?.cameras ?? null;
-  const line = coverageLine(prev, next, new Map(cams.map((c) => [c.id, c.name])));
+  const line = coverageLine(
+    prev,
+    next,
+    new Map(cams.map((c) => [c.id, c.name])),
+    cloudQuietOn(process.env.HUB_SENTINEL_CLOUD_QUIET),
+  );
   if (line) log(line);
   coverage = { at: now, cameras: next.cameras };
   if (prev && coverageShrank(prev, next.cameras)) coverageShrinkListener?.();
@@ -971,6 +977,9 @@ export function startSentinel(d: { chatIds: () => string[] }): void {
   deps = d;
   seq = currentEventSeq();
   setSentinelVouch((cameraId) => vouchNow(cameraId));
+  // Schwenk-Kameras folgen nur bei geschlossenem Raum (camera-motion.ts):
+  // derselbe Stand, nach dem der Waechter bewacht.
+  setCameraRoomClosed((cameraId) => cameraClosed(cameraId));
   log(
     cloudQuietOn(process.env.HUB_SENTINEL_CLOUD_QUIET)
       ? "Wächter: Cloud schweigt zu unbekannten Personen, die der Wächter nachweislich bewertet (HUB_SENTINEL_CLOUD_QUIET=on)"

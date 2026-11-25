@@ -228,7 +228,10 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
         let result: unknown;
         switch (task.type) {
           case "CAMERA_PTZ":
-            noteCameraHand(cameraId);
+            // Erst gibt die Automatik die Kamera ab (Tracking des Hubs aus,
+            // hoechstens 2 s warten), dann geht der Befehl hinaus: Sonst
+            // steuert die Kamera dagegen.
+            await noteCameraHand(cameraId);
             result = await ptzControl(cameraId, task.payload);
             break;
           case "CAMERA_SPOTLIGHT":
@@ -242,7 +245,7 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
             break;
           case "CAMERA_ZOOM":
             // Nur Fahren ist Handsteuerung, Lesen (ohne pos/step) nicht.
-            if (task.payload?.pos != null || task.payload?.step != null) noteCameraHand(cameraId);
+            if (task.payload?.pos != null || task.payload?.step != null) await noteCameraHand(cameraId);
             result = { zoom: await cameraZoom(cameraId, task.payload) };
             break;
           default:

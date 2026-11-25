@@ -156,3 +156,87 @@ export function sidecarLogLines(chunk: string): string[] {
     .filter((l) => l.length > 0)
     .map((l) => (l.startsWith("[face]") ? l : `[face] ${l}`));
 }
+
+/** Ein hochgeladenes Sichtungsbild, wie der Hub es sich je Kamera merkt (nur im Arbeitsspeicher). */
+export interface SightingUpload {
+  at: number;
+  /** Erkannte Person (listedPersonId); null = unbekannt. */
+  personId: number | null;
+  /** Merkmal des hochgeladenen Gesichts (Vergleich unbekannter Gesichter). */
+  embedding: number[];
+  /** faceQuality des hochgeladenen Gesichts. */
+  quality: number;
+}
+
+/** Die Sichtung, die gleich hochgeladen wuerde. */
+export interface SightingCandidate extends SightingUpload {
+  /** Liste der erkannten Person (BLACKLIST = gesperrt); null = unbekannt. */
+  listType: string | null;
+}
+
+/** So lange merkt sich der Hub die Uploads je Kamera. */
+export const SIGHTING_MEMORY_MS = 10 * 60_000;
+/** Hoechstens so viele Uploads je Kamera. */
+export const SIGHTING_MEMORY_MAX = 10;
+/** Dieselbe erkannte Person an derselben Kamera: innerhalb dieser Zeit eine Wiederholung. */
+export const SIGHTING_SAME_PERSON_MS = 5 * 60_000;
+/** Unbekanntes Gesicht: ab diesem Kosinus zu einem Upload ist es dasselbe Gesicht. */
+export const SIGHTING_SIMILAR_MIN = 0.5;
+/** Unbekanntes Gesicht: ab dieser Guete (Vielfaches) ist es deutlich besser und keine Wiederholung. */
+export const SIGHTING_BETTER_FACTOR = 1.3;
+
+export interface SightingDecision {
+  /** Hochladen (true) oder als Wiederholung weglassen. */
+  store: boolean;
+  /** Wiederholung eines Uploads dieser Kamera; null = keine. */
+  repeat: { known: boolean; gapS: number; sim: number | null } | null;
+  /** Wiederholung, die trotzdem gespeichert wird; null = keine Ausnahme. */
+  exempt: "gesperrt" | "Überwachung" | null;
+}
+
+/**
+ * Ist diese Sichtung eine Wiederholung eines Uploads derselben Kamera aus den
+ * letzten SIGHTING_MEMORY_MS?
+ *  - Erkannte Person: dieselbe Person vor weniger als SIGHTING_SAME_PERSON_MS.
+ *  - Unbekanntes Gesicht: einem Upload aehnlich (Kosinus ab SIGHTING_SIMILAR_MIN)
+ *    und nicht deutlich besser (unter SIGHTING_BETTER_FACTOR mal dessen Guete);
+ *    unter mehreren zaehlt der aehnlichste. Der Kosinus steht im Ergebnis, die
+ *    Zaehlung laesst sich so spaeter auch mit einer strengeren Schwelle
+ *    auswerten.
+ * Eine Wiederholung wird trotzdem gespeichert bei einer gesperrten Person und
+ * in der Ueberwachungszeit (`surveillance`; null = unbekannt, zaehlt wie
+ * Ueberwachungszeit).
+ */
+export function shouldStoreSighting(
+  recent: readonly SightingUpload[],
+  next: SightingCandidate,
+  opts: { now: number; surveillance: boolean | null }
+): SightingDecision {
+  const live = recent.filter((u) => opts.now - u.at >= 0 && opts.now - u.at < SIGHTING_MEMORY_MS);
+  let repeat: SightingDecision["repeat"] = null;
+  if (next.personId != null) {
+    let last: SightingUpload | null = null;
+    for (const u of live) {
+      if (u.personId === next.personId && opts.now - u.at < SIGHTING_SAME_PERSON_MS && (!last || u.at > last.at)) last = u;
+    }
+    if (last) repeat = { known: true, gapS: Math.round((opts.now - last.at) / 1000), sim: null };
+  } else {
+    let best: { u: SightingUpload; sim: number } | null = null;
+    for (const u of live) {
+      const sim = cosine(u.embedding, next.embedding);
+      if (sim < SIGHTING_SIMILAR_MIN) continue;
+      if (next.quality >= SIGHTING_BETTER_FACTOR * u.quality) continue;
+      if (!best || sim > best.sim) best = { u, sim };
+    }
+    if (best) repeat = { known: false, gapS: Math.round((opts.now - best.u.at) / 1000), sim: Number(best.sim.toFixed(3)) };
+  }
+  if (!repeat) return { store: true, repeat: null, exempt: null };
+  if (next.listType === "BLACKLIST") return { store: true, repeat, exempt: "gesperrt" };
+  if (opts.surveillance !== false) return { store: true, repeat, exempt: "Überwachung" };
+  return { store: false, repeat, exempt: null };
+}
+
+/** Upload merken: nur die letzten SIGHTING_MEMORY_MS, hoechstens SIGHTING_MEMORY_MAX je Kamera. */
+export function rememberSighting(recent: readonly SightingUpload[], add: SightingUpload, now: number): SightingUpload[] {
+  return [...recent.filter((u) => now - u.at >= 0 && now - u.at < SIGHTING_MEMORY_MS), add].slice(-SIGHTING_MEMORY_MAX);
+}

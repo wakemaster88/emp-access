@@ -14,10 +14,21 @@ import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { STATE, recordHubEvent } from "./state.js";
 import { embedJpeg, embeddingHeader, scoreGallery, refreshGallery, type FaceEmbedResult } from "./face.js";
-import { bestShot, fuseEmbeddings, type FaceShot } from "./face-rules.js";
+import {
+  bestShot,
+  faceQuality,
+  fuseEmbeddings,
+  rememberSighting,
+  shouldStoreSighting,
+  type FaceShot,
+  type SightingCandidate,
+  type SightingUpload,
+} from "./face-rules.js";
 import { detectPersons, faceViaZoom } from "./person-crop.js";
 import { CameraMotion, type CloseUp, type MotionDriver, type PersistedMove } from "./camera-motion.js";
-import { RULE_HOLD_MS, isZoneCamera, readTrackingCfg } from "./camera-motion-rules.js";
+import { HAND_HANDOVER_MAX_MS, RULE_HOLD_MS, followAlwaysOn, isZoneCamera, readTrackingCfg } from "./camera-motion-rules.js";
+import { cameraRoomClosed, sentinelNightWindow } from "./camera-room.js";
+import { berlinHour } from "./agent/quiet.js";
 import { findAllowedVehicle, plateAutoMinConf, scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { checkVehicle } from "./vision.js";
 import { KNOWN_CITY, normalizePlate } from "./plate-match.js";
@@ -80,11 +91,19 @@ import {
   snapshotJobFor,
   tidyOutbox,
 } from "./camera-poll-rules.js";
+import {
+  nextLastActiveAt,
+  pipelineShouldStop,
+  sightingAction,
+  sightingRepeatMode,
+  sightingSurveillance,
+  takeOpticalFace,
+} from "./person-pipeline-rules.js";
 import { ChangeLog } from "./change-log.js";
 import { isExiting, onShutdown } from "./shutdown.js";
 import { CameraMarks } from "./camera-marks.js";
 import { BurstLights } from "./vehicle-light.js";
-import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
+import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT, shrinkJpeg } from "./image.js";
 
 export interface CameraConfig {
   id: number;
@@ -241,8 +260,11 @@ const EVENT_END_HOLD_MS = Number(process.env.HUB_EVENT_END_HOLD_MS || 6_000);
 /** Reine Bewegung (ohne KI) laeuft laenger nach, siehe endHoldFor(). */
 const MOTION_END_HOLD_MS = Number(process.env.HUB_MOTION_END_HOLD_MS || 60_000);
 const eventEndHold = (type: string) => endHoldFor(type, EVENT_END_HOLD_MS, MOTION_END_HOLD_MS);
-/** Personen: kurz warten, dann mehrere Versuche solange PERSON aktiv (Gesicht oft erst frontal). */
-const PERSON_SNAP_DELAY_MS = 1_000;
+/**
+ * Personen: erstes Bild sofort, dann weitere Versuche im Abstand von
+ * PERSON_SNAP_RETRY_MS, solange die Kamera die Person meldet (Gesicht oft
+ * erst frontal). Wann das Signal als beendet gilt: pipelineShouldStop.
+ */
 const PERSON_SNAP_ATTEMPTS = 4;
 const PERSON_SNAP_RETRY_MS = 1_200;
 /**
@@ -253,6 +275,18 @@ const PERSON_SNAP_RETRY_MS = 1_200;
  */
 const PERSON_BEST_EXTRA = Math.max(0, Math.min(5, Number(process.env.HUB_FACE_BEST_EXTRA ?? 2)));
 const PERSON_BEST_GAP_MS = Number(process.env.HUB_FACE_BEST_GAP_MS || 400);
+/**
+ * Zeitlimit je Zusatzbild: Das erste Gesicht liegt dann schon vor, und die
+ * Sichtung soll nicht auf ein Bild warten, das die Kamera nicht liefert.
+ */
+const PERSON_BEST_SNAP_TIMEOUT_MS = 5_000;
+/**
+ * Wiederholungen derselben Person an einer Kamera (shouldStoreSighting):
+ * count (Standard) zaehlt nur, skip laedt sie nicht hoch, off wertet nicht aus.
+ */
+const SIGHTING_REPEAT = sightingRepeatMode(process.env.HUB_SIGHTING_REPEAT);
+/** Uploads je Kamera der letzten 10 Minuten, nur im Arbeitsspeicher (nach einem Neustart leer). */
+const recentSightings = new Map<number, SightingUpload[]>();
 /**
  * Fahrzeuge: dichter Burst solange VEHICLE aktiv, lokal dumpen,
  * Plate-OCR wählt den besten Frame. Fallback: Vision „Fahrzeug?“.
@@ -574,12 +608,12 @@ async function pollStatesSingle(cam: CameraRuntime): Promise<Record<string, bool
 }
 
 /** JPEG von der Kamera holen (ohne Upload). */
-async function captureSnap(cam: CameraRuntime): Promise<Buffer> {
+async function captureSnap(cam: CameraRuntime, timeoutMs = 15_000): Promise<Buffer> {
   await ensureLogin(cam);
   const rs = Math.random().toString(36).slice(2, 10);
   const res = await fetch(
     `${baseUrl(cam.config)}/cgi-bin/api.cgi?cmd=Snap&channel=${cam.config.channel}&rs=${rs}&token=${encodeURIComponent(cam.token!)}`,
-    { signal: AbortSignal.timeout(15000) }
+    { signal: AbortSignal.timeout(timeoutMs) }
   );
   if (!res.ok) throw new Error(`Snap fehlgeschlagen: HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
@@ -635,8 +669,9 @@ interface PersonRun {
 }
 
 /**
- * Bei Personen-Erkennung: Delay, dann bis zu N Snap-/Face-Versuche solange
- * PERSON noch aktiv – Gallery-Match, Upload (ohne Gesicht: kein Upload).
+ * Bei Personen-Erkennung: sofort bis zu N Snap-/Face-Versuche, solange die
+ * Kamera die Person meldet (einzelne Aussetzer des Signals zaehlen nicht) –
+ * Gallery-Match, Upload (ohne Gesicht: kein Upload).
  *
  * Meldet die Kamera waehrenddessen ein Fahrzeug, geht das Kennzeichen vor
  * (Tor): Die Pipeline gibt die Kamera nach dem laufenden Bild ab und der
@@ -724,7 +759,7 @@ async function pickBestFace(
     // Wartet ein Fahrzeug, reicht das Bild, das schon da ist.
     if (lease.lost()) break;
     await new Promise((r) => setTimeout(r, PERSON_BEST_GAP_MS));
-    const b = await lease.use(() => captureSnap(cam).catch(() => null));
+    const b = await lease.use(() => captureSnap(cam, PERSON_BEST_SNAP_TIMEOUT_MS).catch(() => null));
     if (!b) break;
     const f = await embedJpeg(b);
     if (f) shots.push({ buf: b, face: f });
@@ -746,10 +781,15 @@ async function uploadPersonSnapshotBody(
   cameraId: number,
   run: PersonRun
 ): Promise<{ bytes: number } | null> {
-  await new Promise((r) => setTimeout(r, PERSON_SNAP_DELAY_MS));
-
   let buf: Buffer | null = null;
   let face: Awaited<ReturnType<typeof embedJpeg>> = null;
+  // Roh-Zustand der Pipeline in einer eigenen Variable, nicht in cam.states:
+  // Dort erkennt die Abfrage (pollOne) die Flanken, und die gehoeren ihr
+  // allein. Was die Abfrage zuletzt gesehen hat, zaehlt mit (nur lesen): Bei
+  // der rohen Flanke ist das jetzt, nach einem Fahrzeug-Burst die letzte
+  // Abfrage mit Person.
+  const seenByPoll = () => cam.debounce.lastActiveAt.PERSON;
+  let lastActiveAt = seenByPoll() ?? Date.now();
 
   /** Ein Fahrzeug hat die Kamera und es gibt noch kein Gesicht. */
   const vehicleFirst = (attempt: number): null => {
@@ -768,16 +808,20 @@ async function uploadPersonSnapshotBody(
     if (run.lease.lost()) return vehicleFirst(attempt);
     try {
       const states = await pollStates(cam);
-      cam.states.PERSON = states.PERSON ?? false;
-      if (!states.PERSON) {
+      const now = Date.now();
+      const rawActive = states.PERSON ?? false;
+      lastActiveAt = nextLastActiveAt({ rawActive, now, prev: lastActiveAt, seenByPoll: seenByPoll() });
+      if (pipelineShouldStop({ rawActive, lastActiveAt, now })) {
         log(
           `Personen-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv` +
             (attempt > 1 ? `, nach Versuch ${attempt - 1}` : "") +
             `)`
         );
-        improve("face", "skip_inactive", { cam: cam.config.name });
+        improve("face", "skip_inactive", { cam: cam.config.name, after: attempt - 1 });
         return null;
       }
+      // Aussetzer des Signals: der Versuch laeuft trotzdem.
+      if (!rawActive) improveCount("face", "signal_gap");
     } catch (e) {
       log(
         `Personen-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${
@@ -822,17 +866,25 @@ async function uploadPersonSnapshotBody(
     const direct = face ? scoreGallery(face.embedding, { upscaled: face.upscaled }).match : null;
     if (!direct) {
       // Der optische Zoom braucht die Kamera: nicht, wenn ein Fahrzeug wartet.
-      const close = await run.lease.use(() => motion.closeUp(cameraId).catch(() => null));
+      // Er faehrt nur, wenn das Gesicht danach voraussichtlich gross genug ist
+      // (opticalWorth in camera-motion-rules.ts).
+      const need = { size: face?.size ?? null, upscaled: face?.upscaled ?? true };
+      const close = await run.lease.use(() => motion.closeUp(cameraId, need).catch(() => null));
       if (close) {
         improve("face", "optical", { cam: cam.config.name, gain: Number(close.gain.toFixed(2)), persons: close.persons });
-        const got = (await embedJpeg(close.jpeg)) ?? (await faceViaZoom(close.jpeg).catch(() => null))?.face ?? null;
-        if (got) {
+        const got = (await embedJpeg(close.jpeg)) ?? (await faceViaZoom(close.jpeg, close.boxes).catch(() => null))?.face ?? null;
+        // Das neue Gesicht ersetzt das bisherige nur mit Treffer oder hoeherer Guete.
+        const hit = got ? scoreGallery(got.embedding, { upscaled: got.upscaled }).match != null : false;
+        if (got && takeOpticalFace({ matched: hit, before: face ? asShot(face) : null, after: asShot(got) })) {
           log(`Personen-Snapshot ${cam.config.name}: Gesicht über optischen Zoom ×${close.gain.toFixed(1)}`);
           improve("face", "optical_face", { cam: cam.config.name, upscaled: got.upscaled });
           face = got;
           buf = close.jpeg;
           optical = true;
           facePos = null;
+        } else if (got) {
+          log(`Personen-Snapshot ${cam.config.name}: Gesicht über optischen Zoom ×${close.gain.toFixed(1)} ohne Treffer und nicht besser – das bisherige bleibt`);
+          improve("face", "optical_kept", { cam: cam.config.name, upscaled: got.upscaled });
         }
       }
       if (!optical) {
@@ -916,9 +968,54 @@ async function uploadPersonSnapshotBody(
     upscaled: face.upscaled,
   });
 
-  // Verkleinert hochladen: die Cloud zeigt das Bild nur an (FACE_ENROLL kommt
-  // mit 1600 px noch gut zurecht); das Original bleibt hier fuer die Pipeline.
-  const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT_MAX_PX);
+  // Wiederholung eines Uploads dieser Kamera (shouldStoreSighting)? Erst hier,
+  // nach Hub-Ereignis und Zaehler: Waechter und Lagebild sehen jede Sichtung.
+  // Mit dem Standard count wird nur gezaehlt, hochgeladen wird jede. Gemerkt
+  // wird, was auch mit skip hochgeladen wuerde: So zaehlt count genau die
+  // Sichtungen, die skip weglaesst.
+  let remember = false;
+  const sighting: SightingCandidate | null =
+    SIGHTING_REPEAT === "off"
+      ? null
+      : {
+          at: Date.now(),
+          personId: match?.listedPersonId ?? null,
+          listType: match?.listType ?? null,
+          embedding: face.embedding,
+          quality: faceQuality(asShot(face)),
+        };
+  if (sighting) {
+    const decision = shouldStoreSighting(recentSightings.get(cameraId) ?? [], sighting, {
+      now: sighting.at,
+      surveillance: sightingSurveillance(localHourOrNaN()),
+    });
+    remember = decision.store;
+    if (decision.repeat) {
+      const { known, gapS, sim } = decision.repeat;
+      improve("face", decision.exempt ? "repeat_exempt" : known ? "repeat_known" : "repeat_unknown", {
+        cam: cam.config.name,
+        known,
+        gapS,
+        sim: sim ?? undefined,
+        why: decision.exempt ?? undefined,
+        mode: SIGHTING_REPEAT,
+      });
+      if (sightingAction(SIGHTING_REPEAT, decision) === "skip") {
+        log(
+          `Personen-Snapshot ${cam.config.name}: Wiederholung (${known && match ? `„${match.name}“` : "ähnliches Gesicht"} vor ${gapS} s) – nicht hochgeladen`
+        );
+        // Die Drossel gilt wie nach einem Upload: Die naechste Flanke startet
+        // nicht sofort eine neue Pipeline.
+        cam.lastSnapshotAt = Date.now();
+        return null;
+      }
+    }
+  }
+
+  // Verkleinert hochladen (PERSON_SNAPSHOT in image.ts): Das Merkmal geht im
+  // Header mit, die Cloud zeigt das Bild an und behaelt es als Beleg. Das
+  // Original bleibt hier fuer die Pipeline.
+  const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT.maxPx, PERSON_SNAPSHOT.quality);
   // Beleg je Sichtung (sentinel-vouch.ts), mit dem Stand direkt vor dem
   // Upload: Nur wenn der Waechter genau diese Person gerade bewertet oder
   // gemeldet hat, steht sentinel=1 dabei. Nur dann darf die Cloud zu einer
@@ -945,6 +1042,7 @@ async function uploadPersonSnapshotBody(
       );
     }
     log(`Personen-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes${vouchNote})`);
+    if (sighting && remember) recentSightings.set(cameraId, rememberSighting(recentSightings.get(cameraId) ?? [], sighting, Date.now()));
   } finally {
     // Die Drossel gilt, sobald ein Gesicht ausgewertet ist, auch wenn der
     // Upload scheitert: Ohne Cloud soll die Pipeline nicht bei jedem neuen
@@ -1286,8 +1384,10 @@ async function uploadVehicleSnapshotBody(
   cameraId: number,
   run: VehicleRun
 ): Promise<{ bytes: number } | null> {
-  // Laeuft noch eine Nahaufnahme (Waechter), passen Zone und Mindestgroesse nicht.
-  if (!motion.atHome(cameraId)) await motion.waitAtHome(cameraId, 3_000);
+  // Laeuft noch eine Nahaufnahme (Waechter), passen Zone und Mindestgroesse
+  // nicht. Auf eine ausstehende Rueckfahrt des Zooms wartet der Burst nicht:
+  // Bis zu ihrem naechsten Versuch faehrt das Objektiv nicht (settled).
+  if (!motion.settled(cameraId)) await motion.waitSettled(cameraId, 3_000);
 
   await new Promise((r) => setTimeout(r, VEHICLE_SNAP_DELAY_MS));
 
@@ -1964,7 +2064,7 @@ async function writeAutoTrack(cam: CameraRuntime, key: string, on: boolean): Pro
 export async function setAutoTrack(cameraId: number, on: boolean): Promise<{ autoTrack: boolean; was: boolean }> {
   const cam = await getControlCam(cameraId);
   const cur = await readAutoTrack(cam);
-  if (cur.on !== on) await writeAutoTrack(cam, cur.key, on);
+  if (cur.on !== on) await ptzSerial(cameraId, () => writeAutoTrack(cam, cur.key, on));
   return { autoTrack: on, was: cur.on };
 }
 
@@ -1989,7 +2089,12 @@ export async function cameraScene(
   if (presetId == null && autoTrack == null) throw new Error("Weder Preset noch Folgen angegeben");
   // Die Regel bewegt die Kamera: Automatik haelt still, bis sie zurueck ist.
   // Erst danach lesen, sonst gilt das Tracking des Hubs als Zustand vorher.
-  await motion.noteRule(cameraId, returnAfter > 0 ? returnAfter * 1000 + SCENE_SETTLE_MS + 5_000 : RULE_HOLD_MS);
+  // true: Das Tracking des Hubs liess sich nicht ausschalten; ein „an“
+  // stammt dann vom Hub, vorher galt „aus“.
+  const hubTrackOn = await motion.noteRule(
+    cameraId,
+    returnAfter > 0 ? returnAfter * 1000 + SCENE_SETTLE_MS + 5_000 : RULE_HOLD_MS
+  );
 
   // Nur Preset: eine Kamera ohne Auto-Tracking ist in Ordnung.
   const track = await readAutoTrack(cam).catch((e) => {
@@ -1999,22 +2104,30 @@ export async function cameraScene(
 
   // Zustand vor der Szene merken – bei einer Verlaengerung den urspruenglichen.
   const pending = sceneReturns.get(cameraId);
-  const restoreTrack = pending ? pending.restoreTrack : track?.on ?? null;
+  // Gelesen: Ab jetzt bestimmt die Regel das Tracking, der Hub versucht nicht
+  // mehr, es auszuschalten. Ohne Lesen bleibt es beim Hub.
+  if (track && hubTrackOn) await motion.ruleOwnsTracking(cameraId);
+  const before = track ? (hubTrackOn ? false : track.on) : null;
+  const restoreTrack = pending ? pending.restoreTrack : before;
   if (pending) clearTimeout(pending.timer);
   sceneReturns.delete(cameraId);
 
+  // Befehle an die Kamera ueber ihre Warteschlange: Eine Fahrt der Automatik
+  // (Grundstellung, Zoom, Tracking) kann gerade unterwegs sein, und zwei
+  // gleichzeitige PtzCtrl beantwortet Reolink mit -13.
+  const send = <T>(fn: () => Promise<T>) => ptzSerial(cameraId, fn);
   if (presetId != null) {
-    if (track?.on) await writeAutoTrack(cam, track.key, false);
-    await cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "ToPos", id: presetId, speed: 48 });
+    if (track?.on) await send(() => writeAutoTrack(cam, track.key, false));
+    await send(() => cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "ToPos", id: presetId, speed: 48 }));
   }
   // „unveraendert“ heisst: nach dem Anfahren wieder wie vorher.
-  const wantTrack = autoTrack ?? track?.on ?? null;
+  const wantTrack = autoTrack ?? before;
   if (track && wantTrack != null) {
     const isOn = presetId != null ? false : track.on;
     if (wantTrack !== isOn) {
       // Erst ankommen lassen, sonst folgt die Kamera schon unterwegs.
       if (wantTrack && presetId != null) await new Promise((r) => setTimeout(r, SCENE_SETTLE_MS));
-      await writeAutoTrack(cam, track.key, wantTrack);
+      await send(() => writeAutoTrack(cam, track.key, wantTrack));
     }
   }
 
@@ -2024,13 +2137,13 @@ export async function cameraScene(
       void (async () => {
         try {
           const now = await readAutoTrack(cam).catch(() => null);
-          if (now?.on) await writeAutoTrack(cam, now.key, false);
+          if (now?.on) await send(() => writeAutoTrack(cam, now.key, false));
           if (presetId != null) {
-            await cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "ToPos", id: presetId, speed: 48 });
+            await send(() => cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "ToPos", id: presetId, speed: 48 }));
           }
           if (now && restoreTrack) {
             await new Promise((r) => setTimeout(r, SCENE_SETTLE_MS));
-            await writeAutoTrack(cam, now.key, true);
+            await send(() => writeAutoTrack(cam, now.key, true));
           }
           log(`Kamera ${cam.config.name}: Szene beendet, zurück${presetId != null ? ` auf Preset ${presetId}` : ""}`);
         } catch (e) {
@@ -2537,6 +2650,17 @@ export async function getMotionDiagnostics(cameraId: number): Promise<Record<str
 
 const MOTION_FILE = path.join(CONFIG.hubDir, ".cache", "camera-motion.json");
 const flagOn = (v: string | undefined) => !/^(0|false|off|nein)$/i.test((v ?? "").trim());
+/** Schwenk-Kameras folgen auch bei offenem Raum (frueheres Verhalten). */
+const FOLLOW_ALWAYS = followAlwaysOn(process.env.HUB_FOLLOW_ALWAYS);
+
+/** Ortszeit-Stunde fuer das Nachtfenster; nicht lesbar = NaN (dann gilt es nicht). */
+function localHourOrNaN(): number {
+  try {
+    return berlinHour();
+  } catch {
+    return Number.NaN;
+  }
+}
 
 const motionDriver: MotionDriver = {
   now: () => Date.now(),
@@ -2601,6 +2725,12 @@ const motionDriver: MotionDriver = {
   },
   persons: (jpeg) => detectPersons(jpeg),
   vehicleActive: (id) => cameras.get(id)?.states.VEHICLE === true,
+  followRoom: (id) => ({
+    closed: cameraRoomClosed(id),
+    hour: localHourOrNaN(),
+    nightWindow: sentinelNightWindow(),
+    always: FOLLOW_ALWAYS,
+  }),
   async save(moves) {
     await fs.mkdir(path.dirname(MOTION_FILE), { recursive: true });
     await fs.writeFile(MOTION_FILE, JSON.stringify(moves));
@@ -2611,6 +2741,7 @@ const motionDriver: MotionDriver = {
     return Array.isArray(list) ? (list as PersistedMove[]) : [];
   },
   log,
+  warn: (where, title, detail) => recordHubEvent({ kind: "camera", severity: "warn", where, title, detail }),
   count: (kind, event, data) => improve(kind, event, data),
 };
 
@@ -2637,9 +2768,26 @@ export function cameraFollowing(cameraId: number): boolean {
   return motion.isFollowing(cameraId);
 }
 
-/** Handsteuerung aus Zentrale, Cloud oder Assistent: Automatik haelt 5 min still. */
-export function noteCameraHand(cameraId: number): void {
-  void motion.noteHand(cameraId);
+/**
+ * Handsteuerung aus Zentrale, Cloud oder Assistent: Automatik haelt 5 min
+ * still. Fertig, sobald sie die Kamera abgegeben hat (Tracking des Hubs aus),
+ * hoechstens nach HAND_HANDOVER_MAX_MS: Steht die Uebergabe hinter einem
+ * laufenden Kamerabefehl der Automatik, geht der Befehl von Hand trotzdem
+ * hinaus, und das Tracking des Hubs geht gleich danach aus.
+ */
+export async function noteCameraHand(cameraId: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<"late">((resolve) => {
+    timer = setTimeout(() => resolve("late"), HAND_HANDOVER_MAX_MS);
+  });
+  try {
+    // noteHand faengt eigene Fehler ab und wird nie abgelehnt.
+    if ((await Promise.race([motion.noteHand(cameraId), late])) === "late") {
+      improve("camera", "hand_handover_late", { cam: cameras.get(cameraId)?.config.name ?? cameraId });
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Beim Hub-Start: von einem Neustart unterbrochene Bewegungen zurueckstellen. */
