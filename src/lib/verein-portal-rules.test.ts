@@ -118,7 +118,11 @@ test("portalLimitError: offene Buchungen", () => {
   assert.equal(portalLimitError(limits, { openBookings: 2, inclusiveInMonth: 0 }, { date: "2026-12-05", inclusive: false }), null);
   const msg = portalLimitError(limits, { openBookings: 3, inclusiveInMonth: 0 }, { date: "2026-12-05", inclusive: false });
   assert.match(msg ?? "", /3 offene Buchungen und Anfragen \(höchstens 3\)/);
-  assert.match(portalLimitError({ maxOpenBookings: 0, maxInclusivePerMonth: null }, { openBookings: 0, inclusiveInMonth: 0 }, { date: "2026-12-05", inclusive: false }) ?? "", /höchstens 0/);
+  const zero = portalLimitError({ maxOpenBookings: 0, maxInclusivePerMonth: null }, { openBookings: 3, inclusiveInMonth: 0 }, { date: "2026-12-05", inclusive: false }) ?? "";
+  assert.match(zero, /gerade keine Buchungen und Anfragen möglich/);
+  assert.doesNotMatch(zero, /höchstens 0/);
+  const one = portalLimitError({ maxOpenBookings: 1, maxInclusivePerMonth: null }, { openBookings: 1, inclusiveInMonth: 0 }, { date: "2026-12-05", inclusive: false }) ?? "";
+  assert.match(one, /schon eine offene Buchung oder Anfrage \(höchstens 1\)/);
 });
 
 test("portalLimitError: Inklusivmieten je Monat nur bei Inklusivmiete", () => {
@@ -128,4 +132,12 @@ test("portalLimitError: Inklusivmieten je Monat nur bei Inklusivmiete", () => {
   const msg = portalLimitError(limits, { openBookings: 0, inclusiveInMonth: 2 }, { date: "2026-12-05", inclusive: true });
   assert.match(msg ?? "", /im Dezember schon 2-mal gebucht \(höchstens 2\)/);
   assert.match(portalLimitError(limits, { openBookings: 0, inclusiveInMonth: 2 }, { date: "2027-03-01", inclusive: true }) ?? "", /im März/);
+});
+
+test("portalLimitError: Inklusivmiete mit Grenze 0 und Einzahl", () => {
+  const zero = portalLimitError({ maxOpenBookings: null, maxInclusivePerMonth: 0 }, { openBookings: 0, inclusiveInMonth: 0 }, { date: "2026-12-05", inclusive: true }) ?? "";
+  assert.match(zero, /im Dezember über das Portal nicht buchbar/);
+  assert.doesNotMatch(zero, /0-mal/);
+  const one = portalLimitError({ maxOpenBookings: null, maxInclusivePerMonth: 1 }, { openBookings: 0, inclusiveInMonth: 1 }, { date: "2026-12-05", inclusive: true }) ?? "";
+  assert.match(one, /schon einmal gebucht \(höchstens 1\)/);
 });

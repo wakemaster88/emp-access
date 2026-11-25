@@ -13,7 +13,7 @@ import {
   type DeviceControlAction,
   type DeviceControlModel,
 } from "@/lib/device-controls";
-import { mobileActionNeedsGrant } from "@/lib/link-rules";
+import { mobileActionNeedsGrant, mobileSecondaryDenied } from "@/lib/link-rules";
 import { cn } from "@/lib/utils";
 import {
   parseSchedule, DAY_KEYS, DAY_LABELS, hasAnySchedule,
@@ -441,11 +441,10 @@ function DeviceRow({ device, loading, feedback, enabled, mayUseEmergency, onActi
   // Pro Device: zeigen wir den letzten Feedback-Status der primary action.
   const primaryFb = feedback?.id === `${device.id}:${actions?.primary.key}` ? feedback : null;
   const primaryLoading = loading === `${device.id}:${actions?.primary.key}`;
-  // Fehler einer Zusatztaste (z. B. NOT-AUF): Text unter der Gerätezeile,
-  // die Zusatztasten selbst haben keinen Platz dafür.
-  const secondaryErr = feedback?.type === "err" && !primaryFb && feedback.id.startsWith(`${device.id}:`)
-    ? feedback
-    : null;
+  // Ablehnung einer Zusatztaste durch die Regel (z. B. NOT-AUF ohne Haken):
+  // Text unter der Gerätezeile. Andere Fehler von Zusatztasten wie bisher nur
+  // als Vibration (lib/link-rules, mobileSecondaryDenied).
+  const secondaryErr = mobileSecondaryDenied(feedback, device.id, actions?.primary.key);
   const iconSize = actions?.primary.large ? "size-5" : "size-4";
 
   return (

@@ -5,7 +5,7 @@ import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { createTtlCache } from "@/lib/ttl-cache";
 import { hideMonitorNames } from "@/lib/link-rules";
-import { loadLinkRules } from "@/lib/link-rules-cache";
+import { loadLinkRulesOrOff } from "@/lib/link-rules-cache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -204,7 +204,7 @@ export async function GET(
       },
     }),
     // Regel „Kundennamen am Auslastungs-Monitor ausblenden“ (60 s im Speicher).
-    loadLinkRules(prisma, accountId),
+    loadLinkRulesOrOff(prisma, accountId),
   ]);
 
   const areaLinks = new Map<number, typeof allLinks>();
@@ -326,12 +326,15 @@ export async function GET(
       if (!b.start || !b.end) continue;
 
       const key = `${b.start}-${b.end}`;
+      // Regel „Kundennamen ausblenden“: schon hier ohne Namen, damit auch das
+      // Zusammenfassen der Slots nicht nach Personen trennt.
+      const customerName = linkRules.monitorHideNames ? "" : b.customerName;
       const existing = bookedSlotMap.get(key);
       if (existing) {
         existing.count++;
-        if (existing.names.length < 8) existing.names.push(b.customerName);
+        if (existing.names.length < 8) existing.names.push(customerName);
       } else {
-        bookedSlotMap.set(key, { start: b.start, end: b.end, count: 1, names: [b.customerName] });
+        bookedSlotMap.set(key, { start: b.start, end: b.end, count: 1, names: [customerName] });
       }
     }
 

@@ -6,7 +6,7 @@
  * hat, sofort.
  */
 import { createTtlCache } from "./ttl-cache";
-import { parseLinkRules, type LinkRules } from "./link-rules";
+import { LINK_RULES_OFF, parseLinkRules, type LinkRules } from "./link-rules";
 
 const RULES_TTL_MS = 60_000;
 
@@ -29,6 +29,21 @@ export function loadLinkRules(db: LinkRulesDb, accountId: number): Promise<LinkR
     });
     return parseLinkRules(account?.accessRules);
   });
+}
+
+/**
+ * Für die öffentlichen Routen: Schlägt das Lesen fehl, gelten alle Regeln als
+ * aus. Die Anfrage läuft dann wie vor den Regeln weiter, statt zu scheitern
+ * (die Routen brauchten diese Abfrage vorher nicht). Fehler werden nicht
+ * zwischengespeichert; die nächste Anfrage liest neu.
+ */
+export async function loadLinkRulesOrOff(db: LinkRulesDb, accountId: number): Promise<LinkRules> {
+  try {
+    return await loadLinkRules(db, accountId);
+  } catch (err) {
+    console.error("[link-rules] Lesen fehlgeschlagen, Regeln gelten als aus:", err);
+    return { ...LINK_RULES_OFF };
+  }
 }
 
 /** Nach dem Speichern (gleiche Instanz sofort) und in Tests. */

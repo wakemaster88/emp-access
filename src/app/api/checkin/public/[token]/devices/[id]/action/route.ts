@@ -3,7 +3,7 @@ import { publicRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { triggerDeviceAction } from "@/lib/device-open";
 import { KIOSK_DOOR_DENIED_MESSAGE, kioskDoorAllowed } from "@/lib/link-rules";
-import { loadLinkRules } from "@/lib/link-rules-cache";
+import { loadLinkRulesOrOff } from "@/lib/link-rules-cache";
 
 /**
  * Quick-Open-Endpoint für den oeffentlichen Check-In Monitor. Validiert
@@ -65,7 +65,7 @@ export async function POST(
   if (device.category !== "TUER" && device.category !== "DREHKREUZ") {
     return NextResponse.json({ error: "Gerät nicht öffnenbar" }, { status: 400 });
   }
-  const linkRules = await loadLinkRules(prisma, monitor.accountId);
+  const linkRules = await loadLinkRulesOrOff(prisma, monitor.accountId);
   if (!kioskDoorAllowed(linkRules, monitor.deviceIds, device.id)) {
     return NextResponse.json({ error: KIOSK_DOOR_DENIED_MESSAGE }, { status: 403 });
   }

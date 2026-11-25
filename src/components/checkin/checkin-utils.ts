@@ -2,12 +2,20 @@
  * Reine Hilfsfunktionen des Check-in-Kiosks – ohne React, ohne Netz.
  * Ausgelagert aus src/app/checkin/[token]/page.tsx.
  */
-import type { CheckinTicket, EquipmentSetup, SlotOverviewService, TimeRange } from "./checkin-types";
+import type { CheckinTicket, EquipmentSetup, SlotOverviewService, TicketExtra, TimeRange } from "./checkin-types";
 
 /** Artikel, die das Personal am Shop tatsaechlich herausgeben muss. Buchbare
  *  Optionen wie die Flex-Option sind zwar auch Add-Ons, aber kein Material. */
 export function isRentalAddOn(name: string): boolean {
   return !/flex/i.test(name);
+}
+
+/** Zeilen „Extras“ auf dem Ticketdruck. `extras` ist nur als Liste von
+ *  Zusatzartikeln gemeint; ein Objekt (Pause-Vermerke, Abgleich) oder ein
+ *  Einzelwert ergibt keine Zeile statt eines Fehlers beim Drucken. */
+export function printableExtraLines(extras: unknown): string[] {
+  if (!Array.isArray(extras)) return [];
+  return (extras as TicketExtra[]).map((ex) => (ex.quantity > 1 ? `${ex.quantity}x ${ex.name}` : ex.name));
 }
 
 

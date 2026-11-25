@@ -8,7 +8,7 @@ import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import type { ScheduleSpec } from "@/lib/operating-hours";
 import { createTtlCache } from "@/lib/ttl-cache";
 import { kioskVisibleDoors } from "@/lib/link-rules";
-import { loadLinkRules } from "@/lib/link-rules-cache";
+import { loadLinkRulesOrOff } from "@/lib/link-rules-cache";
 
 /**
  * Betriebszeiten-Profil des Shops je Konto, 60 s im Speicher der Instanz:
@@ -323,7 +323,7 @@ export async function GET(
     loadShopSchedule(accountId).catch(() => null),
 
     // Regel „Kiosk-Link oeffnet nur zugeordnete Tueren“ (60 s im Speicher).
-    loadLinkRules(prisma, accountId),
+    loadLinkRulesOrOff(prisma, accountId),
   ]);
   // Bei eingeschalteter Regel nur die am Monitor eingetragenen Tueren.
   const openableDevices = kioskVisibleDoors(linkRules, allOpenableDevices, monitor.deviceIds);

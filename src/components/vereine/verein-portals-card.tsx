@@ -342,7 +342,7 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
                     <Input id="vp-max-inclusive" type="number" min={0} inputMode="numeric" placeholder="unbegrenzt" value={maxInclusive} onChange={(e) => setMaxInclusive(e.target.value)} className="max-sm:h-11" />
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">Leer = unbegrenzt. Offen heißt: gebucht oder angefragt und noch nicht vorbei. Ist eine Grenze erreicht, sagt das Portal das beim Buchen.</p>
+                <p className="text-xs text-muted-foreground">Leer = unbegrenzt. Offen heißt: gebucht oder angefragt und noch nicht vorbei. Ist eine Grenze erreicht, sagt das Portal das beim Buchen. Kommen zwei Buchungen genau gleichzeitig, kann die Grenze einmal um eine überschritten werden.</p>
               </div>
             )}
 

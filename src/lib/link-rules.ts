@@ -50,7 +50,7 @@ export const LINK_RULE_TEXTS: Record<LinkRuleKey, { title: string; effect: strin
   mobileEmergencyNeedsGrant: {
     title: "NOT-AUF und Sperren am Mitarbeiter-Handy nur für freigeschaltete Mitarbeiter",
     effect:
-      "Über den Handy-Link können nur noch Mitarbeiter mit dem Haken „NOT-AUF und Sperren erlaubt“ ein Drehkreuz dauerhaft öffnen (NOT-AUF) oder ein Gerät sperren. Öffnen, Schalten und Abschließen an Smart Locks bleiben für alle.",
+      "Über den Handy-Link können nur noch Mitarbeiter mit dem Haken „NOT-AUF und Sperren erlaubt“ ein Gerät dauerhaft öffnen (NOT-AUF) oder sperren. Öffnen, Schalten, Abschließen an Smart Locks und Stopp an Antrieben (Markisen, Rollos) bleiben für alle. Auf der Handy-Seite selbst verschwindet damit nur die Taste NOT-AUF am Drehkreuz; Sperren bietet die Seite heute nicht als eigene Taste an.",
     confirm:
       "Danach im Mitarbeiter-Dialog bei den Mitarbeitern, die NOT-AUF weiter brauchen, den Haken setzen. Bis dahin fehlt die Taste auf ihren Handys. Offene Handy-Seiten blenden sie spätestens nach einer Minute aus und zeigen bei Ablehnung die Meldung. Eine Seite, die vor diesem Update geladen wurde, zeigt die Taste weiter und vibriert bei Ablehnung nur, ohne Text: die Mitarbeiter die Seite vorher einmal neu laden lassen.",
   },
@@ -71,7 +71,7 @@ export const LINK_RULE_TEXTS: Record<LinkRuleKey, { title: string; effect: strin
     effect:
       "„Alle fortsetzen“ am Scan-Monitor setzt nur Tickets fort, die mit „Alle pausieren“ pausiert wurden, und zwar auf ihren Status davor. Einzeln, wegen offener Zahlung oder im Abgleich pausierte Tickets bleiben pausiert; ein Monitor ohne Bereich setzt nichts fort. Tickets, die schon vor diesem Update mit „Alle pausieren“ pausiert wurden, tragen keine Kennung und werden vom Knopf nicht fortgesetzt.",
     confirm:
-      "Noch pausierte Tickets aus einer früheren Massen-Pause danach einzeln oder vorher mit „Alle fortsetzen“ fortsetzen.",
+      "Noch pausierte Tickets aus einer früheren Massen-Pause danach einzeln mit „Pause aufheben“ (Kiosk oder Dashboard) fortsetzen. Nicht vorher „Alle fortsetzen“ drücken: ohne die Regel setzt der Knopf jedes pausierte Ticket im Bereich fort, auch die wegen offener Zahlung pausierten Abos.",
   },
   riderShortIntro: {
     title: "Kurze Start-Animation in der Kunden-App",
@@ -215,3 +215,21 @@ export const KIOSK_DOOR_DENIED_MESSAGE = "Diese Tür ist diesem Kiosk nicht zuge
 
 export const MOBILE_ACTION_DENIED_MESSAGE =
   "NOT-AUF und Sperren sind für dich nicht freigeschaltet. Bitte an die Verwaltung wenden.";
+
+/**
+ * Handy-Seite: Text unter der Gerätezeile für eine Zusatztaste. Nur die
+ * Ablehnung durch die Regel (MOBILE_ACTION_DENIED_MESSAGE); andere Fehler
+ * einer Zusatztaste melden sich wie bisher nur mit der Vibration. Bei
+ * ausgeschalteter Regel kommt diese Meldung nie, die Seite bleibt also wie
+ * vorher.
+ */
+export function mobileSecondaryDenied<F extends { id: string; type: "ok" | "err"; text: string }>(
+  feedback: F | null,
+  deviceId: number,
+  primaryKey: string | undefined,
+): F | null {
+  if (!feedback || feedback.type !== "err") return null;
+  if (!feedback.id.startsWith(`${deviceId}:`)) return null;
+  if (primaryKey != null && feedback.id === `${deviceId}:${primaryKey}`) return null;
+  return feedback.text === MOBILE_ACTION_DENIED_MESSAGE ? feedback : null;
+}

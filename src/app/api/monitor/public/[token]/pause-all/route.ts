@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { loadLinkRules } from "@/lib/link-rules-cache";
+import { loadLinkRulesOrOff } from "@/lib/link-rules-cache";
 import {
   PAUSE_ALL_MARKER,
   groupPauseAllResume,
@@ -127,13 +127,21 @@ async function markPausedByPauseAll(accountId: number, ids: number[], previousSt
   }
 }
 
-/** Entfernt die Kennung „Alle pausieren“ wieder (nach dem Fortsetzen). */
+/**
+ * Entfernt die Kennung „Alle pausieren“ wieder (nach dem Fortsetzen). Bleibt
+ * danach nichts übrig, wird `extras` wieder leer (SQL NULL) wie vor dem
+ * Pausieren; die Leser behandeln NULL und {} gleich, so bleibt aber auch der
+ * gespeicherte Wert wie bisher.
+ */
 async function clearPauseAllMarker(accountId: number, ids: number[]) {
   if (ids.length === 0) return;
   try {
     await prisma.$executeRaw`
       UPDATE "Ticket"
-      SET "extras" = "extras" - 'pausedBy' - 'pauseAllPrevStatus' - 'pauseAllAt'
+      SET "extras" = CASE
+        WHEN ("extras" - 'pausedBy' - 'pauseAllPrevStatus' - 'pauseAllAt') = '{}'::jsonb THEN NULL
+        ELSE "extras" - 'pausedBy' - 'pauseAllPrevStatus' - 'pauseAllAt'
+      END
       WHERE "accountId" = ${accountId}
         AND "id" = ANY(${ids}::int[])
         AND jsonb_typeof("extras") = 'object'`;
@@ -251,7 +259,7 @@ export async function POST(
     // (Mass-Pause-Schutz nach Vorfall 2026-05-27: 3.546 Tickets unbemerkt
     // pausiert).
     // Regel „„Alle fortsetzen“ hebt nur die eigene Pause auf“ (lib/link-rules).
-    const onlyOwnPause = (await loadLinkRules(prisma, monitor.accountId)).resumeOnlyOwnPause;
+    const onlyOwnPause = (await loadLinkRulesOrOff(prisma, monitor.accountId)).resumeOnlyOwnPause;
 
     if (action === "preview") {
       const targetStatus = (body.target as string) === "resume"

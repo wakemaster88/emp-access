@@ -127,11 +127,19 @@ export function portalLimitError(
   booking: { date: string; inclusive: boolean },
 ): string | null {
   if (limits.maxOpenBookings != null && counts.openBookings >= limits.maxOpenBookings) {
-    return `Euer Verein hat schon ${counts.openBookings} offene Buchungen und Anfragen (höchstens ${limits.maxOpenBookings}). Neue gehen wieder, sobald eine vorbei ist oder storniert wurde.`;
+    if (limits.maxOpenBookings === 0) {
+      return "Über das Portal sind für euren Verein gerade keine Buchungen und Anfragen möglich. Bitte bei uns melden.";
+    }
+    const open = counts.openBookings === 1 ? "eine offene Buchung oder Anfrage" : `${counts.openBookings} offene Buchungen und Anfragen`;
+    return `Euer Verein hat schon ${open} (höchstens ${limits.maxOpenBookings}). Neue gehen wieder, sobald eine vorbei ist oder storniert wurde.`;
   }
   if (booking.inclusive && limits.maxInclusivePerMonth != null && counts.inclusiveInMonth >= limits.maxInclusivePerMonth) {
     const month = MONTHS[Number(booking.date.slice(5, 7)) - 1] ?? booking.date.slice(0, 7);
-    return `Die Inklusivmiete ist im ${month} schon ${counts.inclusiveInMonth}-mal gebucht (höchstens ${limits.maxInclusivePerMonth}). Bitte ohne Inklusivmiete buchen oder bei uns melden.`;
+    if (limits.maxInclusivePerMonth === 0) {
+      return `Die Inklusivmiete ist im ${month} über das Portal nicht buchbar. Bitte ohne Inklusivmiete buchen oder bei uns melden.`;
+    }
+    const times = counts.inclusiveInMonth === 1 ? "einmal" : `${counts.inclusiveInMonth}-mal`;
+    return `Die Inklusivmiete ist im ${month} schon ${times} gebucht (höchstens ${limits.maxInclusivePerMonth}). Bitte ohne Inklusivmiete buchen oder bei uns melden.`;
   }
   return null;
 }

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   LINK_RULE_CHANGES_KEPT,
   LINK_RULES_OFF,
+  LINK_RULE_TEXTS,
+  MOBILE_ACTION_DENIED_MESSAGE,
   diffLinkRules,
   hideMonitorNames,
   kioskDoorAllowed,
@@ -11,6 +13,7 @@ import {
   mayUseMobileEmergency,
   mergeLinkRulesPatch,
   mobileActionNeedsGrant,
+  mobileSecondaryDenied,
   parseLinkRuleChanges,
   parseLinkRules,
   type LinkRules,
@@ -186,4 +189,28 @@ test("mergeLinkRulesPatch: legt die Änderung über den gelesenen Stand und erg�
   const foreign = mergeLinkRulesPatch(null, { readerNeedsArea: true } as unknown as Partial<LinkRules>, who);
   assert.deepEqual(foreign.links, LINK_RULES_OFF);
   assert.deepEqual(foreign.newLinkChanges, []);
+});
+
+test("Handy-Seite: Text unter der Gerätezeile nur bei Ablehnung durch die Regel", () => {
+  const denied = { id: "7:emergency", type: "err" as const, text: MOBILE_ACTION_DENIED_MESSAGE };
+  assert.equal(mobileSecondaryDenied(denied, 7, "open"), denied);
+  // Andere Fehler von Zusatztasten: wie bisher kein Text (nur Vibration).
+  for (const text of ["Gerät nicht erreichbar", "Offline – nicht erreichbar", "Fehler (500)"]) {
+    assert.equal(mobileSecondaryDenied({ id: "7:emergency", type: "err", text }, 7, "open"), null);
+    assert.equal(mobileSecondaryDenied({ id: "7:deactivate", type: "err", text }, 7, "open"), null);
+  }
+  // Haupttaste hat ihre eigene Rückmeldung, anderes Gerät, Erfolg, nichts.
+  assert.equal(mobileSecondaryDenied({ ...denied, id: "7:open" }, 7, "open"), null);
+  assert.equal(mobileSecondaryDenied(denied, 70, "open"), null);
+  assert.equal(mobileSecondaryDenied({ ...denied, type: "ok" }, 7, "open"), null);
+  assert.equal(mobileSecondaryDenied(null, 7, "open"), null);
+});
+
+test("Kartentexte: ehrliche Hinweise zu Ausnahmen und zum Einschalten", () => {
+  const grant = LINK_RULE_TEXTS.mobileEmergencyNeedsGrant.effect;
+  assert.match(grant, /Abschließen an Smart Locks/);
+  assert.match(grant, /Stopp an Antrieben/);
+  const resume = LINK_RULE_TEXTS.resumeOnlyOwnPause.confirm ?? "";
+  assert.doesNotMatch(resume, /vorher mit „Alle fortsetzen“ fortsetzen/);
+  assert.match(resume, /offener Zahlung/);
 });

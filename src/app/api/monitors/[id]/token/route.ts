@@ -19,8 +19,10 @@ export async function POST(
   if (isNaN(monitorId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
 
   const { db, accountId } = session;
+  // Ohne zugeordnetes Konto (z. B. Super-Admin ohne Konto) wie die anderen Routen.
+  if (accountId == null) return NextResponse.json({ error: "Kein Konto zugeordnet" }, { status: 403 });
   const existing = await db.monitorConfig.findFirst({
-    where: { id: monitorId, accountId: accountId! },
+    where: { id: monitorId, accountId },
     select: { id: true },
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
