@@ -207,6 +207,20 @@ export function activityAt(
 }
 
 /**
+ * Ende, wie es eine Anzeige ausgibt: `null` nur, solange das Ereignis laeuft.
+ * Ein offenes Ereignis, dessen Kamera der Hub nicht mehr meldet, endet fuer
+ * die Anzeige mit seiner letzten Aktivitaet. Wer nur auf das fehlende Ende
+ * schaut, zeigte es sonst weiter als laufend.
+ */
+export function shownEndedAt(
+  e: { startedAt: Date; endedAt: Date | null },
+  cameraLastSeenAt: Date | null,
+  now: Date,
+): Date | null {
+  return isRunning(e, cameraLastSeenAt, now) ? null : activityAt(e, cameraLastSeenAt, now);
+}
+
+/**
  * Suchbedingung „seit `since` war etwas los“. Zaehlt auch ein Ereignis, das
  * frueher begann, aber noch laeuft oder erst danach endete: Bei anhaltender
  * Bewegung meldet die Kamera ein einziges langes Ereignis, und nur nach dem

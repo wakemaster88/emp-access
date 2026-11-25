@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { recentActivityWhere } from "@/lib/camera-events";
+import { recentActivityWhere, shownEndedAt } from "@/lib/camera-events";
 
 /**
  * GET (Session): letzte Kamera-Ereignisse fürs Kontrollzentrum-Overlay.
  * Liefert Ereignisse der letzten 15 Minuten plus alle noch laufenden. Als
- * laufend gilt ein offenes Ereignis höchstens 24 Stunden: Ein Ereignis, dessen
- * Ende verloren ging, blinkte sonst für immer auf der Kachel.
+ * laufend gilt ein offenes Ereignis höchstens 24 Stunden und nur, solange der
+ * Hub seine Kamera meldet: Ein Ereignis, dessen Ende verloren ging oder dessen
+ * Kamera ausfiel, blinkte sonst weiter auf der Kachel. Es trägt dann als Ende
+ * seine letzte Aktivität, denselben Zeitpunkt, den Räume und Dashboard zeigen.
  */
 export async function GET(request: NextRequest) {
   const session = await getSessionWithDb();
@@ -30,6 +32,7 @@ export async function GET(request: NextRequest) {
       type: true,
       startedAt: true,
       endedAt: true,
+      camera: { select: { lastSeenAt: true } },
     },
   });
 
@@ -39,7 +42,7 @@ export async function GET(request: NextRequest) {
       cameraId: e.cameraId,
       type: e.type,
       startedAt: e.startedAt.toISOString(),
-      endedAt: e.endedAt?.toISOString() ?? null,
+      endedAt: shownEndedAt(e, e.camera.lastSeenAt, now)?.toISOString() ?? null,
     }))
   );
 }
