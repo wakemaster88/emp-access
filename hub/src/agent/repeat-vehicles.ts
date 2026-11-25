@@ -14,6 +14,12 @@ export interface PlateRecord {
   state: null | "asked" | "approved" | "declined";
   askedAt?: number;
   camera?: string;
+  /**
+   * Frage faellig, aber noch nicht gesendet (Ruhezeit). Steht mit im Buch,
+   * damit sie einen Neustart uebersteht; sonst kaeme sie wegen REASK_MS
+   * erst nach einer Woche.
+   */
+  pending?: boolean;
 }
 
 export type PlateBook = Record<string, PlateRecord>;

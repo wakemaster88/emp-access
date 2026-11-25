@@ -1366,3 +1366,46 @@ Beenden gegen eine Kamera-Attrappe mit Weißlicht: Brennt das Licht, wenn der Hu
 - Nach dem Update Log holen: Zeilen „Abfrage dauerte“ und Zähler `camera.poll_slow` zeigen, welche Kamera wie oft langsam antwortet. `camera.relocate_search` soll für eine dauerhaft fehlende Kamera nach der ersten Stunde des Ausfalls bei 4 je Stunde liegen, über Neustarts hinweg bei höchstens 5 in 60 Minuten. Vor jedem „Hub startet“ soll eine Zeile „Improve-Snapshot (exit)“ stehen. Steht dort „Aufräumen unvollständig: weisslicht:…“, soll kurz nach dem Start „Weißlicht aus (nachgeholt)“ folgen oder, wenn das Licht schon aus war, „Weißlicht war schon aus – Merker gelöscht“.
 - Ereignisse, die während eines Cloud-Ausfalls beginnen und enden, werden wie bisher nicht nachgemeldet; was bei der Rückkehr der Cloud noch läuft, trägt sie über die Liste der laufenden Ereignisse nach (Teil 1). Die Regeln auf dem Hub (Notbetrieb) und die Bild-Pipelines sehen jetzt alle.
 - Offen: Überwachung des Gesichts-Dienstes mit Neustart bei ausbleibender Antwort, und eine Lint-Regel für Hintergrund-Aufrufe ohne Fehlerbehandlung in `hub/`.
+
+## 2026-11-25 (Gesamtprüfung Hub und Kamera-Erkennung, Wächter: Uhrzeit, Merkliste, Sperrzeit, Zustellung, Bildmodell-Ausfall)
+
+### Befund
+
+Grundlage: dieselben 54 Stunden Hub-Log (250 Bewertungen des Wächters, 132 Alarme) und ein Nachbau auf dem Entwicklungsrechner: der echte Wächter-, Zustell- und Zustands-Code gegen Attrappen für Kamera, Bildmodell, Tracker und Telegram, die Uhr im Zeitraffer.
+
+- **Die Uhrzeit-Funktion des Assistenten lieferte keine Zahl.** Die Stunde wurde aus dem deutsch formatierten Text gelesen („16 Uhr“), jeder Vergleich damit fiel aus. Im Log: 6 Alarme „Eingestempelt: …, aber nachts und ohne Arbeitskleidung“ am hellen Tag (22.11. 16:02 und 16:04; 23.11. 08:20, 08:47, 08:54, 09:30). Kameras ohne Raum mit Betriebszeit wurden im Nachtfenster nicht bewacht. Die Ruhezeit 22–7 Uhr galt nie, die Belegung maß nie.
+- **Eine gemeldete Person galt nach dem ersten Wiedersehen 8 Stunden als „schon gesehen“** statt 20 Minuten: 13 Entscheidungen „Schon gesehen: bereits gemeldet“, bei 4 lag der Eintrag 75 bis 267 Minuten zurück. Bei mehreren Personen im Bild wurden alle Beschreibungen unter einem Namen gemerkt.
+- **Nach jeder Bewertung war die Kamera 3 Minuten gesperrt, auch nach einem leeren Bild.** Nachstellung ab 23.11. 00:20: 357 Auslöser, 224 bewertet, 133 übergangen (37 %), 27 der 50 Auslöser nach leerem Ergebnis kamen später als 60 s. Übergangene Auslöser wurden weder gezählt noch geloggt.
+- **Zustellung:** Jede Nachricht hatte genau einen Versuch, Fehler wurden verschluckt (132 Alarme, 0 Zeilen über gesendete oder gescheiterte Alarm-Nachrichten). Am 23.11. rund 70 s ohne Internet („Telegram: fetch failed“), zufällig ohne Alarm in dem Fenster. Der Tagesbericht galt als erledigt, bevor er gesendet war.
+- **Bildmodell:** Scheiterte der Aufruf, endete die Bewertung ohne Nachricht; nach „Modell nicht gefunden“ bewertete der Wächter bis zum Neustart nichts mehr. Der Zustands-Wächter prüfte das Bildmodell nicht (aus dem Code abgeleitet, im Fenster kein Ausfall).
+- **Zustand über Neustarts:** Der Stand des Zustands-Wächters lag nur im Speicher. Nach jedem der 4 Neustarts wurde jeder weiter bestehende Befund erneut gemeldet, für Erledigtes kam keine Entwarnung.
+- **Dauer des Bildmodells:** vom Auslöser bis zum Personen-Urteil im Median 67,8 s (p90 105,6 s, n=135), die Nahaufnahme allein 45,6 s. Wofür die Zeit vergeht, stand nirgends.
+
+### Änderungen
+
+- `agent/quiet.ts`: `berlinHour()` liest die Stunde über `formatToParts` (0 bis 23, sonst Fehler). Damit greifen Tagsüber-Regel für eingestempeltes Personal (6–20 Uhr), Nachtfenster für Kameras ohne Betriebszeit (22–6 Uhr, derzeit nur die Kamera Imbisscontainer), Ruhezeit (22–7 Uhr) und Messzeit der Belegung. Startzeile „Assistent: Ortszeit Stunde …“.
+- `occupancy.ts`: `HUB_OCCUPANCY_ALERTS` kennt `on`, `off` und `shadow`; ohne Angabe Probelauf (Zeile „Probelauf, nichts gesendet“, Zähler `occupancy.shadow_alert`).
+- `agent/people-rules.ts` (neu, Tests): Arten der Merkliste. *Gemeldet* endet 20 Minuten nach dem Alarm und wird nicht verlängert, *freigegeben* und *Mitarbeiter* gelten 8 Stunden, Mitarbeiter-Einträge zählen nachts nicht. Neue Beschreibungen nur bei genau einer Person im Bild. Datei in einem Zug ersetzt (`atomic-file.ts`).
+- `agent/sentinel-rules.ts`: Nach „unauffällig“, leerem Tracker oder Fehler sieht der Wächter im Nachtfenster schon nach 45 s wieder hin; der 3-Minuten-Takt bleibt. Höchstens zwei Bewertungen gleichzeitig, ein weiterer Auslöser wird bis zu 30 s erneut versucht; hält ein zusätzlicher Blick einen Platz, verfällt ein Auslöser des 3-Minuten-Takts nicht. Bilanz-Zeile je Stunde, Zähler `camera.sentinel_*`.
+- `agent/outbox.ts`, `agent/dispatch.ts` (neu, Tests): Sende-Warteschlange je Chat, Versuche sofort, nach 5 s, 20 s, 60 s, dann alle 3 Minuten, höchstens 15 Minuten. Scheitert das Bild, geht der Alarm als Text mit seinen Knöpfen hinaus, auch wenn der letzte Bild-Versuch erst nach der Frist scheitert. Log-Zeile bei mehr als einem Versuch und bei jedem Fehlschlag. Ein Alarm ohne Zustellung wird 12 Stunden Befund „Wächter-Alarm nicht zugestellt“ (`.cache/agent-undelivered.json`). Der Tagesbericht gilt erst nach der Zustellung als erledigt.
+- `agent/findings.ts`, `agent/watch-runner.ts` (neu, Tests): Der Stand des Zustands-Wächters liegt in `.cache/agent-watch.json` und übersteht einen Neustart; jede Meldung steht mit ihrem Schlüssel im Log.
+- `agent/ollama.ts`, `agent/vision-rules.ts` (neu, Tests): Befund „Bildmodell nicht bereit“ bzw. „antwortet nicht (N Fehler in Folge)“, Wiederanlauf höchstens alle 5 Minuten. Scheitert der Aufruf bei einer Person im Standbild oder nachts, geht ein Alarm „ungeprüft, Bildmodell nicht erreichbar“ hinaus. `agent/vision-timing-rules.ts`: eine Zeile je Bewertung mit den Zeitangaben von Ollama.
+
+### Nach dem Gegenlesen ergänzt (25.11.)
+
+Ein unabhängiger Durchgang über den ganzen Stand fand 8 Punkte, einen mittleren und sieben niedrige; alle sind eingearbeitet.
+
+- Alarm-Text auch dann, wenn ein Bild-Versuch über das Ende der 15 Minuten läuft (im Nachbau bei 45 s je Versuch: vorher kein Text, jetzt ein letzter Versuch als Text).
+- Beenden des Hubs (höchstens 3 s): Offene Alarme stehen vor dem letzten Versuch in der Liste der nicht zugestellten und werden bei Zustellung wieder ausgetragen. Nach dem Neustart steht „Wächter: 1 Alarm beim letzten Beenden nicht zugestellt“ im Log. Probe mit hängendem Telegram: vorher nach 3 s nichts gespeichert, jetzt steht der Alarm in der Liste; antwortet Telegram nach 0,5 s, ist sie wieder leer.
+- Die Knöpfe eines Alarms gelten 10 Minuten ab seiner Zustellung statt ab der Bewertung.
+- Zustands-Wächter: Auf der Platte gilt ein Befund erst nach der Zustellung seiner Meldung als gemeldet; endet der Hub vorher, kommen Meldung oder Entwarnung nach dem Neustart erneut (Tests). Ein leerer Stand älter als 24 Stunden gilt still.
+- Eine Kennzeichen-Frage aus der Ruhezeit steht im Zählerstand und kommt auch nach einem Neustart am Morgen (vorher erst nach 7 Tagen).
+- „lade Modell“ steht beim Wiederanlauf des Bildmodells einmal bis zum nächsten Erfolg im Log, nicht alle 5 Minuten.
+- Zweites Gegenlesen dieser Nachbesserungen, 5 Punkte, eingearbeitet: Die Knöpfe eines wartenden Alarms bleiben bis zu 16 Minuten über ihre Frist hinaus in der Liste, damit die Verlängerung bei der Zustellung sie noch findet (vorher nach 10 Minuten weggeräumt); bei mehreren Chats zählt die letzte Zustellung. Ein Alarm, den beim Beenden schon ein Chat erhalten hat, steht nicht mehr als nicht zugestellt in der Liste. Die Zeile „beim letzten Beenden nicht zugestellt“ kommt einmal, nicht bei jedem Neustart der folgenden 12 Stunden. Der Befund zu einem solchen Alarm verweist nicht mehr auf die Zentrale, weil er dort nicht steht. Mit `HUB_AGENT_VEHICLE_ASK=off` geht eine vorgemerkte Kennzeichen-Frage auch nach einem Neustart nicht hinaus.
+
+### Nächster Schritt
+
+- Nach dem Update Log holen: Startzeile mit der richtigen Stunde; 0 Zeilen „aber nachts und ohne Arbeitskleidung“ zwischen 6 und 20 Uhr (vorher 6 in 54 Stunden); Bilanz-Zeilen je Stunde; `camera.sentinel_skip_belegt` und „Auslöser verfallen“ bei 0.
+- Zustellung: `camera.sentinel_send_*` gegen die Zeilen „AUFFÄLLIG“ halten, `camera.sentinel_alarm_lost` und „NICHT zugestellt“ bei 0. Nach jedem „Hub startet“ eine Zeile „Zustands-Wächter: Stand von vor N min übernommen“ und keine zweite Meldung zu einem schon gemeldeten Schlüssel.
+- Bildmodell: aus den Zeilen „Bildmodell Übersicht …“ Median und p90 bestimmen und danach über die Punkte 2 bis 5 von WAE-5 entscheiden.
+- Belegung: nach einigen Betriebstagen die Zeilen „(Probelauf, nichts gesendet)“ gegen den Andrang halten; passen die Schwellen, `HUB_OCCUPANCY_ALERTS=on` setzen.

@@ -15,6 +15,7 @@ import { randomInt, randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, api, log } from "../config.js";
+import { onShutdown } from "../shutdown.js";
 import { recordHubEvent } from "../state.js";
 import { LLM, LLM_LOADED, VISION, askVision, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
 import { SENTINEL, startSentinel } from "./sentinel.js";
@@ -41,9 +42,12 @@ import {
   type TgUpdate,
 } from "./telegram.js";
 import { TOOLS, findTool, readNotes, toolResultText, toolSpecs, type ToolContext } from "./tools.js";
-import { diffFindings, newWatchState, openFindings, type Finding } from "./findings.js";
-import { startOccupancy } from "../occupancy.js";
-import { berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
+import { WatchRunner } from "./watch-runner.js";
+import { closeDispatch, loadDispatch, sendNotice, type NoticeKind, type NoticeResult } from "./dispatch.js";
+import { MAX_AGE_MS as OUTBOX_MAX_AGE_MS } from "./outbox-rules.js";
+import { reportDue, reportRetryMs } from "./report-rules.js";
+import { occupancyAlertMode, startOccupancy } from "../occupancy.js";
+import { WATCH_WARMUP_S, berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
 import { VOICE, ensureWhisper, transcribe } from "./voice.js";
 import { dayPreviewText } from "../day-preview.js";
 import { handleUnknownChat, isPaired, newPairingState, titleName, type PairingState } from "./pairing.js";
@@ -60,6 +64,13 @@ const QUIET = (process.env.HUB_AGENT_QUIET ?? "22-7").trim();
 const MAX_HISTORY = 24;
 const MAX_ROUNDS = 8;
 const PENDING_TTL_MS = 10 * 60_000;
+/**
+ * So lange bleibt ein Vorschlag mindestens in der Liste: Der Knopf eines
+ * Alarms kann bis zu 15 Minuten in der Sende-Warteschlange warten, seine Frist
+ * beginnt erst mit der Zustellung (renewOffers). Ob ein Tipp noch gilt,
+ * entscheidet weiter PENDING_TTL_MS.
+ */
+const PENDING_KEEP_MS = OUTBOX_MAX_AGE_MS + 60_000;
 
 export const AGENT = {
   enabled: false,
@@ -126,7 +137,7 @@ async function systemPrompt(): Promise<string> {
     minute: "2-digit",
   });
   const notes = await readNotes();
-  const open = openFindings(watch);
+  const open = watcher.open();
   return [
     `Du bist der Hub-Assistent der Wasserski- und Freizeitanlage Tuttenbrocksee. Du läufst lokal auf dem Hub (Mac Studio „${CONFIG.name}“ im Technikraum) und sprichst per Telegram mit Aaron, dem Betreiber.`,
     `Jetzt: ${when} (Europe/Berlin).`,
@@ -140,7 +151,10 @@ async function systemPrompt(): Promise<string> {
     "- Schalte nur, worum Aaron gebeten hat. Keine eigenmächtigen Aktionen.",
     "- Netzwerk (Router PR60X, Switches, VLANs, DHCP, WLAN, Firewall) änderst du nie. Du kannst Befunde lesen und Änderungen vorschlagen; umsetzen tut Aaron.",
     "- Kameras in Umkleiden/WC gibt es nicht und darf es nicht geben.",
-    "- Fragen wie „Wie voll ist es?“, „Wie lange wartet man am Lift?“ beantwortest du mit occupancy. Tagsüber meldet sich die Belegungsüberwachung selbst, wenn ein Punkt voll wird.",
+    "- Fragen wie „Wie voll ist es?“, „Wie lange wartet man am Lift?“ beantwortest du mit occupancy. " +
+      (occupancyAlertMode() === "on"
+        ? "Tagsüber meldet sich die Belegungsüberwachung selbst, wenn ein Punkt voll wird."
+        : "Die Belegungsüberwachung misst tagsüber, schickt von sich aus aber keine Meldung, wenn ein Punkt voll wird."),
     "- Fragen zu Wetter, Mähen, Bewässerung, Heizung und Energie: erst weather_forecast bzw. energy_plan holen. Heizung und Lüftung regelt die Cloud-Klimaregelung; du schlägst nur vor.",
     "- Mit look_at_camera siehst du dir ein aktuelles Kamerabild selbst an. Außerhalb des Betriebs bewertet der Wächter Personen- und Fahrzeugereignisse automatisch und meldet Auffälliges mit Bild.",
     "- Frueherkennung: early_warnings zeigt, was sich ankündigt (gehäufte Zeitüberschreitungen, häufige Neustarts, Port-Fehler, Temperatur, Platte, abgelaufene Anmeldungen). Nenne dabei die Zahlen und die typische Ursache, schlage die Prüfung vor, ändere aber nichts.",
@@ -241,7 +255,7 @@ async function plainStatus(): Promise<string> {
     `Kameras ${status.cameras.reachable}/${status.cameras.total} erreichbar`,
     ...status.cameras.unreachable.slice(0, 10).map((c) => `• ${c}`),
   ];
-  const open = openFindings(watch);
+  const open = watcher.open();
   if (open.length) lines.push("", "Offene Befunde:", ...open.map((f) => `• ${f.title}`));
   lines.push("", "Frueherkennung:", trendSummaryText(healthSummary()));
   return lines.join("\n");
@@ -264,12 +278,12 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
     return;
   }
   if (cmd === "/befunde") {
-    const open = openFindings(watch);
+    const open = watcher.open();
     await sendText(chatId, open.length ? open.map((f) => `• ${f.title}${f.detail ? ` (${f.detail})` : ""}`).join("\n") : "Keine offenen Befunde.");
     return;
   }
   if (cmd === "/vorwarnungen") {
-    const active = healthFindings(new Set(openFindings(watch).map((f) => f.key)));
+    const active = healthFindings(new Set(watcher.open().map((f) => f.key)));
     const head = active.length
       ? active.map((f) => `⚠️ ${f.title}${f.detail ? `\n   ${f.detail}` : ""}`).join("\n")
       : "Keine Vorwarnungen.";
@@ -373,9 +387,24 @@ function offer(label: string, tool: string, args: Record<string, unknown>, desc:
   const id = randomBytes(6).toString("hex");
   const now = Date.now();
   // Abgelaufene Vorschlaege aufraeumen, damit die Liste nicht waechst.
-  for (const [k, p] of pending) if (now - p.createdAt > (p.ttlMs ?? PENDING_TTL_MS)) pending.delete(k);
+  for (const [k, p] of pending) if (now - p.createdAt > (p.ttlMs ?? PENDING_TTL_MS) + PENDING_KEEP_MS) pending.delete(k);
   pending.set(id, { chatId: "*", tool, args, desc, createdAt: now, ttlMs });
   return { text: label, callback_data: `ok:${id}` };
+}
+
+/**
+ * Knoepfe eines Alarms gelten ab der Zustellung, bei mehreren Chats ab der
+ * letzten: Wartete er wegen eines Telegram-Ausfalls in der Warteschlange,
+ * waeren sie sonst bei Ankunft schon abgelaufen. Schaltet nichts, setzt nur
+ * den Beginn der Frist neu.
+ */
+function renewOffers(buttons: TgButton[][]): void {
+  const now = Date.now();
+  for (const b of buttons.flat()) {
+    const m = /^ok:([0-9a-f]+)$/.exec(b.callback_data ?? "");
+    const p = m ? pending.get(m[1]) : undefined;
+    if (p) p.createdAt = now;
+  }
 }
 
 /* ------------------------------------------------------------ Kopplung */
@@ -548,46 +577,60 @@ async function pollLoop(): Promise<void> {
 
 /* ------------------------------------------------------------ Waechter */
 
-const watch = newWatchState();
-let deferred: Finding[] = [];
-
-async function broadcast(text: string): Promise<void> {
-  for (const id of chatIds()) {
-    await sendText(id, text).catch((e) => log(`Assistent: Senden an ${id}: ${e instanceof Error ? e.message : e}`));
-  }
+/**
+ * Text an alle gekoppelten Chats, ueber die Sende-Warteschlange (dispatch.ts):
+ * mit Wiederholung, wenn Telegram nicht erreichbar ist. Das Ergebnis sagt, ob
+ * er mindestens einen Chat erreicht hat.
+ */
+function broadcast(text: string, kind: NoticeKind): Promise<NoticeResult> {
+  return sendNotice(chatIds(), text, kind);
 }
+
+/**
+ * Zustands-Waechter (watch-runner.ts): Sein Stand liegt in
+ * .cache/agent-watch.json und wird beim Start uebernommen. Nach einem
+ * Neustart des Hubs wird ein schon gemeldeter Befund nicht noch einmal
+ * gemeldet.
+ */
+const watcher = new WatchRunner({
+  file: path.join(CONFIG.hubDir, ".cache", "agent-watch.json"),
+  // Was jetzt kaputt ist (watch.ts) plus was sich ankuendigt (Verlaeufe).
+  collect: (now, open) => [...collectFindings(now, open, SENTINEL.enabled), ...healthFindings(open)],
+  quiet: () => inQuietHours(QUIET, berlinHour()),
+  chats: () => chatIds().length,
+  send: (text) => broadcast(text, "zustand"),
+  log,
+  record: (kind, text) => recordActivity({ kind, text }),
+});
 
 async function watchTick(): Promise<void> {
   AGENT.lastWatchAt = new Date().toISOString();
-  // Was jetzt kaputt ist (watch.ts) plus was sich ankuendigt (Verlaeufe).
-  const open = new Set(openFindings(watch).map((f) => f.key));
-  const findings = collectFindings();
-  if (process.uptime() >= 300) findings.push(...healthFindings(open));
-  const diff = diffFindings(watch, findings, Date.now());
-  const quiet = inQuietHours(QUIET, berlinHour());
-  const now: Finding[] = [];
-  for (const f of diff.opened) (quiet && f.severity !== "alert" ? deferred : now).push(f);
-  if (!quiet && deferred.length) {
-    const stillOpen = new Set(openFindings(watch).map((f) => f.key));
-    now.unshift(...deferred.filter((f) => stillOpen.has(f.key)));
-    deferred = [];
-  }
-  const deferredKeys = new Set(deferred.map((f) => f.key));
-  const resolved = diff.resolved.filter((f) => !deferredKeys.has(f.key));
-  deferred = deferred.filter((f) => !diff.resolved.some((r) => r.key === f.key));
-  const lines: string[] = [];
-  for (const f of now) lines.push(`${f.severity === "alert" ? "‼️" : "⚠️"} ${f.title}${f.detail ? `\n   ${f.detail}` : ""}`);
-  for (const f of resolved) lines.push(`✅ Wieder in Ordnung: ${f.title} (nach ${Math.max(1, Math.round(f.sinceMs / 60_000))} min)`);
-  for (const f of diff.opened.filter((x) => deferred.includes(x))) {
-    recordActivity({ kind: "warn", text: `⚠️ ${f.title} (Ruhezeit – Meldung kommt morgens)` });
-  }
-  if (lines.length && chatIds().length) await broadcast(lines.join("\n"));
-  else if (lines.length) for (const l of lines) recordActivity({ kind: l.startsWith("‼️") ? "alert" : l.startsWith("✅") ? "ok" : "warn", text: l });
+  // Erste Minuten nach dem Start: Es gibt noch keine Befunde (watch.ts). Ohne
+  // Pruefung bleibt der uebernommene Stand, wie er ist.
+  if (process.uptime() < WATCH_WARMUP_S) return;
+  await watcher.tick();
+}
+
+/**
+ * Vor dem Beenden des Hubs: die Zustellung abschliessen (dispatch.ts), dann
+ * den Stand des Zustands-Waechters speichern.
+ */
+async function closeAgent(): Promise<void> {
+  await closeDispatch();
+  await watcher.close();
 }
 
 /* ------------------------------------------------------------ Tagesbericht */
 
 let lastReportDay: string | null = null;
+/**
+ * Tagesvorschau und Bericht des Tages, solange sie noch keinen Chat erreicht
+ * haben. Der Bericht wird einmal geschrieben und bis zur Zustellung erneut
+ * gesendet; erst dann gilt der Tag als erledigt (lastReportDay).
+ */
+let reportDraft: { day: string; preview: string | null; text: string | null } | null = null;
+let reportBusy = false;
+let reportRetryAt = 0;
 
 async function dailyReport(): Promise<string> {
   const history: ChatMessage[] = [
@@ -615,23 +658,51 @@ async function dailyReport(): Promise<string> {
   return `Tagesbericht ${new Date().toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })}\n\n${text}`;
 }
 
+/** Text des Tagesberichts; ohne Sprachmodell oder nach einem Fehler die Kurzlage. */
+async function reportText(): Promise<string> {
+  if (!(await ensureOllama())) return `Tagesbericht ohne Sprachmodell (${LLM.error ?? "nicht bereit"}):\n\n${await plainStatus()}`;
+  try {
+    return await dailyReport();
+  } catch (e) {
+    log(`Assistent: Tagesbericht fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    return `Tagesbericht fehlgeschlagen, hier die Kurzlage:\n\n${await plainStatus()}`;
+  }
+}
+
 async function reportTick(): Promise<void> {
   if (!chatIds().length) return;
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
-  if (lastReportDay === today || berlinHHMM() < REPORT_TIME) return;
-  lastReportDay = today;
-  await saveStore();
-  // Erst die Tagesvorschau (feste Zahlen, ohne Sprachmodell), dann der Bericht.
-  await broadcast(await dayPreviewText(0));
-  if (!(await ensureOllama())) {
-    await broadcast(`Tagesbericht ohne Sprachmodell (${LLM.error ?? "nicht bereit"}):\n\n${await plainStatus()}`);
-    return;
-  }
+  if (!reportDue({ today, hhmm: berlinHHMM(), reportTime: REPORT_TIME, lastReportDay, busy: reportBusy, retryAt: reportRetryAt, now: Date.now() })) return;
+  reportBusy = true;
   try {
-    await broadcast(await dailyReport());
+    if (reportDraft?.day !== today) reportDraft = { day: today, preview: await dayPreviewText(0), text: null };
+    const draft = reportDraft;
+    // Erst die Tagesvorschau (feste Zahlen, ohne Sprachmodell), dann der Bericht.
+    // Die Vorschau geht sofort hinaus, waehrend der Bericht entsteht.
+    const preview = draft.preview;
+    if (preview !== null) {
+      void broadcast(preview, "vorschau")
+        .then((sent) => {
+          if (sent.delivered) draft.preview = null;
+        })
+        .catch((e) => log(`Assistent: Bericht: ${e instanceof Error ? e.message : e}`));
+    }
+    draft.text ??= await reportText();
+    const sent = await broadcast(draft.text, "bericht");
+    if (sent.delivered) {
+      // Erledigt ist der Tag erst jetzt: Der Bericht hat einen Chat erreicht.
+      lastReportDay = today;
+      reportDraft = null;
+      reportRetryAt = 0;
+      await saveStore();
+    } else {
+      reportRetryAt = Date.now() + reportRetryMs(sent.rejected);
+    }
   } catch (e) {
-    log(`Assistent: Tagesbericht fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
-    await broadcast(`Tagesbericht fehlgeschlagen, hier die Kurzlage:\n\n${await plainStatus()}`);
+    reportRetryAt = Date.now() + reportRetryMs(false);
+    throw e;
+  } finally {
+    reportBusy = false;
   }
 }
 
@@ -683,7 +754,19 @@ export async function startAgent(): Promise<void> {
   AGENT.enabled = true;
   startAiLoad();
   await loadStore();
+  // Alarme, die vor dem Neustart keinen Chat erreicht haben, stehen wieder unter den Befunden.
+  await loadDispatch();
+  // Was der Zustands-Waechter vor dem Neustart gemeldet hat, meldet er nicht noch einmal.
+  await watcher.load();
   log(`Assistent: an, ${TOOLS.length} Werkzeuge, ${AGENT.pairedChats} Chat(s) gekoppelt`);
+  // Ruhezeit, Nachtfenster des Waechters und Messzeit der Belegung richten
+  // sich nach dieser Stunde. Sie steht bei jedem Start im Log.
+  try {
+    const q = QUIET.match(/^(\d{1,2})-(\d{1,2})$/);
+    log(`Assistent: Ortszeit Stunde ${berlinHour()}, Ruhezeit ${q && Number(q[1]) !== Number(q[2]) ? `${QUIET} Uhr` : "aus"}`);
+  } catch (e) {
+    log(`Assistent: ${e instanceof Error ? e.message : e}`);
+  }
   void setCommands();
   // Modell im Hintergrund bereitstellen; scheitert es, alle 30 min erneut.
   void ensureOllama();
@@ -691,13 +774,18 @@ export async function startAgent(): Promise<void> {
     if (!LLM.ready) void ensureOllama();
   }, 30 * 60_000);
   // Kamera-Ereignisse ausserhalb des Betriebs selbst ansehen (Bildmodell).
-  startSentinel({ chatIds, offer });
-  // Tagsueber Belegung/Wartezeiten messen und melden, wenn es voll wird.
+  startSentinel({ chatIds, offer, renew: renewOffers });
+  // Tagsueber Belegung/Wartezeiten messen; ob gemeldet wird, wenn es voll
+  // wird, bestimmt HUB_OCCUPANCY_ALERTS (ohne Angabe: Probelauf, nur Log).
   startOccupancy({ chatIds });
   // Energie, Maeher und Bewaesserung nach Wetter und Betriebszeit (Vorschlaege mit Knopf).
   if ((process.env.HUB_AGENT_ENERGY ?? "on").toLowerCase() !== "off") void startEnergy({ chatIds, offer });
   // Sprachnachrichten: whisper.cpp + Modell im Hintergrund bereitstellen.
   void ensureWhisper();
+  // Vor dem Beenden: Ein Alarm, der noch auf seinen naechsten Sendeversuch
+  // wartet, geht ein letztes Mal als Text hinaus (dispatch.ts); danach wird
+  // der Stand des Zustands-Waechters gespeichert.
+  onShutdown("zustellung", closeAgent);
   void pollLoop();
   setInterval(() => void watchTick().catch((e) => log(`Assistent: Wächter: ${e instanceof Error ? e.message : e}`)), WATCH_MS);
   setInterval(() => void reportTick().catch((e) => log(`Assistent: Bericht: ${e instanceof Error ? e.message : e}`)), 60_000);

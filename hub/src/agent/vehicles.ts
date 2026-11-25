@@ -44,6 +44,9 @@ async function load(): Promise<void> {
   } catch {
     book = {};
   }
+  // Fragen, die vor dem Neustart auf das Ende der Ruhezeit warteten (nicht,
+  // wenn die Fragen inzwischen abgeschaltet sind; sie bleiben dann vorgemerkt).
+  if (ASK) for (const [key, rec] of Object.entries(book)) if (rec?.pending && rec.state === "asked") deferred.add(key);
 }
 
 async function save(): Promise<void> {
@@ -110,11 +113,21 @@ export async function vehicleTick(events: HubEvent[], chatIds: string[]): Promis
     lastByCamera.set(ev.where, { at: now, plate: ev.plate ?? null, listed: !!ev.listed });
     if (!ASK || !ev.plate || ev.listed || plateKnown(ev.plate)) continue;
     dirty = true;
-    if (notePlate(book, ev.plate, now, { minVisits: MIN_VISITS, camera: ev.where })) deferred.add(normalizePlate(ev.plate));
+    if (notePlate(book, ev.plate, now, { minVisits: MIN_VISITS, camera: ev.where })) {
+      const key = normalizePlate(ev.plate);
+      book[key].pending = true;
+      deferred.add(key);
+    }
   }
   if (deferred.size && !inQuietHours(QUIET, berlinHour()) && chatIds.length) {
     for (const key of [...deferred]) {
       deferred.delete(key);
+      const rec = book[key];
+      if (!rec?.pending) continue;
+      delete rec.pending;
+      dirty = true;
+      // Inzwischen beantwortet oder genehmigt: nicht mehr fragen.
+      if (rec.state !== "asked" || plateKnown(rec.plate)) continue;
       await ask(key, chatIds).catch((e) => log(`Assistent: Kennzeichen-Frage: ${e instanceof Error ? e.message : e}`));
     }
   }

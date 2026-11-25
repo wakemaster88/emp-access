@@ -5,11 +5,24 @@
  *  - Eingestempelte Mitarbeiter aus emp-control (hub/src/staff.ts, kommt aus
  *    einem eigenen Modul; solange es fehlt, gibt es keine Stempeldaten).
  */
-import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { CONFIG } from "../config.js";
+import { CONFIG, log } from "../config.js";
 import type { HubEvent } from "../state.js";
+import {
+  CLEAR_MS,
+  afterAlarm,
+  afterNoAlarm,
+  afterOk,
+  pruneCleared,
+  type ClearedPerson,
+  type PendingOk,
+  type Sighting,
+  type SightingResult,
+} from "./people-rules.js";
+import { readPeopleFile, writePeopleFile } from "./people-store.js";
+
+export type { ClearedPerson } from "./people-rules.js";
 
 const WINDOW_MS = 90_000;
 /** Stempeldaten aelter als das gelten als unbekannt. */
@@ -68,56 +81,62 @@ export async function staffClockedIn(): Promise<string[] | null> {
 /* ------------------------------------- Wiedererkennung ueber Kameras */
 
 /**
- * Personen, die heute schon als unbedenklich gelten (Mitarbeiter, Gesichts-
- * Treffer, von Aaron per Knopf freigegeben). Gespeichert wird nur eine kurze
- * Kleidungsbeschreibung des Bildmodells, kein Bild und kein Gesichtsmerkmal.
- * Taucht dieselbe Kleidung an einer anderen Kamera auf, gibt es keinen
- * neuen Alarm.
+ * Merkliste: Personen, die der Waechter heute schon bewertet hat. Gespeichert
+ * wird nur eine kurze Kleidungsbeschreibung des Bildmodells, kein Bild und
+ * kein Gesichtsmerkmal. Taucht dieselbe Kleidung an einer anderen Kamera auf,
+ * gibt es keinen neuen Alarm. Drei Arten von Eintraegen (people-rules.ts):
+ *  - freigegeben (Gesichts-Treffer, Knopf „Ist in Ordnung“): 8 Stunden ab der
+ *    letzten Sichtung.
+ *  - mitarbeiter (vermutlich Mitarbeiter): ebenso, zaehlt aber nicht im
+ *    Nachtfenster des Waechters.
+ *  - gemeldet (Alarm ging hinaus): 20 Minuten ab dem Alarm, ohne Verlaengerung.
  */
-export interface ClearedPerson {
-  id: string;
-  /** z. B. „Jakob“ oder „Mitarbeiter“ / „freigegeben“. */
-  label: string;
-  kleidung: string;
-  camera: string;
-  at: number;
-  until: number;
-}
-
-const CLEAR_MS = 8 * 60 * 60_000;
-const MAX_CLEARED = 30;
 let cleared: ClearedPerson[] = [];
-let clearedLoaded = false;
+let loading: Promise<void> | null = null;
 /** Alarm-Knopf „Ist in Ordnung“: Kleidung der gemeldeten Personen. */
-const pendingOk = new Map<string, { camera: string; kleidung: string[]; at: number }>();
+const pendingOk = new Map<string, PendingOk>();
 
 function clearedPath(): string {
   return path.join(CONFIG.hubDir, ".cache", "agent-people.json");
 }
 
-async function loadCleared(): Promise<void> {
-  if (clearedLoaded) return;
-  clearedLoaded = true;
-  try {
-    const raw = JSON.parse(await readFile(clearedPath(), "utf8")) as { cleared?: ClearedPerson[]; pending?: Array<[string, { camera: string; kleidung: string[]; at: number }]> };
-    cleared = Array.isArray(raw.cleared) ? raw.cleared : [];
-    for (const [k, v] of raw.pending ?? []) pendingOk.set(k, v);
-  } catch {
-    cleared = [];
-  }
+/** Text der Eintraege, die der Knopf „Ist in Ordnung“ anlegt. */
+const OK_LABEL = "von Aaron freigegeben";
+
+const newId = () => randomBytes(4).toString("hex");
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Einmal je Hub-Lauf lesen; alle Aufrufer warten auf denselben Lesevorgang. */
+function loadCleared(): Promise<void> {
+  loading ??= readPeopleFile(clearedPath())
+    .then(({ store, problem }) => {
+      cleared = store.cleared;
+      for (const [k, v] of store.pending) pendingOk.set(k, v);
+      if (problem) log(`Wächter: Merkliste: ${problem}`);
+    })
+    .catch((e) => log(`Wächter: Merkliste: ${errText(e)}`));
+  return loading;
 }
 
-async function saveCleared(): Promise<void> {
-  const now = Date.now();
-  cleared = cleared.filter((c) => c.until > now).slice(-MAX_CLEARED);
-  for (const [k, v] of pendingOk) if (now - v.at > CLEAR_MS) pendingOk.delete(k);
-  await mkdir(path.dirname(clearedPath()), { recursive: true });
-  await writeFile(clearedPath(), JSON.stringify({ cleared, pending: [...pendingOk] }, null, 2), "utf8");
+/** Schreibvorgaenge laufen nacheinander: Sie teilen sich die zweite Datei (atomic-file.ts). */
+let writeQueue: Promise<void> = Promise.resolve();
+
+/** Liste aufraeumen und speichern. Ein Fehler steht im Log, die Liste im Speicher gilt weiter. */
+function saveCleared(): Promise<void> {
+  writeQueue = writeQueue
+    .then(() => {
+      const now = Date.now();
+      cleared = pruneCleared(cleared, now);
+      for (const [k, v] of pendingOk) if (now - v.at > CLEAR_MS) pendingOk.delete(k);
+      return writePeopleFile(clearedPath(), { cleared, pending: [...pendingOk] });
+    })
+    .catch((e) => log(`Wächter: Merkliste nicht gespeichert: ${errText(e)}`));
+  return writeQueue;
 }
 
 const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" });
 
-/** Aktuell bekannte Personen, aelteste zuerst (Reihenfolge = Nummern im Prompt). */
+/** Aktuell gemerkte Personen, aelteste zuerst (Reihenfolge = Nummern im Prompt). */
 export async function activeCleared(): Promise<ClearedPerson[]> {
   await loadCleared();
   const now = Date.now();
@@ -141,32 +160,29 @@ export function knownPrompt(list: ClearedPerson[]): string {
 }
 
 /**
- * Personen merken. `matched` sind die wiedererkannten Eintraege (werden
- * verlaengert), `kleidung` sind neue Beschreibungen, die dazukommen.
+ * Nach einer Entscheidung „kein Alarm“: wiedererkannte Eintraege verlaengern,
+ * neue Beschreibungen merken (Regeln: afterNoAlarm in people-rules.ts).
+ * `matched` sind die wiedererkannten Eintraege.
  */
-export async function rememberPeople(opts: {
-  camera: string;
-  kleidung: string[];
-  label: string;
-  matched?: ClearedPerson[];
-  /** Gueltigkeit, Standard 8 h. */
-  forMs?: number;
-}): Promise<void> {
+export async function rememberSeen(
+  s: Omit<Sighting, "now" | "matchedIds"> & { matched: ClearedPerson[] },
+): Promise<Omit<SightingResult, "entries">> {
   await loadCleared();
-  const now = Date.now();
-  const ms = opts.forMs ?? CLEAR_MS;
-  for (const m of opts.matched ?? []) {
-    const c = cleared.find((x) => x.id === m.id);
-    if (c) {
-      c.until = Math.max(c.until, now + ms);
-      c.at = now;
-      c.camera = opts.camera;
-    }
+  const { matched, ...seen } = s;
+  const { entries, ...changes } = afterNoAlarm(cleared, { ...seen, now: Date.now(), matchedIds: matched.map((m) => m.id) }, newId);
+  if (changes.extended || changes.promoted || changes.added) {
+    cleared = entries;
+    await saveCleared();
   }
-  for (const k of opts.kleidung) {
-    cleared.push({ id: randomBytes(4).toString("hex"), label: opts.label, kleidung: k, camera: opts.camera, at: now, until: now + ms });
-  }
-  await saveCleared().catch(() => undefined);
+  return changes;
+}
+
+/** Nach einem Alarm: die gemeldeten Personen 20 Minuten merken. */
+export async function rememberReported(camera: string, kleidung: string[]): Promise<void> {
+  if (!kleidung.length) return;
+  await loadCleared();
+  cleared = afterAlarm(cleared, { now: Date.now(), camera, kleidung }, newId);
+  await saveCleared();
 }
 
 /** Knopf „Ist in Ordnung“ fuer einen Alarm vorbereiten. null = nichts zu merken. */
@@ -175,7 +191,7 @@ export async function offerPersonOk(camera: string, kleidung: string[]): Promise
   await loadCleared();
   const token = randomBytes(4).toString("hex");
   pendingOk.set(token, { camera, kleidung, at: Date.now() });
-  await saveCleared().catch(() => undefined);
+  await saveCleared();
   return `pok:${token}`;
 }
 
@@ -185,6 +201,7 @@ export async function answerPersonOk(token: string): Promise<string> {
   const p = pendingOk.get(token);
   if (!p) return "Diese Meldung ist zu alt, da kann ich nichts mehr merken.";
   pendingOk.delete(token);
-  await rememberPeople({ camera: p.camera, kleidung: p.kleidung, label: "von Aaron freigegeben" });
+  cleared = afterOk(cleared, { now: Date.now(), camera: p.camera, kleidung: p.kleidung, label: OK_LABEL }, newId);
+  await saveCleared();
   return `Gemerkt: ${p.kleidung.length === 1 ? "diese Person gilt" : `diese ${p.kleidung.length} Personen gelten`} die nächsten 8 Stunden an allen Kameras als unbedenklich.`;
 }

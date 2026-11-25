@@ -168,6 +168,38 @@ export function newAlertState(): AlertState {
 export const ALERT_COOLDOWN_MS = 45 * 60_000;
 
 /**
+ * Was mit einer faelligen Meldung geschieht:
+ *  - on: sie geht per Telegram hinaus.
+ *  - off: die Meldestufen werden gar nicht ausgewertet.
+ *  - shadow (Probelauf): ausgewertet, geloggt und gezaehlt, aber nichts wird
+ *    gesendet. So lassen sich die Schwellen an echten Messungen pruefen,
+ *    bevor Meldungen eingeschaltet werden.
+ */
+export type AlertMode = "on" | "off" | "shadow";
+
+/**
+ * HUB_OCCUPANCY_ALERTS lesen. Fehlt die Variable oder ist sie leer, gilt der
+ * Probelauf. Das gilt auch fuer einen Wert, den der Hub nicht kennt (`known`
+ * ist dann false): Meldungen schaltet nur ein ausdrueckliches „on“ ein.
+ */
+export function alertMode(raw: string | null | undefined): { mode: AlertMode; known: boolean } {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (v === "") return { mode: "shadow", known: true };
+  if (/^(on|1|true|ja|an|yes)$/.test(v)) return { mode: "on", known: true };
+  if (/^(off|0|false|nein|aus|no)$/.test(v)) return { mode: "off", known: true };
+  return { mode: "shadow", known: v === "shadow" };
+}
+
+/**
+ * Was mit einem Ergebnis der Meldestufe geschieht: senden (on), nur loggen
+ * und zaehlen (shadow) oder nichts. Gesendet wird ausschliesslich bei „on“.
+ */
+export function alertAction(mode: AlertMode, step: "alert" | "relaxed" | null): "send" | "log" | null {
+  if (!step || mode === "off") return null;
+  return mode === "on" ? "send" : "log";
+}
+
+/**
  * Meldung, wenn zweimal hintereinander voll (oder Wartezeit ueber der
  * Schwelle). Danach Ruhe, bis es deutlich leerer ist (unter 70 % von voll
  * und unter 70 % der Wartezeit-Schwelle) – dann „entspannt“.
@@ -196,8 +228,12 @@ export function stepAlert(
   return null;
 }
 
-/** "9-21" → Messung von 9:00 bis 20:59. Ungueltig/leer = immer. */
+/**
+ * "9-21" → Messung von 9:00 bis 20:59. Ungueltig/leer = immer. Ist die Stunde
+ * keine endliche Zahl, wird nicht gemessen.
+ */
 export function inHours(spec: string, hour: number): boolean {
+  if (!Number.isFinite(hour)) return false;
   const m = spec.trim().match(/^(\d{1,2})-(\d{1,2})$/);
   if (!m) return true;
   const from = Number(m[1]);
@@ -229,4 +265,35 @@ export function spotLine(s: { name: string; persons: number; level: Level; wait:
   const who = s.persons === 1 ? "1 Person" : `${s.persons} Personen`;
   const wait = s.wait > 0 ? `, Wartezeit ca. ${s.wait} min` : "";
   return `${s.name}: ${s.level} (${who}${wait})${s.partial ? " – nicht alle Kameras erreichbar" : ""}`;
+}
+
+/**
+ * Log-Zeile zur ersten Messung eines Tages: wie viele Bereiche gemessen
+ * wurden und wie viele Personen dort zusammen zu sehen waren. Die weiteren
+ * Messungen des Tages bekommen keine Zeile. Ein Bereich zaehlt als gemessen,
+ * wenn mindestens eine seiner Kameras ein Ergebnis geliefert hat (oder er
+ * keine Kamera hat und nur ueber das Drehkreuz laeuft).
+ *
+ * `resting` = Bereiche, die der Takt auslaesst, weil ihre Raeume zu sind.
+ * `again` = fuer heute liegen schon Messwerte vor (der Hub wurde im Lauf des
+ * Tages neu gestartet, oder es wurde vor dem Takt auf Nachfrage gemessen).
+ */
+export function dayStartLine(
+  readings: Array<{ persons: number; cameras: Array<{ persons: number | null }> }>,
+  resting: number,
+  again = false,
+): string {
+  const blind = readings.filter((r) => r.cameras.length > 0 && r.cameras.every((c) => c.persons == null));
+  const measured = readings.filter((r) => !blind.includes(r));
+  const persons = measured.reduce((sum, r) => sum + r.persons, 0);
+  const areas = (n: number) => (n === 1 ? "1 Bereich" : `${n} Bereiche`);
+  const notes = [
+    resting > 0 ? `${areas(resting)} ${resting === 1 ? "ruht" : "ruhen"}, Räume geschlossen` : "",
+    blind.length > 0 ? `${areas(blind.length)} ohne Kamerabild` : "",
+  ].filter(Boolean);
+  return (
+    `Belegung: ${again ? "Messung heute fortgesetzt" : "erste Messung heute"}: ${areas(measured.length)}, ` +
+    `${persons === 1 ? "1 Person" : `${persons} Personen`}` +
+    (notes.length ? ` (${notes.join("; ")})` : "")
+  );
 }

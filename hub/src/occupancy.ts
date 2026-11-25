@@ -11,6 +11,11 @@
  *  - Wartezeit ≈ Personen / Durchsatz, Stufe nach Schwelle „voll“.
  *  - Zweimal hintereinander voll (oder Wartezeit ueber Schwelle): Meldung
  *    per Telegram mit Bild, „entspannt“, wenn es wieder leerer ist.
+ *  - Ob eine faellige Meldung hinausgeht, bestimmt HUB_OCCUPANCY_ALERTS:
+ *    on = senden, off = die Meldestufen gar nicht auswerten. Ohne Angabe
+ *    laeuft der Probelauf (shadow): Die Meldung steht im Log und im Zaehler,
+ *    gesendet wird nichts. Die Schwellen sollen sich erst an echten
+ *    Messungen zeigen; das Einschalten entscheidet der Betreiber.
  *
  * Schwellen und Zonen lassen sich in hub/occupancy.json anpassen (siehe
  * occupancy-rules.ts, mergeSpots). Bilder werden nicht gespeichert, nur
@@ -19,6 +24,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
+import { improveCount } from "./improve-log.js";
 import { captureSnapshot, listCameraConfigs, listCameraStatus, waitCameraAtHome } from "./cameras.js";
 import { detectPersons } from "./person-crop.js";
 import { inside } from "./vision.js";
@@ -27,7 +33,10 @@ import { berlinHour } from "./agent/watch.js";
 import { roomsPayload } from "./rooms.js";
 import {
   DEFAULT_SPOTS,
+  alertAction,
+  alertMode,
   camerasForSpot,
+  dayStartLine,
   effectivePerHour,
   inHours,
   levelFor,
@@ -39,6 +48,7 @@ import {
   spotLine,
   stepAlert,
   waitMinutes,
+  type AlertMode,
   type AlertState,
   type Level,
   type SpotConfig,
@@ -46,7 +56,7 @@ import {
 
 const INTERVAL_MS = (Number(process.env.HUB_OCCUPANCY_INTERVAL) > 0 ? Number(process.env.HUB_OCCUPANCY_INTERVAL) : 300) * 1000;
 const HOURS = (process.env.HUB_OCCUPANCY_HOURS ?? "9-21").trim();
-const ALERTS = !/^(0|false|off|nein)$/i.test((process.env.HUB_OCCUPANCY_ALERTS ?? "1").trim());
+const ALERTS = alertMode(process.env.HUB_OCCUPANCY_ALERTS);
 /** Juengere Messung als das reicht fuer „Wie voll ist es?“, sonst wird neu gemessen. */
 const FRESH_MS = 4 * 60_000;
 const HISTORY_MS = 3 * 60 * 60_000;
@@ -101,8 +111,16 @@ export const OCCUPANCY = {
   enabled: true,
   lastRunAt: null as string | null,
   lastError: null as string | null,
+  /** Gesendete Meldungen „wird voll“. */
   alerts: 0,
+  /** Im Probelauf faellige Meldungen (geloggt, nicht gesendet). */
+  shadowAlerts: 0,
 };
+
+/** on | off | shadow (Probelauf), siehe occupancy-rules.ts. */
+export function occupancyAlertMode(): AlertMode {
+  return ALERTS.mode;
+}
 
 const runtime = new Map<string, SpotRuntime>();
 let spots: SpotConfig[] = DEFAULT_SPOTS;
@@ -110,6 +128,10 @@ let spotsLoadedAt = 0;
 let areas: AreaRate[] = [];
 let areasAt = 0;
 let running: Promise<SpotReading[]> | null = null;
+/** Bereiche, die die letzte Messung ausgelassen hat, weil ihre Raeume zu sind. */
+let lastResting = 0;
+/** Tag (Berlin), dessen erste Messung schon im Log steht. */
+let loggedDay: string | null = null;
 let peaks: Record<string, Record<string, { persons: number; waitMin: number; at: string }>> = {};
 
 function configPath(): string {
@@ -259,6 +281,7 @@ export function measureAll(opts: { skipClosed?: boolean } = {}): Promise<SpotRea
   running = (async () => {
     try {
       let list = (await loadSpots()).filter((s) => s.enabled !== false);
+      let resting = 0;
       if (opts.skipClosed) {
         const closed = closedSpotKeys(list);
         for (const key of closed) {
@@ -266,7 +289,9 @@ export function measureAll(opts: { skipClosed?: boolean } = {}): Promise<SpotRea
           if (rt) rt.alert = newAlertState();
         }
         list = list.filter((s) => !closed.has(s.key));
+        resting = closed.size;
       }
+      lastResting = resting;
       await refreshAreas();
       const out: SpotReading[] = [];
       for (const s of list) {
@@ -317,6 +342,8 @@ export async function occupancyReport(fresh = false): Promise<unknown> {
     at: new Date().toISOString(),
     hours: HOURS,
     inOperatingHours: inHours(HOURS, berlinHour()),
+    // on = der Hub meldet „wird voll“ von sich aus, shadow = Probelauf (nur Log), off = keine Meldungen.
+    alerts: ALERTS.mode,
     hinweis:
       "Personen = Median der letzten Messungen auf den Kamerabildern (YOLO). Wartezeit = Personen / Durchsatz pro Stunde, grob geschätzt. perHourMeasured=true: Durchsatz aus den Drehkreuz-Eintritten der letzten Stunde.",
     spots: readings.map((r) => ({
@@ -367,24 +394,50 @@ async function tick(chatIds: () => string[]): Promise<void> {
     for (const rt of runtime.values()) rt.alert = newAlertState();
     return;
   }
+  const day = berlinDay();
+  // Vor der Messung lesen: Gibt es fuer heute schon Tagesspitzen, wurde heute
+  // bereits gemessen (vor einem Neustart des Hubs oder auf Nachfrage).
+  const again = Object.keys(peaks[day] ?? {}).length > 0;
   const readings = await measureAll({ skipClosed: true });
-  if (!ALERTS) return;
+  improveCount("occupancy", "measure");
+  // Eine Zeile zur ersten Messung des Tages, danach keine Zeile je Messung.
+  if (loggedDay !== day) {
+    loggedDay = day;
+    log(dayStartLine(readings, lastResting, again));
+  }
+  if (ALERTS.mode === "off") return;
   const ids = chatIds();
   for (const r of readings) {
     const spot = spots.find((s) => s.key === r.key);
     const rt = runtime.get(r.key);
     if (!spot || !rt || (r.partial && r.cameras.every((c) => c.persons == null))) continue;
     const step = stepAlert(rt.alert, { persons: r.persons, full: spot.full, wait: r.waitMin, waitAlertMin: spot.waitAlertMin }, Date.now());
-    if (step) {
-      log(`Belegung: ${spotLine({ name: r.name, persons: r.persons, level: r.level, wait: r.waitMin })} → ${step === "alert" ? "Meldung" : "entspannt"}`);
-      if (ids.length) await notify(ids, r, step);
+    const action = alertAction(ALERTS.mode, step);
+    if (!step || !action) continue;
+    const line = `Belegung: ${spotLine({ name: r.name, persons: r.persons, level: r.level, wait: r.waitMin })} → ${step === "alert" ? "Meldung" : "entspannt"}`;
+    if (action === "log") {
+      // Probelauf: Die Meldestufe laeuft wie im Betrieb weiter (Abklingzeit,
+      // „entspannt“), es geht aber keine Nachricht hinaus.
+      log(`${line} (Probelauf, nichts gesendet)`);
+      improveCount("occupancy", step === "alert" ? "shadow_alert" : "shadow_relaxed");
+      if (step === "alert") OCCUPANCY.shadowAlerts++;
+      continue;
     }
+    log(line);
+    improveCount("occupancy", step === "alert" ? "alert" : "relaxed");
+    if (ids.length) await notify(ids, r, step);
   }
 }
 
 export function startOccupancy(d: { chatIds: () => string[] }): void {
   void loadPeaks();
-  log(`Belegung: an, alle ${Math.round(INTERVAL_MS / 1000)} s zwischen ${HOURS} Uhr${ALERTS ? "" : " (ohne Meldungen)"}`);
+  const mode =
+    ALERTS.mode === "on"
+      ? "Meldungen an"
+      : ALERTS.mode === "off"
+        ? "ohne Meldungen"
+        : `Meldungen im Probelauf (nur Log, nichts wird gesendet; einschalten mit HUB_OCCUPANCY_ALERTS=on)${ALERTS.known ? "" : " – Wert von HUB_OCCUPANCY_ALERTS nicht erkannt"}`;
+  log(`Belegung: an, alle ${Math.round(INTERVAL_MS / 1000)} s zwischen ${HOURS} Uhr, ${mode}`);
   const run = () => void tick(d.chatIds).catch((e) => log(`Belegung: ${e instanceof Error ? e.message : e}`));
   setTimeout(run, 60_000);
   setInterval(run, INTERVAL_MS);

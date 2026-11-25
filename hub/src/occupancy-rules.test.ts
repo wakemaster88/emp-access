@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import {
   ALERT_COOLDOWN_MS,
   DEFAULT_SPOTS,
+  alertAction,
+  alertMode,
   camerasForSpot,
+  dayStartLine,
   effectivePerHour,
   inHours,
   spotClosed,
@@ -108,6 +111,18 @@ test("Betriebszeit und Textzeile", () => {
   );
 });
 
+test("Betriebszeit: ohne endliche Stunde wird nicht gemessen, auch nicht bei „immer“", () => {
+  assert.equal(inHours("9-21", NaN), false);
+  assert.equal(inHours("9-21", Infinity), false);
+  assert.equal(inHours("21-9", -Infinity), false);
+  assert.equal(inHours("", NaN), false);
+  assert.equal(inHours("7-7", NaN), false);
+  // Mit Stunde gilt „immer“ wie zuvor.
+  assert.equal(inHours("7-7", 3), true);
+  assert.equal(inHours("21-9", 23), true);
+  assert.equal(inHours("21-9", 12), false);
+});
+
 test("Punkt ruht, wenn alle Raeume seiner Kameras zu sind", () => {
   const rooms = [
     { cameras: [{ id: 5 }], operating: { open: false } },
@@ -120,4 +135,73 @@ test("Punkt ruht, wenn alle Raeume seiner Kameras zu sind", () => {
   assert.equal(spotClosed([8], rooms), false);
   assert.equal(spotClosed([9], rooms), false);
   assert.equal(spotClosed([], rooms), false);
+});
+
+test("Meldungen: on, off und der Probelauf als Standard", () => {
+  for (const v of ["on", "1", "true", "ja", "an", "yes", " ON ", "True", "JA"]) {
+    assert.deepEqual(alertMode(v), { mode: "on", known: true }, v);
+  }
+  for (const v of ["off", "0", "false", "nein", "aus", "no", " Off ", "FALSE"]) {
+    assert.deepEqual(alertMode(v), { mode: "off", known: true }, v);
+  }
+  // Fehlt die Variable oder ist sie leer: Probelauf.
+  assert.deepEqual(alertMode(undefined), { mode: "shadow", known: true });
+  assert.deepEqual(alertMode(null), { mode: "shadow", known: true });
+  assert.deepEqual(alertMode(""), { mode: "shadow", known: true });
+  assert.deepEqual(alertMode("   "), { mode: "shadow", known: true });
+  assert.deepEqual(alertMode("shadow"), { mode: "shadow", known: true });
+  assert.deepEqual(alertMode(" Shadow "), { mode: "shadow", known: true });
+});
+
+test("Meldungen: ein unbekannter Wert schaltet nichts ein", () => {
+  for (const v of ["vielleicht", "2", "on!", "o n", "-1", "onoff"]) {
+    assert.deepEqual(alertMode(v), { mode: "shadow", known: false }, v);
+  }
+});
+
+test("Meldungen: gesendet wird nur bei on, der Probelauf loggt, off wertet nichts aus", () => {
+  assert.equal(alertAction("on", "alert"), "send");
+  assert.equal(alertAction("on", "relaxed"), "send");
+  assert.equal(alertAction("shadow", "alert"), "log");
+  assert.equal(alertAction("shadow", "relaxed"), "log");
+  assert.equal(alertAction("off", "alert"), null);
+  assert.equal(alertAction("off", "relaxed"), null);
+  for (const mode of ["on", "off", "shadow"] as const) assert.equal(alertAction(mode, null), null);
+  // Fehlt die Variable, kommt aus keiner Messung eine Nachricht.
+  const st = newAlertState();
+  const m = (persons: number) => ({ persons, full: 10, wait: 0, waitAlertMin: 15 });
+  const actions = [12, 12, 13, 5].map((persons, i) => alertAction(alertMode(undefined).mode, stepAlert(st, m(persons), i * 300_000)));
+  assert.deepEqual(actions, [null, "log", null, "log"]);
+});
+
+const reading = (persons: number, cams: Array<number | null>) => ({ persons, cameras: cams.map((p) => ({ persons: p })) });
+
+test("Erste Messung des Tages: Zahl der Bereiche und Summe der Personen", () => {
+  assert.equal(
+    dayStartLine([reading(3, [3]), reading(4, [1, 3]), reading(0, [0])], 0),
+    "Belegung: erste Messung heute: 3 Bereiche, 7 Personen",
+  );
+  assert.equal(dayStartLine([reading(1, [1])], 0), "Belegung: erste Messung heute: 1 Bereich, 1 Person");
+});
+
+test("Erste Messung des Tages: ruhende Bereiche und Bereiche ohne Kamerabild stehen dabei", () => {
+  assert.equal(
+    dayStartLine([reading(2, [2])], 4),
+    "Belegung: erste Messung heute: 1 Bereich, 2 Personen (4 Bereiche ruhen, Räume geschlossen)",
+  );
+  assert.equal(
+    dayStartLine([], 5),
+    "Belegung: erste Messung heute: 0 Bereiche, 0 Personen (5 Bereiche ruhen, Räume geschlossen)",
+  );
+  // Keine Kamera hat geliefert: Der Bereich zaehlt nicht als gemessen, seine 0 nicht als Messwert.
+  assert.equal(
+    dayStartLine([reading(5, [5, null]), reading(0, [null, null])], 1),
+    "Belegung: erste Messung heute: 1 Bereich, 5 Personen (1 Bereich ruht, Räume geschlossen; 1 Bereich ohne Kamerabild)",
+  );
+  // Bereich ohne Kamera (nur Drehkreuz) zaehlt als gemessen.
+  assert.equal(dayStartLine([reading(0, [])], 0), "Belegung: erste Messung heute: 1 Bereich, 0 Personen");
+});
+
+test("Erste Messung des Tages: nach einem Neustart im Lauf des Tages heisst sie Fortsetzung", () => {
+  assert.equal(dayStartLine([reading(3, [3])], 0, true), "Belegung: Messung heute fortgesetzt: 1 Bereich, 3 Personen");
 });

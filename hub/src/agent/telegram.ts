@@ -40,6 +40,24 @@ export interface TgUpdate {
   };
 }
 
+/**
+ * Telegram hat geantwortet, aber nicht mit „ok“. `status` ist der HTTP-Status
+ * (bzw. der Fehlercode aus der Antwort), `retryAfterSec` die Wartezeit, die
+ * Telegram bei 429 nennt. Daran liest die Sende-Warteschlange ab, ob ein
+ * weiterer Versuch lohnt (outbox-rules.ts, classifyFailure). Kommt gar keine
+ * Antwort an (Netzfehler, Zeitueberschreitung), wirft `fetch` selbst.
+ */
+export class TelegramError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly retryAfterSec: number | null
+  ) {
+    super(message);
+    this.name = "TelegramError";
+  }
+}
+
 async function call<T>(method: string, body: Record<string, unknown> | FormData, timeoutMs = 20_000): Promise<T> {
   const isForm = body instanceof FormData;
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
@@ -48,8 +66,22 @@ async function call<T>(method: string, body: Record<string, unknown> | FormData,
     body: isForm ? body : JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  const json = (await res.json().catch(() => ({}))) as { ok?: boolean; result?: T; description?: string };
-  if (!json.ok) throw new Error(`Telegram ${method}: ${json.description ?? `HTTP ${res.status}`}`);
+  const json = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    result?: T;
+    description?: string;
+    error_code?: number;
+    parameters?: { retry_after?: number };
+  };
+  if (!json.ok) {
+    const code = Number(json.error_code);
+    const wait = Number(json.parameters?.retry_after);
+    throw new TelegramError(
+      `Telegram ${method}: ${json.description ?? `HTTP ${res.status}`}`,
+      res.ok && Number.isInteger(code) && code >= 400 ? code : res.status,
+      Number.isFinite(wait) && wait > 0 ? wait : null
+    );
+  }
   return json.result as T;
 }
 
