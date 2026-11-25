@@ -161,3 +161,34 @@ test("hostnameOf", () => {
   assert.equal(hostnameOf("host:port"), null);
   assert.equal(hostnameOf(undefined), null);
 });
+
+test("lesende /api/*-Anfragen ohne Token: nur eigene Host-Namen", () => {
+  const read = (over: Partial<GuardRequest>) =>
+    uiPost({ method: "GET", pathname: "/api/overview", origin: undefined, contentType: undefined, ...over });
+  // Dashboard am Hub-Rechner und Kontrollzentrum (fetch auf http://127.0.0.1:8787/api/status).
+  for (const host of ["localhost:8787", "127.0.0.1:8787", "[::1]:8787", "hub-imac.local:8787", "hub.emp.lan:8787"]) {
+    assert.equal(reason(read({ host })), "ok", host);
+    assert.equal(reason(read({ host, method: "HEAD" })), "ok", host);
+  }
+  assert.equal(reason(read({ host: "127.0.0.1:8787", pathname: "/api/status" })), "ok");
+  // Per DNS umgebogener fremder Name.
+  assert.equal(reason(read({ host: "evil.example:8787" })), "host");
+  assert.equal(reason(read({ host: "evil.example:8787", method: "HEAD" })), "host");
+  assert.equal(reason(read({ host: "evil.example:8787", pathname: "/api/go2rtc/frame.jpeg" })), "host");
+  assert.equal(reason(read({ host: undefined })), "host");
+  const r = checkDashboardRequest(read({ host: "evil.example:8787" }), CFG);
+  assert.equal(r.ok ? 0 : r.status, 403);
+});
+
+test("lesend mit Token und Seiten ohne /api/ bleiben unter jedem Namen erreichbar", () => {
+  const read = (over: Partial<GuardRequest>) =>
+    uiPost({ method: "GET", origin: undefined, contentType: undefined, ...over });
+  assert.equal(reason(read({ pathname: "/api/overview", host: "imac.fritz.box:8787", tokenAuthenticated: true })), "ok");
+  assert.equal(
+    reason(read({ pathname: "/api/climate/report", host: "imac.fritz.box:8787", tokenAuthenticated: true })),
+    "ok"
+  );
+  for (const pathname of ["/", "/index.html", "/dashboard.js", "/manifest.webmanifest", "/ca.crt", "/icons/icon-192.png"]) {
+    assert.equal(reason(read({ pathname, host: "evil.example:8787" })), "ok", pathname);
+  }
+});

@@ -7,8 +7,9 @@
  *
  * Zugriff: ohne HUB_DASHBOARD_TOKEN nur 127.0.0.1. Mit Token bindet der
  * Server ans LAN und verlangt das Token fuer jede Anfrage von aussen.
- * Schreibende Anfragen pruefen zusaetzlich Host, Origin und Content-Type
- * (CSRF/DNS-Rebinding, siehe dashboard-guard.ts).
+ * Schreibende Anfragen pruefen zusaetzlich Host, Origin und Content-Type,
+ * lesende /api/*-Anfragen ohne Token den Host (CSRF/DNS-Rebinding, siehe
+ * dashboard-guard.ts). Cookie-Wert und Fehlversuche: dashboard-auth.ts.
  */
 import { staffPayload } from "./staff-insights.js";
 import { deviceAction, liveStates, roomsPayload, syncRooms } from "./rooms.js";
@@ -20,7 +21,6 @@ import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 import { hostname, networkInterfaces } from "node:os";
-import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { CONFIG, api, log } from "./config.js";
 import {
@@ -44,6 +44,14 @@ import { soundwebSummary } from "./soundweb.js";
 import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
 import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
 import { buildAllowedHosts, checkDashboardRequest } from "./dashboard-guard.js";
+import {
+  AttemptLimiter,
+  checkCookieValue,
+  clientKey,
+  cookieValueFor,
+  dashboardAccessMode,
+  sameSecret,
+} from "./dashboard-auth.js";
 import { personBoxes, seenPeople } from "./live-people.js";
 import { getFrame, startFrameWarmer } from "./frame-cache.js";
 import { GO2RTC_URL, fetchGo2rtcStreams, noteWebrtcClient, noteWebrtcFailure } from "./go2rtc-status.js";
@@ -224,63 +232,120 @@ async function proxyGo2rtc(
  * ------------------------------------------------------------------------- */
 
 const COOKIE_NAME = "hub_dash";
+/**
+ * Dasselbe Cookie mit Secure, nur ueber HTTPS gesetzt. Eigener Name: Ein
+ * Secure-Cookie namens hub_dash wuerde das Cookie fuer http://…:8787 im
+ * selben Browser verdraengen (und liesse sich dort nicht neu setzen).
+ */
+const SECURE_COOKIE_NAME = "__Secure-hub_dash";
+const COOKIE_ATTRS = "Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000";
 
 function isLoopback(req: http.IncomingMessage): boolean {
   const addr = req.socket.remoteAddress ?? "";
   return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
 }
 
-/** Laengenunabhaengiger Vergleich ueber Digests. */
-function sameToken(given: string, expected: string): boolean {
-  const a = createHash("sha256").update(given).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
+function isTls(req: http.IncomingMessage): boolean {
+  return !!(req.socket as { encrypted?: boolean }).encrypted;
 }
 
-function cookieToken(req: http.IncomingMessage): string | null {
+function readCookie(req: http.IncomingMessage, name: string): string | null {
   const raw = req.headers.cookie;
   if (!raw) return null;
   for (const part of raw.split(";")) {
     const [k, ...v] = part.trim().split("=");
-    if (k === COOKIE_NAME) return decodeURIComponent(v.join("="));
+    if (k === name) {
+      try {
+        return decodeURIComponent(v.join("="));
+      } catch {
+        return v.join("=");
+      }
+    }
   }
   return null;
 }
 
-/** Gueltiges Token in Adresse, Header oder Cookie (false, wenn keins konfiguriert ist). */
-function hasValidToken(req: http.IncomingMessage, url: URL): boolean {
-  const expected = CONFIG.dashboardToken;
-  if (!expected) return false;
-  const header = req.headers["x-hub-token"];
-  const given =
-    url.searchParams.get("token") ??
-    (typeof header === "string" ? header : null) ??
-    cookieToken(req);
-  return !!given && sameToken(given, expected);
+interface TokenCheck {
+  /** Adresse, Header oder Cookie war vorhanden. */
+  presented: boolean;
+  valid: boolean;
+  /** Der abgelehnte Wert (fuer die Zaehlung der Fehlversuche). */
+  given: string;
+  /** Cookie hub_dash vorhanden (egal ob gueltig). */
+  plainCookie: boolean;
 }
 
+/**
+ * Anmeldedaten pruefen. Reihenfolge wie bisher: Token in der Adresse, sonst
+ * Header X-Hub-Token, sonst Cookie. Als Cookie gilt der abgeleitete Wert und
+ * – fuer Cookies von vor der Umstellung – das Token selbst.
+ */
+function checkToken(req: http.IncomingMessage, url: URL): TokenCheck {
+  const expected = CONFIG.dashboardToken;
+  const plain = readCookie(req, COOKIE_NAME);
+  const out: TokenCheck = { presented: false, valid: false, given: "", plainCookie: plain !== null };
+  if (!expected) return out;
+  const header = req.headers["x-hub-token"];
+  const direct = url.searchParams.get("token") ?? (typeof header === "string" ? header : null);
+  if (direct !== null) {
+    return { ...out, presented: true, valid: !!direct && sameSecret(direct, expected), given: direct };
+  }
+  const secure = readCookie(req, SECURE_COOKIE_NAME);
+  if (plain === null && secure === null) return out;
+  const valid =
+    (plain !== null && checkCookieValue(plain, expected) !== null) ||
+    (secure !== null && sameSecret(secure, cookieValueFor(expected)));
+  return { ...out, presented: true, valid, given: `${plain ?? ""}|${secure ?? ""}` };
+}
+
+/** Gueltiges Token in Adresse, Header oder Cookie (false, wenn keins konfiguriert ist). */
+function hasValidToken(req: http.IncomingMessage, url: URL): boolean {
+  return checkToken(req, url).valid;
+}
+
+/** Fehlversuche je Client-Adresse (nur im Speicher, beim Neustart leer). */
+const attempts = new AttemptLimiter();
+
+/** Ergebnis der Zugangspruefung: frei, Login noetig oder zu viele Fehlversuche. */
 function authorized(
   req: http.IncomingMessage,
   url: URL,
   res: http.ServerResponse
-): boolean {
+): "ok" | "denied" | "limited" {
   const expected = CONFIG.dashboardToken;
-  if (!expected) return true;
-  if (isLoopback(req)) return true;
+  if (!expected) return "ok";
+  if (isLoopback(req)) return "ok";
 
-  if (!hasValidToken(req, url)) return false;
+  const key = clientKey(req.socket.remoteAddress);
+  if (attempts.blockedFor(key) > 0) return "limited";
+
+  const check = checkToken(req, url);
+  if (!check.valid) {
+    if (check.presented && attempts.recordFailure(key, check.given)) {
+      log(`Dashboard: zu viele Fehlversuche von ${key} – 15 min gesperrt`);
+      return "limited";
+    }
+    return "denied";
+  }
+  // Nur eine Anmeldung ueber ?token= loescht den Zaehler, nicht jede Anfrage
+  // mit gueltigem Cookie (mehrere Geraete koennen eine Adresse teilen).
+  if (url.searchParams.has("token")) attempts.clear(key);
 
   // Bei jedem Seitenaufruf erneuern (gleitend ein Jahr), damit die
   // Home-Bildschirm-App nicht nach einem Monat wieder nach dem Token fragt.
   // Lax statt Strict: Der Start vom Home-Bildschirm soll das Cookie sicher
-  // mitschicken. Kein Secure – das Cookie gilt fuer HTTP und HTTPS.
+  // mitschicken. Der Wert ist aus dem Token abgeleitet (dashboard-auth.ts).
+  // HTTP: hub_dash ohne Secure wie bisher. HTTPS: __Secure-hub_dash mit
+  // Secure, hub_dash nur weiter erneuern, wenn der Browser es schon hat
+  // (derselbe Browser nutzt auch http://…:8787).
   if (url.searchParams.has("token") || !url.pathname.startsWith("/api/")) {
-    res.setHeader(
-      "Set-Cookie",
-      `${COOKIE_NAME}=${encodeURIComponent(expected)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`
-    );
+    const value = cookieValueFor(expected);
+    const cookies: string[] = [];
+    if (!isTls(req) || check.plainCookie) cookies.push(`${COOKIE_NAME}=${value}; ${COOKIE_ATTRS}`);
+    if (isTls(req)) cookies.push(`${SECURE_COOKIE_NAME}=${value}; ${COOKIE_ATTRS}; Secure`);
+    res.setHeader("Set-Cookie", cookies);
   }
-  return true;
+  return "ok";
 }
 
 /* ---------------------------------------------------------------------------
@@ -678,16 +743,29 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       if (pub) return serveAsset(res, req, pub);
     }
 
-    if (!authorized(req, url, res)) {
+    const access = authorized(req, url, res);
+    if (access === "limited") {
+      const msg = "Zu viele Fehlversuche – bitte in 15 Minuten erneut versuchen.";
+      if (url.pathname.startsWith("/api/")) {
+        res.setHeader("Retry-After", "900");
+        return json(res, 429, { error: msg });
+      }
+      res.writeHead(429, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "Retry-After": "900" });
+      return void res.end(msg);
+    }
+    if (access === "denied") {
       if (url.pathname.startsWith("/api/")) return json(res, 401, { error: "Token fehlt" });
       res.writeHead(401, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
       return void res.end(loginPage(url.searchParams.has("token")));
     }
 
     // Schreibende Anfragen: nur vom Dashboard selbst (kein CSRF von fremden
-    // Seiten im Browser des Hub-Rechners, kein DNS-Rebinding). GET/HEAD
-    // bleiben unberuehrt.
-    if (req.method !== "GET" && req.method !== "HEAD") {
+    // Seiten im Browser des Hub-Rechners, kein DNS-Rebinding). Lesende
+    // /api/*-Anfragen vom Hub-Rechner ohne Token: nur Host-Pruefung. Seiten,
+    // Dateien und Anfragen aus dem LAN ohne konfiguriertes Token bleiben
+    // unberuehrt.
+    const readOnly = req.method === "GET" || req.method === "HEAD";
+    if (!readOnly || (isLoopback(req) && url.pathname.startsWith("/api/"))) {
       const guard = checkDashboardRequest(
         {
           method: req.method ?? "",
@@ -716,7 +794,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     if (req.method === "GET" && url.pathname === "/api/pwa") {
       return json(res, 200, {
         https: !!tls,
-        secure: !!(req.socket as { encrypted?: boolean }).encrypted,
+        secure: isTls(req),
         port: CONFIG.dashboardPort,
         names: tls?.names ?? [],
       });
@@ -983,15 +1061,16 @@ export async function startDashboard(): Promise<void> {
 
   server.on("error", (e) => log(`Dashboard-Server-Fehler: ${e.message}`));
   server.listen(CONFIG.dashboardPort, CONFIG.dashboardHost, () => {
-    const scope =
-      CONFIG.dashboardHost === "127.0.0.1"
-        ? "nur lokal"
-        : CONFIG.dashboardToken
-          ? "im LAN, Token nötig"
-          : "im LAN OHNE Token";
+    const mode = dashboardAccessMode(CONFIG.dashboardHost, CONFIG.dashboardToken);
+    const scope = mode === "local" ? "nur lokal" : mode === "lan-token" ? "im LAN, Token nötig" : "im LAN OHNE Token";
     log(
       `Lokales Dashboard: http://localhost:${CONFIG.dashboardPort} (${scope})` +
         (tls ? ` · HTTPS auf demselben Port, CA unter /ca.crt` : "")
     );
+    if (mode === "lan-open") {
+      log(
+        `Achtung: Dashboard lauscht auf ${CONFIG.dashboardHost}:${CONFIG.dashboardPort} ohne HUB_DASHBOARD_TOKEN – jedes Gerät im Netz hat vollen Zugriff. Token in hub/.env setzen (oder HUB_DASHBOARD_HOST=127.0.0.1).`
+      );
+    }
   });
 }
