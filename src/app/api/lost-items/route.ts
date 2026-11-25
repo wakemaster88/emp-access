@@ -18,7 +18,7 @@ import { inlineImageRows } from "@/lib/list-images-db";
  *                              (Bild-Route /api/lost-items/[id]/image)
  */
 export async function GET(request: NextRequest) {
-  const auth = await resolveLostItemAuth(request);
+  const auth = await resolveLostItemAuth(request, "/api/lost-items");
   if ("error" in auth) return auth.error;
   const { db, accountId, viaToken } = auth;
 
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
 /** POST /api/lost-items – Fundsache oder Verlustmeldung anlegen. */
 export async function POST(request: NextRequest) {
-  const auth = await resolveLostItemAuth(request);
+  const auth = await resolveLostItemAuth(request, "/api/lost-items");
   if ("error" in auth) return auth.error;
   const { db, accountId } = auth;
 

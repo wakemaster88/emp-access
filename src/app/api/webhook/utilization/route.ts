@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiOrIntegrationToken } from "@/lib/api-auth";
 import { computeResourceUtilization, type ResourceUtilizationRow } from "@/lib/resource-utilization";
 import {
   fetchAnnyAvailability,
@@ -81,6 +81,7 @@ function enrichResources(
  * Auslastung + ANNY-Verfügbarkeiten pro Ressource.
  *
  * Auth wie eigene API: Bearer-Token oder ?token= (Account apiToken), alternativ eingeloggte Session.
+ * Integrations-Token mit Scope `utilization:read` nur als Bearer-Header.
  *
  * GET /api/webhook/utilization?date=2026-03-22
  * Query: date (YYYY-MM-DD, optional, default heute), all=1 (auch Bereiche ohne Dashboard-Flag)
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest) {
   const opts = { onlyShowOnDashboard: !allResources };
 
   if (hasApiToken(request)) {
-    const auth = await validateApiToken(request);
+    const auth = await validateApiOrIntegrationToken(request, "/api/webhook/utilization");
     if ("error" in auth) return auth.error;
     const resources = await computeResourceUtilization(
       auth.db as unknown as PrismaClient,

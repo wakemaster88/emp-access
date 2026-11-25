@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient, type TenantDb } from "./prisma";
 import { auth, markedCrossSite } from "./auth";
 import { queryTokenLogLine, shouldLogQueryToken } from "./query-token-log";
+import {
+  bearerToken,
+  hashIntegrationToken,
+  integrationLastUsedDue,
+  integrationScopeAllows,
+  looksLikeIntegrationToken,
+  type IntegrationRoute,
+} from "./integration-token";
 
 export function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -118,6 +126,86 @@ export async function validateApiToken(
   }
 
   return { account, db: tenantClient(account.id), device };
+}
+
+/** Angaben zum Integrations-Token, wenn die Anfrage eines benutzt hat. */
+export type IntegrationTokenAuth = { id: number; name: string; scopes: string[] };
+
+async function findIntegrationToken(token: string) {
+  return prisma.integrationToken.findUnique({
+    where: { tokenHash: hashIntegrationToken(token) },
+    select: {
+      id: true,
+      name: true,
+      scopes: true,
+      accountId: true,
+      revokedAt: true,
+      lastUsedAt: true,
+      account: { select: { id: true, isActive: true } },
+    },
+  });
+}
+
+/**
+ * Wie `validateApiToken`, laesst aber zusaetzlich Integrations-Tokens zu
+ * (src/lib/integration-token.ts). Diese gelten nur als
+ * `Authorization: Bearer`, nur solange sie nicht widerrufen sind und nur,
+ * wenn einer ihrer Scopes Methode und Route erlaubt. Account- und
+ * Geraete-Tokens laufen unveraendert ueber `validateApiToken`.
+ */
+export async function validateApiOrIntegrationToken(
+  request: NextRequest,
+  route: IntegrationRoute,
+  options: { allowDevice?: boolean } = {},
+): Promise<
+  | { error: NextResponse }
+  | { account: CachedAccount; db: TenantDb; device: CachedDevice | null; integration: IntegrationTokenAuth | null }
+> {
+  const bearer = bearerToken(request.headers);
+  if (bearer && looksLikeIntegrationToken(bearer)) {
+    const row = await findIntegrationToken(bearer);
+    if (row) {
+      if (row.revokedAt || !row.account.isActive) {
+        return { error: NextResponse.json({ error: "Invalid API token" }, { status: 403 }) };
+      }
+      if (!integrationScopeAllows(row.scopes, request.method, route)) {
+        return {
+          error: NextResponse.json(
+            { error: "Dieses Integrations-Token ist für diese Anfrage nicht freigegeben" },
+            { status: 403 },
+          ),
+        };
+      }
+      if (integrationLastUsedDue(row.lastUsedAt)) {
+        await prisma.integrationToken
+          .update({ where: { id: row.id }, data: { lastUsedAt: new Date() } })
+          .catch(() => undefined);
+      }
+      return {
+        account: { id: row.account.id, isActive: row.account.isActive },
+        db: tenantClient(row.accountId),
+        device: null,
+        integration: { id: row.id, name: row.name, scopes: row.scopes },
+      };
+    }
+    // Kein Integrations-Token: weiter wie bisher (Account- oder Geraete-Token).
+  }
+
+  const auth = await validateApiToken(request, options);
+  if ("error" in auth) {
+    // Integrations-Token als ?token=: eigene Meldung, damit der Grund klar ist.
+    const queryToken = request.headers.has("authorization") ? null : request.nextUrl.searchParams.get("token");
+    if (queryToken && looksLikeIntegrationToken(queryToken) && (await findIntegrationToken(queryToken))) {
+      return {
+        error: NextResponse.json(
+          { error: "Integrations-Token nur im Header „Authorization: Bearer …“ senden" },
+          { status: 403 },
+        ),
+      };
+    }
+    return { error: auth.error as NextResponse };
+  }
+  return { account: auth.account, db: auth.db, device: auth.device, integration: null };
 }
 
 /**

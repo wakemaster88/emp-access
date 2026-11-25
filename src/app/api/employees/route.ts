@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiOrIntegrationToken } from "@/lib/api-auth";
 import { employeeCreateSchema } from "@/lib/validators";
 import { randomBytes } from "crypto";
 import { foreignRefError } from "@/lib/tenant-refs";
@@ -26,11 +26,14 @@ function hasApiToken(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   let db, accountId: number;
+  // Integrations-Token (Scope `employees:read`): Liste ohne Foto.
+  let viaIntegration = false;
   if (hasApiToken(request)) {
-    const auth = await validateApiToken(request);
+    const auth = await validateApiOrIntegrationToken(request, "/api/employees");
     if ("error" in auth) return auth.error;
     db = auth.db;
     accountId = auth.account.id;
+    viaIntegration = auth.integration !== null;
   } else {
     const session = await getSessionWithDb();
     if ("error" in session) return session.error;
@@ -92,7 +95,7 @@ export async function GET(request: NextRequest) {
       startDate: true,
       endDate: true,
       status: true,
-      profileImage: !photoUrls,
+      profileImage: !photoUrls && !viaIntegration,
       ticketTypeName: true,
       weekSchedule: true,
       accessAreaId: true,
@@ -146,7 +149,9 @@ export async function GET(request: NextRequest) {
             hasPhoto: photoIds.has(e.id),
             photoUrl: photoServable(photoIds, e.id) ? ticketPhotoUrl(e.id, e.updatedAt) : null,
           }
-        : { profileImage: e.profileImage }),
+        : viaIntegration
+          ? {}
+          : { profileImage: e.profileImage }),
       ticketTypeName: e.ticketTypeName ?? EMPLOYEE_TICKET_TYPE,
       hasSchedule: !!e.weekSchedule,
       areas: e.ticketAreas.map((ta) => ({ id: ta.accessAreaId, name: ta.accessArea?.name ?? `#${ta.accessAreaId}` })),
