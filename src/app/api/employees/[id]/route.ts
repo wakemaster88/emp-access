@@ -3,6 +3,7 @@ import { getSessionWithDb, isTenantAdminRole } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { employeeUpdateSchema } from "@/lib/validators";
 import { foreignRefError } from "@/lib/tenant-refs";
+import { parseLinkRules } from "@/lib/link-rules";
 
 /**
  * Detail / Update / Delete eines Mitarbeiters (= Ticket mit source=EMP_CONTROL).
@@ -40,7 +41,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Ungueltige ID" }, { status: 400 });
   }
 
-  const employee = await loadEmployee(db, employeeId, accountId!);
+  const [employee, account] = await Promise.all([
+    loadEmployee(db, employeeId, accountId!),
+    db.account.findUnique({ where: { id: accountId! }, select: { accessRules: true } }),
+  ]);
   if (!employee) return NextResponse.json({ error: "Mitarbeiter nicht gefunden" }, { status: 404 });
 
   return NextResponse.json({
@@ -59,6 +63,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     status: employee.status,
     profileImage: employee.profileImage,
     weekSchedule: employee.weekSchedule,
+    // Haken „NOT-AUF und Sperren erlaubt“; der Dialog zeigt ihn nur, solange
+    // die Regel dafuer an ist (lib/link-rules).
+    mobileEmergencyGrant: employee.mobileEmergencyGrant,
+    mobileEmergencyNeedsGrant: parseLinkRules(account?.accessRules).mobileEmergencyNeedsGrant,
     accessAreaId: employee.accessAreaId,
     areaIds: employee.ticketAreas.map((ta) => ta.accessAreaId),
     deviceIds: employee.ticketDevices.map((td) => td.deviceId),
@@ -116,6 +124,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // null = entfernen, sonst ersetzen
     updateData.weekSchedule = data.weekSchedule === null ? null : data.weekSchedule;
   }
+  if (data.mobileEmergencyGrant !== undefined) updateData.mobileEmergencyGrant = data.mobileEmergencyGrant;
 
   // Bereiche/Geraete-Whitelist: komplett ersetzen, wenn das Feld geschickt wurde.
   // Roher Client in einer Transaktion; das Ticket ist oben bereits als

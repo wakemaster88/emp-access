@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { loadLinkRules } from "@/lib/link-rules-cache";
+import {
+  PAUSE_ALL_MARKER,
+  groupPauseAllResume,
+  pauseAllMarkable,
+  pauseAllMarker,
+  pauseAllResumeStatus,
+  stripPauseAllMarker,
+  withPauseAllMarker,
+  type PauseAllPrevStatus,
+} from "@/lib/pause-all-marker";
 
 /**
  * Sammelt alle AccessArea-IDs, die ein Monitor "betrifft". Der Scope wird -
@@ -86,6 +97,123 @@ function ticketAreaScopeFilter(areaIds: number[]): Prisma.TicketWhereInput {
   };
 }
 
+/** Prisma-Filter: Ticket traegt die Kennung „Alle pausieren“. */
+const MARKED_FILTER: Prisma.TicketWhereInput = {
+  extras: { path: ["pausedBy"], equals: PAUSE_ALL_MARKER },
+};
+
+/**
+ * Setzt bei pausierten Tickets die Kennung „Alle pausieren“ samt Status davor
+ * (lib/pause-all-marker). Nur Extras-Objekte oder leere Extras; der Status
+ * bleibt, wie ihn das Pausieren gesetzt hat.
+ */
+async function markPausedByPauseAll(accountId: number, ids: number[], previousStatus: PauseAllPrevStatus, at: Date) {
+  if (ids.length === 0) return;
+  const marker = pauseAllMarker(previousStatus, at);
+  // Nur Buchfuehrung: ein Fehler hier darf die Pause-Antwort nicht kippen.
+  try {
+    await prisma.$executeRaw`
+    UPDATE "Ticket"
+    SET "extras" = CASE
+      WHEN "extras" IS NULL OR jsonb_typeof("extras") = 'null' THEN ${JSON.stringify(marker)}::jsonb
+      ELSE "extras" || ${JSON.stringify(marker)}::jsonb
+    END
+    WHERE "accountId" = ${accountId}
+      AND "id" = ANY(${ids}::int[])
+      AND "status" = 'PAUSED'
+      AND ("extras" IS NULL OR jsonb_typeof("extras") IN ('null', 'object'))`;
+  } catch (err) {
+    console.error("pause-all marker error:", err);
+  }
+}
+
+/** Entfernt die Kennung „Alle pausieren“ wieder (nach dem Fortsetzen). */
+async function clearPauseAllMarker(accountId: number, ids: number[]) {
+  if (ids.length === 0) return;
+  try {
+    await prisma.$executeRaw`
+      UPDATE "Ticket"
+      SET "extras" = "extras" - 'pausedBy' - 'pauseAllPrevStatus' - 'pauseAllAt'
+      WHERE "accountId" = ${accountId}
+        AND "id" = ANY(${ids}::int[])
+        AND jsonb_typeof("extras") = 'object'`;
+  } catch (err) {
+    console.error("pause-all marker error:", err);
+  }
+}
+
+/**
+ * „Alle fortsetzen“ bei eingeschalteter Regel „„Alle fortsetzen“ hebt nur die
+ * eigene Pause auf“: nur Tickets mit der Kennung „Alle pausieren“, jeweils
+ * auf ihren Status davor. Einzeln, wegen offener Zahlung oder im Abgleich
+ * pausierte Tickets bleiben pausiert; ebenso Tickets, die vor dieser Kennung
+ * pausiert wurden.
+ */
+async function resumeOwnPause(accountId: number, scopeFilter: Prisma.TicketWhereInput, areaIds: number[]) {
+  const now = new Date();
+  const durationTickets = await prisma.ticket.findMany({
+    where: {
+      accountId,
+      status: "PAUSED",
+      validityType: "DURATION",
+      validityDurationMinutes: { not: null },
+      ...scopeFilter,
+      ...MARKED_FILTER,
+    },
+    select: { id: true, validityDurationMinutes: true, extras: true },
+  });
+
+  let count = 0;
+  for (const t of durationTickets) {
+    const target = pauseAllResumeStatus(t.extras);
+    if (!target) continue;
+    const ext = { ...((t.extras as Record<string, unknown>) ?? {}) };
+    let firstScanAt: Date | undefined;
+    if (typeof ext.remainingMs === "number" && t.validityDurationMinutes) {
+      firstScanAt = new Date(now.getTime() - (t.validityDurationMinutes * 60_000 - ext.remainingMs));
+    }
+    delete ext.pausedAtMs;
+    delete ext.remainingMs;
+    delete ext.previousStatus;
+    stripPauseAllMarker(ext);
+    await prisma.ticket.update({
+      where: { id: t.id },
+      data: { status: target, extras: ext as Prisma.InputJsonValue, ...(firstScanAt ? { firstScanAt } : {}) },
+    });
+    count++;
+  }
+
+  const marked = await prisma.ticket.findMany({
+    where: {
+      accountId,
+      status: "PAUSED",
+      id: { notIn: durationTickets.map((t) => t.id) },
+      ...scopeFilter,
+      ...MARKED_FILTER,
+    },
+    select: { id: true, extras: true },
+  });
+  const groups = groupPauseAllResume(marked);
+  for (const status of ["VALID", "REDEEMED"] as const) {
+    if (groups[status].length === 0) continue;
+    const res = await prisma.ticket.updateMany({
+      where: { accountId, status: "PAUSED", id: { in: groups[status] } },
+      data: { status },
+    });
+    count += res.count;
+  }
+  await clearPauseAllMarker(accountId, [...groups.VALID, ...groups.REDEEMED]);
+
+  return NextResponse.json({
+    success: true,
+    action: "resumed",
+    count,
+    scopeAreaIds: areaIds,
+    // Nur mit eingeschalteter Regel: die Monitor-Seite erklaert damit count 0.
+    onlyOwnPause: true,
+  });
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
@@ -122,17 +250,30 @@ export async function POST(
     // Bestaetigungsdialog mit der konkreten Trefferzahl anzuzeigen
     // (Mass-Pause-Schutz nach Vorfall 2026-05-27: 3.546 Tickets unbemerkt
     // pausiert).
+    // Regel „„Alle fortsetzen“ hebt nur die eigene Pause auf“ (lib/link-rules).
+    const onlyOwnPause = (await loadLinkRules(prisma, monitor.accountId)).resumeOnlyOwnPause;
+
     if (action === "preview") {
       const targetStatus = (body.target as string) === "resume"
         ? ["PAUSED"]
         : ["VALID", "REDEEMED"];
-      const count = await prisma.ticket.count({
-        where: {
-          accountId: monitor.accountId,
-          status: { in: targetStatus as ("VALID" | "REDEEMED" | "PAUSED")[] },
-          ...scopeFilter,
-        },
-      });
+      const where: Prisma.TicketWhereInput = {
+        accountId: monitor.accountId,
+        status: { in: targetStatus as ("VALID" | "REDEEMED" | "PAUSED")[] },
+        ...scopeFilter,
+      };
+      let count: number;
+      if (onlyOwnPause && (body.target as string) === "resume") {
+        // Nur, was „Alle fortsetzen“ mit der Regel wirklich fortsetzt.
+        const marked = await prisma.ticket.findMany({
+          where: { ...where, ...MARKED_FILTER },
+          select: { id: true, extras: true },
+        });
+        const groups = groupPauseAllResume(marked);
+        count = groups.VALID.length + groups.REDEEMED.length;
+      } else {
+        count = await prisma.ticket.count({ where });
+      }
       return NextResponse.json({
         success: true,
         action: "preview",
@@ -168,11 +309,15 @@ export async function POST(
           validityDurationMinutes: { not: null },
           ...scopeFilter,
         },
-        select: { id: true, firstScanAt: true, validityDurationMinutes: true, extras: true },
+        select: { id: true, status: true, firstScanAt: true, validityDurationMinutes: true, extras: true },
       });
 
       for (const t of durationTickets) {
-        const ext = (t.extras as Record<string, unknown>) ?? {};
+        // Kennung „Alle pausieren“ und Status davor (lib/pause-all-marker).
+        // Arrays und Einzelwerte in extras bleiben wie bisher ohne Kennung.
+        const ext = pauseAllMarkable(t.extras)
+          ? withPauseAllMarker(t.extras, t.status === "REDEEMED" ? "REDEEMED" : "VALID", now)
+          : ((t.extras as Record<string, unknown>) ?? {});
         const expiresAt = new Date(t.firstScanAt!).getTime() + t.validityDurationMinutes! * 60_000;
         ext.pausedAtMs = now.getTime();
         ext.remainingMs = Math.max(0, expiresAt - now.getTime());
@@ -184,15 +329,21 @@ export async function POST(
       }
 
       const durationIds = durationTickets.map(t => t.id);
+      const bulkWhere: Prisma.TicketWhereInput = {
+        accountId: monitor.accountId,
+        status: { in: ["VALID", "REDEEMED"] },
+        id: { notIn: durationIds },
+        ...scopeFilter,
+      };
+      // Status davor merken, damit „Alle fortsetzen“ mit eingeschalteter
+      // Regel genau diese Tickets auf ihren Status zuruecksetzen kann.
+      const before = await prisma.ticket.findMany({ where: bulkWhere, select: { id: true, status: true } });
       const bulk = await prisma.ticket.updateMany({
-        where: {
-          accountId: monitor.accountId,
-          status: { in: ["VALID", "REDEEMED"] },
-          id: { notIn: durationIds },
-          ...scopeFilter,
-        },
+        where: bulkWhere,
         data: { status: "PAUSED" },
       });
+      await markPausedByPauseAll(monitor.accountId, before.filter((t) => t.status === "VALID").map((t) => t.id), "VALID", now);
+      await markPausedByPauseAll(monitor.accountId, before.filter((t) => t.status === "REDEEMED").map((t) => t.id), "REDEEMED", now);
 
       return NextResponse.json({
         success: true,
@@ -203,6 +354,22 @@ export async function POST(
     }
 
     if (action === "resume") {
+      if (onlyOwnPause) {
+        if (scopeIsGlobal) {
+          return NextResponse.json(
+            {
+              error: "Fortsetzen ohne Bereichs-Scope ist deaktiviert.",
+              detail:
+                "Dieser Monitor ist keinem Bereich oder Scan-Geraet zugeordnet. " +
+                "Bitte am bereichsspezifischen Monitor fortsetzen.",
+              scopeIsGlobal: true,
+            },
+            { status: 400 },
+          );
+        }
+        return resumeOwnPause(monitor.accountId, scopeFilter, areaIds);
+      }
+
       const now = new Date();
       const durationTickets = await prisma.ticket.findMany({
         where: {
@@ -224,6 +391,7 @@ export async function POST(
         delete ext.pausedAtMs;
         delete ext.remainingMs;
         delete ext.previousStatus;
+        stripPauseAllMarker(ext);
         await prisma.ticket.update({
           where: { id: t.id },
           data: { status: "VALID", extras: ext as Prisma.InputJsonValue, ...(firstScanAt ? { firstScanAt } : {}) },
@@ -231,15 +399,21 @@ export async function POST(
       }
 
       const durationIds = durationTickets.map(t => t.id);
+      const bulkWhere: Prisma.TicketWhereInput = {
+        accountId: monitor.accountId,
+        status: "PAUSED",
+        id: { notIn: durationIds },
+        ...scopeFilter,
+      };
+      const marked = await prisma.ticket.findMany({
+        where: { ...bulkWhere, ...MARKED_FILTER },
+        select: { id: true },
+      });
       const bulk = await prisma.ticket.updateMany({
-        where: {
-          accountId: monitor.accountId,
-          status: "PAUSED",
-          id: { notIn: durationIds },
-          ...scopeFilter,
-        },
+        where: bulkWhere,
         data: { status: "VALID" },
       });
+      await clearPauseAllMarker(monitor.accountId, marked.map((t) => t.id));
 
       return NextResponse.json({
         success: true,

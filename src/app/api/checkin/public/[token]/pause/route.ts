@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { stripPauseAllMarker } from "@/lib/pause-all-marker";
 
 /**
  * Pause/Resume eines einzelnen Tickets vom CHECKIN-Monitor (Shop).
@@ -144,6 +145,8 @@ export async function POST(
     delete cleanExtras.pausedAtMs;
     delete cleanExtras.remainingMs;
     delete cleanExtras.previousStatus;
+    // Kennung „Alle pausieren“ (lib/pause-all-marker) gilt nur bis zum Fortsetzen.
+    stripPauseAllMarker(cleanExtras);
 
     const updated = await prisma.ticket.update({
       where: { id: ticket.id },

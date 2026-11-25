@@ -266,6 +266,9 @@ export default function PublicMonitorPage({ params }: Props) {
     | null
   >(null);
   const [pausePreviewLoading, setPausePreviewLoading] = useState(false);
+  // Hinweis nach „Alle fortsetzen“, wenn die Regel „nur die eigene Pause“
+  // nichts fortsetzt oder der Monitor keinen Bereich hat.
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
   const [ticketSearch, setTicketSearch] = useState("");
   const [focusNow, setFocusNow] = useState(() => Date.now());
   const [scanLeaders, setScanLeaders] = useState<ScanLeaderBoard | null>(null);
@@ -405,7 +408,19 @@ export default function PublicMonitorPage({ params }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "resume" }),
         });
-        if (res.ok) setAllPaused(false);
+        const data = (await res.json().catch(() => ({}))) as {
+          count?: number; onlyOwnPause?: boolean; scopeIsGlobal?: boolean; error?: string; detail?: string;
+        };
+        if (res.ok) {
+          setAllPaused(false);
+          if (data.onlyOwnPause && data.count === 0) {
+            setResumeNotice(
+              "Keine mit „Alle pausieren“ pausierten Tickets in diesem Bereich. Einzeln, wegen offener Zahlung oder vor dem Update pausierte Tickets bleiben pausiert.",
+            );
+          }
+        } else if (data.scopeIsGlobal) {
+          setResumeNotice(data.detail ?? data.error ?? "Fortsetzen nicht möglich.");
+        }
       } catch { /* ignore */ }
       setPauseToggling(false);
       return;
@@ -1581,6 +1596,26 @@ export default function PublicMonitorPage({ params }: Props) {
                   {pauseConfirm.count === 0 ? "Keine Tickets" : `${pauseConfirm.count} pausieren`}
                 </AlertDialogAction>
               )}
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {resumeNotice && (
+        <AlertDialog open onOpenChange={(open) => { if (!open) setResumeNotice(null); }}>
+          <AlertDialogContent className={themeClass}>
+            <AlertDialogHeader className="sm:grid-cols-[auto_1fr]">
+              <AlertDialogMedia className="text-warning">
+                <Pause strokeWidth={2.2} />
+              </AlertDialogMedia>
+              <AlertDialogTitle>Nichts fortgesetzt</AlertDialogTitle>
+              <AlertDialogDescription className="text-xs">
+                Monitor „{monitorName}“
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <Notice tone="warning" title={resumeNotice} />
+            <AlertDialogFooter>
+              <AlertDialogCancel className="h-14 px-6 text-base">Verstanden</AlertDialogCancel>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

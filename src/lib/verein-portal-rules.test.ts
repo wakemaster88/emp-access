@@ -8,6 +8,7 @@ import {
   isDateBookable,
   monthBounds,
   parseEuroToCents,
+  portalLimitError,
   portalSlotStates,
 } from "./verein-portal-rules";
 
@@ -103,4 +104,28 @@ test("Zugangsfenster mit Vor- und Nachbereitung", async () => {
   assert.equal(clampedBerlinHm(late.to, "2026-11-10", "end"), "23:59");
   const early = accessWindow(new Date("2026-11-10T00:15:00+01:00"), new Date("2026-11-10T01:00:00+01:00"), 30, 0);
   assert.equal(clampedBerlinHm(early.from, "2026-11-10", "start"), "00:00");
+});
+
+test("portalLimitError: ohne Grenzen nie eine Meldung (wie bisher)", () => {
+  const none = { maxOpenBookings: null, maxInclusivePerMonth: null };
+  for (const inclusive of [false, true]) {
+    assert.equal(portalLimitError(none, { openBookings: 1000, inclusiveInMonth: 1000 }, { date: "2026-12-05", inclusive }), null);
+  }
+});
+
+test("portalLimitError: offene Buchungen", () => {
+  const limits = { maxOpenBookings: 3, maxInclusivePerMonth: null };
+  assert.equal(portalLimitError(limits, { openBookings: 2, inclusiveInMonth: 0 }, { date: "2026-12-05", inclusive: false }), null);
+  const msg = portalLimitError(limits, { openBookings: 3, inclusiveInMonth: 0 }, { date: "2026-12-05", inclusive: false });
+  assert.match(msg ?? "", /3 offene Buchungen und Anfragen \(höchstens 3\)/);
+  assert.match(portalLimitError({ maxOpenBookings: 0, maxInclusivePerMonth: null }, { openBookings: 0, inclusiveInMonth: 0 }, { date: "2026-12-05", inclusive: false }) ?? "", /höchstens 0/);
+});
+
+test("portalLimitError: Inklusivmieten je Monat nur bei Inklusivmiete", () => {
+  const limits = { maxOpenBookings: null, maxInclusivePerMonth: 2 };
+  assert.equal(portalLimitError(limits, { openBookings: 0, inclusiveInMonth: 5 }, { date: "2026-12-05", inclusive: false }), null);
+  assert.equal(portalLimitError(limits, { openBookings: 0, inclusiveInMonth: 1 }, { date: "2026-12-05", inclusive: true }), null);
+  const msg = portalLimitError(limits, { openBookings: 0, inclusiveInMonth: 2 }, { date: "2026-12-05", inclusive: true });
+  assert.match(msg ?? "", /im Dezember schon 2-mal gebucht \(höchstens 2\)/);
+  assert.match(portalLimitError(limits, { openBookings: 0, inclusiveInMonth: 2 }, { date: "2027-03-01", inclusive: true }) ?? "", /im März/);
 });

@@ -11,6 +11,7 @@ import { prisma, tenantClient } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { adoptDayTickets } from "./day-guest";
 import { createTtlCache } from "./ttl-cache";
+import { parseLinkRules } from "./link-rules";
 import { samePersonAbos } from "./abo-person";
 import { aboNamesRider, isKidsSubscriptionName } from "./customer-person";
 import { awardCategory, awardText, voucherShortLabel, type AwardCategory } from "./awards";
@@ -125,6 +126,8 @@ export interface RiderView {
   profileId: number;
   accountId: number;
   accountName: string;
+  /** Kurze Start-Animation (Schalter in den Einstellungen, lib/link-rules). */
+  shortIntro: boolean;
   ticketIds: number[];
   firstName: string;
   nickname: string | null;
@@ -200,7 +203,8 @@ export async function loadRider(
     // Profilbild (Data-URL, eigene Route) und Passwort-Hash braucht die Ansicht nicht.
     omit: { photo: true, passwordHash: true },
     include: {
-      account: { select: { name: true, isActive: true } },
+      // accessRules: Schalter „Kurze Start-Animation“ (lib/link-rules), ohne eigene Abfrage.
+      account: { select: { name: true, isActive: true, accessRules: true } },
       tickets: {
         select: {
           id: true,
@@ -432,6 +436,7 @@ export async function loadRider(
     profileId: profile.id,
     accountId,
     accountName: profile.account.name,
+    shortIntro: parseLinkRules(profile.account.accessRules).riderShortIntro,
     ticketIds,
     // Vorname der Person (am Kids-Abo steht bei anny der Name der Eltern), sonst vom Abo.
     // Tagestickets tragen keinen Namen: dann grüßt die App mit dem Spitznamen oder ohne Namen.

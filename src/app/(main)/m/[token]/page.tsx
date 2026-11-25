@@ -33,6 +33,7 @@ export default async function MobileAccessPage({ params }: PageProps) {
         contractOk: profile.contractOk,
         contractReason: profile.contractReason,
         scheduleCheck: profile.scheduleCheck,
+        mayUseEmergency: profile.mayUseEmergency,
         devices: profile.devices.map((d) => ({
           id: d.id,
           name: d.name,

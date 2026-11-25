@@ -13,6 +13,7 @@ import {
   type DeviceControlAction,
   type DeviceControlModel,
 } from "@/lib/device-controls";
+import { mobileActionNeedsGrant } from "@/lib/link-rules";
 import { cn } from "@/lib/utils";
 import {
   parseSchedule, DAY_KEYS, DAY_LABELS, hasAnySchedule,
@@ -48,6 +49,8 @@ interface MobileProfile {
   contractOk: boolean;
   contractReason: string | null;
   scheduleCheck: { ok: boolean; reason?: string } | null;
+  /// false: NOT-AUF und Sperren fehlen (Regel in den Einstellungen, lib/link-rules).
+  mayUseEmergency: boolean;
   devices: MobileDevice[];
 }
 
@@ -116,12 +119,14 @@ const PASSAGE_MODELS: DeviceControlModel[] = ["LOCK", "DOOR", "TURNSTILE"];
  * ihre Angaben speist. Hier kommen nur Symbol und Tastengroesse dazu; die
  * Haupttaste ist immer die Primaertaste (Akzentfarbe).
  */
-function actionsFor(device: MobileDevice): DeviceActions | null {
+function actionsFor(device: MobileDevice, mayUseEmergency: boolean): DeviceActions | null {
   const controls = deviceControls(device);
   if (controls.length === 0) return null;
 
   const model = deviceControlModel(device);
-  const [primary, ...rest] = controls;
+  const [primary, ...all] = controls;
+  // Ohne Freischaltung fehlen NOT-AUF und Sperren; der Server lehnt sie dann ab.
+  const rest = mayUseEmergency ? all : all.filter((c) => !mobileActionNeedsGrant(c.action, device));
 
   return {
     primary: {
@@ -187,6 +192,8 @@ function fmtDate(iso: string | null): string {
 
 export function MobileAccessClient({ token, profile }: Props) {
   const [scheduleCheck, setScheduleCheck] = useState(profile.scheduleCheck);
+  // Freigabe für NOT-AUF und Sperren; der Abruf je Minute hält sie aktuell.
+  const [mayUseEmergency, setMayUseEmergency] = useState(profile.mayUseEmergency !== false);
   const [feedback, setFeedback] = useState<{ id: string; type: "ok" | "err"; text: string } | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -225,6 +232,7 @@ export function MobileAccessClient({ token, profile }: Props) {
       if (res.ok) {
         const data = await res.json();
         setScheduleCheck(data.scheduleCheck ?? null);
+        setMayUseEmergency(data.mayUseEmergency !== false);
       }
     } catch {
       /* offline ok */
@@ -393,6 +401,7 @@ export function MobileAccessClient({ token, profile }: Props) {
                   loading={loading}
                   feedback={feedback}
                   enabled={isAllowed}
+                  mayUseEmergency={mayUseEmergency}
                   onAction={handleAction}
                 />
               ))}
@@ -415,6 +424,7 @@ interface DeviceRowProps {
   loading: string | null;
   feedback: { id: string; type: "ok" | "err"; text: string } | null;
   enabled: boolean;
+  mayUseEmergency: boolean;
   onAction: (device: MobileDevice, action: ActionKey) => void;
 }
 
@@ -423,14 +433,19 @@ interface DeviceRowProps {
  * die Tasten in voller Breite – Zusatzbefehle als Glas-Tasten links, die
  * Haupttaste als Primaertaste (44 px, an Durchgaengen 56 px).
  */
-function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowProps) {
+function DeviceRow({ device, loading, feedback, enabled, mayUseEmergency, onAction }: DeviceRowProps) {
   const iconComp = deviceIcon(device);
-  const actions = actionsFor(device);
+  const actions = actionsFor(device, mayUseEmergency);
   const meta = categoryMeta(device.category, device.type);
 
   // Pro Device: zeigen wir den letzten Feedback-Status der primary action.
   const primaryFb = feedback?.id === `${device.id}:${actions?.primary.key}` ? feedback : null;
   const primaryLoading = loading === `${device.id}:${actions?.primary.key}`;
+  // Fehler einer Zusatztaste (z. B. NOT-AUF): Text unter der Gerätezeile,
+  // die Zusatztasten selbst haben keinen Platz dafür.
+  const secondaryErr = feedback?.type === "err" && !primaryFb && feedback.id.startsWith(`${device.id}:`)
+    ? feedback
+    : null;
   const iconSize = actions?.primary.large ? "size-5" : "size-4";
 
   return (
@@ -511,6 +526,12 @@ function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowPr
             </span>
           </Button>
         </div>
+      )}
+
+      {secondaryErr && (
+        <p role="alert" className="text-xs font-medium text-destructive">
+          {secondaryErr.text}
+        </p>
       )}
     </div>
   );

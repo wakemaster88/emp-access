@@ -627,6 +627,11 @@ model Ticket {
   /// Mitarbeiter-Editor erzeugt/rotiert und kann per QR an den Mitarbeiter
   /// geteilt werden. NULL = noch kein Token erzeugt.
   mobileToken             String?              @unique
+  /// Mitarbeiter darf über den Handy-Link NOT-AUF auslösen und Geräte
+  /// sperren. Wirkt nur, solange die Regel „NOT-AUF und Sperren am
+  /// Mitarbeiter-Handy nur für freigeschaltete Mitarbeiter“ an ist
+  /// (lib/link-rules); sonst darf das jeder Mitarbeiter mit Link.
+  mobileEmergencyGrant    Boolean              @default(false)
   /// UUID der ANNY-Booking, die bei Ticket-Verkauf erzeugt wurde (Slot-
   /// Kapazitaet in ANNY blocken). Wird gespeichert, um spaeter beim Storno
   /// die Booking in ANNY cancelen zu koennen. NULL = nicht via ANNY
@@ -1504,6 +1509,12 @@ model Verein {
   portalDoorbirdIds  Int[]                   @default([])
   /// Ansprechpartner/Rechnungsadresse fuer die Abrechnung (Freitext).
   billingContact     String?
+  /// Hoechstens so viele offene Buchungen und Anfragen (noch nicht vorbei)
+  /// darf der Verein im Portal haben. NULL = unbegrenzt.
+  portalMaxOpenBookings      Int?
+  /// Hoechstens so viele Inklusivmieten (0 EUR) je Kalendermonat des Slots.
+  /// NULL = unbegrenzt.
+  portalMaxInclusivePerMonth Int?
   bookableServices   VereinBookableService[]
   slotBookings       VereinSlotBooking[]
   createdAt          DateTime                @default(now())

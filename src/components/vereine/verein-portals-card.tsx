@@ -38,6 +38,9 @@ interface PortalSettings {
   trailMinutes: number;
   deviceIds: number[];
   doorbirdIds: number[];
+  /** Obergrenzen; null = unbegrenzt (fehlt bei älterem Server). */
+  maxOpenBookings?: number | null;
+  maxInclusivePerMonth?: number | null;
   allDevices: { id: number; name: string }[];
   allDoorbirds: { id: number; name: string }[];
   services: { serviceId: number; priceCents: number; daylight: boolean; inclusive: boolean }[];
@@ -85,6 +88,9 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
   const [billingContact, setBillingContact] = useState("");
   const [leadMinutes, setLeadMinutes] = useState("30");
   const [trailMinutes, setTrailMinutes] = useState("30");
+  // Leer = unbegrenzt.
+  const [maxOpen, setMaxOpen] = useState("");
+  const [maxInclusive, setMaxInclusive] = useState("");
   const [access, setAccess] = useState<Set<string>>(new Set());
   const [prices, setPrices] = useState<Record<number, string>>({});
   const [daylight, setDaylight] = useState<Set<number>>(new Set());
@@ -102,6 +108,8 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
     setBillingContact(s.billingContact ?? "");
     setLeadMinutes(String(s.leadMinutes));
     setTrailMinutes(String(s.trailMinutes));
+    setMaxOpen(s.maxOpenBookings != null ? String(s.maxOpenBookings) : "");
+    setMaxInclusive(s.maxInclusivePerMonth != null ? String(s.maxInclusivePerMonth) : "");
     setAccess(new Set([...s.doorbirdIds.map((id) => `doorbird:${id}`), ...s.deviceIds.map((id) => `device:${id}`)]));
     setPrices(Object.fromEntries(s.services.map((x) => [x.serviceId, (x.priceCents / 100).toFixed(2).replace(".", ",")])));
     setDaylight(new Set(s.services.filter((x) => x.daylight).map((x) => x.serviceId)));
@@ -133,6 +141,12 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
       }
       services.push({ serviceId: Number(id), priceCents: cents, daylight: daylight.has(Number(id)), inclusive: inclusive.has(Number(id)) });
     }
+    for (const [label, value] of [["Höchstens offene Buchungen", maxOpen], ["Höchstens Inklusivmieten je Monat", maxInclusive]] as const) {
+      if (value.trim() !== "" && !/^\d+$/.test(value.trim())) {
+        setError(`${label}: bitte eine ganze Zahl oder leer lassen.`);
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     try {
@@ -148,10 +162,17 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
           trailMinutes: Number(trailMinutes) || 0,
           deviceIds: [...access].filter((k) => k.startsWith("device:")).map((k) => Number(k.slice(7))),
           doorbirdIds: [...access].filter((k) => k.startsWith("doorbird:")).map((k) => Number(k.slice(9))),
+          // Nur mitschicken, wenn der Server die Grenzen kennt; leer = unbegrenzt.
+          ...(settings && "maxOpenBookings" in settings
+            ? {
+                maxOpenBookings: maxOpen.trim() === "" ? null : Number(maxOpen),
+                maxInclusivePerMonth: maxInclusive.trim() === "" ? null : Number(maxInclusive),
+              }
+            : {}),
           services,
         }),
       });
-      if (!res.ok) throw new Error("Speichern fehlgeschlagen. Prüfe Frist und Vorlauf.");
+      if (!res.ok) throw new Error("Speichern fehlgeschlagen. Prüfe Frist, Vorlauf und Obergrenzen.");
       apply(await res.json());
       router.refresh();
       onClose();
@@ -308,6 +329,22 @@ function PortalDialog({ verein, onClose }: { verein: PortalVereinRow | null; onC
                 <Input id="vp-horizon" type="number" min={1} inputMode="numeric" value={horizonDays} onChange={(e) => setHorizonDays(e.target.value)} className="max-sm:h-11" />
               </div>
             </div>
+
+            {"maxOpenBookings" in settings && (
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="vp-max-open">Höchstens offene Buchungen</Label>
+                    <Input id="vp-max-open" type="number" min={0} inputMode="numeric" placeholder="unbegrenzt" value={maxOpen} onChange={(e) => setMaxOpen(e.target.value)} className="max-sm:h-11" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="vp-max-inclusive">Höchstens Inklusivmieten je Monat</Label>
+                    <Input id="vp-max-inclusive" type="number" min={0} inputMode="numeric" placeholder="unbegrenzt" value={maxInclusive} onChange={(e) => setMaxInclusive(e.target.value)} className="max-sm:h-11" />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">Leer = unbegrenzt. Offen heißt: gebucht oder angefragt und noch nicht vorbei. Ist eine Grenze erreicht, sagt das Portal das beim Buchen.</p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Zugang außerhalb des Betriebs</Label>

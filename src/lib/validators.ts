@@ -113,6 +113,8 @@ export const employeeUpdateSchema = z.object({
   deviceIds: z.array(z.coerce.number().int().positive()).optional(),
   /// Wochenplan (null = entfernen, ansonsten kompletter Plan).
   weekSchedule: weekScheduleSchema.nullable().optional(),
+  /// NOT-AUF und Sperren ueber den Handy-Link erlaubt (lib/link-rules).
+  mobileEmergencyGrant: z.boolean().optional(),
 });
 
 /// Anlage eines Mitarbeiters von Hand (sonst per EMP_CONTROL-Webhook).

@@ -77,7 +77,7 @@ export default async function RiderAppLayout({
           { value: String(rider.awards.filter((a) => a.unlocked).length), label: "Awards" },
         ]}
       />
-      <RiderIntro word={PASS_WORD[rider.pass]} />
+      <RiderIntro word={PASS_WORD[rider.pass]} short={rider.shortIntro} />
     </div>
   );
 }

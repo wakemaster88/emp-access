@@ -4,6 +4,8 @@ import { fetchAnnyAvailability, fmtTimeBerlin, berlinOffset } from "@/lib/anny-a
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { createTtlCache } from "@/lib/ttl-cache";
+import { hideMonitorNames } from "@/lib/link-rules";
+import { loadLinkRules } from "@/lib/link-rules-cache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -182,7 +184,7 @@ export async function GET(
 
   const selectedAreaIds = (config.deviceIds as number[]) ?? [];
 
-  const [areas, annyConfig, allLinks] = await Promise.all([
+  const [areas, annyConfig, allLinks, linkRules] = await Promise.all([
     db.accessArea.findMany({
       where: {
         accountId,
@@ -201,6 +203,8 @@ export async function GET(
         ...(selectedAreaIds.length > 0 ? { accessAreaId: { in: selectedAreaIds } } : {}),
       },
     }),
+    // Regel „Kundennamen am Auslastungs-Monitor ausblenden“ (60 s im Speicher).
+    loadLinkRules(prisma, accountId),
   ]);
 
   const areaLinks = new Map<number, typeof allLinks>();
@@ -551,6 +555,7 @@ export async function GET(
     name: config.name,
     date: dateStr,
     now: now.toISOString(),
-    resources,
+    // Bei eingeschalteter Regel ohne Kundennamen (`names` leer).
+    resources: hideMonitorNames(linkRules, resources),
   });
 }

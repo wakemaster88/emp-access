@@ -104,6 +104,38 @@ export function bookingPrice(
   return { ok: true, priceCents: 0, inclusive: true };
 }
 
+/** Obergrenzen eines Vereins im Portal; `null` = unbegrenzt (wie bisher). */
+export interface PortalLimits {
+  maxOpenBookings: number | null;
+  maxInclusivePerMonth: number | null;
+}
+
+const MONTHS = [
+  "Januar", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember",
+];
+
+/**
+ * Prueft die Obergrenzen vor einer neuen Buchung oder Anfrage. `counts`
+ * sind die schon offenen Buchungen und Anfragen (noch nicht vorbei) und die
+ * Inklusivmieten im Monat des Slots (`date`, YYYY-MM-DD). Liefert die Meldung
+ * fuer den Verein oder null.
+ */
+export function portalLimitError(
+  limits: PortalLimits,
+  counts: { openBookings: number; inclusiveInMonth: number },
+  booking: { date: string; inclusive: boolean },
+): string | null {
+  if (limits.maxOpenBookings != null && counts.openBookings >= limits.maxOpenBookings) {
+    return `Euer Verein hat schon ${counts.openBookings} offene Buchungen und Anfragen (höchstens ${limits.maxOpenBookings}). Neue gehen wieder, sobald eine vorbei ist oder storniert wurde.`;
+  }
+  if (booking.inclusive && limits.maxInclusivePerMonth != null && counts.inclusiveInMonth >= limits.maxInclusivePerMonth) {
+    const month = MONTHS[Number(booking.date.slice(5, 7)) - 1] ?? booking.date.slice(0, 7);
+    return `Die Inklusivmiete ist im ${month} schon ${counts.inclusiveInMonth}-mal gebucht (höchstens ${limits.maxInclusivePerMonth}). Bitte ohne Inklusivmiete buchen oder bei uns melden.`;
+  }
+  return null;
+}
+
 /** Summen fuer die Abrechnung: nur gebuchte (nicht stornierte) Slots zaehlen. */
 export function billingTotals(rows: Pick<BillingRow, "priceCents" | "status" | "billedAt">[]) {
   let openCents = 0;

@@ -13,6 +13,9 @@ const putSchema = z.object({
   deviceIds: z.array(z.coerce.number().int().positive()).max(50),
   doorbirdIds: z.array(z.coerce.number().int().positive()).max(50),
   billingContact: z.string().trim().max(500).nullable().optional(),
+  /// Obergrenzen; null = unbegrenzt. Fehlt das Feld (aeltere Seite), bleibt der Wert.
+  maxOpenBookings: z.coerce.number().int().min(0).max(10_000).nullable().optional(),
+  maxInclusivePerMonth: z.coerce.number().int().min(0).max(10_000).nullable().optional(),
   services: z
     .array(z.object({
       serviceId: z.coerce.number().int().positive(),
@@ -59,6 +62,8 @@ async function serialize(vereinId: number, accountId: number) {
         portalTrailMinutes: true,
         portalDeviceIds: true,
         portalDoorbirdIds: true,
+        portalMaxOpenBookings: true,
+        portalMaxInclusivePerMonth: true,
         bookableServices: { select: { serviceId: true, priceCents: true, daylight: true, inclusive: true } },
       },
     }),
@@ -80,6 +85,8 @@ async function serialize(vereinId: number, accountId: number) {
     trailMinutes: verein?.portalTrailMinutes ?? 30,
     deviceIds: verein?.portalDeviceIds ?? [],
     doorbirdIds: verein?.portalDoorbirdIds ?? [],
+    maxOpenBookings: verein?.portalMaxOpenBookings ?? null,
+    maxInclusivePerMonth: verein?.portalMaxInclusivePerMonth ?? null,
     services: verein?.bookableServices ?? [],
     allServices: services,
     allDevices: devices,
@@ -130,6 +137,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         portalTrailMinutes: data.trailMinutes,
         portalDeviceIds: validDevices.map((d) => d.id),
         portalDoorbirdIds: validDoorbirds.map((c) => c.id),
+        ...(data.maxOpenBookings !== undefined ? { portalMaxOpenBookings: data.maxOpenBookings } : {}),
+        ...(data.maxInclusivePerMonth !== undefined ? { portalMaxInclusivePerMonth: data.maxInclusivePerMonth } : {}),
         ...(data.enabled && !verein.portalToken ? { portalToken: generatePortalToken() } : {}),
       },
     });

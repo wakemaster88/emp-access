@@ -7,6 +7,8 @@ import { checkinDayOpening, pickShopSchedule, type CheckinDayOpening } from "@/l
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import type { ScheduleSpec } from "@/lib/operating-hours";
 import { createTtlCache } from "@/lib/ttl-cache";
+import { kioskVisibleDoors } from "@/lib/link-rules";
+import { loadLinkRules } from "@/lib/link-rules-cache";
 
 /**
  * Betriebszeiten-Profil des Shops je Konto, 60 s im Speicher der Instanz:
@@ -115,11 +117,12 @@ export async function GET(
     annyResourceLinks,
     recentScans,
     grantedTicketIdsToday,
-    openableDevices,
+    allOpenableDevices,
     ticketsWithPhoto,
     pendingRequests,
     annyConfig,
     shopSchedule,
+    linkRules,
   ] = await Promise.all([
     prisma.ticket.findMany({
       where: {
@@ -274,7 +277,8 @@ export async function GET(
     // Türen/Drehkreuze fuer den Quick-Open: ALLE des Accounts. Welche davon
     // als direkter Header-Button erscheinen, bestimmt MonitorConfig.deviceIds
     // (Tür-Schnellzugriff). Die uebrigen sind ueber das "Mehr Türen"-Menue
-    // erreichbar.
+    // erreichbar, ausser die Regel „Kiosk-Link oeffnet nur zugeordnete
+    // Tueren“ ist an (unten gefiltert).
     prisma.device.findMany({
       where: {
         accountId,
@@ -317,7 +321,12 @@ export async function GET(
       .catch(() => null),
 
     loadShopSchedule(accountId).catch(() => null),
+
+    // Regel „Kiosk-Link oeffnet nur zugeordnete Tueren“ (60 s im Speicher).
+    loadLinkRules(prisma, accountId),
   ]);
+  // Bei eingeschalteter Regel nur die am Monitor eingetragenen Tueren.
+  const openableDevices = kioskVisibleDoors(linkRules, allOpenableDevices, monitor.deviceIds);
 
   // Tagesliste ohne EMP_CONTROL-Importe (die sind nur als Abo-Tickets dabei).
   const tickets = dayTickets.filter((t) => t.source !== "EMP_CONTROL");

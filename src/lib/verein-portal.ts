@@ -18,6 +18,7 @@ import {
   canVereinCancel,
   clampedBerlinHm,
   isDateBookable,
+  portalLimitError,
   portalSlotStates,
   type PortalSlot,
 } from "@/lib/verein-portal-rules";
@@ -53,6 +54,8 @@ export async function loadPortalVerein(token: string) {
       portalTrailMinutes: true,
       portalDeviceIds: true,
       portalDoorbirdIds: true,
+      portalMaxOpenBookings: true,
+      portalMaxInclusivePerMonth: true,
       account: { select: { name: true, latitude: true, longitude: true } },
       bookableServices: {
         select: {
@@ -219,6 +222,33 @@ async function loadRelatedBusy(
   return { ok: true, intervals };
 }
 
+/**
+ * Obergrenzen des Vereins (offene Buchungen, Inklusivmieten je Monat) vor
+ * einer neuen Buchung oder Anfrage. Ohne gesetzte Grenze keine Abfrage.
+ */
+async function checkPortalLimits(
+  verein: PortalVerein,
+  booking: { date: string; inclusive: boolean },
+): Promise<string | null> {
+  const limits = {
+    maxOpenBookings: verein.portalMaxOpenBookings,
+    maxInclusivePerMonth: verein.portalMaxInclusivePerMonth,
+  };
+  const needOpen = limits.maxOpenBookings != null;
+  const needInclusive = booking.inclusive && limits.maxInclusivePerMonth != null;
+  if (!needOpen && !needInclusive) return null;
+  const base = { accountId: verein.accountId, vereinId: verein.id, status: { in: ["BOOKED" as const, "REQUESTED" as const] } };
+  const [openBookings, inclusiveInMonth] = await Promise.all([
+    needOpen ? prisma.vereinSlotBooking.count({ where: { ...base, endDate: { gt: new Date() } } }) : Promise.resolve(0),
+    needInclusive
+      ? prisma.vereinSlotBooking.count({
+          where: { ...base, inclusive: true, priceCents: 0, date: { startsWith: `${booking.date.slice(0, 7)}-` } },
+        })
+      : Promise.resolve(0),
+  ]);
+  return portalLimitError(limits, { openBookings, inclusiveInMonth }, booking);
+}
+
 export type BookingOutcome =
   | { ok: true; bookingId: number }
   | { ok: false; status: number; error: string };
@@ -243,6 +273,8 @@ export async function createVereinBooking(
   if (!isDateBookable(input.date, verein.portalHorizonDays)) {
     return { ok: false, status: 400, error: `Buchbar sind nur die nächsten ${verein.portalHorizonDays} Tage.` };
   }
+  const limitError = await checkPortalLimits(verein, { date: input.date, inclusive: price.inclusive });
+  if (limitError) return { ok: false, status: 409, error: limitError };
 
   if (bookable.daylight) {
     // Tageslicht: Slot aus dem eigenen Raster, Belegung frisch aus anny und EMP.
@@ -474,6 +506,8 @@ export async function createVereinRequest(
   const startDate = new Date(`${input.date}T${input.start}:00${offset}`);
   const endDate = new Date(`${input.date}T${input.end}:00${offset}`);
   if (startDate.getTime() <= Date.now()) return { ok: false, status: 400, error: "Die Zeit liegt in der Vergangenheit." };
+  const limitError = await checkPortalLimits(verein, { date: input.date, inclusive: price.inclusive });
+  if (limitError) return { ok: false, status: 409, error: limitError };
 
   const open = await prisma.vereinSlotBooking.count({
     where: { accountId: verein.accountId, vereinId: verein.id, status: "REQUESTED" },

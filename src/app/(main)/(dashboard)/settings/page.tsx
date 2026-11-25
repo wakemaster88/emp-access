@@ -21,6 +21,7 @@ import { DataRetentionCard } from "@/components/settings/data-retention-card";
 import { parseDataRetention } from "@/lib/data-retention";
 import { AccessRulesCard } from "@/components/settings/access-rules-card";
 import { parseAccessRules } from "@/lib/access-rules";
+import { parseLinkRules } from "@/lib/link-rules";
 import { isTenantAdminRole } from "@/lib/api-auth";
 import { maskApiConfig, maskSecret } from "@/lib/secret-mask";
 import { RepoAccessCard, type RepoAccessEntry } from "@/components/settings/repo-access-card";
@@ -120,6 +121,7 @@ export default async function SettingsPage() {
 
   const dataRetention = parseDataRetention(account?.dataRetention);
   const accessRules = parseAccessRules(account?.accessRules);
+  const linkRules = parseLinkRules(account?.accessRules);
 
   const baseUrl = process.env.AUTH_URL ?? "http://localhost:3000";
   const shellyConfig = apiConfigs.find((c) => c.provider === "SHELLY");
@@ -249,7 +251,7 @@ export default async function SettingsPage() {
         {/* Einlass-Regeln: strengere Prüfungen am Einlass, ab Werk aus */}
         <section className="space-y-2">
           <SectionHeading icon={ShieldCheck} title="Einlass" />
-          <AccessRulesCard initial={accessRules} />
+          <AccessRulesCard initial={accessRules} initialLinks={linkRules} />
         </section>
 
         {/* Löschfristen / Datenschutz */}

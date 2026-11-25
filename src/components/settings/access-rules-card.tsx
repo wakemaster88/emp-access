@@ -21,6 +21,14 @@ import {
   type AccessRuleKey,
   type AccessRules,
 } from "@/lib/access-rules";
+import {
+  LINK_RULE_KEYS,
+  LINK_RULE_TEXTS,
+  LINK_RULES_OFF,
+  type LinkRuleChange,
+  type LinkRuleKey,
+  type LinkRules,
+} from "@/lib/link-rules";
 
 interface Affected {
   readersWithoutArea: number;
@@ -34,8 +42,51 @@ interface Affected {
   passbackExemptAreas?: string[];
 }
 
+/** „Betrifft heute“ der Regeln für Links und Monitore (fehlt bei älterem Server). */
+interface LinkAffected {
+  employeesWithLink?: number;
+  employeesWithGrant?: number;
+  kiosks?: Array<{ name: string; doorsToday: number; doorsAssigned: number }>;
+  resourceMonitors?: number;
+  pausedTickets?: number;
+  pausedByPauseAll?: number;
+}
+
 interface Props {
   initial: AccessRules;
+  initialLinks?: LinkRules;
+}
+
+/** „Betrifft heute: …“ je Regel für Links und Monitore. */
+function linkAffectedLines(key: LinkRuleKey, a: LinkAffected | null): string[] {
+  if (!a) return [];
+  switch (key) {
+    case "mobileEmergencyNeedsGrant": {
+      if (typeof a.employeesWithLink !== "number") return [];
+      const n = a.employeesWithLink;
+      const g = a.employeesWithGrant ?? 0;
+      return [
+        `Betrifft heute: ${n} Mitarbeiter mit Handy-Link, davon ${g} freigeschaltet`,
+      ];
+    }
+    case "kioskDoorsAssignedOnly": {
+      if (!Array.isArray(a.kiosks)) return [];
+      if (a.kiosks.length === 0) return ["Betrifft heute: kein aktiver Kiosk"];
+      return a.kiosks.map((k) => `Betrifft heute: ${k.name} zeigt ${k.doorsToday} Tür${k.doorsToday === 1 ? "" : "en"}, danach ${k.doorsAssigned}`);
+    }
+    case "monitorHideNames":
+      if (typeof a.resourceMonitors !== "number") return [];
+      return [`Betrifft heute: ${a.resourceMonitors} aktive${a.resourceMonitors === 1 ? "r" : ""} Auslastungs-Monitor${a.resourceMonitors === 1 ? "" : "e"}`];
+    case "resumeOnlyOwnPause": {
+      if (typeof a.pausedTickets !== "number") return [];
+      const own = a.pausedByPauseAll ?? 0;
+      return [
+        `Betrifft heute: ${a.pausedTickets} pausierte Ticket${a.pausedTickets === 1 ? "" : "s"}, davon ${own} mit Kennung „Alle pausieren“`,
+      ];
+    }
+    default:
+      return [];
+  }
 }
 
 /** „Betrifft heute: …“ je Regel, wo es eine Zahl gibt. */
@@ -97,14 +148,21 @@ function formatAt(iso: string): string {
  * aus. Einschalten fragt im Karteninhalt nach (ConfirmStep), Ausschalten
  * wirkt sofort. Der Scan übernimmt eine Änderung spätestens nach 60 s.
  */
-export function AccessRulesCard({ initial }: Props) {
+export function AccessRulesCard({ initial, initialLinks }: Props) {
   const [rules, setRules] = useState<AccessRules>({ ...initial });
+  const [links, setLinks] = useState<LinkRules>({ ...LINK_RULES_OFF, ...initialLinks });
+  const [linkAffected, setLinkAffected] = useState<LinkAffected | null>(null);
+  const [linkChanges, setLinkChanges] = useState<LinkRuleChange[]>([]);
+  const [confirmLinkKey, setConfirmLinkKey] = useState<LinkRuleKey | null>(null);
+  const [busyLinkKey, setBusyLinkKey] = useState<LinkRuleKey | null>(null);
   const [affected, setAffected] = useState<Affected | null>(null);
   const [changes, setChanges] = useState<AccessRuleChange[]>([]);
   const [confirmKey, setConfirmKey] = useState<AccessRuleKey | null>(null);
   const [minutesDraft, setMinutesDraft] = useState(String(PASSBACK_SUGGESTED_MINUTES));
   const [busyKey, setBusyKey] = useState<AccessRuleKey | null>(null);
   const [error, setError] = useState("");
+  /** Irgendeine Regel (beider Gruppen) wird gerade gespeichert. */
+  const saving = busyKey != null || busyLinkKey != null;
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +174,9 @@ export function AccessRulesCard({ initial }: Props) {
         setAffected(json.affected ?? null);
         setChanges(Array.isArray(json.changes) ? json.changes : []);
         if (json.rules?.passbackMinutes > 0) setMinutesDraft(String(json.rules.passbackMinutes));
+        if (json.links) setLinks({ ...LINK_RULES_OFF, ...json.links });
+        setLinkAffected(json.linkAffected ?? null);
+        setLinkChanges(Array.isArray(json.linkChanges) ? json.linkChanges : []);
       })
       .catch(() => {});
     return () => {
@@ -124,7 +185,7 @@ export function AccessRulesCard({ initial }: Props) {
   }, []);
 
   /** Speichert eine Regel; wirft mit deutscher Meldung (für ConfirmStep). */
-  async function save(patch: Partial<AccessRules>) {
+  async function save(patch: Partial<AccessRules> | Partial<LinkRules>) {
     const res = await fetch("/api/settings/access-rules", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -136,6 +197,31 @@ export function AccessRulesCard({ initial }: Props) {
     }
     setRules(json.rules);
     setChanges(Array.isArray(json.changes) ? json.changes : []);
+    if (json.links) setLinks({ ...LINK_RULES_OFF, ...json.links });
+    if (Array.isArray(json.linkChanges)) setLinkChanges(json.linkChanges);
+  }
+
+  async function switchLinkOff(key: LinkRuleKey) {
+    setBusyLinkKey(key);
+    setError("");
+    try {
+      await save({ [key]: false });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Speichern hat nicht geklappt.");
+    } finally {
+      setBusyLinkKey(null);
+    }
+  }
+
+  async function switchLinkOn(key: LinkRuleKey) {
+    // Wie bei den Einlass-Regeln: während des Speicherns ist alles gesperrt.
+    setBusyLinkKey(key);
+    try {
+      await save({ [key]: true });
+    } finally {
+      setBusyLinkKey(null);
+    }
+    setConfirmLinkKey(null);
   }
 
   async function switchOff(key: AccessRuleKey) {
@@ -242,8 +328,9 @@ export function AccessRulesCard({ initial }: Props) {
                     id={switchId}
                     checked={on || confirmKey === key}
                     // Gesperrt, solange gespeichert wird oder eine andere Regel
-                    // gerade auf ihre Bestätigung wartet: nie zwei Änderungen zugleich.
-                    disabled={busyKey != null || (confirmKey != null && confirmKey !== key)}
+                    // (auch eine der Links und Monitore) gerade auf ihre
+                    // Bestätigung wartet: nie zwei Änderungen zugleich.
+                    disabled={saving || confirmLinkKey != null || (confirmKey != null && confirmKey !== key)}
                     onCheckedChange={(next) => {
                       setError("");
                       if (next) {
@@ -280,7 +367,7 @@ export function AccessRulesCard({ initial }: Props) {
                     type="button"
                     variant="outline"
                     onClick={() => void saveMinutes()}
-                    disabled={busyKey != null || confirmKey != null || Number(minutesDraft) === rules.passbackMinutes}
+                    disabled={saving || confirmKey != null || confirmLinkKey != null || Number(minutesDraft) === rules.passbackMinutes}
                     className="max-sm:h-11"
                   >
                     Übernehmen
@@ -291,18 +378,89 @@ export function AccessRulesCard({ initial }: Props) {
           );
         })}
 
+        {/* Zweite Gruppe: Links ohne Anmeldung und Wandanzeigen, gleiche Zeilen wie oben. */}
+        <div className="space-y-1 pt-2">
+          <h4 className="text-[13px] font-semibold">Links und Monitore</h4>
+          <p className="text-[12px] text-muted-foreground">
+            Grenzen für Mitarbeiter-Handy, Kiosk und Wandanzeigen. Ab Werk ist jede Regel aus.
+          </p>
+        </div>
+        {LINK_RULE_KEYS.map((key) => {
+          const text = LINK_RULE_TEXTS[key];
+          const on = links[key];
+          const lines = linkAffectedLines(key, linkAffected);
+          const switchId = `link-rule-${key}`;
+          return (
+            <div key={key} className="glass-tile space-y-3 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor={switchId} className="block text-[13px] font-medium leading-snug">
+                    {text.title}
+                  </Label>
+                  <p className="text-[12px] text-muted-foreground">{text.effect}</p>
+                  {lines.map((line) => (
+                    <p key={line} className="break-words text-[12px] font-medium tabular-nums">{line}</p>
+                  ))}
+                </div>
+                <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                  {busyLinkKey === key && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />}
+                  <Switch
+                    id={switchId}
+                    checked={on || confirmLinkKey === key}
+                    // Gleiche Sperre wie oben, über beide Gruppen.
+                    disabled={saving || confirmKey != null || (confirmLinkKey != null && confirmLinkKey !== key)}
+                    onCheckedChange={(next) => {
+                      setError("");
+                      if (next) setConfirmLinkKey(key);
+                      else if (confirmLinkKey === key) setConfirmLinkKey(null);
+                      else void switchLinkOff(key);
+                    }}
+                  />
+                </div>
+              </div>
+
+              {confirmLinkKey === key && !on && (
+                <ConfirmStep
+                  title={`„${text.title}“ einschalten?`}
+                  description={[text.effect, ...lines.map((l) => `${l}.`), text.confirm ?? ""].filter(Boolean).join(" ")}
+                  confirmLabel="Einschalten"
+                  destructive={false}
+                  onConfirm={() => switchLinkOn(key)}
+                  onCancel={() => setConfirmLinkKey(null)}
+                />
+              )}
+            </div>
+          );
+        })}
+
         {error && <Notice tone="danger" compact title={error} />}
 
-        {changes.length > 0 && (
+        {(changes.length > 0 || linkChanges.length > 0) && (
           <div className="space-y-1.5 pt-1">
             <p className="text-label">Letzte Änderungen</p>
             <ul className="space-y-1 text-[12px] text-muted-foreground">
-              {changes.slice(0, 5).map((c, i) => (
-                <li key={`${c.at}-${c.key}-${i}`} className="break-words">
-                  {formatAt(c.at)} · {ACCESS_RULE_TEXTS[c.key].title}: {changeValue(c.key, c.from)} → {changeValue(c.key, c.to)}
-                  {c.admin ? ` · ${c.admin}` : ""}
-                </li>
-              ))}
+              {[
+                ...changes.map((c) => ({
+                  at: c.at,
+                  key: c.key as string,
+                  text: `${ACCESS_RULE_TEXTS[c.key].title}: ${changeValue(c.key, c.from)} → ${changeValue(c.key, c.to)}`,
+                  admin: c.admin,
+                })),
+                ...linkChanges.map((c) => ({
+                  at: c.at,
+                  key: c.key as string,
+                  text: `${LINK_RULE_TEXTS[c.key].title}: ${c.from ? "an" : "aus"} → ${c.to ? "an" : "aus"}`,
+                  admin: c.admin,
+                })),
+              ]
+                .sort((a, b) => b.at.localeCompare(a.at))
+                .slice(0, 5)
+                .map((c, i) => (
+                  <li key={`${c.at}-${c.key}-${i}`} className="break-words">
+                    {formatAt(c.at)} · {c.text}
+                    {c.admin ? ` · ${c.admin}` : ""}
+                  </li>
+                ))}
             </ul>
           </div>
         )}
