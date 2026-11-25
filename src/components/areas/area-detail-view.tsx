@@ -84,6 +84,8 @@ interface Props {
   annyResources: string[];
   annyServices: string[];
   annyMappings: Record<string, number>;
+  /** Einlass-Regel „Tickets ohne Bereich …“ ist an (sonst Hinweis am Haken im Dialog). */
+  ticketNeedsAreaOn?: boolean;
 }
 
 // recharts erst nachladen; der Platzhalter füllt die feste Diagrammhöhe.
@@ -164,7 +166,7 @@ function FactRow({ icon: Icon, label, children }: { icon: typeof LogIn; label: s
   );
 }
 
-export function AreaDetailView({ data, allAreas, editorDevices, annyResources, annyServices, annyMappings }: Props) {
+export function AreaDetailView({ data, allAreas, editorDevices, annyResources, annyServices, annyMappings, ticketNeedsAreaOn = false }: Props) {
   const router = useRouter();
   const [dialog, setDialog] = useState<{ open: boolean; tab?: AreaDialogTab; child?: boolean }>({ open: false });
   const [range, setRange] = useState<"day" | "week">("day");
@@ -640,6 +642,7 @@ export function AreaDetailView({ data, allAreas, editorDevices, annyResources, a
         annyResources={annyResources}
         annyServices={annyServices}
         annyMappings={annyMappings}
+        ticketNeedsAreaOn={ticketNeedsAreaOn}
         onClose={() => setDialog({ open: false })}
         onDeleted={() => router.push("/areas")}
       />

@@ -49,6 +49,10 @@ export async function POST(request: NextRequest) {
       allowReentry: body.allowReentry ?? false,
       personLimit: body.personLimit ? Number(body.personLimit) : null,
       scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, null),
+      // Einlass-Regel „Tickets ohne Bereich …“: nur gesetzt, wenn mitgeschickt.
+      ...(typeof body.allowUnassignedTickets === "boolean"
+        ? { allowUnassignedTickets: body.allowUnassignedTickets }
+        : {}),
       showOnDashboard: body.showOnDashboard ?? true,
       openingHours: body.openingHours || null,
       accountId: accountId!,

@@ -167,6 +167,9 @@ model Account {
   /// Keys: vehicleSightings, personSightings, cameraEvents, scans,
   /// irrigationRuns, automationRuns, emailSends, hubTasks, discoveredDevices
   dataRetention          Json?
+  /// JSON: Einlass-Regeln (Schalter in den Einstellungen), siehe
+  /// src/lib/access-rules.ts. NULL oder fehlende Schlüssel = Regel aus.
+  accessRules            Json?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   admins                 Admin[]
@@ -793,6 +796,10 @@ model AccessArea {
   ///
   /// NULL oder 0 = keine bereichsweite Sperre.
   scanLockSeconds    Int?
+  /// Einlass-Regel „Tickets ohne Bereich gelten nur an freigegebenen
+  /// Bereichen“: an Lesern dieses Bereichs gelten Tickets ohne jeden Bereich
+  /// weiter. Wirkt nur, solange die Regel in den Einstellungen an ist.
+  allowUnassignedTickets Boolean      @default(false)
   showOnDashboard    Boolean            @default(true)
   openingHours       String?
   /// Veranstaltungsraum (z. B. Rooftop Lounge): Belegung ueber

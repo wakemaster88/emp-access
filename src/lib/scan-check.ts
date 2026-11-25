@@ -6,9 +6,11 @@ import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 import { evaluateScanLock } from "@/lib/scan-lock";
-import { isDurationPastBerlinDay, isDurationTicket } from "@/lib/duration-ticket";
+import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } from "@/lib/duration-ticket";
 import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
 import { checkVoucherAccess } from "@/lib/voucher-access";
+import { ACCESS_RULES_OFF, deniesRedeemedAtHandscanner, redeemedMessage } from "@/lib/access-rules";
+import { loadAccessRules } from "@/lib/access-rules-cache";
 
 /**
  * Geteilte Scan-Check-Kernlogik fuer den authentifizierten Endpoint
@@ -64,13 +66,15 @@ export async function performScanCheck({
 
   let lockSeconds: number | null = null;
   let isExitDevice = false;
+  let deviceAllowsReentry = false;
   let deviceAreaIds: number[] = [];
   if (deviceId) {
     const scanDevice = await db.device.findFirst({
       where: { id: deviceId, accountId },
-      select: { scanLockSeconds: true, accessIn: true, accessOut: true },
+      select: { scanLockSeconds: true, accessIn: true, accessOut: true, allowReentry: true },
     });
     lockSeconds = scanDevice?.scanLockSeconds ?? null;
+    deviceAllowsReentry = scanDevice?.allowReentry === true;
     deviceAreaIds = [scanDevice?.accessIn, scanDevice?.accessOut].filter((a): a is number => a != null);
     isExitDevice = scanDevice != null && scanDevice.accessOut != null && scanDevice.accessIn == null;
   }
@@ -456,6 +460,66 @@ export async function performScanCheck({
         data: { code, result: "DENIED", ticketId: ticket.id, accountId, ...scanDeviceData },
       });
       return { granted: false, message: "Resource nicht erlaubt", ticket: ticketInfo };
+    }
+  }
+
+  // Einlass-Regel „Handscanner lehnt eingelöste Einzeltickets ab“ (ab Werk
+  // aus). Die Regeln werden nur gelesen, wenn das Ticket betroffen waere.
+  const redeemedCase = {
+    status: ticket.status,
+    subscriptionId: ticket.subscriptionId,
+    vereinId: ticket.vereinId,
+    isEmployee,
+    serviceAllowsReentry: ticket.service?.allowReentry === true,
+    deviceAllowsReentry,
+    durationStillRunning: isDurationStillRunning(ticket, now),
+    isExit: isExitDevice,
+    hitsMainResource: scanHitsMainResource,
+  };
+  if (deniesRedeemedAtHandscanner({ ...ACCESS_RULES_OFF, handscannerDenyRedeemed: true }, redeemedCase)) {
+    const { rules } = await loadAccessRules(
+      db as unknown as Parameters<typeof loadAccessRules>[0],
+      accountId,
+    ).catch((err) => {
+      console.error("[scan-check] access rules failed:", err);
+      return { rules: ACCESS_RULES_OFF };
+    });
+    // Ohne firstScanAt gilt wie am Drehkreuz der erste GRANTED-Scan als
+    // Timerstart; bei Zeitkarten nur an der Hauptressource.
+    const firstScanAt =
+      !rules.handscannerDenyRedeemed
+        ? null
+        : ticket.firstScanAt
+          ?? (
+            await db.scan.findFirst({
+              where: {
+                ticketId: ticket.id,
+                accountId,
+                result: "GRANTED",
+                ...(isDurationTicket(ticket) && mainAreaId != null
+                  ? { device: { OR: [{ accessIn: mainAreaId }, { accessOut: mainAreaId }] } }
+                  : {}),
+              },
+              orderBy: { scanTime: "asc" },
+              select: { scanTime: true },
+            })
+          )?.scanTime
+          ?? null;
+    if (deniesRedeemedAtHandscanner(rules, {
+      ...redeemedCase,
+      durationStillRunning: isDurationStillRunning({ ...ticket, firstScanAt }, now),
+    })) {
+      await db.scan.create({
+        data: {
+          code,
+          result: "DENIED",
+          note: "ticket_already_redeemed",
+          ticketId: ticket.id,
+          accountId,
+          ...scanDeviceData,
+        },
+      });
+      return { granted: false, message: redeemedMessage(firstScanAt, now), ticket: ticketInfo };
     }
   }
 

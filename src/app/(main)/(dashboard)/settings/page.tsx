@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
-import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone, GitBranch, Bot } from "lucide-react";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone, GitBranch, Bot, ShieldCheck } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { GardenaCard } from "@/components/settings/gardena-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
@@ -19,6 +19,8 @@ import { PushCard } from "@/components/settings/push-card";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { DataRetentionCard } from "@/components/settings/data-retention-card";
 import { parseDataRetention } from "@/lib/data-retention";
+import { AccessRulesCard } from "@/components/settings/access-rules-card";
+import { parseAccessRules } from "@/lib/access-rules";
 import { isTenantAdminRole } from "@/lib/api-auth";
 import { maskApiConfig, maskSecret } from "@/lib/secret-mask";
 import { RepoAccessCard, type RepoAccessEntry } from "@/components/settings/repo-access-card";
@@ -49,6 +51,7 @@ export default async function SettingsPage() {
         subdomain: true,
         apiToken: isAdmin,
         dataRetention: true,
+        accessRules: true,
       },
     }),
     db.device.findMany({
@@ -116,6 +119,7 @@ export default async function SettingsPage() {
   ];
 
   const dataRetention = parseDataRetention(account?.dataRetention);
+  const accessRules = parseAccessRules(account?.accessRules);
 
   const baseUrl = process.env.AUTH_URL ?? "http://localhost:3000";
   const shellyConfig = apiConfigs.find((c) => c.provider === "SHELLY");
@@ -240,6 +244,12 @@ export default async function SettingsPage() {
         <section className="space-y-2">
           <SectionHeading icon={GitBranch} title="Update-Zugang der Geräte" />
           <RepoAccessCard entries={repoAccessEntries} />
+        </section>
+
+        {/* Einlass-Regeln: strengere Prüfungen am Einlass, ab Werk aus */}
+        <section className="space-y-2">
+          <SectionHeading icon={ShieldCheck} title="Einlass" />
+          <AccessRulesCard initial={accessRules} />
         </section>
 
         {/* Löschfristen / Datenschutz */}
