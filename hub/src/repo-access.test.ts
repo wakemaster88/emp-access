@@ -97,6 +97,28 @@ test("Fehlermeldung von git: die Ursache, nicht der Schluss des Hinweistexts", (
     ),
     "Host key verification failed."
   );
-  // Nur der Nachsatz: dann eben der.
-  assert.equal(gitErrorLine("fatal: Could not read from remote repository."), "fatal: Could not read from remote repository.");
+  // Zeilenenden mit CR aendern nichts.
+  assert.equal(
+    gitErrorLine(`git@ssh.github.com: Permission denied (publickey).\n${tail}`.replace(/\n/g, "\r\n")),
+    "git@ssh.github.com: Permission denied (publickey)."
+  );
+});
+
+test("Fehlermeldung von git: steht nur der Nachsatz da, zaehlt seine erste Zeile", () => {
+  // So schreibt git ihn, wenn ssh ohne eigene Meldung endet: immer alle drei Zeilen.
+  const tail = [
+    "fatal: Could not read from remote repository.",
+    "",
+    "Please make sure you have the correct access rights",
+    "and the repository exists.",
+  ].join("\n");
+  assert.equal(gitErrorLine(tail), "fatal: Could not read from remote repository.");
+  assert.equal(gitErrorLine(tail.replace(/\n/g, "\r\n")), "fatal: Could not read from remote repository.");
+  // Auch hinter einem Warnblock ohne weiteren Text.
+  assert.equal(
+    gitErrorLine(`@@@@@@@@@@@\n@ WARNING: UNPROTECTED PRIVATE KEY FILE! @\n@@@@@@@@@@@\n${tail}`),
+    "fatal: Could not read from remote repository."
+  );
+  // Ohne den Nachsatz bleibt es bei der ersten Zeile.
+  assert.equal(gitErrorLine("@@@@@@@@@@@\n@ WARNING: UNPROTECTED PRIVATE KEY FILE! @\n@@@@@@@@@@@"), "@@@@@@@@@@@");
 });
