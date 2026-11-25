@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { secretsEqual } from "@/lib/cron-auth";
 import { isUniqueConstraintError } from "@/lib/db-errors";
+import { FULL_SYNC_PREVIEW_MAX, isPresenceMarker, isSyncedEmployeeUuid, planFullSync } from "@/lib/emp-control-sync";
 
 /**
  * Zahlen aus einem Payload-Feld einsammeln und dabei in bekannt und unbekannt
@@ -33,6 +34,29 @@ function collectIds(
  *   ohne dafuer einen eigenen Bereich anzulegen. Wirkt additiv zu den Bereichen
  *   und gilt in der Mitarbeiter-App wie am RFID-Leser. IDs kommen aus
  *   `GET /api/devices`.
+ *
+ * Ein Eintrag mit `active: false` fuer einen Mitarbeiter, der hier noch kein
+ * Ticket hat, wird uebersprungen (kein Ticket angelegt, nicht gezaehlt).
+ *
+ * Voll-Abgleich (nur Objektform): `{ "fullSync": true, "employees": [...] }`
+ * heisst, die Liste ist vollstaendig (aktive und inaktive Mitarbeiter). Nach
+ * der normalen Verarbeitung werden alle VALID-Tickets dieses Mandanten mit
+ * Quelle EMP_CONTROL und uuid `emp-<id>` (nicht `emp-manual-…` aus dem
+ * Dashboard), die nicht in der Liste stehen und seit Beginn des Aufrufs nicht
+ * geaendert wurden, auf INVALID gesetzt; sonst bleibt am Ticket alles stehen. Antwort zusaetzlich
+ * mit `deactivated` und `deactivatedIds`. Abgelehnt (409, `wouldDeactivate`)
+ * wird der Abgleich bei leerer Liste, bei einem Eintrag ohne ID und, ausser
+ * mit `fullSyncForce: true`, wenn mehr als 3 Tickets und mehr als 30 Prozent
+ * der gueltigen Mitarbeiter-Tickets gesperrt wuerden (siehe
+ * `src/lib/emp-control-sync.ts`). Fuer den taeglichen Abgleich reicht je
+ * Mitarbeiter `{ "id": …, "active": true|false }`: Ein solcher Eintrag ohne
+ * weitere Felder legt im Voll-Abgleich kein Ticket an und aendert an einem
+ * vorhandenen nichts. Mit `active: false` gilt der Mitarbeiter als nicht
+ * mehr gemeldet, sein gueltiges Ticket wird wie ein fehlendes gesperrt
+ * (zaehlt bei den Schutzregeln mit und steht in `deactivatedIds`). Eine
+ * Ablehnung nennt in `wouldDeactivateEmployees` (ID und Name, hoechstens 50)
+ * die Mitarbeiter, deren Ticket gesperrt worden waere, damit der Absender
+ * sie anzeigen kann.
  */
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -96,6 +120,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const bodyObject = !Array.isArray(body) && body != null && typeof body === "object"
+    ? (body as { fullSync?: unknown; fullSyncForce?: unknown })
+    : null;
+  const fullSync = bodyObject?.fullSync === true;
+  const fullSyncForce = bodyObject?.fullSyncForce === true;
+
+  // Fuer den Voll-Abgleich: Zeitpunkt und Anzahl der gueltigen Webhook-Tickets
+  // vor der Verarbeitung. Gesperrt werden nur Tickets, die seit diesem
+  // Zeitpunkt nicht geaendert wurden (ein parallel eingetroffener Einzel-Sync
+  // bleibt so stehen); der Nenner der Prozent-Regel zaehlt im selben Aufruf
+  // neu angelegte Tickets nicht mit.
+  const fullSyncStartedAt = new Date();
+  const validBefore = fullSync
+    ? (await db.ticket.findMany({
+        where: { accountId, source: "EMP_CONTROL", status: "VALID" },
+        select: { uuid: true },
+      })).filter((t) => isSyncedEmployeeUuid(t.uuid)).length
+    : 0;
+
   let created = 0;
   let updated = 0;
   /**
@@ -142,6 +185,20 @@ export async function POST(request: NextRequest) {
     const deviceIds = [...new Set(deviceKnown)];
     const devicesInPayload = Array.isArray(emp.deviceIds) || emp.deviceId != null;
 
+    const uuid = `emp-${id}`;
+    const existing = await db.ticket.findFirst({ where: { uuid } });
+
+    // Inaktiver Mitarbeiter ohne Ticket: nichts anlegen. Ein gesperrtes
+    // Ticket fuer jemanden, der hier nie Zutritt hatte, braucht niemand.
+    if (!existing && emp.active === false) continue;
+
+    // Voll-Abgleich: Ein Eintrag nur mit ID (und active) ist eine reine
+    // Anwesenheitsmeldung. Er legt nichts an und laesst ein vorhandenes
+    // Ticket, wie es ist (Chip, Namen, Bereiche, Status). Mit active false
+    // gilt der Mitarbeiter als nicht mehr gemeldet: Sein Ticket wird unten
+    // zusammen mit den fehlenden gesperrt, unter denselben Schutzregeln.
+    if (fullSync && isPresenceMarker(emp)) continue;
+
     if (areaUnknown.length > 0 || deviceUnknown.length > 0) {
       unknown.push({
         employeeId: String(id),
@@ -149,9 +206,6 @@ export async function POST(request: NextRequest) {
         ...(deviceUnknown.length > 0 ? { deviceIds: [...new Set(deviceUnknown)] } : {}),
       });
     }
-
-    const uuid = `emp-${id}`;
-    const existing = await db.ticket.findFirst({ where: { uuid } });
 
     // Inkrementeller Sync: Nur Felder schreiben, die der Webhook
     // tatsaechlich mitgeschickt hat. Frueher hat ein Sync ohne
@@ -259,6 +313,65 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Voll-Abgleich: Erst nach der Verarbeitung oben, damit gerade gemeldete
+  // Mitarbeiter schon ihren neuen Stand haben. Gesperrt wird nur der Status
+  // VALID; Bereiche, Geraete, Chip und Daten bleiben, ein spaeterer Aufruf
+  // mit active true gibt das Ticket wieder frei.
+  let fullSyncResult: { deactivated: number; deactivatedIds: string[] } | null = null;
+  let fullSyncRefusal: {
+    error: string;
+    wouldDeactivate: number;
+    wouldDeactivateEmployees: { id: string; name: string }[];
+  } | null = null;
+  if (fullSync) {
+    const validTickets = await db.ticket.findMany({
+      where: { accountId, source: "EMP_CONTROL", status: "VALID", updatedAt: { lt: fullSyncStartedAt } },
+      select: { id: true, uuid: true, name: true },
+    });
+    const plan = planFullSync({ employees, validTickets, validBefore, force: fullSyncForce });
+    if (plan.action === "refuse") {
+      const names = new Map(validTickets.map((t) => [t.id, t.name]));
+      fullSyncRefusal = {
+        error: plan.error,
+        wouldDeactivate: plan.wouldDeactivate,
+        wouldDeactivateEmployees: plan.ticketIds.slice(0, FULL_SYNC_PREVIEW_MAX).map((ticketId, i) => ({
+          id: plan.employeeIds[i],
+          name: names.get(ticketId) ?? "",
+        })),
+      };
+      console.info("[emp-control/webhook] Voll-Abgleich abgelehnt", {
+        accountId,
+        employees: employees.length,
+        reason: plan.reason,
+        wouldDeactivate: plan.wouldDeactivate,
+        valid: plan.total,
+      });
+    } else {
+      const changed = plan.ticketIds.length > 0
+        ? await db.ticket.updateManyAndReturn({
+            where: {
+              id: { in: plan.ticketIds },
+              accountId,
+              source: "EMP_CONTROL",
+              status: "VALID",
+              updatedAt: { lt: fullSyncStartedAt },
+            },
+            data: { status: "INVALID" },
+            select: { id: true, uuid: true },
+          })
+        : [];
+      const deactivatedIds = changed
+        .sort((a, b) => a.id - b.id)
+        .map((t) => (t.uuid ?? "").slice(4));
+      fullSyncResult = { deactivated: changed.length, deactivatedIds };
+      console.info("[emp-control/webhook] Voll-Abgleich", {
+        accountId,
+        employees: employees.length,
+        deactivated: changed.length,
+      });
+    }
+  }
+
   await prisma.apiConfig.update({
     where: { id: config.id },
     data: { lastUpdate: new Date() },
@@ -267,6 +380,25 @@ export async function POST(request: NextRequest) {
   // Konflikte sollen in emp-control sichtbar bleiben: Der Abgleich dort
   // wertet nur den HTTP-Status und das Feld error aus. Die uebrigen
   // Mitarbeiter sind zu diesem Zeitpunkt bereits gespeichert.
+  if (fullSyncRefusal) {
+    const failedText = failed.length > 0
+      ? ` ${failed.length} Mitarbeiter nicht gespeichert, Kennung oder Code ist bereits vergeben (ID ${failed.map((f) => f.employeeId).join(", ")})`
+      : "";
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `${fullSyncRefusal.error}${failedText}`,
+        wouldDeactivate: fullSyncRefusal.wouldDeactivate,
+        wouldDeactivateEmployees: fullSyncRefusal.wouldDeactivateEmployees,
+        created,
+        updated,
+        ...(unknown.length > 0 ? { unknown } : {}),
+        ...(failed.length > 0 ? { failed } : {}),
+      },
+      { status: 409 },
+    );
+  }
+
   if (failed.length > 0) {
     const ids = failed.map((f) => f.employeeId).join(", ");
     return NextResponse.json(
@@ -277,6 +409,7 @@ export async function POST(request: NextRequest) {
         updated,
         ...(unknown.length > 0 ? { unknown } : {}),
         failed,
+        ...(fullSyncResult ?? {}),
       },
       { status: 409 },
     );
@@ -287,5 +420,6 @@ export async function POST(request: NextRequest) {
     created,
     updated,
     ...(unknown.length > 0 ? { unknown } : {}),
+    ...(fullSyncResult ?? {}),
   });
 }
