@@ -6,7 +6,7 @@
  * hat, sofort.
  */
 import { createTtlCache } from "./ttl-cache";
-import { LINK_RULES_OFF, parseLinkRules, type LinkRules } from "./link-rules";
+import { LINK_RULE_KEYS, parseLinkRules, type LinkRules } from "./link-rules";
 
 const RULES_TTL_MS = 60_000;
 
@@ -31,18 +31,25 @@ export function loadLinkRules(db: LinkRulesDb, accountId: number): Promise<LinkR
   });
 }
 
+/** Alle Regeln eingeschaltet: der strengere Stand jeder Regel. */
+export const LINK_RULES_STRICT: LinkRules = Object.fromEntries(
+  LINK_RULE_KEYS.map((key) => [key, true]),
+) as LinkRules;
+
 /**
- * Für die öffentlichen Routen: Schlägt das Lesen fehl, gelten alle Regeln als
- * aus. Die Anfrage läuft dann wie vor den Regeln weiter, statt zu scheitern
- * (die Routen brauchten diese Abfrage vorher nicht). Fehler werden nicht
- * zwischengespeichert; die nächste Anfrage liest neu.
+ * Für die öffentlichen Routen (Kiosk, Kiosk-Tür, Auslastung, Massen-Pause):
+ * Schlägt das Lesen fehl, gilt für diese eine Anfrage jede Regel als
+ * eingeschaltet, also der strengere Stand (nur zugeordnete Türen, keine
+ * Namen, „Alle fortsetzen“ nur für die eigene Massen-Pause). Die Anfrage
+ * scheitert nicht, öffnet aber auch nicht mehr als mit der Regel. Fehler
+ * werden nicht zwischengespeichert; die nächste Anfrage liest neu.
  */
-export async function loadLinkRulesOrOff(db: LinkRulesDb, accountId: number): Promise<LinkRules> {
+export async function loadLinkRulesOrStrict(db: LinkRulesDb, accountId: number): Promise<LinkRules> {
   try {
     return await loadLinkRules(db, accountId);
   } catch (err) {
-    console.error("[link-rules] Lesen fehlgeschlagen, Regeln gelten als aus:", err);
-    return { ...LINK_RULES_OFF };
+    console.error("[link-rules] Lesen fehlgeschlagen, Regeln gelten für diese Anfrage als eingeschaltet:", err);
+    return { ...LINK_RULES_STRICT };
   }
 }
 

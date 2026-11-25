@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { loadLinkRulesOrOff } from "@/lib/link-rules-cache";
+import { loadLinkRulesOrStrict } from "@/lib/link-rules-cache";
 import {
   PAUSE_ALL_MARKER,
   groupPauseAllResume,
@@ -259,7 +259,7 @@ export async function POST(
     // (Mass-Pause-Schutz nach Vorfall 2026-05-27: 3.546 Tickets unbemerkt
     // pausiert).
     // Regel „„Alle fortsetzen“ hebt nur die eigene Pause auf“ (lib/link-rules).
-    const onlyOwnPause = (await loadLinkRulesOrOff(prisma, monitor.accountId)).resumeOnlyOwnPause;
+    const onlyOwnPause = (await loadLinkRulesOrStrict(prisma, monitor.accountId)).resumeOnlyOwnPause;
 
     if (action === "preview") {
       const targetStatus = (body.target as string) === "resume"

@@ -5,7 +5,7 @@ import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { createTtlCache } from "@/lib/ttl-cache";
 import { hideMonitorNames } from "@/lib/link-rules";
-import { loadLinkRulesOrOff } from "@/lib/link-rules-cache";
+import { loadLinkRulesOrStrict } from "@/lib/link-rules-cache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -204,7 +204,7 @@ export async function GET(
       },
     }),
     // Regel „Kundennamen am Auslastungs-Monitor ausblenden“ (60 s im Speicher).
-    loadLinkRulesOrOff(prisma, accountId),
+    loadLinkRulesOrStrict(prisma, accountId),
   ]);
 
   const areaLinks = new Map<number, typeof allLinks>();
