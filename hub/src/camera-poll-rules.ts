@@ -38,6 +38,24 @@ export function snapshotJobFor(type: string, g: SnapshotGate): SnapshotJob {
 }
 
 /**
+ * Zustand einer KI-Art in einer Messung: aktiv, nicht aktiv oder null (die
+ * Kamera kennt die Art nicht; der bisherige Stand bleibt).
+ *
+ * Ist die Fahrzeug-Erkennung der Kamera abgeschaltet, gilt VEHICLE als nicht
+ * aktiv und nicht als ungemessen: Ein Fahrzeug-Ereignis, das beim Abschalten
+ * gerade lief, endet dann nach dem Nachlauf. Ungemessen bliebe es bis zum
+ * naechsten Hub-Start als laufend stehen.
+ */
+export function aiAlarmState(
+  type: string,
+  entry: { alarm_state?: number; support?: number } | undefined,
+  vehicleDetection: boolean
+): boolean | null {
+  if (type === "VEHICLE" && !vehicleDetection) return false;
+  return entry?.support === 1 ? entry.alarm_state === 1 : null;
+}
+
+/**
  * Vorrang des Kennzeichens vor der Gesichtserkennung an derselben Kamera.
  *
  * Die Personen-Pipeline haelt die Kamera fuer ihren ganzen Lauf (Vorlauf,
@@ -121,6 +139,115 @@ export function endHoldFor(type: string, holdMs: number, motionHoldMs: number): 
  */
 export function endsToRetry<T extends { phase: string }>(events: T[]): T[] {
   return events.filter((e) => e.phase === "end");
+}
+
+/** Was die Regeln der Warteschlange von einer Meldung wissen muessen. */
+export interface QueuedEvent {
+  cameraId: number;
+  type: string;
+  phase: string;
+  /** Zeitpunkt des Ereignisses (ISO, Uhr des Hubs). */
+  at: string;
+}
+
+/**
+ * So alt darf ein Beginn hoechstens sein, wenn er an die Cloud geht. Er loest
+ * dort Regeln aus (Licht, Durchsage, Push), und die gehoeren zum Augenblick:
+ * Ein Beginn, der wegen einer Stoerung laenger in der Warteschlange stand,
+ * entfaellt. 30 s reichen fuer einen zweiten Versuch nach einer einzelnen
+ * gescheiterten Meldung (Zeitlimit 15 s, neuer Versuch nach 10 s).
+ */
+export const START_MAX_AGE_MS = 30_000;
+
+export interface OutboxTidy<T> {
+  queue: T[];
+  /** Beginne, die zu alt wurden. */
+  staleStarts: number;
+  /** Enden, deren Beginn dabei entfiel (die Cloud kennt das Ereignis nicht). */
+  staleEnds: number;
+  /** Wegen der Obergrenze verworfen. */
+  cutStarts: number;
+  cutEnds: number;
+}
+
+const queueKey = (e: QueuedEvent): string => `${e.cameraId}:${e.type}`;
+
+/**
+ * Warteschlange der Meldungen an die Cloud aufraeumen, vor jeder Meldung und
+ * nach jedem Einreihen. Die Reihenfolge bleibt erhalten.
+ *
+ * 1. Beginne, die aelter als `maxStartAgeMs` sind, entfallen (siehe
+ *    START_MAX_AGE_MS). Steht das Ende desselben Ereignisses schon dahinter,
+ *    entfaellt es mit: Der Beginn ging nie hinaus, die Cloud kennt das
+ *    Ereignis also nicht. Laeuft es noch, traegt die Cloud es ueber die Liste
+ *    der laufenden Ereignisse nach, ohne Regeln.
+ * 2. Sind es danach mehr als `maxLength`, fallen zuerst Enden weg, die
+ *    hoechstwahrscheinlich nichts schliessen: Je Kamera und Art fuehrt die
+ *    Cloud hoechstens ein offenes Ereignis. Das erste Ende in der
+ *    Warteschlange schliesst es, ebenso das Ende hinter einem Beginn, der
+ *    selbst noch wartet. Diese bleiben; von den uebrigen gehen die aeltesten.
+ *    Erst danach fallen Beginne weg.
+ */
+export function tidyOutbox<T extends QueuedEvent>(
+  queue: T[],
+  now: number,
+  maxStartAgeMs: number,
+  maxLength: number
+): OutboxTidy<T> {
+  const out: OutboxTidy<T> = { queue: [], staleStarts: 0, staleEnds: 0, cutStarts: 0, cutEnds: 0 };
+
+  /** Kamera und Art, deren veralteter Beginn gerade entfiel: Das naechste Ende gehoert dazu. */
+  const endOfStale = new Set<string>();
+  for (const e of queue) {
+    const key = queueKey(e);
+    if (e.phase === "start") {
+      if (now - Date.parse(e.at) > maxStartAgeMs) {
+        out.staleStarts++;
+        endOfStale.add(key);
+        continue;
+      }
+      endOfStale.delete(key);
+    } else if (e.phase === "end" && endOfStale.delete(key)) {
+      out.staleEnds++;
+      continue;
+    }
+    out.queue.push(e);
+  }
+
+  let over = out.queue.length - maxLength;
+  if (over <= 0) return out;
+
+  // Enden, die sicher gebraucht werden: das erste je Kamera und Art und das
+  // Ende hinter einem wartenden Beginn.
+  const needed = new Set<number>();
+  const expectsEnd = new Map<string, boolean>();
+  out.queue.forEach((e, i) => {
+    const key = queueKey(e);
+    if (e.phase === "start") {
+      expectsEnd.set(key, true);
+    } else if (e.phase === "end") {
+      if (expectsEnd.get(key) ?? true) needed.add(i);
+      expectsEnd.set(key, false);
+    }
+  });
+  const drop = new Set<number>();
+  const passes: Array<(e: T, i: number) => boolean> = [
+    (e, i) => e.phase === "end" && !needed.has(i),
+    (e) => e.phase === "start",
+    () => true,
+  ];
+  for (const fits of passes) {
+    for (let i = 0; i < out.queue.length && over > 0; i++) {
+      const e = out.queue[i];
+      if (drop.has(i) || !fits(e, i)) continue;
+      drop.add(i);
+      over--;
+      if (e.phase === "start") out.cutStarts++;
+      else out.cutEnds++;
+    }
+  }
+  out.queue = out.queue.filter((_, i) => !drop.has(i));
+  return out;
 }
 
 /**

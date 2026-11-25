@@ -1,6 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CameraLease, RunningReport, clockDriftKey, endHoldFor, endsToRetry, snapshotJobFor, type SnapshotGate } from "./camera-poll-rules.js";
+import { debounceEvents, newDebounceState, runningOf } from "./event-debounce.js";
+import {
+  CameraLease,
+  RunningReport,
+  START_MAX_AGE_MS,
+  aiAlarmState,
+  clockDriftKey,
+  endHoldFor,
+  endsToRetry,
+  snapshotJobFor,
+  tidyOutbox,
+  type QueuedEvent,
+  type SnapshotGate,
+} from "./camera-poll-rules.js";
 
 const gate = (o: Partial<SnapshotGate> = {}): SnapshotGate => ({
   inFlight: false,
@@ -197,4 +210,143 @@ test("Liste der laufenden Ereignisse: geht nur mit der Meldung, die genau ihren 
   // Leere Liste ist eine Aussage (nichts laeuft), kein „nicht mitsenden“.
   r.capture([]);
   assert.deepEqual(r.take(true), []);
+});
+
+test("KI-Alarm: abgeschaltete Fahrzeug-Erkennung heisst nicht aktiv, eine unbekannte Art bleibt ungemessen", () => {
+  const on = { alarm_state: 1, support: 1 };
+  assert.equal(aiAlarmState("VEHICLE", on, true), true);
+  assert.equal(aiAlarmState("VEHICLE", { alarm_state: 0, support: 1 }, true), false);
+  // Abgeschaltet: nicht aktiv, auch wenn die Kamera Alarm meldet oder die Art gar nicht kennt.
+  assert.equal(aiAlarmState("VEHICLE", on, false), false);
+  assert.equal(aiAlarmState("VEHICLE", undefined, false), false);
+  // Die Einstellung betrifft nur Fahrzeuge.
+  assert.equal(aiAlarmState("PERSON", on, false), true);
+  // Kamera kennt die Art nicht: ungemessen.
+  assert.equal(aiAlarmState("ANIMAL", undefined, true), null);
+  assert.equal(aiAlarmState("ANIMAL", { alarm_state: 1, support: 0 }, true), null);
+});
+
+test("KI-Alarm: ein laufendes Fahrzeug-Ereignis endet, wenn die Erkennung abgeschaltet wird", () => {
+  const st = newDebounceState();
+  const hold = 6_000;
+  const alarm = { alarm_state: 1, support: 1 };
+  const measure = (now: number, vehicleDetection: boolean) => {
+    const v = aiAlarmState("VEHICLE", alarm, vehicleDetection);
+    return debounceEvents(st, v === null ? {} : { VEHICLE: v }, now, hold);
+  };
+  assert.deepEqual(measure(10_000, true), [{ type: "VEHICLE", phase: "start", at: 10_000 }]);
+  assert.deepEqual(measure(12_000, true), []);
+  // Erkennung abgeschaltet, die Kamera meldet weiter Alarm: Nach dem Nachlauf
+  // endet das Ereignis mit seiner letzten aktiven Messung.
+  assert.deepEqual(measure(14_000, false), []);
+  assert.deepEqual(measure(20_000, false), [{ type: "VEHICLE", phase: "end", at: 12_000 }]);
+  assert.deepEqual(runningOf(st), []);
+});
+
+// ---- Warteschlange der Meldungen an die Cloud ----
+
+const T = Date.UTC(2026, 10, 25, 10, 0, 0);
+/** Ereignis `ageS` Sekunden vor T. */
+const queued = (cameraId: number, type: string, phase: "start" | "end", ageS: number): QueuedEvent => ({
+  cameraId,
+  type,
+  phase,
+  at: new Date(T - ageS * 1000).toISOString(),
+});
+const show = (q: QueuedEvent[]) => q.map((e) => `${e.phase}:${e.cameraId}:${e.type}@-${(T - Date.parse(e.at)) / 1000}`);
+const tidy = (q: QueuedEvent[], max = 400) => tidyOutbox(q, T, START_MAX_AGE_MS, max);
+
+test("Warteschlange: ein frischer Beginn bleibt, ein zu alter entfaellt", () => {
+  const r = tidy([queued(7, "PERSON", "start", 31), queued(8, "PERSON", "start", 30), queued(9, "MOTION", "start", 2)]);
+  assert.deepEqual(show(r.queue), ["start:8:PERSON@-30", "start:9:MOTION@-2"]);
+  assert.equal(r.staleStarts, 1);
+  assert.equal(r.staleEnds, 0);
+});
+
+test("Warteschlange: mit dem zu alten Beginn entfaellt das Ende desselben Ereignisses, sonst keines", () => {
+  const r = tidy([
+    queued(7, "PERSON", "end", 300), // Ende eines Ereignisses, dessen Beginn schon hinausging: bleibt
+    queued(7, "PERSON", "start", 120), // zu alt
+    queued(8, "PERSON", "end", 110), // andere Kamera: bleibt
+    queued(7, "MOTION", "end", 105), // andere Art: bleibt
+    queued(7, "PERSON", "end", 100), // gehoert zum zu alten Beginn: entfaellt
+    queued(7, "PERSON", "start", 5), // frisch
+    queued(7, "PERSON", "end", 1), // gehoert zum frischen Beginn: bleibt
+  ]);
+  assert.deepEqual(show(r.queue), [
+    "end:7:PERSON@-300",
+    "end:8:PERSON@-110",
+    "end:7:MOTION@-105",
+    "start:7:PERSON@-5",
+    "end:7:PERSON@-1",
+  ]);
+  assert.equal(r.staleStarts, 1);
+  assert.equal(r.staleEnds, 1);
+});
+
+test("Warteschlange: laeuft das Ereignis des zu alten Beginns noch, bleibt ein spaeteres Ende stehen", () => {
+  // Erster Aufruf: nur der Beginn steht da, das Ereignis laeuft. Die Cloud
+  // traegt es ueber die Liste der laufenden Ereignisse nach.
+  const first = tidy([queued(7, "MOTION", "start", 45)]);
+  assert.deepEqual(first.queue, []);
+  // Spaeter kommt das Ende: Es muss hinaus, die Cloud kennt das Ereignis jetzt.
+  const later = tidy([queued(7, "MOTION", "end", 3)]);
+  assert.deepEqual(show(later.queue), ["end:7:MOTION@-3"]);
+  assert.equal(later.staleEnds, 0);
+});
+
+test("Warteschlange: Enden werden nie wegen ihres Alters verworfen, ein unlesbarer Zeitpunkt bleibt stehen", () => {
+  const broken = { cameraId: 7, type: "PERSON", phase: "start", at: "kaputt" };
+  const r = tidy([queued(7, "PERSON", "end", 7200), broken]);
+  assert.equal(r.queue.length, 2);
+  assert.equal(r.staleStarts + r.staleEnds + r.cutStarts + r.cutEnds, 0);
+});
+
+test("Warteschlange voll: je Kamera und Art bleibt das aelteste Ende, ueberzaehlige Enden gehen zuerst", () => {
+  // Kamera 5: das Ereignis von vor der Stoerung endet (aeltestes Ende), danach
+  // fuenf weitere Enden, deren Beginn nie ankam. Kamera 6 genauso mit zwei.
+  const q = [
+    queued(5, "PERSON", "end", 600),
+    queued(6, "PERSON", "end", 590),
+    queued(5, "PERSON", "end", 500),
+    queued(5, "PERSON", "end", 400),
+    queued(6, "PERSON", "end", 390),
+    queued(5, "PERSON", "end", 300),
+    queued(5, "PERSON", "end", 200),
+    queued(5, "PERSON", "end", 100),
+  ];
+  const r = tidy(q, 5);
+  assert.deepEqual(show(r.queue), [
+    "end:5:PERSON@-600",
+    "end:6:PERSON@-590",
+    "end:5:PERSON@-300",
+    "end:5:PERSON@-200",
+    "end:5:PERSON@-100",
+  ]);
+  assert.equal(r.cutEnds, 3);
+  assert.equal(r.cutStarts, 0);
+});
+
+test("Warteschlange voll: das Ende hinter einem wartenden Beginn bleibt, Beginne gehen erst nach den ueberzaehligen Enden", () => {
+  const q = [
+    queued(5, "PERSON", "end", 600), // aeltestes Ende: bleibt
+    queued(5, "PERSON", "end", 500), // ueberzaehlig
+    queued(5, "PERSON", "start", 20), // frisch, wartet
+    queued(5, "PERSON", "end", 10), // schliesst den wartenden Beginn: bleibt
+    queued(5, "PERSON", "end", 5), // ueberzaehlig
+  ];
+  const three = tidy(q, 3);
+  assert.deepEqual(show(three.queue), ["end:5:PERSON@-600", "start:5:PERSON@-20", "end:5:PERSON@-10"]);
+  assert.equal(three.cutEnds, 2);
+  assert.equal(three.cutStarts, 0);
+  // Noch enger: jetzt erst faellt der Beginn.
+  const two = tidy(q, 2);
+  assert.deepEqual(show(two.queue), ["end:5:PERSON@-600", "end:5:PERSON@-10"]);
+  assert.equal(two.cutStarts, 1);
+});
+
+test("Warteschlange: unter der Obergrenze bleibt alles in seiner Reihenfolge", () => {
+  const q = [queued(5, "PERSON", "end", 50), queued(6, "VEHICLE", "start", 3), queued(5, "PERSON", "start", 2), queued(6, "VEHICLE", "end", 1)];
+  const r = tidy(q);
+  assert.deepEqual(r.queue, q);
 });

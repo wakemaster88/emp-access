@@ -34,7 +34,17 @@ import { getForecast } from "./weather.js";
 import { isDark, spotlightWanted } from "./vehicle-light-rules.js";
 import { debounceEvents, endAll, newDebounceState, runningOf, type DebounceState } from "./event-debounce.js";
 import { previousAliveAt } from "./alive-mark.js";
-import { CameraLease, RunningReport, clockDriftKey, endHoldFor, endsToRetry, snapshotJobFor } from "./camera-poll-rules.js";
+import {
+  CameraLease,
+  RunningReport,
+  START_MAX_AGE_MS,
+  aiAlarmState,
+  clockDriftKey,
+  endHoldFor,
+  endsToRetry,
+  snapshotJobFor,
+  tidyOutbox,
+} from "./camera-poll-rules.js";
 import { ChangeLog } from "./change-log.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 
@@ -101,7 +111,11 @@ interface CameraRuntime {
   lastAutoSnapshotAt: number;
   /** Personen-/Fahrzeug-Pipeline läuft – keine zweite starten. */
   snapshotInFlight: boolean;
-  /** VEHICLE kam während einer Pipeline – Burst danach nachholen. */
+  /**
+   * VEHICLE kam während einer Pipeline. Die Personen-Pipeline gibt die Kamera
+   * dann nach dem laufenden Bild ab (CameraLease), ein laufender Burst zieht
+   * den nächsten direkt nach.
+   */
   pendingVehicle: boolean;
   /** Letzter Burst ohne Fahrzeug (Fehlalarm) – steuert die Licht-Sperre. */
   burstEmpty?: boolean;
@@ -451,10 +465,10 @@ function readStates(
   if (!ai) return states;
   const map: Record<string, string> = { people: "PERSON", vehicle: "VEHICLE", dog_cat: "ANIMAL" };
   for (const [key, type] of Object.entries(map)) {
-    // Fahrzeug-Erkennung pro Kamera abschaltbar (Spam-Weitwinkel).
-    if (type === "VEHICLE" && cam.config.vehicleDetection === false) continue;
     const entry = ai[key] as { alarm_state?: number; support?: number } | undefined;
-    if (entry?.support === 1) states[type] = entry.alarm_state === 1;
+    // Fahrzeug-Erkennung pro Kamera abschaltbar (Spam-Weitwinkel).
+    const state = aiAlarmState(type, entry, cam.config.vehicleDetection !== false);
+    if (state !== null) states[type] = state;
   }
   // Klare Gesichtserkennung (falls Modell face liefert) ueberschreibt PERSON.
   const face = ai.face as { alarm_state?: number; support?: number } | undefined;
@@ -903,10 +917,14 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     // Kam während des Bursts eine neue VEHICLE-Flanke (zweiter Wagen direkt
     // dahinter), jetzt nachziehen. Der Body prüft zuerst, ob der Alarm noch
     // steht, und bricht sonst sofort ab – keine Endlosschleife.
+    // Abwarten statt entkoppeln: Wer auf diesen Burst wartet (der Nachhol-Lauf
+    // der Gesichtserkennung, die Person bei gleichzeitigem Beginn), soll die
+    // Kamera danach frei vorfinden. Sonst belegte der nachgezogene Burst sie
+    // im selben Atemzug wieder und der Nachhol-Lauf entfiel ersatzlos.
     if (cam.pendingVehicle) {
       cam.pendingVehicle = false;
       log(`Fahrzeug-Snapshot ${cam.config.name}: nachgezogen (kam während Burst)`);
-      void uploadVehicleSnapshot(cameraId).catch((e) =>
+      await uploadVehicleSnapshot(cameraId).catch((e) =>
         log(`Fahrzeug-Snapshot ${cam.config.name} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
       );
     }
@@ -2338,7 +2356,8 @@ interface CloudEvent {
  * laeuft dagegen weiter im Takt. Scheitert eine Meldung, entfallen ihre
  * Beginne wie bisher; ihre Enden gehen noch einmal mit (endsToRetry), und was
  * dann noch laeuft, traegt die Cloud ueber die Liste der laufenden Ereignisse
- * nach.
+ * nach. Ein Beginn, der in der Warteschlange zu alt wird, entfaellt ebenfalls
+ * (tidyOutbox): Regeln sollen nie zu einem Ereignis von vorhin laufen.
  */
 const EVENT_UPLOAD_TIMEOUT_MS = 15_000;
 const EVENT_BATCH_MAX = 100;
@@ -2364,13 +2383,57 @@ let orphansClosed = false;
 /** Alle Kameras dieses Hubs inklusive DoorBird (fuer das Schliessen nach dem Start). */
 let knownCameraIds: number[] = [];
 
+/** Was seit der letzten Log-Zeile aus der Warteschlange fiel. */
+const outboxLoss = { staleStarts: 0, staleEnds: 0, cutStarts: 0, cutEnds: 0 };
+let outboxLossLoggedAt = 0;
+const OUTBOX_LOSS_LOG_MS = 5 * 60_000;
+/** Waehrend einer Stoerung steht der Ausfall selbst schon im Log: die Summe nur stuendlich. */
+const OUTBOX_LOSS_LOG_FAILING_MS = 60 * 60_000;
+
+/**
+ * Verluste der Warteschlange ins Log: gesammelt in einer Zeile, nicht je
+ * Vorfall, und in jedem Fall einmal, wenn die Cloud wieder da ist.
+ */
+function logOutboxLoss(force = false): void {
+  const { staleStarts, staleEnds, cutStarts, cutEnds } = outboxLoss;
+  if (staleStarts + staleEnds + cutStarts + cutEnds === 0) return;
+  const every = eventUploadFailing ? OUTBOX_LOSS_LOG_FAILING_MS : OUTBOX_LOSS_LOG_MS;
+  if (!force && Date.now() - outboxLossLoggedAt < every) return;
+  outboxLossLoggedAt = Date.now();
+  const starts = (n: number) => `${n} ${n === 1 ? "Beginn" : "Beginne"}`;
+  const ends = (n: number) => `${n} ${n === 1 ? "Ende" : "Enden"}`;
+  const parts: string[] = [];
+  if (staleStarts > 0) {
+    parts.push(
+      `${starts(staleStarts)} nicht mehr gemeldet (älter als ${START_MAX_AGE_MS / 1000} s, dafür laufen keine Regeln)` +
+        (staleEnds > 0 ? `, ${ends(staleEnds)} dazu entfallen` : "")
+    );
+  }
+  if (cutStarts + cutEnds > 0) {
+    parts.push(`Warteschlange voll, ${ends(cutEnds)} und ${starts(cutStarts)} verworfen`);
+  }
+  log(`Kamera-Event-Upload: ${parts.join("; ")}`);
+  outboxLoss.staleStarts = outboxLoss.staleEnds = outboxLoss.cutStarts = outboxLoss.cutEnds = 0;
+}
+
+/** Warteschlange aufraeumen (zu alte Beginne, Obergrenze), vor jeder Meldung und nach jedem Einreihen. */
+function tidyEventOutbox(): void {
+  const t = tidyOutbox(eventOutbox, Date.now(), START_MAX_AGE_MS, EVENT_OUTBOX_MAX);
+  if (t.queue.length === eventOutbox.length) return;
+  eventOutbox.length = 0;
+  eventOutbox.push(...t.queue);
+  outboxLoss.staleStarts += t.staleStarts;
+  outboxLoss.staleEnds += t.staleEnds;
+  outboxLoss.cutStarts += t.cutStarts;
+  outboxLoss.cutEnds += t.cutEnds;
+  for (let i = 0; i < t.staleStarts; i++) improveCount("camera", "event_start_stale");
+  logOutboxLoss();
+}
+
 function queueEventUpload(events: CloudEvent[], seen: number[]): void {
   if (events.length > 0) runningReport.enqueued();
   eventOutbox.push(...events);
-  if (eventOutbox.length > EVENT_OUTBOX_MAX) {
-    const dropped = eventOutbox.splice(0, eventOutbox.length - EVENT_OUTBOX_MAX).length;
-    log(`Kamera-Event-Upload: ${dropped} alte Meldungen verworfen (Cloud antwortet nicht)`);
-  }
+  tidyEventOutbox();
   for (const id of seen) seenOutbox.add(id);
   // Mit der Erreichbarkeit (einmal je Minute) geht mit, was gerade laeuft.
   if (seen.length > 0) runningReport.capture(runningEvents());
@@ -2403,6 +2466,10 @@ async function drainEventUploads(): Promise<void> {
   eventUploadRunning = true;
   try {
     while (eventOutbox.length > 0 || seenOutbox.size > 0) {
+      // Erst jetzt entscheiden, was noch hinausgeht: Seit dem Einreihen kann
+      // ein Beginn zu alt geworden sein (gescheiterte Versuche davor).
+      tidyEventOutbox();
+      if (eventOutbox.length === 0 && seenOutbox.size === 0) break;
       const events = eventOutbox.splice(0, EVENT_BATCH_MAX);
       const seen = [...seenOutbox];
       seenOutbox.clear();
@@ -2456,6 +2523,7 @@ async function drainEventUploads(): Promise<void> {
             eventUploadFailing = false;
             uploadFailLog.shouldLog("upload", "", Date.now());
             log("Kamera-Event-Upload: Cloud wieder erreichbar");
+            logOutboxLoss(true);
           }
           // Regel ausgeloest (z. B. Kamera auf Preset): Tasks sofort holen.
           if ((body?.rulesTriggered ?? 0) > 0) kickTaskPoll();
