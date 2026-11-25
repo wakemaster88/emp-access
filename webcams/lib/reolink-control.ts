@@ -1,4 +1,5 @@
 import { reolinkCommand } from "./reolink";
+import { spotlightLegacy, spotlightParam } from "./spotlight-param";
 import type { Cam } from "./types";
 
 export type PtzOp =
@@ -35,21 +36,32 @@ export async function ptzCtrl(cam: Cam, op: PtzOp, opts: { speed?: number; prese
   return reolinkCommand(cam, { cmd: "PtzCtrl", action: 0, param });
 }
 
+/**
+ * Weißlicht an/aus. Lichtmodus und Helligkeit bleiben, wie die Kamera sie
+ * meldet (lib/spotlight-param.ts): erst GetWhiteLed, dann SetWhiteLed.
+ * `brightness` gilt nur beim Einschalten. Ist der Stand nicht lesbar oder
+ * WEBCAMS_SPOTLIGHT_LEGACY=1 gesetzt, der frühere Befehl (Lichtmodus 1).
+ */
 export async function setSpotlight(
   cam: Cam,
   on: boolean,
-  brightness = 100,
+  brightness?: number,
 ) {
+  const legacy = spotlightLegacy(process.env.WEBCAMS_SPOTLIGHT_LEGACY);
+  const current = legacy
+    ? null
+    : await reolinkCommand<{ WhiteLed?: unknown }>(cam, {
+        cmd: "GetWhiteLed",
+        action: 0,
+        param: { channel: cam.channel },
+      })
+        .then((v) => v?.WhiteLed ?? null)
+        .catch(() => null);
   return reolinkCommand(cam, {
     cmd: "SetWhiteLed",
     action: 0,
     param: {
-      WhiteLed: {
-        channel: cam.channel,
-        state: on ? 1 : 0,
-        mode: 1, // manual
-        bright: Math.max(1, Math.min(100, brightness)),
-      },
+      WhiteLed: { channel: cam.channel, ...spotlightParam({ legacy, current, on, brightness }) },
     },
   });
 }

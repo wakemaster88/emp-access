@@ -88,6 +88,12 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Die Switch-Pruefung meldet Netzwerk-Befunde, andere Quellen (Assistent,
+  // Fahrzeugliste) Befunde des Hubs: Text und Ziel danach waehlen.
+  const network = source === "switch";
+  const origin = network ? "Netzwerk-Prüfung" : "Hub";
+  const target = network ? "/network" : "/";
+
   const list = (lines: string[]) =>
     lines.slice(0, MAX_LINES).join("\n") + (lines.length > MAX_LINES ? `\n… und ${lines.length - MAX_LINES} weitere` : "");
 
@@ -95,11 +101,11 @@ export async function POST(request: NextRequest) {
   if (opened.length > 0) {
     const single = opened.length === 1;
     const res = await notifyOutage(account.id, {
-      title: single ? `⚠️ ${opened[0].title}` : `⚠️ ${opened.length} neue Befunde (Netzwerk-Prüfung)`,
+      title: single ? `⚠️ ${opened[0].title}` : `⚠️ ${opened.length} neue Befunde (${origin})`,
       body: single
-        ? opened[0].detail || "Vom Hub bei der Netzwerk-Prüfung gefunden."
+        ? opened[0].detail || (network ? "Vom Hub bei der Netzwerk-Prüfung gefunden." : "Vom Hub gemeldet.")
         : list(opened.map((a) => `• ${a.title}`)),
-      url: "/network",
+      url: target,
       tag: `hub-alert-${source}`,
     });
     sent += res.pushed + res.telegram;
@@ -108,8 +114,12 @@ export async function POST(request: NextRequest) {
     const single = resolvedRows.length === 1;
     const res = await notifyOutage(account.id, {
       title: single ? `✅ Behoben: ${resolvedRows[0].title}` : `✅ ${resolvedRows.length} Befunde behoben`,
-      body: single ? "Die Netzwerk-Prüfung findet den Fehler nicht mehr." : list(resolvedRows.map((a) => `• ${a.title}`)),
-      url: "/network",
+      body: single
+        ? network
+          ? "Die Netzwerk-Prüfung findet den Fehler nicht mehr."
+          : "Der Hub meldet den Fehler nicht mehr."
+        : list(resolvedRows.map((a) => `• ${a.title}`)),
+      url: target,
       tag: `hub-alert-${source}-ok`,
     });
     sent += res.pushed + res.telegram;

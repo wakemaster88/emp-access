@@ -89,7 +89,8 @@ export function CamControlPanel({ cam, className, onReloadStream }: CamControlPa
   async function toggleSpotlight() {
     setBusy(true);
     try {
-      await post("/spotlight", { on: !spotlightOn, brightness: 100 });
+      // Nur an/aus: Ohne Helligkeit behält die Route die der Kamera (lib/spotlight-param.ts).
+      await post("/spotlight", { on: !spotlightOn });
       setSpotlightOn((s) => !s);
       toast(`Spotlight ${spotlightOn ? "aus" : "an"}`, "success");
     } finally {

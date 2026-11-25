@@ -510,7 +510,8 @@ function CameraPanel({
 
   async function toggleSpotlight(on: boolean) {
     setSpotlightOn(on);
-    const r = await run("spotlight", "spotlight", { on, brightness: 100 });
+    // Nur an/aus: Lichtmodus und Helligkeit stellt die Kamera selbst (Hub: spotlight-rules.ts).
+    const r = await run("spotlight", "spotlight", { on });
     if (!r.ok) setSpotlightOn(!on);
   }
 

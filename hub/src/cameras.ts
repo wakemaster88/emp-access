@@ -21,7 +21,21 @@ import { RULE_HOLD_MS, isZoneCamera, readTrackingCfg } from "./camera-motion-rul
 import { findAllowedVehicle, plateAutoMinConf, scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { checkVehicle } from "./vision.js";
 import { KNOWN_CITY, normalizePlate } from "./plate-match.js";
-import { burstConsensus, burstDone, pickFallbackFrame, type FrameRead } from "./vehicle-burst-rules.js";
+import { UMLAUT_CITY_BY_PLAIN } from "./plate-cities.js";
+import {
+  burstConsensus,
+  burstDoneReason,
+  burstEndText,
+  burstStep,
+  consensusChange,
+  firstFound,
+  frameShowsPlate,
+  pickFallbackFrame,
+  sightingImageTooLarge,
+  singleReadWeak,
+  type BurstEnd,
+  type FrameRead,
+} from "./vehicle-burst-rules.js";
 import { speakOnCamera } from "./camera-talk.js";
 import { syncDoorbirds } from "./doorbird.js";
 import { actuateIfAllowed } from "./vehicle-actuate.js";
@@ -30,8 +44,19 @@ import { findIpByMac, macForIp, normalizeMac } from "./netmap.js";
 import { lastScanResult } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
 import { improve, improveCount } from "./improve-log.js";
-import { getForecast } from "./weather.js";
-import { burstSwitchesLight, isDark, lightMarkStep, spotlightWanted } from "./vehicle-light-rules.js";
+import { getForecast, lastForecast } from "./weather.js";
+import {
+  isDark,
+  lightDecision,
+  lightMarkStep,
+  lightMinFrames,
+  lightMuteDue,
+  lightSkipLogged,
+  lightSkipText,
+  type LightFacts,
+  type LightSkipReason,
+} from "./vehicle-light-rules.js";
+import { ledModeNote, spotlightCommand, spotlightLegacy, type SpotlightCommand } from "./spotlight-rules.js";
 import { debounceEvents, endAll, newDebounceState, runningOf, type DebounceState } from "./event-debounce.js";
 import { previousAliveAt } from "./alive-mark.js";
 import {
@@ -128,8 +153,6 @@ interface CameraRuntime {
    * den nächsten direkt nach.
    */
   pendingVehicle: boolean;
-  /** Letzter Burst ohne Fahrzeug (Fehlalarm) – steuert die Licht-Sperre. */
-  burstEmpty?: boolean;
   /** Bis dahin kein Weißlicht beim Fahrzeug-Burst (Licht löst selbst Alarme aus). */
   spotlightMuteUntil?: number;
   unreachableLogged: boolean;
@@ -911,6 +934,21 @@ async function uploadPersonSnapshotBody(
   return { bytes: buf.length };
 }
 
+/** Ein Fahrzeug-Burst aus Sicht des Weißlichts: was der Body für Licht und Sperre meldet. */
+interface VehicleRun {
+  /**
+   * Der Hub hat für diesen Burst das Weißlicht eingeschaltet: schaltet es
+   * aus (vehicle-light.ts, mehrfach aufrufbar). null = kein Licht vom Hub.
+   */
+  lightOff: (() => Promise<void>) | null;
+  /** So viele Bilder hat die Kennzeichen-Suche ausgewertet. */
+  evaluated: number;
+  /** Ausgewertet und weder Kennzeichen noch Fahrzeug (ab Mindestfläche, in der Zone) gesehen. */
+  empty: boolean;
+  /** Mindestzahl der Bilder dieses Licht-Bursts (HUB_VEHICLE_LIGHT_MIN_FRAMES), 0 = keine. */
+  minFrames: number;
+}
+
 /**
  * Fahrzeug-Erkennung: dichter Burst → lokal dumpen → Plate-OCR wählt Frame.
  * Ohne Plate: Fallback Vision (Fahrzeug?). Ohne beides → kein Upload.
@@ -930,22 +968,28 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
   }
   cam.snapshotInFlight = true;
   try {
-    cam.burstEmpty = false;
     const lightOff = await vehicleLightOn(cam, cameraId);
+    const run: VehicleRun = { lightOff, evaluated: 0, empty: false, minFrames: 0 };
     try {
-      return await uploadVehicleSnapshotBody(cam, cameraId);
+      return await uploadVehicleSnapshotBody(cam, cameraId, run);
     } finally {
       if (lightOff) {
+        // Meist schon direkt nach dem letzten Bild aus (der Body schaltet es
+        // dort ab); hier für jeden anderen Ausgang. Mehrfach aufrufbar.
         await lightOff();
         // Licht an, aber kein Fahrzeug: Das Ein-/Ausschalten selbst löst an der
         // Kamera den nächsten Fahrzeug-Alarm aus (19.11. 15:28–15:33 Uhr alle ~8 s,
         // 16 von 19 Licht-Bursts leer). Eine Weile ohne Licht weiter.
-        if (cam.burstEmpty && VEHICLE_LIGHT_MUTE_MS > 0) {
+        // Mit Mindestzahl erst, wenn so viele Bilder ausgewertet sind (lightMuteDue).
+        if (
+          VEHICLE_LIGHT_MUTE_MS > 0 &&
+          lightMuteDue({ evaluated: run.evaluated, shown: !run.empty, minFrames: run.minFrames })
+        ) {
           cam.spotlightMuteUntil = Date.now() + VEHICLE_LIGHT_MUTE_MS;
           log(
-            `Fahrzeug-Burst ${cam.config.name}: Licht-Burst ohne Fahrzeug – ${Math.round(VEHICLE_LIGHT_MUTE_MS / 60_000)} min kein Weißlicht`
+            `Fahrzeug-Burst ${cam.config.name}: Licht-Burst ohne Fahrzeug (${run.evaluated} Frames ausgewertet) – ${Math.round(VEHICLE_LIGHT_MUTE_MS / 60_000)} min kein Weißlicht`
           );
-          improve("alpr", "spotlight_mute", { cam: cam.config.name });
+          improve("alpr", "spotlight_mute", { cam: cam.config.name, frames: run.evaluated });
         }
       }
     }
@@ -953,7 +997,8 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     cam.snapshotInFlight = false;
     // Kam während des Bursts eine neue VEHICLE-Flanke (zweiter Wagen direkt
     // dahinter), jetzt nachziehen. Der Body prüft zuerst, ob der Alarm noch
-    // steht, und bricht sonst sofort ab – keine Endlosschleife.
+    // steht; ist er aus, entscheidet das erste Bild, und ohne Kennzeichen und
+    // Fahrzeug darauf ist sofort Schluss – keine Endlosschleife.
     // Abwarten statt entkoppeln: Wer auf diesen Burst wartet (der Nachhol-Lauf
     // der Gesichtserkennung, die Person bei gleichzeitigem Beginn), soll die
     // Kamera danach frei vorfinden. Sonst belegte der nachgezogene Burst sie
@@ -1003,55 +1048,147 @@ const lateLightOffFailLog = new ChangeLog(10 * 60_000);
  */
 const lateLightOffSending = new Set<number>();
 
-/** Weißlicht einer Kamera schalten (manueller Modus der Kamera). */
-async function switchSpotlight(cam: CameraRuntime, on: boolean, brightness = 100): Promise<void> {
+/** Weißlicht mit dem früheren Befehl, weil der Stand fehlte: höchstens stündlich je Kamera im Log. */
+const spotlightFallbackLog = new ChangeLog(60 * 60_000);
+
+/**
+ * Weißlicht einer Kamera an oder aus. Lichtmodus und Helligkeit bleiben, wie
+ * die Kamera sie meldet (spotlight-rules.ts, Entscheidung vom 25.11.2026).
+ * `current` ist das Feld WhiteLed der Antwort auf GetWhiteLed, wenn der
+ * Aufrufer sie schon hat (null: seine Abfrage ist gescheitert); fehlt es,
+ * fragt switchSpotlight die Kamera selbst. `brightness` nur bei
+ * ausdrücklichem Wunsch, sie gilt nur beim Einschalten. Ohne brauchbaren
+ * Stand und mit HUB_SPOTLIGHT_LEGACY geht der frühere Befehl hinaus
+ * (Lichtmodus 1, Helligkeit 100 oder die angegebene).
+ */
+async function switchSpotlight(
+  cam: CameraRuntime,
+  on: boolean,
+  opts: { current?: unknown; brightness?: number } = {}
+): Promise<SpotlightCommand> {
   await ensureLogin(cam);
-  await cgi(cam, "SetWhiteLed", {
-    WhiteLed: { channel: cam.config.channel, state: on ? 1 : 0, mode: 1, bright: brightness },
+  const legacy = spotlightLegacy(process.env.HUB_SPOTLIGHT_LEGACY);
+  let current = opts.current;
+  let readError: string | null = null;
+  if (!legacy && current === undefined) {
+    current = await cgi(cam, "GetWhiteLed", { channel: cam.config.channel })
+      .then((v) => v.WhiteLed ?? null)
+      .catch((e) => {
+        readError = e instanceof Error ? e.message : String(e);
+        return null;
+      });
+  }
+  const cmd = spotlightCommand({ legacy, current, on, brightness: opts.brightness });
+  if (cmd.how === "fallback") {
+    improveCount("camera", "spotlight_fallback");
+    if (spotlightFallbackLog.shouldLog(String(cam.config.id), "fallback", Date.now())) {
+      const why = readError ?? (current == null ? "keine Antwort auf GetWhiteLed" : "GetWhiteLed ohne state/mode");
+      log(
+        `Kamera ${cam.config.name}: Weißlicht-Stand nicht lesbar (${why}) – ` +
+          `schaltet mit dem früheren Befehl (mode=${cmd.param.mode}, bright=${cmd.param.bright})`
+      );
+    }
+  }
+  await cgi(cam, "SetWhiteLed", { WhiteLed: { channel: cam.config.channel, ...cmd.param } });
+  return cmd;
+}
+
+/**
+ * Kein Weißlicht für diesen Burst: Im Dunkeln steht der Grund im Log (eine
+ * Zeile je Burst) und im Zähler alpr.spotlight_skip_<Grund>, bei Tag nichts.
+ */
+function noteNoLight(cam: CameraRuntime, reason: LightSkipReason, facts: LightFacts): void {
+  const dark = lightSkipLogged({
+    dark: facts.dark,
+    darkWithoutFetch: () => isDark(new Date(facts.now), lastForecast()?.days ?? []),
   });
+  if (!dark) return;
+  // Den Lichtmodus nennt die Zeile, wenn die Kamera schon gefragt wurde
+  // („schon an“ nennt ihn selbst); dafür keine eigene Abfrage.
+  const mode = reason === "already_on" ? "" : ledModeNote(facts.led);
+  log(
+    `Fahrzeug-Burst ${cam.config.name}: dunkel – kein Weißlicht (${lightSkipText(reason, facts)}${mode ? `; ${mode}` : ""})`
+  );
+  improveCount("alpr", `spotlight_skip_${reason}`);
 }
 
 /**
  * Nachts an der Zufahrt: Weißlicht der Kamera für die Dauer des Bursts
- * einschalten, damit das Kennzeichen lesbar wird (Aaron, 14.11.2026).
- * War das Licht schon an (manuell), bleibt es unberührt – außer der Hub
- * schaltet es gerade selbst aus (lateLightOff). Liefert die
+ * einschalten, damit das Kennzeichen lesbar wird (Entscheidung vom
+ * 14.11.2026). War das Licht schon an (manuell), bleibt es unberührt – außer
+ * der Hub schaltet es gerade selbst aus (lateLightOff). Liefert die
  * Ausschalt-Funktion oder null, wenn nichts geschaltet wurde. Fehler
  * blockieren den Burst nie.
+ *
+ * Ob und warum nicht entscheidet lightDecision (vehicle-light-rules.ts); sie
+ * fragt die Angaben in der Reihenfolge der Kosten ab, die Kamera erst, wenn es
+ * dunkel ist und die Kamera gemeint ist. Im Dunkeln steht jeder Burst mit
+ * genau einer Zeile im Log: „Weißlicht an“, „kein Weißlicht (Grund)“ oder
+ * „Weißlicht nicht schaltbar“.
  */
 async function vehicleLightOn(cam: CameraRuntime, cameraId: number): Promise<(() => Promise<void>) | null> {
+  const facts: LightFacts = {
+    env: process.env.HUB_VEHICLE_SPOTLIGHT,
+    cam: { id: cameraId, name: cam.config.name },
+    now: Date.now(),
+    mutedUntil: cam.spotlightMuteUntil ?? null,
+  };
   try {
-    if (process.env.HUB_VEHICLE_SPOTLIGHT?.trim() === "0") return null;
-    if (cam.spotlightMuteUntil && Date.now() < cam.spotlightMuteUntil) return null;
-    const forecast = await getForecast().catch(() => null);
-    if (!isDark(new Date(), forecast?.days ?? [])) return null;
-    const caps = capsCache.get(cameraId)?.caps ?? (await getCameraCaps(cameraId).catch(() => null));
-    if (!spotlightWanted({ id: cameraId, name: cam.config.name }, !!caps?.spotlight, process.env.HUB_VEHICLE_SPOTLIGHT)) {
-      return null;
+    // Jede Runde ergänzt genau die Angabe, nach der lightDecision fragt (höchstens vier).
+    for (let round = 0; ; round++) {
+      const d = lightDecision(facts);
+      if (d.light === "on") break;
+      if (d.light === "off") {
+        noteNoLight(cam, d.reason, facts);
+        return null;
+      }
+      if (round >= 4) throw new Error(`Angabe ${d.fact} fehlt`);
+      if (d.fact === "dark") {
+        const forecast = await getForecast().catch(() => null);
+        facts.dark = isDark(new Date(), forecast?.days ?? []);
+      } else if (d.fact === "hasLight") {
+        const caps = capsCache.get(cameraId)?.caps ?? (await getCameraCaps(cameraId).catch(() => null));
+        facts.hasLight = caps ? caps.spotlight : null;
+      } else if (d.fact === "led") {
+        await ensureLogin(cam);
+        // Vor der Abfrage festhalten: Ein Ausschalt-Befehl, der jetzt unterwegs
+        // ist, kann wirken, nachdem die Kamera das Licht noch als brennend meldet.
+        facts.goingOff = lateLightOffSending.has(cameraId);
+        const cur = (await cgi(cam, "GetWhiteLed", { channel: cam.config.channel }).catch(() => null)) as {
+          WhiteLed?: { state?: number; mode?: number };
+        } | null;
+        facts.led = cur?.WhiteLed ?? null;
+      } else {
+        // Alarm schon vorbei (Flackern): kein Licht für einen Burst, der gleich abbricht.
+        const still = await pollStates(cam).catch(() => null);
+        facts.alarm = still ? still.VEHICLE === true : null;
+      }
     }
-    await ensureLogin(cam);
-    // Vor der Abfrage festhalten: Ein Ausschalt-Befehl, der jetzt unterwegs
-    // ist, kann wirken, nachdem die Kamera das Licht noch als brennend meldet.
-    const goingOff = lateLightOffSending.has(cameraId);
-    const cur = (await cgi(cam, "GetWhiteLed", { channel: cam.config.channel }).catch(() => ({}))) as {
-      WhiteLed?: { state?: number };
-    };
-    if (!burstSwitchesLight({ lit: cur.WhiteLed?.state === 1, goingOff })) return null;
-    // Alarm schon vorbei (Flackern): kein Licht für einen Burst, der gleich abbricht.
-    const still = await pollStates(cam).catch(() => null);
-    if (still && !still.VEHICLE) return null;
+    // Ein- und Ausschalten mit dem Stand von eben (facts.led): Lichtmodus und
+    // Helligkeit bleiben, wie die Kamera sie gemeldet hat, ohne weitere Abfrage.
+    const led = facts.led ?? null;
     const off = await burstLights.switchOn({
       cameraId,
       name: cam.config.name,
-      switchLight: (on) => switchSpotlight(cam, on),
+      switchLight: async (on) => {
+        await switchSpotlight(cam, on, { current: led });
+      },
     });
-    if (!off) return null;
-    log(`Fahrzeug-Burst ${cam.config.name}: dunkel – Weißlicht an`);
-    improve("alpr", "spotlight", { cam: cam.config.name });
+    if (!off) {
+      noteNoLight(cam, "exiting", facts);
+      return null;
+    }
+    const mode = ledModeNote(led);
+    log(`Fahrzeug-Burst ${cam.config.name}: dunkel – Weißlicht an${mode ? ` (${mode})` : ""}`);
+    improve("alpr", "spotlight", { cam: cam.config.name, mode: led?.mode ?? null });
     await new Promise((r) => setTimeout(r, VEHICLE_LIGHT_SETTLE_MS));
     return off;
   } catch (e) {
-    log(`Fahrzeug-Burst ${cam.config.name}: Weißlicht nicht schaltbar: ${e instanceof Error ? e.message : e}`);
+    const mode = ledModeNote(facts.led);
+    log(
+      `Fahrzeug-Burst ${cam.config.name}: Weißlicht nicht schaltbar: ${e instanceof Error ? e.message : e}${mode ? ` (${mode})` : ""}`
+    );
+    improveCount("alpr", "spotlight_skip_error");
     return null;
   }
 }
@@ -1102,7 +1239,8 @@ async function lateLightOff(cam: CameraRuntime, markedAt: number): Promise<void>
       }
       lateLightOffSending.add(cameraId);
       try {
-        await switchSpotlight(cam, false);
+        // Der eben gelesene Stand: Lichtmodus und Helligkeit bleiben, wie die Kamera sie meldet.
+        await switchSpotlight(cam, false, { current: cur.WhiteLed ?? null });
       } finally {
         lateLightOffSending.delete(cameraId);
       }
@@ -1125,7 +1263,8 @@ async function lateLightOff(cam: CameraRuntime, markedAt: number): Promise<void>
 
 async function uploadVehicleSnapshotBody(
   cam: CameraRuntime,
-  cameraId: number
+  cameraId: number,
+  run: VehicleRun
 ): Promise<{ bytes: number } | null> {
   // Laeuft noch eine Nahaufnahme (Waechter), passen Zone und Mindestgroesse nicht.
   if (!motion.atHome(cameraId)) await motion.waitAtHome(cameraId, 3_000);
@@ -1133,11 +1272,17 @@ async function uploadVehicleSnapshotBody(
   await new Promise((r) => setTimeout(r, VEHICLE_SNAP_DELAY_MS));
 
   const plan = vehicleBurstPlan(cam.config);
+  // Hat der Hub das Licht eingeschaltet, nimmt der Burst so viele erste Bilder
+  // unabhängig vom Alarm (Entscheidung vom 25.11.2026: nachts rund 7 s Licht).
+  const minFrames = run.lightOff ? lightMinFrames(process.env.HUB_VEHICLE_LIGHT_MIN_FRAMES, plan.count) : 0;
+  run.minFrames = minFrames;
   const snaps: Buffer[] = [];
-  const scoreJobs: Promise<void>[] = [];
+  const scoreJobs: Promise<unknown>[] = [];
   const scored: Array<{ index: number; score: PlateScore } | undefined> = [];
   let localPromise: ReturnType<typeof actuateIfAllowed> | null = null;
   let actedPlate: string | null = null;
+  /** Bild, dessen Listen-Treffer Tor oder Shelly geschaltet hat (null = keins). */
+  const acted: { at: number | null } = { at: null };
   let graceLeft = VEHICLE_GRACE_FRAMES;
 
   const isRepeatPlate = (plate: string): boolean => {
@@ -1171,11 +1316,22 @@ async function uploadVehicleSnapshotBody(
       exact: score.matchKind === "exact",
       confidence: score.matchConfidence,
     });
+    // Hat es wirklich geschaltet, stehen Kennzeichen und Bild fest: Der Burst
+    // endet zwei Bilder später (burstDone). Ein Fehler kommt beim Warten auf
+    // localPromise vor dem Upload an.
+    localPromise.then(
+      (r) => {
+        if (r?.doorOpened || r?.shellyOk) acted.at ??= index;
+      },
+      () => undefined
+    );
   };
 
   const burstOpts = {
     minConf: plateAutoMinConf(),
     knownCity: KNOWN_CITY,
+    // Kreise mit Umlaut, ohne Umlaut gelesen (LUD → LÜD): bekannter Kreis, Anzeige mit Umlaut.
+    umlautCity: UMLAUT_CITY_BY_PLAIN,
     confirmFrames: VEHICLE_CONFIRM_FRAMES,
     afterFrames: cam.config.deliveryMode ? VEHICLE_AFTER_PLATE_FRAMES_DELIVERY : VEHICLE_AFTER_PLATE_FRAMES,
   };
@@ -1183,8 +1339,12 @@ async function uploadVehicleSnapshotBody(
     scored.flatMap((r) => (r ? [{ index: r.index, candidates: r.score.candidates }] : []));
 
   log(
-    `Fahrzeug-Burst ${cam.config.name}: max ${plan.count}×${plan.gapMs}ms solange VEHICLE (+${VEHICLE_GRACE_FRAMES} Grace), OCR parallel ohne Vision …`
+    `Fahrzeug-Burst ${cam.config.name}: max ${plan.count}×${plan.gapMs}ms solange VEHICLE (+${VEHICLE_GRACE_FRAMES} Grace${
+      minFrames > 0 ? `, mit Licht mindestens ${minFrames}` : ""
+    }), OCR parallel ohne Vision …`
   );
+  /** Warum die Aufnahme endet; ohne anderen Grund war es die Höchstzahl. */
+  let end: BurstEnd = { why: "max" };
   for (let i = 0; i < plan.count; i++) {
     const frameStart = Date.now();
     let states: Record<string, boolean>;
@@ -1198,44 +1358,71 @@ async function uploadVehicleSnapshotBody(
       await ensureLogin(cam); // einmal vorweg, nicht zweimal parallel
       [states, jpeg] = await Promise.all([pollStates(cam), captureSnap(cam)]);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       if (snaps.length === 0) {
-        log(
-          `Fahrzeug-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${
-            e instanceof Error ? e.message : e
-          }`
-        );
+        log(`Fahrzeug-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${msg}`);
         return null;
       }
+      end = { why: "error", detail: msg };
       break;
     }
-    if (!states.VEHICLE) {
-      if (snaps.length === 0) {
-        log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
-        cam.burstEmpty = true;
-        return null;
-      }
-      // Alarm flackert oft, Auto noch im Bild: ein paar Frames weiter.
-      if (graceLeft <= 0) {
-        log(
-          `Fahrzeug-Burst ${cam.config.name}: VEHICLE ende nach ${snaps.length} Frames`
-        );
-        break;
-      }
-      graceLeft--;
-    } else {
-      graceLeft = VEHICLE_GRACE_FRAMES;
+    // Alarm flackert oft, Auto noch im Bild: ein paar Frames weiter (Grace);
+    // im Licht-Burst die ersten Bilder ohnehin (burstStep).
+    const step = burstStep({
+      framesTaken: snaps.length,
+      alarm: states.VEHICLE === true,
+      graceLeft,
+      graceFrames: VEHICLE_GRACE_FRAMES,
+      lightMinFrames: minFrames,
+    });
+    if (step.next === "end") {
+      end = { why: "alarm" };
+      break;
     }
+    graceLeft = step.graceLeft;
 
     snaps.push(jpeg);
     const index = snaps.length - 1;
-    scoreJobs.push(
-      scorePlateFromJpeg(jpeg, { vision: false }).then((score) => {
-        considerPlate(index, score);
-      })
-    );
-    // Kennzeichen steht sicher fest: nicht noch 10–15 s weiter knipsen.
-    if (burstDone(frameReads(), snaps.length, burstOpts)) {
-      log(`Fahrzeug-Burst ${cam.config.name}: Kennzeichen sicher – fertig nach ${snaps.length} Frames`);
+    const job = scorePlateFromJpeg(jpeg, { vision: false }).then((score) => {
+      considerPlate(index, score);
+      return score;
+    });
+    scoreJobs.push(job);
+    if (step.next === "check") {
+      // Alarm schon beim ersten Bild aus: Das Bild ist geholt (nachts
+      // beleuchtet) und wird gelesen, bevor der Burst aufgibt. Was zuerst
+      // etwas findet, entscheidet; die Fahrzeug-Prüfung braucht Millisekunden.
+      const seen = await firstFound<string>([
+        job.then((score) => (frameShowsPlate(score) ? "Kennzeichen" : null)),
+        checkVehicle(jpeg, {
+          cameraId,
+          label: cam.config.name,
+          minArea: cam.config.vehicleMinArea ?? undefined,
+          zone: cam.config.vehicleZone ?? undefined,
+        }).then((r) => (r.vehicle === true ? "Fahrzeug" : null)),
+      ]);
+      if (!seen) {
+        await Promise.all(scoreJobs);
+        run.evaluated = snaps.length;
+        run.empty = true;
+        log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv, Frame 1 ohne Kennzeichen und Fahrzeug)`);
+        improveCount("alpr", "first_frame_empty");
+        return null;
+      }
+      log(`Fahrzeug-Burst ${cam.config.name}: Alarm schon vorbei, Frame 1 zeigt ${seen} – weiter (+${graceLeft} Grace)`);
+      improveCount("alpr", "first_frame_seen");
+    }
+    // Kennzeichen steht sicher fest oder hat schon geschaltet: nicht noch
+    // 10–15 s weiter knipsen. Vor der Mindestzahl im Licht-Burst endet er nur
+    // nach einer Schaltung (burstDoneReason mit minFrames).
+    const done = burstDoneReason(frameReads(), snaps.length, { ...burstOpts, actedAtIndex: acted.at, minFrames });
+    if (done === "acted" && acted.at != null) {
+      end = { why: "acted", actedAt: acted.at };
+      improve("alpr", "acted_stop", { cam: cam.config.name, frames: snaps.length, actedFrame: acted.at + 1 });
+      break;
+    }
+    if (done === "confirmed") {
+      end = { why: "confirmed" };
       improve("alpr", "early_stop", { cam: cam.config.name, frames: snaps.length });
       break;
     }
@@ -1243,6 +1430,16 @@ async function uploadVehicleSnapshotBody(
     if (i < plan.count - 1 && wait > 0) {
       await new Promise((r) => setTimeout(r, wait));
     }
+  }
+
+  // Letztes Bild ist aufgenommen: Licht sofort aus, nicht erst nach
+  // Lieferdienst-Prüfung und Upload. Die Zusagen von vehicle-light.ts bleiben
+  // (Merker, Aufräumer beim Beenden); uploadVehicleSnapshot wartet am Ende
+  // auf genau diesen Ausschalt-Vorgang.
+  if (run.lightOff) void run.lightOff().catch(() => undefined);
+  if (snaps.length > 0) {
+    log(`Fahrzeug-Burst ${cam.config.name}: ${burstEndText(end, snaps.length)}`);
+    if (end.why === "error" || end.why === "max") improveCount("alpr", `burst_end_${end.why}`);
   }
 
   if (snaps.length === 0) {
@@ -1254,6 +1451,7 @@ async function uploadVehicleSnapshotBody(
   // auf leeren Bildern ~1,6 s, und genau die späteren Frames sind oft schon leer.
   const dumpRoot = vehicleDumpDir();
   await Promise.all(scoreJobs);
+  run.evaluated = snaps.length;
 
   const scores: Array<{ index: number; score: PlateScore }> = [];
   let bestIdx: number | null = null;
@@ -1269,10 +1467,27 @@ async function uploadVehicleSnapshotBody(
     }
   }
 
+  // Ob das Weißlicht die Kennzeichen lesbar macht, steht so je Licht-Burst im
+  // Log: Bilder mit Kennzeichen oder Schild-artiger Lesung (ab 0,5).
+  if (run.lightOff) {
+    const read = scores.filter((r) => frameShowsPlate(r.score)).length;
+    log(`Fahrzeug-Burst ${cam.config.name}: mit Weißlicht ${read} von ${snaps.length} Bildern mit Lesung`);
+    improve("alpr", "light_frames", { cam: cam.config.name, frames: snaps.length, read });
+  }
+
   // Mehrheit über den Burst statt bestem Einzelbild: Einzelbilder lesen gern
   // ein Zeichen falsch (ST-K 3434E einmal, GT-K 3434E viermal). Hat schon ein
   // freigegebenes Kennzeichen geschaltet, bleibt es dabei.
   const consensus = actedPlate ? null : burstConsensus(frameReads(), burstOpts);
+  // Seit dem 25.11.2026 sammelt eine längere Lesung auf nur einem Bild die
+  // kürzeren nicht mehr ein. Wo das das Ergebnis ändert, steht es im Log.
+  const change = actedPlate ? null : consensusChange(frameReads(), burstOpts, consensus);
+  if (change) {
+    log(
+      `Fahrzeug-Burst ${cam.config.name}: Mehrheit ${change.now ?? "keine"} (frühere Regel: ${change.before ?? "keine"}, längere Lesung nur auf 1 Bild)`
+    );
+    improveCount("alpr", "consensus_longer_single");
+  }
   if (consensus) {
     const own = scored[consensus.bestIndex]?.score;
     const sameAsOwn = !!own?.plate && normalizePlate(own.plate) === normalizePlate(consensus.plate);
@@ -1347,7 +1562,7 @@ async function uploadVehicleSnapshotBody(
         log(
           `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Plate/Fahrzeug in ${snaps.length} Frames)`
         );
-        cam.burstEmpty = true;
+        run.empty = true;
         improve("alpr", "skip", { cam: cam.config.name, frames: snaps.length });
         // Auch Skips throtteln – sonst Dauerschleife bei statischen Fehlalarmen.
         cam.lastSnapshotAt = Date.now();
@@ -1429,6 +1644,21 @@ async function uploadVehicleSnapshotBody(
     wl: bestScore?.viaWhitelist,
   });
   const listed = plate ? findAllowedVehicle(plate) : null;
+  // Nur zählen: Kennzeichen aus einem einzigen Bild unter 0,95, ohne Mehrheit
+  // und ohne Listen-Treffer. Grundlage für die Entscheidung, ob eine solche
+  // Lesung künftig nur noch als Hinweis gilt; die Sichtung bleibt, wie sie ist.
+  if (
+    bestScore?.plate === plate &&
+    singleReadWeak({
+      acted: actedPlate != null,
+      consensus: consensus != null,
+      plate,
+      listed: listed != null,
+      confidence: bestScore?.confidence ?? 0,
+    })
+  ) {
+    improveCount("alpr", "single_weak");
+  }
   // Unscharfer Whitelist-Treffer irgendwo im Burst: nur als Hinweis anzeigen.
   const probable = bestScore?.probable ?? scores.find((r) => r.score.probable)?.score.probable ?? null;
   cam.lastPlate = {
@@ -1482,6 +1712,14 @@ async function uploadVehicleSnapshotBody(
 
   try {
     const uploadBuf = await shrinkJpeg(buf, DISPLAY_SNAPSHOT_MAX_PX);
+    // Über 4 MB lehnt die Cloud die Sichtung ab (HTTP 413); eine Sichtung
+    // ohne Bild nimmt die Route nicht an. Das steht dann vorher im Log.
+    if (sightingImageTooLarge(uploadBuf.length)) {
+      log(
+        `Fahrzeug-Snapshot ${cam.config.name}: Bild mit ${uploadBuf.length} bytes über 4 MB (Original ${buf.length} bytes) – die Cloud lehnt die Sichtung ab`
+      );
+      improveCount("alpr", "upload_too_large");
+    }
     const upload = await api(`/api/hub/vehicle-sightings?${qs}`, {
       method: "POST",
       headers: { "Content-Type": "image/jpeg" },
@@ -1494,7 +1732,7 @@ async function uploadVehicleSnapshotBody(
         `Fahrzeug-Snapshot fehlgeschlagen: HTTP ${upload.status} ${errText.slice(0, 120)}`
       );
     }
-    log(`Fahrzeug-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes)`);
+    log(`Fahrzeug-Snapshot ${cam.config.name}: Upload OK (${uploadBuf.length} bytes, Original ${buf.length} bytes)`);
   } catch (e) {
     if (local?.doorOpened || local?.shellyOk) {
       log(
@@ -1792,19 +2030,25 @@ export async function cameraScene(
   return { presetId, autoTrack: wantTrack, returnAfterSeconds: returnAfter || null };
 }
 
-/** Weisslicht-Scheinwerfer an/aus (manueller Modus), auf Anforderung aus der Cloud. */
+/**
+ * Weisslicht-Scheinwerfer an/aus auf Anforderung (Cloud, Hub-Dashboard,
+ * Assistent und Waechter-Knopf „Licht an“). Lichtmodus und Helligkeit
+ * bleiben, wie die Kamera sie meldet (eine Abfrage GetWhiteLed davor);
+ * eine Helligkeit aus dem Auftrag gilt nur beim Einschalten.
+ */
 export async function setSpotlight(
   cameraId: number,
   payload: Record<string, unknown> | null
 ): Promise<unknown> {
   const cam = await getControlCam(cameraId);
   const on = payload?.on === true;
-  const brightness = clamp(Number(payload?.brightness) || 100, 1, 100);
-  await switchSpotlight(cam, on, brightness);
+  // Fehlt die Angabe oder ist sie 0 bzw. keine Zahl, gibt der Auftrag keine Helligkeit vor.
+  const brightness = Number(payload?.brightness) || undefined;
+  const cmd = await switchSpotlight(cam, on, { brightness });
   // Von Hand geschaltet: Das Licht gehoert nicht mehr dem Hub, nach einem
   // Neustart fasst er es nicht an.
   void lightMarks.delete(cameraId);
-  return { on, brightness };
+  return { on, brightness: cmd.param.bright ?? null, mode: cmd.param.mode };
 }
 
 /** Infrarot-LEDs: Auto | On | Off. */

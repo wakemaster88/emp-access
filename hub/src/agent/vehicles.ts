@@ -6,19 +6,29 @@
  * Antwort auch nach einem Hub-Neustart (Auto-Update) noch funktioniert.
  * „Genehmigen“ legt das Fahrzeug in der Cloud an (POST
  * /api/hub/allowed-vehicles, nur an der Kamera, an der es gesehen wurde) und
- * laedt die Liste neu. Danach loest es keinen Waechter-Alarm mehr aus.
+ * laedt die Liste neu. Danach loest es keinen Waechter-Alarm mehr aus. Ist
+ * genau eine DoorBird eingerichtet, geht ihre ID mit; nur dann versprechen
+ * Frage und Antwort das automatische Oeffnen (vehicle-approval-rules.ts).
  */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, api, log } from "../config.js";
 import { recordHubEvent, type HubEvent } from "../state.js";
-import { captureSnapshot, findCameraByRef } from "../cameras.js";
-import { captureDoorbirdSnapshot, isDoorbird } from "../doorbird.js";
+import { captureSnapshot, ensureCameraConfigs, findCameraByRef } from "../cameras.js";
+import { captureDoorbirdSnapshot, isDoorbird, listDoorbirdIds } from "../doorbird.js";
 import { findAllowedVehicle, refreshVehicleWhitelist } from "../plate.js";
 import { sendPhoto, sendText, type TgButton } from "./telegram.js";
 import { inQuietHours } from "./quiet.js";
 import { berlinHour } from "./watch.js";
 import { markPlate, normalizePlate, notePlate, type PlateBook } from "./repeat-vehicles.js";
+import {
+  approvalBody,
+  approvalDoorbird,
+  approvalQuestion,
+  approvedText,
+  approvedWithDoorbird,
+  retryWithoutDoorbird,
+} from "./vehicle-approval-rules.js";
 
 const ASK = !/^(off|0|false)$/i.test((process.env.HUB_AGENT_VEHICLE_ASK || "on").trim());
 const MIN_VISITS = Number(process.env.HUB_AGENT_VEHICLE_VISITS) >= 2 ? Number(process.env.HUB_AGENT_VEHICLE_VISITS) : 3;
@@ -80,12 +90,16 @@ export function cameraSawKnownPlate(cameraName: string, since: number): boolean 
 async function ask(key: string, chatIds: string[]): Promise<void> {
   const rec = book[key];
   if (!rec || !chatIds.length) return;
+  // Kamera und DoorBirds kennt der Hub erst nach dem ersten Laden der
+  // Kamera-Liste (nach einem Neustart geht eine vorgemerkte Frage im ersten
+  // Takt hinaus). Ohne sie versprache die Frage kein Oeffnen, die
+  // Genehmigung schickte die DoorBird dann doch mit.
+  await ensureCameraConfigs().catch(() => undefined);
   const cam = rec.camera ? findCameraByRef(rec.camera) : null;
   const caption =
     `🚗 Kennzeichen ${rec.plate} war jetzt ${rec.visits}-mal da` +
     ` (zuerst ${day(rec.firstAt)}, zuletzt ${day(rec.lastAt)}${cam ? `, ${cam.name}` : ""}).\n` +
-    `Auf die genehmigte Liste setzen? Dann gibt es dafür keinen Alarm mehr, und wie bei allen genehmigten Fahrzeugen ` +
-    `kann sich das Tor bei Erkennung an dieser Kamera automatisch öffnen.`;
+    `Auf die genehmigte Liste setzen? ${approvalQuestion(approvalDoorbird(listDoorbirdIds()), !!cam)}`;
   const buttons: TgButton[][] = [
     [
       { text: "Genehmigen", callback_data: `vok:${key}` },
@@ -149,15 +163,28 @@ export async function answerVehicle(approve: boolean, key: string): Promise<stri
     await save().catch(() => undefined);
     return `${plate} steht schon auf der genehmigten Liste.`;
   }
+  // Kamera und DoorBirds kennt der Hub erst nach dem ersten Laden der
+  // Kamera-Liste. Kommt der Knopfdruck direkt nach einem Neustart
+  // (Auto-Update), erst laden; sonst ginge die Genehmigung ohne Kamera und
+  // ohne DoorBird hinaus. Ist die Cloud nicht erreichbar, scheitert auch das
+  // Anlegen und die Antwort sagt das.
+  await ensureCameraConfigs().catch(() => undefined);
   const cam = book[key]?.camera ? findCameraByRef(book[key].camera!) : null;
-  const body: Record<string, unknown> = { plate };
-  if (cam) body.cameraId = cam.id;
-  const res = await api("/api/hub/allowed-vehicles", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const json = (await res.json().catch(() => ({}))) as { error?: unknown };
+  const doorId = approvalDoorbird(listDoorbirdIds());
+  const post = async (body: Record<string, unknown>) => {
+    const r = await api("/api/hub/allowed-vehicles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { res: r, json: (await r.json().catch(() => ({}))) as { error?: unknown } };
+  };
+  const body = approvalBody(plate, cam?.id ?? null, doorId);
+  let { res, json } = await post(body);
+  if (retryWithoutDoorbird(res.status, json.error, body)) {
+    log(`Assistent: DoorBird ${doorId} in der Cloud nicht gefunden – genehmige ${plate} ohne DoorBird`);
+    ({ res, json } = await post(approvalBody(plate, cam?.id ?? null, null)));
+  }
   const already = typeof json.error === "string" && /existiert bereits/.test(json.error);
   if (!res.ok && !already) {
     const msg = typeof json.error === "string" ? json.error : `HTTP ${res.status}`;
@@ -168,6 +195,7 @@ export async function answerVehicle(approve: boolean, key: string): Promise<stri
   await save().catch(() => undefined);
   await refreshVehicleWhitelist().catch(() => undefined);
   recordHubEvent({ kind: "vehicle", severity: "info", where: "Assistent", title: `Kennzeichen ${plate} genehmigt (Telegram)` });
-  log(`Assistent: Kennzeichen ${plate} genehmigt`);
-  return `✅ ${plate} ist genehmigt${cam ? ` (Kamera ${cam.name})` : ""}. Kein Alarm mehr für dieses Fahrzeug.`;
+  const opens = res.ok && approvedWithDoorbird(json, doorId);
+  log(`Assistent: Kennzeichen ${plate} genehmigt${opens ? ` (DoorBird ${doorId})` : " (ohne DoorBird)"}`);
+  return approvedText(plate, cam?.name ?? null, opens);
 }

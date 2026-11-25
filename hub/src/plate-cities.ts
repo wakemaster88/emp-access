@@ -5,10 +5,13 @@
  * Bis 20.11.2026 kannte der Hub nur ~35 Ruhrgebiets-Kreise. Kennzeichen aus
  * der Region (WAF, BE, GT, PB, LIP, MS …) wurden deshalb trotz sicherer Lesung
  * (0,95+) verworfen, und das Fahrzeug landete als „ohne Kennzeichen“ in der
- * Cloud. Zeichen mit Umlaut fehlen bewusst: Die OCR liefert nur A–Z.
+ * Cloud. Zeichen mit Umlaut stehen nicht in ALL: Die OCR liefert nur A–Z.
+ * Kreise mit Umlaut stehen in UMLAUT_CITY_BY_PLAIN (unten).
  *
  * Schalten (Tor/Shelly) hängt NICHT an dieser Liste, nur am exakten
- * Whitelist-Treffer (plate-match.ts).
+ * Whitelist-Treffer (plate-match.ts). Die Cloud führt eine Kopie von ALL
+ * (src/lib/plate-cities.ts); src/lib/plate-match.test.ts prüft, dass beide
+ * gleich sind.
  */
 const ALL = `
 A AA AB ABG ABI AC AE AH AIB AIC AK ALF ALZ AM AN ANA ANG ANK AP APD ARN ART AS
@@ -57,6 +60,47 @@ Z ZE ZEL ZI ZIG ZP ZR ZW ZZ
 `;
 
 export const GERMAN_CITY_CODES: ReadonlySet<string> = new Set(ALL.split(/\s+/).filter(Boolean));
+
+/**
+ * Kreise mit Umlaut in der Schreibweise, in der die OCR sie liefert (Ä zu A,
+ * Ö zu O, Ü zu U): LÜD wird als LUD gelesen. Nur Kreise, deren Schreibweise
+ * ohne Umlaut kein eigener Kreis in ALL ist – BO bleibt Bochum. Eine Lesung
+ * mit einem dieser Kreise gilt als bekannter Kreis und erscheint mit Umlaut
+ * (plate-match.ts, umlautReading), wenn sich ihre Zeichen nicht auch als
+ * Kennzeichen eines anderen Kreises lesen lassen.
+ */
+export const UMLAUT_CITY_BY_PLAIN: ReadonlyMap<string, string> = new Map([
+  ["BUR", "BÜR"],
+  ["BUS", "BÜS"],
+  ["BUZ", "BÜZ"],
+  ["DUW", "DÜW"],
+  ["FU", "FÜ"],
+  ["FUS", "FÜS"],
+  ["GO", "GÖ"],
+  ["GU", "GÜ"],
+  ["HOS", "HÖS"],
+  ["HOX", "HÖX"],
+  ["JUL", "JÜL"],
+  ["KON", "KÖN"],
+  ["KOT", "KÖT"],
+  ["KOZ", "KÖZ"],
+  ["KUN", "KÜN"],
+  ["LO", "LÖ"],
+  ["LOB", "LÖB"],
+  ["LUD", "LÜD"],
+  ["LUN", "LÜN"],
+  ["MU", "MÜ"],
+  ["MUB", "MÜB"],
+  ["MUR", "MÜR"],
+  ["NO", "NÖ"],
+  ["RUG", "RÜG"],
+  ["SOM", "SÖM"],
+  ["SUW", "SÜW"],
+  ["TOL", "TÖL"],
+  ["TU", "TÜ"],
+  ["WU", "WÜ"],
+  ["WUM", "WÜM"],
+]);
 
 /**
  * Kreise rund um den Standort (Beckum, Kreis Warendorf). Nur Tie-Break, wenn
