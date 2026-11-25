@@ -12,6 +12,7 @@ import {
   piOpenTaskNeedsFetchMark,
   piReportClearsOpenTask,
   piReportHoldsOpenTask,
+  piReportWrite,
   switchCommandCutoff,
   withActor,
 } from "./hub-task-rules";
@@ -210,17 +211,25 @@ function piSim() {
       if (piOpenTaskNeedsFetchMark(row.task, row.taskSetAt, row.taskFetchedSetAt)) row.taskFetchedSetAt = row.taskSetAt;
       return row.task;
     },
+    /**
+     * POST, erster Schritt: Zeile lesen und den Schreibzugriff planen wie die
+     * Route. Zwischen Lesen und Schreiben kann eine andere Anfrage laufen.
+     */
+    reportRead(reported: number) {
+      expire();
+      const read = { taskSetAt: row.taskSetAt };
+      return { read, plan: piReportWrite(row.task, reported, row.taskSetAt, row.taskFetchedSetAt) };
+    },
+    /** POST, zweiter Schritt: schreiben; liefert den Task in der Antwort. */
+    reportWrite({ read, plan }: { read: { taskSetAt: Date | null }; plan: ReturnType<typeof piReportWrite> }): number {
+      const sameOrder =
+        row.task === 1 && (row.taskSetAt?.getTime() ?? null) === (read.taskSetAt?.getTime() ?? null);
+      if (!plan.guarded || sameOrder) Object.assign(row, plan.data);
+      return plan.answerTask;
+    },
     /** POST: Meldung des Pis; liefert den Task in der Antwort. */
     report(reported: number): number {
-      expire();
-      if (piReportClearsOpenTask(row.task, reported, row.taskSetAt, row.taskFetchedSetAt)) {
-        row.task = 0;
-        row.taskSetAt = null;
-        return 0;
-      }
-      if (piReportHoldsOpenTask(row.task, reported, row.taskSetAt, row.taskFetchedSetAt)) return 0;
-      if (piOpenTaskNeedsFetchMark(row.task, row.taskSetAt, row.taskFetchedSetAt)) row.taskFetchedSetAt = row.taskSetAt;
-      return row.task;
+      return this.reportWrite(this.reportRead(reported));
     },
   };
 }
@@ -428,4 +437,66 @@ test("Pi: NOT-AUF und Deaktiviert bleiben unberuehrt", () => {
   const idle = piSim();
   assert.equal(idle.report(0), 0);
   assert.equal(idle.fetch(), 0);
+});
+
+test("Pi: Schreibzugriff einer Meldung, der Task oder Vermerk aendert, ist an den gelesenen Auftrag gebunden", () => {
+  const t1 = new Date("2026-11-24T12:00:00.000Z");
+  const t0 = new Date("2026-11-24T11:59:00.000Z");
+  for (const task of [0, 1, 2, 3]) {
+    for (const reported of [0, 1, 2, 3]) {
+      for (const setAt of [null, t1]) {
+        for (const fetched of [null, t0, t1]) {
+          const plan = piReportWrite(task, reported, setAt, fetched);
+          const writes = Object.keys(plan.data).length > 0;
+          assert.equal(plan.guarded, writes, `task ${task}, Meldung ${reported}`);
+          if (task !== 1) {
+            assert.deepEqual(plan, { data: {}, guarded: false, answerTask: task });
+          }
+          assert.ok(!("task" in plan.data && "taskFetchedSetAt" in plan.data));
+        }
+      }
+    }
+  }
+  // Nicht abgeholt, Meldung 2: Auftrag geht mit der Antwort raus und wird vermerkt.
+  assert.deepEqual(piReportWrite(1, 2, t1, null), { data: { taskFetchedSetAt: t1 }, guarded: true, answerTask: 1 });
+  // Nicht abgeholt, Meldung 0: bleibt stehen, nichts wird vermerkt, Antwort 0.
+  assert.deepEqual(piReportWrite(1, 0, t1, t0), { data: {}, guarded: false, answerTask: 0 });
+  // Abgeholt, Meldung 0: zuruecksetzen.
+  assert.deepEqual(piReportWrite(1, 0, t1, t1), { data: { task: 0, taskSetAt: null }, guarded: true, answerTask: 0 });
+  // Alte Zeile ohne taskSetAt: wie bisher zuruecksetzen.
+  assert.deepEqual(piReportWrite(1, 0, null, null), { data: { task: 0, taskSetAt: null }, guarded: true, answerTask: 0 });
+});
+
+test("Pi: spaete Meldung ueberschreibt den Vermerk eines neueren Auftrags nicht", () => {
+  // Am Pi ist NOT-AUF aktiv (er meldet 2). Erster Klick T1, die Meldung liest T1.
+  const pi = piSim();
+  pi.set(1);
+  const late = pi.reportRead(2);
+  // Zweiter Klick T2, ein GET liefert und vermerkt T2.
+  pi.wait(5);
+  pi.set(1);
+  const t2 = pi.row.taskSetAt;
+  assert.equal(pi.fetch(), 1);
+  assert.equal(pi.row.taskFetchedSetAt?.getTime(), t2?.getTime());
+  // Erst jetzt schreibt die Meldung: Antwort 1 (T1), der Vermerk von T2 bleibt.
+  assert.equal(pi.reportWrite(late), 1);
+  assert.equal(pi.row.taskFetchedSetAt?.getTime(), t2?.getTime());
+  // Die Bestaetigung setzt T2 zurueck; kein dritter Abruf liefert noch einmal 1.
+  assert.equal(pi.report(0), 0);
+  assert.equal(pi.row.task, 0);
+  assert.equal(pi.fetch(), 0);
+});
+
+test("Pi: spaete Bestaetigung setzt einen neueren Auftrag nicht zurueck", () => {
+  const pi = piSim();
+  pi.set(1);
+  assert.equal(pi.fetch(), 1);
+  const late = pi.reportRead(0); // Bestaetigung von T1 gelesen
+  pi.wait(5);
+  pi.set(1); // T2
+  assert.equal(pi.reportWrite(late), 0);
+  assert.equal(pi.row.task, 1, "T2 bleibt stehen");
+  assert.equal(pi.fetch(), 1);
+  assert.equal(pi.report(0), 0);
+  assert.equal(pi.row.task, 0);
 });

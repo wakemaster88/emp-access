@@ -3,12 +3,7 @@ import { createHash } from "node:crypto";
 import { deviceTokenMismatch, validateApiToken } from "@/lib/api-token-auth";
 import { piStatusSchema } from "@/lib/validators";
 import { LATEST_PI_VERSION } from "@/lib/pi-version";
-import {
-  piOpenTaskExpired,
-  piOpenTaskNeedsFetchMark,
-  piReportClearsOpenTask,
-  piReportHoldsOpenTask,
-} from "@/lib/hub-task-rules";
+import { piOpenTaskExpired, piOpenTaskNeedsFetchMark, piReportWrite } from "@/lib/hub-task-rules";
 import type { TenantDb } from "@/lib/prisma";
 
 type PiStateFields = {
@@ -203,29 +198,20 @@ export async function POST(request: NextRequest) {
     // als 0, geht task=1 wie bisher mit der Antwort raus und wird im selben
     // Schreibzugriff als abgeholt vermerkt. Sonst: Task bleibt unveraendert;
     // nur lastUpdate/systemInfo wird gesetzt.
-    const resetTask = piReportClearsOpenTask(current.task, update.pis_task, current.taskSetAt, current.taskFetchedSetAt);
-    const holdTask = piReportHoldsOpenTask(current.task, update.pis_task, current.taskSetAt, current.taskFetchedSetAt);
-    if (resetTask) {
-      data.task = 0;
-      data.taskSetAt = null;
-    } else if (!holdTask && piOpenTaskNeedsFetchMark(current.task, current.taskSetAt, current.taskFetchedSetAt)) {
-      data.taskFetchedSetAt = current.taskSetAt;
-    }
+    const plan = piReportWrite(current.task, update.pis_task, current.taskSetAt, current.taskFetchedSetAt);
 
     // 1 Write: state-Update, ohne anschliessenden Re-Read. Wir kennen die
     // Felder bereits aus `current` und mergen das ggf. zurueckgesetzte Task.
-    // Das Zuruecksetzen gilt nur fuer den gelesenen Auftrag; wurde inzwischen
-    // ein neuer gesetzt, bleibt er stehen und nur lastUpdate/systemInfo wird
-    // geschrieben.
+    // Zuruecksetzen und Abhol-Vermerk gelten nur fuer den gelesenen Auftrag;
+    // wurde inzwischen ein neuer gesetzt (oder der Task geaendert), bleibt er
+    // unberuehrt und nur lastUpdate/systemInfo wird geschrieben.
     let updated = await db.device.updateMany({
-      where: resetTask
+      where: plan.guarded
         ? { id: update.pis_id, type: "RASPBERRY_PI", task: 1, taskSetAt: current.taskSetAt }
         : { id: update.pis_id, type: "RASPBERRY_PI" },
-      data,
+      data: { ...data, ...plan.data },
     });
-    if (updated.count === 0 && resetTask) {
-      delete data.task;
-      delete data.taskSetAt;
+    if (updated.count === 0 && plan.guarded) {
       updated = await db.device.updateMany({
         where: { id: update.pis_id, type: "RASPBERRY_PI" },
         data,
@@ -236,7 +222,7 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const merged: PiStateFields = resetTask || holdTask ? { ...current, task: 0 } : current;
+    const merged: PiStateFields = plan.answerTask === current.task ? current : { ...current, task: plan.answerTask };
     results.push({ ...deviceToPiState(merged), updated: true });
   }
 

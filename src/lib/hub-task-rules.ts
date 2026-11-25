@@ -148,6 +148,41 @@ export function piReportHoldsOpenTask(
   return task === 1 && reportedTask === 0 && !piReportClearsOpenTask(task, reportedTask, taskSetAt, taskFetchedSetAt);
 }
 
+/**
+ * Was eine Meldung des Pis (POST /api/devices/pi) am Einmal-Oeffnen schreibt
+ * und welchen Task die Antwort traegt.
+ *
+ * `guarded`: Der Schreibzugriff aendert task oder den Abhol-Vermerk und darf
+ * deshalb nur den gelesenen Auftrag treffen (Bedingung task=1 und taskSetAt
+ * wie gelesen). Trifft er nicht, weil inzwischen ein neuer Auftrag gesetzt
+ * oder der Task geaendert wurde, wird nur der Status geschrieben. Ohne diese
+ * Bedingung koennte eine spaete Meldung den Vermerk eines neueren Auftrags
+ * ueberschreiben, und der ginge ein zweites Mal an den Pi.
+ */
+export type PiReportWrite = {
+  data: { task?: 0; taskSetAt?: null; taskFetchedSetAt?: Date };
+  guarded: boolean;
+  answerTask: number;
+};
+
+export function piReportWrite(
+  task: number,
+  reportedTask: number,
+  taskSetAt: Date | null | undefined,
+  taskFetchedSetAt: Date | null | undefined,
+): PiReportWrite {
+  if (piReportClearsOpenTask(task, reportedTask, taskSetAt, taskFetchedSetAt)) {
+    return { data: { task: 0, taskSetAt: null }, guarded: true, answerTask: 0 };
+  }
+  if (piReportHoldsOpenTask(task, reportedTask, taskSetAt, taskFetchedSetAt)) {
+    return { data: {}, guarded: false, answerTask: 0 };
+  }
+  if (taskSetAt && piOpenTaskNeedsFetchMark(task, taskSetAt, taskFetchedSetAt)) {
+    return { data: { taskFetchedSetAt: taskSetAt }, guarded: true, answerTask: task };
+  }
+  return { data: {}, guarded: false, answerTask: task };
+}
+
 /** Zeitpunkt, der zusammen mit Device.task gespeichert wird (null bei 0). */
 export function deviceTaskSetAt(task: number, now: Date = new Date()): Date | null {
   return task === 0 ? null : now;
