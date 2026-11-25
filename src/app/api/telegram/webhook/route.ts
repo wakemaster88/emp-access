@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { answerCallbackQuery, editMessageCaption, editMessageText, telegramWebhookSecret } from "@/lib/telegram";
 import { approveVereinRequest, rejectVereinRequest } from "@/lib/verein-portal";
 import { loadRequestSummary, requestTelegramText, VEREIN_REQUEST_CALLBACK_RE } from "@/lib/verein-request-telegram";
 import { secretsEqual } from "@/lib/cron-auth";
 import { escapeTelegramHtml } from "@/lib/telegram-text";
+import { ensureTelegramWebhook } from "@/lib/telegram-webhook";
 
 /**
  * Telegram-Webhook: verarbeitet Inline-Button-Klicks (callback_query).
@@ -16,7 +17,10 @@ import { escapeTelegramHtml } from "@/lib/telegram-text";
  * Bot-Token nicht mehr in URL und Request-Logs.
  *
  * Uebergang: Alte Registrierungen mit `?token=<botToken>` funktionieren
- * weiter, bis `npx tsx scripts/telegram-webhook-setup.ts` gelaufen ist.
+ * weiter. Ein solcher Aufruf stellt die Registrierung dieses Bots nach der
+ * Antwort auf die id-Form um (ensureTelegramWebhook, gleicher Host); dasselbe
+ * passiert im naechtlichen Aufraeum-Cron und nach dem Speichern der
+ * Telegram-Einstellungen.
  *
  * Unterstützte Callbacks:
  *   door:<cameraId>  → DOORBIRD_OPEN-Hub-Task (Tor öffnen)
@@ -42,13 +46,15 @@ async function resolveConfig(request: NextRequest): Promise<WebhookConfig | null
 
   const botToken = request.nextUrl.searchParams.get("token") ?? "";
   if (!botToken) return null;
-  const config = await prisma.telegramConfig.findFirst({
+  const legacy = await prisma.telegramConfig.findFirst({
     where: { botToken, isActive: true },
-    select: { accountId: true, chatId: true, botToken: true },
+    select: { id: true, accountId: true, chatId: true, botToken: true },
   });
-  if (config) {
-    console.warn("[telegram webhook] Aufruf mit Bot-Token in der URL – bitte scripts/telegram-webhook-setup.ts ausfuehren.");
-  }
+  if (!legacy) return null;
+  console.warn("[telegram webhook] Aufruf mit Bot-Token in der URL – bitte scripts/telegram-webhook-setup.ts ausfuehren.");
+  // Nach der Antwort auf die id-Form umstellen; wirft nie (siehe ensureTelegramWebhook).
+  const { id, ...config } = legacy;
+  after(() => ensureTelegramWebhook({ id, botToken: config.botToken }).catch(() => undefined));
   return config;
 }
 
