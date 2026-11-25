@@ -51,7 +51,7 @@ function affectedText(key: AccessRuleKey, a: Affected | null): string | null {
       return `Betrifft heute: ${a.ticketsWithoutArea} heute gültige${a.ticketsWithoutArea === 1 ? "s" : ""} Ticket${a.ticketsWithoutArea === 1 ? "" : "s"} ohne Bereich`
         + (a.staffTicketsWithoutArea > 0 ? `, davon ${a.staffTicketsWithoutArea} Mitarbeiter` : "");
     case "voucherNeedsArea":
-      return `Betrifft heute: ${a.vouchersWithArea} offene${a.vouchersWithArea === 1 ? "r" : ""} Gutschein${a.vouchersWithArea === 1 ? "" : "e"} mit Bereich`;
+      return `Betrifft heute: ${a.vouchersWithArea} offene${a.vouchersWithArea === 1 ? "r" : ""} Gutschein${a.vouchersWithArea === 1 ? "" : "e"} mit Bereich, selbst oder über den Ticket-Typ`;
     default:
       return null;
   }
@@ -151,14 +151,17 @@ export function AccessRulesCard({ initial }: Props) {
   }
 
   async function switchOn(key: AccessRuleKey) {
-    if (key === "passbackMinutes") {
-      const minutes = Number(minutesDraft);
-      if (!isPassbackMinutes(minutes)) {
-        throw new Error(`Bitte eine ganze Zahl von ${PASSBACK_MIN_MINUTES} bis ${PASSBACK_MAX_MINUTES} Minuten eingeben.`);
-      }
-      await save({ passbackMinutes: minutes });
-    } else {
-      await save({ [key]: true });
+    const minutes = Number(minutesDraft);
+    if (key === "passbackMinutes" && !isPassbackMinutes(minutes)) {
+      throw new Error(`Bitte eine ganze Zahl von ${PASSBACK_MIN_MINUTES} bis ${PASSBACK_MAX_MINUTES} Minuten eingeben.`);
+    }
+    // Während des Speicherns sind alle Schalter gesperrt, damit dieselbe
+    // Seite nicht zwei Änderungen gleichzeitig abschickt.
+    setBusyKey(key);
+    try {
+      await save(key === "passbackMinutes" ? { passbackMinutes: minutes } : { [key]: true });
+    } finally {
+      setBusyKey(null);
     }
     setConfirmKey(null);
   }

@@ -80,7 +80,7 @@ export const ACCESS_RULE_TEXTS: Record<AccessRuleKey, { title: string; effect: s
     effect:
       "Ein Ticket ohne jeden Bereich öffnet an einem Leser nur noch an der Hauptressource seines Service oder wenn der Bereich des Lesers dafür freigegeben ist (Haken im Bereich).",
     confirm:
-      "Danach in den Bereichen, an denen solche Tickets weiter gelten sollen, den Haken „Tickets ohne Bereich gelten hier“ setzen. Bis dahin werden sie an allen Lesern mit Bereich abgewiesen, außer an ihrer Hauptressource. Das gilt auch für Mitarbeiter-Tickets ohne Bereich und ohne Direkt-Zuweisung. Ausgänge bleiben offen.",
+      "Setze vorher in den Bereichen, an denen solche Tickets weiter gelten sollen, den Haken „Tickets ohne Bereich gelten hier“. Der Haken lässt sich schon setzen, solange die Regel aus ist. Ohne Haken werden sie ab dem Einschalten an allen Lesern mit Bereich abgewiesen, außer an ihrer Hauptressource. Das gilt auch für Mitarbeiter-Tickets ohne Bereich und ohne Direkt-Zuweisung. Reine Ausgänge bleiben offen. Ein Leser, der zugleich Eingang und Ausgang desselben Bereichs ist, zählt als Eingang und weist sie ohne Haken ebenfalls ab.",
   },
   handscannerDenyRedeemed: {
     title: "Handscanner lehnt eingelöste Einzeltickets ab",
@@ -95,7 +95,7 @@ export const ACCESS_RULE_TEXTS: Record<AccessRuleKey, { title: string; effect: s
   voucherNeedsArea: {
     title: "Gutscheine gelten nur an Lesern ihres Bereichs",
     effect:
-      "Ein Gutschein mit Bereich wird an einem Leser eines anderen Bereichs nicht eingelöst. Gutscheine ohne Bereich gelten weiter überall.",
+      "Ein Gutschein, der selbst oder über seinen Ticket-Typ einem Bereich zugeordnet ist, wird an einem Leser eines anderen Bereichs nicht eingelöst. Gutscheine ohne jede Zuordnung gelten weiter überall.",
   },
 };
 
@@ -166,6 +166,27 @@ export function diffAccessRules(
   }));
 }
 
+/**
+ * Neuer Stand des JSON `Account.accessRules` nach einer Änderung (PUT der
+ * Einstellungen): `patch` über die gelesenen Regeln gelegt, die neuen
+ * Einträge vorn im Änderungsverlauf (höchstens ACCESS_RULE_CHANGES_KEPT).
+ * Ohne Änderung ist `newChanges` leer, dann wird nichts geschrieben.
+ */
+export function mergeAccessRulesPatch(
+  raw: unknown,
+  patch: Partial<AccessRules>,
+  who: { at: string; adminId: string | null; admin: string | null },
+): { rules: AccessRules; changes: AccessRuleChange[]; newChanges: AccessRuleChange[] } {
+  const before = parseAccessRules(raw);
+  const rules: AccessRules = { ...before };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value !== undefined) (rules as Record<string, boolean | number>)[key] = value;
+  }
+  const newChanges: AccessRuleChange[] = diffAccessRules(before, rules).map((c) => ({ ...who, ...c }));
+  const changes = [...[...newChanges].reverse(), ...parseAccessRuleChanges(raw)].slice(0, ACCESS_RULE_CHANGES_KEPT);
+  return { rules, changes, newChanges };
+}
+
 // ---------------------------------------------------------------------------
 // Die einzelnen Regeln (rein, ohne Datenbank)
 // ---------------------------------------------------------------------------
@@ -192,7 +213,9 @@ export function deniesUnassignedReader(
  * Regel „Leser ohne Bereich“) und nur für Tickets, für die die Route gar
  * keinen Bereich ableitet. Vereinsmitglieder ohne Bereiche lehnt die Route
  * ohnehin schon ab. An der Hauptressource des Tickets (`mainAreaId`) bleibt
- * es gültig, ebenso bei Ausgängen (`isExit`): wer drin ist, darf raus.
+ * es gültig, ebenso bei Ausgängen (`isExit`): wer drin ist, darf raus. Ein
+ * Leser, der Eingang und Ausgang desselben Bereichs zugleich ist, zählt als
+ * Eingang (der Pi meldet keine Richtung).
  */
 export function deniesUnassignedTicket(
   rules: AccessRules,
@@ -226,8 +249,9 @@ export function voucherAreaIds(
 
 /**
  * Regel „Gutscheine gelten nur an Lesern ihres Bereichs“: true = ablehnen.
- * Gutscheine ohne Bereich gelten überall; an Lesern ohne Bereich gilt die
- * Regel „Leser ohne Bereich“.
+ * Als Bereiche zählen die aus `voucherAreaIds` (eigener Bereich und die des
+ * Service). Gutscheine ohne jede Zuordnung gelten überall; an Lesern ohne
+ * Bereich gilt die Regel „Leser ohne Bereich“.
  */
 export function deniesVoucherArea(
   rules: AccessRules,
@@ -368,8 +392,9 @@ type PassbackDb = {
  * (`areaHasExitReader`, im Scan-Weg mit 60-s-Zwischenspeicher). Nur dann
  * liest sie den letzten GRANTED-Scan des Tickets an einem Leser des Bereichs
  * innerhalb der Wartezeit (Index `Scan(ticketId, scanTime)`) und entscheidet
- * mit `decidePassback`. Ohne Wartezeit keine Abfrage. Schlägt die Frage nach
- * dem Ausgangs-Leser fehl, lehnt die Regel nicht ab.
+ * mit `decidePassback`. Ohne Wartezeit keine Abfrage. Schlägt eine der beiden
+ * Abfragen fehl, lehnt die Regel nicht ab: eine freiwillige Regel darf das
+ * Drehkreuz nicht wegen ihres eigenen Lesefehlers schließen.
  */
 export async function evaluatePassback(
   db: PassbackDb,
@@ -392,16 +417,22 @@ export async function evaluatePassback(
     areaHasExitReader = false;
   }
   if (!areaHasExitReader) return null;
-  const last = await db.scan.findFirst({
-    where: {
-      ticketId: opts.ticketId,
-      accountId: opts.accountId,
-      result: "GRANTED",
-      scanTime: { gte: new Date(opts.now.getTime() - opts.minutes * 60_000) },
-      device: { OR: [{ accessIn: areaId }, { accessOut: areaId }] },
-    },
-    orderBy: { scanTime: "desc" },
-    select: { scanTime: true, device: { select: { accessIn: true, accessOut: true } } },
-  });
+  let last: PassbackLastScan | null;
+  try {
+    last = await db.scan.findFirst({
+      where: {
+        ticketId: opts.ticketId,
+        accountId: opts.accountId,
+        result: "GRANTED",
+        scanTime: { gte: new Date(opts.now.getTime() - opts.minutes * 60_000) },
+        device: { OR: [{ accessIn: areaId }, { accessOut: areaId }] },
+      },
+      orderBy: { scanTime: "desc" },
+      select: { scanTime: true, device: { select: { accessIn: true, accessOut: true } } },
+    });
+  } catch (err) {
+    console.error("[einlass-regeln] Letzter Scan nicht lesbar:", err);
+    return null;
+  }
   return decidePassback({ minutes: opts.minutes, areaId, now: opts.now, areaHasExitReader }, last);
 }

@@ -40,7 +40,7 @@ export default async function AreasPage() {
           annyResources={isSuperAdmin ? undefined : editor.annyResources}
           annyServices={isSuperAdmin ? undefined : editor.annyServices}
           annyMappings={isSuperAdmin ? undefined : editor.annyMappings}
-          unassignedTicketsOption={!isSuperAdmin && editor.ticketNeedsArea}
+          ticketNeedsAreaOn={!isSuperAdmin && editor.ticketNeedsArea}
         />
       </div>
     </>

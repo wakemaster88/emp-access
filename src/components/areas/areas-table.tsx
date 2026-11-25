@@ -51,8 +51,8 @@ interface AreasCardProps {
   annyResources?: string[];
   annyServices?: string[];
   annyMappings?: Record<string, number>;
-  /** Einlass-Regel „Tickets ohne Bereich …“ ist an: Haken im Dialog zeigen. */
-  unassignedTicketsOption?: boolean;
+  /** Einlass-Regel „Tickets ohne Bereich …“ ist an (sonst Hinweis am Haken im Dialog). */
+  ticketNeedsAreaOn?: boolean;
 }
 
 type Filter = "all" | "devices" | "none";
@@ -139,7 +139,7 @@ function mobileSummary(area: AreaRow): string {
  * Antippen der Zeile öffnet die Detailseite `/areas/[id]`; Seltenes (Unterressource anlegen,
  * Geräte zuordnen, Löschen) liegt im Mehr-Menü.
  */
-export function AreasCard({ areas, devices = [], readonly, annyResources, annyServices, annyMappings, unassignedTicketsOption = false }: AreasCardProps) {
+export function AreasCard({ areas, devices = [], readonly, annyResources, annyServices, annyMappings, ticketNeedsAreaOn = false }: AreasCardProps) {
   const router = useRouter();
   const [dialog, setDialog] = useState<DialogState>({ open: false });
   const [query, setQuery] = useState("");
@@ -397,7 +397,7 @@ export function AreasCard({ areas, devices = [], readonly, annyResources, annySe
           annyResources={annyResources}
           annyServices={annyServices}
           annyMappings={annyMappings}
-          unassignedTicketsOption={unassignedTicketsOption}
+          ticketNeedsAreaOn={ticketNeedsAreaOn}
           onClose={() => setDialog({ open: false })}
         />
       )}

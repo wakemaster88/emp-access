@@ -43,7 +43,7 @@ export async function loadAreaEditorData(db: PrismaClient, accountFilter: { acco
       where: accountFilter,
       select: { annyName: true, accessAreaId: true },
     }).catch(() => [] as { annyName: string; accessAreaId: number }[]),
-    // Einlass-Regel „Tickets ohne Bereich …“: nur dann zeigt der Dialog den Haken.
+    // Einlass-Regel „Tickets ohne Bereich …“: ist sie aus, zeigt der Dialog am Haken einen Hinweis.
     accountFilter.accountId != null
       ? db.account.findUnique({ where: { id: accountFilter.accountId }, select: { accessRules: true } })
       : Promise.resolve(null),

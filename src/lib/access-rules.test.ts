@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ACCESS_RULES_OFF,
+  ACCESS_RULE_CHANGES_KEPT,
+  ACCESS_RULE_TEXTS,
   anyAccessRuleOn,
   decidePassback,
   deniesRedeemedAtHandscanner,
@@ -10,6 +12,7 @@ import {
   deniesVoucherArea,
   diffAccessRules,
   evaluatePassback,
+  mergeAccessRulesPatch,
   parseAccessRuleChanges,
   parseAccessRules,
   readerHasArea,
@@ -305,6 +308,83 @@ test("evaluatePassback: Ausgangs-Leser nur bei eingeschalteter Regel gefragt", a
     console.error = origError;
   }
   assert.equal(scanQueries, 1);
+});
+
+test("evaluatePassback: Abfrage des letzten Scans schlägt fehl, nicht abgelehnt und kein Fehler", async () => {
+  const now = new Date("2026-08-25T10:00:00.000Z");
+  let scanQueries = 0;
+  const db = {
+    scan: {
+      async findFirst(): Promise<null> {
+        scanQueries++;
+        throw new Error("db down");
+      },
+    },
+  };
+  const logged: unknown[][] = [];
+  const origError = console.error;
+  console.error = (...args: unknown[]) => {
+    logged.push(args);
+  };
+  try {
+    const result = await evaluatePassback(db, {
+      accountId: 1,
+      areaId: 5,
+      ticketId: 9,
+      minutes: 10,
+      now,
+      areaHasExitReader: async () => true,
+    });
+    assert.equal(result, null);
+  } finally {
+    console.error = origError;
+  }
+  assert.equal(scanQueries, 1);
+  assert.equal(logged.length, 1);
+  assert.match(String(logged[0][0]), /^\[einlass-regeln\] /);
+});
+
+test("mergeAccessRulesPatch: legt die Änderung über den gelesenen Stand und ergänzt den Verlauf", () => {
+  const who = { at: "2026-11-25T10:00:00.000Z", adminId: "7", admin: "a@example.org" };
+  // Noch nie gespeichert.
+  const first = mergeAccessRulesPatch(null, { readerNeedsArea: true }, who);
+  assert.deepEqual(first.rules, on({ readerNeedsArea: true }));
+  assert.deepEqual(first.newChanges, [{ ...who, key: "readerNeedsArea", from: false, to: true }]);
+  assert.deepEqual(first.changes, first.newChanges);
+
+  // Zweite Änderung auf dem gespeicherten Stand: die erste bleibt erhalten.
+  const stored = { ...first.rules, changes: first.changes };
+  const second = mergeAccessRulesPatch(stored, { voucherNeedsArea: true, readerNeedsArea: true }, { ...who, at: "2026-11-25T10:01:00.000Z" });
+  assert.deepEqual(second.rules, on({ readerNeedsArea: true, voucherNeedsArea: true }));
+  assert.deepEqual(second.newChanges.map((c) => c.key), ["voucherNeedsArea"]);
+  assert.deepEqual(second.changes.map((c) => c.key), ["voucherNeedsArea", "readerNeedsArea"]);
+
+  // Mehrere Änderungen auf einmal: neueste vorn, in umgekehrter Reihenfolge von ACCESS_RULE_KEYS.
+  const multi = mergeAccessRulesPatch(null, { readerNeedsArea: true, passbackMinutes: 10 }, who);
+  assert.deepEqual(multi.newChanges.map((c) => c.key), ["readerNeedsArea", "passbackMinutes"]);
+  assert.deepEqual(multi.changes.map((c) => c.key), ["passbackMinutes", "readerNeedsArea"]);
+
+  // Ohne Änderung nichts Neues, Verlauf unverändert.
+  const same = mergeAccessRulesPatch(stored, { readerNeedsArea: true }, who);
+  assert.deepEqual(same.newChanges, []);
+  assert.deepEqual(same.changes, first.changes);
+
+  // Verlauf auf ACCESS_RULE_CHANGES_KEPT gekürzt.
+  const long = Array.from({ length: ACCESS_RULE_CHANGES_KEPT }, () => ({ ...who, key: "readerNeedsArea", from: false, to: true }));
+  const cut = mergeAccessRulesPatch({ changes: long }, { ticketNeedsArea: true }, who);
+  assert.equal(cut.changes.length, ACCESS_RULE_CHANGES_KEPT);
+  assert.equal(cut.changes[0].key, "ticketNeedsArea");
+});
+
+test("Texte: Gutschein-Zuordnung über den Ticket-Typ und Kombi-Leser als Eingang", () => {
+  const voucher = ACCESS_RULE_TEXTS.voucherNeedsArea.effect;
+  assert.match(voucher, /Ticket-Typ/);
+  assert.match(voucher, /ohne jede Zuordnung gelten weiter überall/);
+  assert.doesNotMatch(voucher, /Gutscheine ohne Bereich gelten/);
+  const ticket = ACCESS_RULE_TEXTS.ticketNeedsArea.confirm ?? "";
+  assert.match(ticket, /Eingang und Ausgang desselben Bereichs/);
+  assert.match(ticket, /zählt als Eingang/);
+  assert.match(ticket, /solange die Regel aus ist/);
 });
 
 test("splitPassbackAreas: Einlass-Bereiche mit und ohne Ausgangs-Leser", () => {

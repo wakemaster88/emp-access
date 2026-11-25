@@ -64,9 +64,10 @@ interface AreaDialogProps {
   onDeleted?: () => void;
   /**
    * Einlass-Regel „Tickets ohne Bereich gelten nur an freigegebenen Bereichen“
-   * ist an: Haken „Tickets ohne Bereich gelten hier“ zeigen und mitsenden.
+   * ist an. Der Haken „Tickets ohne Bereich gelten hier“ steht immer da; ist
+   * die Regel aus, sagt ein Hinweis, dass er erst mit der Regel wirkt.
    */
-  unassignedTicketsOption?: boolean;
+  ticketNeedsAreaOn?: boolean;
 }
 
 const EMPTY = {
@@ -185,7 +186,7 @@ function DeviceChecklist({
 export function AreaDialog({
   area, presetParentId = null, initialTab = "settings", askDelete = false, allAreas, devices = [],
   annyResources = [], annyServices = [], annyMappings = {},
-  open, onClose, onDeleted, unassignedTicketsOption = false,
+  open, onClose, onDeleted, ticketNeedsAreaOn = false,
 }: AreaDialogProps) {
   const router = useRouter();
   const isNew = !area;
@@ -286,8 +287,12 @@ export function AreaDialog({
         allowReentry: form.allowReentry,
         personLimit: form.personLimit ? Number(form.personLimit) : null,
         scanLockSeconds: Number(form.scanLockSeconds) || 0,
-        // Nur mitsenden, solange die Einlass-Regel an ist; sonst bleibt der Wert.
-        ...(unassignedTicketsOption ? { allowUnassignedTickets: form.allowUnassignedTickets } : {}),
+        // Auch bei ausgeschalteter Einlass-Regel, damit der Betreiber die
+        // Bereiche vorher vorbereiten kann. Kennt die Seite den Wert nicht,
+        // bleibt er, wie er ist.
+        ...(isNew || area?.allowUnassignedTickets !== undefined
+          ? { allowUnassignedTickets: form.allowUnassignedTickets }
+          : {}),
         showOnDashboard: form.showOnDashboard,
         openingHours: form.openingHours.trim() || null,
       };
@@ -453,20 +458,23 @@ export function AreaDialog({
               description="Dasselbe Ticket kommt erst nach dieser Zeit wieder herein – an allen Eingängen der Ressource und auch dann, wenn zwischendurch am Ausgang gescannt wurde. Mitarbeiter sind ausgenommen."
             />
 
-            {unassignedTicketsOption && (
-              <label className="glass-tile flex min-h-11 cursor-pointer items-center justify-between gap-3 p-2.5">
-                <span>
-                  <span className="block text-[13px] font-medium">Tickets ohne Bereich gelten hier</span>
-                  <span className="block text-[11px] text-muted-foreground">
-                    Einlass-Regel in den Einstellungen: Tickets ohne jeden Bereich öffnen nur an freigegebenen Bereichen.
-                  </span>
+            <label className="glass-tile flex min-h-11 cursor-pointer items-center justify-between gap-3 p-2.5">
+              <span className="min-w-0">
+                <span className="block text-[13px] font-medium">Tickets ohne Bereich gelten hier</span>
+                <span className="block text-[11px] text-muted-foreground">
+                  Einlass-Regel in den Einstellungen: Tickets ohne jeden Bereich öffnen nur an freigegebenen Bereichen.
                 </span>
-                <Switch
-                  checked={form.allowUnassignedTickets}
-                  onCheckedChange={(v) => set("allowUnassignedTickets", v)}
-                />
-              </label>
-            )}
+                {!ticketNeedsAreaOn && (
+                  <span className="block break-words text-[11px] text-muted-foreground">
+                    Wirkt erst, wenn du in den Einstellungen die Regel „Tickets ohne Bereich gelten nur an freigegebenen Bereichen“ einschaltest.
+                  </span>
+                )}
+              </span>
+              <Switch
+                checked={form.allowUnassignedTickets}
+                onCheckedChange={(v) => set("allowUnassignedTickets", v)}
+              />
+            </label>
 
             <div className="space-y-1">
               <Label htmlFor="a-limit">Personenlimit</Label>

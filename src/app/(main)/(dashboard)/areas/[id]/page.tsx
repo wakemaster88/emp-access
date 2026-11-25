@@ -287,7 +287,7 @@ export default async function AreaDetailPage({ params }: Props) {
           annyResources={editor.annyResources}
           annyServices={editor.annyServices}
           annyMappings={editor.annyMappings}
-          unassignedTicketsOption={editor.ticketNeedsArea}
+          ticketNeedsAreaOn={editor.ticketNeedsArea}
         />
       </div>
     </>

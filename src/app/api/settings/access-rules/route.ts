@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
 import {
-  ACCESS_RULE_CHANGES_KEPT,
   PASSBACK_MAX_MINUTES,
   PASSBACK_MIN_MINUTES,
-  diffAccessRules,
+  mergeAccessRulesPatch,
   parseAccessRuleChanges,
   parseAccessRules,
-  type AccessRuleChange,
-  type AccessRules,
 } from "@/lib/access-rules";
 import { clearAccessRulesCache } from "@/lib/access-rules-cache";
 import { countAccessRulesAffected } from "@/lib/access-rules-affected";
@@ -21,6 +18,9 @@ import { countAccessRulesAffected } from "@/lib/access-rules-affected";
  * Änderungsverlauf (`Account.accessRules.changes`, die letzten 50) und im
  * Server-Log festgehalten.
  */
+
+/** So oft wird bei parallelem Speichern neu gelesen, dann kommt 409. */
+const ACCESS_RULES_SAVE_ATTEMPTS = 8;
 
 const accessRulesPatchSchema = z
   .object({
@@ -70,36 +70,48 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const existing = await db.account.findUnique({
-    where: { id: accountId },
-    select: { accessRules: true },
-  });
-  const before = parseAccessRules(existing?.accessRules);
-  const next: AccessRules = { ...before };
-  for (const [key, value] of Object.entries(parsed.data)) {
-    if (value !== undefined) (next as Record<string, boolean | number>)[key] = value;
-  }
-
   const user = session.session.user;
-  const at = new Date().toISOString();
   const adminId = user.id ? String(user.id) : null;
   const admin = user.email ?? user.name ?? null;
-  const newChanges: AccessRuleChange[] = diffAccessRules(before, next).map((c) => ({ at, adminId, admin, ...c }));
-  const changes = [...newChanges.reverse(), ...parseAccessRuleChanges(existing?.accessRules)].slice(
-    0,
-    ACCESS_RULE_CHANGES_KEPT,
-  );
 
-  if (newChanges.length > 0) {
-    await db.account.update({
+  // Lesen, zusammenführen, schreiben: geschrieben wird nur, wenn
+  // `accessRules` noch genau dem gelesenen Stand entspricht (Vergleich in der
+  // Datenbank per jsonb-Gleichheit). Sonst hat ein paralleler PUT dazwischen
+  // gespeichert, und es geht mit dessen Stand von vorn los. So geht keine
+  // Änderung und kein Eintrag im Verlauf verloren, ohne Transaktion (gleich
+  // mit Neon- und pg-Adapter und durch den Mandanten-Client). Noch nie
+  // gespeichert (null) vergleicht mit `AnyNull`.
+  for (let attempt = 0; attempt < ACCESS_RULES_SAVE_ATTEMPTS; attempt++) {
+    const existing = await db.account.findUnique({
       where: { id: accountId },
-      data: { accessRules: { ...next, changes } as unknown as Prisma.InputJsonValue },
+      select: { accessRules: true },
     });
+    const raw = existing?.accessRules ?? null;
+    const { rules, changes, newChanges } = mergeAccessRulesPatch(raw, parsed.data, {
+      at: new Date().toISOString(),
+      adminId,
+      admin,
+    });
+    if (newChanges.length === 0) return NextResponse.json({ rules, changes });
+
+    const written = await db.account.updateMany({
+      where: {
+        id: accountId,
+        accessRules: raw === null ? { equals: Prisma.AnyNull } : { equals: raw as Prisma.InputJsonValue },
+      },
+      data: { accessRules: { ...rules, changes } as unknown as Prisma.InputJsonValue },
+    });
+    if (written.count === 0) continue;
+
     for (const c of newChanges) {
       console.info("[einlass-regeln] geändert", { accountId, adminId, key: c.key, from: c.from, to: c.to });
     }
     clearAccessRulesCache();
+    return NextResponse.json({ rules, changes });
   }
 
-  return NextResponse.json({ rules: next, changes });
+  return NextResponse.json(
+    { error: "Die Einlass-Regeln wurden gerade woanders geändert. Bitte lade die Seite neu und versuche es noch einmal." },
+    { status: 409 },
+  );
 }
