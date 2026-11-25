@@ -303,7 +303,10 @@ export async function triggerRiderSkill(
   let error: string | null = null;
   try {
     if (skill.kind === "DEVICE") {
-      const res = await triggerDeviceAction(db, skill.device!, accountId, "open", { autoOffSec: seconds });
+      const res = await triggerDeviceAction(db, skill.device!, accountId, "open", {
+        autoOffSec: seconds,
+        actor: { source: "skill", actorLabel: `skill:${skill.id}` },
+      });
       if (!res.sent) error = res.error ?? "Das Gerät hat nicht geantwortet.";
     } else {
       const zones = (await loadVoteZones(db, accountId, ctx.music!.zoneIds)).filter(
@@ -344,14 +347,18 @@ export async function triggerRiderSkill(
 export async function runSkillOffTick(now: Date = new Date()): Promise<{ off: number; errors: string[] }> {
   const due = await prisma.riderSkillUse.findMany({
     where: { ok: true, offDone: false, until: { lte: now } },
-    select: { id: true, accountId: true, skill: { select: { device: { select: DEVICE_SELECT } } } },
+    select: { id: true, accountId: true, skillId: true, skill: { select: { device: { select: DEVICE_SELECT } } } },
     take: 50,
   });
   const out = { off: 0, errors: [] as string[] };
   for (const u of due) {
     const device = u.skill.device;
     try {
-      if (device) await triggerDeviceAction(tenantClient(u.accountId), device, u.accountId, "deactivate");
+      if (device) {
+        await triggerDeviceAction(tenantClient(u.accountId), device, u.accountId, "deactivate", {
+          actor: { source: "skill", actorLabel: `skill:${u.skillId}` },
+        });
+      }
       out.off++;
     } catch (e) {
       out.errors.push(`Nutzung ${u.id}: ${e instanceof Error ? e.message : String(e)}`);

@@ -83,6 +83,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     where: { id: deviceId, accountId: profile.accountId },
     select: {
       id: true,
+      name: true,
       type: true,
       category: true,
       shellyId: true,
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       fullDevice,
       profile.accountId,
       action,
+      { actor: { source: "mobil", actorLabel: `ticket:${profile.id}` } },
     );
     task = res.task;
     sent = res.sent;

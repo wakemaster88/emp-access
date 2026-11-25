@@ -9,6 +9,13 @@ import {
   hubTaskActor,
   withActor,
 } from "@/lib/hub-task-rules";
+import { recordDeviceAction } from "@/lib/device-action-log";
+
+/** Tuer-Auftraege an Kamera-Tueren, die im Geraete-Protokoll stehen. */
+const LOGGED_DOOR_TASKS: Record<string, string> = {
+  DOORBIRD_OPEN: "doorbird_open",
+  DOORBIRD_HOLD: "doorbird_hold",
+};
 
 /** Hoechstens so viele Auftraege je Abholung. */
 const PICKUP_LIMIT = 10;
@@ -134,20 +141,39 @@ export async function POST(request: NextRequest) {
   if (!check.ok) {
     return NextResponse.json({ error: check.error }, { status: 400 });
   }
+  let cameraName: string | null = null;
   if (check.cameraId != null) {
     const camera = await db.camera.findFirst({
       where: { id: check.cameraId, accountId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!camera) return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 400 });
+    cameraName = camera.name;
   }
 
+  const by = hubTaskActor(session.session.user);
   const task = await db.hubTask.create({
     data: {
       type: body.type,
-      payload: withActor(check.payload, hubTaskActor(session.session.user)) as object,
+      payload: withActor(check.payload, by) as object,
       accountId,
     },
   });
+  // Kamera-Tueren haben keine Device-Zeile: deviceId 0, Kamera im Namen.
+  // DOORBIRD_HOLD ohne payload.until (kein nicht-leerer Text) beendet das
+  // Offenhalten – genau wie der Hub es liest.
+  const rawUntil = (body.payload as { until?: unknown } | null | undefined)?.until;
+  const holdEnds = body.type === "DOORBIRD_HOLD" && !(typeof rawUntil === "string" && rawUntil);
+  const doorAction = holdEnds ? "doorbird_hold_ende" : LOGGED_DOOR_TASKS[body.type];
+  if (doorAction && check.cameraId != null) {
+    recordDeviceAction({
+      accountId,
+      deviceId: 0,
+      deviceName: `${cameraName ?? "Kamera"} (Kamera ${check.cameraId})`,
+      action: doorAction,
+      result: "ok",
+      by: { source: "admin", actorId: by.adminId },
+    });
+  }
   return NextResponse.json(task, { status: 201 });
 }

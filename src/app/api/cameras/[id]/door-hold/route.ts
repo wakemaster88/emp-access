@@ -8,6 +8,7 @@ import {
   doorHoldState,
   parseDoorHoldMinutes,
 } from "@/lib/door-hold";
+import { recordDeviceAction } from "@/lib/device-action-log";
 
 /**
  * Tor offen halten (DoorBird):
@@ -46,6 +47,18 @@ async function context(params: Promise<{ id: string }>): Promise<{ error: NextRe
     return { error: NextResponse.json({ error: "Ungültige ID" }, { status: 400 }) };
   }
   return { db: session.db, accountId: session.accountId!, cameraId, by: hubTaskActor(session.session.user) };
+}
+
+/** Protokoll-Eintrag: Kamera-Tueren haben keine Device-Zeile (deviceId 0). */
+function logHold(ctx: Ctx, camera: { id: number; name: string | null }, action: string, failed: boolean) {
+  recordDeviceAction({
+    accountId: ctx.accountId,
+    deviceId: 0,
+    deviceName: `${camera.name ?? "Kamera"} (Kamera ${camera.id})`,
+    action,
+    result: failed ? "fehler" : "ok",
+    by: { source: "admin", actorId: ctx.by.adminId },
+  });
 }
 
 function loadCamera(ctx: Ctx) {
@@ -111,6 +124,7 @@ export async function POST(
   });
 
   const outcome = await waitForHubTask(db, task.id);
+  logHold(ctx, camera, "doorbird_hold", outcome.status === "FAILED");
   if (outcome.status === "FAILED") {
     // Hub kennt die DoorBird nicht o. ae.: Zielzustand zuruecknehmen, sonst
     // zeigt die UI "aktiv", obwohl nichts pulst.
@@ -161,6 +175,7 @@ export async function DELETE(
   });
 
   const outcome = await waitForHubTask(db, task.id);
+  logHold(ctx, camera, "doorbird_hold_ende", outcome.status === "FAILED");
   const fresh = (await loadCamera(ctx)) ?? camera;
   return NextResponse.json({
     ok: outcome.status !== "FAILED",

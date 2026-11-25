@@ -45,6 +45,7 @@ export async function POST(
     where: { id: deviceId, accountId: monitor.accountId },
     select: {
       id: true,
+      name: true,
       type: true,
       shellyId: true,
       ipAddress: true,
@@ -64,6 +65,7 @@ export async function POST(
     device,
     monitor.accountId,
     action as KioskAction,
+    { actor: { source: "kiosk", actorLabel: `monitor:${monitor.id}` } },
   );
 
   return NextResponse.json({ ok: true, task, sent });

@@ -7,6 +7,8 @@ import { withAudioDeviceInfo, AUDIO_ZONE_SELECT } from "@/lib/audio-integration"
 import { withoutDeviceSecrets } from "@/lib/role-guards";
 import { parseDeviceIp } from "@/lib/net-address";
 import { foreignRefError } from "@/lib/tenant-refs";
+import { hubTaskActor } from "@/lib/hub-task-rules";
+import { recordDeviceAction } from "@/lib/device-action-log";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -245,6 +247,14 @@ export async function DELETE(
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   await db.device.delete({ where: { id: deviceId } });
+  recordDeviceAction({
+    accountId: existing.accountId,
+    deviceId,
+    deviceName: existing.name,
+    action: "geloescht",
+    result: "ok",
+    by: { source: "admin", actorId: hubTaskActor(session.session.user).adminId },
+  });
 
   return NextResponse.json({ ok: true });
 }

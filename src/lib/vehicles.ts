@@ -5,6 +5,7 @@ import { maybeSurveillanceAlert, maybeSurveillanceTelegramAlert } from "@/lib/su
 import { sendPushToAccount } from "@/lib/web-push";
 import { storeSightingSnapshot } from "@/lib/blob-store";
 import type { HubTaskActor } from "@/lib/hub-task-rules";
+import { recordDeviceAction, type DeviceActionBy } from "@/lib/device-action-log";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 
@@ -105,6 +106,13 @@ export async function processVehicleSighting(opts: {
       (!vehicle.lastTriggeredAt ||
         seenAt.getTime() - vehicle.lastTriggeredAt.getTime() >= cooldownMs);
 
+    // Protokoll: von Hand ausgeloest (Sitzung) oder automatisch per Kennzeichen.
+    const logBy: DeviceActionBy | null = vehicle
+      ? opts.by
+        ? { source: "admin", actorId: opts.by.adminId, actorLabel: `fahrzeug:${vehicle.id}` }
+        : { source: "regel", actorLabel: `fahrzeug:${vehicle.id}` }
+      : null;
+
     if (vehicle?.shellyDeviceId && vehicle.shellyDevice && cameraAllowed) {
       if (cooledDown) {
         const action = (SHELLY_ACTIONS.includes(vehicle.shellyAction as (typeof SHELLY_ACTIONS)[number])
@@ -128,6 +136,14 @@ export async function processVehicleSighting(opts: {
           action,
           vehicle.timerSeconds ?? undefined
         );
+        recordDeviceAction({
+          accountId: opts.accountId,
+          deviceId: vehicle.shellyDeviceId,
+          deviceName: vehicle.shellyDevice.name,
+          action,
+          result: shellyOk ? "ok" : "fehler",
+          by: logBy ?? undefined,
+        });
       }
     }
 
@@ -142,6 +158,15 @@ export async function processVehicleSighting(opts: {
           },
         });
         doorbirdTriggered = true;
+        // Kamera-Tueren haben keine Device-Zeile: deviceId 0, Kamera im Namen.
+        recordDeviceAction({
+          accountId: opts.accountId,
+          deviceId: 0,
+          deviceName: `Kamera (Kamera ${vehicle.doorbirdCameraId})`,
+          action: "doorbird_open",
+          result: "ok",
+          by: logBy ?? undefined,
+        });
         console.log(
           `[vehicles] DoorBird-Türöffner ausgelöst: ${vehicle.name} (${plateRaw}) → Kamera ${vehicle.doorbirdCameraId}`
         );

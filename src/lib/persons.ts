@@ -6,6 +6,7 @@ import {
 } from "@/lib/surveillance";
 import { sendPushToAccount } from "@/lib/web-push";
 import { storeSightingSnapshot } from "@/lib/blob-store";
+import { recordDeviceAction } from "@/lib/device-action-log";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 export const PERSON_LIST_TYPES = ["WHITELIST", "BLACKLIST"] as const;
@@ -52,12 +53,15 @@ async function triggerShellyForPerson(
     cooldownMinutes: number;
     lastTriggeredAt: Date | null;
     shellyDevice: {
+      name: string;
       ipAddress: string | null;
       shellyId: string | null;
       shellyAuthKey: string | null;
     } | null;
   },
-  seenAt: Date
+  seenAt: Date,
+  /** Admin.id bei einer Sichtung von Hand, sonst automatisch (Gesichtserkennung). */
+  actorId?: number | null
 ): Promise<{ shellyTriggered: boolean; shellyOk: boolean | null }> {
   if (!person.shellyDeviceId || !person.shellyDevice) {
     return { shellyTriggered: false, shellyOk: null };
@@ -92,6 +96,16 @@ async function triggerShellyForPerson(
     action,
     person.timerSeconds ?? undefined
   );
+  recordDeviceAction({
+    accountId,
+    deviceId: person.shellyDeviceId,
+    deviceName: person.shellyDevice.name,
+    action,
+    result: shellyOk ? "ok" : "fehler",
+    by: actorId
+      ? { source: "admin", actorId, actorLabel: `person:${person.id}` }
+      : { source: "regel", actorLabel: `person:${person.id}` },
+  });
 
   await prisma.listedPerson.update({
     where: { id: person.id },
@@ -289,6 +303,8 @@ export async function processManualPersonSighting(opts: {
   notes?: string | null;
   seenAt?: Date;
   triggerShelly?: boolean;
+  /** Admin.id des angemeldeten Benutzers, fuers Geraete-Protokoll. */
+  actorId?: number | null;
 }): Promise<{
   sightingId: number;
   shellyTriggered: boolean;
@@ -310,7 +326,7 @@ export async function processManualPersonSighting(opts: {
       data: { lastTriggeredAt: null },
     });
     const refreshed = { ...person, lastTriggeredAt: null };
-    const r = await triggerShellyForPerson(opts.accountId, refreshed, seenAt);
+    const r = await triggerShellyForPerson(opts.accountId, refreshed, seenAt, opts.actorId);
     shellyTriggered = r.shellyTriggered;
     shellyOk = r.shellyOk;
   }

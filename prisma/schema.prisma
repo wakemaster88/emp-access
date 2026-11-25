@@ -201,6 +201,7 @@ model Account {
   inventoryCountLinks    InventoryCountLink[]
   irrigationSchedules    IrrigationSchedule[]
   irrigationRuns         IrrigationRun[]
+  deviceActionLogs       DeviceActionLog[]
   pushSubscriptions      PushSubscription[]
   infoFormTemplates      InfoFormTemplate[]
   infoRequests           InfoRequest[]
@@ -541,6 +542,38 @@ model Device {
   @@index([accessOut])
   @@index([pumpDeviceId])
   @@index([cameraId])
+}
+
+/// Protokoll: wer ein Geraet von Hand oder automatisch geschaltet, sein Token
+/// geaendert oder es geloescht hat. deviceId bewusst ohne Fremdschluessel,
+/// damit die Zeilen das Loeschen des Geraets ueberdauern (deviceName haelt den
+/// Namen fest). Geschrieben von src/lib/device-action-log.ts.
+model DeviceActionLog {
+  id         Int      @id @default(autoincrement())
+  accountId  Int
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Device.id; 0 bei Kamera-Tueren (DoorBird), die keine Device-Zeile haben.
+  deviceId   Int
+  deviceName String
+  /// open, emergency, deactivate, reset, close, stop, on, off, toggle,
+  /// doorbird_open, doorbird_hold, doorbird_hold_ende, token_neu,
+  /// token_entfernt, geloescht
+  action     String
+  /// ok, fehler oder abgelehnt. ok = Befehl gesendet bzw. Auftrag erteilt
+  /// (bei Pi und Hub nicht: ausgefuehrt).
+  result     String
+  /// admin (angemeldeter Benutzer, jede Rolle), kiosk, monitor, mobil, verein,
+  /// skill, regel, mcp oder unbekannt
+  source     String
+  /// Admin.id, wenn ein angemeldeter Benutzer geschaltet hat.
+  actorId    Int?
+  /// Kennung der Quelle, z. B. Monitor-ID, Name des MCP-Tokens, Regel-ID oder
+  /// "ticket:<id>". Nie ein Token und nie ein Kundenname.
+  actorLabel String?
+  createdAt  DateTime @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([accountId, deviceId, createdAt])
 }
 
 model Ticket {

@@ -22,9 +22,15 @@ const BLOB_BATCH = 5000;
  */
 const STALE_HUB_TASK_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Geraete-Protokoll (DeviceActionLog): feste Frist in Tagen, nicht in den
+ * Einstellungen waehlbar – es haelt fest, wer Tueren und Geraete geschaltet hat.
+ */
+export const DEVICE_ACTION_LOG_DAYS = 365;
+
 export type RetentionPurgeResult = {
   accountId: number;
-  deleted: Partial<Record<RetentionKey, number>>;
+  deleted: Partial<Record<RetentionKey | "deviceActions", number>>;
 };
 
 /** Löscht abgelaufene Datensätze eines Accounts gemäß Config. */
@@ -33,7 +39,7 @@ export async function purgeAccountRetention(
   config: DataRetentionConfig,
   now = new Date()
 ): Promise<RetentionPurgeResult> {
-  const deleted: Partial<Record<RetentionKey, number>> = {};
+  const deleted: RetentionPurgeResult["deleted"] = {};
 
   async function del(
     key: RetentionKey,
@@ -162,6 +168,11 @@ export async function purgeAccountRetention(
     });
     return r.count;
   });
+
+  const actions = await prisma.deviceActionLog.deleteMany({
+    where: { accountId, createdAt: { lt: cutoffDate(DEVICE_ACTION_LOG_DAYS, now) } },
+  });
+  if (actions.count > 0) deleted.deviceActions = actions.count;
 
   return { accountId, deleted };
 }

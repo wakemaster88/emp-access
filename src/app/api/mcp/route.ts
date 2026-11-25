@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(rpcError(null, RPC.PARSE_ERROR, "Ungültiges JSON"), { status: 400 });
   }
 
-  const ctx: McpCtx = { db: tenantClient(auth.accountId), accountId: auth.accountId, tokenName: auth.tokenName };
+  const ctx: McpCtx = { db: tenantClient(auth.accountId), accountId: auth.accountId, tokenName: auth.tokenName, tokenId: auth.tokenId };
   const opts = {
     tools: MCP_TOOLS,
     ctx,
