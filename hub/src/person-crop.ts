@@ -89,11 +89,14 @@ export async function groupCrop(jpeg: Buffer, boxes: NormBox[]): Promise<Buffer 
  * Ausschnitte vergroessern, je Ausschnitt einbetten und gegen die Gallery
  * pruefen. Liefert den besten Treffer (sonst das erste gefundene Gesicht).
  * Vergroesserte Ausschnitte gelten als „upscaled“ → strengere Schwelle.
+ * `known`: Personen auf diesem Bild, schon erkannt (optische Nahaufnahme);
+ * dann entfaellt die zweite Personen-Erkennung auf demselben Bild.
  */
 export async function faceViaZoom(
-  jpeg: Buffer
+  jpeg: Buffer,
+  known?: NormBox[] | null
 ): Promise<{ face: FaceEmbedResult; matched: boolean; persons: number; box: NormBox } | null> {
-  const boxes = await detectPersons(jpeg);
+  const boxes = known?.length ? known : await detectPersons(jpeg);
   if (!boxes?.length) return null;
   let best: { face: FaceEmbedResult; score: number; matched: boolean; box: NormBox } | null = null;
   for (const box of largestFirst(boxes, 3)) {

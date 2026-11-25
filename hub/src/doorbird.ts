@@ -19,7 +19,7 @@ import type { CameraConfig, LastPerson } from "./cameras.js";
 import { updateLocalStreams } from "./streams.js";
 import { findIpByMac, macForIp } from "./netmap.js";
 import { improve } from "./improve-log.js";
-import { PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
+import { PERSON_SNAPSHOT, shrinkJpeg } from "./image.js";
 
 const RECONNECT_MIN_MS = 3_000;
 const RECONNECT_MAX_MS = 60_000;
@@ -595,7 +595,7 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
   });
 
   try {
-    const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT_MAX_PX);
+    const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT.maxPx, PERSON_SNAPSHOT.quality);
     const upload = await api(`/api/hub/person-sightings?${qs}`, {
       method: "POST",
       headers: { "Content-Type": "image/jpeg", "X-Face-Embedding": embeddingHeader(face.embedding) },

@@ -1,11 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  CLOSEUP_CACHE_MS,
+  CLOSEUP_EMPTY_CACHE_MS,
   CLOSEUP_GAP_MS,
   CLOSEUP_GAP_ZONE_MS,
+  CLOSEUP_SKIP_PAUSE_MS,
   HOME_SETTLE_MS,
+  ZOOM_RETURN_RETRIES,
   closeUpBlocked,
+  closeUpCacheUsable,
+  followAlwaysOn,
   followBlocked,
+  followRoomBlocked,
   isAtHome,
   isCentered,
   isZoneCamera,
@@ -13,9 +20,13 @@ import {
   maxCenterGain,
   newMotionState,
   opticalFactor,
+  opticalWorth,
   planCloseUp,
   posForMagnification,
   readTrackingCfg,
+  roomLabel,
+  shouldRestoreZoom,
+  zoomReturnGivenUp,
 } from "./camera-motion-rules.js";
 
 const MID = { x: 0.45, y: 0.375, w: 0.1, h: 0.25 };
@@ -125,4 +136,123 @@ test("Nahaufnahme: Abstand 30 s, an Zonen-Kameras 2 min und nie bei Fahrzeug", (
   assert.equal(closeUpBlocked(st, CLOSEUP_GAP_ZONE_MS, zone, false), null);
   assert.equal(closeUpBlocked(st, CLOSEUP_GAP_ZONE_MS, zone, true), "Fahrzeug an der Zonen-Kamera");
   assert.equal(closeUpBlocked(st, CLOSEUP_GAP_ZONE_MS, { ...cam, zoom: false }, false), "kein Zoom");
+});
+
+test("Nahaufnahme: keine neue, solange die Rückfahrt des Zooms aussteht", () => {
+  const cam = { pan: false, zoom: true, zone: false };
+  const st = newMotionState(0);
+  assert.equal(closeUpBlocked(st, 0, cam, false, true), "Zoom noch nicht zurück");
+  assert.equal(closeUpBlocked(st, 0, cam, false, false), null);
+  // Hand und Regel gehen als Grund vor.
+  st.hold = { by: "hand", until: 1_000 };
+  assert.equal(closeUpBlocked(st, 0, cam, false, true), "Handsteuerung");
+});
+
+test("Zoom nach Handsteuerung: zurück nur, wenn er noch steht, wo die Automatik ihn hingestellt hat", () => {
+  // Unverändert auf der Position der Automatik: zurück in die Ausgangsstellung.
+  assert.equal(shouldRestoreZoom(12, 12, 0), true);
+  // Von Hand weiter herein- oder herausgezoomt: die Einstellung bleibt.
+  assert.equal(shouldRestoreZoom(16, 12, 0), false);
+  assert.equal(shouldRestoreZoom(8, 12, 0), false);
+  // Steht schon in der Ausgangsstellung: nichts zu tun.
+  assert.equal(shouldRestoreZoom(0, 12, 0), false);
+  // Ausgangsstellung war nicht Weitwinkel.
+  assert.equal(shouldRestoreZoom(20, 20, 6), true);
+  assert.equal(shouldRestoreZoom(6, 20, 6), false);
+});
+
+test("Rückfahrt des Zooms: nach dem ersten Fehlversuch noch zehn weitere, dann aufgeben", () => {
+  assert.equal(ZOOM_RETURN_RETRIES, 10);
+  assert.equal(zoomReturnGivenUp(1), false);
+  assert.equal(zoomReturnGivenUp(ZOOM_RETURN_RETRIES), false);
+  assert.equal(zoomReturnGivenUp(ZOOM_RETURN_RETRIES + 1), true);
+});
+
+test("Zoom für die Gesichtserkennung nur, wenn das Gesicht danach mindestens 64 px groß ist", () => {
+  // Mini-Gesicht, kleiner Faktor: bleibt zu klein.
+  assert.equal(opticalWorth(30, 1.5), false);
+  // 40 px mal 2: 80 px.
+  assert.equal(opticalWorth(40, 2.0), true);
+  assert.equal(opticalWorth(32, 2.0), true);
+  assert.equal(opticalWorth(31, 2.0), false);
+  // Ohne Gesicht erst ab Faktor 2.
+  assert.equal(opticalWorth(null, 1.5), false);
+  assert.equal(opticalWorth(null, 2.0), true);
+  assert.equal(opticalWorth(0, 2.4), true);
+  // Direkt erkannte Gesichter (an 4K-Kameras ab 96 px): Größe mal Faktor, wie jedes andere.
+  assert.equal(opticalWorth(100, 2.0), true);
+  assert.equal(opticalWorth(96, 1.3), true);
+  assert.equal(opticalWorth(64, 1.5), true);
+  // Knapp: 50 × 1,3 = 65 px reicht, 49 × 1,3 = 63,7 px nicht.
+  assert.equal(opticalWorth(50, 1.3), true);
+  assert.equal(opticalWorth(49, 1.3), false);
+  // Kein Gewinn, keine Fahrt.
+  assert.equal(opticalWorth(80, 1), false);
+  assert.equal(opticalWorth(null, Number.NaN), false);
+});
+
+test("Nach einem Verzicht ohne Fahrt: 15 s Pause, auch an Zonen-Kameras", () => {
+  assert.equal(CLOSEUP_SKIP_PAUSE_MS, 15_000);
+  for (const zone of [false, true]) {
+    const cam = { pan: false, zoom: true, zone };
+    const st = newMotionState(0);
+    st.skipUntil = 15_000;
+    assert.equal(closeUpBlocked(st, 14_999, cam, false), "letzter Versuch ohne Fahrt zu kurz her");
+    assert.equal(closeUpBlocked(st, 15_000, cam, false), null);
+  }
+});
+
+test("Verzicht nur wegen des Gesichts sperrt die Gesichtserkennung, nicht den Wächter", () => {
+  const cam = { pan: false, zoom: true, zone: true };
+  const st = newMotionState(0);
+  st.faceSkipUntil = CLOSEUP_GAP_ZONE_MS;
+  assert.equal(closeUpBlocked(st, 60_000, cam, false, false, true), "Fahrt lohnte für das Gesicht eben nicht");
+  assert.equal(closeUpBlocked(st, 60_000, cam, false, false, false), null);
+  assert.equal(closeUpBlocked(st, CLOSEUP_GAP_ZONE_MS, cam, false, false, true), null);
+});
+
+test("Zwischenspeicher: Bild 45 s, leeres Ergebnis 10 s, Verzicht wegen des Gesichts nicht für den Wächter", () => {
+  assert.equal(closeUpCacheUsable({ ok: true, faceSkip: false, ageMs: CLOSEUP_CACHE_MS - 1 }, false), true);
+  assert.equal(closeUpCacheUsable({ ok: true, faceSkip: false, ageMs: CLOSEUP_CACHE_MS }, true), false);
+  assert.equal(CLOSEUP_EMPTY_CACHE_MS, 10_000);
+  assert.equal(closeUpCacheUsable({ ok: false, faceSkip: false, ageMs: 9_999 }, false), true);
+  assert.equal(closeUpCacheUsable({ ok: false, faceSkip: false, ageMs: 10_000 }, true), false);
+  // Die Gesichtserkennung hat verzichtet: der Wächter plant selbst, die Gesichtserkennung nicht neu.
+  assert.equal(closeUpCacheUsable({ ok: false, faceSkip: true, ageMs: 1_000 }, false), false);
+  assert.equal(closeUpCacheUsable({ ok: false, faceSkip: true, ageMs: 1_000 }, true), true);
+});
+
+test("Folgen nur bei geschlossenem Raum; unbekannt: nur im Nachtfenster des Wächters", () => {
+  const cam = { pan: true, zoom: false, zone: false };
+  const st = newMotionState(0);
+  const room = { closed: true as boolean | null, hour: 14, nightWindow: "22-6", always: false };
+  // Raum offen: nein.
+  assert.equal(followBlocked(st, 0, cam, { ...room, closed: false }), "Raum offen");
+  // Geschlossen: ja, auch am Tag.
+  assert.equal(followBlocked(st, 0, cam, room), null);
+  // Unbekannt (keine Raumdaten, Kamera ohne Raum, Assistent aus): um 14 Uhr nein, um 23 Uhr ja.
+  assert.equal(followBlocked(st, 0, cam, { ...room, closed: null, hour: 14 }), "Raum unbekannt, außerhalb des Nachtfensters");
+  assert.equal(followBlocked(st, 0, cam, { ...room, closed: null, hour: 23 }), null);
+  assert.equal(followBlocked(st, 0, cam, { ...room, closed: null, hour: 5 }), null);
+  // Stunde nicht lesbar: kein Nachtfenster.
+  assert.equal(followRoomBlocked({ ...room, closed: null, hour: Number.NaN }), "Raum unbekannt, außerhalb des Nachtfensters");
+  // HUB_FOLLOW_ALWAYS: wie früher.
+  assert.equal(followBlocked(st, 0, cam, { ...room, closed: false, always: true }), null);
+  // Ohne Betriebszustand (Nahaufnahme des Wächters) zählt er nicht.
+  assert.equal(followBlocked(st, 0, cam), null);
+  // Die übrigen Gründe gehen vor.
+  assert.equal(followBlocked(st, 0, { ...cam, pan: false }, { ...room, closed: false }), "kein Schwenkkopf");
+  st.hold = { by: "hand", until: 1_000 };
+  assert.equal(followBlocked(st, 0, cam, { ...room, closed: false }), "Handsteuerung");
+});
+
+test("Betriebszustand im Zähler: offen, geschlossen, unbekannt", () => {
+  assert.equal(roomLabel(true), "geschlossen");
+  assert.equal(roomLabel(false), "offen");
+  assert.equal(roomLabel(null), "unbekannt");
+});
+
+test("HUB_FOLLOW_ALWAYS: 1, true, ja, on stellen das frühere Folgen her", () => {
+  for (const v of ["1", "true", "ja", "on", " ON ", "True"]) assert.equal(followAlwaysOn(v), true, v);
+  for (const v of [undefined, "", "0", "off", "nein", "false", "yes", "immer"]) assert.equal(followAlwaysOn(v), false, String(v));
 });
