@@ -23,9 +23,10 @@ Weitere Dokumente im Repo: [`README.md`](../../README.md) (Cloud),
 
 Das Repo ist öffentlich. Auf Aarons Entscheidung (10.11.2026) steht der
 Standort trotzdem vollständig hier, mit Adressen und Regeln. Draußen
-bleiben nur Passwörter, Tokens, SNMP-Community, WLAN-Schlüssel,
+bleiben Passwörter, Tokens, SNMP-Community, WLAN-Schlüssel,
 Insight-API-Schlüssel und Konto-IDs, die DynDNS-Adresse des VPN-Zugangs und
-Daten Dritter. Geheimnisse liegen nur in `hub/.env` auf der Hub-Maschine
+Daten Dritter. Seriennummern, Details zum Fernzugang und zur Absicherung
+des Hub-Rechners stehen im privaten Projektwissen. Geheimnisse liegen nur in `hub/.env` auf der Hub-Maschine
 bzw. in den Vercel-Umgebungsvariablen. Hintergrund und Entstehung des
 Netzplans stehen in den Claude-Dokumenten „Netzwerkplan Tuttenbrocksee –
 PR60X“ und „Mac Studio als neuen Hub einrichten“.

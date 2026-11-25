@@ -433,7 +433,7 @@ Snapshot über den neuen Task `HUB_LOG` gelesen (Hub auf `df15676`), nicht vom i
 
 ## 2026-09-05 (Hub-Mac fertig eingerichtet)
 
-- 13:53 Uhr per `SYSTEM_CHECK` bestätigt: FileVault aus, Auto-Login `aaronarmnborst`, kein Ruhezustand, Neustart nach Stromausfall, Einschalten täglich 06:00, sudo-Regel für pmset, caffeinate an – keine Hinweise mehr. Auto-Login wurde über die Systemeinstellungen gesetzt, nachdem der zweite Lauf des Setup-Skripts bei `sysadminctl` abgebrochen war (Skript-Ausgabe nicht gesehen).
+- 13:53 Uhr per `SYSTEM_CHECK` bestätigt: FileVault aus, Auto-Login dem Benutzer des Hub-Rechners, kein Ruhezustand, Neustart nach Stromausfall, Einschalten täglich 06:00, sudo-Regel für pmset, caffeinate an – keine Hinweise mehr. Auto-Login wurde über die Systemeinstellungen gesetzt, nachdem der zweite Lauf des Setup-Skripts bei `sysadminctl` abgebrochen war (Skript-Ausgabe nicht gesehen).
 - Damit überlebt der Hub Herunterfahren und Neustart des iMac ohne Zutun; der Ausfall vom 3./4.9. kann so nicht mehr entstehen.
 
 ## 2026-09-07 (Audio und Shelly an Räume und Betriebszeiten gekoppelt)

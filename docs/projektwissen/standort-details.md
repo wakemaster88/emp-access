@@ -7,14 +7,15 @@ Insight bzw. der Hub-Scan; diese Datei dann nachziehen.
 
 Nicht hier: Passwörter, Tokens, SNMP-Community, WLAN-Schlüssel,
 Insight-API-Schlüssel und Konto-IDs, die DynDNS-Adresse des VPN-Zugangs und
-Daten Dritter (private Geräte von Personen).
+Daten Dritter (private Geräte von Personen). Seriennummern, Details zum
+Fernzugang und zur Absicherung des Hub-Rechners stehen im privaten
+Projektwissen.
 
 ## WAN
 
 - Telekom VDSL ~250/40 Mbit/s (FTTC) über FRITZ!Box 7590 (Modem +
   Telefonie, 6 Rufnummern auf FON1/FON2). FRITZ!Box-Netz 192.168.0.0/24.
-- PR60X WAN1 = 192.168.0.203 (doppeltes NAT). Portweiterleitung auf der
-  FRITZ!Box „WireGuard PR60X“ UDP 51820 → 192.168.0.203, nur IPv4.
+- PR60X WAN1 = 192.168.0.203 (doppeltes NAT).
 - Öffentliches Gäste-Netz: extern betreut, hängt direkt an der FRITZ!Box
   (D4:01:C3:5C:FC:B9), nicht am PR60X.
 - AGFEO ist abgebaut; eine AGFEO-MAC 00:09:40:67:14:59 taucht noch unter
@@ -29,10 +30,8 @@ Daten Dritter (private Geräte von Personen).
 - Uplink zum Core: LAN1 (U1, T20/30/40/41/70/80). LAN4 (SFP+) als Trunk
   vorbereitet, noch kein DAC-Kabel. LAN2: Synology-Backup (192.168.1.251).
 - DHCP je VLAN .100–.250 (VLAN 1: .100–.150), Lease 1 Tag, DNS-Proxy.
-- WireGuard: UDP 51820, Netz 10.10.0.0/24, Split-Tunnel auf VLAN
-  1/30/40/41/70. Clients Aaron-iPhone 10.10.0.2, Aaron-MacBook 10.10.0.3.
-  Konfiguration in Insight unter WireGuard Clients → Zeile → Mehr →
-  QR-Code/Exportieren.
+- WireGuard für den Fernzugang; Details liegen nicht im öffentlichen
+  Repository, sondern im privaten Projektwissen.
 - SNMP v2c an, Client auf 192.168.1.121 beschränkt (antwortet dem Hub
   bisher nicht; die API meldet `snmpServer enabled:0`, mögliche Ursache).
 - mDNS-Gateway an (je VLAN `isMdnsEnabled` noch aus).
@@ -55,9 +54,6 @@ Daten Dritter (private Geräte von Personen).
 - VLAN 30: deny vlan30 → WAN, vlan30 → vlan1, vlan30 → vlan70.
 - Für jedes X in 20, 40, 41, 80: allow vlan1 192.168.1.121 → X,
   deny Any → X, deny X → vlan1/vlan30/vlan70 (zustandsbehaftet).
-- WireGuard-Clients erreichen 40/41 seitdem nicht mehr direkt.
-- Offen: deny vlan70 → vlan1 (Verwaltung hat vollen Zugriff auf
-  Management).
 
 ### DHCP-Reservierungen (Auszug)
 
@@ -90,23 +86,23 @@ unter Connected Clients → Statisch. Port-VLANs per
 
 SNMP-fähig (stehen in `HUB_SNMP_TARGETS`):
 
-| Name | Modell | Seriennummer | IP |
-| --- | --- | --- | --- |
-| Switch_Technikraum (Core) | GC752XP | 51518A7P8008D | 192.168.1.101 |
-| SwitchInsel | GC728XP | 5134917H800EB | 192.168.1.4 (statisch am Gerät) |
-| SwitchContainer | GC108P | 5V480B7A00334 | 192.168.1.20 (statisch) |
-| Bewaesserung | GC108P | 5V480B7S0027E | 192.168.1.25 (statisch) |
-| SwitchHalle | GC108P | 5V460579801D9 | 192.168.1.18 |
+| Name | Modell | IP |
+| --- | --- | --- |
+| Switch_Technikraum (Core) | GC752XP | 192.168.1.101 |
+| SwitchInsel | GC728XP | 192.168.1.4 (statisch am Gerät) |
+| SwitchContainer | GC108P | 192.168.1.20 (statisch) |
+| Bewaesserung | GC108P | 192.168.1.25 (statisch) |
+| SwitchHalle | GC108P | 192.168.1.18 |
 
 Ohne SNMP (GC110P, EOL):
 
-| Name | Seriennummer | IP |
-| --- | --- | --- |
-| Switch_Rooftop | 4WS17A7B8047F | 192.168.1.106 |
-| Switch_Drehkreuze1 | 4WS17A7S80427 | 192.168.1.138 (dynamisch, zusätzlich 192.168.20.112) |
-| Switch_Grillstation | 4WS17A7W80455 | 192.168.1.22 |
-| SwitchRestaurant | 4WS17A7D802E9 | 192.168.1.21 |
-| SwitchBuchhaltung | 4WS17A7X80383 | 192.168.1.132 (zusätzlich 192.168.40.130) |
+| Name | IP |
+| --- | --- |
+| Switch_Rooftop | 192.168.1.106 |
+| Switch_Drehkreuze1 | 192.168.1.138 (dynamisch, zusätzlich 192.168.20.112) |
+| Switch_Grillstation | 192.168.1.22 |
+| SwitchRestaurant | 192.168.1.21 |
+| SwitchBuchhaltung | 192.168.1.132 (zusätzlich 192.168.40.130) |
 
 ### Core-Switch (GC752XP) Ports
 
@@ -134,7 +130,7 @@ erst nach einem Stromzyklus des GS110TP.
 
 ## Access Points
 
-14 APs: 7× WAC505, 5× WAC540 (FW 9.9.6.8, EOL), 1× WAX615 (AP-Shop),
+14 APs: 7× WAC505, 5× WAC540 (EOL), 1× WAX615 (AP-Shop),
 1× WAX610Y (AP-Eingang). Geplante Adressen .40–.53. APImbisscontain hat
 statisch 192.168.1.30. 2,4 GHz Sendeleistung halbiert auf APImbiss,
 APImbisscontain, APGrillstation. APRestaurant, AP-Shop, AP-Eingang waren im
@@ -198,7 +194,7 @@ Personenzähler-/Tailgate-Konfiguration müsste auf `cam-eingang` (= Drehkreuz,
 
 ## Hub (Mac Studio)
 
-- Rechnername Hub-Technikraum, Benutzer `aaronarmborst`, macOS 27.2 arm64,
+- Rechnername Hub-Technikraum, macOS 27.2 arm64,
   Apple M5 Max 18 Kerne, 64 GB.
 - Ethernet en0 BC:89:C1:E4:3F:92, 192.168.1.121 (manuell per
   `networksetup -setmanualwithdhcprouter` plus Reservierung), Core P46.
@@ -211,7 +207,7 @@ Personenzähler-/Tailgate-Konfiguration müsste auf `cam-eingang` (= Drehkreuz,
 - Software: go2rtc 1.9.15 in `webcams/bin`, Face/ALPR/Tracker Python 3.12,
   Mäher Python 3.13, Ollama mit `qwen3:30b-a3b-instruct` und `qwen3-vl:8b`,
   whisper.cpp `large-v3-turbo`.
-- Alter iMac: Benutzer `aaronarmnborst`, MAC C0:B2:2F:8C:6D:0C,
+- Alter iMac: MAC C0:B2:2F:8C:6D:0C,
   LaunchAgents in `~/LaunchAgents-alt`.
 
 ## Cloud
