@@ -229,8 +229,9 @@ export class UnconfirmedStarts {
  *    und es reicht, dass eine die Grenze ueberschritten sieht: die Wanduhr
  *    (`now` gegen die Zeit des Ereignisses) und die Wartezeit in der
  *    Warteschlange (`waitedMs`). Wird die Uhr des Hubs zurueckgestellt, gaelte
- *    ein alter Beginn nach der Wanduhr allein wieder als frisch; stand der
- *    Rechner still, zaehlte die Wartezeit allein den Stillstand nicht mit.
+ *    ein alter Beginn nach der Wanduhr allein wieder als frisch. Die Wartezeit
+ *    allein reicht auch nicht: Je nach System zaehlt ihre Uhr nicht weiter,
+ *    waehrend der Rechner ruht.
  * 2. Sind es danach mehr als `maxLength`, fallen zuerst Enden weg, die
  *    hoechstwahrscheinlich nichts schliessen: Je Kamera und Art fuehrt die
  *    Cloud hoechstens ein offenes Ereignis. Das erste Ende in der

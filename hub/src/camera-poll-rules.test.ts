@@ -324,8 +324,8 @@ test("Warteschlange: wie lange ein Beginn wartet, zaehlt auch, wenn die Uhr des 
   // Nach der Wanduhr allein gaelten alle als frisch.
   assert.deepEqual(tidy(q).queue, q);
 
-  // Die Wanduhr zaehlt weiter mit: Stand der Rechner still, ist die Wartezeit
-  // kurz, der Beginn aber alt.
+  // Die Wanduhr zaehlt weiter mit: Ruhte der Rechner und zaehlte die andere
+  // Uhr dabei nicht, ist die Wartezeit kurz, der Beginn aber alt.
   const asleep = queued(7, "MOTION", "start", 45);
   assert.deepEqual(tidyOutbox([asleep], T, START_MAX_AGE_MS, 400, { waitedMs: () => 1_000 }).queue, []);
 });
