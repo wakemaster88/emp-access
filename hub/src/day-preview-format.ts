@@ -1,9 +1,10 @@
 /**
  * Tagesvorschau als Telegram-Text (rein, ohne Hub-Konfiguration, testbar).
  *
- * Eingaben: Antwort der Cloud (GET /api/hub/day-preview: Buchungen + Wetter)
- * und der Personal-Stand aus emp-control (staff.ts). Fehlt etwas, steht das
- * kurz im Text, statt dass die ganze Vorschau ausfaellt.
+ * Eingaben: Antwort der Cloud (GET /api/hub/day-preview: Buchungen + Wetter),
+ * der Personal-Stand aus emp-control (staff.ts) und fuer heute die Zeile
+ * „Heute bewacht: …“ des Waechters (sentinel-guard-rules.ts). Fehlt etwas,
+ * steht das kurz im Text, statt dass die ganze Vorschau ausfaellt.
  */
 import type { StaffShift } from "./staff-parse.js";
 
@@ -151,9 +152,11 @@ export function previewHints(d: DayPreviewData, staff: DayPreviewStaff | null): 
   return hints;
 }
 
-export function formatDayPreview(d: DayPreviewData, staff: DayPreviewStaff | null): string {
+/** `guard`: Zeile „Heute bewacht: …“ (nur fuer heute), null = ohne. */
+export function formatDayPreview(d: DayPreviewData, staff: DayPreviewStaff | null, guard: string | null = null): string {
   const parts = [`Tagesvorschau ${dayLabel(d.date)}`, formatWeather(d.weather).join("\n"), formatBookings(d.bookings).join("\n")];
   if (staff) parts.push(formatStaff(staff).join("\n"));
+  if (guard) parts.push(guard);
   const hints = previewHints(d, staff);
   if (hints.length) parts.push(hints.map((h) => `Hinweis: ${h}`).join("\n"));
   return parts.join("\n\n");

@@ -9,7 +9,9 @@ import {
   isOperatingAt,
   isWithinOperatingSpan,
   isWithinSeasonRange,
+  nextOperatingChange,
   nextOperatingOccurrence,
+  openSpansBetween,
   openingForDay,
   operatingBoundary,
   operatingOccurrenceForDay,
@@ -551,3 +553,206 @@ test("Zustand nennt den nächsten Wechsel: Ende der laufenden, Beginn der nächs
   assert.equal(gap.until, null);
 });
 
+
+/* ------------------------------------------------ nächster Wechsel offen/zu */
+
+/** Saison nur Mai bis September, täglich 10–18 Uhr (wie ein Freibad). */
+function sommerbad(): ScheduleSpec {
+  return {
+    name: "Sommerbad",
+    seasons: [
+      {
+        name: "Sommer",
+        startMmDd: "05-01",
+        endMmDd: "09-30",
+        sortOrder: 0,
+        periods: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opensAt: "10:00", closesAt: "18:00" })),
+      },
+    ],
+    exceptions: [],
+  };
+}
+
+/** Ganzjährig täglich eine Spanne, gleiche Zeiten an allen Tagen. */
+function taeglich(opensAt: string, closesAt: string): ScheduleSpec {
+  return {
+    name: "Täglich",
+    seasons: [
+      {
+        name: "Ganzjährig",
+        startMmDd: "01-01",
+        endMmDd: "12-31",
+        sortOrder: 0,
+        periods: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opensAt, closesAt })),
+      },
+    ],
+    exceptions: [],
+  };
+}
+
+const next = (s: ScheduleSpec | null, iso: string) => nextOperatingChange(s, new Date(iso), TZ)?.toISOString() ?? null;
+
+/** Der Wechsel stimmt mit isOperatingAt überein: eine Minute davor wie jetzt, zum Wechsel das Gegenteil. */
+function assertChange(s: ScheduleSpec, iso: string, expected: string) {
+  assert.equal(next(s, iso), expected, `nächster Wechsel nach ${iso}`);
+  const now = isOperatingAt(s, new Date(iso), TZ);
+  assert.equal(isOperatingAt(s, new Date(Date.parse(expected) - 60_000), TZ), now, "eine Minute vorher wie jetzt");
+  assert.equal(isOperatingAt(s, new Date(expected), TZ), !now, "zum Wechsel das Gegenteil");
+}
+
+test("nächster Wechsel: Saisonende und Saisonbeginn im nächsten Jahr", () => {
+  const s = sommerbad();
+  // 30.09. 17:00 MESZ: offen, schließt 18:00 MESZ = 16:00 UTC.
+  assertChange(s, "2026-09-30T15:00:00Z", "2026-09-30T16:00:00.000Z");
+  // 30.09. 19:00 MESZ: zu bis 01.05. 10:00 MESZ = 08:00 UTC.
+  assertChange(s, "2026-09-30T17:00:00Z", "2027-05-01T08:00:00.000Z");
+  // Im Winter (25.11.) liegt der Saisonbeginn gut fünf Monate voraus.
+  assertChange(s, "2026-11-25T12:00:00Z", "2027-05-01T08:00:00.000Z");
+  // 30.04. abends: Saisonbeginn am nächsten Morgen.
+  assertChange(s, "2027-04-30T20:00:00Z", "2027-05-01T08:00:00.000Z");
+});
+
+test("nächster Wechsel: Ausnahmetag schließt einen Saisontag", () => {
+  const s: ScheduleSpec = {
+    ...sommerbad(),
+    exceptions: [{ date: "2026-07-02", closed: true, opensAt: null, closesAt: null }],
+  };
+  // 01.07. 19:00 MESZ: zu; der 02.07. bleibt zu, nächste Öffnung 03.07. 10:00.
+  assertChange(s, "2026-07-01T17:00:00Z", "2026-07-03T08:00:00.000Z");
+});
+
+test("nächster Wechsel: Tageswechsel mit Spanne über Mitternacht", () => {
+  const s = taeglich("18:00", "02:00");
+  // 23:00 MESZ offen, schließt am Folgetag 02:00 MESZ = 00:00 UTC.
+  assertChange(s, "2026-07-01T21:00:00Z", "2026-07-02T00:00:00.000Z");
+  // 01:00 MESZ (Vortags-Spanne) noch offen bis 02:00.
+  assertChange(s, "2026-07-01T23:00:00Z", "2026-07-02T00:00:00.000Z");
+  // 03:00 MESZ zu bis 18:00 MESZ = 16:00 UTC.
+  assertChange(s, "2026-07-02T01:00:00Z", "2026-07-02T16:00:00.000Z");
+  // Spanne bis Mitternacht: schließt um 00:00.
+  assertChange(taeglich("20:00", "00:00"), "2026-07-01T20:00:00Z", "2026-07-01T22:00:00.000Z");
+});
+
+test("nächster Wechsel: durchgehend geöffneter Tag endet um Mitternacht", () => {
+  const s: ScheduleSpec = {
+    name: "Technik",
+    seasons: [
+      {
+        name: "Ganzjährig",
+        startMmDd: "01-01",
+        endMmDd: "12-31",
+        sortOrder: 0,
+        // Nur Mittwoch durchgehend, Donnerstag ab 06:00.
+        periods: [
+          { weekday: 2, opensAt: "08:00", closesAt: "08:00" },
+          { weekday: 3, opensAt: "06:00", closesAt: "12:00" },
+        ],
+      },
+    ],
+    exceptions: [],
+  };
+  // Mittwoch 01.07. 12:00 MESZ offen; isOperatingAt zählt den ganzen Kalendertag.
+  assertChange(s, "2026-07-01T10:00:00Z", "2026-07-01T22:00:00.000Z");
+  assertChange(s, "2026-07-01T22:30:00Z", "2026-07-02T04:00:00.000Z");
+});
+
+test("nächster Wechsel: Umstellung auf Sommerzeit", () => {
+  // 29.03.2026: 02:00 MEZ springt auf 03:00 MESZ.
+  const s = taeglich("10:00", "18:00");
+  // Sa 28.03. 19:00 MEZ = 18:00 UTC: zu bis So 10:00 MESZ = 08:00 UTC.
+  assertChange(s, "2026-03-28T18:00:00Z", "2026-03-29T08:00:00.000Z");
+  // Spanne bis 02:00: Die Uhrzeit gibt es am Umstellungstag nicht, es schließt beim Sprung (03:00 MESZ = 01:00 UTC).
+  const nacht = taeglich("18:00", "02:00");
+  assertChange(nacht, "2026-03-28T22:00:00Z", "2026-03-29T01:00:00.000Z");
+  // Öffnung in der Lücke (02:30): offen ab dem Sprung.
+  assertChange(taeglich("02:30", "05:00"), "2026-03-28T23:00:00Z", "2026-03-29T01:00:00.000Z");
+});
+
+test("nächster Wechsel: Umstellung auf Winterzeit", () => {
+  // 25.10.2026: 03:00 MESZ springt auf 02:00 MEZ.
+  const s = taeglich("10:00", "18:00");
+  // Sa 24.10. 19:00 MESZ = 17:00 UTC: zu bis So 10:00 MEZ = 09:00 UTC.
+  assertChange(s, "2026-10-24T17:00:00Z", "2026-10-25T09:00:00.000Z");
+  // Spanne bis 03:00: die Stunde 02–03 gibt es zweimal, geschlossen wird um 03:00 MEZ = 02:00 UTC.
+  const nacht = taeglich("22:00", "03:00");
+  assertChange(nacht, "2026-10-24T21:00:00Z", "2026-10-25T02:00:00.000Z");
+});
+
+test("nächster Wechsel: Spannen in der doppelten Stunde am Ende der Sommerzeit", () => {
+  // 25.10.2026: Um 03:00 MESZ (01:00 UTC) wird die Uhr auf 02:00 MEZ zurückgestellt.
+  const frueh = taeglich("02:30", "04:00");
+  // 02:30 MESZ offen; mit der Umstellung ist es 02:00 MEZ, also zu bis 02:30 MEZ.
+  assertChange(frueh, "2026-10-25T00:30:00Z", "2026-10-25T01:00:00.000Z");
+  assertChange(frueh, "2026-10-25T01:00:00Z", "2026-10-25T01:30:00.000Z");
+  assertChange(frueh, "2026-10-25T01:30:00Z", "2026-10-25T03:00:00.000Z");
+  // 02:00–03:00: offen ab 02:00 MESZ, durch die Umstellung hindurch bis 03:00 MEZ.
+  const stunde = taeglich("02:00", "03:00");
+  assertChange(stunde, "2026-10-24T23:30:00Z", "2026-10-25T00:00:00.000Z");
+  assertChange(stunde, "2026-10-25T00:00:00Z", "2026-10-25T02:00:00.000Z");
+  // Gegen isOperatingAt Minute für Minute: alle 15 Minuten ein Zeitpunkt rund um die Umstellung.
+  for (const s of [frueh, stunde]) {
+    for (let at = Date.parse("2026-10-24T22:00:00Z"); at <= Date.parse("2026-10-25T03:00:00Z"); at += 15 * 60_000) {
+      const change = nextOperatingChange(s, new Date(at), TZ);
+      assert.ok(change, new Date(at).toISOString());
+      const now = isOperatingAt(s, new Date(at), TZ);
+      assert.equal(isOperatingAt(s, change, TZ), !now, `${new Date(at).toISOString()} → ${change.toISOString()}`);
+      const until = Math.min(change.getTime(), at + 4 * 3_600_000);
+      for (let t = Math.floor(at / 60_000) * 60_000 + 60_000; t < until; t += 60_000) {
+        assert.equal(isOperatingAt(s, new Date(t), TZ), now, `${new Date(t).toISOString()} vor ${change.toISOString()} (ab ${new Date(at).toISOString()})`);
+      }
+    }
+  }
+});
+
+test("nächster Wechsel: keiner in Sicht oder ohne Profil", () => {
+  const ohneSaison: ScheduleSpec = { name: "Zu", seasons: [], exceptions: [] };
+  assert.equal(next(ohneSaison, "2026-11-25T12:00:00Z"), null);
+  assert.equal(next(taeglich("00:00", "00:00"), "2026-11-25T12:00:00Z"), null);
+  assert.equal(next(null, "2026-11-25T12:00:00Z"), null);
+});
+
+test("nächster Wechsel: auch über ein Jahr ohne Öffnung schnell genug", () => {
+  const started = Date.now();
+  nextOperatingChange({ name: "Zu", seasons: [], exceptions: [] }, new Date("2026-11-25T12:00:00Z"), TZ);
+  nextOperatingChange(taeglich("00:00", "00:00"), new Date("2026-11-25T12:00:00Z"), TZ);
+  assert.ok(Date.now() - started < 2_000, `${Date.now() - started} ms`);
+});
+
+test("Öffnungsspannen von heute und morgen, auf den Zeitraum zugeschnitten", () => {
+  const nacht = taeglich("18:00", "02:00");
+  // 01.07. 00:00 MESZ (= 30.06. 22:00 UTC) bis 03.07. 00:00 MESZ.
+  assert.deepEqual(openSpansBetween(nacht, new Date("2026-06-30T22:00:00Z"), new Date("2026-07-02T22:00:00Z"), TZ), [
+    { from: "2026-06-30T22:00:00.000Z", to: "2026-07-01T00:00:00.000Z" },
+    { from: "2026-07-01T16:00:00.000Z", to: "2026-07-02T00:00:00.000Z" },
+    { from: "2026-07-02T16:00:00.000Z", to: "2026-07-02T22:00:00.000Z" },
+  ]);
+  assert.deepEqual(openSpansBetween(sommerbad(), new Date("2026-11-24T23:00:00Z"), new Date("2026-11-26T23:00:00Z"), TZ), []);
+  assert.deepEqual(openSpansBetween(null, new Date("2026-11-24T23:00:00Z"), new Date("2026-11-25T23:00:00Z"), TZ), [
+    { from: "2026-11-24T23:00:00.000Z", to: "2026-11-25T23:00:00.000Z" },
+  ]);
+});
+
+test("nächster Wechsel: übers Jahr verteilt stimmt er mit isOperatingAt überein", () => {
+  const profiles = [strandbad(), sommerbad(), taeglich("18:00", "02:00")];
+  const bar: ScheduleSpec = {
+    name: "Bar",
+    seasons: [{ name: "Ganzjährig", startMmDd: "01-01", endMmDd: "12-31", sortOrder: 0, periods: [{ weekday: 2, opensAt: "18:00", closesAt: "02:00" }] }],
+    exceptions: [],
+  };
+  profiles.push(bar);
+  for (const s of profiles) {
+    for (let k = 0; k < 20; k++) {
+      // Alle gut 18 Tage ein Zeitpunkt mit wechselnder Uhrzeit, über ein Jahr.
+      const at = new Date(Date.parse("2026-01-03T00:00:00Z") + k * (18 * 86_400_000 + 3_700_000 * 7));
+      const change = nextOperatingChange(s, at, TZ);
+      assert.ok(change, `${s.name} ${at.toISOString()}`);
+      const now = isOperatingAt(s, at, TZ);
+      assert.equal(isOperatingAt(s, change, TZ), !now, `${s.name} ${at.toISOString()} → ${change.toISOString()}`);
+      // Bis zum Wechsel bleibt der Zustand (alle 90 Minuten geprüft, höchstens zwei Wochen voraus).
+      const until = Math.min(change.getTime(), at.getTime() + 14 * 86_400_000);
+      for (let t = at.getTime(); t < until; t += 90 * 60_000) {
+        assert.equal(isOperatingAt(s, new Date(t), TZ), now, `${s.name} ${new Date(t).toISOString()} vor ${change.toISOString()}`);
+      }
+    }
+  }
+});

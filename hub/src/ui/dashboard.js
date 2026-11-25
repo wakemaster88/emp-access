@@ -3145,6 +3145,11 @@ function detCardHtml(c) {
       <div class="det-row"><span class="k">Standzeit</span><span class="unit"><input class="field" type="number" inputmode="decimal" min="0.25" max="240" step="0.25" data-det-field="noParkMinutes" value="${esc(c.noParkMinutes ?? "")}" placeholder="${esc(defMin)}" aria-label="Standzeit in Minuten">min</span></div>
       <div class="det-row"><span class="k">Gesperrte Fläche</span>${zoneButton("noParkZone", c.noParkZone)}</div>
     </div>
+    <div class="det-block ${c.sentinelMode === "OFF" ? "is-off" : ""}">
+      <div class="det-row"><span class="k">Wächter</span><select class="field" data-det-field="sentinelMode" aria-label="Wächter" title="Wie der Raum: bewertet, solange der Raum geschlossen ist. Nur nachts: nur im Nachtfenster. Aus: diese Kamera wird nicht bewertet.">${[["", "Wie der Raum"], ["NIGHT", "Nur nachts"], ["OFF", "Aus"]]
+        .map(([v, l]) => `<option value="${v}"${(c.sentinelMode || "") === v ? " selected" : ""}>${l}</option>`)
+        .join("")}</select></div>
+    </div>
   </article>`;
 }
 
@@ -3210,7 +3215,9 @@ async function saveDetection(camId, patch, input) {
   try {
     const saved = await sendJson("PATCH", `/api/detection/cameras/${camId}`, patch);
     for (const k of Object.keys(saved)) if (k in cam) cam[k] = saved[k];
-    toast(`${cam.name}: gespeichert`, "ok");
+    // Eine Cloud, die das Feld noch nicht kennt (Update läuft), gibt es nicht zurück.
+    if (Object.keys(patch).some((k) => !(k in saved))) toast(`${cam.name}: Die Cloud kennt diese Einstellung noch nicht – bitte in einigen Minuten erneut versuchen`, "err");
+    else toast(`${cam.name}: gespeichert`, "ok");
   } catch (e) {
     toast(`${cam.name}: ${e.message}`, "err");
     if (input && input.type === "checkbox") input.checked = !input.checked;

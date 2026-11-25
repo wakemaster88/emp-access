@@ -20,6 +20,12 @@ export interface TgButton {
   callback_data: string;
 }
 
+/** Wie eine Nachricht hinausgeht. */
+export interface SendOptions {
+  /** Ohne Ton (disable_notification): Telegram zeigt sie, klingelt aber nicht. */
+  silent?: boolean;
+}
+
 export interface TgUpdate {
   update_id: number;
   message?: {
@@ -99,7 +105,7 @@ export function chunkText(text: string, max = MAX_TEXT): string[] {
   return out;
 }
 
-export async function sendText(chatId: string, text: string, buttons?: TgButton[][]): Promise<number | null> {
+export async function sendText(chatId: string, text: string, buttons?: TgButton[][], opts: SendOptions = {}): Promise<number | null> {
   let last: number | null = null;
   const parts = chunkText(text || "…");
   for (let i = 0; i < parts.length; i++) {
@@ -108,6 +114,7 @@ export async function sendText(chatId: string, text: string, buttons?: TgButton[
       chat_id: chatId,
       text: parts[i],
       disable_web_page_preview: true,
+      ...(opts.silent ? { disable_notification: true } : {}),
       ...markup,
     });
     last = r.message_id;
@@ -116,11 +123,12 @@ export async function sendText(chatId: string, text: string, buttons?: TgButton[
   return last;
 }
 
-export async function sendPhoto(chatId: string, jpeg: Buffer, caption?: string, buttons?: TgButton[][]): Promise<void> {
+export async function sendPhoto(chatId: string, jpeg: Buffer, caption?: string, buttons?: TgButton[][], opts: SendOptions = {}): Promise<void> {
   const form = new FormData();
   form.set("chat_id", chatId);
   if (caption) form.set("caption", caption.slice(0, 1000));
   if (buttons) form.set("reply_markup", JSON.stringify({ inline_keyboard: buttons }));
+  if (opts.silent) form.set("disable_notification", "true");
   form.set("photo", new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), "bild.jpg");
   await call("sendPhoto", form, 60_000);
   recordTelegramOut(caption || "Bild", { buttons: !!buttons, jpeg });
@@ -177,14 +185,24 @@ export async function setCommands(): Promise<void> {
 }
 
 let offset = 0;
+/** Seit wann getUpdates ohne Unterbrechung scheitert; null = der letzte Abruf gelang. */
+let pollFailSince: number | null = null;
+
+/** Seit wann der Bot keine Updates abholen kann; null = der letzte Abruf gelang (deliveryTrouble in outbox-rules.ts). */
+export function pollFailingSince(): number | null {
+  return pollFailSince;
+}
 
 /** Long Polling – blockiert bis zu 50 s, liefert neue Updates. */
 export async function pollUpdates(): Promise<TgUpdate[]> {
-  const updates = await call<TgUpdate[]>(
-    "getUpdates",
-    { offset, timeout: 50, allowed_updates: ["message", "callback_query"] },
-    65_000
-  );
+  let updates: TgUpdate[];
+  try {
+    updates = await call<TgUpdate[]>("getUpdates", { offset, timeout: 50, allowed_updates: ["message", "callback_query"] }, 65_000);
+  } catch (e) {
+    pollFailSince ??= Date.now();
+    throw e;
+  }
+  pollFailSince = null;
   for (const u of updates) offset = Math.max(offset, u.update_id + 1);
   return updates;
 }

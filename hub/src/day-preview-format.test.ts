@@ -74,3 +74,11 @@ test("Personal: nicht eingerichtet, Schichten, alter Stand", () => {
     "(Stand vor 30 min, Zeitüberschreitung)",
   ]);
 });
+
+test("Zeile „Heute bewacht“ steht nach dem Personal und vor den Hinweisen", () => {
+  const guard = "Heute bewacht: Shop bis 10:00 und ab 18:00 (Kasse).";
+  const parts = formatDayPreview(data, null, guard).split("\n\n");
+  assert.equal(parts[3], guard);
+  assert.match(parts[4], /^Hinweis: /);
+  assert.doesNotMatch(formatDayPreview(data, null), /Heute bewacht/);
+});

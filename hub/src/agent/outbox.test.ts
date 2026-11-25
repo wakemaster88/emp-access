@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Outbox, type OutMessage } from "./outbox.js";
-import { CLOSED_PHOTO_NOTE, MAX_WAITING, type OutResult } from "./outbox-rules.js";
+import { CLOSED_PHOTO_NOTE, MAX_WAITING, imageSilent, type OutResult } from "./outbox-rules.js";
 
 const SEC = 1000;
 const MIN = 60 * SEC;
@@ -52,6 +52,8 @@ interface Call {
   chatId: string;
   text: string;
   buttons: unknown;
+  /** Ohne Ton gesendet (disable_notification). */
+  silent: boolean;
   /** Sekunden seit dem Start. */
   at: number;
 }
@@ -71,16 +73,16 @@ function setup(o: { foto?: Script; text?: Script; takesMs?: number; onResult?: (
   const results: { name: string; result: OutResult }[] = [];
   const errors: unknown[] = [];
   const left = { foto: Array.isArray(o.foto) ? [...o.foto] : [], text: Array.isArray(o.text) ? [...o.text] : [] };
-  const send = async (kind: "foto" | "text", chatId: string, text: string, buttons: unknown) => {
-    calls.push({ kind, chatId, text, buttons, at: (clock.now - T0) / SEC });
+  const send = async (kind: "foto" | "text", chatId: string, text: string, buttons: unknown, opts?: { silent?: boolean }) => {
+    calls.push({ kind, chatId, text, buttons, silent: opts?.silent === true, at: (clock.now - T0) / SEC });
     const script = kind === "foto" ? o.foto : o.text;
     const step = typeof script === "function" ? script(chatId) : (left[kind].shift() ?? "ok");
     if (o.takesMs) await clock.sleep(o.takesMs);
     if (step !== "ok") throw step();
   };
   const outbox = new Outbox<Meta>({
-    photo: (chatId, _jpeg, caption, buttons) => send("foto", chatId, caption, buttons),
-    text: (chatId, text, buttons) => send("text", chatId, text, buttons),
+    photo: (chatId, _jpeg, caption, buttons, opts) => send("foto", chatId, caption, buttons, opts),
+    text: (chatId, text, buttons, opts) => send("text", chatId, text, buttons, opts),
     now: () => clock.now,
     sleep: clock.sleep,
     onResult:
@@ -105,7 +107,14 @@ const alarm = (chatId = "c1", name = "Alarm"): OutMessage<Meta> => ({
   textFallback: { note: NOTE },
   meta: { name },
 });
-const image = (name: string, chatId = "c1"): OutMessage<Meta> => ({ chatId, text: `Eingang · ${name}`, jpeg: JPEG, optional: true, meta: { name } });
+const image = (name: string, chatId = "c1", silent?: OutMessage["silent"]): OutMessage<Meta> => ({
+  chatId,
+  text: `Eingang · ${name}`,
+  jpeg: JPEG,
+  optional: true,
+  ...(silent !== undefined ? { silent } : {}),
+  meta: { name },
+});
 const notice = (name = "Meldung", chatId = "c1"): OutMessage<Meta> => ({ chatId, text: "⚠️ Kamera Eingang nicht erreichbar", meta: { name } });
 
 const times = (calls: Call[]) => calls.map((c) => c.at);
@@ -388,6 +397,170 @@ test("Volle Reihe: Zusatzbilder werden abgewiesen, Alarme und Meldungen nicht", 
   // Eine andere Reihe ist davon nicht betroffen.
   void s.outbox.enqueue(image("Übersicht", "c2"));
   assert.equal(s.outbox.pending(), MAX_WAITING + 2);
+});
+
+/* ------------------------------------------------------------ Ton */
+
+test("Ton: der Alarm klingelt, Übersicht und Bildserie gehen ohne Ton hinaus, in derselben Reihenfolge", async () => {
+  const s = setup();
+  void s.outbox.enqueue(alarm());
+  void s.outbox.enqueue(image("Übersicht", "c1", true));
+  void s.outbox.enqueue(image("+4 s", "c1", true));
+  await s.clock.run();
+  assert.deepEqual(
+    s.calls.map((c) => `${c.text} ${c.silent ? "still" : "Ton"}`),
+    ["⚠️ Eingang: Person am Tor Ton", "Eingang · Übersicht still", "Eingang · +4 s still"]
+  );
+});
+
+test("Ton: eine stille Nachricht bleibt bei jeder Wiederholung still", async () => {
+  const s = setup({ foto: [netz, netz, "ok"] });
+  const done = s.outbox.enqueue(image("Übersicht", "c1", true));
+  await s.clock.run();
+  assert.deepEqual(times(s.calls), [0, 5, 25]);
+  assert.ok(s.calls.every((c) => c.silent));
+  assert.equal((await done).ok, true);
+});
+
+test("Ton: still als Text ohne Bild und beim letzten Versuch beim Beenden", async () => {
+  const s = setup({ foto: [() => http(400, "Bad Request: wrong file")] });
+  const silentAlarm = { ...alarm(), silent: true };
+  void s.outbox.enqueue(silentAlarm);
+  await s.clock.run();
+  assert.deepEqual(kinds(s.calls), ["foto", "text"]);
+  assert.ok(s.calls.every((c) => c.silent));
+
+  const t = setup({ foto: () => netz });
+  void t.outbox.enqueue(silentAlarm);
+  await t.clock.run(10);
+  await t.outbox.close();
+  assert.equal(t.calls[t.calls.length - 1].kind, "text");
+  assert.ok(t.calls.every((c) => c.silent));
+});
+
+test("Ton: eine Funktion wird vor jedem Versuch gefragt, scheitert sie, kommt die Nachricht mit Ton", async () => {
+  const s = setup({ foto: [netz, "ok"] });
+  let quiet = false;
+  void s.outbox.enqueue(image("Übersicht", "c1", () => quiet));
+  await s.clock.run(1);
+  quiet = true;
+  await s.clock.run();
+  assert.deepEqual(
+    s.calls.map((c) => c.silent),
+    [false, true]
+  );
+
+  const t = setup();
+  void t.outbox.enqueue(
+    image("Übersicht", "c1", () => {
+      throw new Error("kaputt");
+    })
+  );
+  await t.clock.run();
+  assert.deepEqual(
+    t.calls.map((c) => c.silent),
+    [false]
+  );
+  assert.deepEqual(t.errors, []);
+});
+
+test("Ton: Nachrichten ohne Angabe klingeln wie bisher", async () => {
+  const s = setup();
+  void s.outbox.enqueue(notice());
+  void s.outbox.enqueue(image("Übersicht"));
+  await s.clock.run();
+  assert.ok(s.calls.every((c) => !c.silent));
+});
+
+test("Ton: ein Zusatzbild fragt erst, wenn der Alarm davor verbucht ist", async () => {
+  // Wie dispatch.ts: Der Ausgang des Alarms wird beim Verbuchen gemerkt, das Bild richtet sich danach.
+  const reached = new Map<string, boolean>();
+  const s = setup({
+    foto: (chatId) => (chatId === "c2" ? () => http(403, "Forbidden: bot was blocked by the user") : "ok"),
+    text: (chatId) => (chatId === "c2" ? () => http(403, "Forbidden: bot was blocked by the user") : "ok"),
+    onResult: (msg, r) => {
+      if (msg.meta.name === "Alarm") reached.set(msg.chatId, r.ok);
+    },
+  });
+  const silentIfReached = (chatId: string) => () => reached.get(chatId) !== false;
+  for (const chatId of ["c1", "c2"]) {
+    void s.outbox.enqueue(alarm(chatId));
+    void s.outbox.enqueue(image("Übersicht", chatId, silentIfReached(chatId)));
+  }
+  await s.clock.run();
+  const bild = (chatId: string) => s.calls.find((c) => c.chatId === chatId && c.text === "Eingang · Übersicht");
+  assert.equal(bild("c1")?.silent, true);
+  // Den Alarm hat c2 nicht bekommen: Das Bild ist dort die erste Nachricht des Alarms und kommt mit Ton.
+  assert.equal(bild("c2")?.silent, false);
+});
+
+test("Ton: Ist der Alarm in einem Chat gescheitert, klingelt dort nur das erste Zusatzbild, das ankommt", async () => {
+  // Wie dispatch.ts: Ausgang des Alarms je Chat, und ob ein Bild des Alarms dort schon mit Ton ankam.
+  const reached = new Map<string, boolean>();
+  const rang = new Set<string>();
+  const loud = new Map<OutMessage<Meta>, boolean>();
+  // In c2 scheitern der Alarm (Bild und Text) und die Übersicht; die Folgebilder kommen an.
+  const fails = ["⚠️ Eingang: Person am Tor", "Eingang · Übersicht"];
+  const s = setup({
+    foto: (chatId) => (chatId === "c2" && fails.some((t) => s.calls[s.calls.length - 1].text.startsWith(t)) ? () => http(400, "Bad Request: wrong file") : "ok"),
+    text: (chatId) => (chatId === "c2" ? () => http(400, "Bad Request: chat not found") : "ok"),
+    onResult: (msg, r) => {
+      if (msg.meta.name === "Alarm") reached.set(msg.chatId, r.ok);
+      else if (r.ok && loud.get(msg)) rang.add(msg.chatId);
+    },
+  });
+  const extra = (name: string, chatId: string) => {
+    const msg: OutMessage<Meta> = image(name, chatId, () => {
+      const silent = imageSilent(reached.get(chatId) ?? null, rang.has(chatId));
+      loud.set(msg, !silent);
+      return silent;
+    });
+    return msg;
+  };
+  for (const chatId of ["c1", "c2"]) {
+    void s.outbox.enqueue(alarm(chatId));
+    for (const name of ["Übersicht", "+4 s", "+8 s"]) void s.outbox.enqueue(extra(name, chatId));
+  }
+  await s.clock.run();
+  const ton = (chatId: string) => s.calls.filter((c) => c.chatId === chatId).map((c) => `${c.kind} ${c.text.split("\n")[0]}${c.silent ? "" : " (Ton)"}`);
+  assert.deepEqual(ton("c1"), ["foto ⚠️ Eingang: Person am Tor (Ton)", "foto Eingang · Übersicht", "foto Eingang · +4 s", "foto Eingang · +8 s"]);
+  // c2: Der Alarm kam nicht an, die Übersicht mit Ton auch nicht. Es klingelt „+4 s“, „+8 s“ kommt still.
+  assert.deepEqual(ton("c2"), [
+    "foto ⚠️ Eingang: Person am Tor (Ton)",
+    "text ⚠️ Eingang: Person am Tor (Ton)",
+    "foto Eingang · Übersicht (Ton)",
+    "foto Eingang · +4 s (Ton)",
+    "foto Eingang · +8 s",
+  ]);
+});
+
+/* ------------------------------------------------------------ Knöpfe mit Zeitpunkt */
+
+test("Knöpfe als Funktion: jeder Versuch bekommt seinen Zeitpunkt, auch als Text ohne Bild", async () => {
+  const s = setup({ foto: [netz, () => http(400, "Bad Request: wrong file")] });
+  const stamped = (at: number) => [[{ text: "Licht an", callback_data: `cam:9:spot:${Math.floor((at - T0) / SEC)}` }]];
+  const done = s.outbox.enqueue({ ...alarm(), buttons: stamped });
+  await s.clock.run();
+  assert.deepEqual(
+    s.calls.map((c) => `${c.at} ${c.kind} ${(c.buttons as { callback_data: string }[][])[0][0].callback_data}`),
+    ["0 foto cam:9:spot:0", "5 foto cam:9:spot:5", "5 text cam:9:spot:5"]
+  );
+  assert.equal((await done).ok, true);
+});
+
+test("Knöpfe als Funktion: scheitert sie, geht die Nachricht ohne Knöpfe hinaus", async () => {
+  const s = setup();
+  const done = s.outbox.enqueue({
+    ...alarm(),
+    buttons: () => {
+      throw new Error("kaputt");
+    },
+  });
+  await s.clock.run();
+  assert.equal((await done).ok, true);
+  assert.equal(s.calls.length, 1);
+  assert.equal(s.calls[0].buttons, undefined);
+  assert.equal(s.errors.length, 1);
 });
 
 /* ------------------------------------------------------------ Beenden */

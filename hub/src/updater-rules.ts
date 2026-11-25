@@ -54,3 +54,35 @@ export function retryBlocked(
 ): boolean {
   return !!rejected && rejected.rev === rev && now - rejected.at < waitMs;
 }
+
+/**
+ * Neustart nach einem Update: Laeuft eine Bewertung des Waechters, wartet er
+ * auf ihr Ende, hoechstens RESTART_HOLD_MAX_MS. Ein Neustart mitten in der
+ * Bewertung braeche ihren Alarm ab. In Runden von RESTART_POLL_MS; die Zahl
+ * der Runden ist begrenzt, damit ein Sprung der Uhr das Warten nicht
+ * verlaengert.
+ */
+export const RESTART_HOLD_MAX_MS = 3 * 60_000;
+export const RESTART_POLL_MS = 2_000;
+
+/**
+ * Ein Schritt vor dem Neustart: `busy` laufende Bewertungen, `waitedMs` seit
+ * dem ersten Schritt, `round` = Nummer des Schritts ab 0. `line` ist die
+ * Zeile fuers Log (null = keine).
+ */
+export function restartStep(busy: number, waitedMs: number, round: number): { then: "warten" | "neustart"; line: string | null } {
+  const sec = Math.round(Math.max(0, waitedMs) / 1000);
+  if (!(busy > 0)) {
+    return { then: "neustart", line: round > 0 ? `Update: Bewertung des Wächters abgeschlossen, Neustart nach ${sec} s Warten` : null };
+  }
+  if (waitedMs >= RESTART_HOLD_MAX_MS || round >= Math.ceil(RESTART_HOLD_MAX_MS / RESTART_POLL_MS)) {
+    return { then: "neustart", line: `Update: Neustart nach ${sec} s Warten, obwohl noch ${busy} Bewertung(en) des Wächters laufen` };
+  }
+  if (round === 0) {
+    return {
+      then: "warten",
+      line: `Update: Neustart wartet auf ${busy} laufende Bewertung(en) des Wächters (höchstens ${RESTART_HOLD_MAX_MS / 60_000} min)`,
+    };
+  }
+  return { then: "warten", line: null };
+}

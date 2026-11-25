@@ -1,7 +1,7 @@
 /**
  * Fahrzeug-Einstellungen im lokalen Dashboard: Erkennung pro Kamera
- * (Fahrzeuge, Mindestgröße, Einfahrtszone, Halteverbot) und freigegebene
- * Fahrzeuge. Gespeichert wird in der Cloud (Quelle der Wahrheit), der Hub
+ * (Fahrzeuge, Mindestgröße, Einfahrtszone, Halteverbot, Wächter) und
+ * freigegebene Fahrzeuge. Gespeichert wird in der Cloud (Quelle der Wahrheit), der Hub
  * reicht nur durch und übernimmt die neuen Werte sofort lokal.
  *
  * Feineinstellungen aus der .env (HUB_ALPR_*, HUB_VEHICLE_*, HUB_NOPARK_*)
@@ -25,6 +25,7 @@ const DETECTION_KEYS = [
   "deliveryMode",
   "deliveryFrom",
   "deliveryTo",
+  "sentinelMode",
 ] as const;
 
 /** .env-Feineinstellungen mit Standardwert (nur Anzeige). */
@@ -64,6 +65,8 @@ function cameraSettings(c: CameraConfig) {
     deliveryMode: c.deliveryMode ?? null,
     deliveryFrom: c.deliveryFrom ?? null,
     deliveryTo: c.deliveryTo ?? null,
+    // Einstellung „Wächter“: null = wie der Raum (auch bei einer älteren Cloud ohne das Feld).
+    sentinelMode: c.sentinelMode ?? null,
   };
 }
 

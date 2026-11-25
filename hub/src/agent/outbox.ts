@@ -13,7 +13,7 @@
  * im Speicher. Ohne Hub-Konfiguration: Sender, Uhr und Wartezeit kommen vom
  * Aufrufer (dispatch.ts verbindet sie mit dem Telegram-Bot).
  */
-import type { TgButton } from "./telegram.js";
+import type { SendOptions, TgButton } from "./telegram.js";
 import {
   CLOSED_PHOTO_NOTE,
   CLOSED_REASON,
@@ -32,8 +32,12 @@ export interface OutMessage<M = unknown> {
   /** Text der Nachricht bzw. Bildunterschrift. */
   text: string;
   jpeg?: Buffer;
-  /** Knoepfe; sie bleiben an der Nachricht, auch wenn sie ohne Bild hinausgeht. */
-  buttons?: TgButton[][];
+  /**
+   * Knoepfe; sie bleiben an der Nachricht, auch wenn sie ohne Bild hinausgeht.
+   * Eine Funktion bekommt vor jedem Versuch dessen Zeitpunkt: So tragen
+   * Knoepfe mit Frist die Zeit der Nachricht, die ankommt (alarm-rules.ts).
+   */
+  buttons?: TgButton[][] | ((sentAt: number) => TgButton[][]);
   /**
    * Der Text sagt auch ohne Bild, was los ist (Alarm): Scheitert das Bild,
    * geht er allein hinaus, ergaenzt um `note`.
@@ -41,15 +45,21 @@ export interface OutMessage<M = unknown> {
   textFallback?: { note: string };
   /** Zusatzbild (Uebersicht, Bildserie): wird bei voller Reihe nicht mehr angenommen. */
   optional?: boolean;
+  /**
+   * Ohne Ton senden (disable_notification), bei jedem Versuch gleich. Eine
+   * Funktion wird vor jedem Versuch gefragt: So richtet sich ein Zusatzbild
+   * danach, ob der Alarm davor den Chat erreicht hat (dispatch.ts).
+   */
+  silent?: boolean | (() => boolean);
   /** Angaben des Aufrufers fuer Log und Zaehler. */
   meta: M;
 }
 
 export interface OutboxDeps<M = unknown> {
   /** Bild senden; wirft, wenn es nicht angekommen ist. */
-  photo: (chatId: string, jpeg: Buffer, caption: string, buttons?: TgButton[][]) => Promise<unknown>;
+  photo: (chatId: string, jpeg: Buffer, caption: string, buttons?: TgButton[][], opts?: SendOptions) => Promise<unknown>;
   /** Text senden; wirft, wenn er nicht angekommen ist. */
-  text: (chatId: string, text: string, buttons?: TgButton[][]) => Promise<unknown>;
+  text: (chatId: string, text: string, buttons?: TgButton[][], opts?: SendOptions) => Promise<unknown>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   /** Ausgang jeder Nachricht, genau einmal (Log, Zaehler). */
@@ -57,6 +67,16 @@ export interface OutboxDeps<M = unknown> {
   /** Fehler in der Warteschlange selbst oder in `onResult`. */
   onError?: (e: unknown) => void;
   maxAgeMs?: number;
+}
+
+/** Sendeoptionen fuer den naechsten Versuch einer Nachricht. Scheitert die Frage nach `silent`, geht sie mit Ton hinaus. */
+function sendOptions(msg: OutMessage<unknown>): SendOptions {
+  if (typeof msg.silent !== "function") return { silent: msg.silent === true };
+  try {
+    return { silent: msg.silent() === true };
+  } catch {
+    return { silent: false };
+  }
 }
 
 interface Entry<M> {
@@ -92,6 +112,17 @@ export class Outbox<M = unknown> {
 
   private sleep(ms: number): Promise<void> {
     return this.deps.sleep ? this.deps.sleep(ms) : new Promise((r) => setTimeout(r, ms));
+  }
+
+  /** Knoepfe fuer einen Versuch. Scheitert die Funktion, geht die Nachricht ohne Knoepfe hinaus. */
+  private buttonsFor(msg: OutMessage<M>): TgButton[][] | undefined {
+    if (typeof msg.buttons !== "function") return msg.buttons;
+    try {
+      return msg.buttons(this.now());
+    } catch (err) {
+      this.report(err);
+      return undefined;
+    }
   }
 
   /** Fehler melden; die Warteschlange arbeitet in jedem Fall weiter. */
@@ -178,7 +209,7 @@ export class Outbox<M = unknown> {
     const { msg } = e;
     e.tries++;
     try {
-      await this.deps.text(msg.chatId, msg.jpeg ? msg.text + CLOSED_PHOTO_NOTE : msg.text, msg.buttons);
+      await this.deps.text(msg.chatId, msg.jpeg ? msg.text + CLOSED_PHOTO_NOTE : msg.text, this.buttonsFor(msg), sendOptions(msg));
       return { ok: true, tries: e.tries, ms: this.now() - e.queuedAt, asText: !!msg.jpeg, photoError: e.photoError ?? CLOSED_REASON };
     } catch (err) {
       const f = classifyFailure(err);
@@ -232,8 +263,10 @@ export class Outbox<M = unknown> {
       e.sending = true;
       let failure: SendFailure;
       try {
-        if (mode === "foto" && msg.jpeg) await this.deps.photo(msg.chatId, msg.jpeg, msg.text, msg.buttons);
-        else await this.deps.text(msg.chatId, noPhoto ? msg.text + (msg.textFallback?.note ?? "") : msg.text, msg.buttons);
+        const opts = sendOptions(msg);
+        const buttons = this.buttonsFor(msg);
+        if (mode === "foto" && msg.jpeg) await this.deps.photo(msg.chatId, msg.jpeg, msg.text, buttons, opts);
+        else await this.deps.text(msg.chatId, noPhoto ? msg.text + (msg.textFallback?.note ?? "") : msg.text, buttons, opts);
         return { ok: true, tries: e.tries, ms: this.now() - e.queuedAt, asText: noPhoto, photoError: noPhoto ? e.photoError : null };
       } catch (err) {
         failure = classifyFailure(err);

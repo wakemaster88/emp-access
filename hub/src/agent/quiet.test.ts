@@ -118,7 +118,7 @@ test("Ruhezeit mit der Ortszeit-Stunde: 22 bis 7 Uhr, im Winter wie im Sommer", 
 });
 
 test("Waechter-Regeln mit der Ortszeit-Stunde: tagsueber eingestempelt kein Alarm, nachts schon", () => {
-  const look = { personen: 1, arbeitskleidung: false, mitarbeiter: false, verdaechtig: false, was: "", kleidung: [], bekannt: [], unbekannt: 1 };
+  const look = { personen: 1, arbeitskleidung: false, mitarbeiter: false, handlung: "keine" as const, was: "", kleidung: [], bekannt: [], unbekannt: 1 };
   const staff = ["Mitarbeiter A"];
   // 16:02 Ortszeit: eine Person, eine eingestempelt.
   assert.equal(decidePerson({ face: null, staff, look, hour: at("2026-11-22T15:02:50Z") }).alarm, false);

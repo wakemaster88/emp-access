@@ -1,7 +1,10 @@
 /**
  * Signale fuer „Person auf dem Gelaende – Mitarbeiter?“:
  *  - Gesichts-Treffer der bestehenden Gesichtserkennung (Hub-Ereignis
- *    kind "person", Liste WHITELIST/BLACKLIST) je Kamera.
+ *    kind "person", Liste WHITELIST/BLACKLIST) je Kamera, mit Score und der
+ *    Angabe, ob das Gesicht hochgerechnet wurde. Gemerkt werden alle Treffer
+ *    der letzten Minuten; welcher fuer eine Bewertung zaehlt, entscheidet
+ *    pickFaceHit (sentinel-rules.ts).
  *  - Eingestempelte Mitarbeiter aus emp-control (hub/src/staff.ts, kommt aus
  *    einem eigenen Modul; solange es fehlt, gibt es keine Stempeldaten).
  */
@@ -21,29 +24,56 @@ import {
   type SightingResult,
 } from "./people-rules.js";
 import { readPeopleFile, writePeopleFile } from "./people-store.js";
+import { pickFaceHit, type FaceHit, type TimedFaceHit } from "./sentinel-rules.js";
 
 export type { ClearedPerson } from "./people-rules.js";
 
-const WINDOW_MS = 90_000;
 /** Stempeldaten aelter als das gelten als unbekannt. */
 const STAFF_MAX_AGE_MS = 20 * 60_000;
+/** So lange bleiben Gesichts-Treffer je Kamera gemerkt (laenger als jede Bewertung dauert). */
+const HIT_KEEP_MS = 10 * 60_000;
+/** Hoechstens so viele Treffer je Kamera (die juengsten). */
+const HIT_MAX = 20;
 
-const lastFace = new Map<string, { at: number; name: string; list: string }>();
+const faceHits = new Map<string, TimedFaceHit[]>();
+/**
+ * Letztes Gesichts-Ereignis je Kamera, mit oder ohne Treffer. Nur ein Beleg,
+ * dass dort jemand war (Tracker-Gegencheck, trackerVeto), nie eine Freigabe.
+ */
+const faceSeen = new Map<string, number>();
 
 export function notePersonEvents(events: HubEvent[]): void {
   const now = Date.now();
   for (const ev of events) {
+    if (ev.kind === "person" && ev.where) faceSeen.set(ev.where, now);
     if (ev.kind !== "person" || !ev.where || !ev.list) continue;
     const name = ev.title.replace(/^Person erkannt:\s*/, "").trim();
-    lastFace.set(ev.where, { at: now, name, list: ev.list });
+    const hit: TimedFaceHit = {
+      at: now,
+      name,
+      list: ev.list,
+      // Ereignisse eines aelteren Stands haben kein `upscaled`: Der Treffer gilt dann als schwach.
+      score: typeof ev.score === "number" && Number.isFinite(ev.score) ? ev.score : undefined,
+      upscaled: typeof ev.upscaled === "boolean" ? ev.upscaled : undefined,
+    };
+    const kept = (faceHits.get(ev.where) ?? []).filter((h) => now - h.at < HIT_KEEP_MS);
+    kept.push(hit);
+    faceHits.set(ev.where, kept.slice(-HIT_MAX));
   }
 }
 
-/** Gesichts-Treffer an der Kamera kurz vor/nach `since`. */
-export function faceAt(cameraName: string, since: number): { name: string; list: string } | null {
-  const f = lastFace.get(cameraName);
-  if (!f || f.at < since - WINDOW_MS) return null;
-  return { name: f.name, list: f.list };
+/**
+ * Gesichts-Treffer fuer einen Ausloeser an der Kamera bis jetzt: Whitelist ab
+ * 10 s vor `since`, Sperrliste ab 90 s; ein Treffer der Sperrliste gewinnt
+ * (pickFaceHit).
+ */
+export function faceAt(cameraName: string, since: number): FaceHit | null {
+  return pickFaceHit(faceHits.get(cameraName) ?? [], since);
+}
+
+/** Zeitpunkt des letzten Gesichts-Ereignisses an der Kamera (bekannt oder unbekannt); null = keins seit dem Start. */
+export function faceSeenAt(cameraName: string): number | null {
+  return faceSeen.get(cameraName) ?? null;
 }
 
 type StaffModule = {

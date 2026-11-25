@@ -7,6 +7,8 @@ import {
   HOUR_MS,
   RETRY_MAX_AGE_MS,
   TALLY_GRACE_MS,
+  VEHICLE_BACKLOG_MAX,
+  appendBacklog,
   awaitsResult,
   cooldownFor,
   dueTallies,
@@ -246,10 +248,15 @@ const input = (now: number, cams: number[], o: Partial<TickInput> = {}): TickInp
   now,
   hour: 23,
   nightWindow: "22-6",
-  always: false,
   maxPerHour: 30,
   maxBusy: 2,
-  events: cams.map((camId) => ({ ev: { kind: "camera", title: "PERSON erkannt", where: `Kamera ${camId}` }, camId, where: `Kamera ${camId}`, closed: true })),
+  events: cams.map((camId) => ({
+    ev: { kind: "camera", title: "PERSON erkannt", where: `Kamera ${camId}` },
+    camId,
+    where: `Kamera ${camId}`,
+    closed: true,
+    always: false,
+  })),
   ...o,
 });
 const cams = (plan: { start: StartedInspection[] }) => plan.start.map((s) => s.trigger.camId);
@@ -829,4 +836,22 @@ test("Zufaellige Folgen: kein Ausloeser doppelt, nie mehr als zwei Bewertungen, 
     assert.equal(early, earlyStarts);
     assert.ok(triggers > 50, `zu wenige Ausloeser: ${triggers}`);
   }
+});
+
+/* ------------------------------------------------ Kennzeichen-Fragen neben dem Takt */
+
+test("appendBacklog: Reihenfolge bleibt, höchstens max, die ältesten fallen weg und werden gezählt", () => {
+  assert.deepEqual(appendBacklog([], [1, 2], 5), { list: [1, 2], dropped: 0 });
+  assert.deepEqual(appendBacklog([1, 2], [3], 5), { list: [1, 2, 3], dropped: 0 });
+  assert.deepEqual(appendBacklog([1, 2, 3], [4, 5], 5), { list: [1, 2, 3, 4, 5], dropped: 0 }, "genau voll");
+  assert.deepEqual(appendBacklog([1, 2, 3, 4], [5, 6, 7], 5), { list: [3, 4, 5, 6, 7], dropped: 2 });
+  // Mehr neue als Platz: nur die neuesten bleiben.
+  assert.deepEqual(appendBacklog([1], [2, 3, 4, 5, 6, 7], 3), { list: [5, 6, 7], dropped: 4 });
+  assert.deepEqual(appendBacklog([1, 2], [], 5), { list: [1, 2], dropped: 0 });
+  assert.equal(VEHICLE_BACKLOG_MAX, 300);
+  const full = appendBacklog(Array.from({ length: VEHICLE_BACKLOG_MAX }, (_, i) => i), [VEHICLE_BACKLOG_MAX]);
+  assert.equal(full.list.length, VEHICLE_BACKLOG_MAX);
+  assert.equal(full.dropped, 1);
+  assert.equal(full.list[0], 1);
+  assert.equal(full.list.at(-1), VEHICLE_BACKLOG_MAX);
 });

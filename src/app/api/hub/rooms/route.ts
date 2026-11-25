@@ -1,9 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
-import { isOperatingAt } from "@/lib/operating-hours";
-import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
-import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
+import { isOperatingAt, nextOperatingChange, openSpansBetween } from "@/lib/operating-hours";
+import { scheduleSpecInclude, toScheduleSpec, type ScheduleRecord } from "@/lib/operating-queries";
+import { DEFAULT_TIMEZONE, addDaysToYmd, tzInstant, tzYmd } from "@/lib/tz-time";
 import { climateView } from "@/lib/room-climate";
+
+/**
+ * Betriebszeit eines Raums fuer den Hub: offen jetzt, der naechste Wechsel
+ * (nextChangeAt, null = keiner in Sicht) und die Oeffnungsspannen von heute
+ * und morgen. Mit nextChangeAt haelt der Hub einen Stand, den er nicht mehr
+ * auffrischen kann, bis zum naechsten Wechsel fuer gueltig; mit den Spannen
+ * schreibt er die Zeile „Heute bewacht“ der Tagesvorschau.
+ */
+function operatingView(
+  schedule: ScheduleRecord & { id: number },
+  now: Date,
+  tz: string,
+  dayStart: Date,
+  dayAfterTomorrow: Date,
+) {
+  const spec = toScheduleSpec(schedule);
+  return {
+    id: schedule.id,
+    name: schedule.name,
+    open: isOperatingAt(spec, now, tz),
+    nextChangeAt: nextOperatingChange(spec, now, tz)?.toISOString() ?? null,
+    spans: openSpansBetween(spec, dayStart, dayAfterTomorrow, tz),
+  };
+}
 
 /**
  * GET (Hub, Token-Auth): Raeume mit Geraeten, Kameras, Audiozonen und Regeln
@@ -96,6 +120,10 @@ export async function GET(request: NextRequest) {
 
   const tz = acc?.timezone || DEFAULT_TIMEZONE;
   const now = new Date();
+  // Heute und morgen in der Zeitzone des Kontos, fuer die Oeffnungsspannen.
+  const today = tzYmd(now, tz);
+  const dayStart = tzInstant(today, "00:00", tz) ?? now;
+  const dayAfterTomorrow = tzInstant(addDaysToYmd(today, 2), "00:00", tz) ?? new Date(now.getTime() + 2 * 86_400_000);
 
   return NextResponse.json({
     at: now.toISOString(),
@@ -112,13 +140,7 @@ export async function GET(request: NextRequest) {
     rooms: rooms.map(({ operatingSchedule, climate, ...room }) => ({
       ...room,
       climate: climate ? climateView(climate) : null,
-      operating: operatingSchedule
-        ? {
-            id: operatingSchedule.id,
-            name: operatingSchedule.name,
-            open: isOperatingAt(toScheduleSpec(operatingSchedule), now, tz),
-          }
-        : null,
+      operating: operatingSchedule ? operatingView(operatingSchedule, now, tz, dayStart, dayAfterTomorrow) : null,
     })),
     unassigned,
   });

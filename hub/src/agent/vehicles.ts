@@ -117,14 +117,31 @@ async function ask(key: string, chatIds: string[]): Promise<void> {
   log(`Assistent: frage nach Kennzeichen ${rec.plate} (${rec.visits} Besuche)`);
 }
 
-/** Aus dem Waechter-Takt: neue Hub-Ereignisse verbuchen, ggf. fragen. */
+/**
+ * Aus dem Waechter-Takt, sofort und ohne zu warten: das letzte Kennzeichen
+ * je Kamera festhalten (cameraSawKnownPlate). Das geschieht nicht erst in
+ * vehicleTick, weil dieser Lauf neben dem Takt laeuft und waehrend einer
+ * Kennzeichen-Frage spaeter drankommen kann: Die Bewertung eines Fahrzeugs
+ * soll das Kennzeichen mit der Zeit sehen, zu der es kam.
+ */
+export function noteVehicleSightings(events: readonly HubEvent[], now = Date.now()): void {
+  for (const ev of events) {
+    if (ev.kind !== "vehicle" || !ev.where || ev.where === "Assistent") continue;
+    lastByCamera.set(ev.where, { at: now, plate: ev.plate ?? null, listed: !!ev.listed });
+  }
+}
+
+/**
+ * Aus dem Waechter-Takt, in einem eigenen Lauf: neue Fahrzeug-Ereignisse
+ * verbuchen, ggf. fragen. Das letzte Kennzeichen je Kamera haelt
+ * noteVehicleSightings schon vorher fest.
+ */
 export async function vehicleTick(events: HubEvent[], chatIds: string[]): Promise<void> {
   await load();
   let dirty = false;
   const now = Date.now();
   for (const ev of events) {
     if (ev.kind !== "vehicle" || !ev.where || ev.where === "Assistent") continue;
-    lastByCamera.set(ev.where, { at: now, plate: ev.plate ?? null, listed: !!ev.listed });
     if (!ASK || !ev.plate || ev.listed || plateKnown(ev.plate)) continue;
     dirty = true;
     if (notePlate(book, ev.plate, now, { minVisits: MIN_VISITS, camera: ev.where })) {

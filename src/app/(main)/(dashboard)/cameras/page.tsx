@@ -34,6 +34,7 @@ export default async function CamerasPage() {
         deliveryMode: true,
         deliveryFrom: true,
         deliveryTo: true,
+        sentinelMode: true,
         notes: true,
         snapshotAt: true,
         lastSeenAt: true,

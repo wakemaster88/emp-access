@@ -242,32 +242,29 @@ export async function processVehicleSighting(opts: {
   // Ueberwachungs-Push erst hier, nach der Pruefung auf dem Hub (frueher
   // schon beim rohen VEHICLE-Alarm). Freigegebene Fahrzeuge bleiben still,
   // wie Whitelist-Personen; sie haben ihren eigenen Push (notifyOnDetection).
-  if (opts.cameraId && source !== "MANUAL" && !vehicle) {
-    maybeSurveillanceAlert({
-      accountId: opts.accountId,
-      cameraId: opts.cameraId,
-      type: "VEHICLE",
-      at: seenAt,
-    }).catch((err) => console.error("[vehicles] surveillance push failed:", err));
-  }
-
-  if (snapshot && opts.cameraId) {
-    const detail = [
-      vehicle?.name ?? null,
-      plateRaw,
-      vehicle ? "erlaubt" : "unbekannt",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    maybeSurveillanceTelegramAlert({
-      accountId: opts.accountId,
-      cameraId: opts.cameraId,
-      type: "VEHICLE",
-      snapshot,
-      detail,
-      at: seenAt,
-    }).catch((err) => console.error("[vehicles] surveillance telegram failed:", err));
-  }
+  // Push und Telegram laufen nebeneinander und werden abgewartet: Serverlos
+  // endet die Funktion mit der Antwort an den Hub.
+  const cameraId = opts.cameraId;
+  await Promise.all([
+    cameraId && source !== "MANUAL" && !vehicle
+      ? maybeSurveillanceAlert({
+          accountId: opts.accountId,
+          cameraId,
+          type: "VEHICLE",
+          at: seenAt,
+        }).catch((err) => console.error("[vehicles] surveillance push failed:", err))
+      : null,
+    snapshot && cameraId
+      ? maybeSurveillanceTelegramAlert({
+          accountId: opts.accountId,
+          cameraId,
+          type: "VEHICLE",
+          snapshot,
+          detail: [vehicle?.name ?? null, plateRaw, vehicle ? "erlaubt" : "unbekannt"].filter(Boolean).join(" · "),
+          at: seenAt,
+        }).catch((err) => console.error("[vehicles] surveillance telegram failed:", err))
+      : null,
+  ]);
 
   return {
     sightingId: sighting.id,

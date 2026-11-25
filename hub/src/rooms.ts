@@ -20,6 +20,8 @@ import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { shellyStatus, shellySwitch } from "./shelly.js";
 import { controlSmart, hueLightStates } from "./smart-devices.js";
+import { cacheSyncedAt } from "./rooms-rules.js";
+import { ChangeLog } from "./change-log.js";
 
 export interface RoomDevice {
   id: number;
@@ -52,7 +54,18 @@ export interface Room {
   devices: RoomDevice[];
   cameras: { id: number; name: string; kind: string | null }[];
   audioZones: { id: number; name: string }[];
-  operating: { id: number; name: string; open: boolean } | null;
+  /**
+   * Betriebszeit: offen jetzt, der naechste Wechsel (null = keiner in Sicht)
+   * und die Oeffnungsspannen von heute und morgen. nextChangeAt und spans
+   * fehlen bei einer aelteren Cloud.
+   */
+  operating: {
+    id: number;
+    name: string;
+    open: boolean;
+    nextChangeAt?: string | null;
+    spans?: { from: string; to: string }[];
+  } | null;
   rules: { id: number; name: string; trigger: string; isActive: boolean; lastRunAt: string | null }[];
   /** Solltemperatur halten; geregelt von der Cloud (src/lib/room-climate.ts). */
   climate?: {
@@ -90,6 +103,8 @@ export interface IrrigationPlan {
 
 interface RoomsSnapshot {
   at: string;
+  /** Nur im Platten-Cache: wann der Hub diesen Stand geholt hat. */
+  syncedAt?: string;
   timezone: string;
   location?: { latitude: number; longitude: number } | null;
   irrigation?: IrrigationPlan[];
@@ -116,6 +131,25 @@ let syncedAt: string | null = null;
 let syncError: string | null = null;
 /** true = Stand kommt von der Platte, die Cloud war beim Start nicht erreichbar. */
 let fromCache = false;
+/*
+ * Scheitert der Abruf, steht das einmal im Log, bei anderem Grund erneut,
+ * nicht bei jedem Versuch alle 2 Minuten; der naechste Erfolg auch.
+ * Ab 30 Minuten meldet der Zustands-Waechter den alten Stand (watch.ts).
+ */
+const syncFailLog = new ChangeLog();
+let syncFailed = false;
+
+function standText(): string {
+  if (!syncedAt) return "kein Stand vorhanden";
+  const t = new Date(syncedAt).toLocaleString("de-DE", {
+    timeZone: "Europe/Berlin",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `es gilt der Stand vom ${t}`;
+}
 
 function isCover(d: RoomDevice): boolean {
   return COVER.has(d.category ?? "");
@@ -198,7 +232,9 @@ async function loadCache(): Promise<void> {
     const data = JSON.parse(raw) as RoomsSnapshot;
     if (Array.isArray(data.rooms)) {
       snapshot = data;
-      syncedAt = data.at ?? null;
+      // Der Stand traegt seinen Zeitpunkt: Wie alt er ist, entscheidet, wie
+      // lange der Waechter ihm noch glaubt (sentinel-rooms-rules.ts).
+      syncedAt = cacheSyncedAt(data);
       fromCache = true;
     }
   } catch {
@@ -218,14 +254,22 @@ export async function syncRooms(): Promise<{ ok: boolean; error?: string }> {
     syncedAt = new Date().toISOString();
     syncError = null;
     fromCache = false;
-    await saveCache(data);
+    await saveCache({ ...data, syncedAt });
     if (first) {
       const n = data.rooms.reduce((sum, r) => sum + r.devices.length, 0) + data.unassigned.length;
       log(`Räume: ${data.rooms.length} Räume, ${n} Geräte aus der Cloud geladen`);
     }
+    if (syncFailed) {
+      syncFailed = false;
+      // Derselbe Grund soll nach einer Erholung wieder im Log stehen.
+      syncFailLog.shouldLog("fetch", "", Date.now());
+      log("Räume: Abruf wieder erfolgreich");
+    }
     return { ok: true };
   } catch (e) {
     syncError = e instanceof Error ? e.message : String(e);
+    syncFailed = true;
+    if (syncFailLog.shouldLog("fetch", syncError, Date.now())) log(`Räume: Abruf fehlgeschlagen (${syncError}), ${standText()}`);
     return { ok: false, error: syncError };
   }
 }
@@ -377,6 +421,17 @@ export function irrigationPlans(): IrrigationPlan[] {
 }
 
 /* -------------------------------------------------------------- Dashboard */
+
+/** Grund, an dem der letzte Abruf der Raumdaten gescheitert ist; null = er ist gelungen. */
+export function roomsSyncError(): string | null {
+  return syncError;
+}
+
+/** Zeitpunkt des Stands der Raumdaten (ms); null = noch keiner. */
+export function roomsSyncedAt(): number | null {
+  const ms = syncedAt ? Date.parse(syncedAt) : NaN;
+  return Number.isFinite(ms) ? ms : null;
+}
 
 export function roomsPayload() {
   const mark = (d: RoomDevice) => ({ ...d, local: isLocalDevice(d) });

@@ -4,7 +4,10 @@ import { readFileSync } from "node:fs";
 import {
   PREFLIGHT_ENV,
   PREFLIGHT_OK,
+  RESTART_HOLD_MAX_MS,
+  RESTART_POLL_MS,
   installCommand,
+  restartStep,
   isPreflightRun,
   retryBlocked,
   signatureCheckEnabled,
@@ -66,4 +69,24 @@ test("index.ts beantwortet den Pre-Flight, bevor irgendetwas startet", () => {
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("//") && !l.startsWith("import ") && !l.startsWith("/*") && !l.startsWith("*"));
   assert.deepEqual(before, []);
+});
+
+test("Neustart nach einem Update wartet auf laufende Bewertungen des Wächters, höchstens 3 min", () => {
+  assert.equal(RESTART_HOLD_MAX_MS, 3 * 60_000);
+  // Nichts laeuft: sofort, ohne Zeile.
+  assert.deepEqual(restartStep(0, 0, 0), { then: "neustart", line: null });
+  // Eine Bewertung laeuft: warten, eine Zeile beim ersten Schritt.
+  assert.deepEqual(restartStep(1, 0, 0), {
+    then: "warten",
+    line: "Update: Neustart wartet auf 1 laufende Bewertung(en) des Wächters (höchstens 3 min)",
+  });
+  assert.deepEqual(restartStep(1, 30_000, 15), { then: "warten", line: null });
+  // Fertig: Neustart mit Zeile.
+  assert.deepEqual(restartStep(0, 42_000, 21), { then: "neustart", line: "Update: Bewertung des Wächters abgeschlossen, Neustart nach 42 s Warten" });
+  // Nach 3 min in jedem Fall.
+  assert.equal(restartStep(2, RESTART_HOLD_MAX_MS, 90).then, "neustart");
+  assert.match(restartStep(2, RESTART_HOLD_MAX_MS, 90).line ?? "", /obwohl noch 2 Bewertung\(en\)/);
+  // Die Uhr springt zurueck: Die Zahl der Runden begrenzt das Warten.
+  assert.equal(restartStep(1, -600_000, Math.ceil(RESTART_HOLD_MAX_MS / RESTART_POLL_MS)).then, "neustart");
+  assert.equal(restartStep(1, -600_000, 10).then, "warten");
 });

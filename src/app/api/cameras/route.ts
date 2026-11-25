@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { INVALID_HOST_ERROR, isHostAddress } from "@/lib/net-address";
+import { parseSentinelMode } from "@/lib/camera-detection";
 
 // Felder ohne Passwort und ohne Snapshot-Bytes (die UI laedt das Bild ueber
 // die eigene Snapshot-Route).
@@ -60,6 +61,10 @@ export async function POST(request: NextRequest) {
   }
 
   const kind = body.kind === "DOORBIRD" ? "DOORBIRD" : "REOLINK";
+  const sentinelMode = body.sentinelMode === undefined ? null : parseSentinelMode(body.sentinelMode);
+  if (sentinelMode === "invalid") {
+    return NextResponse.json({ error: "Wächter: wie der Raum, nur nachts oder aus wählen" }, { status: 400 });
+  }
 
   const camera = await db.camera.create({
     data: {
@@ -73,6 +78,7 @@ export async function POST(request: NextRequest) {
       channel: Number.isInteger(Number(body.channel)) && Number(body.channel) >= 0 ? Number(body.channel) : 0,
       enabled: body.enabled !== false,
       vehicleDetection: body.vehicleDetection !== false,
+      sentinelMode,
       notes: body.notes?.trim() || null,
       accountId: accountId!,
     },

@@ -43,6 +43,7 @@ export async function PUT(
       deliveryMode: true,
       deliveryFrom: true,
       deliveryTo: true,
+      sentinelMode: true,
       notes: true,
     },
   });

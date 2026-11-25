@@ -12,10 +12,9 @@
  *  - Zweimal hintereinander voll (oder Wartezeit ueber Schwelle): Meldung
  *    per Telegram mit Bild, „entspannt“, wenn es wieder leerer ist.
  *  - Ob eine faellige Meldung hinausgeht, bestimmt HUB_OCCUPANCY_ALERTS:
- *    on = senden, off = die Meldestufen gar nicht auswerten. Ohne Angabe
- *    laeuft der Probelauf (shadow): Die Meldung steht im Log und im Zaehler,
- *    gesendet wird nichts. Die Schwellen sollen sich erst an echten
- *    Messungen zeigen; das Einschalten entscheidet der Betreiber.
+ *    on (Standard, auch ohne Angabe) = senden, off = die Meldestufen gar
+ *    nicht auswerten, shadow = Probelauf: Die Meldung steht im Log und im
+ *    Zaehler, gesendet wird nichts.
  *
  * Schwellen und Zonen lassen sich in hub/occupancy.json anpassen (siehe
  * occupancy-rules.ts, mergeSpots). Bilder werden nicht gespeichert, nur
@@ -35,6 +34,7 @@ import {
   DEFAULT_SPOTS,
   alertAction,
   alertMode,
+  alertModeText,
   camerasForSpot,
   dayStartLine,
   effectivePerHour,
@@ -431,13 +431,7 @@ async function tick(chatIds: () => string[]): Promise<void> {
 
 export function startOccupancy(d: { chatIds: () => string[] }): void {
   void loadPeaks();
-  const mode =
-    ALERTS.mode === "on"
-      ? "Meldungen an"
-      : ALERTS.mode === "off"
-        ? "ohne Meldungen"
-        : `Meldungen im Probelauf (nur Log, nichts wird gesendet; einschalten mit HUB_OCCUPANCY_ALERTS=on)${ALERTS.known ? "" : " – Wert von HUB_OCCUPANCY_ALERTS nicht erkannt"}`;
-  log(`Belegung: an, alle ${Math.round(INTERVAL_MS / 1000)} s zwischen ${HOURS} Uhr, ${mode}`);
+  log(`Belegung: an, alle ${Math.round(INTERVAL_MS / 1000)} s zwischen ${HOURS} Uhr, ${alertModeText(process.env.HUB_OCCUPANCY_ALERTS)}`);
   const run = () => void tick(d.chatIds).catch((e) => log(`Belegung: ${e instanceof Error ? e.message : e}`));
   setTimeout(run, 60_000);
   setInterval(run, INTERVAL_MS);

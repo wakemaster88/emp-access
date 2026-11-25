@@ -13,7 +13,16 @@
  */
 import { noteModelWork } from "./ai-load.js";
 import { visionErrorText } from "./vision-rules.js";
-import { readVisionTiming, type VisionTiming } from "./vision-timing-rules.js";
+import {
+  answerCutOff,
+  cutOffText,
+  numPredictText,
+  readNumPredict,
+  readVisionOutput,
+  readVisionTiming,
+  type VisionOutput,
+  type VisionTiming,
+} from "./vision-timing-rules.js";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import { promisify } from "node:util";
@@ -263,11 +272,24 @@ export function refreshLoadedModel(): void {
 
 /* ------------------------------------------------------------ Bilder */
 
-/** Bildmodell fuer Kamerabilder und Fotos (~6 GB, passt neben das Chatmodell). */
+/**
+ * Bildmodell fuer Kamerabilder und Fotos (~6 GB, passt neben das Chatmodell).
+ * `qwen3-vl:8b` ist in der Ollama-Bibliothek die Thinking-Ausgabe (gleicher
+ * Digest wie `qwen3-vl:8b-thinking`); die Instruct-Ausgabe heisst
+ * `qwen3-vl:8b-instruct`. Ob ein Denktext anfaellt, zeigt die Zeitzeile des
+ * Waechters (vision-timing-rules.ts).
+ */
 export const VISION_MODEL = process.env.HUB_AGENT_VISION_MODEL?.trim() || "qwen3-vl:8b";
 const VISION_KEEP_ALIVE = process.env.HUB_AGENT_VISION_KEEP_ALIVE?.trim() || "10m";
 /** Kontextfenster des Bildmodells in Token (Bild, Prompt und Antwort zusammen). */
 export const VISION_NUM_CTX = 8192;
+/**
+ * Obergrenze der Antwort-Token je Bewertung des Waechters
+ * (HUB_AGENT_VISION_NUM_PREDICT, Ollama `num_predict`); null = keine Grenze
+ * (Standard, auch bei einem ungueltigen Wert). Fragen und Fotos im Chat
+ * bleiben ohne Grenze.
+ */
+export const VISION_NUM_PREDICT = readNumPredict(process.env.HUB_AGENT_VISION_NUM_PREDICT);
 
 export const VISION = {
   /** Das Bildmodell ist eingeschaltet (HUB_AGENT_VISION=0 schaltet es ab). */
@@ -299,6 +321,8 @@ function setVisionReady(ready: boolean): void {
 
 /** Die Zeile „lade Modell“ fuer das Bildmodell steht seit dem letzten Erfolg schon im Log. */
 let visionPullAnnounced = false;
+/** Die Zeile zur Obergrenze der Antwort steht schon im Log (einmal je Start, nur wenn die Variable gesetzt ist). */
+let numPredictAnnounced = false;
 
 /**
  * Bildmodell bereitstellen: Ollama muss antworten, das Modell wird geladen,
@@ -320,6 +344,11 @@ export async function ensureVisionModel(): Promise<boolean> {
     setVisionReady(true);
     VISION.error = null;
     visionPullAnnounced = false;
+    if (!numPredictAnnounced) {
+      numPredictAnnounced = true;
+      const limitText = numPredictText(process.env.HUB_AGENT_VISION_NUM_PREDICT, VISION_NUM_PREDICT);
+      if (limitText) log(`Assistent: Bildmodell: ${limitText}`);
+    }
     recordHubEvent({ kind: "system", severity: "info", where: "Assistent", title: `Bildmodell bereit (${VISION_MODEL})` });
     return true;
   } catch (e) {
@@ -336,6 +365,23 @@ export async function ensureVisionModel(): Promise<boolean> {
 export interface VisionAnswer {
   text: string;
   timing: VisionTiming;
+  /** Laengen von Antwort- und Denktext und done_reason, fuer die Zeitzeile des Waechters. */
+  output: VisionOutput;
+}
+
+/**
+ * Die Antwort ist an der Obergrenze VISION_NUM_PREDICT abgebrochen: Der
+ * Aufruf zaehlt als gescheitert (VISION.failStreak, im Waechter wie jeder
+ * andere Fehler des Bildmodells). Zeitangaben und Laengen kommen mit, damit
+ * die Zeitzeile zeigt, wofuer die Token verbraucht wurden.
+ */
+export class VisionCutOffError extends Error {
+  readonly answer: VisionAnswer;
+  constructor(answer: VisionAnswer, limit: number) {
+    super(cutOffText(limit));
+    this.name = "VisionCutOffError";
+    this.answer = answer;
+  }
 }
 
 /**
@@ -343,7 +389,8 @@ export interface VisionAnswer {
  * JSON-Objekt erzwingen (fuer die Ereignis-Bewertung). Jeder gescheiterte
  * Aufruf des bereiten Modells zaehlt in VISION.failStreak, der erste
  * gelungene setzt den Zaehler zurueck (Befund „Bildmodell antwortet nicht“,
- * vision-rules.ts).
+ * vision-rules.ts). Mit `json` gilt die Obergrenze VISION_NUM_PREDICT; eine
+ * Antwort, die an ihr abbricht, scheitert mit VisionCutOffError.
  */
 export async function askVision(jpeg: Buffer, prompt: string, json = false): Promise<string> {
   return (await askVisionTimed(jpeg, prompt, json)).text;
@@ -366,6 +413,8 @@ export async function askVisionTimed(jpeg: Buffer, prompt: string, json = false)
 
 async function callVision(jpeg: Buffer, prompt: string, json: boolean): Promise<VisionAnswer> {
   const started = Date.now();
+  // Obergrenze nur fuer die JSON-Antworten des Waechters; ohne Grenze bleibt die Anfrage wie sie ist.
+  const limit = json ? VISION_NUM_PREDICT : null;
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: "POST",
     body: JSON.stringify({
@@ -375,11 +424,12 @@ async function callVision(jpeg: Buffer, prompt: string, json: boolean): Promise<
       think: false,
       format: json ? "json" : undefined,
       keep_alive: VISION_KEEP_ALIVE,
-      options: { temperature: 0.1, num_ctx: VISION_NUM_CTX },
+      options: { temperature: 0.1, num_ctx: VISION_NUM_CTX, ...(limit !== null ? { num_predict: limit } : {}) },
     }),
     signal: AbortSignal.timeout(120_000),
   });
-  const body = (await res.json().catch(() => ({}))) as { message?: { content?: string }; error?: string };
+  // Die ganze Antwort: message.content, message.thinking (falls vorhanden), Zeitfelder, done_reason.
+  const body = (await res.json().catch(() => ({}))) as { message?: { content?: string; thinking?: string }; error?: string; done_reason?: string };
   if (!res.ok || !body.message) {
     // Modell weg (z. B. geloescht): Der Takt des Waechters stellt es neu bereit (sentinel.ts).
     if (res.status === 404) setVisionReady(false);
@@ -387,5 +437,8 @@ async function callVision(jpeg: Buffer, prompt: string, json: boolean): Promise<
   }
   VISION.lastMs = Date.now() - started;
   noteModelWork(started, Date.now());
-  return { text: (body.message.content ?? "").trim(), timing: readVisionTiming(body, VISION.lastMs) };
+  const answer: VisionAnswer = { text: (body.message.content ?? "").trim(), timing: readVisionTiming(body, VISION.lastMs), output: readVisionOutput(body) };
+  // An der Obergrenze abgebrochen: unvollstaendig, zaehlt wie ein Fehler des Bildmodells.
+  if (limit !== null && answerCutOff(answer.output, limit)) throw new VisionCutOffError(answer, limit);
+  return answer;
 }
