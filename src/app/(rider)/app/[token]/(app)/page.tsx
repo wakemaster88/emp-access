@@ -4,9 +4,8 @@ import { requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { kontoRidersFor } from "@/lib/rider-konto";
 import { RiderForWhom } from "@/components/rider/rider-for-whom";
 import { METRIC_LABEL, RENEWAL_HINT_DAYS, formatDegrees, formatEuro } from "@/lib/gamification";
-import { loadWaterNow } from "@/lib/gamification-service";
-import { loadAirNow } from "@/lib/weather-history";
-import { loadRiderChallengesCached, loadRiderOffers } from "@/lib/rider-challenges";
+import { loadRiderChallengesCached } from "@/lib/rider-challenges";
+import { homeAir, homeBeachOccupancy, homeBeachOpening, homeOccupancy, homeOffers, homeOpening, homeWater } from "@/lib/rider-home-cache";
 import { ChallengePrize, challengeStandText, challengeTimeText } from "@/components/rider/rider-challenge-parts";
 import { loadRiderHoliday, type RiderHolidayView } from "@/lib/rider-holiday";
 import { holidayDayLabel } from "@/lib/holidays";
@@ -14,9 +13,8 @@ import { loadRiderBirthday, type RiderBirthdayView } from "@/lib/rider-birthday"
 import { RiderBirthdayAnnounce } from "@/components/rider/rider-birthday-announce";
 import { fmtDay, voucherValidity } from "@/lib/rider-format";
 import { aboStatus, RIDER_LOCATION } from "@/lib/rider-shop";
-import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
-import { loadBeachOpening, loadRiderOpening } from "@/lib/rider-opening";
-import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
+import { OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
+import { BEACH_LABEL } from "@/lib/beach-occupancy";
 import { awardRemainingText, nextAward, voucherHeadline } from "@/lib/awards";
 import { berlinYmd } from "@/lib/berlin-day";
 import type { RiderView } from "@/lib/rider-app";
@@ -184,7 +182,7 @@ function TodayCard({
         </span>
       )}
       {unlockedToday.length > 0 && (
-        <Link href={`${base}/awards`} prefetch className="rd-today-row">
+        <Link href={`${base}/awards`} className="rd-today-row">
           {unlockedToday.slice(0, 2).map((a) => <AwardBadge key={a.id} award={a} size={40} />)}
           <span className="rd-grow">
             <b>{unlockedToday.length === 1 ? "Neuer Award" : `${unlockedToday.length} neue Awards`}</b>
@@ -237,7 +235,7 @@ function HolidayCard({ holiday, base }: { holiday: RiderHolidayView; base: strin
       <span className="rd-display rd-h2">{holiday.title}</span>
       {holiday.text && <span className="rd-soft">{holiday.text}</span>}
       {v && !v.redeemed && (
-        <Link href={`${base}/gutscheine/${v.id}`} prefetch className="rd-today-row">
+        <Link href={`${base}/gutscheine/${v.id}`} className="rd-today-row">
           {QR_ICON}
           <span className="rd-grow">
             <b>Dein Geschenk: {v.label}</b>
@@ -265,7 +263,7 @@ function BirthdayCard({ birthday, base, token }: { birthday: RiderBirthdayView; 
       <span className="rd-display rd-h2">{birthday.title}</span>
       {birthday.text && <span className="rd-soft">{birthday.text}</span>}
       {v && !v.redeemed && (
-        <Link href={`${base}/gutscheine/${v.id}`} prefetch className="rd-today-row">
+        <Link href={`${base}/gutscheine/${v.id}`} className="rd-today-row">
           {QR_ICON}
           <span className="rd-grow">
             <b>Dein Geschenk: {v.label}</b>
@@ -288,16 +286,17 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
   const rider = await requireRider(token);
   const base = await riderBase(token);
   const [news, offers, challenges, occupancy, opening, family, beach, air, water, holiday, musicVote, skills, birthday, beachOpening] = await Promise.all([
-    loadRiderOffers(rider.accountId, rider.pass, undefined, "NEWS"),
-    loadRiderOffers(rider.accountId, rider.pass),
+    // Für alle Kunden gleiche Werte kommen 30 s aus dem Speicher (lib/rider-home-cache).
+    homeOffers(rider.accountId, rider.pass, "NEWS"),
+    homeOffers(rider.accountId, rider.pass, "OFFER"),
     loadRiderChallengesCached(rider),
-    loadRiderOccupancy(rider.accountId).catch(() => null),
-    loadRiderOpening(rider.accountId).catch(() => null),
+    homeOccupancy(rider.accountId).catch(() => null),
+    homeOpening(rider.accountId).catch(() => null),
     riderFamilyView(token),
-    loadBeachOccupancy(rider.accountId).catch(() => null),
+    homeBeachOccupancy(rider.accountId).catch(() => null),
     // Luft und Wasser für den Kopf: zwei kleine Abfragen neben den anderen, kein Abruf nach außen.
-    loadAirNow(rider.accountId).catch(() => null),
-    loadWaterNow(rider.accountId).catch(() => null),
+    homeAir(rider.accountId).catch(() => null),
+    homeWater(rider.accountId).catch(() => null),
     loadRiderHoliday(rider).catch((e) => {
       console.error("[rider-holiday]", e);
       return null;
@@ -312,7 +311,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       return null;
     }),
     // Beach Pass: Öffnungszeit des Strandbads statt der des Lifts.
-    rider.pass === "BEACH" ? loadBeachOpening(rider.accountId).catch(() => null) : Promise.resolve(null),
+    rider.pass === "BEACH" ? homeBeachOpening(rider.accountId).catch(() => null) : Promise.resolve(null),
   ]);
   // Neue Abos des Kundenkontos ohne Fahrer: nur im eigenen Profil fragen.
   // Familie: die angemeldete Person zuerst, dann Partner und Kinder (Wechsel am Gruß).
@@ -542,7 +541,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             </>
           )}
           {opening && (
-            <Link href={`${base}/zeiten`} prefetch className={`rd-hours${opening.open ? " rd-hours-open" : ""}`}>
+            <Link href={`${base}/zeiten`} className={`rd-hours${opening.open ? " rd-hours-open" : ""}`}>
               {CLOCK_ICON}
               <span className="rd-grow">
                 {opening.text}
@@ -580,7 +579,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             <div className="rd-label">{beachOpening!.scheduleName}</div>
           )}
           {beachOpening && (
-            <Link href={`${base}/zeiten`} prefetch className={`rd-hours${beachOpening.open ? " rd-hours-open" : ""}`}>
+            <Link href={`${base}/zeiten`} className={`rd-hours${beachOpening.open ? " rd-hours-open" : ""}`}>
               {CLOCK_ICON}
               <span className="rd-grow">
                 {beachOpening.text}
@@ -644,7 +643,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
       ) : (
         <div className="rd-card rd-list">
           {open.slice(0, 3).map((v) => (
-            <Link key={v.id} href={`${base}/gutscheine/${v.id}`} prefetch>
+            <Link key={v.id} href={`${base}/gutscheine/${v.id}`}>
               {QR_ICON}
               <span className="rd-grow">
                 <b>{voucherHeadline(v.label, v.award?.voucherShort).head}</b>
@@ -664,7 +663,7 @@ export default async function RiderDashboard({ params }: { params: Promise<{ tok
             <Link href={`${base}/awards`} className="rd-more">alle ansehen</Link>
           </div>
           {earned.length > 0 && (
-            <Link href={`${base}/awards`} prefetch className="rd-card rd-aw-strip" aria-label={`${earned.length} Awards freigeschaltet, alle ansehen`}>
+            <Link href={`${base}/awards`} className="rd-card rd-aw-strip" aria-label={`${earned.length} Awards freigeschaltet, alle ansehen`}>
               {earned.slice(0, 5).map((a) => <AwardBadge key={a.id} award={a} size={60} />)}
             </Link>
           )}

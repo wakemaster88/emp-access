@@ -10,6 +10,7 @@ import { skillRewardText } from "./rider-skill-rules";
 import { prisma, tenantClient } from "./prisma";
 import { berlinYmd } from "./berlin-day";
 import { adoptDayTickets } from "./day-guest";
+import { createTtlCache } from "./ttl-cache";
 import { samePersonAbos } from "./abo-person";
 import { aboNamesRider, isKidsSubscriptionName } from "./customer-person";
 import { awardCategory, awardText, voucherShortLabel, type AwardCategory } from "./awards";
@@ -176,6 +177,10 @@ export interface RiderToday {
   waterTemp: number | null;
 }
 
+/** Tagestickets zuordnen: je Profil-ID höchstens einmal je Minute (Speicher je Instanz). */
+const ADOPT_EVERY_MS = 60_000;
+const adoptThrottle = createTtlCache<{ added: number; doneAt: number }>(ADOPT_EVERY_MS);
+
 /**
  * Alles, was die Kunden-App zeigt. Liefert null, wenn der Token unbekannt ist
  * oder am Profil kein Ticket mehr hängt.
@@ -189,8 +194,11 @@ export async function loadRider(
   readOnly = false,
 ): Promise<RiderView | null> {
   if (!token || token.length < 16) return null;
+  const readAt = Date.now();
   const profile = await prisma.riderProfile.findUnique({
     where: { token },
+    // Profilbild (Data-URL, eigene Route) und Passwort-Hash braucht die Ansicht nicht.
+    omit: { photo: true, passwordHash: true },
     include: {
       account: { select: { name: true, isActive: true } },
       tickets: {
@@ -215,11 +223,18 @@ export async function loadRider(
   if (!profile || !profile.account.isActive || (profile.tickets.length === 0 && !profile.email)) return null;
 
   // Neue Tagestickets mit derselben E-Mail-Adresse gehören zum selben Gast.
+  // Je Profil höchstens einmal je Minute: ein neu gekauftes Tagesticket
+  // erscheint so spätestens nach einer Minute in der App.
   if (!adopted && !readOnly) {
     const emails = [...new Set([profile.email, ...profile.tickets.map((t) => t.email?.trim().toLowerCase())].filter((e): e is string => !!e))].slice(0, 5);
-    let added = 0;
-    for (const e of emails) added += await adoptDayTickets(profile.accountId, e, now).catch(() => 0);
-    if (added > 0) return loadRider(token, now, true, awarded);
+    const { added, doneAt } = await adoptThrottle.get(String(profile.id), async () => {
+      let sum = 0;
+      for (const e of emails) sum += await adoptDayTickets(profile.accountId, e, now).catch(() => 0);
+      return { added: sum, doneAt: Date.now() };
+    });
+    // Neu laden, wenn dieses Profil vor dem Ende der Zuordnung gelesen wurde
+    // (auch bei gleichzeitigen Requests, die auf dieselbe Zuordnung warten).
+    if (added > 0 && readAt <= doneAt) return loadRider(token, now, true, awarded);
   }
 
   // Nutzung merken (für „App aktiv“ in der Verwaltung), höchstens einmal je Stunde.
@@ -487,6 +502,21 @@ export async function markAwardsSeen(rider: Pick<RiderView, "accountId" | "ticke
 
 /** Je Request nur einmal laden (Layout und Seite teilen sich das Ergebnis). */
 export const loadRiderCached = cache((token: string) => loadRider(token));
+
+/**
+ * Nur der Name des Betriebs für Titel und Manifest, unter denselben
+ * Bedingungen wie `loadRider` (Token bekannt, Konto aktiv, Ticket oder
+ * bestätigte Adresse); sonst null. Liest nur, ändert nichts. Je Request einmal.
+ */
+export const loadRiderAccountName = cache(async (token: string): Promise<string | null> => {
+  if (!token || token.length < 16) return null;
+  const p = await prisma.riderProfile.findUnique({
+    where: { token },
+    select: { email: true, account: { select: { name: true, isActive: true } }, _count: { select: { tickets: true } } },
+  });
+  if (!p || !p.account.isActive || (p._count.tickets === 0 && !p.email)) return null;
+  return p.account.name;
+});
 
 /**
  * Profil zu einem Abo-Ticket holen oder anlegen. Weitere Abo-Tickets

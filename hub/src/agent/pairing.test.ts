@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CODE_TTL_MS, MAX_ATTEMPTS, handleUnknownChat, isPaired, newPairingState } from "./pairing.js";
+import { CODE_TTL_MS, MAX_ATTEMPTS, TITLE_NAME_MAX, handleUnknownChat, isPaired, newPairingState, titleName } from "./pairing.js";
 
 const code = () => "123456";
 
@@ -36,4 +36,14 @@ test("Abgelaufener Code koppelt nicht", () => {
 
 test("Chat-IDs aus der .env gelten ohne Kopplung", () => {
   assert.equal(isPaired(newPairingState(), "99", ["99"]), true);
+});
+
+test("Anzeigename fuer Ereignistitel: druckbar und gekuerzt", () => {
+  assert.equal(titleName("Max Muster"), "Max Muster");
+  assert.equal(titleName("  Zeile\neins\u0007\tzwei  "), "Zeile eins zwei");
+  assert.equal(titleName("a\u2028b\u200Bc"), "a b c");
+  const long = titleName("x".repeat(100));
+  assert.equal(long.length, TITLE_NAME_MAX);
+  assert.equal(Array.from(titleName("😀".repeat(50))).length, TITLE_NAME_MAX);
+  assert.equal(titleName(""), "");
 });

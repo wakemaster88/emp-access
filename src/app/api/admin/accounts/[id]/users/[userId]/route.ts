@@ -3,6 +3,7 @@ import { safeAuth } from "@/lib/auth";
 import { superAdminClient } from "@/lib/prisma";
 import { adminUpdateSchema } from "@/lib/validators";
 import { hash } from "bcryptjs";
+import { resetLoginLocks } from "@/lib/login-lockout";
 
 async function requireSuperAdmin() {
   const session = await safeAuth();
@@ -51,7 +52,7 @@ export async function PUT(
   if (parsed.data.password) {
     data.password = await hash(parsed.data.password, 12);
     // Neues Passwort: bestehende Sitzungen dieses Benutzers enden (auth.ts),
-    // eine Sperre aus alten Fehlversuchen entfaellt.
+    // eine Sperre aus alten Fehlversuchen entfaellt (unten, login-lockout.ts).
     data.sessionVersion = { increment: 1 };
     data.loginFailures = 0;
     data.loginLockedUntil = null;
@@ -69,6 +70,7 @@ export async function PUT(
       createdAt: true,
     },
   });
+  if (parsed.data.password) await resetLoginLocks(user.email);
 
   return NextResponse.json(user);
 }

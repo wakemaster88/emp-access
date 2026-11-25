@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cancelVereinBooking, loadPortalVerein } from "@/lib/verein-portal";
+import { publicRateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 30;
+
+/**
+ * Stornieren von Hand; die Grenze bremst Schleifen, nicht den Verein.
+ */
+const VEREIN_CANCEL_LIMIT = { limit: 30, windowMs: 60_000 } as const;
 
 /** Storniert eine eigene Buchung (nur bis zur Storno-Frist). */
 export async function DELETE(
@@ -9,6 +15,8 @@ export async function DELETE(
   { params }: { params: Promise<{ token: string; id: string }> },
 ) {
   const { token, id } = await params;
+  const limited = publicRateLimit(token, "verein-portal-cancel", VEREIN_CANCEL_LIMIT);
+  if (limited) return limited;
   const verein = await loadPortalVerein(token);
   if (!verein) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   const bookingId = Number(id);

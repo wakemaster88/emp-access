@@ -104,6 +104,50 @@ export async function resolveAnnyOrganizationId(
   return fetchAnnyOrganizationId(baseUrl, token);
 }
 
+/**
+ * Kurzer Zwischenspeicher je Instanz fuer ANNY-Antworten, wie `orgIdCache`.
+ * Nur vollstaendige, fehlerfreie Antworten werden gespeichert; nach einem
+ * Fehler fragt der naechste Aufruf ANNY erneut.
+ */
+type TimedEntry<T> = { value: T; expiresAt: number };
+const ANNY_CACHE_MAX_ENTRIES = 200;
+
+function timedGet<T>(map: Map<string, TimedEntry<T>>, key: string): T | undefined {
+  const hit = map.get(key);
+  if (!hit) return undefined;
+  if (hit.expiresAt > Date.now()) return hit.value;
+  map.delete(key);
+  return undefined;
+}
+
+function timedSet<T>(map: Map<string, TimedEntry<T>>, key: string, value: T, ttlMs: number): void {
+  const now = Date.now();
+  for (const [k, e] of map) {
+    if (e.expiresAt <= now) map.delete(k);
+  }
+  while (map.size >= ANNY_CACHE_MAX_ENTRIES) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+  map.set(key, { value, expiresAt: now + ttlMs });
+}
+
+/** Oeffnungszeiten je Ressourcen-Satz und Tag: hoechstens 60 s alt. */
+const availabilityCache = new Map<string, TimedEntry<Record<string, AvailabilityPeriod[]>>>();
+const AVAILABILITY_CACHE_TTL_MS = 60 * 1000;
+
+/** Nach einer Buchung ueber emp-access: Verfuegbarkeit neu bei ANNY lesen
+ *  (wirkt in dieser Instanz; andere Instanzen nach spaetestens 60 s). */
+export function invalidateAnnyAvailabilityCache(): void {
+  availabilityCache.clear();
+}
+
+/** Service- und Ressourcen-Katalog je Konto (Token): 10 Minuten. */
+const servicesCatalogCache = new Map<string, TimedEntry<AnnyServiceCatalogEntry[]>>();
+const resourcesCatalogCache = new Map<string, TimedEntry<AnnyResource[]>>();
+const CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
+
 export function berlinOffset(dateStr: string): string {
   const d = new Date(`${dateStr}T12:00:00Z`);
   const berlin = d.toLocaleString("sv-SE", { timeZone: "Europe/Berlin" });
@@ -122,6 +166,10 @@ export async function fetchAnnyAvailability(
   dateStr: string,
 ): Promise<Record<string, AvailabilityPeriod[]>> {
   if (resourceIds.length === 0) return {};
+
+  const cacheKey = `${baseUrl}|${token}|${dateStr}|${[...resourceIds].sort().join(",")}`;
+  const cached = timedGet(availabilityCache, cacheKey);
+  if (cached) return { ...cached };
 
   const offset = berlinOffset(dateStr);
   const startDate = `${dateStr}T00:00:00${offset}`;
@@ -154,7 +202,8 @@ export async function fetchAnnyAvailability(
           .filter((p: AvailabilityPeriod) => p.start || p.end);
       }
     }
-    return result;
+    timedSet(availabilityCache, cacheKey, result, AVAILABILITY_CACHE_TTL_MS);
+    return { ...result };
   } catch {
     return {};
   }
@@ -507,8 +556,14 @@ export async function fetchAllAnnyServices(
   token: string,
   organizationId?: string | null,
 ): Promise<AnnyServiceCatalogEntry[]> {
+  const cacheKey = `${baseUrl}|${token}|${organizationId ?? ""}`;
+  const cached = timedGet(servicesCatalogCache, cacheKey);
+  if (cached) return [...cached];
+
   const out: AnnyServiceCatalogEntry[] = [];
   const pageSize = 50;
+  // Nur ein ohne Fehler zu Ende gelesener Katalog kommt in den Speicher.
+  let complete = false;
   for (let page = 1; page <= 10; page++) {
     const params = new URLSearchParams({
       "page[size]": String(pageSize),
@@ -532,7 +587,10 @@ export async function fetchAllAnnyServices(
           : Array.isArray((json as { items?: unknown[] }).items)
             ? ((json as { items: unknown[] }).items)
             : [];
-      if (items.length === 0) break;
+      if (items.length === 0) {
+        complete = true;
+        break;
+      }
       for (const raw of items) {
         const svc = raw as {
           id?: string;
@@ -574,12 +632,16 @@ export async function fetchAllAnnyServices(
           resourceIds,
         });
       }
-      if (items.length < pageSize) break;
+      if (items.length < pageSize) {
+        complete = true;
+        break;
+      }
     } catch {
       break;
     }
   }
-  return out;
+  if (complete) timedSet(servicesCatalogCache, cacheKey, out, CATALOG_CACHE_TTL_MS);
+  return [...out];
 }
 
 /**
@@ -594,8 +656,14 @@ export async function fetchAllAnnyResources(
   token: string,
   organizationId?: string | null,
 ): Promise<AnnyResource[]> {
+  const cacheKey = `${baseUrl}|${token}|${organizationId ?? ""}`;
+  const cached = timedGet(resourcesCatalogCache, cacheKey);
+  if (cached) return [...cached];
+
   const out: AnnyResource[] = [];
   const pageSize = 50;
+  // Nur eine ohne Fehler zu Ende gelesene Liste kommt in den Speicher.
+  let complete = false;
   for (let page = 1; page <= 5; page++) {
     const params = new URLSearchParams({
       "page[size]": String(pageSize),
@@ -616,7 +684,10 @@ export async function fetchAllAnnyResources(
           : Array.isArray((json as { items?: unknown[] }).items)
             ? ((json as { items: unknown[] }).items)
             : [];
-      if (items.length === 0) break;
+      if (items.length === 0) {
+        complete = true;
+        break;
+      }
       for (const raw of items) {
         const r = raw as { id?: string; attributes?: Record<string, unknown> };
         const a = (r.attributes ?? r) as Record<string, unknown>;
@@ -625,12 +696,16 @@ export async function fetchAllAnnyResources(
         if (!id || !name) continue;
         out.push({ id: String(id), name });
       }
-      if (items.length < pageSize) break;
+      if (items.length < pageSize) {
+        complete = true;
+        break;
+      }
     } catch {
       break;
     }
   }
-  return out;
+  if (complete) timedSet(resourcesCatalogCache, cacheKey, out, CATALOG_CACHE_TTL_MS);
+  return [...out];
 }
 
 /**
@@ -1242,6 +1317,8 @@ export async function rescheduleAnnyBooking(
         },
       }),
     });
+    // Buchung in ANNY verschoben: zwischengespeicherte Verfuegbarkeit verwerfen.
+    invalidateAnnyAvailabilityCache();
     if (res.ok) return { ok: true };
     let detail = "";
     try {
@@ -1251,6 +1328,8 @@ export async function rescheduleAnnyBooking(
     } catch { /* ignore */ }
     return { ok: false, status: res.status, message: detail || `ANNY ${res.status}` };
   } catch (err) {
+    // Auch nach Zeitueberschreitung verwerfen: das Verschieben kann angekommen sein.
+    invalidateAnnyAvailabilityCache();
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, status: 0, message: `ANNY-Aufruf fehlgeschlagen: ${msg}` };
   }

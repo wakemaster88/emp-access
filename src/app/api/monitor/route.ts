@@ -38,27 +38,47 @@ export async function GET(request: NextRequest) {
     take: since === 0 ? 100 : 50,
   });
 
-  let counts: { areaId: number; current: number; entries: number; exits: number }[] | null = null;
-  if (areaIds?.length) {
-    const today = berlinDayStart();
-    const baseWhere = { accountId: accountId!, scanTime: { gte: today }, result: { in: ["GRANTED" as const, "PROTECTED" as const] } };
-    counts = await Promise.all(
-      areaIds.map(async (areaId) => {
-        const [entries, exits] = await Promise.all([
-          db.scan.count({ where: { ...baseWhere, device: { accessIn: areaId } } }),
-          db.scan.count({ where: { ...baseWhere, device: { accessOut: areaId } } }),
-        ]);
-        return { areaId, current: entries - exits, entries, exits };
-      })
-    );
-  }
-
   // Geräte-Liste unabhängig vom Feed-Filter (deviceIds/areaIds), damit
   // Filter-Dropdown und Quick-Öffnen-Buttons immer alle Geräte zeigen.
-  const devices = await db.device.findMany({
-    where: { accountId: accountId! },
-    select: { id: true, name: true, type: true, category: true, isActive: true, lastUpdate: true, task: true },
-  });
+  // accessIn/accessOut dienen nur der Bereichszählung und gehen nicht in die
+  // Antwort.
+  const today = berlinDayStart();
+  const [deviceRows, scansPerDevice] = await Promise.all([
+    db.device.findMany({
+      where: { accountId: accountId! },
+      select: { id: true, name: true, type: true, category: true, isActive: true, lastUpdate: true, task: true, accessIn: true, accessOut: true },
+    }),
+    areaIds?.length
+      ? db.scan.groupBy({
+          by: ["deviceId"],
+          where: { accountId: accountId!, scanTime: { gte: today }, result: { in: ["GRANTED", "PROTECTED"] } },
+          _count: { _all: true },
+        })
+      : Promise.resolve(null),
+  ]);
+  const devices = deviceRows.map((d) => ({
+    id: d.id, name: d.name, type: d.type, category: d.category, isActive: d.isActive, lastUpdate: d.lastUpdate, task: d.task,
+  }));
+
+  // Bereichszähler: eine Gruppierung je Gerät statt zwei Zählabfragen je
+  // Bereich. Eintritt = Scans an Geräten mit accessIn = Bereich, Austritt =
+  // Scans an Geräten mit accessOut = Bereich.
+  let counts: { areaId: number; current: number; entries: number; exits: number }[] | null = null;
+  if (areaIds?.length && scansPerDevice) {
+    const deviceById = new Map(deviceRows.map((d) => [d.id, d]));
+    counts = areaIds.map((areaId) => {
+      let entries = 0;
+      let exits = 0;
+      for (const row of scansPerDevice) {
+        if (row.deviceId == null) continue;
+        const device = deviceById.get(row.deviceId);
+        if (!device) continue;
+        if (device.accessIn === areaId) entries += row._count._all;
+        if (device.accessOut === areaId) exits += row._count._all;
+      }
+      return { areaId, current: entries - exits, entries, exits };
+    });
+  }
 
   const lastScanId = scans.length > 0 ? Math.max(...scans.map((s) => s.id)) : since;
 

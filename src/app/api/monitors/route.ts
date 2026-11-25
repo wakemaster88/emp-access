@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { newPublicToken } from "@/lib/tokens";
+import { checkMonitorRefs, monitorIdList } from "@/lib/monitor-refs";
 
 export async function GET() {
   const session = await getSessionWithDb();
@@ -34,14 +35,23 @@ export async function POST(request: NextRequest) {
           : body.type === "VOUCHER"
             ? "VOUCHER"
             : "MONITOR";
+  // Geraete und Bereiche muessen zum Mandanten gehoeren.
+  const checked = await checkMonitorRefs(db, accountId, type, {
+    deviceIds: monitorIdList(body.deviceIds) ?? [],
+    areaIds: monitorIdList(body.areaIds) ?? [],
+    controlDeviceIds: type === "MONITOR" ? (monitorIdList(body.controlDeviceIds) ?? []) : [],
+  });
+  if ("error" in checked) return NextResponse.json({ error: checked.error }, { status: 400 });
+  const { lists } = checked;
+
   const monitor = await db.monitorConfig.create({
     data: {
       name: body.name.trim(),
       token: newPublicToken(),
       type,
-      deviceIds: body.deviceIds ?? [],
-      areaIds: Array.isArray(body.areaIds) ? body.areaIds : [],
-      controlDeviceIds: type === "MONITOR" && Array.isArray(body.controlDeviceIds) ? body.controlDeviceIds : [],
+      deviceIds: lists.deviceIds,
+      areaIds: lists.areaIds,
+      controlDeviceIds: lists.controlDeviceIds,
       isActive: body.isActive ?? true,
       accountId: accountId!,
     },

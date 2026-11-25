@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createVereinRequest, loadPortalVerein } from "@/lib/verein-portal";
+import { publicRateLimit } from "@/lib/rate-limit";
 
 const bodySchema = z.object({
   serviceId: z.coerce.number().int().positive(),
@@ -13,9 +14,17 @@ const bodySchema = z.object({
   inclusive: z.boolean().optional().default(false),
 });
 
+/**
+ * Wunschzeiten fragt man von Hand an, jede Anfrage benachrichtigt das Team.
+ * Die Grenze bremst Schleifen, nicht den Verein.
+ */
+const VEREIN_REQUEST_LIMIT = { limit: 20, windowMs: 60_000 } as const;
+
 /** Wunschzeit anfragen: wartet auf Freigabe im Backoffice. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  const limited = publicRateLimit(token, "verein-portal-request", VEREIN_REQUEST_LIMIT);
+  if (limited) return limited;
   const verein = await loadPortalVerein(token);
   if (!verein) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));

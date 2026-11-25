@@ -4,6 +4,7 @@ import { controlShelly } from "@/lib/shelly";
 import { maybeSurveillanceAlert, maybeSurveillanceTelegramAlert } from "@/lib/surveillance";
 import { sendPushToAccount } from "@/lib/web-push";
 import { storeSightingSnapshot } from "@/lib/blob-store";
+import type { HubTaskActor } from "@/lib/hub-task-rules";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 
@@ -46,6 +47,8 @@ export async function processVehicleSighting(opts: {
   deliveryBrand?: string | null;
   /** Hub hat fuer den Lieferdienst das Tor geoeffnet. */
   deliveryOpened?: boolean;
+  /** Von Hand ausgeloest: angemeldeter Benutzer, steht im DoorBird-Task. */
+  by?: HubTaskActor;
 }): Promise<{
   sightingId: number;
   matched: boolean;
@@ -134,7 +137,7 @@ export async function processVehicleSighting(opts: {
         await prisma.hubTask.create({
           data: {
             type: "DOORBIRD_OPEN",
-            payload: { cameraId: vehicle.doorbirdCameraId },
+            payload: { cameraId: vehicle.doorbirdCameraId, ...(opts.by ? { by: opts.by } : {}) },
             accountId: opts.accountId,
           },
         });

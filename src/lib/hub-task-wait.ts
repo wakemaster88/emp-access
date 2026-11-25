@@ -4,9 +4,10 @@ import type { TenantDb } from "@/lib/prisma";
  * Auf das Ergebnis eines Hub-Tasks warten (kurzes DB-Polling).
  * Der Hub pollt Tasks alle ~5 s (1 s sobald der Heartbeat offene Tasks
  * meldet); Routen, die dem Nutzer sofort antworten wollen, warten daher
- * bis zu ~15 s und melden sonst "pending".
+ * bis zu ~8 s und melden sonst "pending" – so antwortet die Funktion vor
+ * dem Zeitlimit der Plattform (10 s).
  */
-export const HUB_TASK_WAIT_MS = 15_000;
+export const HUB_TASK_WAIT_MS = 8_000;
 const HUB_TASK_POLL_MS = 750;
 
 export type HubTaskOutcome =
@@ -21,7 +22,9 @@ export async function waitForHubTask(
 ): Promise<HubTaskOutcome> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, HUB_TASK_POLL_MS));
+    // Nicht ueber die Frist hinaus schlafen.
+    const waitMs = Math.min(HUB_TASK_POLL_MS, deadline - Date.now());
+    await new Promise((r) => setTimeout(r, waitMs));
     const current = await db.hubTask.findUnique({
       where: { id: taskId },
       select: { status: true, result: true, error: true },

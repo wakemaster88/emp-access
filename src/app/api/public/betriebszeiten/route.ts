@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
-import { matchesArea, parsePublicQuery, publicArea } from "@/lib/public-opening";
+import { clampPublicQuery, matchesArea, parsePublicQuery, publicArea } from "@/lib/public-opening";
 import { DEFAULT_TIMEZONE, addDaysToYmd, tzYmd } from "@/lib/tz-time";
+import { publicRateLimit, requestClientIp } from "@/lib/rate-limit";
+import { createTtlCache } from "@/lib/ttl-cache";
 
 /**
  * Öffentliche Betriebszeiten, ohne Anmeldung (für tuttenbrocksee.com).
@@ -12,7 +14,8 @@ import { DEFAULT_TIMEZONE, addDaysToYmd, tzYmd } from "@/lib/tz-time";
  *   GET /api/public/betriebszeiten?von=2027-04-01&bis=2027-04-30&bereich=wasserski,strandbad
  *
  * Gilt nur für den Mandanten der Website (`WEBSITE_ACCOUNT_ID`, Standard 1).
- * Liefert nur Bereichsnamen und Zeiten, nichts Internes.
+ * Liefert nur Bereichsnamen und Zeiten, nichts Internes. `von` wird auf ein
+ * Fenster um heute gezogen (`clampPublicQuery` in lib/public-opening).
  */
 
 export const dynamic = "force-dynamic";
@@ -22,6 +25,24 @@ const CORS = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
+
+/**
+ * Anfragegrenze je IP. Die Website fragt von ihren eigenen Servern aus (wenige
+ * gemeinsame Adressen) und hält die Antworten selbst 5 Minuten; dazu kommt der
+ * CDN-Cache vor dieser Route. Die Grenze liegt weit über diesem Bedarf.
+ */
+const IP_LIMIT = { limit: 300, windowMs: 60_000 } as const;
+
+/** Geladene Profile je Konto kurz im Speicher; die Tage werden je Abfrage berechnet. */
+const SCHEDULES_TTL_MS = 60_000;
+const loadSchedules = (accountId: number) =>
+  prisma.operatingSchedule.findMany({
+    // Nur Bereiche; Unterprofile (Bahnmieten, Kurse) bucht man über anny.
+    where: { accountId, parentId: null },
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    include: scheduleSpecInclude,
+  });
+const schedulesCache = createTtlCache<Awaited<ReturnType<typeof loadSchedules>>>(SCHEDULES_TTL_MS, { maxEntries: 20 });
 
 function websiteAccountId(): number {
   const id = Number(process.env.WEBSITE_ACCOUNT_ID || 1);
@@ -33,19 +54,22 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  const today = tzYmd(new Date(), DEFAULT_TIMEZONE);
-  const query = parsePublicQuery(request.nextUrl.searchParams, today);
-  if ("error" in query) {
-    return NextResponse.json({ error: query.error }, { status: 400, headers: CORS });
+  const limited = publicRateLimit(requestClientIp(request.headers), "public-betriebszeiten", IP_LIMIT);
+  if (limited) {
+    for (const [k, v] of Object.entries(CORS)) limited.headers.set(k, v);
+    return limited;
   }
 
+  const today = tzYmd(new Date(), DEFAULT_TIMEZONE);
+  const parsed = parsePublicQuery(request.nextUrl.searchParams, today);
+  if ("error" in parsed) {
+    return NextResponse.json({ error: parsed.error }, { status: 400, headers: CORS });
+  }
+  const query = clampPublicQuery(parsed, today);
+
   try {
-    const schedules = await prisma.operatingSchedule.findMany({
-      // Nur Bereiche; Unterprofile (Bahnmieten, Kurse) bucht man über anny.
-      where: { accountId: websiteAccountId(), parentId: null },
-      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-      include: scheduleSpecInclude,
-    });
+    const accountId = websiteAccountId();
+    const schedules = await schedulesCache.get(String(accountId), () => loadSchedules(accountId));
 
     const bereiche = schedules
       .filter((s) => matchesArea(s, query.areas))

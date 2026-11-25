@@ -59,7 +59,6 @@ function writeExtra(raw: string | null | undefined, key: string, value: string):
 
 const SYNC_ENDPOINTS: Record<string, { method: string; url: string }> = {
   ANNY: { method: "POST", url: "/api/integrations/anny" },
-  EMP_CONTROL: { method: "GET", url: "/api/integrations/emp-control" },
   NUKI: { method: "POST", url: "/api/integrations/nuki" },
   LOQED: { method: "POST", url: "/api/integrations/loqed" },
 };
@@ -787,7 +786,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 Entfernen
               </Button>
               <div className="flex flex-wrap items-center gap-2">
-                {syncEndpoint && isConfigured && (provider !== "EMP_CONTROL" || !!data.token) && (
+                {syncEndpoint && isConfigured && (
                   <Button
                     variant="outline"
                     size="sm"

@@ -25,6 +25,7 @@ import { answerPersonOk } from "./people.js";
 import { stripThinking } from "./think.js";
 import { beginWork, endWork, recordActivity } from "./activity.js";
 import { toolLabel } from "./activity-rules.js";
+import { reportToolAllowed } from "./report-tools.js";
 import {
   answerCallback,
   downloadFile,
@@ -45,7 +46,7 @@ import { startOccupancy } from "../occupancy.js";
 import { berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
 import { VOICE, ensureWhisper, transcribe } from "./voice.js";
 import { dayPreviewText } from "../day-preview.js";
-import { handleUnknownChat, isPaired, newPairingState, type PairingState } from "./pairing.js";
+import { handleUnknownChat, isPaired, newPairingState, titleName, type PairingState } from "./pairing.js";
 import { healthFindings, healthSummary } from "../health-trends.js";
 import { trendSummaryText } from "./early-warning.js";
 
@@ -184,9 +185,10 @@ function ctxFor(chatId: string): ToolContext {
  * Gibt den Antworttext zurueck.
  */
 async function converse(chatId: string, history: ChatMessage[], allowAct = true): Promise<string> {
-  // Ohne Chat (Tagesbericht): nur lesen, keine Bilder verschicken.
+  // Ohne Chat (Tagesbericht): nur lesen, keine Bilder verschicken. remember ist
+  // "act" und faellt damit hier ebenfalls heraus.
   const tools = toolSpecs().filter(
-    (t) => allowAct || (findTool(t.function.name)?.risk === "read" && !["camera_snapshot", "look_at_camera"].includes(t.function.name))
+    (t) => allowAct || reportToolAllowed(t.function.name, findTool(t.function.name)?.risk)
   );
   const sys: ChatMessage = { role: "system", content: await systemPrompt() };
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -401,7 +403,7 @@ async function handleUnknown(chatId: string, chatType: string, name: string, tex
   switch (step.kind) {
     case "issued":
       log(`Assistent: Kopplungsanfrage von Chat ${chatId} (${name}) – Code über die Cloud gemeldet`);
-      recordHubEvent({ kind: "system", severity: "warn", where: "Assistent", title: `Kopplungsanfrage von ${name}`, detail: `Code ${step.code}` });
+      recordHubEvent({ kind: "system", severity: "warn", where: "Assistent", title: `Kopplungsanfrage von ${titleName(name)}` });
       await reportPairingCode(step.code);
       await sendText(chatId, "Hallo! Ich kenne diesen Chat noch nicht. Ich habe einen sechsstelligen Code über den EMP-Access-Alarmkanal (Push und Alarm-Telegram) geschickt. Bitte schick ihn mir hier.");
       return;
@@ -418,7 +420,7 @@ async function handleUnknown(chatId: string, chatType: string, name: string, tex
       await saveStore();
       await reportPairingCode(null);
       log(`Assistent: Chat ${chatId} (${name}) gekoppelt`);
-      recordHubEvent({ kind: "system", severity: "info", where: "Assistent", title: `Telegram-Chat gekoppelt: ${name}` });
+      recordHubEvent({ kind: "system", severity: "info", where: "Assistent", title: `Telegram-Chat gekoppelt: ${titleName(name)}` });
       await sendText(
         chatId,
         "Gekoppelt. Ich bin der Assistent des Hubs und laufe lokal auf dem Mac Studio. Frag mich nach der Lage (/status), offenen Befunden (/befunde) oder sag mir, was ich schalten soll – Schaltbefehle bestätigst du per Knopf. Jeden Morgen um " +

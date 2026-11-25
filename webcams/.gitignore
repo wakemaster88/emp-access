@@ -46,6 +46,7 @@ next-env.d.ts
 /config.json
 /config.json.tmp
 /infra/go2rtc.yaml
+/infra/*.bak*
 
 # Lokale Logs
 /logs/

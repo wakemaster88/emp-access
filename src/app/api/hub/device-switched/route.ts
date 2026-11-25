@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { isValidDeviceAction } from "@/lib/device-open";
 import { runDeviceSwitchedRules } from "@/lib/room-rules";
+import { deviceTaskSetAt } from "@/lib/hub-task-rules";
 
 const TASK: Record<string, number> = { open: 1, emergency: 2, deactivate: 3, reset: 0, close: 3, stop: 0 };
 
@@ -23,7 +24,8 @@ export async function POST(request: NextRequest) {
   }
   const device = await db.device.findFirst({ where: { id: deviceId, accountId: account.id }, select: { id: true } });
   if (!device) return NextResponse.json({ error: "Gerät nicht gefunden" }, { status: 404 });
-  await db.device.update({ where: { id: deviceId }, data: { task: TASK[action] ?? 0 } });
+  const task = TASK[action] ?? 0;
+  await db.device.update({ where: { id: deviceId }, data: { task, taskSetAt: deviceTaskSetAt(task) } });
   const { triggered } = await runDeviceSwitchedRules(account.id, deviceId, action);
   return NextResponse.json({ ok: true, triggered });
 }

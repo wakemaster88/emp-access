@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { loadConfig, saveConfig } from "@/lib/config";
+import { requireSameOriginJson } from "@/lib/same-origin";
 import {
   tgDeleteWebhook,
   tgGetWebhookInfo,
@@ -28,6 +29,9 @@ function webhookPath(base: string): string {
 }
 
 export async function POST(req: Request) {
+  const rejected = requireSameOriginJson(req);
+  if (rejected) return rejected;
+
   let body: Body = {};
   try {
     body = ((await req.json()) as Body) ?? {};

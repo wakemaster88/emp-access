@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { Prisma } from "@prisma/client";
-
-function statusObject(raw: unknown): Record<string, unknown> {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
-  }
-  return {};
-}
+import { mergeHubAgentStatus } from "@/lib/hub-agent-status";
 
 /**
  * Heartbeat des lokalen Hubs. Auth per Account-API-Token (Bearer/`?token=`).
@@ -38,18 +32,15 @@ export async function POST(request: NextRequest) {
       ? body.repoAccess
       : undefined;
 
-  const existing = await db.hubAgent.findUnique({
-    where: { accountId_name: { accountId: account.id, name } },
-    select: { status: true },
-  });
-  const status =
+  // Nur die gemeldeten Teile von status ersetzen, die uebrigen (z. B. snmp
+  // vom Switch-Upload) bleiben stehen.
+  const statusPatch: Record<string, unknown> | undefined =
     parking || system || repoAccess
-      ? ({
-          ...statusObject(existing?.status),
+      ? {
           ...(parking ? { parking } : {}),
           ...(system ? { system } : {}),
           ...(repoAccess ? { repoAccess } : {}),
-        } as Prisma.InputJsonValue)
+        }
       : undefined;
 
   const agent = await db.hubAgent.upsert({
@@ -59,7 +50,7 @@ export async function POST(request: NextRequest) {
       hostname: body.hostname || null,
       version: body.version || null,
       modules: body.modules ?? undefined,
-      ...(status ? { status } : {}),
+      ...(statusPatch ? { status: statusPatch as Prisma.InputJsonValue } : {}),
       lastSeenAt: new Date(),
       accountId: account.id,
     },
@@ -67,10 +58,11 @@ export async function POST(request: NextRequest) {
       hostname: body.hostname || null,
       version: body.version || null,
       modules: body.modules ?? undefined,
-      ...(status ? { status } : {}),
       lastSeenAt: new Date(),
     },
+    select: { id: true },
   });
+  if (statusPatch) await mergeHubAgentStatus(db, account.id, name, statusPatch);
 
   const pendingTasks = await db.hubTask.count({
     where: { accountId: account.id, status: "PENDING" },

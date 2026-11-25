@@ -26,12 +26,23 @@ export interface PasskeyRow {
 interface PasskeyCardProps {
   initialPasskeys: PasskeyRow[];
   suggestedName: string;
+  /** Mit aktivem zweiten Faktor verlangt das Hinzufügen zusätzlich einen Code. */
+  twoFactorEnabled: boolean;
 }
 
 type Stage = "overview" | "add" | "rename";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+/** Fehler einer Anfrage; `needsCode` meldet der Server, wenn ein zweiter Faktor fehlt. */
+class RequestError extends Error {
+  readonly needsCode: boolean;
+  constructor(message: string, needsCode: boolean) {
+    super(message);
+    this.needsCode = needsCode;
+  }
 }
 
 async function request<T>(url: string, method: string, body?: unknown): Promise<T> {
@@ -41,15 +52,22 @@ async function request<T>(url: string, method: string, body?: unknown): Promise<
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Aktion fehlgeschlagen");
+  if (!res.ok) {
+    throw new RequestError(typeof data.error === "string" ? data.error : "Aktion fehlgeschlagen", data.needsCode === true);
+  }
   return data as T;
 }
 
-export function PasskeyCard({ initialPasskeys, suggestedName }: PasskeyCardProps) {
+export function PasskeyCard({ initialPasskeys, suggestedName, twoFactorEnabled }: PasskeyCardProps) {
   const [passkeys, setPasskeys] = useState(initialPasskeys);
   const [stage, setStage] = useState<Stage>("overview");
   const [name, setName] = useState(suggestedName);
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  // Der Prop stammt vom Laden der Seite. Wird 2FA danach auf derselben Seite
+  // eingeschaltet, meldet der Server `needsCode` – dann erscheint das Feld.
+  const [askedForCode, setAskedForCode] = useState(false);
+  const showCode = twoFactorEnabled || askedForCode;
   const [editing, setEditing] = useState<PasskeyRow | null>(null);
   const [toDelete, setToDelete] = useState<PasskeyRow | null>(null);
   const [error, setError] = useState("");
@@ -62,6 +80,7 @@ export function PasskeyCard({ initialPasskeys, suggestedName }: PasskeyCardProps
     setStage("overview");
     setEditing(null);
     setPassword("");
+    setCode("");
     setError("");
   }
 
@@ -72,14 +91,17 @@ export function PasskeyCard({ initialPasskeys, suggestedName }: PasskeyCardProps
       const optionsJSON = await request<Parameters<typeof startRegistration>[0]["optionsJSON"]>(
         "/api/account/passkeys/options",
         "POST",
-        { password },
+        { password, code },
       );
       setPassword("");
+      // Ein Code gilt nur einmal; ein neuer Versuch braucht den nächsten.
+      setCode("");
       const response = await startRegistration({ optionsJSON });
       const data = await request<{ passkey: PasskeyRow }>("/api/account/passkeys", "POST", { name, response });
       setPasskeys((list) => [...list, data.passkey]);
       backToOverview();
     } catch (e) {
+      if (e instanceof RequestError && e.needsCode) setAskedForCode(true);
       const message = passkeyErrorMessage(e);
       if (message) setError(message);
     } finally {
@@ -196,6 +218,7 @@ export function PasskeyCard({ initialPasskeys, suggestedName }: PasskeyCardProps
                 setError("");
                 setName(suggestedName);
                 setPassword("");
+                setCode("");
                 setStage("add");
               }}
               disabled={!supported}
@@ -245,6 +268,21 @@ export function PasskeyCard({ initialPasskeys, suggestedName }: PasskeyCardProps
                   className="max-sm:h-11"
                 />
               </div>
+              {showCode && (
+                <div className="space-y-2">
+                  <Label htmlFor="pk-code">Code oder Wiederherstellungscode</Label>
+                  {/* Ohne `required`: Ob ein Code nötig ist, entscheidet der Server –
+                      2FA kann seit dem Laden der Seite abgeschaltet worden sein. */}
+                  <Input
+                    id="pk-code"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    className="max-sm:h-11"
+                  />
+                </div>
+              )}
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy} className="max-sm:h-11">

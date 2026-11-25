@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient, type TenantDb } from "./prisma";
-import { auth } from "./auth";
+import { auth, markedCrossSite } from "./auth";
 
 export function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -153,6 +153,13 @@ export async function getSessionWithDb(options: { requireAdmin?: boolean } = {})
   const session = await auth();
   if (!session?.user) {
     return { error: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
+  }
+  // Sitzungs-Cookie plus schreibende Anfrage einer fremden Seite: ablehnen.
+  // Gilt nur hier im Sitzungs-Zweig; Token-Zugaenge pruefen das nicht.
+  if (await markedCrossSite()) {
+    return {
+      error: NextResponse.json({ error: "Anfrage von einer fremden Seite abgelehnt" }, { status: 403 }),
+    };
   }
   if (options.requireAdmin) {
     const denied = adminRoleRequired(session.user.role);

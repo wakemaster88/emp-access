@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { compare } from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { clearLoginThrottle, hitLoginThrottle } from "@/lib/login-throttle";
 import { isTwoFactorActive, isTwoFactorLocked } from "@/lib/two-factor";
-import {
-  DUMMY_PASSWORD_HASH,
-  LOGIN_LOCK_MINUTES,
-  clearLoginFailures,
-  isLoginLocked,
-  lockLoginIfExhausted,
-  loginRetryAfterSec,
-  reserveLoginAttempt,
-} from "@/lib/login-lockout";
+import { checkLoginPassword, clearLoginFailures } from "@/lib/login-lockout";
+import { requestClientIp } from "@/lib/rate-limit";
 
 /**
  * Sagt dem Login-Formular nach der Passworteingabe, ob noch ein zweiter Faktor
@@ -23,8 +15,11 @@ import {
  * Login ablesen koennte: ob das Passwort stimmt, sieht er dort genauso.
  *
  * Zwei Bremsen: die In-Memory-Bremse pro Instanz (IP + E-Mail) und die
- * Sperre am Admin-Datensatz nach zu vielen falschen Passwoertern. Jeder
- * Versuch wird vor dem Vergleich in der Datenbank belegt (login-lockout.ts).
+ * Sperre je (E-Mail, Client-IP) nach zu vielen falschen Passwoertern; ueber
+ * alle IPs zusammen wird nur verlangsamt und getaktet (login-lockout.ts). Gesperrt,
+ * unbekannte E-Mail und falsches Passwort ergeben dieselbe Antwort
+ * `{ ok: false }` – ob es ein Konto gibt oder ob es gesperrt ist, ist daran
+ * nicht abzulesen.
  */
 
 const schema = z.object({
@@ -35,18 +30,6 @@ const schema = z.object({
 function clientKey(request: NextRequest, email: string): string {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   return `${ip}|${email.toLowerCase()}`;
-}
-
-function lockedResponse(retryAfterSec: number) {
-  const minutes = Math.max(1, Math.ceil(retryAfterSec / 60));
-  return NextResponse.json(
-    {
-      error: `Konto vorübergehend gesperrt. Bitte in ${minutes} Minute${minutes === 1 ? "" : "n"} erneut versuchen.`,
-      locked: true,
-      retryAfterSec,
-    },
-    { status: 423, headers: { "Retry-After": String(retryAfterSec) } },
-  );
 }
 
 export async function POST(request: NextRequest) {
@@ -75,8 +58,6 @@ export async function POST(request: NextRequest) {
     select: {
       id: true,
       password: true,
-      loginFailures: true,
-      loginLockedUntil: true,
       twoFactorSecret: true,
       twoFactorEnabledAt: true,
       twoFactorLockedUntil: true,
@@ -84,23 +65,18 @@ export async function POST(request: NextRequest) {
   });
 
   const now = new Date();
-  if (admin && isLoginLocked(admin, now)) {
-    return lockedResponse(loginRetryAfterSec(admin, now));
-  }
-
-  // Versuch in der Datenbank belegen, bevor verglichen wird: gleichzeitige
-  // Anfragen koennen die Sperre so nicht unterlaufen.
-  if (admin && !(await reserveLoginAttempt(admin, now))) {
-    return lockedResponse(LOGIN_LOCK_MINUTES * 60);
-  }
-
-  const valid = await compare(parsed.data.password, admin?.password ?? DUMMY_PASSWORD_HASH);
+  const { valid, key } = await checkLoginPassword(
+    admin,
+    parsed.data.email,
+    parsed.data.password,
+    requestClientIp(request.headers),
+    now,
+  );
   if (!admin || !valid) {
-    if (admin) await lockLoginIfExhausted(admin.id, now);
     return NextResponse.json({ ok: false });
   }
   // Richtiges Passwort: der belegte Versuch zaehlt nicht als Fehlversuch.
-  await clearLoginFailures(admin.id);
+  await clearLoginFailures(key, now);
 
   if (!isTwoFactorActive(admin)) {
     clearLoginThrottle(clientKey(request, parsed.data.email));

@@ -12,6 +12,7 @@ import { Notice } from "@/components/ui/notice";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { passkeyErrorMessage, passkeySupportSnapshot } from "@/lib/passkey-client";
+import { loginFailedMessage } from "@/lib/login-limits";
 
 type Step = "credentials" | "code";
 
@@ -46,7 +47,8 @@ export default function LoginPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    // 429 = Bremse, 423 = Konto vorübergehend gesperrt; beide nennen die Wartezeit.
+    // 429 = Bremse und nennt die Wartezeit. 423 sendet der Server nicht mehr:
+    // eine Passwort-Sperre sieht aus wie ein falsches Passwort.
     if (res.status === 429 || res.status === 423) {
       const data = (await res.json().catch(() => ({}))) as PrecheckResponse;
       setError(data.error || lockMessage(data.retryAfterSec));
@@ -83,8 +85,10 @@ export default function LoginPage() {
       return;
     }
 
+    // Derselbe Text für falsches Passwort, unbekannte E-Mail und gesperrten
+    // Anschluss – er verrät nicht, ob gerade eine Sperre greift.
     if (!status.ok) {
-      setError("Ungültige Anmeldedaten");
+      setError(loginFailedMessage(passkeySupported));
       setLoading(false);
       return;
     }
@@ -101,7 +105,7 @@ export default function LoginPage() {
     }
 
     if (!(await completeSignIn())) {
-      setError("Ungültige Anmeldedaten");
+      setError(loginFailedMessage(passkeySupported));
       setLoading(false);
     }
   }

@@ -41,7 +41,8 @@ async function main() {
 
   const client = new pg.Client({
     connectionString: url,
-    ssl: { rejectUnauthorized: false },
+    // TLS mit Zertifikatspruefung (Neon hat gueltige Zertifikate).
+    ssl: true,
   });
   await client.connect();
 

@@ -21,7 +21,7 @@ const QR_ICON = (
 function Ticket({ v, href }: { v: RiderVoucher; href: string }) {
   const { head, detail } = voucherHeadline(v.label, v.award?.voucherShort);
   return (
-    <Link href={href} prefetch className="rd-aw-vt">
+    <Link href={href} className="rd-aw-vt">
       <span className="rd-aw-vt-b">
         {v.award ? <AwardBadge award={v.award} size={56} /> : <span className="rd-aw-gift" style={{ margin: "0 8px" }}><GiftIcon size={22} /></span>}
       </span>

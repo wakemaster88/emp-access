@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import type { TenantDb } from "@/lib/prisma";
 import { waitForHubTask } from "@/lib/hub-task-wait";
+import { hubTaskActor, type HubTaskActor } from "@/lib/hub-task-rules";
 import {
   DOOR_HOLD_MAX_MINUTES,
   doorHoldState,
@@ -32,7 +33,7 @@ const HOLD_SELECT = {
   doorHoldError: true,
 } as const;
 
-type Ctx = { db: TenantDb; accountId: number; cameraId: number };
+type Ctx = { db: TenantDb; accountId: number; cameraId: number; by: HubTaskActor };
 
 async function context(params: Promise<{ id: string }>): Promise<{ error: NextResponse } | Ctx> {
   const session = await getSessionWithDb();
@@ -44,7 +45,7 @@ async function context(params: Promise<{ id: string }>): Promise<{ error: NextRe
   if (!Number.isInteger(cameraId)) {
     return { error: NextResponse.json({ error: "Ungültige ID" }, { status: 400 }) };
   }
-  return { db: session.db, accountId: session.accountId!, cameraId };
+  return { db: session.db, accountId: session.accountId!, cameraId, by: hubTaskActor(session.session.user) };
 }
 
 function loadCamera(ctx: Ctx) {
@@ -103,7 +104,7 @@ export async function POST(
   const task = await db.hubTask.create({
     data: {
       type: "DOORBIRD_HOLD",
-      payload: { cameraId: camera.id, until: until.toISOString(), relay: 1 },
+      payload: { cameraId: camera.id, until: until.toISOString(), relay: 1, by: ctx.by },
       accountId,
     },
     select: { id: true },
@@ -153,7 +154,7 @@ export async function DELETE(
   const task = await db.hubTask.create({
     data: {
       type: "DOORBIRD_HOLD",
-      payload: { cameraId: camera.id, until: null },
+      payload: { cameraId: camera.id, until: null, by: ctx.by },
       accountId,
     },
     select: { id: true },

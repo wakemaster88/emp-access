@@ -31,7 +31,7 @@ für die Owner-Rolle der App aber nicht – `npx tsx scripts/db-rls-check.ts`
 zeigt den Ist-Zustand.
 
 **Auth.** Dashboard per E-Mail/Passwort (bcrypt, Sperre nach zehn
-Fehlversuchen, optional TOTP) oder per Passkey (WebAuthn), JWT-Sitzung eine Woche mit Revalidierung gegen
+Fehlversuchen je E-Mail und Client-IP, über alle IPs nur Verlangsamung und Takt, optional TOTP) oder per Passkey (WebAuthn), JWT-Sitzung eine Woche mit Revalidierung gegen
 die Datenbank alle fünf Minuten. Maschinen nutzen das Account-API-Token
 (Hub, Integrationen) oder ein Geräte-Token pro Pi (nur Geräte-Endpunkte,
 Gerätedetail → *Geräte-Token*). Öffentliche Seiten (Monitor, Kiosk, Scanner,
@@ -479,7 +479,11 @@ der Browser bietet die Passkeys für diese Adresse an.
   einmal (auch über mehrere Vercel-Instanzen hinweg).
 - Ein Passkey gilt nur für die Domain, auf der er angelegt wurde. Standard ist
   der Host der Anfrage; `WEBAUTHN_RP_ID` und `WEBAUTHN_ORIGIN` legen das bei
-  Bedarf fest (z. B. damit Passkeys auf einer Subdomain mitgelten).
+  Bedarf fest (z. B. damit Passkeys auf einer Subdomain mitgelten). Ist nur
+  `WEBAUTHN_RP_ID` gesetzt, gilt `https://<RP_ID>` als Origin. Läuft die App
+  auf einem anderen Host als `WEBAUTHN_RP_ID` (etwa RP_ID = übergeordnete
+  Domain, App auf einer Subdomain), muss `WEBAUTHN_ORIGIN` mit der Adresse der
+  App gesetzt sein, sonst scheitert die Passkey-Anmeldung.
 - Ein gelöschter Admin verliert seine Passkeys mit; ein deaktivierter Mandant
   kann sich auch per Passkey nicht anmelden.
 

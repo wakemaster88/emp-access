@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGo2rtcYaml, go2rtcApiUrl, isValidStreamName } from "@/lib/go2rtc";
+import { buildGo2rtcYaml, go2rtcApiUrl, isValidStreamName, yamlKey } from "@/lib/go2rtc";
 import { ConfigSchema } from "@/lib/types";
 
 const config = ConfigSchema.parse({
@@ -34,6 +34,20 @@ describe("buildGo2rtcYaml", () => {
     expect(yaml).toContain("  cam-eingang_sub:");
     expect(yaml).toContain("rtsp://admin:p%40ss%3Aword@192.168.1.51:554/h264Preview_01_sub");
     expect(yaml).toContain("  doorbird:");
+  });
+});
+
+describe("yamlKey", () => {
+  it("lässt übliche Stream-Namen unverändert", () => {
+    expect(yamlKey("cam-eingang_main")).toBe("cam-eingang_main");
+    expect(yamlKey("Cam.Alt_sub")).toBe("Cam.Alt_sub");
+  });
+
+  it("schreibt andere Namen als String in einer Zeile", () => {
+    expect(yamlKey("alte kamera_main")).toBe('"alte kamera_main"');
+    const key = yamlKey("a:\n  b_main");
+    expect(key.startsWith('"')).toBe(true);
+    expect(key).not.toContain("\n  ");
   });
 });
 

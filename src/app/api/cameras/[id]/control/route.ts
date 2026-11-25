@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { waitForHubTask } from "@/lib/hub-task-wait";
+import { hubTaskActor } from "@/lib/hub-task-rules";
 
 /**
  * Kamera-Steuerung (Kontrollzentrum): legt einen Hub-Task an und wartet
- * kurz auf das Ergebnis (waitForHubTask: bis zu 15 s, sonst "pending").
+ * kurz auf das Ergebnis (waitForHubTask: bis zu 8 s, sonst "pending").
  */
 
 const ACTION_TO_TASK: Record<string, string> = {
@@ -69,7 +70,7 @@ export async function POST(
   const task = await db.hubTask.create({
     data: {
       type: taskType,
-      payload: { ...payload, cameraId },
+      payload: { ...payload, cameraId, by: hubTaskActor(session.session.user) },
       accountId: accountId!,
     },
   });

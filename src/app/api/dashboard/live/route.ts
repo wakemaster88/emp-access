@@ -8,7 +8,8 @@ import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
 import { parseParkingSnapshot } from "@/lib/parking";
 import { scanDenyReasonLabel } from "@/lib/scan-deny-reason";
-import { summarizeAreaRates } from "@/lib/turnstile-rate";
+import { loadDayScanCounts, loadSightingCounts } from "@/lib/dashboard-counts";
+import { scanTotalsFromCounts, summarizeAreaRateCounts } from "@/lib/turnstile-rate";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +44,12 @@ export async function GET() {
   const dayStart = berlinDayStart(now);
   const hourAgo = new Date(now.getTime() - 60 * 60_000);
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60_000);
+  // Rohe Zaehlabfragen: Mandanten-Filter ausdruecklich, beim Super-Admin keiner.
+  const countAccountId = isSuperAdmin ? null : accountId!;
 
   const [
     turnstiles,
-    dayScans,
+    dayScanCounts,
     recentScans,
     heartbeatDevices,
     cameras,
@@ -54,9 +57,8 @@ export async function GET() {
     hubAlerts,
     monitorAlertsOpen,
     monitorAlerts,
-    personsToday,
+    sightingCounts,
     personsLatest,
-    vehiclesToday,
     vehiclesLatest,
     cameraEvents,
     annyConfig,
@@ -69,10 +71,8 @@ export async function GET() {
       },
       select: { id: true, accessIn: true, accessOut: true, countsAsStart: true },
     }),
-    db.scan.findMany({
-      where: { ...where, scanTime: { gte: dayStart } },
-      select: { deviceId: true, scanTime: true, result: true },
-    }),
+    // Scans des Tages je Geraet und Ergebnis in der Datenbank gezaehlt.
+    loadDayScanCounts(db, countAccountId, dayStart, now),
     db.scan.findMany({
       where: { ...where, scanTime: { gte: dayStart } },
       select: {
@@ -126,10 +126,7 @@ export async function GET() {
       orderBy: { occurredAt: "desc" },
       take: 3,
     }),
-    db.personSighting.findMany({
-      where: { ...where, seenAt: { gte: dayStart } },
-      select: { seenAt: true, matched: true, listType: true },
-    }),
+    loadSightingCounts(db, countAccountId, dayStart, hourAgo),
     db.personSighting.findMany({
       where: { ...where, seenAt: { gte: dayStart } },
       select: {
@@ -142,10 +139,6 @@ export async function GET() {
       },
       orderBy: { seenAt: "desc" },
       take: 6,
-    }),
-    db.vehicleSighting.findMany({
-      where: { ...where, seenAt: { gte: dayStart } },
-      select: { seenAt: true, matched: true, source: true, deliveryBrand: true },
     }),
     db.vehicleSighting.findMany({
       where: { ...where, seenAt: { gte: dayStart } },
@@ -195,25 +188,12 @@ export async function GET() {
         select: { id: true, name: true, personLimit: true },
       })
     : [];
-  const areas = summarizeAreaRates(areaRows, turnstiles, dayScans, now, dayStart).sort(
+  const areas = summarizeAreaRateCounts(areaRows, turnstiles, dayScanCounts).sort(
     (a, b) => b.in60 - a.in60 || b.inToday - a.inToday || a.name.localeCompare(b.name, "de"),
   );
 
-  const t15 = now.getTime() - 15 * 60_000;
   const t60 = hourAgo.getTime();
-  const totals = { in15: 0, in60: 0, inToday: 0, denied15: 0, denied60: 0, deniedToday: 0 };
-  for (const s of dayScans) {
-    const t = s.scanTime.getTime();
-    if (s.result === "GRANTED") {
-      totals.inToday++;
-      if (t >= t60) totals.in60++;
-      if (t >= t15) totals.in15++;
-    } else if (s.result === "DENIED") {
-      totals.deniedToday++;
-      if (t >= t60) totals.denied60++;
-      if (t >= t15) totals.denied15++;
-    }
-  }
+  const totals = scanTotalsFromCounts(dayScanCounts);
   // Auslastung wie in der Kunden-App: Lift (Fahrer der letzten 60 Min an
   // Start-Geräten) und Strandbad (Eintritte 3 h × Faktor). Dieselbe Zahl, die
   // Gäste gerade sehen; am Strandbad verlässlicher als „rein minus raus“,
@@ -287,25 +267,7 @@ export async function GET() {
     }));
 
   // ── Tracking ───────────────────────────────────────────────────────────
-  const persons = { today: personsToday.length, known: 0, blocked: 0, unknown: 0, last60: 0 };
-  for (const p of personsToday) {
-    if (p.listType === "BLACKLIST") persons.blocked++;
-    else if (p.matched) persons.known++;
-    else persons.unknown++;
-    if (p.seenAt.getTime() >= t60) persons.last60++;
-  }
-  const vehicles = { today: 0, matched: 0, unmatched: 0, delivery: 0, noParking: 0, last60: 0 };
-  for (const v of vehiclesToday) {
-    if (v.source === "NO_PARKING") {
-      vehicles.noParking++;
-      continue;
-    }
-    vehicles.today++;
-    if (v.deliveryBrand) vehicles.delivery++;
-    else if (v.matched) vehicles.matched++;
-    else vehicles.unmatched++;
-    if (v.seenAt.getTime() >= t60) vehicles.last60++;
-  }
+  const { persons, vehicles } = sightingCounts;
 
   const activity = summarizeCameraActivity(
     cameraEvents.map((e) => ({

@@ -117,6 +117,33 @@ export function parsePublicQuery(
   return { from, days, areas };
 }
 
+/** So weit reicht `von` zurück bzw. voraus (ab heute, in Tagen). */
+export const PUBLIC_PAST_DAYS = 40;
+export const PUBLIC_FUTURE_DAYS = 400;
+
+/**
+ * `von` auf ein festes Fenster um heute begrenzen: frühestens heute − 40 Tage
+ * oder der Erste des Vormonats (was früher liegt; der Monatskalender der
+ * Website blättert einen Monat zurück), spätestens heute + 400 Tage. Abfragen
+ * außerhalb werden auf das Fenster gezogen, nicht abgelehnt; `bis` bleibt,
+ * solange es im Fenster liegt.
+ */
+export function clampPublicQuery(query: PublicQuery, today: string): PublicQuery {
+  const [y, m] = today.split("-").map(Number);
+  const prevMonthStart = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10);
+  const pastLimit = addDaysToYmd(today, -PUBLIC_PAST_DAYS);
+  const minFrom = prevMonthStart < pastLimit ? prevMonthStart : pastLimit;
+  const maxFrom = addDaysToYmd(today, PUBLIC_FUTURE_DAYS);
+  if (query.from < minFrom) {
+    const last = addDaysToYmd(query.from, query.days - 1);
+    const days =
+      last < minFrom ? 1 : Math.round((Date.parse(`${last}T00:00:00Z`) - Date.parse(`${minFrom}T00:00:00Z`)) / 86_400_000) + 1;
+    return { ...query, from: minFrom, days };
+  }
+  if (query.from > maxFrom) return { ...query, from: maxFrom };
+  return query;
+}
+
 /** Passt ein Profil zum Filter `bereich=`? Schlüssel, Anfang des Schlüssels oder Id. */
 export function matchesArea(schedule: { id: number; name: string }, areas: string[]): boolean {
   if (areas.length === 0) return true;

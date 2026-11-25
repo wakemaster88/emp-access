@@ -8,17 +8,18 @@ export interface RelyingParty {
 /**
  * Domain und Origin, fuer die der Passkey gilt. Standard ist der Host der
  * Anfrage (so funktionieren Produktion, Vorschau und localhost ohne Konfig);
- * WEBAUTHN_RP_ID und WEBAUTHN_ORIGIN legen sie fest, falls noetig.
+ * WEBAUTHN_RP_ID und WEBAUTHN_ORIGIN legen sie fest, falls noetig. Ist nur
+ * WEBAUTHN_RP_ID gesetzt, gilt als Origin `https://<RP_ID>` – fest statt aus
+ * den Anfrage-Headern.
  */
 export function relyingPartyFrom(headers: Headers, env: Partial<Record<string, string>> = process.env): RelyingParty {
   const host = (headers.get("x-forwarded-host") ?? headers.get("host") ?? "localhost").split(",")[0].trim();
   const hostname = host.replace(/:\d+$/, "");
   const forwardedProto = headers.get("x-forwarded-proto")?.split(",")[0].trim();
   const proto = forwardedProto || (hostname === "localhost" || hostname === "127.0.0.1" ? "http" : "https");
-  return {
-    rpID: env.WEBAUTHN_RP_ID || hostname,
-    origin: env.WEBAUTHN_ORIGIN || `${proto}://${host}`,
-  };
+  const rpID = env.WEBAUTHN_RP_ID || hostname;
+  const origin = env.WEBAUTHN_ORIGIN || (env.WEBAUTHN_RP_ID ? `https://${env.WEBAUTHN_RP_ID}` : `${proto}://${host}`);
+  return { rpID, origin };
 }
 
 /** Stabile Benutzerkennung im Authenticator (kein personenbezogener Wert). */

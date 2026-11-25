@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type ApiConfig } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
@@ -227,6 +227,12 @@ export interface AnnySyncResult {
   planSubscriptionsCreated: number;
   planSubscriptionsUpdated: number;
   unmapped: { annyName: string; count: number; customerSample: string[] }[];
+  /** true: fuer das Konto lief bereits ein Abgleich, dieser Aufruf hat nichts
+   *  getan. Die Zahlen sind dann 0; der laufende Abgleich schreibt sein
+   *  Ergebnis wie immer in `lastSyncResult`. */
+  alreadyRunning?: boolean;
+  /** Hinweistext fuer die Oberflaeche (nur bei `alreadyRunning`). */
+  message?: string;
 }
 
 function extractExtras(booking: AnnyBooking): TicketExtra[] {
@@ -448,6 +454,43 @@ async function createTicketSafe(
   }
 }
 
+/** Nach dieser Zeit gilt ein nicht freigegebener Laufbeginn als verwaist
+ *  (z. B. Function-Abbruch), ein neuer Lauf darf starten. */
+const SYNC_CLAIM_STALE_MS = 3 * 60_000;
+
+/** Antwort fuer einen Aufruf, waehrend fuer das Konto schon ein Abgleich laeuft. */
+function alreadyRunningResult(mode: AnnySyncMode | "auto"): AnnySyncResult {
+  return {
+    mode: mode === "auto" ? "incremental" : mode,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    errors: 0,
+    invalidated: 0,
+    total: 0,
+    oldSkipped: 0,
+    syncWindowDays: 0,
+    pages: 0,
+    groups: 0,
+    resources: 0,
+    services: 0,
+    subscriptions: 0,
+    planSubscriptions: 0,
+    planSubscriptionsCreated: 0,
+    planSubscriptionsUpdated: 0,
+    unmapped: [],
+    alreadyRunning: true,
+    message: "Ein Abgleich läuft bereits, bitte in ein paar Minuten erneut starten.",
+  };
+}
+
+/**
+ * Abgleich mit anny fuer ein Konto. Je Verbindung laeuft hoechstens ein
+ * Abgleich gleichzeitig (Cron, Einstellungen, Kiosk): der Start wird ueber
+ * `ApiConfig.syncStartedAt` atomar belegt und am Ende freigegeben. Ein
+ * weiterer Aufruf in dieser Zeit liefert sofort ein Ergebnis mit
+ * `alreadyRunning: true` und Nullwerten.
+ */
 export async function syncAnnyForAccount(
   accountId: number,
   options: AnnySyncOptions = {},
@@ -460,6 +503,43 @@ export async function syncAnnyForAccount(
     throw new Error("anny.co nicht konfiguriert");
   }
 
+  const startedAt = new Date();
+  const claim = await prisma.apiConfig.updateMany({
+    where: {
+      id: config.id,
+      OR: [
+        { syncStartedAt: null },
+        { syncStartedAt: { lt: new Date(startedAt.getTime() - SYNC_CLAIM_STALE_MS) } },
+      ],
+    },
+    data: { syncStartedAt: startedAt },
+  });
+  if (claim.count !== 1) {
+    console.log(`[anny sync] Account ${accountId}: Abgleich laeuft bereits, uebersprungen`);
+    return alreadyRunningResult(options.mode ?? "auto");
+  }
+
+  try {
+    // Nach dem Belegen neu lesen: ein gerade beendeter Lauf kann extraConfig
+    // (Volllauf-/Inkrement-Stand) inzwischen fortgeschrieben haben.
+    const current = await prisma.apiConfig.findUnique({ where: { id: config.id } });
+    return await runAnnySync(accountId, options, current ?? config);
+  } finally {
+    // Nur den eigenen Beginn freigeben (nicht den eines spaeteren Laufs).
+    await prisma.apiConfig
+      .updateMany({
+        where: { id: config.id, syncStartedAt: startedAt },
+        data: { syncStartedAt: null },
+      })
+      .catch((err) => console.error("[anny sync] Freigabe fehlgeschlagen:", err));
+  }
+}
+
+async function runAnnySync(
+  accountId: number,
+  options: AnnySyncOptions,
+  config: ApiConfig,
+): Promise<AnnySyncResult> {
   // Luecken beim Abruf (siehe anny-orphans.ts): steuern, was das Aufraeumen
   // am Ende invalidieren darf.
   const incomplete = newAnnyIncomplete();

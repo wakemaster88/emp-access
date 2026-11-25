@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { parseScanLockSeconds } from "@/lib/scan-lock";
+import { foreignRefError } from "@/lib/tenant-refs";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -36,10 +37,15 @@ export async function POST(request: NextRequest) {
   }
 
   const { db, accountId } = session;
+  const parentId = body.parentId ? Number(body.parentId) : null;
+  // Uebergeordneter Bereich muss zum Mandanten gehoeren.
+  const refError = await foreignRefError(db, accountId, { accessAreaIds: [parentId] });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
+
   const area = await db.accessArea.create({
     data: {
       name: body.name.trim(),
-      parentId: body.parentId ? Number(body.parentId) : null,
+      parentId,
       allowReentry: body.allowReentry ?? false,
       personLimit: body.personLimit ? Number(body.personLimit) : null,
       scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, null),

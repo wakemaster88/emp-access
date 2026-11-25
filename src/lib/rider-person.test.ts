@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { initials, parsePersonInput, PHOTO_MAX_CHARS } from "./rider-person";
+import { initials, parsePersonInput, PHOTO_MAX_CHARS, riderPhotoUrl } from "./rider-person";
 
 const NOW = new Date("2026-11-20T12:00:00Z");
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -39,4 +39,13 @@ test("initials", () => {
   assert.equal(initials("eva", "Beispiel"), "EB");
   assert.equal(initials("Eva", null), "E");
   assert.equal(initials(" ", ""), "?");
+});
+
+test("riderPhotoUrl: eigene Route je Person, Version aus updatedAt", () => {
+  const at = new Date("2026-11-24T10:00:00Z");
+  assert.equal(riderPhotoUrl("abcdefghijklmnop", at), `/api/rider/abcdefghijklmnop/person/photo?v=${at.getTime()}`);
+  // Token mit Sonderzeichen landet sicher im Pfad.
+  assert.equal(riderPhotoUrl("ab/cd?ef", at), `/api/rider/ab%2Fcd%3Fef/person/photo?v=${at.getTime()}`);
+  // Neues Bild, neues updatedAt: neue Adresse, der Browser holt es neu.
+  assert.notEqual(riderPhotoUrl("abcdefghijklmnop", at), riderPhotoUrl("abcdefghijklmnop", new Date(at.getTime() + 1)));
 });

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { compare } from "bcryptjs";
 import { prisma } from "./prisma";
 import { safeAuth } from "./auth";
-import { twoFactorSelect, type TwoFactorFields } from "./two-factor";
+import { isTwoFactorActive, twoFactorSelect, verifySecondFactor, type TwoFactorFields } from "./two-factor";
 import { clearLoginThrottle, hitLoginThrottle } from "./login-throttle";
 
 /**
@@ -60,4 +60,24 @@ export async function passwordMatches(admin: CurrentAdmin, password: unknown): P
 
 export function wrongPassword() {
   return NextResponse.json({ error: "Passwort ist falsch" }, { status: 403 });
+}
+
+/**
+ * Bei aktivem 2FA zusaetzlich einen gueltigen zweiten Faktor verlangen
+ * (TOTP-Code oder Wiederherstellungscode). Gibt die Fehlerantwort zurueck
+ * oder null, wenn alles passt bzw. 2FA nicht aktiv ist. `needsCode` sagt der
+ * Oberflaeche, dass sie das Code-Feld zeigen soll – sie kennt den 2FA-Zustand
+ * nur vom Laden der Seite.
+ */
+export async function secondFactorProblem(admin: CurrentAdmin, code: unknown): Promise<NextResponse | null> {
+  if (!isTwoFactorActive(admin)) return null;
+  const second = await verifySecondFactor(admin, typeof code === "string" ? code : "");
+  if (second.ok) return null;
+  const message =
+    second.reason === "locked"
+      ? "Zu viele Fehlversuche. Bitte später erneut versuchen."
+      : second.reason === "missing"
+        ? "Bitte den Code aus der Authenticator-App eingeben"
+        : "Code ungültig oder abgelaufen. Ein Code gilt nur einmal – nach der Anmeldung bitte auf den nächsten Code warten.";
+  return NextResponse.json({ error: message, needsCode: true }, { status: 400 });
 }

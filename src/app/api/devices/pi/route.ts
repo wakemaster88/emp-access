@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
 import { piStatusSchema } from "@/lib/validators";
 import { LATEST_PI_VERSION } from "@/lib/pi-version";
+import { piOpenTaskExpired } from "@/lib/hub-task-rules";
+import type { TenantDb } from "@/lib/prisma";
 
 type PiStateFields = {
   id: number;
@@ -27,7 +29,25 @@ const PI_STATE_SELECT = {
   task: true,
   allowReentry: true,
   firmware: true,
+  taskSetAt: true,
 } as const;
+
+/**
+ * Einmal-Oeffnen (task=1), das laenger als eine Minute auf den Pi wartet
+ * (Pi stromlos oder offline), wird nicht mehr ausgeliefert, sondern auf 0
+ * zurueckgesetzt. Ohne taskSetAt (alte Zeilen) bleibt alles wie bisher.
+ */
+async function dropExpiredOpenTask<T extends { id: number; task: number; taskSetAt: Date | null }>(
+  db: TenantDb,
+  device: T,
+): Promise<T> {
+  if (!piOpenTaskExpired(device.task, device.taskSetAt)) return device;
+  await db.device.updateMany({
+    where: { id: device.id, type: "RASPBERRY_PI", task: 1, taskSetAt: device.taskSetAt },
+    data: { task: 0, taskSetAt: null },
+  });
+  return { ...device, task: 0, taskSetAt: null };
+}
 
 function deviceToPiState(device: PiStateFields) {
   return {
@@ -82,14 +102,15 @@ export async function GET(request: NextRequest) {
   if (mismatch) return mismatch;
 
   const { db } = auth;
-  const device = await db.device.findFirst({
+  const found = await db.device.findFirst({
     where: { id: Number(piId), type: "RASPBERRY_PI" },
     select: PI_STATE_SELECT,
   });
 
-  if (!device) {
+  if (!found) {
     return NextResponse.json({ error: "Device not found" }, { status: 404 });
   }
+  const device = await dropExpiredOpenTask(db, found);
 
   const etag = piStateEtag(device);
   const ifNoneMatch = request.headers.get("if-none-match");
@@ -137,14 +158,15 @@ export async function POST(request: NextRequest) {
       continue;
     }
     // 1 Read: kompletter Pi-State + task fuer die "Task=1 → 0" Entscheidung.
-    const current = await db.device.findFirst({
+    const found = await db.device.findFirst({
       where: { id: update.pis_id, type: "RASPBERRY_PI" },
       select: PI_STATE_SELECT,
     });
-    if (!current) {
+    if (!found) {
       results.push({ pis_id: update.pis_id, updated: false });
       continue;
     }
+    const current = await dropExpiredOpenTask(db, found);
 
     const data: Record<string, unknown> = {
       lastUpdate: new Date(update.pis_update * 1000),
@@ -158,6 +180,7 @@ export async function POST(request: NextRequest) {
     const resetTask = current.task === 1 && update.pis_task === 0;
     if (resetTask) {
       data.task = 0;
+      data.taskSetAt = null;
     }
 
     // 1 Write: state-Update, ohne anschliessenden Re-Read. Wir kennen die

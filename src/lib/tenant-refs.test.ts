@@ -28,6 +28,10 @@ function fakeDb(own: Record<string, number[]>) {
     service: table("service"),
     verein: table("verein"),
     device: table("device"),
+    riderProfile: table("riderProfile"),
+    audioPlaylist: table("audioPlaylist"),
+    audioAnnouncement: table("audioAnnouncement"),
+    camera: table("camera"),
   } as unknown as TenantDb;
   return { db, calls };
 }
@@ -54,4 +58,32 @@ test("foreignRefError: leere oder fehlende Listen loesen keine Abfrage aus", asy
   const { db, calls } = fakeDb({});
   assert.equal(await foreignRefError(db, 5, { accessAreaIds: [null, undefined], vereinIds: [] }), null);
   assert.equal(calls.length, 0);
+});
+
+test("foreignRefError: Personen, Playlists, Durchsagen und Kameras werden geprueft", async () => {
+  const { db, calls } = fakeDb({ riderProfile: [10], audioPlaylist: [20], audioAnnouncement: [30], camera: [40] });
+  assert.equal(
+    await foreignRefError(db, 5, {
+      riderProfileIds: [10],
+      audioPlaylistIds: [20],
+      audioAnnouncementIds: [30],
+      cameraIds: [40],
+    }),
+    null,
+  );
+  assert.deepEqual(
+    calls.map((c) => c.model).sort(),
+    ["audioAnnouncement", "audioPlaylist", "camera", "riderProfile"],
+  );
+  for (const c of calls) assert.equal((c.where as { accountId?: number }).accountId, 5);
+  assert.match((await foreignRefError(db, 5, { riderProfileIds: [11] })) ?? "", /Person nicht gefunden.*11/);
+  assert.match((await foreignRefError(db, 5, { audioPlaylistIds: [21] })) ?? "", /Playlist nicht gefunden/);
+  assert.match((await foreignRefError(db, 5, { audioAnnouncementIds: [31] })) ?? "", /Durchsage nicht gefunden/);
+  assert.match((await foreignRefError(db, 5, { cameraIds: [41] })) ?? "", /Kamera nicht gefunden/);
+});
+
+test("foreignRefError: ohne Mandant (Super-Admin) nur Existenzpruefung", async () => {
+  const { db, calls } = fakeDb({ camera: [40] });
+  assert.equal(await foreignRefError(db, null, { cameraIds: [40] }), null);
+  assert.deepEqual(calls, [{ model: "camera", where: { id: { in: [40] } } }]);
 });

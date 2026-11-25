@@ -6,10 +6,10 @@
  */
 import { prisma } from "./prisma";
 import { aboNamesRider, isKidsSubscriptionName } from "./customer-person";
-import { decodeImageDataUrl } from "./photo-url";
+import { PROFILE_PHOTO_MAX_CHARS, profilePhotoError } from "./photo-url";
 
 /** Größtes Profilbild als Data-URL. Die App verkleinert vorher auf 320 px (ca. 30 KB). */
-export const PHOTO_MAX_CHARS = 400_000;
+export const PHOTO_MAX_CHARS = PROFILE_PHOTO_MAX_CHARS;
 /** Ältestes Geburtsjahr, das die App annimmt. */
 export const BIRTH_YEAR_MIN = 1900;
 const NAME_MAX = 60;
@@ -47,9 +47,8 @@ export function parsePersonInput(input: PersonInput, now: Date = new Date()): { 
     if (input.photo === null || input.photo === "") {
       data.photo = null;
     } else {
-      if (input.photo.length > PHOTO_MAX_CHARS) return { error: "Das Bild ist zu groß." };
-      const decoded = decodeImageDataUrl(input.photo);
-      if (!decoded || decoded.contentType === "image/gif") return { error: "Bitte ein Foto als JPG, PNG oder WebP wählen." };
+      const photoError = profilePhotoError(input.photo);
+      if (photoError) return { error: photoError };
       data.photo = input.photo.trim();
     }
   }
@@ -82,12 +81,18 @@ export function initials(firstName: string | null | undefined, lastName: string 
   return (a + b).toUpperCase() || "?";
 }
 
+/** Adresse des Profilbilds; `v` ändert sich mit jeder Änderung am Profil (Cache-Schlüssel). */
+export function riderPhotoUrl(token: string, updatedAt: Date): string {
+  return `/api/rider/${encodeURIComponent(token)}/person/photo?v=${updatedAt.getTime()}`;
+}
+
 export interface RiderPersonView {
   firstName: string;
   lastName: string;
   /** `YYYY-MM-DD` oder null. */
   birthDate: string | null;
-  photo: string | null;
+  /** Adresse des Profilbilds (`riderPhotoUrl`); null ohne Bild. */
+  photoUrl: string | null;
   email: string | null;
   /** Die Daten stehen noch nicht an der Person, sondern kommen vom Abo. */
   fromAbo: boolean;
@@ -99,22 +104,26 @@ export interface RiderPersonView {
  * Daten der Eltern).
  */
 export async function loadRiderPerson(token: string, now: Date = new Date()): Promise<RiderPersonView | null> {
-  const p = await prisma.riderProfile.findUnique({
-    where: { token },
-    select: {
-      firstName: true,
-      lastName: true,
-      birthDate: true,
-      photo: true,
-      email: true,
-      customer: { select: { email: true } },
-      tickets: {
-        select: { firstName: true, lastName: true, birthDate: true, startDate: true, email: true, subscription: { select: { name: true } } },
-        orderBy: [{ startDate: { sort: "desc", nulls: "last" } }, { id: "desc" }],
-        take: 20,
+  // Das Bild selbst (Data-URL) bleibt in der Datenbank; die Seite bekommt nur seine Adresse.
+  const [p, withPhoto] = await Promise.all([
+    prisma.riderProfile.findUnique({
+      where: { token },
+      select: {
+        firstName: true,
+        lastName: true,
+        birthDate: true,
+        updatedAt: true,
+        email: true,
+        customer: { select: { email: true } },
+        tickets: {
+          select: { firstName: true, lastName: true, birthDate: true, startDate: true, email: true, subscription: { select: { name: true } } },
+          orderBy: [{ startDate: { sort: "desc", nulls: "last" } }, { id: "desc" }],
+          take: 20,
+        },
       },
-    },
-  });
+    }),
+    prisma.riderProfile.count({ where: { token, AND: [{ photo: { not: null } }, { photo: { not: "" } }] } }),
+  ]);
   if (!p) return null;
   const own = !!(p.firstName?.trim() || p.lastName?.trim());
   const abo = own
@@ -125,7 +134,7 @@ export async function loadRiderPerson(token: string, now: Date = new Date()): Pr
     firstName: src?.firstName?.trim() ?? "",
     lastName: src?.lastName?.trim() ?? "",
     birthDate: src?.birthDate ? src.birthDate.toISOString().slice(0, 10) : null,
-    photo: p.photo,
+    photoUrl: withPhoto > 0 ? riderPhotoUrl(token, p.updatedAt) : null,
     email: p.email ?? p.customer?.email ?? p.tickets.find((t) => t.email)?.email?.trim().toLowerCase() ?? null,
     fromAbo: !own && !!abo,
   };

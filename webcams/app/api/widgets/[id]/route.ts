@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig, saveConfig } from "@/lib/config";
 import { WidgetSchema } from "@/lib/types";
+import { requireSameOrigin, requireSameOriginJson } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ interface RouteCtx {
 }
 
 export async function PUT(req: Request, ctx: RouteCtx) {
+  const rejected = requireSameOriginJson(req);
+  if (rejected) return rejected;
   const { id } = await ctx.params;
   let body: unknown;
   try {
@@ -37,7 +40,9 @@ export async function PUT(req: Request, ctx: RouteCtx) {
   return NextResponse.json({ ok: true, widget: parsed.data });
 }
 
-export async function DELETE(_req: Request, ctx: RouteCtx) {
+export async function DELETE(req: Request, ctx: RouteCtx) {
+  const crossOrigin = requireSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
   const { id } = await ctx.params;
   const config = await loadConfig();
   const exists = config.widgets.some((w) => w.id === id);

@@ -356,7 +356,7 @@ export async function controlAudioZone(
   });
   if (!owned) return { ok: false, error: "Playlist nicht gefunden", status: 404 };
 
-  const payload = await playlistPayload(db, playlistId);
+  const payload = await playlistPayload(db, accountId, playlistId);
   if (!payload) return { ok: false, error: "Playlist nicht gefunden", status: 404 };
 
   if (manual) await setManualMusicOverride(db, zone.id, true);

@@ -39,12 +39,20 @@ function serialize(item: {
   };
 }
 
+/**
+ * Die Liste wird beim Öffnen des Fundsachen-Fensters und über die
+ * Aktualisieren-Taste geladen, nicht im Takt abgefragt.
+ */
+const LOST_ITEMS_READ_LIMIT = { limit: 60, windowMs: 60_000 } as const;
+
 /// Fundsachen- und Verlustmeldungen-Liste für einen Checkin-Monitor.
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
+  const limited = publicLinkRateLimit(request, token, "checkin-lost-items-read", LOST_ITEMS_READ_LIMIT);
+  if (limited) return limited;
   const monitor = await resolveMonitor(token);
   if (!monitor) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { secretsEqual } from "@/lib/cron-auth";
+import { isUniqueConstraintError } from "@/lib/db-errors";
 
 /**
  * Zahlen aus einem Payload-Feld einsammeln und dabei in bekannt und unbekannt
@@ -104,6 +105,12 @@ export async function POST(request: NextRequest) {
    * warum.
    */
   const unknown: { employeeId: string; areaIds?: number[]; deviceIds?: number[] }[] = [];
+  /**
+   * Mitarbeiter, deren Ticket wegen eines eindeutigen Werts (Kennung oder
+   * Code schon vergeben) nicht gespeichert werden konnte. Die uebrigen
+   * Mitarbeiter laufen weiter; gemeldet wird je Mitarbeiter.
+   */
+  const failed: { employeeId: string; error: string }[] = [];
 
   for (const emp of employees) {
     const id = emp.id ?? emp.employeeId;
@@ -190,33 +197,40 @@ export async function POST(request: NextRequest) {
     if (areasInPayload) updateData.accessAreaId = primaryAreaId;
 
     let ticketId: number;
-    if (existing) {
-      if (Object.keys(updateData).length > 0) {
-        await db.ticket.update({ where: { id: existing.id }, data: updateData });
+    try {
+      if (existing) {
+        if (Object.keys(updateData).length > 0) {
+          await db.ticket.update({ where: { id: existing.id }, data: updateData });
+        }
+        ticketId = existing.id;
+        updated++;
+      } else {
+        // Neuanlage: vollstaendige Defaults setzen, damit das Ticket
+        // konsistent startet.
+        const t = await db.ticket.create({
+          data: {
+            uuid,
+            accountId,
+            name: fullName,
+            rfidCode: hasRfidField ? (rfidCodeRaw === null ? null : String(rfidCodeRaw)) : null,
+            firstName: emp.firstName ?? null,
+            lastName: emp.lastName ?? null,
+            startDate: hasContractStart && emp.contractStart ? new Date(emp.contractStart) : null,
+            endDate: hasContractEnd && emp.contractEnd ? new Date(emp.contractEnd) : null,
+            status: emp.active !== false ? "VALID" : "INVALID",
+            ticketTypeName: "Mitarbeiter",
+            source: "EMP_CONTROL",
+            accessAreaId: primaryAreaId,
+          },
+        });
+        ticketId = t.id;
+        created++;
       }
-      ticketId = existing.id;
-      updated++;
-    } else {
-      // Neuanlage: vollstaendige Defaults setzen, damit das Ticket
-      // konsistent startet.
-      const t = await db.ticket.create({
-        data: {
-          uuid,
-          accountId,
-          name: fullName,
-          rfidCode: hasRfidField ? (rfidCodeRaw === null ? null : String(rfidCodeRaw)) : null,
-          firstName: emp.firstName ?? null,
-          lastName: emp.lastName ?? null,
-          startDate: hasContractStart && emp.contractStart ? new Date(emp.contractStart) : null,
-          endDate: hasContractEnd && emp.contractEnd ? new Date(emp.contractEnd) : null,
-          status: emp.active !== false ? "VALID" : "INVALID",
-          ticketTypeName: "Mitarbeiter",
-          source: "EMP_CONTROL",
-          accessAreaId: primaryAreaId,
-        },
-      });
-      ticketId = t.id;
-      created++;
+    } catch (e) {
+      if (!isUniqueConstraintError(e)) throw e;
+      console.warn("[emp-control/webhook] Ticket nicht gespeichert (eindeutiger Wert vergeben)", { employeeId: String(id) });
+      failed.push({ employeeId: String(id), error: "Kennung oder Code ist bereits vergeben" });
+      continue;
     }
 
     // Areas-Sync ist nicht-destruktiv: Wenn der Webhook keine Areas
@@ -249,6 +263,24 @@ export async function POST(request: NextRequest) {
     where: { id: config.id },
     data: { lastUpdate: new Date() },
   });
+
+  // Konflikte sollen in emp-control sichtbar bleiben: Der Abgleich dort
+  // wertet nur den HTTP-Status und das Feld error aus. Die uebrigen
+  // Mitarbeiter sind zu diesem Zeitpunkt bereits gespeichert.
+  if (failed.length > 0) {
+    const ids = failed.map((f) => f.employeeId).join(", ");
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `${failed.length} Mitarbeiter nicht gespeichert, Kennung oder Code ist bereits vergeben (ID ${ids})`,
+        created,
+        updated,
+        ...(unknown.length > 0 ? { unknown } : {}),
+        failed,
+      },
+      { status: 409 },
+    );
+  }
 
   return NextResponse.json({
     ok: true,

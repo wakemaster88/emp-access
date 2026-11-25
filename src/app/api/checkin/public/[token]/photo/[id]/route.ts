@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { decodeImageDataUrl } from "@/lib/photo-url";
+import { decodeImageDataUrl, isPhotoRedirectTarget } from "@/lib/photo-url";
 
 /**
  * Ticket-Foto fuer den Check-in-Monitor. Die Poll-Antwort
@@ -32,8 +32,10 @@ export async function GET(
   });
   const stored = ticket?.profileImage?.trim() ?? "";
   // Aeltere/importierte Tickets koennen statt einer Data-URL einen Link tragen.
+  // Weitergeleitet wird nur auf die bekannten Foto-Hosts (lib/photo-url).
   if (/^https:\/\//i.test(stored)) {
-    return NextResponse.redirect(stored, 302);
+    if (isPhotoRedirectTarget(stored)) return NextResponse.redirect(stored, 302);
+    return NextResponse.json({ error: "Kein Foto" }, { status: 404 });
   }
   const image = stored ? decodeImageDataUrl(stored) : null;
   if (!image) {

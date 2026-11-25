@@ -10,7 +10,8 @@ interface Props {
   lastName: string;
   /** `YYYY-MM-DD` oder null. */
   birthDate: string | null;
-  photo: string | null;
+  /** Adresse des gespeicherten Profilbilds (eigene Route); null ohne Bild. */
+  photoUrl: string | null;
   /** Zweite Zeile unter dem Namen (Spitzname, Adresse). */
   subtitle: string | null;
   /** Darf ändern: selbst oder Eltern für ihr Kind. Partner sehen nur. */
@@ -59,10 +60,11 @@ async function shrink(file: File): Promise<string> {
 }
 
 /** Kopf des Profils: Bild, Name und die persönlichen Daten zum Bearbeiten. */
-export function RiderPerson({ token, firstName, lastName, birthDate, photo, subtitle, editable, managed = false }: Props) {
+export function RiderPerson({ token, firstName, lastName, birthDate, photoUrl, subtitle, editable, managed = false }: Props) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [data, setData] = useState({ firstName, lastName, birthDate, photo });
+  // `photo`: Adresse des gespeicherten Bilds, nach dem Hochladen die neue Data-URL.
+  const [data, setData] = useState({ firstName, lastName, birthDate, photo: photoUrl });
   const [form, setForm] = useState({ firstName, lastName, birthDate: birthDate ?? "" });
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -136,7 +138,7 @@ export function RiderPerson({ token, firstName, lastName, birthDate, photo, subt
   }
 
   const avatar = data.photo ? (
-    // eslint-disable-next-line @next/next/no-img-element -- Data-URL aus der eigenen Datenbank
+    // eslint-disable-next-line @next/next/no-img-element -- Bild aus der eigenen Datenbank (Route oder frisch gewählte Data-URL)
     <img src={data.photo} alt="" />
   ) : (
     <span aria-hidden>{initialsOf(data.firstName, data.lastName)}</span>

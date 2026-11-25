@@ -1,6 +1,6 @@
 import { riderBase } from "@/lib/rider-base";
 import Link from "next/link";
-import { findRiderAuthProfile, requireRider, riderFamilyView } from "@/lib/rider-auth";
+import { findRiderAuthProfileCached, requireRider, riderFamilyView } from "@/lib/rider-auth";
 import { mayVote } from "@/lib/challenge-voting";
 import { RiderChallengeVoting } from "@/components/rider/rider-challenge-voting";
 import { loadRiderChallengesCached, type RiderChallenge } from "@/lib/rider-challenges";
@@ -105,7 +105,7 @@ export default async function RiderChallenges({ params }: { params: Promise<{ to
   const rider = await requireRider(token);
   const [loaded, family] = await Promise.all([loadRiderChallengesCached(rider), riderFamilyView(token)]);
   const self = family?.relation === "self";
-  const profile = self ? await findRiderAuthProfile(token) : null;
+  const profile = self ? await findRiderAuthProfileCached(token) : null;
   const eligible = profile ? await mayVote(profile) : false;
   const viewer: Viewer = {
     token,

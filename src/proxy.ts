@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { RIDER_BASE_HEADER, parseRiderAlsPath } from "@/lib/rider-als";
 import { RIDER_APP_HEADER, RIDER_REST_HEADER, beachToAppPath, riderRestOf } from "@/lib/rider-app-kind";
+import { CROSS_SITE_HEADER, crossSiteWrite } from "@/lib/cross-site";
 
 /**
  * Kunden-App, zwei Aufgaben:
@@ -13,8 +14,24 @@ import { RIDER_APP_HEADER, RIDER_REST_HEADER, beachToAppPath, riderRestOf } from
  *   Wechsel im Bereich der installierten App; iOS öffnete `/app/<anderer
  *   Token>` sonst in einem eigenen Browserfenster (Aaron, 21.11.2026). Ob die
  *   angemeldete Person die Seiten sehen darf, prüfen die Seiten selbst.
+ *
+ * Unter /api nur eine Markierung: schreibende Anfragen einer fremden Seite
+ * bekommen CROSS_SITE_HEADER (src/lib/cross-site.ts). Abgewiesen werden sie
+ * erst beim Lesen der Sitzung; Token-Zugänge bleiben unberührt. Der Proxy
+ * läuft dort nur, wenn der Browser die Anfrage selbst als fremd ausweist
+ * (Sec-Fetch-Site same-site oder cross-site) oder – bei Browsern ohne diesen
+ * Header – ein Origin mitschickt. Die eigenen Seiten (same-origin), Geräte
+ * und Skripte gehen direkt durch, ohne Umweg über den Proxy.
  */
 export function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    const apiHeaders = new Headers(request.headers);
+    // Nie vom Absender übernehmen: nur der Proxy setzt die Markierung.
+    apiHeaders.delete(CROSS_SITE_HEADER);
+    if (crossSiteWrite(request.method, request.headers)) apiHeaders.set(CROSS_SITE_HEADER, "1");
+    return NextResponse.next({ request: { headers: apiHeaders } });
+  }
+
   const headers = new Headers(request.headers);
   // Nie vom Gerät übernehmen: nur der Proxy setzt diese Werte.
   headers.delete(RIDER_BASE_HEADER);
@@ -37,5 +54,16 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/app", "/app/:path*", "/beach", "/beach/:path*"],
+  matcher: [
+    "/app",
+    "/app/:path*",
+    "/beach",
+    "/beach/:path*",
+    { source: "/api/:path*", has: [{ type: "header", key: "sec-fetch-site", value: "(same-site|cross-site)" }] },
+    {
+      source: "/api/:path*",
+      has: [{ type: "header", key: "origin" }],
+      missing: [{ type: "header", key: "sec-fetch-site" }],
+    },
+  ],
 };

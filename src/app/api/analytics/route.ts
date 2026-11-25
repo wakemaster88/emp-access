@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { deviceCountsByName, loadAnalyticsCounts } from "@/lib/dashboard-counts";
 
 function localDateStr(d: Date): string {
   const y = d.getFullYear();
@@ -80,42 +81,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Ungültiger Modus" }, { status: 400 });
   }
 
-  const scanWhere = { ...where, scanTime: { gte: rangeStart, lte: rangeEnd } };
-  const [scansForTimeline, tickets, areas, devices] = await Promise.all([
-    db.scan.findMany({
-      where: scanWhere,
-      select: {
-        scanTime: true,
-        result: true,
-        deviceId: true,
-        ticketId: true,
-      },
-      orderBy: { scanTime: "asc" },
-    }),
-    db.ticket.findMany({
-      where: {
-        ...where,
-        OR: [
-          { startDate: null, endDate: null },
-          { startDate: { lte: rangeEnd }, endDate: null },
-          { startDate: null, endDate: { gte: rangeStart } },
-          { startDate: { lte: rangeEnd }, endDate: { gte: rangeStart } },
-        ],
-      },
-      select: {
-        id: true,
-        status: true,
-        source: true,
-        accessAreaId: true,
-        subscriptionId: true,
-        serviceId: true,
-        startDate: true,
-        createdAt: true,
-        accessArea: { select: { name: true } },
-        subscription: { select: { name: true } },
-        service: { select: { name: true } },
-      },
-    }),
+  // Scans und Tickets des Zeitraums in der Datenbank zaehlen. Scans je
+  // UTC-Stunde: Tag, Woche, Monat und Stunde der Anzeige ergeben sich daraus
+  // wie bisher aus der Ortszeit der Function (Zonen mit ganzen Stunden Versatz).
+  const [counts, areas, devices] = await Promise.all([
+    loadAnalyticsCounts(db, isSuperAdmin ? null : accountId!, rangeStart, rangeEnd),
     db.accessArea.findMany({
       where: { ...where, showOnDashboard: true },
       select: { id: true, name: true, personLimit: true },
@@ -129,14 +99,18 @@ export async function GET(request: NextRequest) {
   ]);
 
   // --- Summary ---
-  const totalScans = scansForTimeline.length;
-  const grantedScans = scansForTimeline.filter((s) => s.result === "GRANTED").length;
-  const deniedScans = scansForTimeline.filter((s) => s.result === "DENIED").length;
-  const uniqueTicketsScanned = new Set(scansForTimeline.filter((s) => s.ticketId).map((s) => s.ticketId)).size;
-  const totalTickets = tickets.length;
-  const validTickets = tickets.filter((t) => t.status === "VALID").length;
-  const redeemedTickets = tickets.filter((t) => t.status === "REDEEMED").length;
-  const annyTickets = tickets.filter((t) => t.source === "ANNY").length;
+  const sumHours = (pred: (result: string) => boolean) =>
+    counts.hours.reduce((sum, h) => (pred(h.result) ? sum + h.count : sum), 0);
+  const sumTickets = (pred: (t: (typeof counts.tickets)[number]) => boolean) =>
+    counts.tickets.reduce((sum, t) => (pred(t) ? sum + t.count : sum), 0);
+  const totalScans = sumHours(() => true);
+  const grantedScans = sumHours((r) => r === "GRANTED");
+  const deniedScans = sumHours((r) => r === "DENIED");
+  const uniqueTicketsScanned = counts.uniqueTickets;
+  const totalTickets = sumTickets(() => true);
+  const validTickets = sumTickets((t) => t.status === "VALID");
+  const redeemedTickets = sumTickets((t) => t.status === "REDEEMED");
+  const annyTickets = sumTickets((t) => t.source === "ANNY");
 
   // --- Scans over time ---
   function bucketKey(d: Date): string {
@@ -195,62 +169,53 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  for (const scan of scansForTimeline) {
-    const d = new Date(scan.scanTime);
+  // Stunden kommen aufsteigend sortiert: neue Schluessel entstehen in derselben
+  // Reihenfolge wie frueher beim Durchlauf der Scans.
+  for (const h of counts.hours) {
+    const d = new Date(h.hour);
     const key = bucketKey(d);
     const bucket = timelineMap.get(key) || { label: bucketLabel(d), granted: 0, denied: 0, total: 0 };
-    bucket.total++;
-    if (scan.result === "GRANTED") bucket.granted++;
-    else if (scan.result === "DENIED") bucket.denied++;
+    bucket.total += h.count;
+    if (h.result === "GRANTED") bucket.granted += h.count;
+    else if (h.result === "DENIED") bucket.denied += h.count;
     timelineMap.set(key, bucket);
   }
 
   const timeline = [...timelineMap.values()];
 
   // --- Scans by area ---
-  const ticketAreaMap = new Map<number, string>();
-  for (const t of tickets) {
-    if (t.accessArea) ticketAreaMap.set(t.id, t.accessArea.name);
-  }
-  const areaScanCounts = new Map<string, number>();
-  for (const scan of scansForTimeline) {
-    if (scan.ticketId && ticketAreaMap.has(scan.ticketId)) {
-      const name = ticketAreaMap.get(scan.ticketId)!;
-      areaScanCounts.set(name, (areaScanCounts.get(name) || 0) + 1);
-    }
-  }
-  const byArea = [...areaScanCounts.entries()]
-    .map(([name, scans]) => ({ name, scans }))
+  // Bei gleicher Zahl zuerst der Bereich mit dem frueheren ersten Scan.
+  const byArea = [...counts.areas]
+    .sort((a, b) => a.firstAt.getTime() - b.firstAt.getTime())
+    .map((a) => ({ name: a.name, scans: a.count }))
     .sort((a, b) => b.scans - a.scans);
 
   // --- Scans by device ---
   const deviceNameMap = new Map(devices.map(d => [d.id, d.name]));
-  const deviceScanCounts = new Map<string, { granted: number; denied: number }>();
-  for (const scan of scansForTimeline) {
-    const name = (scan.deviceId ? deviceNameMap.get(scan.deviceId) : null) ?? "Web-Scanner";
-    const entry = deviceScanCounts.get(name) || { granted: 0, denied: 0 };
-    if (scan.result === "GRANTED") entry.granted++;
-    else if (scan.result === "DENIED") entry.denied++;
-    deviceScanCounts.set(name, entry);
-  }
-  const byDevice = [...deviceScanCounts.entries()]
-    .map(([name, { granted, denied }]) => ({ name, granted, denied, total: granted + denied }))
-    .sort((a, b) => b.total - a.total);
+  const byDevice = deviceCountsByName(
+    counts.devices,
+    (deviceId) => (deviceId ? deviceNameMap.get(deviceId) : null) ?? "Web-Scanner",
+  );
 
   // --- Tickets by type (Service/Abo/Resource) ---
-  const typeCounts = new Map<string, number>();
-  for (const t of tickets) {
-    const typeName = t.service?.name || t.subscription?.name || t.accessArea?.name || "Sonstige";
-    typeCounts.set(typeName, (typeCounts.get(typeName) || 0) + 1);
+  // Bei gleicher Zahl zuerst der Typ mit der kleinsten Ticket-ID.
+  const typeCounts = new Map<string, { count: number; firstId: number }>();
+  for (const t of counts.tickets) {
+    const typeName = t.serviceName || t.subscriptionName || t.areaName || "Sonstige";
+    const e = typeCounts.get(typeName) ?? { count: 0, firstId: t.firstId };
+    e.count += t.count;
+    if (t.firstId < e.firstId) e.firstId = t.firstId;
+    typeCounts.set(typeName, e);
   }
   const byType = [...typeCounts.entries()]
-    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a[1].firstId - b[1].firstId)
+    .map(([name, { count }]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
 
   // --- Peak hours ---
   const hourCounts = new Array(24).fill(0);
-  for (const scan of scansForTimeline) {
-    hourCounts[new Date(scan.scanTime).getHours()]++;
+  for (const h of counts.hours) {
+    hourCounts[new Date(h.hour).getHours()] += h.count;
   }
   const peakHours = hourCounts.map((count, hour) => ({
     hour: `${String(hour).padStart(2, "0")}:00`,

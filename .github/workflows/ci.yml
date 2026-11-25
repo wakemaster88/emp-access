@@ -5,13 +5,17 @@ on:
     branches: [main]
   pull_request:
 
+# Nur Lesen: kein Job hier schreibt ins Repo, in Issues oder Pull Requests.
+permissions:
+  contents: read
+
 jobs:
   # Cloud-App (src/) und Hub (hub/): Typen, Lint, Tests.
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -46,8 +50,8 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/emp_ci
       DATABASE_URL_UNPOOLED: postgresql://postgres:postgres@localhost:5432/emp_ci
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -59,8 +63,8 @@ jobs:
   python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - run: python -m compileall -q raspberry-pi hub/alpr hub/face hub/plate hub/mower webcams/tracker
@@ -73,11 +77,11 @@ jobs:
       run:
         working-directory: webcams
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 10.28.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -86,3 +90,11 @@ jobs:
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec eslint .
       - run: pnpm exec vitest run
+
+  # Eingecheckte Geheimnisse (Muster in scripts/secret-scan.sh, dasselbe
+  # Skript nutzt der taegliche Sicherheitscheck). Ausgabe nur Datei:Zeile.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: bash scripts/secret-scan.sh

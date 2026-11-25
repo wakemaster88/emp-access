@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { addCalendarDays, berlinDayRange, berlinYmd, isBerlinYmd } from "@/lib/berlin-day";
 import { summarizeAreasDay } from "@/lib/dashboard-areas";
+import { loadAreaWeekCounts } from "@/lib/dashboard-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,18 @@ export async function GET(request: NextRequest) {
   const { start: dayStart, endExclusive } = berlinDayRange(dateStr);
   const weekStart = berlinDayRange(addCalendarDays(dateStr, -6)).start;
 
-  const [areas, dayScans, weekScans, soldTickets] = await Promise.all([
+  // Sieben-Tage-Verlauf je Bereich in der Datenbank zaehlen (nur Eingangsgeraete,
+  // wie in `summarizeAreasDay`), statt eine Woche Scans als Zeilen zu laden.
+  const weekAccountId = isSuperAdmin ? null : accountId!;
+  const weekCountsPromise = Promise.all(
+    areaIds.map(async (areaId) => {
+      const entryIds = devices.filter((d) => d.accessIn === areaId).map((d) => d.id);
+      const counts = await loadAreaWeekCounts(db, weekAccountId, entryIds, weekStart, endExclusive);
+      return [areaId, counts] as const;
+    }),
+  );
+
+  const [areas, dayScans, weekCounts, soldTickets] = await Promise.all([
     db.accessArea.findMany({
       where: { ...where, id: { in: areaIds } },
       select: { id: true, name: true, personLimit: true },
@@ -69,10 +81,7 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { scanTime: "asc" },
     }),
-    db.scan.findMany({
-      where: { ...where, deviceId: { in: deviceIds }, scanTime: { gte: weekStart, lt: endExclusive } },
-      select: { result: true, scanTime: true, ticketId: true, deviceId: true },
-    }),
+    weekCountsPromise,
     db.ticket.findMany({
       where: {
         ...where,
@@ -102,7 +111,8 @@ export async function GET(request: NextRequest) {
       ticketId: s.ticketId,
       ticketTypeName: s.ticket?.ticketTypeName || s.ticket?.service?.name || s.ticket?.subscription?.name || null,
     })),
-    weekScans,
+    weekScans: [],
+    weekCountsByArea: new Map(weekCounts),
     sold,
   });
 

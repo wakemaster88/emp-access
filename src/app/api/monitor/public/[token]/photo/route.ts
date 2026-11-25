@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
-import { parsePersonInput } from "@/lib/rider-person";
+import { profilePhotoError } from "@/lib/photo-url";
 
 /**
  * Profilbild eines Tickets fuer den Scan-Monitor (nur Link-Typ MONITOR).
@@ -65,16 +65,11 @@ export async function POST(
   if (!rawImage || typeof rawImage !== "string") {
     return NextResponse.json({ error: "profileImage erforderlich" }, { status: 400 });
   }
-  // Gleiche Regel wie in der Kunden-App: nur JPG, PNG oder WebP als
-  // Base64-Data-URL und hoechstens PHOTO_MAX_CHARS Zeichen.
-  const parsed = parsePersonInput({ photo: rawImage });
-  if ("error" in parsed || !parsed.data.photo) {
-    return NextResponse.json(
-      { error: "error" in parsed ? parsed.error : "profileImage erforderlich" },
-      { status: 400 },
-    );
-  }
-  const profileImage = parsed.data.photo;
+  // Gemeinsame Bildpruefung (lib/photo-url), wie in Kunden-App und Kasse:
+  // nur JPG, PNG oder WebP als Base64-Data-URL, begrenzte Laenge.
+  const photoError = profilePhotoError(rawImage);
+  if (photoError) return NextResponse.json({ error: photoError }, { status: 400 });
+  const profileImage = rawImage.trim();
 
   const ticket = await prisma.ticket.findFirst({
     where: { id: ticketId, accountId: monitor.accountId },
