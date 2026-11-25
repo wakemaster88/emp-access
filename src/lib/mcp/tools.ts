@@ -990,13 +990,14 @@ const backendTools: Tool[] = [
       } as const;
       // Die Liste ist nach Beginn sortiert und begrenzt. Offene Ereignisse
       // kommen deshalb eigens dazu: Was früh begann und noch läuft, stünde an
-      // einem vollen Tag sonst hinter der Grenze.
+      // einem vollen Tag sonst hinter der Grenze. Von ihnen zuerst die am
+      // längsten offenen; die jüngsten stehen ohnehin in der Liste.
       const [recent, open] = await Promise.all([
         ctx.db.cameraEvent.findMany({ where, select, orderBy: { startedAt: "desc" }, take: CAMERA_EVENTS_MAX }),
         ctx.db.cameraEvent.findMany({
           where: { ...where, endedAt: null },
           select,
-          orderBy: { startedAt: "desc" },
+          orderBy: { startedAt: "asc" },
           take: CAMERA_EVENTS_OPEN_MAX,
         }),
       ]);

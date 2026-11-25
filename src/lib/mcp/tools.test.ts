@@ -54,14 +54,15 @@ test("camera_events: je Ereignis laufend und letzte Aktivitaet, offene Ereigniss
   const openSilent = { id: 3, type: "MOTION", startedAt: ago(200), endedAt: null, camera: hof };
   const openRunning = { id: 1, type: "MOTION", startedAt: ago(240), endedAt: null, camera: halle };
 
-  const calls: Array<{ where: Record<string, unknown>; take: number }> = [];
+  type Query = { where: Record<string, unknown>; orderBy: Record<string, string>; take: number };
+  const calls: Query[] = [];
   const db = {
     cameraEvent: {
-      findMany: async (args: { where: Record<string, unknown>; take: number }) => {
+      findMany: async (args: Query) => {
         calls.push(args);
         // Die zweite Abfrage holt nur offene; das laufende Ereignis 1 steht
         // in der ersten nicht mehr (dort greift die Grenze).
-        return args.where.endedAt === null ? [openSilent, openRunning] : [person, openSilent];
+        return args.where.endedAt === null ? [openRunning, openSilent] : [person, openSilent];
       },
     },
   } as unknown as McpCtx["db"];
@@ -82,6 +83,13 @@ test("camera_events: je Ereignis laufend und letzte Aktivitaet, offene Ereigniss
   assert.equal(calls[0].where.accountId, 7);
   assert.equal("endedAt" in calls[0].where, false);
   assert.deepEqual(calls[1].where, { ...calls[0].where, endedAt: null });
+  // Die Liste nennt die juengsten zuerst. Von den offenen kommen die am
+  // laengsten offenen zuerst: Ihre Grenze laesst so die juengsten weg, und
+  // die stehen schon in der Liste.
+  assert.deepEqual(
+    calls.map((c) => c.orderBy),
+    [{ startedAt: "desc" }, { startedAt: "asc" }],
+  );
 
   assert.equal(out.hours, 6);
   assert.equal(out.count, 3);
