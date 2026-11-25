@@ -205,10 +205,11 @@ export function vlanCheckSummary(): {
 /*
  * Dauer der Laeufe: die Zeit, in der die Switches abgefragt werden, ohne die
  * Meldung an die Cloud. Der Normalfall („alles in Ordnung“) wird nur gezaehlt;
- * fuer den Vergleich mit Abbruechen der Livebilder (IMPROVE.md) reicht: Die
- * Laeufe beginnen 45 s nach dem Hub-Start und dann alle `every` Sekunden,
- * die Dauer steht hier, und ein langer Lauf kommt ins Log (hoechstens alle
- * 30 min eine Zeile).
+ * fuer den Vergleich mit Abbruechen der Livebilder (IMPROVE.md) reicht: Der
+ * erste Lauf beginnt 45 s nach dem Hub-Start, die weiteren alle `every`
+ * Sekunden ab dem Start (bei 300 s also nach 0:45, 5:00 und 10:00). Beginn
+ * und Dauer stehen in der Antwort von /api/network (`vlanCheck`), und ein
+ * langer Lauf kommt ins Log (hoechstens alle 30 min eine Zeile).
  */
 const SLOW_RUN_MS = 15_000;
 const slowRunLog = new ChangeLog(30 * 60_000);
