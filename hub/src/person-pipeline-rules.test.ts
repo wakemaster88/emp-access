@@ -122,3 +122,11 @@ test("Optischer Zoom: neues Gesicht nur mit Treffer oder höherer Güte", () => 
   // Gleich gut: das bisherige (gemittelte) bleibt.
   assert.equal(takeOpticalFace({ matched: false, before, after: { ...before } }), false);
 });
+
+test("Optischer Zoom: ein wiedergefundenes Gesicht ersetzt die Notlösung small_keep gleicher Größe", () => {
+  // Größen in Pixeln des Kamerabilds, Werte wie vom Gesichts-Dienst.
+  const keep = shot({ size: 40, detScore: 0.75, frontal: 0.8, sharp: 0.3, region: "small_keep" });
+  const rescue = shot({ size: 40, detScore: 0.7, frontal: 0.8, sharp: 0.3, region: "rescue_zoom" });
+  assert.equal(takeOpticalFace({ matched: false, before: keep, after: rescue }), true);
+  assert.equal(takeOpticalFace({ matched: false, before: rescue, after: keep }), false);
+});

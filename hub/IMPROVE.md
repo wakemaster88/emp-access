@@ -1543,3 +1543,51 @@ Entscheidungen vom 25.11.2026: Wiederholungen derselben Person nicht speichern, 
 - Bildgröße: mittlere Größe der Sichtungsbilder je Kamera in der Cloud, Ziel am Eingang deutlich unter 838 KB, gesamt unter 75 MB pro Tag.
 - Wiederholungen: `face.repeat_*` mit `gapS` und `sim` je Kamera. Liegen `repeat_known` und `repeat_unknown` bei 40 bis 58 % der Sichtungen und zeigt eine Stichprobe dieselbe Person, `HUB_SIGHTING_REPEAT=skip` entscheiden (Ersparnis rund 46 % der Bytes). Vorher klären: Das Überwachungsfenster der Cloud ist einstellbar (Voreinstellung 22 bis 8 Uhr) und lässt sich von Hand scharf schalten, der Hub kennt beides nicht; dafür den Zustand der Cloud additiv an den Hub geben. Außerdem hängen Auslösen und Melden bei Erkennung in der Cloud am Upload.
 - Offen zur Bestätigung: Rückfahrt des Zooms nach Handsteuerung (weicht vom Plan vom 06.11.2026 ab); an Schwenk-Kameras fährt danach nur der Zoom zurück, nicht der Schwenk.
+
+## 2026-11-25 (Gesamtprüfung Hub und Kamera-Erkennung, Gesichts-Qualität: kleine Gesichter aus dem Originalbild, bestes Bild der Serie, Galerie lernt nur aus guten Treffern, Log-Zeilen)
+
+Entscheidungen des Betreibers vom 25.11.2026: E17 „kleine Gesichter aus dem Originalbild an“ und E10 „Galerie lernt nur noch aus guten Treffern: nur bei klarem, nicht hochgerechnetem Gesicht ab 64 Pixeln, bei gesperrten Personen nie von selbst; der Bestand wird nicht automatisch gelöscht“.
+
+**Befund**
+
+- PERS-1: Der Gesichtsdienst verkleinert jedes Bild über 1920 px und schneidet kleine Gesichter (rescue_zoom, small_keep, ROI-Zoom) aus dem verkleinerten Bild aus. Im Hub-Log (54 h): 2.447 Anfragen, 280 rescue_zoom (Median 31,9 px im Original, 141 unter 32 px), 235 small_keep, 390 von 670 Zoom-Versuchen ohne Treffer. Verloren geht die Auflösung bei den Merkmalen: Im Labor lag die eigene Ähnlichkeit bei 4K und 24 px bei 0,46 statt 0,58, bei 32 px bei 0,59 statt 0,70; 24-px-Gesichter wurden nie erkannt. Betroffen sind vor allem die 4K-Kameras (Eingang, Halle 2); bei 2560 bis 2880 px gehen nur 17 bis 33 % der Kantenlänge verloren. Die Suche selbst hängt nicht daran (InsightFace sucht ohnehin mit 960 px).
+- PERS-6: faceQuality setzte fehlende Frontal- und Schärfewerte mit 1,0 an. small_keep lieferte beide nicht und gewann so 36 von 41 Vergleichen gegen ein Rescue-Gesicht. Die Größe von small_keep stand im Suchbild, die anderer Sorten im Kamerabild.
+- PERS-2: Die Cloud lernte nach jedem Treffer ab Score 0,50 ein Sample dazu (bis 20 je Person, Ähnlichkeit unter 0,8), ohne die Güte des Gesichts zu kennen, auch bei gesperrten Personen. Galerie: 107 Samples, davon 64 selbst gelernt (kleinster Score 0,515, Median 0,592, 36 unter 0,60). 249 Treffer in 14 Tagen, Median 0,60; gelernt wurde aus 37. Auch die Zuordnung von Hand übernahm Merkmale ohne Güteprüfung.
+- PERS-11: Log-Zeilen sagten „klares Gesicht“ ohne Sorte und Größe, die Upload-Zeile nannte die Originalgröße statt der gesendeten, der Beinahe-Treffer-Hinweis zählte hochskalierte Gesichter mit und riet zum Senken der Schwelle. Die README nannte CoreML, der Dienst rechnet auf der CPU.
+
+**Änderungen**
+
+Hub, Gesichtsdienst (`hub/face/server.py`):
+- Schalter `FACE_NATIVE` (on, shadow, off; Standard on). Bei Bildern über 1920 px rechnen Rescue-Zoom, small_keep und ROI-Zoom aus dem Original (Landmarken ins Original übertragen, ausgerichtet, Merkmal). In on gilt das neue Merkmal, das bisherige geht als `embedding_scaled` mit; in shadow umgekehrt (`embedding_native`). `compared` nennt den zweiten Weg.
+- Findet der Weg über das Original kein Gesicht, gilt in on für dieses Bild der bisherige (Zähler `face.native_face_old`). Scheitert er, trägt die Antwort `native_error` (Zähler `face.native_error`): in on gilt der bisherige Weg ohne Vergleich, in shadow fällt nur der Vergleich weg.
+- 0, false, aus, no, nein schalten ab; 1, true, an, ein, ja, yes gelten als on; ein unbekannter Wert gilt als on mit Hinweiszeile. Die Stufe steht in der Startzeile und in /health.
+- `upscaled` und alle Schwellen bleiben wie bisher.
+- small_keep liefert frontal und sharp. `size` steht für jede Sorte in Pixeln des Kamerabilds, `size_scaled` im Suchbild.
+- Mehrzeit: Beide Wege laufen für jedes Bild über 1920 px ohne direkt gefundenes Gesicht, auch ohne jedes Gesicht. Labor 4K ohne Gesicht: 1,2 s mit 7 Detektor-Aufrufen (off) gegen 1,5 bis 1,6 s mit 9 (on).
+
+Hub, Auswertung (`hub/src/face-rules.ts`, `face.ts`, `cameras.ts`, `doorbird.ts`, `improve-log.ts`, `person-crop.ts`):
+- faceQuality: fehlende Frontal- oder Schärfewerte zählen 0,5, small_keep wird mit 0,25 gewichtet.
+- compareWays, fuseOther, oneWayFaceCounter, otherOnlyVerdict: Zähler `face.native_same`, `native_new_only`, `native_old_only`, `native_other_person`, `native_face_old`/`native_face_new` (und `_match`). Eine Log-Zeile „Gesichts-Vergleich: …“ nur bei abweichendem Ergebnis, mit beiden Bestwerten, Schwelle und Listenart, ohne Namen. In einer Serie wird jedes Bild nach seiner Rolle zugeordnet.
+- Im Zweifel Alarm: Trifft in Stufe on nur das bisherige Merkmal eine Person der Sperrliste, gilt dieser Treffer samt Merkmal (noteOtherWay, appliedScore, Zähler `face.native_blacklist_kept`), auch bei der Prüfung vor dem Zoom und bei der Nahaufnahme.
+- Gemittelte Serie: Gemittelt wird wie bisher über alle Bilder derselben Person, die Schwelle richtet sich nach dem besten Bild. Steckt ein hochgerechnetes Bild im Merkmal, meldet das Hub-Ereignis die Sichtung dem Wächter als hochgerechnet (strengere Entwarnung).
+- Mit jeder Personen-Sichtung (Kameras und DoorBird) gehen `faceSize`, `faceUpscaled`, `faceDetScore` und `faceMargin` (Abstand zur zweitbesten Person, galleryMargin) an die Cloud. `faceSize` ist die Größe in dem Bild, aus dem das Merkmal stammt (embedSize): Direkt gefundene Gesichter werden im Suchbild bis 1920 px eingebettet, ein Gesicht mit 100 px auf einer 4K-Kamera zählt also 50 px. Bei einer gemittelten Serie gilt die Güte des schwächsten eingegangenen Bilds.
+- faceLabel nennt Sorte, Größe und det (z. B. „Mini-Gesicht (rescue_zoom, 32 px, det 0.66)“). „Upload OK“ und „Personen-Sichtung hochgeladen“ nennen die gesendete Bildgröße, das Original und die Güte („Gesicht 96 px direkt, Abstand 0.153“).
+- Der Beinahe-Treffer-Hinweis kommt erst ab 5 Beinahe-Treffern direkt erkannter Gesichter in 24 h und rät nicht mehr zum Senken der Schwelle.
+- Gesichter aus dem Kopf-Ausschnitt tragen das Kennzeichen headCrop.
+
+Cloud:
+- Migration `20261125213000_person_sighting_face_quality`: PersonSighting bekommt faceSize, faceUpscaled, faceDetScore und faceMargin, alle nullable, nur ADD COLUMN. `src/lib/face-quality.ts` prüft jeden Wert für sich, sonst null. Die Route speichert sie an jeder Sichtung.
+- Lernregel (`src/lib/face-clusters.ts`, `person-profile.ts`): automatisch gelernt wird nur bei direkt gefundenem Gesicht ab 64 px im Bild des Merkmals, Score ab 0,60 und Abstand ab 0,10, nur bei Personen der Whitelist, nicht ohne Güte-Angaben. Grenze 20 Samples und Ähnlichkeit 0,8 wie bisher. Log „[face auto-learn] … gelernt“ oder „nicht gelernt, grund=…“ ohne Namen.
+- Zuordnung von Hand (`persons.ts`, `unknown-persons.ts`) und „Profil optimieren“ (`person-profile.ts`): gute Gesichter werden zuerst Sample, hochgerechnete nur, wenn weder die Auswahl noch das Profil etwas Besseres hat; Log „[face zuordnung]“. „Profil optimieren“ bestimmt Fehlgriffe weiter mit allen Sichtungen. Vorhandene Samples bleiben unverändert.
+- Übergang: Ist die Cloud vor dem Hub neu, lernt die Galerie bis zum Hub-Update nicht von selbst (grund=guete_fehlt). Ein älterer Hub wird weiter angenommen.
+
+Prüfung: Typprüfung Hub und Cloud ohne Fehler, Hub-Tests 890 (889 grün, 1 übersprungen), Cloud-Tests face-quality/face-clusters/tenant-models 23 grün, compileall und Secret-Scan ohne Befund. Labor mit synthetischen Szenen: 290 Szenen ohne Abweichung (on entspricht dem Weg über das Original, off und shadow dem bisherigen Dienst); Treffer bei 4K und 24 px 0 % → 43 bis 54 %, bei 32 px 67 bis 79 % → 81 bis 96 %, 0 Fehltreffer, höchste fremde Ähnlichkeit 0,433 → 0,450 (Schwelle hochgerechnet 0,55). Fehlerwege 25 von 25.
+
+**Nächster Schritt** (nach 7 Tagen Betrieb mit on)
+
+- improve.jsonl: `face.native_new_only` gegen `native_old_only` (erwartet new deutlich größer), `face.native_other_person`, `face.native_blacklist_kept` und `face.native_error` sollen 0 sein, `native_face_old` (Rückfälle). Ist `native_other_person` größer als 0 oder old größer als new: `FACE_NATIVE=shadow` setzen und die Sichtungen prüfen.
+- Takt: Abstand der Zeilen „Personen-Snapshot <4K-Kamera>: Versuch N/4 ohne Gesicht“ Woche davor gegen Woche danach, dazu `face.skip_inactive` und `face.signal_gap`.
+- Cloud-Log `[face auto-learn]` je grund zählen: `guete_fehlt` nach dem Hub-Update etwa 0, „gelernt“ deutlich unter 37 in 14 Tagen, neue Samples mit Score ab 0,60, faceUpscaled = false und faceSize ab 64. An den 4K-Kameras lernt die Galerie erst ab etwa 128 px im Kamerabild.
+- SQL: Verteilung von faceUpscaled, faceSize und faceMargin bei Treffern, Anteil lernbarer Treffer.
+- Vergleiche mit der Zeit davor: Größen von small_keep stehen bei 4K jetzt etwa doppelt so hoch, „[face] zoom miss“ erscheint je Bild für beide Wege.
+- Sind die Zähler eindeutig: den zweiten Weg in on abschalten (Rechenzeit).

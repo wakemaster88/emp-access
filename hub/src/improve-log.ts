@@ -6,6 +6,7 @@ import { appendFile, mkdir, open, rename, stat, writeFile } from "node:fs/promis
 import path from "node:path";
 import { CONFIG, log } from "./config.js";
 import { STATE } from "./state.js";
+import { nearMissHint, recentTimes } from "./face-rules.js";
 
 export type ImproveKind =
   | "boot"
@@ -37,6 +38,8 @@ let lastSnapAt = 0;
 let writing = false;
 /** Zuletzt geloggter Hinweis – die Zeile kommt nur, wenn er sich aendert. */
 let lastLoggedHint: string | null = null;
+/** Beinahe-Treffer nicht hochskalierter Gesichter der letzten 24 h (Zeitpunkte), fuer den Hinweis. */
+let directNearMissAt: number[] = [];
 
 function enabled(): boolean {
   return process.env.HUB_IMPROVE_LOG !== "0";
@@ -91,9 +94,8 @@ function hints(): string[] {
   if (n("face.keep") >= 5 && n("face.zoom") === 0) {
     out.push("Face-Zoom findet Mini-Gesichter nicht – KEEP-Fallback trägt, Matching unsicher");
   }
-  if (n("face.near_miss") >= 2) {
-    out.push("Gallery-Treffer knapp unter der Schwelle – FACE_UPSCALED_THRESHOLD oder Enroll-Qualität");
-  }
+  const nearMiss = nearMissHint(directNearMissAt, Date.now());
+  if (nearMiss) out.push(nearMiss);
   if (embedHit >= 3 && n("face.person_match") === 0 && n("face.person_nomatch") >= 3 && n("face.near_miss") === 0) {
     out.push("Gesichter da, kein Match – Unbekannte oder Mini-Gesichter (best-Score im Log)");
   }
@@ -239,6 +241,10 @@ export function improve(
 ): void {
   if (!enabled()) return;
   bump(kind, event);
+  if (kind === "face" && event === "near_miss" && data?.upscaled !== true) {
+    const now = Date.now();
+    directNearMissAt = [...recentTimes(directNearMissAt, now), now];
+  }
   const row = {
     ts: new Date().toISOString(),
     kind,

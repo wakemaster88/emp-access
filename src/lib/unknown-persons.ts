@@ -6,14 +6,18 @@
 import { prisma } from "@/lib/prisma";
 import {
   embeddingBytesToFloats,
+  profileSampleRanks,
   storePersonFaceEmbedding,
   type PersonListType,
 } from "@/lib/persons";
 import {
+  MANUAL_SAMPLE_LOG_TAG,
   clusterFaces,
-  pickDiverseSamples,
+  pickManualSamples,
   rankKnownPersons,
+  sampleRank,
   type FaceItem,
+  type RankedFace,
 } from "@/lib/face-clusters";
 
 /** So viele unbekannte Sichtungen werden hoechstens gruppiert (neueste zuerst). */
@@ -154,8 +158,10 @@ export async function getUnknownOverview(accountId: number): Promise<UnknownOver
 
 /**
  * Sichtungen einer bestehenden oder neuen Person zuordnen. Vorhandene
- * Embeddings werden direkt als Samples gespeichert (moeglichst verschiedene),
- * fuer Bilder ohne Embedding uebernimmt der Hub per FACE_ENROLL.
+ * Embeddings werden direkt als Samples gespeichert (gute Gesichter zuerst,
+ * moeglichst verschiedene, hochgerechnete nur ohne Besseres:
+ * face-clusters.ts pickManualSamples), fuer Bilder ohne Embedding uebernimmt
+ * der Hub per FACE_ENROLL.
  */
 export async function assignSightings(opts: {
   accountId: number;
@@ -175,7 +181,7 @@ export async function assignSightings(opts: {
 
   const sightings = await prisma.personSighting.findMany({
     where: { id: { in: ids }, accountId: opts.accountId },
-    select: { id: true, faceEmbedding: true, snapshotBlob: true },
+    select: { id: true, faceEmbedding: true, snapshotBlob: true, faceSize: true, faceUpscaled: true },
   });
   if (sightings.length === 0) throw new Error("Sichtungen nicht gefunden");
 
@@ -215,15 +221,21 @@ export async function assignSightings(opts: {
     },
   });
 
-  const existing = await prisma.personFaceEmbedding.count({
-    where: { listedPersonId: person.id },
-  });
-  const room = Math.max(0, Math.min(MAX_SAMPLES_PER_ASSIGN, MAX_SAMPLES_PER_PERSON - existing));
+  const profile = await profileSampleRanks(opts.accountId, person.id);
+  const room = Math.max(0, Math.min(MAX_SAMPLES_PER_ASSIGN, MAX_SAMPLES_PER_PERSON - profile.length));
 
-  const withFace: FaceItem[] = sightings
+  const withFace: RankedFace[] = sightings
     .filter((s) => s.faceEmbedding && s.faceEmbedding.length >= 256)
-    .map((s) => ({ id: s.id, embedding: embeddingBytesToFloats(s.faceEmbedding!) }));
-  const chosen = new Set(pickDiverseSamples(withFace, room));
+    .map((s) => ({ id: s.id, embedding: embeddingBytesToFloats(s.faceEmbedding!), rank: sampleRank(s) }));
+  const chosen = new Set(pickManualSamples(withFace, room, profile));
+  // Hochgerechnete, die wegen besserer Gesichter draussen bleiben (nicht wegen der Obergrenze).
+  const upscaled = withFace.filter((f) => f.rank === 2);
+  if (room > 0 && upscaled.length > 0 && !upscaled.some((f) => chosen.has(f.id))) {
+    console.log(
+      `${MANUAL_SAMPLE_LOG_TAG} account=${opts.accountId}: ${upscaled.length} hochgerechnete Gesichter nicht als Sample übernommen, ` +
+        (chosen.size > 0 ? `${chosen.size} bessere gewählt` : "Profil hat bessere")
+    );
+  }
   let samples = 0;
   for (const f of withFace) {
     if (!chosen.has(f.id)) continue;

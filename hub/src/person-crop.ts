@@ -104,7 +104,8 @@ export async function faceViaZoom(
     if (!crop) continue;
     const e = await embedJpeg(crop);
     if (!e) continue;
-    const face = { ...e, upscaled: true };
+    // `size` des Gesichts zaehlt hier in Pixeln des vergroesserten Ausschnitts.
+    const face = { ...e, upscaled: true, headCrop: true };
     const s = scoreGallery(face.embedding, { upscaled: true });
     const score = s.nearest?.score ?? 0;
     if (!best || (!!s.match && !best.matched) || score > best.score) best = { face, score, matched: !!s.match, box };

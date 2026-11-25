@@ -42,7 +42,108 @@ ein Mac Studio im Technikraum, Betrieb siehe
   ist `Camera.doorHoldUntil`; nach einem Hub-Neustart wird eine laufende
   Offenhaltung aus der Kamera-Konfiguration wieder aufgenommen, „Beenden“
   stoppt sofort.
-- **Gesichter**: InsightFace-Sidecar (`buffalo_l`, CoreML wenn vorhanden).
+- **Gesichter**: InsightFace-Sidecar (`face/server.py`, `buffalo_l`, nur
+  Erkennung und Merkmale). Der Dienst rechnet auf der CPU; CoreML ist
+  abgeschaltet, weil es bei `buffalo_l` Shape-Fehler wirft.
+  Gesucht wird in dem auf 1920 px verkleinerten Bild. Kleine Gesichter
+  (Rescue-Zoom, `small_keep`, ROI-Zoom) rechnet der Dienst aus dem
+  Originalbild der Kamera. Schalter `FACE_NATIVE` in `hub/.env` (der Hub
+  startet den Dienst mit seiner Umgebung):
+  - `on` (Standard): Es gilt das Merkmal aus dem Original; das bisherige aus
+    dem verkleinerten Bild rechnet der Dienst mit. Findet der Weg über das
+    Original in einem Bild kein Gesicht oder scheitert er, gilt dort der
+    bisherige Weg.
+  - `shadow`: beide Merkmale, es gilt das aus dem verkleinerten Bild.
+  - `off`: nur der Weg über das verkleinerte Bild; ebenso `0`, `false`,
+    `aus`, `no` und `nein`.
+
+  `on` gilt auch für `1`, `true`, `an`, `ein`, `ja`, `yes` und einen leeren
+  Wert, ebenso für jeden anderen Wert, dann mit der Zeile
+  „[face] FACE_NATIVE=… unbekannt – es gilt on“.
+
+  In `on` und `shadow` wertet der Hub beide Merkmale eines Gesichts mit
+  derselben Schwelle gegen die Galerie (`compareWays` in `face-rules.ts`).
+  Zähler je Sichtung: `face.native_same` (gleiches Ergebnis),
+  `face.native_new_only` (nur das Merkmal aus dem Original ist bzw. wäre ein
+  Treffer), `face.native_old_only` (nur das bisherige),
+  `face.native_other_person` (beide treffen verschiedene Personen); je Bild
+  `face.native_face_new` bzw. `face.native_face_old`, wenn nur ein Weg ein
+  Gesicht fand (`…_match`: es wäre ein Treffer), `face.native_blacklist_kept`
+  (Stufe `on`: nur das bisherige Merkmal trifft eine Person der Sperrliste;
+  dieser Treffer gilt, im Zweifel Alarm) und `face.native_error`,
+  wenn der Weg über das Original scheiterte (Zeile „[face] Weg über das
+  Originalbild fehlgeschlagen: …“, auch wenn das Merkmal der Notlösung
+  `small_keep` nicht gelingt); dann gilt für das Bild der bisherige Weg ohne
+  Vergleich, in `shadow` fällt nur der Vergleich weg. Eine Log-Zeile
+  „Gesichts-Vergleich: …“ mit beiden Bestwerten, Schwelle, Listenart und
+  Sorte des Gesichts (ohne Namen) gibt es nur, wenn das Ergebnis abweicht.
+  Schwellen und die strengere Bewertung hochskalierter Gesichter bleiben in
+  allen Stufen gleich. Es gilt das Ergebnis des verwendeten Merkmals, mit
+  einer Ausnahme: Trifft in `on` nur das bisherige Merkmal eine Person der
+  Sperrliste, gilt dieser Treffer samt Merkmal (`noteOtherWay` und
+  `appliedScore` in `face.ts`, auch bei der Prüfung vor dem Zoom). Ein
+  Gesicht, das nur der bisherige Weg findet und das zu keinem Gesicht aus
+  dem Original passt, gibt der Dienst in `on` nicht weiter (gezählt als
+  `face.native_face_new` beim anderen Gesicht). Die Stufe steht in der
+  Startzeile des Dienstes
+  (`[face] buffalo_l bereit (…, cpu, native=on)`) und in `/health`; der
+  Vergleich betrifft nur Bilder über 1920 px Kantenlänge. Die Zeilen
+  „[face] zoom …“ nennen den Weg: „(Original)“ oder „aus N px
+  (verkleinert)“.
+
+  Rechenzeit: In `on` und `shadow` rechnet der Dienst beide Wege für jedes
+  Bild über 1920 px, in dem die Suche kein direkt brauchbares Gesicht findet,
+  auch für ein Bild ganz ohne Gesicht (Person von hinten, leere Szene): Die
+  zwei vergrößerten Bildausschnitte laufen dann je Weg einmal. Im Labor
+  (3840×2160, Bild ohne Gesicht, CPU) sind das 9 statt 7 Aufrufe des
+  Detektors und rund 1,5–1,6 s statt 1,2 s je Bild. Solche Bilder kommen
+  bei jedem Versuch der Personen-Serie ohne Gesicht vor, ebenso bei den
+  Zusatzbildern zum besten Bild und bei der optischen Nahaufnahme, wenn dort
+  kein direktes Gesicht gefunden wird; der Abstand der Bilder einer Serie
+  wächst entsprechend (im Log an den Zeitstempeln der Zeilen „Versuch N/4
+  ohne Gesicht“ abzulesen). `FACE_NATIVE=off` rechnet nur einen Weg.
+
+  Gesichtsgrößen (`size`) zählen für jede Sorte in Pixeln des Kamerabilds
+  (`size_scaled`: im verkleinerten Bild, darauf beziehen sich die
+  Mindestgrößen des Dienstes), beim Kopf-Ausschnitt (`faceViaZoom`) in
+  Pixeln des vergrößerten Ausschnitts. Das beste Bild einer Serie wählt
+  `faceQuality` (`face-rules.ts`) aus Detektor-Sicherheit, Größe,
+  Frontalität und Schärfe; fehlt ein Messwert, gilt 0,5, hochskalierte
+  Gesichter zählen halb, die Notlösung `small_keep` ein Viertel. Die
+  Merkmale aller Bilder derselben Person werden gemittelt
+  (`fuseEmbeddings`); die Schwelle richtet sich nach dem besten Bild. Steckt
+  ein hochgerechnetes Bild im Merkmal, meldet das Hub-Ereignis die Sichtung
+  dem Wächter als hochgerechnet (strengere Entwarnung).
+
+  Zeilen ohne Treffer nennen Sorte, Größe und Sicherheit des Gesichts
+  (`faceLabel`, z. B. „Mini-Gesicht (rescue_zoom, 32 px, det 0.66)“),
+  „Upload OK“ die Größe des gesendeten Bilds und dahinter das Original. Der
+  Hinweis zu Beinahe-Treffern im Improve-Snapshot kommt erst ab fünf
+  Beinahe-Treffern direkt gefundener Gesichter in 24 h, gezählt seit dem
+  Start des Hubs (`nearMissHint`).
+
+  Mit jeder Personen-Sichtung (Kameras und DoorBird) schickt der Hub die Güte
+  des Gesichts als Query-Parameter mit (`sightingQualityParams` in
+  `face-rules.ts`): `faceSize` (Größe in dem Bild, aus dem das Merkmal
+  stammt, `embedSize`: bei direkt gefundenen Gesichtern im verkleinerten
+  Suchbild bis 1920 px, ein Gesicht mit 100 px auf einer 4K-Kamera zählt
+  also 50 px; bei hochgerechneten im Kamerabild; fehlt beim
+  Kopf-Ausschnitt), `faceUpscaled` (1/0), `faceDetScore` und `faceMargin`
+  (Abstand zur zweitbesten Person aus demselben Abgleich wie `matchScore`,
+  `galleryMargin`; fehlt ohne zweite Person). Bei einer gemittelten Serie
+  gelten Größe und hochgerechnet des schwächsten Bilds, das ins Merkmal
+  einging (`fuseEmbeddings` → `series`): Steckt ein hochgerechnetes Bild im
+  Merkmal, geht `faceUpscaled=1` mit. Die Cloud speichert die Angaben an
+  der Sichtung und lernt nur aus klaren Treffern dazu: direkt gefunden, ab
+  64 px, Score ab 0,60, Abstand ab 0,10, nur bei Personen der Whitelist,
+  nie bei gesperrten (`src/lib/face-clusters.ts`, Log „[face auto-learn] …
+  grund=…“). Bei der
+  Zuordnung von Hand und bei „Profil optimieren“ werden gute Gesichter
+  zuerst Sample, hochgerechnete nur ohne Besseres (Log „[face
+  zuordnung]“). „Upload OK“ nennt die gesendete Güte, z. B. „Gesicht 96 px
+  direkt, Abstand 0.153“. Eine Cloud, die die Parameter nicht kennt, nimmt
+  die Sichtung wie bisher an.
+
   Bei einer Person holt der Hub das erste Bild sofort, bis zu drei weitere im
   Abstand von 1,2 s; ein Aussetzer des Personen-Signals beendet die Serie
   nicht, erst 4 s ohne Signal (`person-pipeline-rules.ts`, Zähler
