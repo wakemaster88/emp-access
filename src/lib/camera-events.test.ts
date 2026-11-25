@@ -12,6 +12,7 @@ import {
   parseRunning,
   planOrphanClose,
   recentActivityWhere,
+  roomEventInputs,
   shownAsRunning,
   shownEndedAt,
   staleOpen,
@@ -393,6 +394,88 @@ test("Letztes Ereignis je Raum: unter mehreren Ereignissen derselben Kamera zaeh
   assert.deepEqual(picked(events), expected);
   // In welcher Reihenfolge die Ereignisse ankommen, aendert die Auswahl nicht.
   assert.deepEqual(picked([...events].reverse()), expected);
+});
+
+test("Raeume: die letzte Aktivitaet braucht alle drei Abfragen (zuletzt begonnen, offen, zuletzt beendet je Kamera und Art)", () => {
+  const at = (time: string) => new Date(`2026-11-24T${time}Z`);
+  const row = (cameraId: number, type: string, startedAt: string, endedAt: string | null) => ({
+    cameraId,
+    type,
+    startedAt: at(startedAt),
+    endedAt: endedAt ? at(endedAt) : null,
+  });
+  const group = (cameraId: number, type: string, startedAt: string | null, endedAt: string | null) => ({
+    cameraId,
+    type,
+    _max: { startedAt: startedAt ? at(startedAt) : null, endedAt: endedAt ? at(endedAt) : null },
+  });
+  const rooms = [
+    { id: 1, cameras: [{ id: 1, name: "Halle", lastSeenAt: at("11:59:30") }] },
+    // Diese Kamera meldet der Hub seit 11:50 nicht mehr.
+    { id: 2, cameras: [{ id: 2, name: "Hof", lastSeenAt: at("11:50:00") }] },
+    { id: 3, cameras: [{ id: 3, name: "Lager", lastSeenAt: at("11:59:30") }] },
+  ];
+  const lists = {
+    // Je Kamera das zuletzt begonnene Ereignis: zweimal eine kurze Person.
+    lastStarted: [
+      row(1, "PERSON", "10:00:00", "10:00:30"),
+      row(2, "PERSON", "11:40:00", "11:41:00"),
+      // Kamera 9 gehoert zu keinem Raum.
+      row(9, "PERSON", "11:58:00", "11:58:30"),
+    ],
+    // Kamera 2: Die Bewegung begann vor der Person und ist offen. Sie steht nur hier.
+    open: [row(2, "MOTION", "09:00:00", null)],
+    lastEnded: [
+      // Kamera 1: Die Bewegung begann vor der Person (08:03) und endete nach
+      // ihr (11:10). Sie steht nur in dieser Zeile.
+      group(1, "MOTION", "08:03:00", "11:10:00"),
+      group(1, "PERSON", "10:00:00", "10:00:30"),
+      group(2, "PERSON", "11:40:00", "11:41:00"),
+      // Zeile ohne Beginn und Ende: nennt kein Ereignis.
+      group(3, "MOTION", null, null),
+      group(9, "PERSON", "11:58:00", "11:58:30"),
+    ],
+  };
+  const picked = (l: typeof lists) =>
+    [...latestActivityByRoom(roomEventInputs(l, rooms), now)]
+      .sort(([a], [b]) => a - b)
+      .map(([room, e]) => [room, e.cameraName, e.type, e.running, e.startedAt, e.at]);
+
+  // Raum, Name und letzte Meldung kommen von den Kameras der Raeume. Kamera 9
+  // und die leere Zeile entfallen, Raum 3 bleibt ohne Angabe.
+  assert.deepEqual(
+    roomEventInputs(lists, rooms).map((e) => [e.roomId, e.cameraId, e.cameraName, e.type, e.cameraLastSeenAt?.toISOString()]),
+    [
+      [1, 1, "Halle", "PERSON", "2026-11-24T11:59:30.000Z"],
+      [2, 2, "Hof", "PERSON", "2026-11-24T11:50:00.000Z"],
+      [2, 2, "Hof", "MOTION", "2026-11-24T11:50:00.000Z"],
+      [1, 1, "Halle", "MOTION", "2026-11-24T11:59:30.000Z"],
+      [1, 1, "Halle", "PERSON", "2026-11-24T11:59:30.000Z"],
+      [2, 2, "Hof", "PERSON", "2026-11-24T11:50:00.000Z"],
+    ],
+  );
+  assert.deepEqual(picked(lists), [
+    [1, "Halle", "MOTION", false, "2026-11-24T08:03:00.000Z", "2026-11-24T11:10:00.000Z"],
+    // Offen an stiller Kamera: lief nachweislich bis zu deren letzter Meldung.
+    [2, "Hof", "MOTION", false, "2026-11-24T09:00:00.000Z", "2026-11-24T11:50:00.000Z"],
+  ]);
+  // Fehlt eine der beiden Listen, steht die kurze Person an der Stelle des langen Ereignisses.
+  assert.deepEqual(picked({ ...lists, lastEnded: [] })[0], [
+    1,
+    "Halle",
+    "PERSON",
+    false,
+    "2026-11-24T10:00:00.000Z",
+    "2026-11-24T10:00:30.000Z",
+  ]);
+  assert.deepEqual(picked({ ...lists, open: [] })[1], [
+    2,
+    "Hof",
+    "PERSON",
+    false,
+    "2026-11-24T11:40:00.000Z",
+    "2026-11-24T11:41:00.000Z",
+  ]);
 });
 
 test("Geoeffnete Seite: ein laufendes Ereignis gilt nur kurz nach dem Abruf noch als laufend", () => {

@@ -112,6 +112,57 @@ test("camera_events: je Ereignis laufend und letzte Aktivitaet, offene Ereigniss
   assert.deepEqual(Object.keys(out.events[0]), ["camera", "type", "startedAt", "endedAt", "running", "lastActivityAt"]);
 });
 
+test("camera_events: an einem vollen Tag behaelt das lange offene Ereignis seinen Platz, Kamera und Art gelten fuer beide Abfragen", async () => {
+  const tool = MCP_TOOLS.find((t) => t.name === "camera_events")!;
+  const start = Date.now();
+  const ago = (minutes: number) => new Date(start - minutes * 60_000);
+  const halle = { name: "Halle", lastSeenAt: ago(1) };
+  // 200 beendete Ereignisse der letzten Stunden: Die erste Abfrage ist voll.
+  const recent = Array.from({ length: 200 }, (_, i) => ({
+    id: 1000 - i,
+    type: "PERSON",
+    startedAt: ago(i + 2),
+    endedAt: ago(i + 1),
+    camera: halle,
+  }));
+  // Begann davor und laeuft noch: steht nur in der Abfrage der offenen.
+  const longOpen = { id: 1, type: "PERSON", startedAt: ago(300), endedAt: null, camera: halle };
+
+  type Query = { where: Record<string, unknown> };
+  const calls: Query[] = [];
+  const db = {
+    camera: { findMany: async () => [{ id: 12, name: "Halle", kind: "REOLINK", enabled: true }] },
+    cameraEvent: {
+      findMany: async (args: Query) => {
+        calls.push(args);
+        return args.where.endedAt === null ? [longOpen] : recent;
+      },
+    },
+  } as unknown as McpCtx["db"];
+
+  const out = (await tool.run({ camera: "halle", type: "person" }, { db, accountId: 7, tokenName: "test" })) as {
+    count: number;
+    byType: Record<string, number>;
+    events: Array<Record<string, unknown>>;
+  };
+
+  // Die Liste bleibt bei 200. Das offene Ereignis steht darin (als aeltestes
+  // am Ende), dafuer weicht das aelteste der uebrigen.
+  assert.equal(out.count, 200);
+  assert.deepEqual(out.byType, { PERSON: 200 });
+  assert.deepEqual(
+    [out.events[199].startedAt, out.events[199].endedAt, out.events[199].running],
+    [ago(300).toISOString(), null, true],
+  );
+  assert.equal(out.events[0].startedAt, ago(2).toISOString());
+  assert.equal(out.events[198].startedAt, ago(200).toISOString());
+  // Kamera und Art schraenken beide Abfragen ein.
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].where.cameraId, 12);
+  assert.deepEqual(calls[0].where.type, { equals: "person", mode: "insensitive" });
+  assert.deepEqual(calls[1].where, { ...calls[0].where, endedAt: null });
+});
+
 test("camera_events: ein seit ueber einem Tag offenes Ereignis laeuft nicht mehr, seine letzte Aktivitaet bleibt stehen", async () => {
   const tool = MCP_TOOLS.find((t) => t.name === "camera_events")!;
   const start = Date.now();

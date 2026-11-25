@@ -326,6 +326,63 @@ export function latestActivityByRoom(events: RoomEventInput[], now: Date): Map<n
   return out;
 }
 
+/** Kamera-Ereignis, wie es die Raeume-Seite abfragt. */
+export interface CameraEventRow {
+  cameraId: number;
+  type: string;
+  startedAt: Date;
+  endedAt: Date | null;
+}
+
+/** Je Kamera und Art der spaeteste Beginn und das spaeteste Ende unter den beendeten Ereignissen (`groupBy`). */
+export interface LastEndedGroup {
+  cameraId: number;
+  type: string;
+  _max: { startedAt: Date | null; endedAt: Date | null };
+}
+
+/**
+ * Eingabe fuer `latestActivityByRoom` aus den drei Abfragen der Raeume-Seite:
+ * je Kamera das zuletzt begonnene Ereignis, die offenen und je Kamera und Art
+ * das zuletzt beendete. Keine der Listen reicht allein: Ein langes Ereignis
+ * kann vor einem kuerzeren derselben Kamera begonnen haben. Laeuft es noch,
+ * steht es nur unter den offenen; endete es nach dem kuerzeren, nur in der
+ * Zeile je Kamera und Art. Der Hub fuehrt je Kamera und Art hoechstens ein
+ * laufendes Ereignis, die Ereignisse einer Kamera und Art folgen also
+ * aufeinander: Unter den beendeten gehoeren der spaeteste Beginn und das
+ * spaeteste Ende deshalb zum selben Ereignis. Raum, Name und letzte Meldung
+ * kommen von den Kameras der Raeume; das Ereignis einer Kamera ohne Raum
+ * entfaellt.
+ */
+export function roomEventInputs(
+  lists: { lastStarted: CameraEventRow[]; open: CameraEventRow[]; lastEnded: LastEndedGroup[] },
+  rooms: Array<{ id: number; cameras: Array<{ id: number; name: string; lastSeenAt: Date | null }> }>,
+): RoomEventInput[] {
+  const lastEnded = lists.lastEnded.flatMap((g) =>
+    g._max.startedAt && g._max.endedAt
+      ? [{ cameraId: g.cameraId, type: g.type, startedAt: g._max.startedAt, endedAt: g._max.endedAt }]
+      : [],
+  );
+  const roomCameras = new Map(
+    rooms.flatMap((room) => room.cameras.map((camera) => [camera.id, { roomId: room.id, camera }] as const)),
+  );
+  return [...lists.lastStarted, ...lists.open, ...lastEnded].flatMap((e) => {
+    const hit = roomCameras.get(e.cameraId);
+    if (!hit) return [];
+    return [
+      {
+        roomId: hit.roomId,
+        cameraId: e.cameraId,
+        cameraName: hit.camera.name,
+        type: e.type,
+        startedAt: e.startedAt,
+        endedAt: e.endedAt,
+        cameraLastSeenAt: hit.camera.lastSeenAt,
+      },
+    ];
+  });
+}
+
 /** So lange nach dem Abruf zeigt eine geoeffnete Seite ein laufendes Ereignis noch als laufend. */
 export const RUNNING_SHOWN_MS = 2 * 60_000;
 

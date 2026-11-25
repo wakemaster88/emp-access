@@ -21,7 +21,7 @@ import { deviceControls } from "@/lib/device-controls";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 import { climateView } from "@/lib/room-climate";
 import { buildRoomActivity, dayStart } from "@/lib/room-activity";
-import { latestActivityByRoom } from "@/lib/camera-events";
+import { latestActivityByRoom, roomEventInputs } from "@/lib/camera-events";
 import { readMowerMap, readMowerState } from "@/lib/mower";
 import { getWeather } from "@/lib/weather";
 import { getIrrigationRecommendation, parseRunState, parseValveSequence } from "@/lib/irrigation";
@@ -485,34 +485,10 @@ export default async function RaeumePage() {
   );
 
   // Letzte Aktivitaet je Raum aus drei Listen: je Kamera das zuletzt begonnene
-  // Ereignis, die offenen und je Kamera und Art das zuletzt beendete. Der Hub
-  // fuehrt je Kamera und Art hoechstens ein laufendes Ereignis, die Ereignisse
-  // einer Kamera und Art folgen also aufeinander: Unter den beendeten gehoeren
-  // der spaeteste Beginn und das spaeteste Ende deshalb zum selben.
-  const lastEnded = lastEndedGroups.flatMap((g) =>
-    g._max.startedAt && g._max.endedAt
-      ? [{ cameraId: g.cameraId, type: g.type, startedAt: g._max.startedAt, endedAt: g._max.endedAt }]
-      : [],
-  );
-  const roomCameras = new Map(
-    rooms.flatMap((room) => room.cameras.map((camera) => [camera.id, { roomId: room.id, camera }] as const)),
-  );
+  // Ereignis, die offenen und je Kamera und Art das zuletzt beendete. Warum es
+  // alle drei braucht, steht bei `roomEventInputs`.
   const lastEventByRoom: Map<number, RoomEvent> = latestActivityByRoom(
-    [...events, ...openEvents, ...lastEnded].flatMap((e) => {
-      const hit = roomCameras.get(e.cameraId);
-      if (!hit) return [];
-      return [
-        {
-          roomId: hit.roomId,
-          cameraId: e.cameraId,
-          cameraName: hit.camera.name,
-          type: e.type,
-          startedAt: e.startedAt,
-          endedAt: e.endedAt,
-          cameraLastSeenAt: hit.camera.lastSeenAt,
-        },
-      ];
-    }),
+    roomEventInputs({ lastStarted: events, open: openEvents, lastEnded: lastEndedGroups }, rooms),
     now,
   );
 
