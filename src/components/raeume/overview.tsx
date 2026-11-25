@@ -30,6 +30,7 @@ import { nextParts } from "@/components/raeume/automation-widget";
 import type { RoomAlert, RoomSummary, UpcomingItem } from "@/components/raeume/room-summary";
 import type { RoomDevice, RoomZone } from "@/components/raeume/types";
 import type { ZoneAction } from "@/components/raeume/zone-row";
+import { shownAsRunning } from "@/lib/camera-events";
 import { cn } from "@/lib/utils";
 
 export type OverviewFilter = "all" | "open" | "present" | "lights" | "music" | "alerts";
@@ -198,7 +199,8 @@ function RoomTile({
   if (s.camerasTotal > 0) {
     chips.push({
       Icon: Cctv,
-      text: `${s.camerasTotal} ${s.camerasTotal === 1 ? "Kamera" : "Kameras"}${lastEvent ? ` · ${lastEvent.running ? "jetzt" : ago(lastEvent.at, nowMs)}` : ""}`,
+      // "jetzt" nur kurz nach dem Abruf: Bleibt die Seite offen, steht danach das Alter der Angabe.
+      text: `${s.camerasTotal} ${s.camerasTotal === 1 ? "Kamera" : "Kameras"}${lastEvent ? ` · ${shownAsRunning(lastEvent, nowMs) ? "jetzt" : ago(lastEvent.at, nowMs)}` : ""}`,
       tone: s.camerasStale > 0 ? "text-destructive" : undefined,
     });
   }

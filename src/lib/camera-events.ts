@@ -320,3 +320,18 @@ export function latestActivityByRoom(events: RoomEventInput[], now: Date): Map<n
   }
   return out;
 }
+
+/** So lange nach dem Abruf zeigt eine geoeffnete Seite ein laufendes Ereignis noch als laufend. */
+export const RUNNING_SHOWN_MS = 2 * 60_000;
+
+/**
+ * Zeigt eine geoeffnete Seite das Ereignis noch als laufend? `running` ist der
+ * Stand beim Abruf, `at` bei einem laufenden Ereignis dessen Zeitpunkt. Liegt
+ * der Abruf laenger zurueck, weiss die Seite nicht mehr, ob das Ereignis noch
+ * laeuft: Sie nennt dann wie bei einem beendeten das Alter der Angabe, statt
+ * ueber Stunden „laeuft“ zu zeigen. Geht die Uhr des Browsers nach, zaehlt
+ * der Abruf als eben geschehen.
+ */
+export function shownAsRunning(e: Pick<RoomLastEvent, "at" | "running">, nowMs: number): boolean {
+  return e.running && nowMs - Date.parse(e.at) < RUNNING_SHOWN_MS;
+}

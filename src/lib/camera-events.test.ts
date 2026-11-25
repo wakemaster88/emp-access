@@ -12,6 +12,7 @@ import {
   parseRunning,
   planOrphanClose,
   recentActivityWhere,
+  shownAsRunning,
   shownEndedAt,
   staleOpen,
   withOpenEvents,
@@ -383,4 +384,19 @@ test("Letztes Ereignis je Raum: unter mehreren Ereignissen derselben Kamera zaeh
   assert.deepEqual(picked(events), expected);
   // In welcher Reihenfolge die Ereignisse ankommen, aendert die Auswahl nicht.
   assert.deepEqual(picked([...events].reverse()), expected);
+});
+
+test("Geoeffnete Seite: ein laufendes Ereignis gilt nur kurz nach dem Abruf noch als laufend", () => {
+  const at = "2026-11-24T12:00:00.000Z"; // Abruf; so steht es bei einem laufenden Ereignis
+  const fetched = Date.parse(at);
+  const running = { at, running: true };
+  assert.equal(shownAsRunning(running, fetched), true);
+  assert.equal(shownAsRunning(running, fetched + 119_000), true);
+  // Zwei Minuten nach dem Abruf und spaeter: Die Seite nennt das Alter der Angabe.
+  assert.equal(shownAsRunning(running, fetched + 120_000), false);
+  assert.equal(shownAsRunning(running, fetched + 3 * 3_600_000), false);
+  // Die Uhr des Browsers geht nach: wie eben abgerufen.
+  assert.equal(shownAsRunning(running, fetched - 30_000), true);
+  // Ein beendetes Ereignis laeuft auch frisch abgerufen nicht.
+  assert.equal(shownAsRunning({ at: "2026-11-24T11:59:00.000Z", running: false }, fetched), false);
 });
