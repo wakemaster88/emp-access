@@ -29,9 +29,12 @@ import { riderHome } from "./rider-base";
 import { familyRelation, loadFamilyMembers, memberName, type FamilyMember, type FamilyPerson, type FamilyRelation } from "./rider-family";
 import { RIDER_COOKIE, RIDER_SESSION_DAYS, signRiderSession, verifyRiderSession } from "./rider-session";
 import { riderResetKeyValid } from "./rider-reset";
+import { keyedFingerprint } from "./secret-box";
+import {
+  clearLoginFailures, isKnownLoginIp, lockLoginIfExhausted, loginIpHash, loginSlowdownMs, pruneLoginLocks,
+  releaseLoginAttempt, reserveLoginAttempt, waitForLoginPaceSlot, type LoginLockKey,
+} from "./login-lockout";
 
-const MAX_FAILURES = 5;
-const LOCK_MS = 15 * 60_000;
 const MAX_PASSKEYS = 5;
 const TIMEOUT_MS = 120_000;
 
@@ -273,13 +276,20 @@ export async function mayManageCredentials(p: RiderAuthProfile, resetKey?: unkno
  * Link aus der Anmelde-Mail: Er belegt die Adresse. Gehört sie diesem Zugang
  * (bestätigt) und ist schon ein Passwort oder Passkey eingerichtet, meldet der
  * Link an (`setRiderCookie`). Null: ohne Anmeldedaten geht es zum Einrichten.
+ * Trägt der Link eine Version (`mailLinkKey`), meldet er nur an, solange sie
+ * der `sessionVersion` des Profils entspricht; danach geht es zur Anmeldung.
  */
-export async function mailLinkSession(token: string, email: string): Promise<{ id: number; sessionVersion: number } | null> {
+export async function mailLinkSession(
+  token: string,
+  email: string,
+  version?: number,
+): Promise<{ id: number; sessionVersion: number } | null> {
   const p = await prisma.riderProfile.findUnique({
     where: { token },
     select: { id: true, email: true, sessionVersion: true, passwordHash: true, _count: { select: { passkeys: true } } },
   });
   if (!p || p.email !== email || (p.passwordHash == null && p._count.passkeys === 0)) return null;
+  if (version !== undefined && version !== p.sessionVersion) return null;
   return { id: p.id, sessionVersion: p.sessionVersion };
 }
 
@@ -303,29 +313,68 @@ export function hashRiderPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
 }
 
-export function isLocked(p: RiderAuthProfile, now: Date = new Date()): boolean {
-  return !!p.loginLockedUntil && p.loginLockedUntil.getTime() > now.getTime();
+/**
+ * Zähler der Passwort-Sperre für ein Profil und eine Client-IP. Liegt in
+ * derselben Tabelle wie die Sperre der Verwaltung (lib/login-lockout), mit
+ * eigenem Abdruck je Profil; IP und Profil nur als Abdruck.
+ */
+export function riderLoginLockKey(profileId: number, ip: string): LoginLockKey {
+  return { emailHash: keyedFingerprint("rider-login-profile", String(profileId)), ipHash: loginIpHash(ip) };
 }
 
-/** Passwort prüfen; zählt Fehlversuche und sperrt nach fünf für 15 Minuten. */
-export async function checkRiderPassword(p: RiderAuthProfile, password: unknown): Promise<"ok" | "wrong" | "locked"> {
-  if (isLocked(p)) return "locked";
+/** Neues Passwort oder Zugang zurückgesetzt: Sperren dieses Profils an allen IPs aufheben. */
+export async function resetRiderLoginLocks(profileId: number): Promise<void> {
+  await prisma.adminLoginLock.updateMany({
+    where: { emailHash: riderLoginLockKey(profileId, "").emailHash },
+    data: { failures: 0, lockedUntil: null },
+  });
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Passwort prüfen. Gesperrt wird je (Profil, Client-IP) nach den
+ * Fehlversuchen aus lib/login-limits für 15 Minuten; wer nur den Link kennt,
+ * sperrt so nicht die Person selbst aus. Über alle IPs zusammen wird nur
+ * verlangsamt und getaktet, IPs mit früherer richtiger Eingabe nicht.
+ * „slow“: gerade kein Takt frei, der Versuch zählt nicht.
+ */
+export async function checkRiderPassword(
+  p: RiderAuthProfile,
+  password: unknown,
+  ip: string,
+  now: Date = new Date(),
+): Promise<"ok" | "wrong" | "locked" | "slow"> {
+  await pruneLoginLocks(now);
+  const key = riderLoginLockKey(p.id, ip);
+  const start = Date.now();
+  const delay = await loginSlowdownMs(key.emailHash, now);
+  // Versuch vor dem Vergleich belegen: gleichzeitige Anfragen unterlaufen die Sperre so nicht.
+  if (!(await reserveLoginAttempt(key, now))) return "locked";
+  if (delay > 0 && !(await isKnownLoginIp(key, now))) {
+    if (!(await waitForLoginPaceSlot(key.emailHash, now))) {
+      await releaseLoginAttempt(key);
+      return "slow";
+    }
+  }
+  const remaining = delay - (Date.now() - start);
+  if (remaining > 0) await sleep(remaining);
+
   const ok = typeof password === "string" && !!p.passwordHash && (await bcrypt.compare(password, p.passwordHash));
   if (ok) {
-    if (p.loginFailures > 0 || p.loginLockedUntil) {
-      await prisma.riderProfile.update({ where: { id: p.id }, data: { loginFailures: 0, loginLockedUntil: null } });
-    }
+    await clearLoginFailures(key, now);
     return "ok";
   }
-  const failures = p.loginFailures + 1;
-  await prisma.riderProfile.update({
-    where: { id: p.id },
-    data:
-      failures >= MAX_FAILURES
-        ? { loginFailures: 0, loginLockedUntil: new Date(Date.now() + LOCK_MS) }
-        : { loginFailures: failures },
-  });
+  await lockLoginIfExhausted(key, now);
   return "wrong";
+}
+
+/** Antwort der Schnittstellen auf „locked“ und „slow“ aus `checkRiderPassword`. */
+export function riderPasswordLimitResponse(check: "locked" | "slow"): NextResponse {
+  return NextResponse.json(
+    { error: check === "locked" ? "Zu viele Versuche. Bitte in 15 Minuten noch einmal." : "Gerade sehr viele Versuche. Bitte gleich noch einmal." },
+    { status: 429 },
+  );
 }
 
 // ---------------------------------------------------------------- Passkeys
@@ -547,6 +596,7 @@ export async function resetRiderAccess(profileId: number, accountId: number): Pr
     }),
   ]);
   if (updated.count !== 1) return null;
+  await resetRiderLoginLocks(profileId);
   // Die bisherigen Geräte gehören womöglich nicht mehr dem Fahrer.
   await prisma.riderPushSubscription.deleteMany({ where: { profileId, accountId } });
   return token;

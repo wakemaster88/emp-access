@@ -207,6 +207,9 @@ export function RiderChallengeVoting({ token, challengeId, kind, running, ended,
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden onChange={pick} />
         </div>
       )}
+      {running && canUpload && (
+        <span className="rd-muted">Dein Foto prüft vorher automatisch ein KI-Dienst (xAI), erst danach sehen es die anderen.</span>
+      )}
       {message}
 
       {(ended ? voting.entries : others).length > 0 ? (

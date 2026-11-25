@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { verifyMailLinkKey } from "@/lib/day-guest";
+import { verifyCurrentMailLinkKey } from "@/lib/day-guest";
 import { aboRuntimeLabel, onboardingState } from "@/lib/rider-onboarding";
 import { RiderAboChoice } from "@/components/rider/rider-abo-choice";
 import { RiderWho } from "@/components/rider/rider-who";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 /** Nach dem Mail-Link: wer man im Kundenkonto ist, sonst gefundene Abos zur Adresse auswählen. */
 export default async function RiderWelcomePage({ params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
-  const link = verifyMailLinkKey(key);
+  const link = await verifyCurrentMailLinkKey(key);
   if (!link) {
     return (
       <main className="rd-main">

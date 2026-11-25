@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireRider } from "@/lib/rider-auth";
 import { daysUntil, fmtDay } from "@/lib/rider-format";
 import { RiderProfileForm } from "@/components/rider/rider-profile-form";
-import { RiderLogout, RiderSecurity } from "@/components/rider/rider-auth";
+import { RiderLogout, RiderLogoutEverywhere, RiderSecurity } from "@/components/rider/rider-auth";
 import { RiderPush } from "@/components/rider/rider-push";
 import { RiderPerson } from "@/components/rider/rider-person";
 import { findRiderAuthProfileCached, riderFamilyView } from "@/lib/rider-auth";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 /**
  * Profil: oben Bild, Name und persönliche Daten (änderbar), dann Abo,
  * „Abo fehlt?“ (Code für die Kasse), Spitzname, Familie, Anmeldung und
- * Benachrichtigungen; unten Abmelden.
+ * Benachrichtigungen; unten Abmelden (dieses Gerät oder alle).
  * Statistik löschen gibt es nicht (Aaron, 20.11.2026).
  */
 export default async function RiderProfilePage({ params }: { params: Promise<{ token: string }> }) {
@@ -46,6 +46,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
         subtitle={subtitle}
         editable={relation === "self" || relation === "manage"}
         managed={relation === "manage"}
+        birthDateLocked={person.birthDateLocked}
       />
 
       {abo && (
@@ -92,6 +93,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ t
           <RiderPush token={token} />
           <div className="rd-sec-end">
             <RiderLogout token={token} />
+            <RiderLogoutEverywhere token={token} />
           </div>
         </>
       ) : relation === "manage" ? (

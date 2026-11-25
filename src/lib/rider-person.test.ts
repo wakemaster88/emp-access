@@ -49,3 +49,35 @@ test("riderPhotoUrl: eigene Route je Person, Version aus updatedAt", () => {
   // Neues Bild, neues updatedAt: neue Adresse, der Browser holt es neu.
   assert.notEqual(riderPhotoUrl("abcdefghijklmnop", at), riderPhotoUrl("abcdefghijklmnop", new Date(at.getTime() + 1)));
 });
+
+test("birthDateChange: erstes Eintragen immer, danach eine Änderung im Jahr", async () => {
+  const { birthDateChange, birthDateLocked, BIRTH_DATE_LOCK_DAYS } = await import("./rider-person");
+  const a = new Date(Date.UTC(1990, 4, 1));
+  const b = new Date(Date.UTC(1990, 4, 2));
+  const day = 86_400_000;
+  assert.equal(birthDateChange(a, new Date(a.getTime()), null, NOW), "same");
+  assert.equal(birthDateChange(null, null, null, NOW), "same");
+  assert.equal(birthDateChange(null, a, null, NOW), "first");
+  assert.equal(birthDateChange(a, b, null, NOW), "change");
+  assert.equal(birthDateChange(a, null, null, NOW), "change");
+  const recent = new Date(NOW.getTime() - 10 * day);
+  assert.equal(birthDateChange(a, b, recent, NOW), "blocked");
+  // Gelöscht und neu eingetragen zählt nicht als erstes Mal.
+  assert.equal(birthDateChange(null, b, recent, NOW), "blocked");
+  assert.equal(birthDateChange(a, a, recent, NOW), "same");
+  const old = new Date(NOW.getTime() - (BIRTH_DATE_LOCK_DAYS + 1) * day);
+  assert.equal(birthDateChange(a, b, old, NOW), "change");
+  assert.equal(birthDateLocked(recent, NOW), true);
+  assert.equal(birthDateLocked(old, NOW), false);
+  assert.equal(birthDateLocked(null, NOW), false);
+});
+
+test("birthDateChange: gleicher Tag gilt als unverändert, auch wenn der gespeicherte Wert nicht auf Mitternacht liegt", async () => {
+  const { birthDateChange } = await import("./rider-person");
+  const stored = new Date(Date.UTC(1990, 4, 2, 22, 0));
+  const sent = new Date(Date.UTC(1990, 4, 2));
+  const recent = new Date(NOW.getTime() - 10 * 86_400_000);
+  assert.equal(birthDateChange(stored, sent, null, NOW), "same");
+  assert.equal(birthDateChange(stored, sent, recent, NOW), "same");
+  assert.equal(birthDateChange(stored, new Date(Date.UTC(1990, 4, 3)), null, NOW), "change");
+});

@@ -74,6 +74,36 @@ function parseNames(input: PersonInput, now: Date): { firstName: string; lastNam
   return { firstName, lastName, birthDate };
 }
 
+/** So lange nach einer Änderung in der App geht das Geburtsdatum dort nicht mehr zu ändern (Kasse und Verwaltung immer). */
+export const BIRTH_DATE_LOCK_DAYS = 365;
+export const BIRTH_DATE_LOCKED_TEXT = "Das Geburtsdatum kannst du in der App nur einmal im Jahr ändern. An der Kasse ändern wir es dir gern.";
+
+/** Hat die Person das Geburtsdatum in der App in den letzten BIRTH_DATE_LOCK_DAYS Tagen geändert? */
+export function birthDateLocked(changedAt: Date | null | undefined, now: Date = new Date()): boolean {
+  return !!changedAt && now.getTime() - changedAt.getTime() < BIRTH_DATE_LOCK_DAYS * 86_400_000;
+}
+
+function birthDay(d: Date | null): string | null {
+  return d ? d.toISOString().slice(0, 10) : null;
+}
+
+/**
+ * Geburtsdatum in der App: „same“ unverändert, „first“ erstmals eingetragen
+ * (immer erlaubt), „change“ geändert oder gelöscht (zählt als die eine
+ * Änderung im Jahr), „blocked“ schon geändert, jetzt nur noch an der Kasse.
+ */
+export function birthDateChange(
+  current: Date | null,
+  next: Date | null,
+  changedAt: Date | null,
+  now: Date = new Date(),
+): "same" | "first" | "change" | "blocked" {
+  // Verglichen wird der Tag: die App zeigt und sendet nur ihn, gespeicherte Werte liegen nicht immer auf Mitternacht.
+  if (birthDay(current) === birthDay(next)) return "same";
+  if (birthDateLocked(changedAt, now)) return "blocked";
+  return current == null ? "first" : "change";
+}
+
 /** Initialen für das runde Bild ohne Foto. */
 export function initials(firstName: string | null | undefined, lastName: string | null | undefined): string {
   const a = firstName?.trim().charAt(0) ?? "";
@@ -96,6 +126,8 @@ export interface RiderPersonView {
   email: string | null;
   /** Die Daten stehen noch nicht an der Person, sondern kommen vom Abo. */
   fromAbo: boolean;
+  /** Das Geburtsdatum wurde in der App schon geändert; bis auf Weiteres nur an der Kasse. */
+  birthDateLocked: boolean;
 }
 
 /**
@@ -112,6 +144,7 @@ export async function loadRiderPerson(token: string, now: Date = new Date()): Pr
         firstName: true,
         lastName: true,
         birthDate: true,
+        birthDateChangedAt: true,
         updatedAt: true,
         email: true,
         customer: { select: { email: true } },
@@ -137,5 +170,6 @@ export async function loadRiderPerson(token: string, now: Date = new Date()): Pr
     photoUrl: withPhoto > 0 ? riderPhotoUrl(token, p.updatedAt) : null,
     email: p.email ?? p.customer?.email ?? p.tickets.find((t) => t.email)?.email?.trim().toLowerCase() ?? null,
     fromAbo: !own && !!abo,
+    birthDateLocked: birthDateLocked(p.birthDateChangedAt, now),
   };
 }

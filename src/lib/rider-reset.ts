@@ -87,7 +87,10 @@ export async function sendRiderResetMail(
   return result.ok;
 }
 
-/** Nach dem Zurücksetzen: alte Sitzungen beenden; liefert die neue Version fürs Cookie. */
+/**
+ * Alte Sitzungen beenden (nach dem Zurücksetzen, nach einem Passwort-Wechsel
+ * und für „Auf allen Geräten abmelden“); liefert die neue Version fürs Cookie.
+ */
 export async function endOtherSessions(profileId: number): Promise<number> {
   const updated = await prisma.riderProfile.update({
     where: { id: profileId },

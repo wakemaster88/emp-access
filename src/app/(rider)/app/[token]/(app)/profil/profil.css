@@ -66,5 +66,5 @@ div.rd-avatar { cursor: default; }
 .rd-set > .rd-msg { min-height: 0; margin-bottom: 12px; border-top: 0; }
 
 /* Ende des Profils: Abmelden. */
-.rd-sec-end { margin-top: 14px; }
+.rd-sec-end { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
 .rd-note { padding: 0 2px; }
