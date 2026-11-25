@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { parseScanLockSeconds } from "@/lib/scan-lock";
 import { foreignRefError } from "@/lib/tenant-refs";
+import { clearAccessRulesCache } from "@/lib/access-rules-cache";
 
 export async function PUT(
   request: NextRequest,
@@ -41,10 +42,15 @@ export async function PUT(
       allowReentry: body.allowReentry ?? existing.allowReentry,
       personLimit: body.personLimit !== undefined ? (body.personLimit ? Number(body.personLimit) : null) : existing.personLimit,
       scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, existing.scanLockSeconds),
+      // Einlass-Regel „Tickets ohne Bereich …“: nur geändert, wenn mitgeschickt.
+      allowUnassignedTickets: typeof body.allowUnassignedTickets === "boolean"
+        ? body.allowUnassignedTickets
+        : existing.allowUnassignedTickets,
       showOnDashboard: body.showOnDashboard !== undefined ? body.showOnDashboard : existing.showOnDashboard,
       openingHours: body.openingHours !== undefined ? (body.openingHours || null) : existing.openingHours,
     },
   });
+  if (area.allowUnassignedTickets !== existing.allowUnassignedTickets) clearAccessRulesCache();
   return NextResponse.json(area);
 }
 

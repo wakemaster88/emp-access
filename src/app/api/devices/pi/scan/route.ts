@@ -18,6 +18,15 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { adoptDayTickets } from "@/lib/day-guest";
 import { riderView } from "@/lib/customer-person";
 import { checkVoucherAccess } from "@/lib/voucher-access";
+import {
+  ACCESS_RULES_OFF,
+  deniesUnassignedReader,
+  deniesUnassignedTicket,
+  deniesVoucherArea,
+  evaluatePassback,
+  voucherAreaIds,
+} from "@/lib/access-rules";
+import { loadAccessRules, loadAreaHasExitReader, type LoadedAccessRules } from "@/lib/access-rules-cache";
 
 /**
  * Meldung des Raspberry Pi, dass das Relais per Dashboard-Button geoeffnet
@@ -73,6 +82,9 @@ const PARTNER_DEADLINE_MS = 5_000;
  * der in einer Schleife sendet.
  */
 const SCAN_RATE_LIMIT = { limit: 300, windowMs: 60_000 } as const;
+
+/** Ablehnung der Einlass-Regel „Leser ohne Bereich öffnet nicht“. */
+const UNASSIGNED_READER_MESSAGE = "Leser keinem Bereich zugeordnet";
 
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
@@ -174,6 +186,17 @@ export async function POST(request: NextRequest) {
       });
   // Bei frueher Rueckkehr wird das Ergebnis nicht mehr gebraucht.
   recentPromise.catch(() => {});
+
+  // Einlass-Regeln aus den Einstellungen (60-s-Zwischenspeicher je Instanz,
+  // also im Normalfall ohne Abfrage). Ab Werk sind alle Regeln aus. Kann die
+  // Konfiguration nicht gelesen werden, gelten alle Regeln als aus.
+  const rulesPromise: Promise<LoadedAccessRules> = loadAccessRules(
+    db as unknown as Parameters<typeof loadAccessRules>[0],
+    accountId,
+  ).catch((err) => {
+    console.error("[scan] access rules failed:", err);
+    return { rules: ACCESS_RULES_OFF, openAreaIds: [] };
+  });
 
   const device = await db.device.findFirst({
     where: { id: deviceId, accountId, type: "RASPBERRY_PI" },
@@ -281,6 +304,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Ungültiger Code" });
   }
 
+  // Regel „Leser ohne Bereich öffnet nicht“ fuer Treffer ohne EMP-Ticket
+  // (Binarytec, Wakesys, Gutschein): die haben nie eine Direkt-Zuweisung.
+  const readerHasArea = !!(device.accessIn || device.accessOut);
+  async function unassignedReaderDenied(scanCode: string) {
+    const { rules } = await rulesPromise;
+    if (!deniesUnassignedReader(rules, { readerHasArea, hasDirectDeviceMatch: false })) {
+      return null;
+    }
+    await db.scan.create({
+      data: { code: scanCode, deviceId, result: "DENIED", note: "device_unassigned", accountId },
+    });
+    return NextResponse.json({ granted: false, message: UNASSIGNED_READER_MESSAGE });
+  }
+
   function scanLockFor(ticketId?: number | null) {
     return evaluateScanLock(db, {
       accountId,
@@ -322,6 +359,8 @@ export async function POST(request: NextRequest) {
   );
   if (binarytec !== null) {
     if (binarytec.valid) {
+      const unassigned = await unassignedReaderDenied(code);
+      if (unassigned) return unassigned;
       const locked = await lockedResponse();
       if (locked) return locked;
       await db.scan.create({
@@ -422,6 +461,33 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ granted: false, message: access.message });
       }
       if (voucher) {
+        const unassigned = await unassignedReaderDenied(code);
+        if (unassigned) return unassigned;
+        // Regel „Gutscheine gelten nur an Lesern ihres Bereichs“: Bereiche des
+        // Gutscheins (eigener Bereich, Bereiche und Hauptressource seines
+        // Service) gegen die des
+        // Lesers, bevor eingeloest wird.
+        const { rules } = await rulesPromise;
+        const readerAreas = [device.accessIn, device.accessOut].filter(Boolean) as number[];
+        if (rules.voucherNeedsArea && readerAreas.length > 0) {
+          const service = voucher.serviceId != null
+            ? await db.service.findFirst({
+                where: { id: voucher.serviceId, accountId },
+                select: { mainAccessAreaId: true, serviceAreas: { select: { accessAreaId: true } } },
+              })
+            : null;
+          const areas = voucherAreaIds(voucher, [
+            ...(service?.mainAccessAreaId ? [service.mainAccessAreaId] : []),
+            ...(service?.serviceAreas.map((sa) => sa.accessAreaId) ?? []),
+          ]);
+          if (deniesVoucherArea(rules, { voucherAreaIds: areas, deviceAreaIds: readerAreas })) {
+            await db.scan.create({
+              data: { code, deviceId, result: "DENIED", note: "voucher_wrong_area", accountId },
+            });
+            return NextResponse.json({ granted: false, message: "Gutschein gilt nicht an diesem Leser" });
+          }
+        }
+
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0);
         const todayEnd = new Date(today);
@@ -501,6 +567,9 @@ export async function POST(request: NextRequest) {
       if (wakesys.picture) noteData.picture = wakesys.picture;
       if (wakesys.age) noteData.age = wakesys.age;
       const note = Object.keys(noteData).length > 0 ? JSON.stringify(noteData) : wakesys.name || null;
+
+      const unassigned = await unassignedReaderDenied(stripped || code);
+      if (unassigned) return unassigned;
 
       const locked = await lockedResponse();
       if (locked) return locked;
@@ -721,9 +790,27 @@ export async function POST(request: NextRequest) {
         })(device.accessIn)
       : Promise.resolve(null);
   const scanLockPromise = scanLockFor(ticketId);
+  // Regel „Wiedereintritt erst nach Ausgang oder Wartezeit“: gleiche
+  // Bedingungen wie die Bereichssperre, und nur in Bereichen mit aktivem
+  // Ausgangs-Leser. Ist die Regel aus, gibt es keine Abfrage.
+  const passbackPromise =
+    !isExitScan && !isEmployee && device.accessIn != null
+      ? rulesPromise.then(({ rules }) =>
+          evaluatePassback(db, {
+            accountId,
+            areaId: device.accessIn,
+            ticketId,
+            minutes: rules.passbackMinutes,
+            now,
+            areaHasExitReader: (areaId) =>
+              loadAreaHasExitReader(db as unknown as Parameters<typeof loadAreaHasExitReader>[0], accountId, areaId),
+          }),
+        )
+      : Promise.resolve(null);
   // Bei frueher Rueckkehr werden die Ergebnisse nicht mehr gebraucht.
   areaLockPromise.catch(() => {});
   scanLockPromise.catch(() => {});
+  passbackPromise.catch(() => {});
 
   // DURATION-Ablauf greift nur bei Eintritten an der HAUPTRESSOURCE. Wer
   // drin ist, darf raus, auch wenn die gebuchte Stunde inzwischen abgelaufen
@@ -791,6 +878,31 @@ export async function POST(request: NextRequest) {
         data: { code, deviceId, result: "DENIED", note: "wrong_resource", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({ granted: false, message: "Resource nicht erlaubt", ticket: ticketInfo });
+    }
+    // Regel „Tickets ohne Bereich gelten nur an freigegebenen Bereichen“.
+    const { rules, openAreaIds } = await rulesPromise;
+    if (deniesUnassignedTicket(rules, {
+      ticketAreaCount: allTicketAreas.length,
+      isVereinMember,
+      deviceAreaIds: deviceAreas,
+      openAreaIds,
+      mainAreaId,
+      isExit: isExitScan,
+    })) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", note: "ticket_unassigned", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({ granted: false, message: "Ticket ohne Bereich – hier nicht gültig", ticket: ticketInfo });
+    }
+  } else if (!hasDirectDeviceMatch) {
+    // Leser ohne Bereich: ohne Regel gilt hier jedes Ticket. Regel „Leser
+    // ohne Bereich öffnet nicht“: nur noch Tickets mit Direkt-Zuweisung.
+    const { rules } = await rulesPromise;
+    if (deniesUnassignedReader(rules, { readerHasArea: false, hasDirectDeviceMatch })) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", note: "device_unassigned", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({ granted: false, message: UNASSIGNED_READER_MESSAGE, ticket: ticketInfo });
     }
   }
 
@@ -946,13 +1058,26 @@ export async function POST(request: NextRequest) {
   // aussperren.
   if (!isExitScan && !isEmployee && device.accessIn != null) {
     const areaLock = await areaLockPromise;
-    if (areaLock) {
+    // Sperren beide, gilt die laengere.
+    const passback = await passbackPromise;
+    if (areaLock && (!passback || areaLock.remainingMs >= passback.remainingMs)) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", note: "area_scan_lock", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({
         granted: false,
         message: areaLock.message,
+        locked: true,
+        ticket: ticketInfo,
+      });
+    }
+    if (passback) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", note: "area_passback", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({
+        granted: false,
+        message: passback.message,
         locked: true,
         ticket: ticketInfo,
       });

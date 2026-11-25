@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { parseAccessRules } from "./access-rules";
 
 /**
  * Daten für den Dialog „Ressource bearbeiten“ (Reiter Geräte und anny) –
@@ -25,7 +26,7 @@ export interface EditorDevice {
 }
 
 export async function loadAreaEditorData(db: PrismaClient, accountFilter: { accountId?: number }) {
-  const [devices, annyConfig, annyLinks] = await Promise.all([
+  const [devices, annyConfig, annyLinks, account] = await Promise.all([
     db.device.findMany({
       where: accountFilter,
       select: {
@@ -42,7 +43,12 @@ export async function loadAreaEditorData(db: PrismaClient, accountFilter: { acco
       where: accountFilter,
       select: { annyName: true, accessAreaId: true },
     }).catch(() => [] as { annyName: string; accessAreaId: number }[]),
+    // Einlass-Regel „Tickets ohne Bereich …“: nur dann zeigt der Dialog den Haken.
+    accountFilter.accountId != null
+      ? db.account.findUnique({ where: { id: accountFilter.accountId }, select: { accessRules: true } })
+      : Promise.resolve(null),
   ]);
+  const ticketNeedsArea = parseAccessRules(account?.accessRules).ticketNeedsArea;
 
   // Für den Reiter „Geräte“: Scanner (Pi), Drehkreuze und Türen – und alles,
   // was schon an einer Ressource hängt, damit es sich dort auch lösen lässt.
@@ -69,5 +75,5 @@ export async function loadAreaEditorData(db: PrismaClient, accountFilter: { acco
   const annyMappings: Record<string, number> = {};
   for (const link of annyLinks) annyMappings[link.annyName] = link.accessAreaId;
 
-  return { devices: devices as EditorDevice[], accessDevices, annyResources, annyServices, annyMappings };
+  return { devices: devices as EditorDevice[], accessDevices, annyResources, annyServices, annyMappings, ticketNeedsArea };
 }

@@ -182,6 +182,7 @@ export default async function AreaDetailPage({ params }: Props) {
       allowReentry: area.allowReentry,
       personLimit: area.personLimit,
       scanLockSeconds: area.scanLockSeconds,
+      allowUnassignedTickets: area.allowUnassignedTickets,
       showOnDashboard: area.showOnDashboard,
       openingHours: area.openingHours,
     },
@@ -286,6 +287,7 @@ export default async function AreaDetailPage({ params }: Props) {
           annyResources={editor.annyResources}
           annyServices={editor.annyServices}
           annyMappings={editor.annyMappings}
+          unassignedTicketsOption={editor.ticketNeedsArea}
         />
       </div>
     </>
