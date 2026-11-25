@@ -170,7 +170,52 @@ export interface OutboxTidy<T> {
   cutEnds: number;
 }
 
-const queueKey = (e: QueuedEvent): string => `${e.cameraId}:${e.type}`;
+const queueKey = (e: { cameraId: number; type: string }): string => `${e.cameraId}:${e.type}`;
+
+/**
+ * Beginne, bei denen der Hub nicht weiss, ob die Cloud sie kennt: Sie standen
+ * in einer Meldung, die er als gescheitert wertet, als Beginn oder in der
+ * Liste der laufenden Ereignisse. Die Cloud kann eine solche Meldung trotzdem
+ * verarbeitet haben (Zeitlimit) und fuehrt das Ereignis dann als offen. Den
+ * Beginn sendet der Hub nicht noch einmal, sein Ende muss aber ankommen.
+ *
+ * Gemerkt wird jeder solche Beginn, nicht nur der juengste je Kamera und Art:
+ * Welche der gescheiterten Meldungen die Cloud verarbeitet hat, weiss der Hub
+ * nicht, offen sein kann dort also das Ereignis zu jedem von ihnen. Erledigt
+ * ist ein Beginn, sobald ein Ende ab seinem Zeitpunkt angekommen ist.
+ */
+export class UnconfirmedStarts {
+  /** Je Kamera und Art die Zeitpunkte (ms), aufsteigend. */
+  private readonly times = new Map<string, number[]>();
+
+  /** Meldung gescheitert: ihre Beginne und was sie als laufend nannte. */
+  failed(events: QueuedEvent[], running: Array<Omit<QueuedEvent, "phase">> = []): void {
+    for (const e of [...events.filter((e) => e.phase === "start"), ...running]) {
+      const at = Date.parse(e.at);
+      const list = this.times.get(queueKey(e)) ?? [];
+      if (Number.isNaN(at) || list.includes(at)) continue;
+      this.times.set(queueKey(e), [...list, at].sort((a, b) => a - b));
+    }
+  }
+
+  /** Meldung angekommen: Jedes Ende erledigt die Beginne bis zu seinem Zeitpunkt. */
+  delivered(events: QueuedEvent[]): void {
+    for (const e of events) {
+      const list = this.times.get(queueKey(e));
+      const at = Date.parse(e.at);
+      if (e.phase !== "end" || !list || Number.isNaN(at)) continue;
+      const later = list.filter((t) => t > at);
+      if (later.length > 0) this.times.set(queueKey(e), later);
+      else this.times.delete(queueKey(e));
+    }
+  }
+
+  /** Wie viele gemerkte Beginne dieser Kamera und Art liegen nicht nach `e`? */
+  upTo(e: QueuedEvent): number {
+    const at = Date.parse(e.at);
+    return (this.times.get(queueKey(e)) ?? []).filter((t) => t <= at).length;
+  }
+}
 
 /**
  * Warteschlange der Meldungen an die Cloud aufraeumen, vor jeder Meldung und
@@ -185,14 +230,17 @@ const queueKey = (e: QueuedEvent): string => `${e.cameraId}:${e.type}`;
  *    hoechstwahrscheinlich nichts schliessen: Je Kamera und Art fuehrt die
  *    Cloud hoechstens ein offenes Ereignis. Das erste Ende in der
  *    Warteschlange schliesst es, ebenso das Ende hinter einem Beginn, der
- *    selbst noch wartet. Diese bleiben; von den uebrigen gehen die aeltesten.
- *    Erst danach fallen Beginne weg.
+ *    selbst noch wartet, und das Ende zu einem Beginn aus einer gescheiterten
+ *    Meldung (`unconfirmed`): Den kann die Cloud verarbeitet haben, auch wenn
+ *    ein aelteres Ende derselben Kamera und Art davor steht. Diese bleiben;
+ *    von den uebrigen gehen die aeltesten. Erst danach fallen Beginne weg.
  */
 export function tidyOutbox<T extends QueuedEvent>(
   queue: T[],
   now: number,
   maxStartAgeMs: number,
-  maxLength: number
+  maxLength: number,
+  opts: { unconfirmed?: UnconfirmedStarts } = {}
 ): OutboxTidy<T> {
   const out: OutboxTidy<T> = { queue: [], staleStarts: 0, staleEnds: 0, cutStarts: 0, cutEnds: 0 };
 
@@ -217,10 +265,13 @@ export function tidyOutbox<T extends QueuedEvent>(
   let over = out.queue.length - maxLength;
   if (over <= 0) return out;
 
-  // Enden, die sicher gebraucht werden: das erste je Kamera und Art und das
-  // Ende hinter einem wartenden Beginn.
+  // Enden, die sicher gebraucht werden: das erste je Kamera und Art, das Ende
+  // hinter einem wartenden Beginn und zu jedem Beginn aus einer gescheiterten
+  // Meldung das erste Ende ab dessen Zeitpunkt.
   const needed = new Set<number>();
   const expectsEnd = new Map<string, boolean>();
+  /** Je Kamera und Art: So viele Beginne aus gescheiterten Meldungen haben ihr Ende schon gefunden. */
+  const matched = new Map<string, number>();
   out.queue.forEach((e, i) => {
     const key = queueKey(e);
     if (e.phase === "start") {
@@ -228,6 +279,11 @@ export function tidyOutbox<T extends QueuedEvent>(
     } else if (e.phase === "end") {
       if (expectsEnd.get(key) ?? true) needed.add(i);
       expectsEnd.set(key, false);
+      const upTo = opts.unconfirmed?.upTo(e) ?? 0;
+      if (upTo > (matched.get(key) ?? 0)) {
+        needed.add(i);
+        matched.set(key, upTo);
+      }
     }
   });
   const drop = new Set<number>();

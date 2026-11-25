@@ -5,6 +5,7 @@ import {
   CameraLease,
   RunningReport,
   START_MAX_AGE_MS,
+  UnconfirmedStarts,
   aiAlarmState,
   clockDriftKey,
   endHoldFor,
@@ -343,6 +344,82 @@ test("Warteschlange voll: das Ende hinter einem wartenden Beginn bleibt, Beginne
   const two = tidy(q, 2);
   assert.deepEqual(show(two.queue), ["end:5:PERSON@-600", "end:5:PERSON@-10"]);
   assert.equal(two.cutStarts, 1);
+});
+
+test("Warteschlange voll: das Ende zu einem Beginn aus einer gescheiterten Meldung bleibt hinter einem aelteren Ende stehen", () => {
+  // Die Meldung [Ende von vorhin, neuer Beginn] lief ins Zeitlimit. Der Hub
+  // legt das Ende zurueck und verwirft den Beginn; die Cloud kann beides
+  // verarbeitet haben und fuehrt das neue Ereignis dann als offen.
+  const failed = [queued(5, "MOTION", "end", 900), queued(5, "MOTION", "start", 800)];
+  const unconfirmed = new UnconfirmedStarts();
+  unconfirmed.failed(failed);
+  const q = [
+    ...endsToRetry(failed),
+    queued(5, "MOTION", "end", 780), // Ende des Ereignisses, das die Cloud kennen kann
+    queued(5, "MOTION", "end", 600), // spaetere Enden, deren Beginn nie hinausging
+    queued(5, "MOTION", "end", 400),
+    queued(5, "MOTION", "end", 200),
+  ];
+  const r = tidyOutbox(q, T, START_MAX_AGE_MS, 3, { unconfirmed });
+  assert.deepEqual(show(r.queue), ["end:5:MOTION@-900", "end:5:MOTION@-780", "end:5:MOTION@-200"]);
+  assert.equal(r.cutEnds, 2);
+  // Ohne die Angabe zaehlt nur das erste Ende je Kamera und Art.
+  assert.deepEqual(show(tidy(q, 3).queue), ["end:5:MOTION@-900", "end:5:MOTION@-400", "end:5:MOTION@-200"]);
+});
+
+test("Warteschlange voll: jeder Beginn aus einer gescheiterten Meldung haelt sein Ende, nicht nur der juengste", () => {
+  // Zwei Meldungen nacheinander scheiterten, jede mit einem Beginn derselben
+  // Kamera und Art. Welche davon die Cloud verarbeitet hat, weiss der Hub nicht.
+  const unconfirmed = new UnconfirmedStarts();
+  unconfirmed.failed([queued(5, "MOTION", "end", 900), queued(5, "MOTION", "start", 800)]);
+  unconfirmed.failed([queued(5, "MOTION", "end", 900), queued(5, "MOTION", "end", 780), queued(5, "MOTION", "start", 700)]);
+  // Andere Kamera: Sie stand nur in der Liste der laufenden Ereignisse.
+  unconfirmed.failed([], [{ cameraId: 6, type: "PERSON", at: queued(6, "PERSON", "start", 750).at }]);
+  const q = [
+    queued(5, "MOTION", "end", 900),
+    queued(6, "PERSON", "end", 850), // aelteres Ende der anderen Kamera: das erste, bleibt
+    queued(5, "MOTION", "end", 780), // Ende zum Beginn bei -800
+    queued(6, "PERSON", "end", 740), // Ende zum laufend gemeldeten Ereignis
+    queued(5, "MOTION", "end", 650), // Ende zum Beginn bei -700
+    queued(5, "MOTION", "end", 500),
+    queued(6, "PERSON", "end", 450),
+    queued(5, "MOTION", "end", 300),
+  ];
+  const r = tidyOutbox(q, T, START_MAX_AGE_MS, 5, { unconfirmed });
+  assert.deepEqual(show(r.queue), [
+    "end:5:MOTION@-900",
+    "end:6:PERSON@-850",
+    "end:5:MOTION@-780",
+    "end:6:PERSON@-740",
+    "end:5:MOTION@-650",
+  ]);
+  assert.equal(r.cutEnds, 3);
+});
+
+test("Beginne aus gescheiterten Meldungen: erledigt, sobald ein Ende ab ihrem Zeitpunkt angekommen ist", () => {
+  const unconfirmed = new UnconfirmedStarts();
+  const end = (ageS: number) => queued(5, "MOTION", "end", ageS);
+  // Nichts gemerkt: Kein Ende zaehlt.
+  assert.equal(unconfirmed.upTo(end(100)), 0);
+
+  unconfirmed.failed([queued(5, "MOTION", "start", 800), queued(5, "MOTION", "start", 700)]);
+  // Dieselbe Meldung noch einmal und ein unlesbarer Zeitpunkt aendern nichts.
+  unconfirmed.failed([queued(5, "MOTION", "start", 800), { cameraId: 5, type: "MOTION", phase: "start", at: "kaputt" }]);
+  assert.equal(unconfirmed.upTo(end(900)), 0); // Ende von vor beiden Beginnen
+  assert.equal(unconfirmed.upTo(end(800)), 1); // genau am Beginn (eine einzige aktive Messung)
+  assert.equal(unconfirmed.upTo(end(650)), 2);
+  // Andere Kamera und andere Art bleiben unberuehrt.
+  assert.equal(unconfirmed.upTo(queued(6, "MOTION", "end", 650)), 0);
+  assert.equal(unconfirmed.upTo(queued(5, "PERSON", "end", 650)), 0);
+
+  // Ein angekommenes Ende von vorher erledigt nichts, ein Beginn auch nicht.
+  unconfirmed.delivered([end(900), queued(5, "MOTION", "start", 600), { cameraId: 5, type: "MOTION", phase: "end", at: "kaputt" }]);
+  assert.equal(unconfirmed.upTo(end(650)), 2);
+  // Das Ende des ersten Ereignisses ist angekommen: Der zweite Beginn bleibt gemerkt.
+  unconfirmed.delivered([end(780)]);
+  assert.equal(unconfirmed.upTo(end(650)), 1);
+  unconfirmed.delivered([end(650)]);
+  assert.equal(unconfirmed.upTo(end(100)), 0);
 });
 
 test("Warteschlange: unter der Obergrenze bleibt alles in seiner Reihenfolge", () => {

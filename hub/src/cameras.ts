@@ -38,6 +38,7 @@ import {
   CameraLease,
   RunningReport,
   START_MAX_AGE_MS,
+  UnconfirmedStarts,
   aiAlarmState,
   clockDriftKey,
   endHoldFor,
@@ -2378,6 +2379,11 @@ const seenOutbox = new Set<number>();
  * eingereiht ist; die Cloud wuerde ihn doppelt anlegen.
  */
 const runningReport = new RunningReport<{ cameraId: number; type: string; at: string }>();
+/**
+ * Beginne aus gescheiterten Meldungen: Die Cloud kann sie trotzdem kennen.
+ * Ihr Ende bleibt auch in einer vollen Warteschlange stehen (tidyOutbox).
+ */
+const unconfirmedStarts = new UnconfirmedStarts();
 let eventUploadRunning = false;
 /** Laufende Stoerung: Die Zeile kommt einmal und dann alle 5 min, nicht je Versuch. */
 let eventUploadFailing = false;
@@ -2424,7 +2430,7 @@ function logOutboxLoss(force = false): void {
 
 /** Warteschlange aufraeumen (zu alte Beginne, Obergrenze), vor jeder Meldung und nach jedem Einreihen. */
 function tidyEventOutbox(): void {
-  const t = tidyOutbox(eventOutbox, Date.now(), START_MAX_AGE_MS, EVENT_OUTBOX_MAX);
+  const t = tidyOutbox(eventOutbox, Date.now(), START_MAX_AGE_MS, EVENT_OUTBOX_MAX, { unconfirmed: unconfirmedStarts });
   if (t.queue.length === eventOutbox.length) return;
   eventOutbox.length = 0;
   eventOutbox.push(...t.queue);
@@ -2447,11 +2453,16 @@ function queueEventUpload(events: CloudEvent[], seen: number[]): void {
 }
 
 /** Gescheiterte Meldung: einmal ins Log, Enden zuruecklegen, bald neu versuchen. */
-function eventUploadFailed(events: CloudEvent[], reason: string): void {
+function eventUploadFailed(
+  events: CloudEvent[],
+  running: Array<{ cameraId: number; type: string; at: string }> | undefined,
+  reason: string
+): void {
   if (uploadFailLog.shouldLog("upload", reason, Date.now())) {
     log(`Kamera-Event-Upload fehlgeschlagen: ${reason}`);
   }
   eventUploadFailing = true;
+  unconfirmedStarts.failed(events, running);
   eventOutbox.unshift(...endsToRetry(events));
   // Die naechste faellige Erreichbarkeits-Meldung stoesst den neuen Versuch an.
   lastSeenReportAt = Date.now() - SEEN_REPORT_MS + EVENT_UPLOAD_RETRY_MS;
@@ -2503,9 +2514,10 @@ async function drainEventUploads(): Promise<void> {
           signal: AbortSignal.timeout(EVENT_UPLOAD_TIMEOUT_MS),
         });
         if (!res.ok) {
-          eventUploadFailed(events, `HTTP ${res.status}`);
+          eventUploadFailed(events, running, `HTTP ${res.status}`);
         } else {
           ok = true;
+          unconfirmedStarts.delivered(events);
           const body = (await res.json().catch(() => null)) as {
             rulesTriggered?: number;
             orphansClosed?: number;
@@ -2535,7 +2547,7 @@ async function drainEventUploads(): Promise<void> {
           if ((body?.rulesTriggered ?? 0) > 0) kickTaskPoll();
         }
       } catch (e) {
-        eventUploadFailed(events, e instanceof Error ? e.message : String(e));
+        eventUploadFailed(events, running, e instanceof Error ? e.message : String(e));
       }
       // Nach einem Fehlschlag nicht sofort weiterprobieren (Cloud oder
       // Internet weg): Der naechste faellige Durchlauf nimmt den Rest mit.
