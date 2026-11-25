@@ -9,6 +9,64 @@ export function checkinPhotoUrl(token: string, ticketId: number, updatedAt: Date
   return `/api/checkin/public/${encodeURIComponent(token)}/photo/${ticketId}?v=${updatedAt.getTime()}`;
 }
 
+/**
+ * Listen und Polls liefern Fotos nur dann als URL statt als Base64, wenn die
+ * Anfrage `?fotos=url` traegt. Ohne den Parameter bleibt die Antwort wie
+ * bisher: offene Tabs, Wandmonitore und Kiosk-Tabs laufen nach einem Deploy
+ * noch stunden- bis tagelang mit altem Code und lesen `profileImage`.
+ */
+export const PHOTO_URL_QUERY = "fotos=url";
+
+/** True, wenn die Anfrage schlanke Antworten mit `hasPhoto`/`photoUrl` will. */
+export function wantsPhotoUrls(searchParams: URLSearchParams): boolean {
+  return searchParams.get("fotos") === "url";
+}
+
+/** URL der angemeldeten Foto-Route eines Tickets (Verwaltung). */
+export function ticketPhotoUrl(ticketId: number, updatedAt: Date): string {
+  return `/api/tickets/${ticketId}/photo?v=${updatedAt.getTime()}`;
+}
+
+/** URL der Foto-Route des Scan-Monitors; mit `v` liefert sie das Bild selbst. */
+export function monitorPhotoUrl(token: string, ticketId: number, updatedAt: Date): string {
+  return `/api/monitor/public/${encodeURIComponent(token)}/photo?ticketId=${ticketId}&v=${updatedAt.getTime()}`;
+}
+
+/**
+ * Tickets mit gespeichertem Foto (`has`), optional mit der Teilmenge
+ * `servable`, deren Foto die Foto-Routen ausliefern (lib/ticket-photo).
+ */
+export type PhotoIds = ReadonlySet<number> & { readonly servable?: ReadonlySet<number> };
+
+/** True, wenn das Ticket ein Foto hat, das die Foto-Route ausliefert. */
+export function photoServable(photoIds: PhotoIds, ticketId: number): boolean {
+  return photoIds.has(ticketId) && (photoIds.servable ? photoIds.servable.has(ticketId) : true);
+}
+
+/**
+ * Schlanke Zeile: ohne `profileImage`, dafuer `hasPhoto` und `photoUrl`.
+ * `hasPhoto` heisst wie bisher `!!profileImage`; `photoUrl` ist null ohne
+ * Foto oder wenn die Foto-Route das gespeicherte Foto nicht ausliefert.
+ */
+export function withPhotoRef<T extends { id: number; updatedAt: Date }>(
+  row: T,
+  photoIds: PhotoIds,
+  url: (ticketId: number, updatedAt: Date) => string,
+): Omit<T, "profileImage"> & { hasPhoto: boolean; photoUrl: string | null } {
+  const { profileImage: _photo, ...rest } = row as T & { profileImage?: unknown };
+  void _photo;
+  const hasPhoto = photoIds.has(row.id);
+  return { ...rest, hasPhoto, photoUrl: photoServable(photoIds, row.id) ? url(row.id, row.updatedAt) : null };
+}
+
+/**
+ * Browser: Bildquelle einer Zeile, egal ob sie schon schlank (`photoUrl`) oder
+ * noch im alten Format (`profileImage`) kommt.
+ */
+export function photoSrc(row: { photoUrl?: string | null; profileImage?: string | null } | null | undefined): string | null {
+  return row?.photoUrl || row?.profileImage || null;
+}
+
 export type DecodedDataUrl = { contentType: string; bytes: Uint8Array };
 
 /** Erlaubte Bildtypen; alles andere wird nicht als Bild ausgeliefert. */

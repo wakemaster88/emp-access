@@ -3,6 +3,8 @@ import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { employeeCreateSchema } from "@/lib/validators";
 import { randomBytes } from "crypto";
 import { foreignRefError } from "@/lib/tenant-refs";
+import { photoServable, ticketPhotoUrl, wantsPhotoUrls } from "@/lib/photo-url";
+import { ticketIdsWithPhoto } from "@/lib/ticket-photo";
 
 /**
  * Mitarbeiter sind Tickets mit `source = EMP_CONTROL` und `uuid = "emp-<id>"`.
@@ -40,6 +42,10 @@ export async function GET(request: NextRequest) {
   const q = url.searchParams.get("q")?.trim().toLowerCase() ?? "";
   const status = url.searchParams.get("status"); // VALID | INVALID | EXPIRED | ""
   const areaId = url.searchParams.get("areaId");
+  // `?fotos=url`: Foto als URL (hasPhoto/photoUrl) statt als Base64. Nur
+  // fuer angemeldete Browser: die Foto-Route verlangt eine Sitzung, Abrufer
+  // mit Account-Token bekommen die Liste wie bisher.
+  const photoUrls = !hasApiToken(request) && wantsPhotoUrls(url.searchParams);
 
   const where: Record<string, unknown> = {
     accountId,
@@ -86,7 +92,7 @@ export async function GET(request: NextRequest) {
       startDate: true,
       endDate: true,
       status: true,
-      profileImage: true,
+      profileImage: !photoUrls,
       ticketTypeName: true,
       weekSchedule: true,
       accessAreaId: true,
@@ -122,6 +128,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const photoIds = photoUrls ? await ticketIdsWithPhoto(db, ids) : null;
+
   return NextResponse.json(
     employees.map((e) => ({
       id: e.id,
@@ -133,7 +141,12 @@ export async function GET(request: NextRequest) {
       startDate: e.startDate,
       endDate: e.endDate,
       status: e.status,
-      profileImage: e.profileImage,
+      ...(photoIds
+        ? {
+            hasPhoto: photoIds.has(e.id),
+            photoUrl: photoServable(photoIds, e.id) ? ticketPhotoUrl(e.id, e.updatedAt) : null,
+          }
+        : { profileImage: e.profileImage }),
       ticketTypeName: e.ticketTypeName ?? EMPLOYEE_TICKET_TYPE,
       hasSchedule: !!e.weekSchedule,
       areas: e.ticketAreas.map((ta) => ({ id: ta.accessAreaId, name: ta.accessArea?.name ?? `#${ta.accessAreaId}` })),

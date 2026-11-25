@@ -33,6 +33,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PHOTO_URL_QUERY, photoSrc } from "@/lib/photo-url";
 import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -66,7 +67,10 @@ interface TicketEntry {
   validityType: string;
   slotStart: string | null;
   slotEnd: string | null;
-  profileImage: string | null;
+  /** Nur in alten Antworten (ohne `fotos=url`): das Foto selbst. */
+  profileImage?: string | null;
+  /** Foto über /api/tickets/[id]/photo (Antwort mit `fotos=url`). */
+  photoUrl?: string | null;
   source: string | null;
   bookingStart: string | null;
   bookingEnd: string | null;
@@ -101,7 +105,8 @@ interface NewTicket {
   name: string;
   typeName: string | null;
   source: string | null;
-  profileImage: string | null;
+  profileImage?: string | null;
+  photoUrl?: string | null;
   createdAt: string;
 }
 
@@ -187,8 +192,8 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
       className="flex w-full items-center gap-2 py-1.5 sm:py-1 text-left rounded-[10px] px-1 -mx-1 outline-none hover:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-ring/50 transition-colors"
       onClick={onClick}
     >
-      {ticket.profileImage ? (
-        <img src={ticket.profileImage} alt="" className="h-6 w-6 rounded-full object-cover shrink-0" />
+      {photoSrc(ticket) ? (
+        <img src={photoSrc(ticket)!} alt="" loading="lazy" decoding="async" className="h-6 w-6 rounded-full object-cover shrink-0" />
       ) : (
         <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center shrink-0">
           <span className="text-[10px] font-bold text-muted-foreground">
@@ -488,7 +493,8 @@ export function DashboardClient() {
   const fetchData = useCallback(async (d: string, opts?: { quiet?: boolean }) => {
     if (!opts?.quiet && !hasLoaded.current) setLoading(true);
     try {
-      const res = await fetch(`/api/dashboard?date=${d}`);
+      // `fotos=url`: Avatare als URL, jedes Bild lädt der Browser nur einmal.
+      const res = await fetch(`/api/dashboard?date=${d}&${PHOTO_URL_QUERY}`);
       if (res.ok) {
         setData(await res.json());
         hasLoaded.current = true;
@@ -960,8 +966,8 @@ export function DashboardClient() {
                       className="flex w-full min-h-11 items-center gap-2.5 px-2 py-2 text-left outline-none hover:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-ring/50 transition-colors"
                       onClick={() => openTicket(ticket.id)}
                     >
-                      {ticket.profileImage ? (
-                        <img src={ticket.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                      {photoSrc(ticket) ? (
+                        <img src={photoSrc(ticket)!} alt="" loading="lazy" decoding="async" className="h-7 w-7 rounded-full object-cover shrink-0" />
                       ) : (
                         // Neutral wie die Personenzeilen der Bereichskarten: Akzent-Initiale auf
                         // Akzent-Tönung erreicht im Dunkeln nur 3,7:1.

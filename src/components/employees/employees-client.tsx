@@ -19,6 +19,7 @@ import {
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { EmployeeEditDialog } from "./employee-edit-dialog";
 import { EmployeeHistoryDialog } from "./employee-history-dialog";
+import { photoSrc } from "@/lib/photo-url";
 
 export interface AreaOption {
   id: number;
@@ -44,7 +45,10 @@ export interface EmployeeListItem {
   startDate: string | null;
   endDate: string | null;
   status: "VALID" | "INVALID" | "PROTECTED" | "REDEEMED" | string;
-  profileImage: string | null;
+  /** Nur in alten Antworten (ohne `fotos=url`): das Foto selbst. */
+  profileImage?: string | null;
+  /** Foto über /api/tickets/[id]/photo (Antwort mit `fotos=url`). */
+  photoUrl?: string | null;
   ticketTypeName: string | null;
   hasSchedule: boolean;
   areas: { id: number; name: string }[];
@@ -79,6 +83,8 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
       }
       if (areaFilter !== "all") params.set("areaId", areaFilter);
       if (search.trim()) params.set("q", search.trim());
+      // Fotos als URL: jedes Bild lädt der Browser nur einmal.
+      params.set("fotos", "url");
 
       const res = await fetch(`/api/employees?${params}`);
       if (!res.ok) {
@@ -296,9 +302,9 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
                   <TableCell className="max-sm:w-full max-sm:max-w-0">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="h-9 w-9 rounded-full bg-primary/10 text-primary dark:text-foreground flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
-                        {e.profileImage ? (
+                        {photoSrc(e) ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={e.profileImage} alt="" className="h-full w-full object-cover" />
+                          <img src={photoSrc(e)!} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                         ) : (
                           initials.toUpperCase()
                         )}
