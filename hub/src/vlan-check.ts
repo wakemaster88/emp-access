@@ -177,7 +177,7 @@ export function vlanCheckIntervalMs(): number {
 /** Fuer das lokale Dashboard: bestaetigte Befunde je Switch. */
 export function vlanCheckSummary(): {
   runs: number;
-  /** Beginn und Dauer des letzten Laufs, laengster Lauf seit dem Hub-Start. */
+  /** Beginn und Dauer des letzten Laufs (Abfrage der Switches), laengster Lauf seit dem Hub-Start. */
   lastRunAt: string | null;
   lastRunMs: number | null;
   maxRunMs: number;
@@ -203,7 +203,8 @@ export function vlanCheckSummary(): {
 }
 
 /*
- * Dauer der Laeufe. Der Normalfall („alles in Ordnung“) wird nur gezaehlt;
+ * Dauer der Laeufe: die Zeit, in der die Switches abgefragt werden, ohne die
+ * Meldung an die Cloud. Der Normalfall („alles in Ordnung“) wird nur gezaehlt;
  * fuer den Vergleich mit Abbruechen der Livebilder (IMPROVE.md) reicht: Die
  * Laeufe beginnen 45 s nach dem Hub-Start und dann alle `every` Sekunden,
  * die Dauer steht hier, und ein langer Lauf kommt ins Log (hoechstens alle
@@ -215,10 +216,22 @@ let lastRunAt: string | null = null;
 let lastRunMs: number | null = null;
 let maxRunMs = 0;
 
+/** Beginn und Dauer eines Laufs festhalten; ein langer Lauf kommt ins Log. */
+function noteRunDuration(startedAt: number): void {
+  const ms = Date.now() - startedAt;
+  lastRunAt = new Date(startedAt).toISOString();
+  lastRunMs = ms;
+  maxRunMs = Math.max(maxRunMs, ms);
+  if (ms >= SLOW_RUN_MS && slowRunLog.shouldLog("run", "slow", Date.now())) {
+    log(`Netzwerk-Prüfung: Lauf dauerte ${Math.round(ms / 1000)} s`);
+  }
+}
+
 export async function runVlanCheck(): Promise<void> {
   if (busy) return;
   busy = true;
   const startedAt = Date.now();
+  let measured = false;
   try {
     const hosts = snmpTargets();
     const all: AlertItem[] = [];
@@ -243,6 +256,10 @@ export async function runVlanCheck(): Promise<void> {
       lastResults.set(host, r);
       all.push(...toAlerts(r));
     }
+    // Die Dauer endet mit der Abfrage der Switches: Die Meldung an die Cloud
+    // danach (Zeitlimit 30 s) haengt an der Cloud, nicht an den Switches.
+    measured = true;
+    noteRunDuration(startedAt);
     runs++;
     const confirmedKeys = confirmer.update(
       all.map((a) => a.key),
@@ -283,13 +300,8 @@ export async function runVlanCheck(): Promise<void> {
     log(`Netzwerk-Prüfung: ${lastReportError}`);
   } finally {
     busy = false;
-    const ms = Date.now() - startedAt;
-    lastRunAt = new Date(startedAt).toISOString();
-    lastRunMs = ms;
-    maxRunMs = Math.max(maxRunMs, ms);
-    if (ms >= SLOW_RUN_MS && slowRunLog.shouldLog("run", "slow", Date.now())) {
-      log(`Netzwerk-Prüfung: Lauf dauerte ${Math.round(ms / 1000)} s`);
-    }
+    // Brach die Abfrage vorher ab, zaehlt die Zeit bis hierher.
+    if (!measured) noteRunDuration(startedAt);
   }
 }
 
