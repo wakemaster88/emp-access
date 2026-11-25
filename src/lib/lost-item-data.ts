@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { lostItemCreateSchema, lostItemUpdateSchema } from "@/lib/validators";
+import { isUploadImageDataUrl } from "@/lib/list-images";
 
 type CreateInput = z.infer<typeof lostItemCreateSchema>;
 type UpdateInput = z.infer<typeof lostItemUpdateSchema>;
@@ -49,4 +50,17 @@ export function buildLostItemUpdateData(
       pickedUpAt: data.pickedUp ? (existing.pickedUpAt ?? new Date()) : null,
     }),
   };
+}
+/**
+ * Bild beim Ändern einer Fundsache: Fehlt das Feld, ist es leer oder ist es
+ * das gespeicherte Bild (Formular schickt es unverändert zurück), gilt es
+ * wie bisher. Ein neues Bild muss JPG, PNG oder WebP sein. Null oder ein
+ * Satz für die Anzeige.
+ */
+export function lostItemImageUpdateError(
+  input: string | null | undefined,
+  stored: string | null,
+): string | null {
+  if (input == null || input === "" || input === stored) return null;
+  return isUploadImageDataUrl(input) ? null : "Bitte ein Foto als JPG, PNG oder WebP wählen.";
 }

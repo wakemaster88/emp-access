@@ -31,7 +31,11 @@ export interface Line {
   counted: number | null;
   broken: number | null;
   countedBy: string | null;
-  image: string | null;
+  /** Bild in der Liste ohne `fotos=url` bzw. gerade vom Handy hochgeladen. */
+  image?: string | null;
+  /** Liste mit `fotos=url`: ob ein Foto da ist und wo es liegt. */
+  hasImage?: boolean;
+  imageUrl?: string | null;
 }
 
 interface Payload {
@@ -72,7 +76,7 @@ export function PublicCountClient({ token }: { token: string }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/zaehlen/${token}`, { cache: "no-store" });
+      const res = await fetch(`/api/zaehlen/${token}?fotos=url`, { cache: "no-store" });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
         setGone(body?.error ?? "Dieser Link ist nicht mehr gültig.");
@@ -371,8 +375,8 @@ export function PublicCountClient({ token }: { token: string }) {
                   key={l.id}
                   className="flex min-h-14 items-center gap-2.5 px-3 py-1.5"
                 >
-                  {l.image ? (
-                    <ArticleThumb image={l.image} name={l.name} category={l.category} className="size-11" />
+                  {l.imageUrl || l.image ? (
+                    <ArticleThumb image={l.imageUrl ?? l.image ?? null} name={l.name} category={l.category} className="size-11" />
                   ) : (
                     <PhotoButton label={`Foto aufnehmen: ${l.name}`} onError={setError} onPhoto={(img) => savePhoto(l, img)} />
                   )}

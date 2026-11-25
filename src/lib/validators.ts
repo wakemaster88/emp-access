@@ -2,6 +2,7 @@ import { z } from "zod";
 import { MAX_SCAN_LOCK_SECONDS } from "@/lib/scan-lock";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/password-rules";
 import { profilePhotoError } from "@/lib/photo-url";
+import { isUploadImageDataUrl } from "@/lib/list-images";
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -312,6 +313,9 @@ const lostItemDate = z
 
 /// Bild als Base64-Data-URL (gleiches Muster wie Ticket.profileImage).
 /// ~2 MB Limit, damit keine riesigen Originalfotos in der DB landen.
+/// Neue Bilder müssen zusätzlich JPG, PNG oder WebP sein: beim Anlegen prüft
+/// das `lostItemCreateSchema`, beim Ändern `lostItemImageUpdateError`
+/// (ein unverändert zurückgeschicktes Bild bleibt erlaubt).
 const lostItemImage = z
   .string()
   .max(2_000_000, "Bild zu groß (max. ~1,5 MB)")
@@ -331,6 +335,9 @@ const lostItemBaseSchema = z.object({
 });
 
 export const lostItemCreateSchema = lostItemBaseSchema.superRefine((data, ctx) => {
+  if (data.image && !isUploadImageDataUrl(data.image)) {
+    ctx.addIssue({ code: "custom", path: ["image"], message: "Bitte ein Foto als JPG, PNG oder WebP wählen." });
+  }
   const kind = data.kind === "LOST_REPORT" ? "LOST_REPORT" : "FOUND";
   if (kind === "LOST_REPORT") {
     if (!data.reporterName?.trim()) {

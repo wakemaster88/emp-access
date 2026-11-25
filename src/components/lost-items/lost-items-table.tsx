@@ -147,10 +147,11 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                       gedimmt werden nur Bild und Symbol-Chip (docs/design-regeln.md, Abschnitt 17). */}
                   <TableCell>
                     {item.image ? (
-                      /* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */
+                      /* eslint-disable-next-line @next/next/no-img-element -- Bild-Route oder Base64-Data-URL */
                       <img
                         src={item.image}
                         alt={item.description}
+                        loading="lazy"
                         className={cn("h-12 w-12 rounded-lg object-cover border border-border", item.pickedUp && "opacity-60")}
                       />
                     ) : (

@@ -168,11 +168,14 @@ export const inventoryLinkSchema = z.object({
   year: z.number().int().min(2000).max(2100).optional(),
 });
 
+/** Größte Data-URL, die die Handy-Seiten zeigen. */
+export const PUBLIC_IMAGE_MAX_CHARS = 400_000;
+
 /** Bilder für die Handy-Seiten: Web-Adressen und kleine eigene Fotos, keine großen Data-URLs. */
 export function publicImage(image: string | null | undefined): string | null {
   if (!image) return null;
   if (image.startsWith("https://")) return image;
-  if (image.startsWith("data:image/") && image.length <= 400_000) return image;
+  if (image.startsWith("data:image/") && image.length <= PUBLIC_IMAGE_MAX_CHARS) return image;
   return null;
 }
 

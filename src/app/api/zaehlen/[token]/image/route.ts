@@ -1,9 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { countLinkState, isPlausibleCountToken } from "@/lib/warenwirtschaft";
-import { publicImageSchema } from "@/lib/warenwirtschaft-server";
+import { PUBLIC_IMAGE_MAX_CHARS, publicImageSchema } from "@/lib/warenwirtschaft-server";
+import { decodeImageDataUrl } from "@/lib/photo-url";
+import { IMAGE_ROUTE_HEADERS } from "@/lib/list-images";
 
 type Ctx = { params: Promise<{ token: string }> };
+
+/**
+ * GET /api/zaehlen/[token]/image?id=<Zeile> – Produktfoto einer Zählzeile.
+ * Die Liste (`/api/zaehlen/[token]?fotos=url`) trägt nur diese Adresse samt
+ * `v` (Änderungszeitpunkt des Artikels); jedes Foto wird einmal geladen.
+ */
+export async function GET(request: NextRequest, { params }: Ctx) {
+  const token = (await params).token;
+  if (!isPlausibleCountToken(token)) return NextResponse.json({ error: "Dieser Link ist nicht mehr gültig." }, { status: 404 });
+  const st = await prisma.stocktake.findUnique({
+    where: { countToken: token },
+    select: { id: true, accountId: true, status: true, countToken: true, countTokenExpiresAt: true },
+  });
+  if (!st) return NextResponse.json({ error: "Dieser Link ist nicht mehr gültig." }, { status: 404 });
+  if (countLinkState(st) !== "OK") return NextResponse.json({ error: "Zählen ist mit diesem Link nicht mehr möglich." }, { status: 410 });
+
+  const lineId = Number(request.nextUrl.searchParams.get("id"));
+  if (!Number.isInteger(lineId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
+  const line = await prisma.stocktakeLine.findFirst({
+    where: { id: lineId, stocktakeId: st.id, accountId: st.accountId },
+    select: { article: { select: { image: true } } },
+  });
+  const stored = line?.article?.image ?? null;
+  const image = stored && stored.length <= PUBLIC_IMAGE_MAX_CHARS ? decodeImageDataUrl(stored) : null;
+  if (!image) return NextResponse.json({ error: "Kein Bild vorhanden" }, { status: 404 });
+
+  return new NextResponse(Buffer.from(image.bytes), {
+    headers: {
+      "Content-Type": image.contentType,
+      "Content-Length": String(image.bytes.length),
+      ...IMAGE_ROUTE_HEADERS,
+    },
+  });
+}
 
 /**
  * POST /api/zaehlen/[token]/image – fehlendes Produktfoto vom Handy. Setzt
