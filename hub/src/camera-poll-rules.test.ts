@@ -303,6 +303,33 @@ test("Warteschlange: Enden werden nie wegen ihres Alters verworfen, ein unlesbar
   assert.equal(r.staleStarts + r.staleEnds + r.cutStarts + r.cutEnds, 0);
 });
 
+test("Warteschlange: wie lange ein Beginn wartet, zaehlt auch, wenn die Uhr des Hubs zurueckgestellt wurde", () => {
+  // Die Uhr des Hubs wurde um 10 min zurueckgestellt: Nach ihr liegen die
+  // Ereignisse von eben in der Zukunft, ihr Alter ist negativ.
+  const old = queued(7, "PERSON", "start", -300); // wartet seit 5 min
+  const oldEnd = queued(7, "PERSON", "end", -310);
+  const fresh = queued(8, "VEHICLE", "start", -598); // wartet seit 2 s
+  const atLimit = queued(9, "MOTION", "start", -570); // wartet genau 30 s
+  const waited = new Map<QueuedEvent, number>([
+    [old, 300_000],
+    [oldEnd, 290_000],
+    [fresh, 2_000],
+    [atLimit, 30_000],
+  ]);
+  const q = [old, oldEnd, fresh, atLimit];
+  const r = tidyOutbox(q, T, START_MAX_AGE_MS, 400, { waitedMs: (e) => waited.get(e) ?? 0 });
+  assert.deepEqual(r.queue, [fresh, atLimit]);
+  assert.equal(r.staleStarts, 1);
+  assert.equal(r.staleEnds, 1);
+  // Nach der Wanduhr allein gaelten alle als frisch.
+  assert.deepEqual(tidy(q).queue, q);
+
+  // Die Wanduhr zaehlt weiter mit: Stand der Rechner still, ist die Wartezeit
+  // kurz, der Beginn aber alt.
+  const asleep = queued(7, "MOTION", "start", 45);
+  assert.deepEqual(tidyOutbox([asleep], T, START_MAX_AGE_MS, 400, { waitedMs: () => 1_000 }).queue, []);
+});
+
 test("Warteschlange voll: je Kamera und Art bleibt das aelteste Ende, ueberzaehlige Enden gehen zuerst", () => {
   // Kamera 5: das Ereignis von vor der Stoerung endet (aeltestes Ende), danach
   // fuenf weitere Enden, deren Beginn nie ankam. Kamera 6 genauso mit zwei.

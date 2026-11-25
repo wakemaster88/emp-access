@@ -2372,6 +2372,12 @@ const EVENT_OUTBOX_MAX = 400;
 /** Nach einer gescheiterten Meldung: naechster Versuch fruehestens so spaet. */
 const EVENT_UPLOAD_RETRY_MS = 10_000;
 const eventOutbox: CloudEvent[] = [];
+/**
+ * Wann ein Ereignis eingereiht wurde, auf einer Uhr, die niemand stellt
+ * (performance.now()). Wie lange ein Beginn schon wartet, haengt so nicht
+ * allein an der Wanduhr des Hubs (tidyOutbox).
+ */
+const queuedAt = new WeakMap<CloudEvent, number>();
 const seenOutbox = new Set<number>();
 /**
  * Was an den Kameras laeuft, festgehalten beim Einreihen. Spaeter gelesen
@@ -2432,7 +2438,11 @@ function logOutboxLoss(force = false): void {
 
 /** Warteschlange aufraeumen (zu alte Beginne, Obergrenze), vor jeder Meldung und nach jedem Einreihen. */
 function tidyEventOutbox(): void {
-  const t = tidyOutbox(eventOutbox, Date.now(), START_MAX_AGE_MS, EVENT_OUTBOX_MAX, { unconfirmed: unconfirmedStarts });
+  const steady = performance.now();
+  const t = tidyOutbox(eventOutbox, Date.now(), START_MAX_AGE_MS, EVENT_OUTBOX_MAX, {
+    unconfirmed: unconfirmedStarts,
+    waitedMs: (e) => steady - (queuedAt.get(e) ?? steady),
+  });
   if (t.queue.length === eventOutbox.length) return;
   eventOutbox.length = 0;
   eventOutbox.push(...t.queue);
@@ -2446,6 +2456,8 @@ function tidyEventOutbox(): void {
 
 function queueEventUpload(events: CloudEvent[], seen: number[]): void {
   if (events.length > 0) runningReport.enqueued();
+  const steady = performance.now();
+  for (const e of events) queuedAt.set(e, steady);
   eventOutbox.push(...events);
   tidyEventOutbox();
   for (const id of seen) seenOutbox.add(id);

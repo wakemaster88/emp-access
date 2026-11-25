@@ -225,7 +225,12 @@ export class UnconfirmedStarts {
  *    START_MAX_AGE_MS). Steht das Ende desselben Ereignisses schon dahinter,
  *    entfaellt es mit: Der Beginn ging nie hinaus, die Cloud kennt das
  *    Ereignis also nicht. Laeuft es noch, traegt die Cloud es ueber die Liste
- *    der laufenden Ereignisse nach, ohne Regeln.
+ *    der laufenden Ereignisse nach, ohne Regeln. Das Alter messen zwei Uhren,
+ *    und es reicht, dass eine die Grenze ueberschritten sieht: die Wanduhr
+ *    (`now` gegen die Zeit des Ereignisses) und die Wartezeit in der
+ *    Warteschlange (`waitedMs`). Wird die Uhr des Hubs zurueckgestellt, gaelte
+ *    ein alter Beginn nach der Wanduhr allein wieder als frisch; stand der
+ *    Rechner still, zaehlte die Wartezeit allein den Stillstand nicht mit.
  * 2. Sind es danach mehr als `maxLength`, fallen zuerst Enden weg, die
  *    hoechstwahrscheinlich nichts schliessen: Je Kamera und Art fuehrt die
  *    Cloud hoechstens ein offenes Ereignis. Das erste Ende in der
@@ -240,7 +245,11 @@ export function tidyOutbox<T extends QueuedEvent>(
   now: number,
   maxStartAgeMs: number,
   maxLength: number,
-  opts: { unconfirmed?: UnconfirmedStarts } = {}
+  opts: {
+    unconfirmed?: UnconfirmedStarts;
+    /** So lange steht ein Eintrag schon in der Warteschlange (ms), gemessen mit einer Uhr, die niemand stellt. */
+    waitedMs?: (e: T) => number;
+  } = {}
 ): OutboxTidy<T> {
   const out: OutboxTidy<T> = { queue: [], staleStarts: 0, staleEnds: 0, cutStarts: 0, cutEnds: 0 };
 
@@ -249,7 +258,7 @@ export function tidyOutbox<T extends QueuedEvent>(
   for (const e of queue) {
     const key = queueKey(e);
     if (e.phase === "start") {
-      if (now - Date.parse(e.at) > maxStartAgeMs) {
+      if (now - Date.parse(e.at) > maxStartAgeMs || (opts.waitedMs?.(e) ?? 0) > maxStartAgeMs) {
         out.staleStarts++;
         endOfStale.add(key);
         continue;
