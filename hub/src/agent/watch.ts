@@ -4,8 +4,8 @@
  * Nur, was die Cloud nicht ohnehin meldet (Hub offline, Geraet offline und
  * Switch-Befunde kommen schon als Push/Alarm-Telegram). Hier: Kameras und
  * DoorBird aus Sicht des Hubs, Speicher/Platte des Macs, Tracker, Soundweb,
- * Gesichtserkennung, das Bildmodell des Waechters und die Cloud-Verbindung
- * selbst.
+ * Gesichtserkennung, das Bildmodell des Waechters, das Alter der Raumdaten
+ * und die Cloud-Verbindung selbst.
  */
 import { STATE } from "../state.js";
 import { listCameraStatus } from "../cameras.js";
@@ -16,6 +16,8 @@ import { cameraUnreachableTitle, faceNotReadyDue, type Finding } from "./finding
 import { undeliveredAlarms } from "./dispatch.js";
 import { LLM, VISION } from "./ollama.js";
 import { visionFinding } from "./vision-rules.js";
+import { roomsSyncError, roomsSyncedAt } from "../rooms.js";
+import { roomsFinding } from "./sentinel-rooms-rules.js";
 export { berlinHour, inQuietHours } from "./quiet.js";
 
 /**
@@ -97,6 +99,10 @@ export function collectFindings(now = Date.now(), open: ReadonlySet<string> = ne
     lastError: VISION.lastError,
   });
   if (vision) out.push(vision);
+
+  // Raumdaten ab 30 Minuten alt: Der Waechter rechnet dann mit dem letzten Stand (sentinel-rooms-rules.ts).
+  const rooms = roomsFinding({ syncedAt: roomsSyncedAt(), startedAt: now - uptimeMin * 60_000, now, error: roomsSyncError() });
+  if (rooms) out.push(rooms);
 
   // Alarme des Waechters mit Bildern, die keinen Chat erreicht haben.
   const lost = undeliveredAlarms(now);

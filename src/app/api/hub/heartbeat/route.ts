@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
 import { Prisma } from "@prisma/client";
 import { mergeHubAgentStatus } from "@/lib/hub-agent-status";
+import { parseSentinelReport } from "@/lib/hub-sentinel";
 
 /**
  * Heartbeat des lokalen Hubs. Auth per Account-API-Token (Bearer/`?token=`).
@@ -32,14 +33,20 @@ export async function POST(request: NextRequest) {
       ? body.repoAccess
       : undefined;
 
+  // Kameras, die der Waechter des Hubs gerade bewacht (lib/hub-sentinel.ts):
+  // Dort meldet die Ueberwachung unbekannte Personen nicht selbst. Ein Hub
+  // ohne das Feld laesst den abgelegten Stand stehen, er veraltet dann.
+  const sentinel = parseSentinelReport(body.sentinel, new Date()) ?? undefined;
+
   // Nur die gemeldeten Teile von status ersetzen, die uebrigen (z. B. snmp
   // vom Switch-Upload) bleiben stehen.
   const statusPatch: Record<string, unknown> | undefined =
-    parking || system || repoAccess
+    parking || system || repoAccess || sentinel
       ? {
           ...(parking ? { parking } : {}),
           ...(system ? { system } : {}),
           ...(repoAccess ? { repoAccess } : {}),
+          ...(sentinel ? { sentinel } : {}),
         }
       : undefined;
 

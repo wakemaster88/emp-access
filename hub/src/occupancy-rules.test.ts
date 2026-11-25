@@ -5,6 +5,7 @@ import {
   DEFAULT_SPOTS,
   alertAction,
   alertMode,
+  alertModeText,
   camerasForSpot,
   dayStartLine,
   effectivePerHour,
@@ -137,18 +138,18 @@ test("Punkt ruht, wenn alle Raeume seiner Kameras zu sind", () => {
   assert.equal(spotClosed([], rooms), false);
 });
 
-test("Meldungen: on, off und der Probelauf als Standard", () => {
+test("Meldungen: on als Standard, off und der Probelauf wählbar", () => {
   for (const v of ["on", "1", "true", "ja", "an", "yes", " ON ", "True", "JA"]) {
     assert.deepEqual(alertMode(v), { mode: "on", known: true }, v);
   }
   for (const v of ["off", "0", "false", "nein", "aus", "no", " Off ", "FALSE"]) {
     assert.deepEqual(alertMode(v), { mode: "off", known: true }, v);
   }
-  // Fehlt die Variable oder ist sie leer: Probelauf.
-  assert.deepEqual(alertMode(undefined), { mode: "shadow", known: true });
-  assert.deepEqual(alertMode(null), { mode: "shadow", known: true });
-  assert.deepEqual(alertMode(""), { mode: "shadow", known: true });
-  assert.deepEqual(alertMode("   "), { mode: "shadow", known: true });
+  // Fehlt die Variable oder ist sie leer: Meldungen an.
+  assert.deepEqual(alertMode(undefined), { mode: "on", known: true });
+  assert.deepEqual(alertMode(null), { mode: "on", known: true });
+  assert.deepEqual(alertMode(""), { mode: "on", known: true });
+  assert.deepEqual(alertMode("   "), { mode: "on", known: true });
   assert.deepEqual(alertMode("shadow"), { mode: "shadow", known: true });
   assert.deepEqual(alertMode(" Shadow "), { mode: "shadow", known: true });
 });
@@ -167,11 +168,29 @@ test("Meldungen: gesendet wird nur bei on, der Probelauf loggt, off wertet nicht
   assert.equal(alertAction("off", "alert"), null);
   assert.equal(alertAction("off", "relaxed"), null);
   for (const mode of ["on", "off", "shadow"] as const) assert.equal(alertAction(mode, null), null);
-  // Fehlt die Variable, kommt aus keiner Messung eine Nachricht.
-  const st = newAlertState();
+  // Fehlt die Variable, gehen „wird voll“ und „entspannt“ hinaus, je einmal.
   const m = (persons: number) => ({ persons, full: 10, wait: 0, waitAlertMin: 15 });
-  const actions = [12, 12, 13, 5].map((persons, i) => alertAction(alertMode(undefined).mode, stepAlert(st, m(persons), i * 300_000)));
-  assert.deepEqual(actions, [null, "log", null, "log"]);
+  const run = (raw: string | undefined) => {
+    const st = newAlertState();
+    return [12, 12, 13, 5].map((persons, i) => alertAction(alertMode(raw).mode, stepAlert(st, m(persons), i * 300_000)));
+  };
+  assert.deepEqual(run(undefined), [null, "send", null, "send"]);
+  // Im Probelauf dieselben Stufen, nur geloggt; off wertet nichts aus.
+  assert.deepEqual(run("shadow"), [null, "log", null, "log"]);
+  assert.deepEqual(run("off"), [null, null, null, null]);
+});
+
+test("Startzeile: ohne Angabe nennt sie den Standard und wie er sich ändern lässt", () => {
+  for (const v of [undefined, null, "", "  "]) {
+    assert.equal(alertModeText(v), "Meldungen an (Standard; HUB_OCCUPANCY_ALERTS=shadow: nur Log, off: ohne Meldungen)", String(v));
+  }
+  assert.equal(alertModeText("on"), "Meldungen an");
+  assert.equal(alertModeText("aus"), "ohne Meldungen");
+  assert.equal(alertModeText("shadow"), "Meldungen im Probelauf (nur Log, nichts wird gesendet; einschalten mit HUB_OCCUPANCY_ALERTS=on)");
+  assert.equal(
+    alertModeText("vielleicht"),
+    "Meldungen im Probelauf (nur Log, nichts wird gesendet; einschalten mit HUB_OCCUPANCY_ALERTS=on) – Wert von HUB_OCCUPANCY_ALERTS nicht erkannt"
+  );
 });
 
 const reading = (persons: number, cams: Array<number | null>) => ({ persons, cameras: cams.map((p) => ({ persons: p })) });

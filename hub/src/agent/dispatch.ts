@@ -3,12 +3,14 @@
  * (outbox.ts, Regeln in outbox-rules.ts) mit dem Telegram-Bot, dem Log, den
  * Zaehlern und dem KI-Protokoll der Zentrale.
  *
- *  - Alarm: Bild mit Text und Knoepfen. Scheitert das Bild, geht der Text mit
- *    den Knoepfen allein hinaus. Erreicht der Alarm keinen Chat, steht er als
- *    Befund beim Zustands-Waechter (undeliveredAlarms); die Liste dazu liegt
- *    in .cache/agent-undelivered.json und uebersteht einen Neustart.
+ *  - Alarm: Bild mit Text und Knoepfen, mit Ton. Scheitert das Bild, geht der
+ *    Text mit den Knoepfen allein hinaus. Erreicht der Alarm keinen Chat,
+ *    steht er als Befund beim Zustands-Waechter (undeliveredAlarms); die Liste
+ *    dazu liegt in .cache/agent-undelivered.json und uebersteht einen Neustart.
  *  - Zusatzbilder eines Alarms (Uebersicht, Bildserie): in derselben Reihe
- *    hinter dem Alarm, ohne Text-Rueckfall.
+ *    hinter dem Alarm, ohne Text-Rueckfall und ohne Ton. Nur wo der Alarm den
+ *    Chat nicht erreicht hat, kommt das erste Zusatzbild, das dort ankommt,
+ *    mit Ton (imageSilent): Ein Alarm klingelt in jedem Chat einmal.
  *  - Meldungen des Zustands-Waechters, Tagesvorschau und Tagesbericht: Text.
  *
  * Im Log steht jede Zustellung, die mehr als einen Versuch gebraucht hat, und
@@ -27,7 +29,9 @@ import {
   addUndelivered,
   deliveryCounter,
   deliveryLine,
+  deliveryTrouble,
   dueAgain,
+  imageSilent,
   markSeenAtExit,
   OPEN_AT_EXIT,
   pruneUndelivered,
@@ -37,7 +41,7 @@ import {
   type OutResult,
   type UndeliveredAlarm,
 } from "./outbox-rules.js";
-import { sendPhoto, sendText, type TgButton } from "./telegram.js";
+import { pollFailingSince, sendPhoto, sendText, type TgButton } from "./telegram.js";
 
 interface Meta {
   /** Name der Nachricht in Log-Zeilen, z. B. „Wächter: Alarm Eingang“. */
@@ -47,6 +51,12 @@ interface Meta {
   counter: string;
   /** Kamera eines Alarms (fuer das KI-Protokoll). */
   camera?: string;
+  /**
+   * Ausgang eines Alarms je Chat merken (sendAlarm), bei einem Zusatzbild,
+   * ob es mit Ton ankam (sendAlarmImage). Laeuft beim Verbuchen, also bevor
+   * die Reihe das naechste Bild des Chats versucht.
+   */
+  onSettled?: (ok: boolean) => void;
 }
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -57,6 +67,7 @@ const NO_CHAT_LOG_MS = 60 * 60_000;
 
 function report(msg: OutMessage<Meta>, r: OutResult): void {
   const { meta } = msg;
+  meta.onSettled?.(r.ok);
   improveCount(meta.kind, `${meta.counter}_${deliveryCounter(r)}`);
   const line = deliveryLine(meta.label, r);
   if (line) log(line);
@@ -100,21 +111,35 @@ export interface AlarmMessage {
   camera: string;
   jpeg: Buffer;
   caption: string;
-  buttons?: TgButton[][];
+  /** Knoepfe; als Funktion je Versuch mit dessen Zeitpunkt (Knoepfe mit Frist, alarm-rules.ts). */
+  buttons?: TgButton[][] | ((sentAt: number) => TgButton[][]);
   /** Je Chat, den der Alarm erreicht hat. */
   onDelivered?: () => void;
 }
 
+/** Ein eingereihter Alarm: Hat er einen Chat erreicht? null = Ausgang noch offen. */
+export interface SentAlarm {
+  reached(chatId: string): boolean | null;
+  /** Ein Zusatzbild des Alarms kam im Chat mit Ton an. */
+  rang(chatId: string): boolean;
+  noteRang(chatId: string): void;
+}
+
+const NO_ALARM: SentAlarm = { reached: () => null, rang: () => false, noteRang: () => undefined };
+
 /**
  * Alarm des Waechters an alle gekoppelten Chats. Kehrt sofort zurueck: Die
- * Bewertung der naechsten Kamera wartet nicht auf die Zustellung.
+ * Bewertung der naechsten Kamera wartet nicht auf die Zustellung. Das
+ * Ergebnis geben die Zusatzbilder des Alarms an sendAlarmImage weiter.
  */
-export function sendAlarm(a: AlarmMessage): void {
+export function sendAlarm(a: AlarmMessage): SentAlarm {
   if (!a.chatIds.length) {
     noChat(a);
-    return;
+    return NO_ALARM;
   }
   const at = Date.now();
+  /** Ausgang je Chat, sobald er feststeht. */
+  const reached = new Map<string, boolean>();
   const results = a.chatIds.map((chatId) =>
     OUTBOX.enqueue({
       chatId,
@@ -122,7 +147,13 @@ export function sendAlarm(a: AlarmMessage): void {
       jpeg: a.jpeg,
       buttons: a.buttons,
       textFallback: { note: NO_PHOTO_NOTE },
-      meta: { label: `Wächter: Alarm ${a.camera}${toChat(a.chatIds, chatId)}`, kind: "camera", counter: "sentinel_send", camera: a.camera },
+      meta: {
+        label: `Wächter: Alarm ${a.camera}${toChat(a.chatIds, chatId)}`,
+        kind: "camera",
+        counter: "sentinel_send",
+        camera: a.camera,
+        onSettled: (ok) => reached.set(chatId, ok),
+      },
     })
   );
   const booked: Promise<void> = Promise.all(results)
@@ -153,6 +184,9 @@ export function sendAlarm(a: AlarmMessage): void {
   }
   booking.add(booked);
   openAlarms.set(booked, { camera: a.camera, at });
+  /** Chats, in denen ein Zusatzbild des Alarms mit Ton ankam. */
+  const rang = new Set<string>();
+  return { reached: (chatId) => reached.get(chatId) ?? null, rang: (chatId) => rang.has(chatId), noteRang: (chatId) => void rang.add(chatId) };
 }
 
 /** Kein Chat gekoppelt: Der Alarm bleibt im KI-Protokoll, im Log steht hoechstens eine Zeile je Stunde. */
@@ -170,17 +204,51 @@ function noChat(a: AlarmMessage): void {
   noChatSkipped = 0;
 }
 
-/** Zusatzbild eines Alarms (Uebersicht, Bildserie): in der Reihe hinter dem Alarm. */
-export function sendAlarmImage(a: { chatIds: string[]; jpeg: Buffer; caption: string }): void {
+/**
+ * Zusatzbild eines Alarms (Uebersicht, Bildserie): in der Reihe hinter dem
+ * Alarm, ohne Ton, ausser der Alarm hat diesen Chat nicht erreicht und noch
+ * kein Bild des Alarms kam dort mit Ton an.
+ */
+export function sendAlarmImage(a: { chatIds: string[]; jpeg: Buffer; caption: string; alarm: SentAlarm }): void {
   for (const chatId of a.chatIds) {
+    /** Ging der letzte Versuch mit Ton hinaus? */
+    let loud = false;
     void OUTBOX.enqueue({
       chatId,
       text: a.caption,
       jpeg: a.jpeg,
       optional: true,
-      meta: { label: `Wächter: Bild ${a.caption}${toChat(a.chatIds, chatId)}`, kind: "camera", counter: "sentinel_image" },
+      silent: () => {
+        const silent = imageSilent(a.alarm.reached(chatId), a.alarm.rang(chatId));
+        loud = !silent;
+        return silent;
+      },
+      meta: {
+        label: `Wächter: Bild ${a.caption}${toChat(a.chatIds, chatId)}`,
+        kind: "camera",
+        counter: "sentinel_image",
+        onSettled: (ok) => {
+          if (ok && loud) a.alarm.noteRang(chatId);
+        },
+      },
     });
   }
+}
+
+/**
+ * Ist die Zustellung der Alarme gerade gestoert (deliveryTrouble)? Dann steht
+ * keine Kamera in der Liste fuer die Cloud, und die Cloud meldet selbst.
+ * null = keine Stoerung bekannt.
+ */
+export function alarmDeliveryTrouble(now = Date.now()): string | null {
+  const open = [...openAlarms.values()].map((o) => o.at);
+  const lost = undelivered.map((a) => a.failedAt);
+  return deliveryTrouble({
+    now,
+    openSince: open.length ? Math.min(...open) : null,
+    lastLostAt: lost.length ? Math.max(...lost) : null,
+    pollFailingSince: pollFailingSince(),
+  });
 }
 
 /** Befund fuer Alarme, die keinen Chat erreicht haben (watch.ts, collectFindings); null = keiner. */

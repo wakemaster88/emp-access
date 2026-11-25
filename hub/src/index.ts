@@ -4,7 +4,8 @@ import { CONFIG, api, log } from "./config.js";
 import { executeTask, type HubTask } from "./tasks.js";
 import { errorText, resultBody, runGuarded } from "./task-guard.js";
 import { exitHub, isExiting, onShutdown } from "./shutdown.js";
-import { checkForUpdate, repoAccessStatus } from "./updater.js";
+import { checkForUpdate, repoAccessStatus, setRestartHold } from "./updater.js";
+import { serialRuns } from "./heartbeat-rules.js";
 import { PREFLIGHT_OK, isPreflightRun } from "./updater-rules.js";
 import { startDashboard } from "./dashboard.js";
 import { dashboardAccessMode } from "./dashboard-auth.js";
@@ -31,6 +32,7 @@ import { startClimate } from "./climate.js";
 import { startRules } from "./rules.js";
 import { startMower, stopMowerSidecar } from "./mower.js";
 import { startAgent } from "./agent/agent.js";
+import { holdSentinelCoverage, onCoverageShrink, sentinelBusy, sentinelCoverage } from "./agent/sentinel.js";
 import { startHealthTrends } from "./health-trends.js";
 import { startStaff } from "./staff.js";
 
@@ -151,7 +153,15 @@ async function reportParking() {
   }
 }
 
-async function heartbeat() {
+/**
+ * Lebenszeichen an die Cloud, nacheinander (serialRuns): Ein Lebenszeichen,
+ * das waehrend eines laufenden angefordert wird, baut seinen Inhalt erst nach
+ * dessen Antwort. So ueberschreibt ein frueher gebautes nie ein spaeteres,
+ * etwa die Liste bewachter Kameras nach dem Wegfall einer Kamera.
+ */
+const heartbeat = serialRuns(sendHeartbeat);
+
+async function sendHeartbeat(): Promise<void> {
   try {
     const res = await api("/api/hub/heartbeat", {
       method: "POST",
@@ -168,6 +178,10 @@ async function heartbeat() {
           : undefined,
         // Deploy-Key/Update-Zugang fuer die Liste in den Cloud-Einstellungen.
         repoAccess: repoAccessStatus() ?? undefined,
+        // Kameras, die der Waechter mit Bildern gerade nachweislich bewacht
+        // (sentinel-cover-rules.ts): Dort meldet die Cloud unbekannte Personen
+        // nicht selbst, solange diese Meldung hoechstens 5 Minuten alt ist.
+        sentinel: sentinelCoverage(),
       }),
     });
     if (!res.ok) {
@@ -189,6 +203,38 @@ async function heartbeat() {
     improve("heartbeat", "fail", { error: msg });
   }
 }
+
+/**
+ * Faellt eine Kamera aus der Liste des Waechters, geht das Lebenszeichen
+ * sofort hinaus statt erst im naechsten Takt: Die Cloud meldet dann dort
+ * wieder selbst. Hoechstens eines alle 10 s; heartbeat() faengt jeden Fehler.
+ */
+const EARLY_HEARTBEAT_GAP_MS = 10_000;
+let earlyHeartbeatAt = 0;
+let earlyHeartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+onCoverageShrink(() => {
+  if (earlyHeartbeatTimer) return;
+  const wait = Math.max(0, earlyHeartbeatAt + EARLY_HEARTBEAT_GAP_MS - Date.now());
+  earlyHeartbeatTimer = setTimeout(() => {
+    earlyHeartbeatTimer = null;
+    earlyHeartbeatAt = Date.now();
+    void heartbeat();
+  }, wait);
+});
+
+/**
+ * Neustart nach einem Update (updater.ts): Zuerst meldet der Hub der Cloud
+ * eine leere Liste bewachter Kameras, damit sie ab jetzt selbst meldet; dann
+ * wartet der Neustart auf laufende Bewertungen des Waechters (hoechstens
+ * 3 min), damit deren Alarm noch hinausgeht.
+ */
+setRestartHold({
+  pending: async () => {
+    holdSentinelCoverage("Neustart des Hubs nach einem Update");
+    await heartbeat();
+  },
+  busy: sentinelBusy,
+});
 
 async function runAndReport(task: HubTask): Promise<void> {
   // Ein Handler, der wirft, darf den Hub nicht beenden: Der Fehler geht als

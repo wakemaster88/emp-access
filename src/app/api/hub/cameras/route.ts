@@ -35,6 +35,8 @@ export async function GET(request: NextRequest) {
       deliveryMode: true,
       deliveryFrom: true,
       deliveryTo: true,
+      // Einstellung „Wächter“ je Kamera (sentinel.ts am Hub); null = wie der Raum.
+      sentinelMode: true,
       // Laufende Tor-Offenhaltung: Der Hub nimmt sie nach einem Neustart
       // wieder auf (doorbird.ts, syncDoorbirds).
       doorHoldUntil: true,

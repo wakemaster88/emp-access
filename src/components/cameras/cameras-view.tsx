@@ -58,6 +58,8 @@ export interface CameraRow {
   deliveryMode: string | null;
   deliveryFrom: string | null;
   deliveryTo: string | null;
+  /** Wächter des Hubs: null = wie der Raum, "NIGHT" = nur nachts, "OFF" = aus. */
+  sentinelMode: string | null;
   notes: string | null;
   snapshotAt: string | null;
   lastSeenAt: string | null;
@@ -111,6 +113,8 @@ const EMPTY = {
   deliveryMode: "",
   deliveryFrom: "",
   deliveryTo: "",
+  /** "" = wie der Raum, "NIGHT", "OFF". */
+  sentinelMode: "",
   notes: "",
 };
 
@@ -206,6 +210,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
       deliveryMode: c.deliveryMode ?? "",
       deliveryFrom: c.deliveryFrom ?? "",
       deliveryTo: c.deliveryTo ?? "",
+      sentinelMode: c.sentinelMode ?? "",
       notes: c.notes ?? "",
     });
     setError("");
@@ -242,6 +247,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
           deliveryMode: form.vehicleDetection && form.deliveryMode ? form.deliveryMode : null,
           deliveryFrom: form.deliveryFrom || null,
           deliveryTo: form.deliveryTo || null,
+          sentinelMode: form.sentinelMode || null,
           notes: form.notes,
         }),
       });
@@ -827,6 +833,26 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                 </div>
               </div>
             )}
+
+            <div className="glass-tile space-y-1.5 p-3">
+              <Label htmlFor="camera-sentinel-mode">Wächter</Label>
+              <NativeSelect
+                id="camera-sentinel-mode"
+                value={form.sentinelMode}
+                onChange={(e) => set("sentinelMode", e.target.value)}
+              >
+                <option value="">Wie der Raum</option>
+                <option value="NIGHT">Nur nachts</option>
+                <option value="OFF">Aus</option>
+              </NativeSelect>
+              <p className="text-xs text-muted-foreground">
+                {form.sentinelMode === "NIGHT"
+                  ? "Der Wächter des Hubs meldet Personen und Fahrzeuge hier nur im Nachtfenster (Standard 22 bis 6 Uhr), unabhängig von der Betriebszeit des Raums."
+                  : form.sentinelMode === "OFF"
+                    ? "Der Wächter des Hubs bewertet diese Kamera nicht und meldet hier nichts. Gesichts- und Kennzeichenerkennung laufen weiter."
+                    : "Der Wächter des Hubs meldet Personen und Fahrzeuge, solange der Raum der Kamera geschlossen ist. Ohne Betriebszeit im Nachtfenster (Standard 22 bis 6 Uhr)."}
+              </p>
+            </div>
 
             <div className="space-y-1.5">
               <Label>Notizen</Label>

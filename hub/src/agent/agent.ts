@@ -44,7 +44,18 @@ import {
 import { TOOLS, findTool, readNotes, toolResultText, toolSpecs, type ToolContext } from "./tools.js";
 import { WatchRunner } from "./watch-runner.js";
 import { closeDispatch, loadDispatch, sendNotice, type NoticeKind, type NoticeResult } from "./dispatch.js";
-import { MAX_AGE_MS as OUTBOX_MAX_AGE_MS } from "./outbox-rules.js";
+import {
+  BUTTON_PREFIX,
+  buttonRefusalLine,
+  buttonRepeatLine,
+  buttonRepeated,
+  buttonRunning,
+  buttonTool,
+  buttonValid,
+  repeatReply,
+  type ButtonRunning,
+} from "./alarm-rules.js";
+import { findCameraByRef } from "../cameras.js";
 import { reportDue, reportRetryMs } from "./report-rules.js";
 import { occupancyAlertMode, startOccupancy } from "../occupancy.js";
 import { WATCH_WARMUP_S, berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
@@ -64,13 +75,6 @@ const QUIET = (process.env.HUB_AGENT_QUIET ?? "22-7").trim();
 const MAX_HISTORY = 24;
 const MAX_ROUNDS = 8;
 const PENDING_TTL_MS = 10 * 60_000;
-/**
- * So lange bleibt ein Vorschlag mindestens in der Liste: Der Knopf eines
- * Alarms kann bis zu 15 Minuten in der Sende-Warteschlange warten, seine Frist
- * beginnt erst mit der Zustellung (renewOffers). Ob ein Tipp noch gilt,
- * entscheidet weiter PENDING_TTL_MS.
- */
-const PENDING_KEEP_MS = OUTBOX_MAX_AGE_MS + 60_000;
 
 export const AGENT = {
   enabled: false,
@@ -324,13 +328,100 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
   }
 }
 
+/**
+ * Werkzeug nach einem bestaetigten Tipp ausfuehren. Das Ergebnis steht im Log
+ * und als Hub-Ereignis; zurueck kommt die Zeile fuer Telegram.
+ */
+async function runConfirmed(chatId: string, tool: string, args: Record<string, unknown>, desc: string): Promise<string> {
+  let line: string;
+  try {
+    const r = (await findTool(tool)!.run(args, ctxFor(chatId))) as { success?: boolean; ok?: boolean; error?: string } | undefined;
+    const failed = r && (r.success === false || r.ok === false);
+    line = failed ? `Fehlgeschlagen: ${desc} – ${r?.error ?? "unbekannter Fehler"}` : `Erledigt: ${desc}`;
+  } catch (e) {
+    line = `Fehlgeschlagen: ${desc} – ${e instanceof Error ? e.message : String(e)}`;
+  }
+  log(`Assistent: ${line}`);
+  recordHubEvent({ kind: "task", severity: line.startsWith("Erledigt") ? "info" : "warn", where: "Assistent", title: line });
+  return line;
+}
+
+/** Wann Licht und Sirene je Kamera zuletzt per Knopf schalteten (`<Kamera>:<Knopf>`, ms); nur im Speicher. */
+const buttonRuns = new Map<string, number>();
+/** Schalten, das gerade laeuft (`<Kamera>:<Knopf>`), mit den Chats, die getippt haben (buttonRunning); nur im Speicher, verfaellt. */
+const buttonsRunning = new Map<string, ButtonRunning>();
+
+/**
+ * Knopf eines Waechter-Alarms (cam:…, alarm-rules.ts): Kamera und Frist
+ * stehen in den Knopf-Daten. Ein gueltiger Tipp fuehrt dasselbe Werkzeug aus
+ * wie bisher; die Alarm-Nachricht bleibt stehen, mit ihren Knoepfen. Licht und
+ * Sirene schalten je Alarm einmal: Ein zweiter Tipp (Doppeltipp, zweiter Chat)
+ * bekommt „Schon ausgeführt“ (buttonRepeated), solange das Schalten des
+ * ersten noch laeuft „Wird gerade ausgeführt …“ (repeatReply). Scheitert das
+ * Schalten, zaehlt der Tipp nicht, ein neuer Tipp versucht es wieder, und
+ * jeder Chat, der waehrenddessen getippt hat, bekommt die Fehlermeldung. Ein
+ * Tipp, der nicht mehr gilt oder nicht erneut schaltet, steht im Log.
+ */
+async function handleAlarmButton(chatId: string, cb: NonNullable<TgUpdate["callback_query"]>, data: string): Promise<void> {
+  const now = Date.now();
+  const check = buttonValid(data, now, (id) => findCameraByRef(String(id)) !== null);
+  if (!check.ok) {
+    log(`Assistent: ${buttonRefusalLine(check, data)}`);
+    await answerCallback(cb.id, check.why === "kamera" ? "Diese Kamera gibt es nicht mehr." : check.why === "abgelaufen" ? "Abgelaufen – bitte neu fragen." : "Unbekannter Knopf.");
+    return;
+  }
+  for (const [k, r] of buttonsRunning) if (!buttonRunning(r, now)) buttonsRunning.delete(k);
+  const key = `${check.camera}:${check.button}`;
+  const lastRun = buttonRuns.get(key);
+  if (buttonRepeated(check.button, check.sentAt, lastRun, now)) {
+    const reply = repeatReply(buttonsRunning.get(key), chatId, now);
+    if (reply.running) buttonsRunning.set(key, reply.running);
+    log(`Assistent: ${buttonRepeatLine(check.camera, check.button, now - (lastRun ?? now))}${reply.running ? " (das Schalten läuft noch)" : ""}`);
+    await answerCallback(cb.id, reply.text);
+    return;
+  }
+  // Vor dem ersten await merken: Ein Tipp, der waehrenddessen kommt, schaltet nicht noch einmal.
+  if (check.sentAt !== null) {
+    buttonRuns.set(key, now);
+    buttonsRunning.set(key, { since: now, chats: [chatId] });
+  }
+  const cam = findCameraByRef(String(check.camera));
+  const { tool, args, desc } = buttonTool(check.camera, check.button, cam?.name ?? `Kamera ${check.camera}`);
+  await answerCallback(cb.id, "Wird ausgeführt …");
+  const line = await runConfirmed(chatId, tool, args, desc);
+  const running = buttonsRunning.get(key);
+  const mine = running?.since === now ? running : null;
+  if (mine) buttonsRunning.delete(key);
+  const failed = !line.startsWith("Erledigt");
+  if (check.sentAt !== null && failed && buttonRuns.get(key) === now) {
+    if (lastRun === undefined) buttonRuns.delete(key);
+    else buttonRuns.set(key, lastRun);
+  }
+  // Ein neues Bild ist selbst die Antwort; sonst eine kurze Zeile unter dem Alarm.
+  if (check.button !== "snap" || failed) await sendText(chatId, line).catch(() => undefined);
+  // Gescheitert: Auch die Chats, die waehrenddessen „Wird gerade ausgeführt …“ bekamen, erfahren es.
+  const others = failed && mine ? mine.chats.filter((c) => c !== chatId) : [];
+  for (const other of others) await sendText(other, line).catch(() => undefined);
+  for (const c of [chatId, ...others]) {
+    const history = histories.get(c) ?? [];
+    history.push({ role: "assistant", content: `(${line})` });
+    histories.set(c, trimHistory(history));
+  }
+}
+
 async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Promise<void> {
   const chatId = String(cb.message?.chat.id ?? "");
-  const veh = (cb.data ?? "").match(/^v(ok|no):([A-Z0-9ÄÖÜ]{4,12})$/);
-  const pok = (cb.data ?? "").match(/^pok:([0-9a-f]{8})$/);
-  const m = (cb.data ?? "").match(/^(ok|no):([0-9a-f]{12})$/);
-  if (!chatId || !isPaired(pairing, chatId, ENV_CHAT_IDS) || (!m && !veh && !pok)) {
+  const data = cb.data ?? "";
+  const veh = data.match(/^v(ok|no):([A-Z0-9ÄÖÜ]{4,12})$/);
+  const pok = data.match(/^pok:([0-9a-f]{8})$/);
+  const m = data.match(/^(ok|no):([0-9a-f]{12})$/);
+  const alarmButton = data.startsWith(BUTTON_PREFIX);
+  if (!chatId || !isPaired(pairing, chatId, ENV_CHAT_IDS) || (!m && !veh && !pok && !alarmButton)) {
     await answerCallback(cb.id, "Nicht berechtigt.");
+    return;
+  }
+  if (alarmButton) {
+    await handleAlarmButton(chatId, cb, data);
     return;
   }
   const msgId = cb.message?.message_id;
@@ -353,6 +444,8 @@ async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Prom
   const p = pending.get(m[2]);
   if (!p || (p.chatId !== "*" && p.chatId !== chatId) || Date.now() - p.createdAt > (p.ttlMs ?? PENDING_TTL_MS)) {
     pending.delete(m[2]);
+    // Auch Knoepfe aus der Zeit vor einem Neustart landen hier: Die Liste lebt nur im Speicher.
+    log(`Assistent: Knopf abgelaufen (${p ? p.desc : "Rückfrage nicht mehr bekannt"})`);
     await answerCallback(cb.id, "Abgelaufen – bitte neu fragen.");
     if (msgId) await editText(chatId, msgId, `${cb.message?.text ?? ""}\n\nAbgelaufen.`);
     return;
@@ -367,44 +460,24 @@ async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Prom
     return;
   }
   await answerCallback(cb.id, "Wird ausgeführt …");
-  let line: string;
-  try {
-    const r = (await findTool(p.tool)!.run(p.args, ctxFor(chatId))) as { success?: boolean; ok?: boolean; error?: string } | undefined;
-    const failed = r && (r.success === false || r.ok === false);
-    line = failed ? `Fehlgeschlagen: ${p.desc} – ${r?.error ?? "unbekannter Fehler"}` : `Erledigt: ${p.desc}`;
-  } catch (e) {
-    line = `Fehlgeschlagen: ${p.desc} – ${e instanceof Error ? e.message : String(e)}`;
-  }
-  log(`Assistent: ${line}`);
-  recordHubEvent({ kind: "task", severity: line.startsWith("Erledigt") ? "info" : "warn", where: "Assistent", title: line });
+  const line = await runConfirmed(chatId, p.tool, p.args, p.desc);
   if (msgId) await editText(chatId, msgId, line);
   history.push({ role: "assistant", content: `(${line})` });
   histories.set(chatId, trimHistory(history));
 }
 
-/** Knopf fuer eine vorbereitete Aktion (Waechter-Meldung): der Tipp ist die Bestaetigung. */
+/**
+ * Knopf fuer eine vorbereitete Aktion (Energie-Vorschlag): der Tipp ist die
+ * Bestaetigung. Die Knoepfe der Waechter-Alarme tragen ihren Zustand selbst
+ * (alarm-rules.ts) und stehen nicht in dieser Liste.
+ */
 function offer(label: string, tool: string, args: Record<string, unknown>, desc: string, ttlMs?: number): TgButton {
   const id = randomBytes(6).toString("hex");
   const now = Date.now();
   // Abgelaufene Vorschlaege aufraeumen, damit die Liste nicht waechst.
-  for (const [k, p] of pending) if (now - p.createdAt > (p.ttlMs ?? PENDING_TTL_MS) + PENDING_KEEP_MS) pending.delete(k);
+  for (const [k, p] of pending) if (now - p.createdAt > (p.ttlMs ?? PENDING_TTL_MS)) pending.delete(k);
   pending.set(id, { chatId: "*", tool, args, desc, createdAt: now, ttlMs });
   return { text: label, callback_data: `ok:${id}` };
-}
-
-/**
- * Knoepfe eines Alarms gelten ab der Zustellung, bei mehreren Chats ab der
- * letzten: Wartete er wegen eines Telegram-Ausfalls in der Warteschlange,
- * waeren sie sonst bei Ankunft schon abgelaufen. Schaltet nichts, setzt nur
- * den Beginn der Frist neu.
- */
-function renewOffers(buttons: TgButton[][]): void {
-  const now = Date.now();
-  for (const b of buttons.flat()) {
-    const m = /^ok:([0-9a-f]+)$/.exec(b.callback_data ?? "");
-    const p = m ? pending.get(m[1]) : undefined;
-    if (p) p.createdAt = now;
-  }
 }
 
 /* ------------------------------------------------------------ Kopplung */
@@ -774,9 +847,9 @@ export async function startAgent(): Promise<void> {
     if (!LLM.ready) void ensureOllama();
   }, 30 * 60_000);
   // Kamera-Ereignisse ausserhalb des Betriebs selbst ansehen (Bildmodell).
-  startSentinel({ chatIds, offer, renew: renewOffers });
+  startSentinel({ chatIds });
   // Tagsueber Belegung/Wartezeiten messen; ob gemeldet wird, wenn es voll
-  // wird, bestimmt HUB_OCCUPANCY_ALERTS (ohne Angabe: Probelauf, nur Log).
+  // wird, bestimmt HUB_OCCUPANCY_ALERTS (ohne Angabe: Meldungen an; shadow: nur Log).
   startOccupancy({ chatIds });
   // Energie, Maeher und Bewaesserung nach Wetter und Betriebszeit (Vorschlaege mit Knopf).
   if ((process.env.HUB_AGENT_ENERGY ?? "on").toLowerCase() !== "off") void startEnergy({ chatIds, offer });

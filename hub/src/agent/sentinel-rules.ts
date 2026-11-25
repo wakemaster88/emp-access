@@ -47,15 +47,24 @@ export type SkipReason =
   | "belegt";
 
 /**
+ * Wird die Kamera gerade bewacht? Ja bei „always“, bei geschlossenem Raum und,
+ * ohne bekannte Betriebszeit (closed null), im Nachtfenster. Dieselbe Regel
+ * gilt fuer die Ausloeser (triggerVerdict) und fuer die Liste der bewachten
+ * Kameras, die der Hub der Cloud meldet (sentinel-cover-rules.ts).
+ */
+export function cameraWatched(ctx: Pick<SentinelContext, "always" | "closed" | "hour" | "nightWindow">): boolean {
+  return ctx.always || ctx.closed === true || (ctx.closed !== false && inQuietHours(ctx.nightWindow, ctx.hour));
+}
+
+/**
  * Ein Kamera-Ereignis einordnen. Ausloeser ist der Beginn eines Personen-
- * oder Fahrzeugereignisses an einer Kamera, die gerade bewacht wird (Raum
- * geschlossen, ohne Betriebszeit im Nachtfenster, oder „always“). Ein
- * Ausloeser wird bewertet oder wegen Abstand bzw. Stundenlimit uebergangen.
+ * oder Fahrzeugereignisses an einer Kamera, die gerade bewacht wird
+ * (cameraWatched). Ein Ausloeser wird bewertet oder wegen Abstand bzw.
+ * Stundenlimit uebergangen.
  */
 export function triggerVerdict(ev: SentinelEvent, ctx: SentinelContext): "bewerten" | "kein_ausloeser" | "abstand" | "limit" {
   if (!isTriggerEvent(ev)) return "kein_ausloeser";
-  const watched = ctx.always || ctx.closed === true || (ctx.closed !== false && inQuietHours(ctx.nightWindow, ctx.hour));
-  if (!watched) return "kein_ausloeser";
+  if (!cameraWatched(ctx)) return "kein_ausloeser";
   if (ctx.lastInspectAt !== undefined && ctx.now - ctx.lastInspectAt < ctx.cooldownMs) return "abstand";
   if (ctx.inspectionsLastHour >= ctx.maxPerHour) return "limit";
   return "bewerten";
@@ -335,12 +344,14 @@ export interface TickInput {
   now: number;
   hour: number;
   nightWindow: string;
-  always: boolean;
   maxPerHour: number;
   /** So viele Bewertungen laufen hoechstens gleichzeitig. */
   maxBusy: number;
-  /** Neue Kamera-Ereignisse, deren Kamera bekannt ist. */
-  events: Array<{ ev: SentinelEvent; camId: number; where: string; closed: boolean | null }>;
+  /**
+   * Neue Kamera-Ereignisse, deren Kamera bekannt ist. `always`:
+   * HUB_AGENT_SENTINEL=always gilt fuer die Kamera (modeAlways).
+   */
+  events: Array<{ ev: SentinelEvent; camId: number; where: string; closed: boolean | null; always: boolean }>;
 }
 
 export interface TickPlan {
@@ -428,13 +439,13 @@ export function planTick(q: SentinelQueue, input: TickInput): TickPlan {
   }
 
   const tally = rollTally(q, now);
-  for (const { ev, camId, where, closed } of input.events) {
+  for (const { ev, camId, where, closed, always } of input.events) {
     const mark = q.marks.get(camId);
     const verdict = triggerVerdict(ev, {
       closed,
       hour: input.hour,
       nightWindow: input.nightWindow,
-      always: input.always,
+      always,
       lastInspectAt: mark?.at,
       now,
       cooldownMs: lock(mark),
@@ -469,10 +480,140 @@ export function finishInspection(q: SentinelQueue, started: StartedInspection, o
   if (outcome === "alarm") mark.regularAt = mark.at;
 }
 
+/* ------------------------------------------------ Kennzeichen-Fragen neben dem Takt */
+
+/** So viele Fahrzeug-Ereignisse warten hoechstens auf den naechsten Lauf der Kennzeichen-Fragen (vehicleTick). */
+export const VEHICLE_BACKLOG_MAX = 300;
+
+/**
+ * Ereignisse an den Puffer fuer den naechsten Lauf haengen, in ihrer
+ * Reihenfolge. Mehr als `max` behaelt der Puffer nicht: Die aeltesten fallen
+ * weg, `dropped` zaehlt sie.
+ */
+export function appendBacklog<T>(backlog: readonly T[], add: readonly T[], max = VEHICLE_BACKLOG_MAX): { list: T[]; dropped: number } {
+  const all = [...backlog, ...add];
+  const dropped = Math.max(0, all.length - Math.max(0, max));
+  return { list: all.slice(dropped), dropped };
+}
+
 export interface Verdict {
   auffaellig: boolean;
   was: string;
   dringlichkeit: "niedrig" | "mittel" | "hoch";
+}
+
+/* ------------------------------------------- Personen: zweiter Blick */
+
+/**
+ * Zusaetzliche Standbilder des zweiten Blicks, gerechnet ab dem ersten Bild.
+ * Sie entstehen neben dem Aufruf des Bildmodells: Nachts ist eine Person oft
+ * nur wenige Sekunden im Bild, das Urteil kommt spaeter.
+ */
+export const SECOND_LOOK_DELAYS_MS: readonly number[] = [3_000, 8_000];
+/** So lange nach dem Ausloeser wartet der Tracker-Gegencheck auf ein Gesichts-Ereignis der Kamera. */
+export const FACE_WAIT_MS = 30_000;
+/**
+ * Ab so lange vor dem Ausloeser belegt ein Gesichts-Ereignis der Kamera
+ * (bekannt oder unbekannt), dass dort jemand ist (trackerVeto,
+ * emptyLookOverruled). Es entlastet niemanden, darum gilt das lange Fenster;
+ * fuer die Entlastung durch ein bekanntes Gesicht gilt FACE_LEAD_MS.
+ */
+export const FACE_PRESENCE_LEAD_MS = 90_000;
+
+/**
+ * Ist „unauffaellig“ noch nicht endgueltig? Im Nachtfenster gilt das Urteil
+ * des Bildmodells bei einem PERSON-Ausloeser erst, wenn auch der Tracker auf
+ * dem ersten Bild und auf zwei weiteren Standbildern niemanden sieht
+ * (secondLookResult). Ist die Stunde nicht lesbar, wird ebenfalls
+ * nachgesehen. Fahrzeuge und Tagesstunden: wie bisher ein Blick.
+ */
+export function needsSecondLook(ctx: { isPerson: boolean; gateAuffaellig: boolean; hour: number; nightWindow: string }): boolean {
+  if (!ctx.isPerson || ctx.gateAuffaellig) return false;
+  return !Number.isFinite(ctx.hour) || inQuietHours(ctx.nightWindow, ctx.hour);
+}
+
+/**
+ * Ergebnis des zweiten Blicks aus den Personenzahlen des Trackers je Bild
+ * (erstes Bild zuerst; null = Bild oder Tracker nicht verfuegbar): Nummer des
+ * ersten Bildes mit einer Person, mit dem die Bewertung weiterlaeuft;
+ * „leer“, wenn jedes Bild geprueft und leer ist; „offen“, wenn keins eine
+ * Person zeigt, aber nicht jedes geprueft werden konnte.
+ */
+export function secondLookResult(counts: ReadonlyArray<number | null>): number | "leer" | "offen" {
+  const hit = counts.findIndex((n) => typeof n === "number" && n > 0);
+  if (hit >= 0) return hit;
+  return counts.length > 0 && counts.every((n) => n === 0) ? "leer" : "offen";
+}
+
+/**
+ * Tracker-Gegencheck: Das Bildmodell nennt das Bild auffaellig, der Tracker
+ * prueft, ob ueberhaupt jemand im Bild ist. Kein Alarm nur, wenn beide
+ * Tracker-Ergebnisse leer sind (Personenzahl 0; null = nicht erreichbar, dann
+ * kein Veto) und die Gesichtserkennung an dieser Kamera seit
+ * FACE_PRESENCE_LEAD_MS vor dem Ausloeser kein Gesicht gemeldet hat, bekannt
+ * oder unbekannt.
+ */
+export function trackerVeto(ctx: { first: number | null; second: number | null; faceSeenAt: number | null; triggerAt: number }): boolean {
+  if (ctx.first !== 0 || ctx.second !== 0) return false;
+  return !faceSince(ctx.faceSeenAt, ctx.triggerAt);
+}
+
+/** Hat die Gesichtserkennung an der Kamera seit FACE_PRESENCE_LEAD_MS vor dem Ausloeser ein Gesicht gemeldet? */
+function faceSince(faceSeenAt: number | null, triggerAt: number): boolean {
+  return typeof faceSeenAt === "number" && faceSeenAt >= triggerAt - FACE_PRESENCE_LEAD_MS;
+}
+
+/** Was eine Person belegt, wenn die Nahaufnahme niemanden zeigt. */
+export type PresenceSignal = "gesicht" | "tracker";
+
+/**
+ * Darf „Auf der Nahaufnahme keine Person“ entwarnen? Nicht, wenn etwas
+ * anderes eine Person belegt: ein Gesichts-Ereignis der Kamera seit
+ * FACE_PRESENCE_LEAD_MS vor dem Ausloeser (zu jeder Stunde) oder, im Nachtfenster wie
+ * beim zweiten Blick, eine Person, die der Tracker gesehen hat. null = nichts
+ * spricht dagegen.
+ */
+export function emptyLookOverruled(ctx: {
+  trackerCount: number | null;
+  faceSeenAt: number | null;
+  triggerAt: number;
+  hour: number;
+  nightWindow: string;
+}): PresenceSignal | null {
+  if (faceSince(ctx.faceSeenAt, ctx.triggerAt)) return "gesicht";
+  const night = !Number.isFinite(ctx.hour) || inQuietHours(ctx.nightWindow, ctx.hour);
+  return night && typeof ctx.trackerCount === "number" && ctx.trackerCount > 0 ? "tracker" : null;
+}
+
+/** Wie es nach „unauffaellig“ des Bildmodells weitergeht (afterCalm). */
+export type CalmNext =
+  /** Es bleibt bei „unauffaellig“. */
+  | { then: "unauffaellig" }
+  /** Weiter mit dem Bild des zweiten Blicks, auf dem der Tracker eine Person sieht. */
+  | { then: "tracker"; shot: number }
+  /** Weiter mit dem ersten Bild: Die Gesichtserkennung hat an der Kamera ein Gesicht gefunden. */
+  | { then: "gesicht" }
+  /** Weiter mit dem ersten Bild: Der Tracker konnte nicht jedes Bild des zweiten Blicks pruefen. */
+  | { then: "offen" };
+
+/**
+ * Ist „unauffaellig“ endgueltig? Bei einem PERSON-Ausloeser nicht, wenn etwas
+ * eine Person belegt: der Tracker auf einem Bild des zweiten Blicks (nachts,
+ * secondLookResult) oder, zu jeder Stunde, ein Gesichts-Ereignis der Kamera
+ * seit FACE_PRESENCE_LEAD_MS vor dem Ausloeser, bekannt oder unbekannt. Dann
+ * laeuft die Bewertung weiter. Konnte der Tracker nachts nicht jedes Bild
+ * pruefen, ebenfalls. `secondLook` = null: kein zweiter Blick (Tag, Fahrzeug).
+ */
+export function afterCalm(ctx: {
+  isPerson: boolean;
+  secondLook: number | "leer" | "offen" | null;
+  faceSeenAt: number | null;
+  triggerAt: number;
+}): CalmNext {
+  if (typeof ctx.secondLook === "number") return { then: "tracker", shot: ctx.secondLook };
+  if (ctx.isPerson && faceSince(ctx.faceSeenAt, ctx.triggerAt)) return { then: "gesicht" };
+  if (ctx.secondLook === "offen") return { then: "offen" };
+  return { then: "unauffaellig" };
 }
 
 /** Antwort des Bildmodells robust lesen (JSON, notfalls aus Text). */
@@ -498,12 +639,84 @@ export function parseVerdict(raw: string): Verdict {
 
 /* ------------------------------------------------- Personen: Mitarbeiter? */
 
+/**
+ * Was die Person laut Nahaufnahme tut (Feld „handlung“ der Antwort). Die
+ * ersten sechs Werte fragt der Prompt ab, die letzten beiden entstehen beim
+ * Lesen:
+ *  - verdaechtig: Antwort im alten Format („verdaechtig“: ja, ohne Handlung).
+ *  - unklar: ein Wert, der keinem festen Wert zuzuordnen ist.
+ */
+export type Handlung = "klettern" | "tuer_fenster_schloss" | "versteckt" | "vermummt" | "traegt_etwas" | "keine" | "verdaechtig" | "unklar";
+
+/** Reihenfolge nach Schwere: Nennt die Antwort mehrere Werte, gilt der schwerste. */
+const ACTION_ORDER: readonly Handlung[] = ["klettern", "tuer_fenster_schloss", "versteckt", "verdaechtig", "unklar", "vermummt", "traegt_etwas", "keine"];
+
+/**
+ * Harte Handlungen loesen immer Alarm aus, auch bei erkannten, freigegebenen
+ * oder eingestempelten Personen. Eine Antwort im alten Format und ein Wert,
+ * der sich nicht zuordnen laesst, zaehlen dazu: Im Zweifel Alarm.
+ */
+export const HARD_ACTIONS: ReadonlySet<Handlung> = new Set<Handlung>(["klettern", "tuer_fenster_schloss", "versteckt", "verdaechtig", "unklar"]);
+
+/** Kurztext fuer Grund und Log. */
+export const ACTION_TEXT: Record<Handlung, string> = {
+  klettern: "klettert",
+  tuer_fenster_schloss: "hantiert an Tür, Fenster oder Schloss",
+  versteckt: "versteckt sich",
+  verdaechtig: "Verhalten wirkt verdächtig",
+  unklar: "Handlung nicht eindeutig",
+  vermummt: "vermummt",
+  traegt_etwas: "trägt etwas",
+  keine: "keine",
+};
+
+/** Freie Schreibweisen der Antwort, in der Reihenfolge nach Schwere. */
+const ACTION_WORDS: Array<[Handlung, RegExp]> = [
+  ["klettern", /kletter/],
+  ["tuer_fenster_schloss", /tuer(?!kis)|fenster|schloss/],
+  ["versteckt", /versteck/],
+  ["vermummt", /vermumm|maskiert|sturmhaube/],
+  ["traegt_etwas", /traeg|tragen|schlepp/],
+  ["keine", /^(keine?|keine_handlung|nichts|none|nein|-)$/],
+];
+
+/** Ein einzelner Wert der Antwort; null = kein Wert. */
+function actionOf(v: unknown): Handlung | null {
+  if (v === null || v === undefined) return null;
+  if (v === false) return "keine";
+  const s = String(v)
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .trim()
+    .replace(/[\s,/-]+/g, "_");
+  if (!s) return null;
+  if ((ACTION_ORDER as readonly string[]).includes(s) && s !== "verdaechtig" && s !== "unklar") return s as Handlung;
+  for (const [action, re] of ACTION_WORDS) if (re.test(s)) return action;
+  return "unklar";
+}
+
+/**
+ * Feld „handlung“ lesen: ein Wert oder eine Liste (dann gilt der schwerste).
+ * null = die Antwort nennt keine Handlung.
+ */
+export function readHandlung(v: unknown): Handlung | null {
+  const values = (Array.isArray(v) ? v : [v]).map(actionOf).filter((a): a is Handlung => a !== null);
+  if (!values.length) return null;
+  return values.reduce((a, b) => (ACTION_ORDER.indexOf(b) < ACTION_ORDER.indexOf(a) ? b : a));
+}
+
 /** Nahaufnahme-Bewertung einer Person (Bildmodell, JSON). */
 export interface PersonLook {
   personen: number;
   arbeitskleidung: boolean;
   mitarbeiter: boolean;
-  verdaechtig: boolean;
+  /** Was die Person tut; „keine“, wenn die Antwort nichts nennt. */
+  handlung: Handlung;
+  /** Bei „unklar“: der Wert, wie ihn die Antwort nennt (fuer Grund und Log). */
+  handlungText?: string;
   was: string;
   /** Kurzbeschreibung je Person (Kleidung, Statur) fuer die Wiedererkennung. */
   kleidung: string[];
@@ -535,6 +748,17 @@ export function parsePersonLook(raw: string): PersonLook {
     .filter((b, i, a) => Number.isInteger(b) && b > 0 && a.indexOf(b) === i);
   const u = Math.round(Number(obj.unbekannt));
   const unbekannt = Number.isFinite(u) && u >= 0 ? u : Math.max(0, personen - bekannt.length);
+  // Das alte Feld „verdaechtig“ gilt weiter: Ein Ja ohne Handlung zaehlt wie
+  // bisher als verdaechtig, ebenso ein Ja neben „keine“ (Widerspruch, im
+  // Zweifel Alarm). Nennt die Antwort eine Handlung, entscheidet diese.
+  const rawAction = obj.handlung ?? obj.handlungen;
+  const said = readHandlung(rawAction);
+  const legacy = yes(obj.verdaechtig ?? obj.verdächtig);
+  const handlung: Handlung = legacy && (said === null || said === "keine") ? "verdaechtig" : (said ?? "keine");
+  const handlungText =
+    handlung === "unklar"
+      ? (Array.isArray(rawAction) ? rawAction.map(String).join(", ") : String(rawAction)).replace(/\s+/g, " ").trim().slice(0, 60)
+      : undefined;
   return {
     personen,
     kleidung,
@@ -542,20 +766,116 @@ export function parsePersonLook(raw: string): PersonLook {
     unbekannt,
     arbeitskleidung: yes(obj.arbeitskleidung),
     mitarbeiter: yes(obj.mitarbeiter ?? obj.wirkt_wie_mitarbeiter),
-    verdaechtig: yes(obj.verdaechtig ?? obj.verdächtig),
+    handlung,
+    ...(handlungText ? { handlungText } : {}),
     was: String(obj.was ?? obj.beschreibung ?? "").replace(/\s+/g, " ").trim().slice(0, 400),
   };
 }
 
+/** Gesichts-Treffer der bestehenden Gesichtserkennung an einer Kamera. */
+export interface FaceHit {
+  name: string;
+  /** WHITELIST | BLACKLIST */
+  list: string;
+  /** Score des Treffers; fehlt bei Ereignissen eines aelteren Stands. */
+  score?: number;
+  /** Aus einem hochgerechneten Mini-Gesicht; fehlt bei Ereignissen eines aelteren Stands. */
+  upscaled?: boolean;
+}
+
+/** Starker Treffer: nicht hochgerechnet und mindestens dieser Score … */
+export const FACE_STRONG_DIRECT = 0.6;
+/** … oder, auch hochgerechnet, mindestens dieser. */
+export const FACE_STRONG_ANY = 0.7;
+
+/**
+ * Ist der Gesichts-Treffer stark genug, um allein zu entwarnen? Fehlen Score
+ * oder die Angabe „hochgerechnet“ (Ereignis eines aelteren Stands), gilt er
+ * als schwach.
+ */
+export function faceIsStrong(hit: Pick<FaceHit, "score" | "upscaled">): boolean {
+  const { score, upscaled } = hit;
+  if (typeof score !== "number" || !Number.isFinite(score) || typeof upscaled !== "boolean") return false;
+  return score >= FACE_STRONG_ANY || (!upscaled && score >= FACE_STRONG_DIRECT);
+}
+
+/** Score fuer Grund und Log: „0,55“, ohne Score „unbekannt“. */
+function scoreText(score: number | undefined): string {
+  return typeof score === "number" && Number.isFinite(score) ? score.toFixed(2).replace(".", ",") : "unbekannt";
+}
+
+/**
+ * Ab so lange vor dem Ausloeser zaehlt ein Gesichts-Ereignis der Kamera zur
+ * Bewertung, bis zur Entscheidung. Ein frueheres Gesicht gehoert eher zu
+ * einem Passanten, der schon weiter ist.
+ */
+export const FACE_LEAD_MS = 10_000;
+/**
+ * Ein Treffer der Sperrliste zaehlt ab so lange vor dem Ausloeser: Er
+ * loest Alarm aus und entlastet niemanden, darum gilt fuer ihn das laengere
+ * Fenster.
+ */
+export const BLACKLIST_LEAD_MS = 90_000;
+
+/** Ein Gesichts-Treffer mit Zeitpunkt (people.ts merkt sich alle Treffer je Kamera). */
+export interface TimedFaceHit extends FaceHit {
+  at: number;
+}
+
+/**
+ * Gesichts-Treffer fuer die Bewertung eines Ausloesers. Ein Treffer der
+ * Sperrliste ab BLACKLIST_LEAD_MS vor `triggerAt` gewinnt immer, auch gegen
+ * einen spaeteren Whitelist-Treffer. Sonst gilt der staerkste Whitelist-
+ * Treffer ab FACE_LEAD_MS vor `triggerAt`: stark vor schwach, dann der
+ * hoechste Score, dann der juengste.
+ */
+export function pickFaceHit(hits: readonly TimedFaceHit[], triggerAt: number): FaceHit | null {
+  const recent = hits.filter((h) => h.at >= triggerAt - FACE_LEAD_MS);
+  const strip = ({ at: _at, ...hit }: TimedFaceHit): FaceHit => hit;
+  const black = hits.filter((h) => h.list === "BLACKLIST" && h.at >= triggerAt - BLACKLIST_LEAD_MS);
+  if (black.length) return strip(black[black.length - 1]);
+  const rank = (h: TimedFaceHit) => [faceIsStrong(h) ? 1 : 0, typeof h.score === "number" && Number.isFinite(h.score) ? h.score : -1, h.at];
+  let best: TimedFaceHit | null = null;
+  for (const h of recent) {
+    if (h.list !== "WHITELIST") continue;
+    if (!best) {
+      best = h;
+      continue;
+    }
+    const [a, b] = [rank(h), rank(best)];
+    const i = a.findIndex((v, k) => v !== b[k]);
+    if (i >= 0 && a[i] > b[i]) best = h;
+  }
+  return best ? strip(best) : null;
+}
+
+/**
+ * Personen im Bild: die hoechste Zahl aus Nahaufnahme und Tracker
+ * (Uebersichtsbild). null = keine der beiden Zahlen bekannt.
+ */
+export function personCount(look: Pick<PersonLook, "personen"> | null, tracked: number | null | undefined): number | null {
+  const counts = [look?.personen, tracked].filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+  return counts.length ? Math.max(...counts) : null;
+}
+
+/** Art eines Eintrags der Merkliste (people-rules.ts). */
+type KnownKind = "gemeldet" | "freigegeben" | "mitarbeiter";
+
 export interface PersonContext {
   /** Gesichts-Treffer der bestehenden Gesichtserkennung an dieser Kamera. */
-  face: { name: string; list: string } | null;
+  face: FaceHit | null;
   /** Eingestempelte Mitarbeiter (null = keine aktuellen Daten). */
   staff: string[] | null;
   look: PersonLook | null;
   hour: number;
   /** Namen/Beschreibungen der bekannten Personen in Listen-Reihenfolge (1-basiert in look.bekannt). */
   known?: string[];
+  /** Art der bekannten Eintraege in derselben Reihenfolge wie `known`; fehlt sie, gilt keiner als freigegeben. */
+  knownKinds?: KnownKind[];
+  /** Personen laut Tracker auf dem Uebersichtsbild; null = unbekannt. */
+  tracked?: number | null;
+  /** Belegt etwas eine Person, auch wenn die Nahaufnahme niemanden zeigt (emptyLookOverruled)? */
+  presence?: PresenceSignal | null;
 }
 
 /**
@@ -564,8 +884,13 @@ export interface PersonContext {
  * `reason` ist fuer Menschen und kann sich aendern.
  */
 export type ClearBasis =
-  /** Gesicht auf der Whitelist. */
+  /** Starker Gesichts-Treffer auf der Whitelist, hoechstens eine Person im Bild. */
   | "gesicht"
+  /**
+   * Schwacher Whitelist-Treffer als Hinweis, zusammen mit einem zweiten
+   * Signal, hoechstens eine Person im Bild. Daraus wird keine Freigabe.
+   */
+  | "hinweis"
   /** Alle Personen im Bild stehen schon auf der Merkliste. */
   | "bekannt"
   /** Auf der Nahaufnahme ist niemand. */
@@ -578,8 +903,10 @@ export type ClearBasis =
 export type AlarmBasis =
   /** Gesicht auf der Sperrliste. */
   | "gesperrt"
-  /** Verhalten wirkt verdaechtig. */
+  /** Harte Handlung (HARD_ACTIONS): Klettern, Hantieren an Tuer/Fenster/Schloss, Verstecken. */
   | "verdaechtig"
+  /** Traegt etwas oder ist vermummt, ohne dass etwas die Person entlastet. */
+  | "ohne_freigabe"
   /** Mehr Personen als eingestempelt. */
   | "ueberzahl"
   /** Eingestempelt, aber nachts und ohne Arbeitskleidung. */
@@ -601,22 +928,110 @@ const WORK_HOURS = (h: number) => h >= 6 && h < 20;
 /**
  * Person ausserhalb des Betriebs: Alarm oder vermutlich Mitarbeiter?
  * Wichtigstes Signal sind eingestempelte Mitarbeiter, dazu Arbeitskleidung,
- * Taetigkeit und Uhrzeit. Ein Gesichts-Treffer auf der Whitelist der
- * bestehenden Gesichtserkennung reicht allein. Verdaechtiges Verhalten oder
- * Blacklist schlagen immer Alarm.
+ * Taetigkeit und Uhrzeit. Blacklist und harte Handlungen (Klettern,
+ * Hantieren an Tuer, Fenster oder Schloss, Verstecken) schlagen immer Alarm.
+ *
+ * Gesichts-Treffer auf der Whitelist der bestehenden Gesichtserkennung:
+ * Allein entwarnt nur ein starker Treffer (faceIsStrong), und nur, wenn
+ * Nahaufnahme und Tracker hoechstens eine Person zaehlen. Die
+ * Gesichtserkennung vergleicht je Bild ein Gesicht; bei zwei oder mehr
+ * Personen entwarnt ein Gesicht deshalb nie allein. Ein schwacher Treffer ist
+ * ein Hinweis: Er entwarnt nur bei hoechstens einer Person und zusammen mit
+ * einem zweiten Signal (eingestempeltes Personal; tagsueber Arbeitskleidung
+ * oder Taetigkeit laut Bildmodell; auf der Merkliste als freigegeben). Der
+ * Grund nennt dann „vermutlich bekannt“ mit dem Score, ohne Namen.
+ *
+ * Traegt die Person etwas, gibt es keinen Alarm nur, wenn sie erkannt ist
+ * (starker Gesichts-Treffer, hoechstens eine Person im Bild), alle Personen im
+ * Bild freigegeben sind oder tagsueber passendes Personal eingestempelt ist.
+ * Eine Vermummung entlastet kein Gesichts-Treffer (er kann von einer anderen
+ * Person im Bild stammen), nur eine Freigabe oder eingestempeltes Personal am
+ * Tag, und nur bei genau einer Person im Bild. Das ist strenger als fuer
+ * „traegt etwas“ und so gewollt: Ohne Alarm bleibt laut Entscheidung des
+ * Betreibers nur, wer erkannt oder freigegeben ist und nur etwas traegt; eine
+ * vermummte Person mit Gesichts-Treffer meldet der Waechter so, wie er sie
+ * meldete, als das Bildmodell sie verdaechtig nannte (Test „Vermummt, Gesicht
+ * erkannt“).
  */
 export function decidePerson(ctx: PersonContext): PersonDecision {
   if (ctx.face?.list === "BLACKLIST") return { alarm: true, basis: "gesperrt", reason: `Gesperrte Person erkannt: ${ctx.face.name}` };
-  if (ctx.look?.verdaechtig) return { alarm: true, basis: "verdaechtig", reason: "Verhalten wirkt verdächtig" };
-  if (ctx.face?.list === "WHITELIST") return { alarm: false, basis: "gesicht", reason: `Gesicht erkannt: ${ctx.face.name}` };
-  // Schon an einer anderen Kamera als unbedenklich eingestuft (gleiche Kleidung).
+  const act = ctx.look?.handlung ?? "keine";
+  if (HARD_ACTIONS.has(act)) {
+    const text = act === "unklar" && ctx.look?.handlungText ? `${ACTION_TEXT.unklar} („${ctx.look.handlungText}“)` : ACTION_TEXT[act];
+    return { alarm: true, basis: "verdaechtig", reason: act === "verdaechtig" ? ACTION_TEXT.verdaechtig : `Verhalten wirkt verdächtig: ${text}` };
+  }
   const known = ctx.known ?? [];
+  const kinds = ctx.knownKinds ?? [];
   const seen = (ctx.look?.bekannt ?? []).filter((b) => b <= known.length);
-  if (ctx.look && seen.length > 0 && ctx.look.unbekannt === 0) {
+  const allSeen = !!ctx.look && seen.length > 0 && ctx.look.unbekannt === 0;
+  const released = allSeen && seen.every((b) => kinds[b - 1] === "freigegeben");
+  const staffList = ctx.staff ?? [];
+  const staffByDay = staffList.length > 0 && (ctx.look?.personen ?? 1) <= staffList.length && WORK_HOURS(ctx.hour);
+  const count = personCount(ctx.look, ctx.tracked);
+  const white = ctx.face?.list === "WHITELIST" ? ctx.face : null;
+  const recognized = !!white && faceIsStrong(white) && count !== null && count <= 1;
+  if (act === "traegt_etwas" && !(recognized || released || staffByDay)) {
+    const reason = "Trägt etwas und ist weder erkannt noch freigegeben";
+    return { alarm: true, basis: "ohne_freigabe", reason: white ? `${reason} – ${faceNote(white, count)}` : reason };
+  }
+  if (act === "vermummt" && !(count === 1 && (released || staffByDay))) {
+    return { alarm: true, basis: "ohne_freigabe", reason: "Vermummt und weder freigegeben noch eingestempelt" };
+  }
+  const face = act === "vermummt" ? null : white;
+  const d = decideKnown(ctx, { white: face, seen, allSeen, known, kinds, count });
+  if (d.alarm) {
+    const notes = [face ? faceNote(face, count) : "", ctx.look?.personen === 0 && ctx.presence ? PRESENCE_NOTE[ctx.presence] : ""].filter(Boolean);
+    return notes.length ? { ...d, reason: `${d.reason} – ${notes.join("; ")}` } : d;
+  }
+  return act === "keine" ? d : { ...d, reason: `${d.reason} (${ACTION_TEXT[act]})` };
+}
+
+const PRESENCE_NOTE: Record<PresenceSignal, string> = {
+  gesicht: "Nahaufnahme ohne Person, die Gesichtserkennung hat aber ein Gesicht gefunden",
+  tracker: "Nahaufnahme ohne Person, der Tracker sieht aber jemanden",
+};
+
+/**
+ * Zweites Signal zu einem schwachen Gesichts-Treffer: eingestempeltes
+ * Personal; tagsueber Arbeitskleidung oder Taetigkeit laut Bildmodell (nachts
+ * nicht); eine Person der Merkliste, die als freigegeben gilt. null = keins.
+ */
+function secondSignal(ctx: PersonContext, seen: number[], kinds: KnownKind[]): string | null {
+  if ((ctx.staff ?? []).length > 0) return "eingestempelt";
+  if (ctx.look && WORK_HOURS(ctx.hour)) {
+    if (ctx.look.arbeitskleidung) return "Arbeitskleidung";
+    if (ctx.look.mitarbeiter) return "wirkt wie Mitarbeiter bei der Arbeit";
+  }
+  if (seen.some((b) => kinds[b - 1] === "freigegeben")) return "schon gesehen als freigegeben";
+  return null;
+}
+
+/** Warum ein Whitelist-Treffer nicht entwarnt hat (ohne Namen). */
+function faceNote(face: FaceHit, count: number | null): string {
+  const score = scoreText(face.score);
+  if (!faceIsStrong(face)) return `Gesicht vermutlich bekannt (Score ${score}), allein zu unsicher`;
+  return count === null ? `Gesicht erkannt (Score ${score}), Personenzahl unbekannt` : `Gesicht erkannt (Score ${score}), aber ${count} Personen im Bild`;
+}
+
+/** decidePerson ohne Handlung: Gesicht, Merkliste, Stempeldaten, Uhrzeit. */
+function decideKnown(
+  ctx: PersonContext,
+  s: { white: FaceHit | null; seen: number[]; allSeen: boolean; known: string[]; kinds: KnownKind[]; count: number | null },
+): PersonDecision {
+  const { seen, known } = s;
+  if (s.white && s.count !== null && s.count <= 1) {
+    const score = scoreText(s.white.score);
+    if (faceIsStrong(s.white)) return { alarm: false, basis: "gesicht", reason: `Gesicht erkannt: ${s.white.name} (Score ${score})` };
+    const signal = secondSignal(ctx, seen, s.kinds);
+    if (signal) return { alarm: false, basis: "hinweis", reason: `Vermutlich bekannt (Score ${score}), ${signal}` };
+  }
+  // Schon an einer anderen Kamera als unbedenklich eingestuft (gleiche Kleidung).
+  if (ctx.look && s.allSeen) {
     return { alarm: false, basis: "bekannt", reason: `Schon gesehen: ${seen.map((b) => known[b - 1]).join(", ")}` };
   }
-  // Nahaufnahme ohne Person (Fehlausloesung, Person schon weg): kein Alarm.
-  if (ctx.look && ctx.look.personen === 0) return { alarm: false, basis: "leer", reason: "Auf der Nahaufnahme keine Person" };
+  // Nahaufnahme ohne Person (Fehlausloesung, Person schon weg): kein Alarm,
+  // ausser Gesichtserkennung oder (nachts) Tracker belegen eine Person.
+  if (ctx.look && ctx.look.personen === 0 && !ctx.presence) return { alarm: false, basis: "leer", reason: "Auf der Nahaufnahme keine Person" };
   // Ohne Stempeldaten: tagsueber genuegt das Bild (Arbeitskleidung/Taetigkeit).
   if (ctx.staff === null && ctx.look && (ctx.look.mitarbeiter || ctx.look.arbeitskleidung) && WORK_HOURS(ctx.hour)) {
     return { alarm: false, basis: "arbeit", reason: "Wirkt wie Mitarbeiter bei der Arbeit (keine Stempeldaten)" };

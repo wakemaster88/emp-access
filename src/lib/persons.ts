@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { controlShelly } from "@/lib/shelly";
 import {
+  hubSentinelLookup,
   maybeSurveillanceAlert,
   maybeSurveillanceTelegramAlert,
 } from "@/lib/surveillance";
@@ -115,30 +116,47 @@ async function triggerShellyForPerson(
   return { shellyTriggered: true, shellyOk };
 }
 
-/** Überwachungs-Push + Telegram für Personenerkennung (nicht für Whitelist). */
-function firePersonSurveillanceAlerts(opts: {
+/**
+ * Überwachungs-Push + Telegram für Personenerkennung (nicht für Whitelist).
+ * Beide laufen nebeneinander und werden abgewartet: Serverlos endet die
+ * Funktion mit der Antwort an den Hub, eine Sendung im Hintergrund kann
+ * dabei abgeschnitten werden. Ein Fehler endet im Log, nicht in der Antwort.
+ *
+ * `viaHubSentinel` (unbekannte Person mit Beleg des Hubs, `sentinel=1`):
+ * Bewacht der Wächter des Hubs die Kamera außerdem laut seiner frischen
+ * Meldung, meldet er die Person, und beide Meldungen hier unterbleiben
+ * (hub-sentinel.ts). Ohne Beleg meldet die Cloud selbst. Gesperrte Personen
+ * meldet die Cloud immer.
+ */
+async function firePersonSurveillanceAlerts(opts: {
   accountId: number;
   cameraId: number;
   snapshot: Uint8Array | null;
   detail: string;
   at: Date;
-}) {
-  maybeSurveillanceAlert({
-    accountId: opts.accountId,
-    cameraId: opts.cameraId,
-    type: "PERSON",
-    at: opts.at,
-  }).catch((err) => console.error("[persons] surveillance push failed:", err));
-
-  if (!opts.snapshot?.length) return;
-  maybeSurveillanceTelegramAlert({
-    accountId: opts.accountId,
-    cameraId: opts.cameraId,
-    type: "PERSON",
-    snapshot: opts.snapshot,
-    detail: opts.detail,
-    at: opts.at,
-  }).catch((err) => console.error("[persons] surveillance telegram failed:", err));
+  viaHubSentinel: boolean;
+}): Promise<void> {
+  const hubSentinel = opts.viaHubSentinel ? hubSentinelLookup(opts.accountId, opts.cameraId) : undefined;
+  await Promise.all([
+    maybeSurveillanceAlert({
+      accountId: opts.accountId,
+      cameraId: opts.cameraId,
+      type: "PERSON",
+      at: opts.at,
+      hubSentinel,
+    }).catch((err) => console.error("[persons] surveillance push failed:", err)),
+    opts.snapshot?.length
+      ? maybeSurveillanceTelegramAlert({
+          accountId: opts.accountId,
+          cameraId: opts.cameraId,
+          type: "PERSON",
+          snapshot: opts.snapshot,
+          detail: opts.detail,
+          at: opts.at,
+          hubSentinel,
+        }).catch((err) => console.error("[persons] surveillance telegram failed:", err))
+      : null,
+  ]);
 }
 
 /**
@@ -155,6 +173,12 @@ export async function processCameraPersonEvent(opts: {
   matchMethod?: string | null;
   /** Float32-Bytes vom Hub, fuer Gruppierung/Zuordnung unbekannter Personen. */
   faceEmbedding?: Uint8Array<ArrayBuffer> | null;
+  /**
+   * Beleg des Hubs (`sentinel=1`, sentinelVouched): Sein Waechter bewertet
+   * genau diese Person. Nur dann darf die Cloud zu einer unbekannten Person
+   * schweigen; fehlt er (auch bei einem aelteren Hub), meldet sie selbst.
+   */
+  sentinelVouched?: boolean;
 }): Promise<{ sightings: number; triggered: number }> {
   const seenAt = opts.seenAt ?? new Date();
   const snapshot =
@@ -243,12 +267,14 @@ export async function processCameraPersonEvent(opts: {
       if (person.listType !== "WHITELIST") {
         const scorePct =
           opts.matchScore != null ? `${Math.round(opts.matchScore * 100)}% Match` : null;
-        firePersonSurveillanceAlerts({
+        await firePersonSurveillanceAlerts({
           accountId: opts.accountId,
           cameraId: opts.cameraId,
           snapshot,
           detail: [person.name, person.listType, scorePct].filter(Boolean).join(" · "),
           at: seenAt,
+          // Erkannte Person (Sperrliste): meldet die Cloud immer selbst.
+          viaHubSentinel: false,
         });
       }
 
@@ -284,12 +310,15 @@ export async function processCameraPersonEvent(opts: {
   });
   sightings++;
 
-  firePersonSurveillanceAlerts({
+  await firePersonSurveillanceAlerts({
     accountId: opts.accountId,
     cameraId: opts.cameraId,
     snapshot,
     detail: "Unbekannte Person",
     at: seenAt,
+    // Nur mit Beleg des Hubs fuer genau diese Sichtung; sonst meldet die Cloud selbst.
+    // Mit Treffer des Hubs (Person dort bekannt, hier nicht mehr aktiv) meldet die Cloud immer selbst.
+    viaHubSentinel: opts.sentinelVouched === true && opts.matchedPersonId == null,
   });
 
   return { sightings, triggered };

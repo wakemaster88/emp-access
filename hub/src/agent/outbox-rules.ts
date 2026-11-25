@@ -145,6 +145,20 @@ export function acceptsMessage(waiting: number, optional: boolean): boolean {
   return !optional || waiting < MAX_WAITING;
 }
 
+/**
+ * Geht ein Zusatzbild eines Alarms (Uebersicht, Bildserie) ohne Ton hinaus?
+ * Ein Alarm klingelt in jedem Chat einmal: mit seiner ersten Nachricht, die
+ * dort ankommt. Hat der Alarm den Chat nicht erreicht (`alarmReached` =
+ * false), kommt das erste Zusatzbild mit Ton, die weiteren kommen still,
+ * sobald eins mit Ton angekommen ist (`imageRang`). Kam das Bild mit Ton
+ * nicht an, klingelt das naechste. null = Ausgang des Alarms nicht bekannt:
+ * ohne Ton. In der Reihe eines Chats steht das Zusatzbild hinter dem Alarm
+ * und den Bildern davor, beim Versuch steht deren Ausgang also fest.
+ */
+export function imageSilent(alarmReached: boolean | null, imageRang: boolean): boolean {
+  return alarmReached !== false || imageRang;
+}
+
 /** Ausgang einer Nachricht in der Warteschlange. */
 export type OutResult =
   | {
@@ -306,4 +320,39 @@ export function markSeenAtExit(list: UndeliveredAlarm[]): { list: UndeliveredAla
     return { ...a, reason: OPEN_AT_EXIT_SEEN };
   });
   return { list: out, fresh };
+}
+
+/* ------------------------------------------- Zustellung gestoert (Liste fuer die Cloud) */
+
+/** So lange darf ein Alarm unterwegs sein, ohne einen Chat erreicht zu haben, bevor die Zustellung als gestoert gilt. */
+export const ALARM_SLOW_MS = 60_000;
+/** So lange nach einem Alarm, der keinen Chat erreicht hat, gilt die Zustellung als gestoert. */
+export const LOST_HOLD_MS = 15 * 60_000;
+/** So lange darf der Empfang des Bots (getUpdates) scheitern, bevor die Zustellung als gestoert gilt. */
+export const POLL_FAIL_MS = 2 * 60_000;
+
+/**
+ * Kommen Alarme des Waechters gerade an? Gestoert ist die Zustellung, wenn ein
+ * Alarm seit ALARM_SLOW_MS unterwegs ist, ohne einen Chat erreicht zu haben,
+ * wenn in den letzten LOST_HOLD_MS ein Alarm keinen Chat erreicht hat oder der
+ * Bot seit POLL_FAIL_MS keine Updates abholen kann (Telegram nicht
+ * erreichbar, Token ungueltig). Dann steht keine Kamera in der Liste fuer die
+ * Cloud (sentinel-cover-rules.ts), und die Cloud meldet selbst. null = keine
+ * Stoerung bekannt. Liegt ein Zeitpunkt in der Zukunft (Uhr zurueckgestellt),
+ * laesst sich die Dauer nicht messen: Ein verlorener Alarm zaehlt dann als
+ * frisch, ein Alarm unterwegs oder ein scheiternder Empfang als Stoerung.
+ */
+export function deliveryTrouble(i: { now: number; openSince: number | null; lastLostAt: number | null; pollFailingSince: number | null }): string | null {
+  if (i.openSince !== null && i.openSince > i.now) return "Telegram-Zustellung gestört: Alarm unterwegs, die Uhr des Hubs wurde zurückgestellt";
+  if (i.openSince !== null && i.now - i.openSince >= ALARM_SLOW_MS) {
+    return `Telegram-Zustellung gestört: Alarm seit ${durationText(i.now - i.openSince)} unterwegs`;
+  }
+  if (i.lastLostAt !== null && i.now - i.lastLostAt < LOST_HOLD_MS) return `Telegram-Zustellung gestört: Alarm um ${hhmm(i.lastLostAt)} nicht zugestellt`;
+  if (i.pollFailingSince !== null && i.pollFailingSince > i.now) {
+    return "Telegram-Zustellung gestört: Bot nicht erreichbar, die Uhr des Hubs wurde zurückgestellt";
+  }
+  if (i.pollFailingSince !== null && i.now - i.pollFailingSince >= POLL_FAIL_MS) {
+    return `Telegram-Zustellung gestört: Bot seit ${durationText(i.now - i.pollFailingSince)} nicht erreichbar`;
+  }
+  return null;
 }

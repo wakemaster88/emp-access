@@ -2016,6 +2016,10 @@ model Camera {
   /// Zeitfenster "HH:mm" fuer das Oeffnen; null = Hub-Standard 07:00–20:00.
   deliveryFrom        String?
   deliveryTo          String?
+  /// Waechter des Hubs auf dieser Kamera: null = wie der Raum (bewacht,
+  /// solange der Raum geschlossen ist; ohne Betriebszeit im Nachtfenster),
+  /// "NIGHT" = nur im Nachtfenster, "OFF" = nicht bewerten.
+  sentinelMode        String?
   notes               String?
   /// Letzter Schnappschuss (JPEG) + Zeitpunkt.
   snapshot            Bytes?

@@ -61,7 +61,10 @@ export const CONFIG = {
   /** Commit, mit dessen hub/-Stand dieser Prozess gestartet wurde. */
   hubCodeRevision: gitHubCodeRevision(),
   // 60 s: Der Heartbeat schreibt jedes Mal in die DB; das Dashboard wertet
-  // bis ~5 Minuten ohne Heartbeat als online.
+  // bis ~5 Minuten ohne Heartbeat als online. Er traegt auch die Liste der
+  // vom Waechter bewachten Kameras; die Cloud laesst sie hoechstens 2 min
+  // gelten (SENTINEL_REPORT_MAX_AGE_MS in src/lib/hub-sentinel.ts). Bei mehr
+  // als 2 min hier meldet die Cloud unbekannte Personen selbst (sichere Seite).
   heartbeatIntervalMs: intEnv("HUB_HEARTBEAT_INTERVAL", 60) * 1000,
   // 5 s Grundtakt (frueher 2 s = 43.000 Aufrufe am Tag). Sobald der
   // Heartbeat offene Tasks meldet, faellt der Takt auf 1 s, damit

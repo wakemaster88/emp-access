@@ -144,9 +144,12 @@ export function singlePerson(s: { persons: number | null; tracked?: number | nul
 
 /**
  * Als was merkt sich die Liste eine Person nach einer Entscheidung „kein Alarm“?
- *  - Gesicht auf der Whitelist: freigegeben, unter dem Namen des Treffers.
+ *  - Starker Gesichts-Treffer auf der Whitelist: freigegeben, unter dem Namen
+ *    des Treffers.
  *  - Eingestempeltes Personal oder Arbeit am Tag: Mitarbeiter-Eintrag.
- *  - Alle schon bekannt oder niemand im Bild: nichts Neues.
+ *  - Schwacher Gesichts-Treffer mit zweitem Signal („hinweis“), alle schon
+ *    bekannt oder niemand im Bild: nichts Neues. Aus einem unsicheren Treffer
+ *    wird keine Freigabe.
  */
 export function grantFor(basis: ClearBasis, faceName?: string | null): { kind: "freigegeben" | "mitarbeiter"; label: string } | null {
   if (basis === "gesicht") return { kind: "freigegeben", label: faceName?.trim() || "Gesicht erkannt" };

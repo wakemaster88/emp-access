@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ALARM_SLOW_MS,
+  LOST_HOLD_MS,
+  POLL_FAIL_MS,
+  deliveryTrouble,
   MAX_AGE_MS,
   MAX_WAITING,
   OPEN_AT_EXIT,
@@ -16,6 +20,7 @@ import {
   deliveryLine,
   dueAgain,
   durationText,
+  imageSilent,
   markSeenAtExit,
   restoreUndelivered,
   retryDelayMs,
@@ -393,4 +398,42 @@ test("Neustart: ein beim Beenden offener Alarm zählt einmal und gilt danach als
   assert.equal(second.fresh, 0);
   assert.deepEqual(second.list, first.list);
   assert.deepEqual(list[1].reason, OPEN_AT_EXIT, "die Eingabe bleibt unverändert");
+});
+
+test("imageSilent: Zusatzbilder still, außer der Alarm hat den Chat nicht erreicht und noch kein Bild klingelte", () => {
+  assert.equal(imageSilent(true, false), true);
+  assert.equal(imageSilent(null, false), true);
+  assert.equal(imageSilent(false, false), false);
+  // Ein Bild des Alarms kam dort schon mit Ton an: Die weiteren kommen still.
+  assert.equal(imageSilent(false, true), true);
+  assert.equal(imageSilent(true, true), true);
+});
+
+test("deliveryTrouble: gestört bei einem Alarm unterwegs ab 60 s, nach einem verlorenen 15 min lang, bei Empfangsfehlern ab 2 min", () => {
+  const now = Date.parse("2026-11-25T22:30:00.000Z");
+  const ok = { now, openSince: null, lastLostAt: null, pollFailingSince: null };
+  assert.equal(deliveryTrouble(ok), null);
+  assert.equal(ALARM_SLOW_MS, 60_000);
+  assert.equal(deliveryTrouble({ ...ok, openSince: now - 59_000 }), null);
+  assert.equal(deliveryTrouble({ ...ok, openSince: now - 65_000 }), "Telegram-Zustellung gestört: Alarm seit 1 min 5 s unterwegs");
+  assert.equal(LOST_HOLD_MS, 15 * 60_000);
+  assert.equal(deliveryTrouble({ ...ok, lastLostAt: now - 60_000 }), "Telegram-Zustellung gestört: Alarm um 23:29 nicht zugestellt");
+  assert.equal(deliveryTrouble({ ...ok, lastLostAt: now - LOST_HOLD_MS }), null);
+  // Uhr zurueckgestellt: ein Zeitpunkt in der Zukunft zaehlt als frisch.
+  assert.match(deliveryTrouble({ ...ok, lastLostAt: now + 60_000 }) ?? "", /nicht zugestellt/);
+  assert.equal(POLL_FAIL_MS, 2 * 60_000);
+  assert.equal(deliveryTrouble({ ...ok, pollFailingSince: now - 119_000 }), null);
+  assert.equal(deliveryTrouble({ ...ok, pollFailingSince: now - 180_000 }), "Telegram-Zustellung gestört: Bot seit 3 min 0 s nicht erreichbar");
+});
+
+test("deliveryTrouble: Uhr zurückgestellt, ein Alarm unterwegs oder ein scheiternder Empfang aus der Zukunft gilt als Störung", () => {
+  const now = Date.parse("2026-11-25T22:30:00.000Z");
+  const ok = { now, openSince: null, lastLostAt: null, pollFailingSince: null };
+  // Negative Dauer: nicht messbar, also gestört (die Liste fuer die Cloud bleibt leer, die Cloud meldet selbst).
+  assert.equal(deliveryTrouble({ ...ok, openSince: now + 1 }), "Telegram-Zustellung gestört: Alarm unterwegs, die Uhr des Hubs wurde zurückgestellt");
+  assert.equal(deliveryTrouble({ ...ok, openSince: now + 3_600_000 }), "Telegram-Zustellung gestört: Alarm unterwegs, die Uhr des Hubs wurde zurückgestellt");
+  assert.equal(deliveryTrouble({ ...ok, pollFailingSince: now + 1 }), "Telegram-Zustellung gestört: Bot nicht erreichbar, die Uhr des Hubs wurde zurückgestellt");
+  // Genau jetzt begonnen: noch keine Störung.
+  assert.equal(deliveryTrouble({ ...ok, openSince: now }), null);
+  assert.equal(deliveryTrouble({ ...ok, pollFailingSince: now }), null);
 });

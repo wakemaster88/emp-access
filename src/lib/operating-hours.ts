@@ -262,6 +262,186 @@ export function isOperatingAt(
   return yesterday.windows.some((w) => coversFromPreviousDay(w, minutes));
 }
 
+/**
+ * So weit schaut `nextOperatingChange` voraus: gut ein Jahr, damit auch ein
+ * Raum, der den ganzen Winter geschlossen ist, seinen Saisonbeginn nennt.
+ */
+export const NEXT_CHANGE_HORIZON_DAYS = 400;
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+
+/** Versatz der Ortszeit gegen UTC in Minuten zum Zeitpunkt `ms` (volle Minute). */
+function offsetMinutes(ms: number, tz: string | null | undefined): number {
+  const at = new Date(ms);
+  const [y, mo, d] = tzYmd(at, tz).split("-").map(Number);
+  return Date.UTC(y, mo - 1, d) / MINUTE_MS + tzMinutesOfDay(at, tz) - Math.floor(ms / MINUTE_MS);
+}
+
+/**
+ * Erste volle Minute in (`fromMs`, `toMs`], ab der die Uhr einen anderen
+ * Versatz gegen UTC hat als zu `fromMs` (Zeitumstellung); null = keine.
+ * Annahme wie in der Praxis: hoechstens eine Umstellung je Tag.
+ */
+function offsetChange(fromMs: number, toMs: number, tz: string | null | undefined): number | null {
+  const before = offsetMinutes(fromMs, tz);
+  if (offsetMinutes(toMs, tz) === before) return null;
+  let lo = Math.floor(fromMs / MINUTE_MS);
+  let hi = Math.ceil(toMs / MINUTE_MS);
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (offsetMinutes(mid * MINUTE_MS, tz) === before) lo = mid;
+    else hi = mid;
+  }
+  return hi * MINUTE_MS;
+}
+
+/**
+ * Zeitpunkte eines Kalendertags, an denen `isOperatingAt` kippen kann: der
+ * Tagesbeginn, Beginn und Ende der eigenen Spannen an diesem Tag und das Ende
+ * der Spannen vom Vortag, die in diesen Tag reichen. An einem Tag mit
+ * Zeitumstellung kommt deren Zeitpunkt dazu, denn dort springt die Uhrzeit,
+ * nach der `isOperatingAt` rechnet. Liegt eine Uhrzeit in der Luecke der
+ * Sommerzeit-Umstellung, kommen die Zeitpunkte eine Stunde davor und danach
+ * dazu; der genaue Wechsel ergibt sich dann aus `firstChange`. Eine Uhrzeit
+ * in der doppelten Stunde am Ende der Sommerzeit gibt es zweimal: Beide
+ * Zeitpunkte zaehlen.
+ */
+function changeCandidates(
+  ymd: string,
+  today: OpeningWindow[],
+  yesterday: OpeningWindow[],
+  tz: string | null | undefined,
+): number[] {
+  const out: number[] = [];
+  const add = (hhmm: string) => {
+    const at = tzInstant(ymd, hhmm, tz);
+    if (!at) return;
+    const t = at.getTime();
+    out.push(t);
+    if (formatHhmm(tzMinutesOfDay(at, tz)) !== hhmm) {
+      out.push(t - HOUR_MS, t + HOUR_MS);
+      return;
+    }
+    for (const other of [t - HOUR_MS, t + HOUR_MS]) {
+      const o = new Date(other);
+      if (tzYmd(o, tz) === ymd && formatHhmm(tzMinutesOfDay(o, tz)) === hhmm) out.push(other);
+    }
+  };
+  const dayStart = tzInstant(ymd, "00:00", tz);
+  const nextStart = tzInstant(addDaysToYmd(ymd, 1), "00:00", tz);
+  if (dayStart && nextStart && nextStart.getTime() - dayStart.getTime() !== 24 * HOUR_MS) {
+    const switchAt = offsetChange(dayStart.getTime(), nextStart.getTime(), tz);
+    if (switchAt !== null) out.push(switchAt);
+  }
+  add("00:00");
+  for (const w of today) {
+    add(w.opensAt);
+    if (!w.overnight && w.opensAt !== w.closesAt) add(w.closesAt);
+  }
+  for (const w of yesterday) {
+    if (w.overnight) add(w.closesAt);
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/**
+ * Kann `isOperatingAt` an diesem Kalendertag nicht vom Zustand `state`
+ * abweichen? Zu bleibt ein Tag ohne eigene Spanne und ohne Spanne vom Vortag,
+ * offen ein durchgehend geoeffneter Tag. Solche Tage ueberspringt die Suche.
+ */
+function dayKeeps(state: boolean, today: OpeningWindow[], yesterday: OpeningWindow[]): boolean {
+  if (state) return today.some((w) => w.opensAt === w.closesAt);
+  return today.length === 0 && !yesterday.some((w) => w.overnight);
+}
+
+/**
+ * Erste volle Minute in (`fromMs`, `toMs`], zu der `isOperatingAt` nicht mehr
+ * `state` liefert; zu `toMs` ist das bekannt. Halbierung ueber Minuten, damit
+ * der Wechsel auch in der Stunde einer Zeitumstellung stimmt.
+ */
+function firstChange(schedule: ScheduleSpec, tz: string | null | undefined, state: boolean, fromMs: number, toMs: number): number {
+  let lo = Math.floor(fromMs / MINUTE_MS);
+  let hi = Math.ceil(toMs / MINUTE_MS);
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (isOperatingAt(schedule, new Date(mid * MINUTE_MS), tz) === state) lo = mid;
+    else hi = mid;
+  }
+  return hi * MINUTE_MS;
+}
+
+/**
+ * Naechster Wechsel offen/zu nach `at`, wie `isOperatingAt` ihn sieht: der
+ * erste Zeitpunkt (volle Minute), zu dem es das Gegenteil von jetzt liefert.
+ * null = kein Wechsel innerhalb von `horizonDays` Tagen, etwa ein Profil ohne
+ * Saison (dauerhaft zu) oder durchgehend geoeffnet; ohne Profil ebenfalls null
+ * (immer offen). Saisongrenzen, Ausnahmetage, Spannen ueber Mitternacht und
+ * Zeitumstellungen kommen aus derselben Rechnung wie bei `isOperatingAt`.
+ * Der Hub haelt damit einen alten Stand bis zum naechsten Wechsel fuer
+ * gueltig (hub/src/agent/sentinel-rooms-rules.ts).
+ */
+export function nextOperatingChange(
+  schedule: ScheduleSpec | null | undefined,
+  at: Date,
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+  horizonDays = NEXT_CHANGE_HORIZON_DAYS,
+): Date | null {
+  if (!schedule) return null;
+  const state = isOperatingAt(schedule, at, tz);
+  const atMs = at.getTime();
+  let knownMs = atMs;
+  const today = tzYmd(at, tz);
+  let yesterday = openingForDay(schedule, addDaysToYmd(today, -1)).windows;
+  for (let d = 0; d <= horizonDays; d++) {
+    const ymd = addDaysToYmd(today, d);
+    const windows = openingForDay(schedule, ymd).windows;
+    const prev = yesterday;
+    yesterday = windows;
+    if (dayKeeps(state, windows, prev)) continue;
+    for (const c of changeCandidates(ymd, windows, prev, tz)) {
+      if (c <= knownMs) continue;
+      if (isOperatingAt(schedule, new Date(c), tz) !== state) return new Date(firstChange(schedule, tz, state, knownMs, c));
+      knownMs = c;
+    }
+  }
+  return null;
+}
+
+/** Eine Oeffnungsspanne als ISO-Zeitpunkte; `to` ausschliesslich. */
+export interface OpenSpanIso {
+  from: string;
+  to: string;
+}
+
+/**
+ * Oeffnungsspannen zwischen `from` und `to`, wie `isOperatingAt` sie sieht,
+ * auf den Zeitraum zugeschnitten. Fuer die Zeile „Heute bewacht“ des Hubs:
+ * Er bekommt die Spannen von heute und morgen mit den Raumdaten.
+ */
+export function openSpansBetween(
+  schedule: ScheduleSpec | null | undefined,
+  from: Date,
+  to: Date,
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+): OpenSpanIso[] {
+  if (to.getTime() <= from.getTime()) return [];
+  if (!schedule) return [{ from: from.toISOString(), to: to.toISOString() }];
+  const days = Math.ceil((to.getTime() - from.getTime()) / 86_400_000) + 1;
+  const spans: OpenSpanIso[] = [];
+  let t = from;
+  let open = isOperatingAt(schedule, t, tz);
+  while (t.getTime() < to.getTime()) {
+    const change = nextOperatingChange(schedule, t, tz, days);
+    const end = change && change.getTime() < to.getTime() ? change : to;
+    if (open) spans.push({ from: t.toISOString(), to: end.toISOString() });
+    if (end === to) break;
+    t = end;
+    open = !open;
+  }
+  return spans;
+}
+
 /** Versatz an beiden Enden einer Oeffnungsspanne in Minuten; negativ = vorher. */
 export interface SpanOffsets {
   openMinutes: number;

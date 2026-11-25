@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
 
 /**
- * Fahrzeug- und Halteverbot-Einstellungen einer Kamera pruefen. Gemeinsam fuer
- * die Web-UI (PUT /api/cameras/[id]) und das Hub-Dashboard
+ * Fahrzeug-, Halteverbot- und Waechter-Einstellungen einer Kamera pruefen.
+ * Gemeinsam fuer die Web-UI (PUT /api/cameras/[id]) und das Hub-Dashboard
  * (PATCH /api/hub/cameras/[id]/detection).
  */
 
@@ -32,6 +32,19 @@ export function parseZoneInput(value: unknown): ZonePoint[] | null | "invalid" {
   ]);
 }
 
+/**
+ * Waechter des Hubs auf dieser Kamera: null = wie der Raum (Standard),
+ * "NIGHT" = nur im Nachtfenster, "OFF" = nicht bewerten.
+ */
+export const SENTINEL_MODES = ["NIGHT", "OFF"] as const;
+
+/** Wert fuer die Einstellung „Wächter“ pruefen; leer heisst „wie der Raum“ (null). */
+export function parseSentinelMode(value: unknown): string | null | "invalid" {
+  if (value === null || value === "") return null;
+  if (typeof value === "string" && (SENTINEL_MODES as readonly string[]).includes(value)) return value;
+  return "invalid";
+}
+
 export interface DetectionSettings {
   vehicleDetection: boolean;
   vehicleMinArea: number | null;
@@ -42,6 +55,7 @@ export interface DetectionSettings {
   deliveryMode: string | null;
   deliveryFrom: string | null;
   deliveryTo: string | null;
+  sentinelMode: string | null;
 }
 
 const DELIVERY_MODES = ["NOTIFY", "OPEN"];
@@ -125,6 +139,14 @@ export function mergeDetectionSettings(
     return { error: "Lieferdienste brauchen die Fahrzeugerkennung" };
   }
 
+  // Waechter: wie der Raum (null), nur nachts, aus.
+  let sentinelMode = existing.sentinelMode;
+  if (body.sentinelMode !== undefined) {
+    const parsed = parseSentinelMode(body.sentinelMode);
+    if (parsed === "invalid") return { error: "Wächter: wie der Raum, nur nachts oder aus wählen" };
+    sentinelMode = parsed;
+  }
+
   return {
     settings: {
       vehicleDetection,
@@ -136,6 +158,7 @@ export function mergeDetectionSettings(
       deliveryMode,
       deliveryFrom,
       deliveryTo,
+      sentinelMode,
     },
   };
 }
@@ -152,6 +175,7 @@ export function detectionUpdateData(s: DetectionSettings) {
     deliveryMode: s.deliveryMode,
     deliveryFrom: s.deliveryFrom,
     deliveryTo: s.deliveryTo,
+    sentinelMode: s.sentinelMode,
   };
 }
 
@@ -165,4 +189,5 @@ export const DETECTION_SELECT = {
   deliveryMode: true,
   deliveryFrom: true,
   deliveryTo: true,
+  sentinelMode: true,
 } as const;

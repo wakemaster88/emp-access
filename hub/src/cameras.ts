@@ -44,6 +44,8 @@ import { findIpByMac, macForIp, normalizeMac } from "./netmap.js";
 import { lastScanResult } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
 import { improve, improveCount } from "./improve-log.js";
+import { sentinelVouch } from "./sentinel-vouch.js";
+import { cloudQuietOn, vouchParam } from "./agent/sentinel-cover-rules.js";
 import { getForecast, lastForecast } from "./weather.js";
 import {
   isDark,
@@ -116,6 +118,11 @@ export interface CameraConfig {
   deliveryTo?: string | null;
   /** DoorBird: Tor offen halten bis (ISO), null = aus – Wiederaufnahme nach Neustart. */
   doorHoldUntil?: string | null;
+  /**
+   * Einstellung „Wächter“ (Cloud): null = wie der Raum, "NIGHT" = nur nachts,
+   * "OFF" = aus. Fehlt bei einer älteren Cloud (sentinel-mode-rules.ts).
+   */
+  sentinelMode?: string | null;
 }
 
 /** Letzte Personen-Sichtung an einer Kamera (Dashboard „wer war wo“). */
@@ -898,6 +905,7 @@ async function uploadPersonSnapshotBody(
         : "Gallery leer",
     score: match?.score ?? scored.nearest?.score,
     list: match?.listType,
+    upscaled: face.upscaled,
     pos: facePos ?? undefined,
   });
   improve("face", match ? "person_match" : scored.ambiguous ? "ambiguous" : nearMiss ? "near_miss" : "person_nomatch", {
@@ -911,6 +919,18 @@ async function uploadPersonSnapshotBody(
   // Verkleinert hochladen: die Cloud zeigt das Bild nur an (FACE_ENROLL kommt
   // mit 1600 px noch gut zurecht); das Original bleibt hier fuer die Pipeline.
   const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT_MAX_PX);
+  // Beleg je Sichtung (sentinel-vouch.ts), mit dem Stand direkt vor dem
+  // Upload: Nur wenn der Waechter genau diese Person gerade bewertet oder
+  // gemeldet hat, steht sentinel=1 dabei. Nur dann darf die Cloud zu einer
+  // unbekannten Person schweigen; ohne Beleg meldet sie selbst.
+  // Ab Werk aus (HUB_SENTINEL_CLOUD_QUIET): Dann meldet die Cloud wie frueher selbst.
+  const vouch = vouchParam(sentinelVouch(cameraId), {
+    quietOn: cloudQuietOn(process.env.HUB_SENTINEL_CLOUD_QUIET),
+    galleryMatch: match != null,
+  });
+  if (vouch.send) qs.set("sentinel", "1");
+  improveCount("face", vouch.counter);
+  const vouchNote = vouch.note;
   try {
     const upload = await api(`/api/hub/person-sightings?${qs}`, {
       method: "POST",
@@ -924,7 +944,7 @@ async function uploadPersonSnapshotBody(
         `Personen-Snapshot fehlgeschlagen: HTTP ${upload.status} ${errText.slice(0, 120)}`
       );
     }
-    log(`Personen-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes)`);
+    log(`Personen-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes${vouchNote})`);
   } finally {
     // Die Drossel gilt, sobald ein Gesicht ausgewertet ist, auch wenn der
     // Upload scheitert: Ohne Cloud soll die Pipeline nicht bei jedem neuen

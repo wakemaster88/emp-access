@@ -8,7 +8,9 @@ import { exitHub } from "./shutdown.js";
 import {
   PREFLIGHT_ENV,
   PREFLIGHT_OK,
+  RESTART_POLL_MS,
   installCommand,
+  restartStep,
   retryBlocked,
   signatureCheckEnabled,
   type RejectedUpdate,
@@ -37,7 +39,8 @@ async function git(args: string[]): Promise<string> {
  *
  * Vor dem Neustart: Abhaengigkeiten installieren (nur wenn sie sich geaendert
  * haben) und Pre-Flight – der neue Stand wird in einem Kindprozess einmal
- * geladen, ohne etwas zu starten. Scheitert eins von beiden, geht der
+ * geladen, ohne etwas zu starten. Laufen dann Bewertungen des Waechters,
+ * wartet der Neustart auf ihr Ende, hoechstens 3 Minuten (restartStep). Scheitert eins von beiden, geht der
  * Checkout zurueck auf den vorherigen Commit und der Hub laeuft mit dem alten
  * Code weiter; auf kaputten Code wird nie neu gestartet.
  *
@@ -237,6 +240,35 @@ async function rollback(resetFrom: string | null, failedRev: string, why: string
   }
 }
 
+/**
+ * Was der Neustart nach einem Update abwartet (index.ts meldet den Waechter
+ * an): `pending` erfaehrt zuerst, dass er ansteht, `busy` sagt danach, wie
+ * viele Bewertungen noch laufen.
+ */
+export interface RestartHold {
+  pending: () => Promise<void>;
+  busy: () => number;
+}
+let restartHold: RestartHold | null = null;
+
+/** Arbeit anmelden, die der Neustart nach einem Update abwartet (restartStep). */
+export function setRestartHold(hold: RestartHold): void {
+  restartHold = hold;
+}
+
+/** Vor dem Neustart: Bescheid geben, dann laufende Bewertungen abwarten (hoechstens 3 min, restartStep). */
+async function waitBeforeRestart(): Promise<void> {
+  if (!restartHold) return;
+  await restartHold.pending().catch((e) => log(`Update: Vorbereitung des Neustarts: ${e instanceof Error ? e.message : e}`));
+  const started = Date.now();
+  for (let round = 0; ; round++) {
+    const step = restartStep(restartHold.busy(), Date.now() - started, round);
+    if (step.line) log(step.line);
+    if (step.then === "neustart") return;
+    await new Promise((r) => setTimeout(r, RESTART_POLL_MS));
+  }
+}
+
 /** Zuletzt geprueft: Deploy-Key/SSH-Zugang zum Repo, fuer den Heartbeat. */
 let repoAccess: RepoAccessStatus | null = null;
 export function repoAccessStatus(): RepoAccessStatus | null {
@@ -315,6 +347,8 @@ async function runUpdateCheck(): Promise<void> {
     return;
   }
 
+  // Eine laufende Bewertung des Waechters bringt ihren Alarm noch hinaus.
+  await waitBeforeRestart();
   log("Neuer Stand installiert und geprueft – Prozess wird beendet (launchd startet neu).");
   // Mit Aufraeumen (hoechstens 3 s): Diagnose-Stand sichern, Weisslicht aus.
   exitHub(0);

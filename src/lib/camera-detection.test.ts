@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeDetectionSettings, parseZoneInput } from "./camera-detection";
+import { mergeDetectionSettings, parseSentinelMode, parseZoneInput } from "./camera-detection";
 
 const base = {
   vehicleDetection: true,
@@ -12,6 +12,7 @@ const base = {
   deliveryMode: null,
   deliveryFrom: null,
   deliveryTo: null,
+  sentinelMode: null,
 };
 const tri = [[0.1, 0.1], [0.9, 0.1], [0.5, 0.9]];
 
@@ -58,4 +59,22 @@ test("Lieferdienste: Modus und Zeitfenster pruefen", () => {
   }
   const off = mergeDetectionSettings({ ...base, deliveryMode: "OPEN" }, { deliveryMode: null });
   assert.ok("settings" in off && off.settings.deliveryMode === null);
+});
+
+test("Wächter: wie der Raum (null), nur nachts, aus; andere Werte werden abgelehnt", () => {
+  assert.equal(parseSentinelMode(null), null);
+  assert.equal(parseSentinelMode(""), null);
+  assert.equal(parseSentinelMode("NIGHT"), "NIGHT");
+  assert.equal(parseSentinelMode("OFF"), "OFF");
+  assert.equal(parseSentinelMode("night"), "invalid");
+  assert.equal(parseSentinelMode(1), "invalid");
+
+  const night = mergeDetectionSettings(base, { sentinelMode: "NIGHT" });
+  assert.ok("settings" in night && night.settings.sentinelMode === "NIGHT");
+  // Ohne das Feld (ältere Oberfläche) bleibt der gespeicherte Wert.
+  const kept = mergeDetectionSettings({ ...base, sentinelMode: "OFF" }, { vehicleDetection: false });
+  assert.ok("settings" in kept && kept.settings.sentinelMode === "OFF");
+  const back = mergeDetectionSettings({ ...base, sentinelMode: "OFF" }, { sentinelMode: "" });
+  assert.ok("settings" in back && back.settings.sentinelMode === null);
+  assert.ok("error" in mergeDetectionSettings(base, { sentinelMode: "TAG" }));
 });

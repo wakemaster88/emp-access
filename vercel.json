@@ -15,6 +15,14 @@
       "maxDuration": 5,
       "memory": 512
     },
+    "src/app/api/hub/person-sightings/route.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "src/app/api/hub/vehicle-sightings/route.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
     "src/app/api/devices/pi/scan/route.ts": {
       "maxDuration": 10,
       "memory": 1024

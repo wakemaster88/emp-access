@@ -169,25 +169,39 @@ export const ALERT_COOLDOWN_MS = 45 * 60_000;
 
 /**
  * Was mit einer faelligen Meldung geschieht:
- *  - on: sie geht per Telegram hinaus.
+ *  - on (Standard): sie geht per Telegram hinaus.
  *  - off: die Meldestufen werden gar nicht ausgewertet.
  *  - shadow (Probelauf): ausgewertet, geloggt und gezaehlt, aber nichts wird
- *    gesendet. So lassen sich die Schwellen an echten Messungen pruefen,
- *    bevor Meldungen eingeschaltet werden.
+ *    gesendet. So lassen sich geaenderte Schwellen an echten Messungen
+ *    pruefen, bevor die Meldungen wieder hinausgehen.
  */
 export type AlertMode = "on" | "off" | "shadow";
 
 /**
  * HUB_OCCUPANCY_ALERTS lesen. Fehlt die Variable oder ist sie leer, gilt der
- * Probelauf. Das gilt auch fuer einen Wert, den der Hub nicht kennt (`known`
- * ist dann false): Meldungen schaltet nur ein ausdrueckliches „on“ ein.
+ * Standard „on“. Ein Wert, den der Hub nicht kennt (`known` ist dann false),
+ * gilt als Probelauf: Wer etwas eintraegt, wollte nicht den Standard, und ein
+ * Tippfehler bei „off“ soll keine Meldungen einschalten.
  */
 export function alertMode(raw: string | null | undefined): { mode: AlertMode; known: boolean } {
   const v = (raw ?? "").trim().toLowerCase();
-  if (v === "") return { mode: "shadow", known: true };
+  if (v === "") return { mode: "on", known: true };
   if (/^(on|1|true|ja|an|yes)$/.test(v)) return { mode: "on", known: true };
   if (/^(off|0|false|nein|aus|no)$/.test(v)) return { mode: "off", known: true };
   return { mode: "shadow", known: v === "shadow" };
+}
+
+/**
+ * Teil der Startzeile zu HUB_OCCUPANCY_ALERTS. Ohne Angabe sagt sie, dass der
+ * Standard gilt und wie man ihn aendert.
+ */
+export function alertModeText(raw: string | null | undefined): string {
+  const { mode, known } = alertMode(raw);
+  if (mode === "on") {
+    return (raw ?? "").trim() === "" ? "Meldungen an (Standard; HUB_OCCUPANCY_ALERTS=shadow: nur Log, off: ohne Meldungen)" : "Meldungen an";
+  }
+  if (mode === "off") return "ohne Meldungen";
+  return `Meldungen im Probelauf (nur Log, nichts wird gesendet; einschalten mit HUB_OCCUPANCY_ALERTS=on)${known ? "" : " – Wert von HUB_OCCUPANCY_ALERTS nicht erkannt"}`;
 }
 
 /**

@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
 import { parseEmbeddingHeader, processCameraPersonEvent } from "@/lib/persons";
+import { sentinelVouched } from "@/lib/hub-sentinel";
 
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 
 /**
  * POST (Hub, Token-Auth): Schnappschuss bei klarer Gesichtserkennung.
- * Query: cameraId, optional listedPersonId, matchScore, matchMethod
+ * Query: cameraId, optional listedPersonId, matchScore, matchMethod,
+ * optional sentinel=1 (der Wächter des Hubs bewertet diese Person; nur dann
+ * darf die Cloud zu einer unbekannten Person schweigen, lib/hub-sentinel.ts)
  * Header: optional X-Face-Embedding (Base64, Float32 LE) fuer die Gruppierung
  * Body: raw JPEG (Content-Type image/jpeg)
  */
@@ -26,6 +29,7 @@ export async function POST(request: NextRequest) {
   const matchScoreRaw = q.get("matchScore");
   const matchScore = matchScoreRaw != null ? Number(matchScoreRaw) : null;
   const matchMethod = q.get("matchMethod");
+  const sentinel = sentinelVouched(q.get("sentinel"));
 
   const camera = await db.camera.findFirst({
     where: { id: cameraId, accountId: account.id },
@@ -68,6 +72,7 @@ export async function POST(request: NextRequest) {
     matchScore: Number.isFinite(matchScore) ? matchScore : null,
     matchMethod: matchMethod || null,
     faceEmbedding: parseEmbeddingHeader(request.headers.get("x-face-embedding")),
+    sentinelVouched: sentinel,
   });
 
   return NextResponse.json({

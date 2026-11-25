@@ -45,6 +45,11 @@ export interface HubEvent {
   /** Personen: Liste des Gesichts-Treffers (WHITELIST | BLACKLIST). */
   list?: string;
   /**
+   * Personen: Das Gesicht wurde hochgerechnet (Mini-Gesicht, strengere
+   * Schwelle). Mit `score` entscheidet der Waechter, ob ein Treffer stark ist.
+   */
+  upscaled?: boolean;
+  /**
    * Personen: Lage des Gesichts im Kamerabild (Mitte, normiert 0..1), damit
    * die Zentrale den Namen an die richtige Box haengt. Nur im Speicher.
    */
