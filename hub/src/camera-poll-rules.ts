@@ -373,3 +373,123 @@ export function clockDriftKey(offsets: Array<{ name: string; offsetS: number; nt
     .sort()
     .join("|");
 }
+
+/** Kamera-Liste aus der Cloud nachladen: gar nicht, im Hintergrund oder mit Warten. */
+export type ConfigRefresh = "none" | "background" | "wait";
+
+export interface ConfigRefreshState {
+  now: number;
+  /** Letzter erfolgreicher Abruf (0 = noch keiner oder als veraltet markiert). */
+  loadedAt: number;
+  /** Letzter gescheiterter Abruf (0 = keiner seit dem letzten Erfolg). */
+  failedAt: number;
+  /** Ein Abruf laeuft schon. */
+  running: boolean;
+  /** Der Hub kennt schon Kameras. */
+  haveCameras: boolean;
+  refreshMs: number;
+  retryMs: number;
+}
+
+/**
+ * Faellt die Cloud aus, fragt der Hub die bekannten Kameras weiter ab. Vorher
+ * stand vor jeder Abfrage-Runde der Abruf der Kamera-Liste, und scheiterte
+ * der, entfiel die Runde: Nach 60 s ohne Cloud sah der Hub keine Person und
+ * kein Fahrzeug mehr, obwohl Fahrzeugliste, Gesichter und Tor lokal vorliegen.
+ * Gewartet wird nur noch, solange der Hub noch gar keine Kamera kennt.
+ */
+export function configRefreshPlan(s: ConfigRefreshState): ConfigRefresh {
+  if (s.loadedAt > 0 && s.now - s.loadedAt <= s.refreshMs) return "none";
+  if (s.running) return s.haveCameras ? "none" : "wait";
+  if (s.failedAt > 0 && s.now - s.failedAt < s.retryMs) return "none";
+  return s.haveCameras ? "background" : "wait";
+}
+
+/**
+ * Lange Fehlversuche in Folge (`slowMs`). Eine Abfrage, die bis ins Zeitlimit
+ * haengt, belegt so lange einen Platz. Eine, die sofort scheitert (HTTP-Fehler,
+ * Verbindung abgewiesen), kostet nichts und kommt meist von einer Kamera, die
+ * gerade hochfaehrt: Sie zaehlt hier nicht. Der Wert bestimmt nur die
+ * Reihenfolge im Takt (`pollOrder`), nie den Abstand der Abfragen.
+ */
+export function failStreakAfter(failStreak: number, tookMs: number, slowMs: number): number {
+  return tookMs >= slowMs ? failStreak + 1 : 0;
+}
+
+export interface PollGate {
+  now: number;
+  /** Beginn der letzten Abfrage dieser Kamera (0 = noch keine). */
+  lastStartAt: number;
+  /** Die letzte Abfrage ist noch unterwegs oder wartet auf einen Platz. */
+  inFlight: boolean;
+  baseMs: number;
+}
+
+/**
+ * Ob eine Kamera in diesem Takt abgefragt wird. Jede Kamera laeuft fuer sich:
+ * Eine, die haengt, wird uebersprungen, bis ihre Antwort (oder das Zeitlimit)
+ * da ist, und haelt weder die anderen Kameras noch deren Bild-Pipelines auf.
+ * Danach ist sie im naechsten Takt wieder dabei, auch nach Stunden ohne
+ * Antwort. Einen festen groesseren Abstand gibt es nicht: Er sparte kaum
+ * einen Platz (die haengende Abfrage belegt ihn ohnehin bis zum Zeitlimit von
+ * 8 s), verzoegerte aber die erste Abfrage nach der Rueckkehr der Kamera, und
+ * dann kann schon ein Fahrzeug vor dem Tor stehen.
+ */
+export function pollDue(g: PollGate): boolean {
+  if (g.inFlight) return false;
+  if (g.lastStartAt === 0) return true;
+  // Halber Takt Toleranz: Der Timer selbst schwankt um einige Millisekunden.
+  return g.now - g.lastStartAt >= g.baseMs / 2;
+}
+
+/**
+ * Reihenfolge, in der die faelligen Kameras eines Takts an die Reihe kommen:
+ * zuerst die ohne langen Fehlversuch. Die Plaetze sind begrenzt, und eine
+ * haengende Abfrage haelt ihren bis zu 8 s. Die Kameras, die antworten, sind
+ * in Millisekunden durch und sollen nicht dahinter warten. Dieselben Kameras,
+ * nur umsortiert; innerhalb beider Gruppen bleibt die Reihenfolge.
+ */
+export function pollOrder<T extends { failStreak: number }>(due: T[]): T[] {
+  return [...due.filter((c) => c.failStreak === 0), ...due.filter((c) => c.failStreak > 0)];
+}
+
+/**
+ * Abstand der Suche nach einer nicht erreichbaren Kamera unter neuer Adresse.
+ * Ein Adresswechsel (DHCP, anderes VLAN) zeigt sich in den ersten Minuten;
+ * eine defekte Kamera wird danach nur noch selten gesucht.
+ */
+export function relocateIntervalMs(downForMs: number): number {
+  if (downForMs < 10 * 60_000) return 60_000;
+  if (downForMs < 60 * 60_000) return 5 * 60_000;
+  return 15 * 60_000;
+}
+
+/**
+ * Die Suche per Anmeldung bei anderen Geraeten im Netz (geroutetes VLAN ohne
+ * ARP) nur in der ersten Stunde eines Ausfalls: Ein Adresswechsel zeigt sich
+ * bis dahin, danach waeren es nur noch Anmeldeversuche bei Nachbargeraeten.
+ */
+export function relocateByLoginAllowed(downForMs: number): boolean {
+  return downForMs < 60 * 60_000;
+}
+
+/**
+ * Stand der Adresssuche beim Anlegen einer Kamera. `downSince` ist ihr
+ * gemerkter Ausfallbeginn aus der Zeit vor dem Neustart des Hubs (null: sie
+ * antwortete zuletzt, oder sie ist neu in der Liste). Der Hub startet
+ * mehrmals am Tag neu (Update): Stand die Kamera schon aus, zaehlen die
+ * Stufen ab dem gemerkten Beginn weiter. Die naechste Suche kommt am naechsten
+ * Punkt eines Rasters, das vom Ausfallbeginn an im Abstand der Stufe laeuft.
+ * Das Raster haengt nicht am Start des Hubs: Bis zur naechsten Suche vergeht
+ * hoechstens ein Abstand der Stufe, und mehrere Neustarts hintereinander
+ * fuehren weder zu einer Pause noch zu einer Suche je Start.
+ */
+export function relocateAtStart(
+  downSince: number | null,
+  now: number
+): { downSince: number | null; lastRelocateAt: number } {
+  if (downSince === null) return { downSince: null, lastRelocateAt: 0 };
+  const since = Math.min(downSince, now);
+  const downFor = now - since;
+  return { downSince: since, lastRelocateAt: now - (downFor % relocateIntervalMs(downFor)) };
+}

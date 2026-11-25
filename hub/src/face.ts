@@ -125,6 +125,17 @@ export async function ensureFaceSidecar(): Promise<boolean> {
       sidecarProc = null;
       healthyAt = 0;
     });
+    // Startfehler (z. B. zu viele Prozesse): ohne Abnehmer wuerfe Node hier
+    // eine unbehandelte Ausnahme und der Hub beendete sich.
+    const spawned = sidecarProc;
+    spawned.on("error", (e) => {
+      log(`Face-Sidecar: ${e.message}`);
+      // Kam der Prozess gar nicht zustande, folgt kein "exit": hier aufraeumen.
+      if (spawned.pid === undefined && sidecarProc === spawned) {
+        sidecarProc = null;
+        healthyAt = 0;
+      }
+    });
     // Warmup abwarten.
     const started = Date.now();
     const wait = async () => {

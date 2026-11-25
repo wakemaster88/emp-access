@@ -31,7 +31,7 @@ import { lastScanResult } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
 import { improve, improveCount } from "./improve-log.js";
 import { getForecast } from "./weather.js";
-import { isDark, spotlightWanted } from "./vehicle-light-rules.js";
+import { burstSwitchesLight, isDark, lightMarkStep, spotlightWanted } from "./vehicle-light-rules.js";
 import { debounceEvents, endAll, newDebounceState, runningOf, type DebounceState } from "./event-debounce.js";
 import { previousAliveAt } from "./alive-mark.js";
 import {
@@ -41,12 +41,22 @@ import {
   UnconfirmedStarts,
   aiAlarmState,
   clockDriftKey,
+  configRefreshPlan,
   endHoldFor,
   endsToRetry,
+  failStreakAfter,
+  pollDue,
+  pollOrder,
+  relocateAtStart,
+  relocateByLoginAllowed,
+  relocateIntervalMs,
   snapshotJobFor,
   tidyOutbox,
 } from "./camera-poll-rules.js";
 import { ChangeLog } from "./change-log.js";
+import { isExiting, onShutdown } from "./shutdown.js";
+import { CameraMarks } from "./camera-marks.js";
+import { BurstLights } from "./vehicle-light.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 
 export interface CameraConfig {
@@ -131,6 +141,16 @@ interface CameraRuntime {
   lastMacLearnAt: number;
   /** Letzter IP-Re-Mapping-Versuch per MAC (Throttle bei Unerreichbarkeit). */
   lastRelocateAt: number;
+  /** Suche nach neuer Adresse laeuft (kann laenger dauern als ihr Abstand). */
+  relocating: boolean;
+  /** Abfrage laeuft oder wartet auf einen Platz – keine zweite starten. */
+  pollInFlight: boolean;
+  /** Beginn der letzten Abfrage (0 = noch keine). */
+  pollStartedAt: number;
+  /** Lange Fehlversuche in Folge (0 = letzte Abfrage hat geantwortet oder scheiterte sofort); bestimmt die Reihenfolge im Takt. */
+  failStreak: number;
+  /** Seit wann nicht erreichbar (null = erreichbar oder noch nie gefragt); ueberlebt den Neustart (downMarks). */
+  downSince: number | null;
   /* Nur fuer das lokale Dashboard – nicht Teil der Kamera-Logik. */
   reachable: boolean;
   lastError: string | null;
@@ -173,9 +193,17 @@ const cameras = new Map<number, CameraRuntime>();
 let configLoadedAt = 0;
 
 const CONFIG_REFRESH_MS = 60_000;
+/** Nach einem gescheiterten Abruf der Kamera-Liste: naechster Versuch. */
+const CONFIG_RETRY_MS = 15_000;
+const CONFIG_FETCH_TIMEOUT_MS = 15_000;
+let configFailedAt = 0;
+let configRefresh: Promise<void> | null = null;
+const configFailLog = new ChangeLog(10 * 60_000);
 const TOKEN_SAFETY_MS = 60_000;
 /** Bei Ereignis-Beginn hoechstens alle 30 s ein Auto-Snapshot pro Kamera. */
 const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
+/** Ein gescheiterter Auto-Snapshot steht je Kamera und Grund hoechstens alle 5 min im Log. */
+const autoSnapshotFailLog = new ChangeLog(5 * 60_000);
 /** Ereignis endet erst nach so langer Ruhe (KI flackert), siehe event-debounce.ts. */
 /** Zeit fuers Anfahren eines Presets, bevor „folgen“ eingeschaltet wird. */
 const SCENE_SETTLE_MS = Number(process.env.HUB_CAMERA_SCENE_SETTLE_MS || 2_500);
@@ -547,6 +575,10 @@ export async function uploadSnapshot(
   if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
 
   const raw = await captureSnap(cam);
+  // Nur Anzeige: drosselt weitere Anzeige-Bilder, nicht die Gesichtserkennung.
+  // Die Drossel gilt ab dem Bild, nicht erst ab dem Upload: Ist die Cloud
+  // nicht erreichbar, soll nicht jede Bewegung ein neues Vollbild holen.
+  cam.lastAutoSnapshotAt = Date.now();
   // Auto-Snapshots bei Bewegung nur fuer die Anzeige: verkleinert hochladen.
   const buf = opts.maxPx ? await shrinkJpeg(raw, opts.maxPx) : raw;
   const upload = await api(`/api/hub/cameras/${cameraId}/snapshot`, {
@@ -555,8 +587,6 @@ export async function uploadSnapshot(
     body: new Uint8Array(buf),
   });
   if (!upload.ok) throw new Error(`Snapshot-Upload fehlgeschlagen: HTTP ${upload.status}`);
-  // Nur Anzeige: drosselt weitere Anzeige-Bilder, nicht die Gesichtserkennung.
-  cam.lastAutoSnapshotAt = Date.now();
   return { bytes: buf.length };
 }
 
@@ -858,20 +888,26 @@ async function uploadPersonSnapshotBody(
   // Verkleinert hochladen: die Cloud zeigt das Bild nur an (FACE_ENROLL kommt
   // mit 1600 px noch gut zurecht); das Original bleibt hier fuer die Pipeline.
   const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT_MAX_PX);
-  const upload = await api(`/api/hub/person-sightings?${qs}`, {
-    method: "POST",
-    headers: { "Content-Type": "image/jpeg", "X-Face-Embedding": embeddingHeader(face.embedding) },
-    body: new Uint8Array(uploadBuf),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!upload.ok) {
-    const errText = await upload.text().catch(() => "");
-    throw new Error(
-      `Personen-Snapshot fehlgeschlagen: HTTP ${upload.status} ${errText.slice(0, 120)}`
-    );
+  try {
+    const upload = await api(`/api/hub/person-sightings?${qs}`, {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg", "X-Face-Embedding": embeddingHeader(face.embedding) },
+      body: new Uint8Array(uploadBuf),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!upload.ok) {
+      const errText = await upload.text().catch(() => "");
+      throw new Error(
+        `Personen-Snapshot fehlgeschlagen: HTTP ${upload.status} ${errText.slice(0, 120)}`
+      );
+    }
+    log(`Personen-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes)`);
+  } finally {
+    // Die Drossel gilt, sobald ein Gesicht ausgewertet ist, auch wenn der
+    // Upload scheitert: Ohne Cloud soll die Pipeline nicht bei jedem neuen
+    // Personen-Alarm sofort wieder anlaufen (Bilder, Gesichts-Dienst).
+    cam.lastSnapshotAt = Date.now();
   }
-  log(`Personen-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes)`);
-  cam.lastSnapshotAt = Date.now();
   return { bytes: buf.length };
 }
 
@@ -936,11 +972,50 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
 const VEHICLE_LIGHT_SETTLE_MS = Number(process.env.HUB_VEHICLE_SPOTLIGHT_SETTLE_MS || 800);
 /** Sicherheitsnetz: Licht spätestens nach dieser Zeit wieder aus. */
 const VEHICLE_LIGHT_MAX_MS = 60_000;
+/** Auf den Merker auf der Platte wartet das Einschalten höchstens so lange. */
+const VEHICLE_LIGHT_MARK_WAIT_MS = 250;
+/**
+ * Wo der Hub das Weißlicht eingeschaltet hat (Kamera-ID und Zeitpunkt), auf
+ * der Platte: Endet der Prozess, bevor er ausschalten konnte, weiß der
+ * nächste, welche Lichter seine sind. Ein brennendes Licht ohne Merker gilt
+ * als von Hand eingeschaltet und bleibt unberührt.
+ */
+const lightMarks = new CameraMarks(path.join(CONFIG.hubDir, ".cache", "lights-on.json"));
+/** Lichter, die für einen Burst brennen, samt allem, was sie wieder ausschaltet (vehicle-light.ts). */
+const burstLights = new BurstLights(
+  {
+    mark: (cameraId, at) => lightMarks.set(cameraId, at),
+    unmark: (cameraId, at) => lightMarks.delete(cameraId, at),
+    onShutdown,
+    isExiting,
+    log,
+  },
+  { maxMs: VEHICLE_LIGHT_MAX_MS, markWaitMs: VEHICLE_LIGHT_MARK_WAIT_MS }
+);
+/** Gemerkte Lichter, die gerade ausgeschaltet werden, und der letzte Versuch je Kamera. */
+const lateLightOffRunning = new Set<number>();
+const lateLightOffTriedAt = new Map<number, number>();
+const lateLightOffFailLog = new ChangeLog(10 * 60_000);
+/**
+ * Kameras, an die der Ausschalt-Befehl für ein gemerktes Licht gerade
+ * unterwegs ist. Bis er wirkt, meldet die Kamera das Licht noch als brennend;
+ * ein Burst, der jetzt beginnt, schaltet es deshalb selbst (burstSwitchesLight).
+ */
+const lateLightOffSending = new Set<number>();
+
+/** Weißlicht einer Kamera schalten (manueller Modus der Kamera). */
+async function switchSpotlight(cam: CameraRuntime, on: boolean, brightness = 100): Promise<void> {
+  await ensureLogin(cam);
+  await cgi(cam, "SetWhiteLed", {
+    WhiteLed: { channel: cam.config.channel, state: on ? 1 : 0, mode: 1, bright: brightness },
+  });
+}
 
 /**
  * Nachts an der Zufahrt: Weißlicht der Kamera für die Dauer des Bursts
  * einschalten, damit das Kennzeichen lesbar wird (Aaron, 14.11.2026).
- * War das Licht schon an (manuell), bleibt es unberührt. Liefert die
+ * War das Licht schon an (manuell), bleibt es unberührt – außer der Hub
+ * schaltet es gerade selbst aus (lateLightOff). Liefert die
  * Ausschalt-Funktion oder null, wenn nichts geschaltet wurde. Fehler
  * blockieren den Burst nie.
  */
@@ -955,32 +1030,96 @@ async function vehicleLightOn(cam: CameraRuntime, cameraId: number): Promise<(()
       return null;
     }
     await ensureLogin(cam);
+    // Vor der Abfrage festhalten: Ein Ausschalt-Befehl, der jetzt unterwegs
+    // ist, kann wirken, nachdem die Kamera das Licht noch als brennend meldet.
+    const goingOff = lateLightOffSending.has(cameraId);
     const cur = (await cgi(cam, "GetWhiteLed", { channel: cam.config.channel }).catch(() => ({}))) as {
       WhiteLed?: { state?: number };
     };
-    if (cur.WhiteLed?.state === 1) return null;
+    if (!burstSwitchesLight({ lit: cur.WhiteLed?.state === 1, goingOff })) return null;
     // Alarm schon vorbei (Flackern): kein Licht für einen Burst, der gleich abbricht.
     const still = await pollStates(cam).catch(() => null);
     if (still && !still.VEHICLE) return null;
-    await setSpotlight(cameraId, { on: true, brightness: 100 });
+    const off = await burstLights.switchOn({
+      cameraId,
+      name: cam.config.name,
+      switchLight: (on) => switchSpotlight(cam, on),
+    });
+    if (!off) return null;
     log(`Fahrzeug-Burst ${cam.config.name}: dunkel – Weißlicht an`);
     improve("alpr", "spotlight", { cam: cam.config.name });
-    let done = false;
-    const off = async (): Promise<void> => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      await setSpotlight(cameraId, { on: false }).catch((e) =>
-        log(`Fahrzeug-Burst ${cam.config.name}: Weißlicht aus fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
-      );
-      log(`Fahrzeug-Burst ${cam.config.name}: Weißlicht aus`);
-    };
-    const timer = setTimeout(() => void off(), VEHICLE_LIGHT_MAX_MS);
     await new Promise((r) => setTimeout(r, VEHICLE_LIGHT_SETTLE_MS));
     return off;
   } catch (e) {
     log(`Fahrzeug-Burst ${cam.config.name}: Weißlicht nicht schaltbar: ${e instanceof Error ? e.message : e}`);
     return null;
+  }
+}
+
+/**
+ * Gemerkte Lichter ausschalten, die zu keinem laufenden Burst mehr gehören:
+ * nach einem Neustart die des vorigen Prozesses, sonst eines, dessen
+ * Ausschalten an der Kamera scheiterte. Die Entscheidung steht in
+ * lightMarkStep (vehicle-light-rules.ts).
+ */
+function settleLightMarks(now: number): void {
+  for (const [cameraId, markedAt] of lightMarks.entries()) {
+    if (lateLightOffRunning.has(cameraId)) continue;
+    const cam = cameras.get(cameraId);
+    const step = lightMarkStep({
+      now,
+      markedAt,
+      known: cam !== undefined,
+      reachable: cam?.reachable === true,
+      inUse: burstLights.isOn(cameraId) || cam?.snapshotInFlight === true,
+      lastTryAt: lateLightOffTriedAt.get(cameraId) ?? 0,
+    });
+    if (step === "drop") {
+      void lightMarks.delete(cameraId, markedAt);
+      lateLightOffTriedAt.delete(cameraId);
+      log(`Kamera ${cam?.config.name ?? cameraId}: Weißlicht-Merker verworfen (älter als 24 h)`);
+    } else if (step === "off" && cam) {
+      lateLightOffTriedAt.set(cameraId, now);
+      lateLightOffRunning.add(cameraId);
+      void lateLightOff(cam, markedAt).finally(() => lateLightOffRunning.delete(cameraId));
+    }
+  }
+}
+
+/** Ein gemerktes Licht ausschalten, falls es noch brennt; der Merker entfällt erst danach. */
+async function lateLightOff(cam: CameraRuntime, markedAt: number): Promise<void> {
+  const cameraId = cam.config.id;
+  try {
+    await ensureLogin(cam);
+    const cur = (await cgi(cam, "GetWhiteLed", { channel: cam.config.channel })) as {
+      WhiteLed?: { state?: number };
+    };
+    if (cur.WhiteLed?.state !== 0) {
+      // Inzwischen läuft dort ein Burst und braucht das Licht: gleich danach wieder.
+      if (burstLights.isOn(cameraId) || cam.snapshotInFlight) {
+        lateLightOffTriedAt.delete(cameraId);
+        return;
+      }
+      lateLightOffSending.add(cameraId);
+      try {
+        await switchSpotlight(cam, false);
+      } finally {
+        lateLightOffSending.delete(cameraId);
+      }
+      log(`Kamera ${cam.config.name}: Weißlicht aus (nachgeholt)`);
+      improve("alpr", "spotlight_late_off", { cam: cam.config.name });
+    } else {
+      // Auch das steht im Log: Wer nach „Aufräumen unvollständig: weisslicht:…“
+      // nachsieht, findet so zu jedem Merker, was aus ihm wurde.
+      log(`Kamera ${cam.config.name}: Weißlicht war schon aus – Merker gelöscht`);
+    }
+    lateLightOffTriedAt.delete(cameraId);
+    await lightMarks.delete(cameraId, markedAt);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (lateLightOffFailLog.shouldLog(String(cameraId), msg, Date.now())) {
+      log(`Kamera ${cam.config.name}: Weißlicht aus fehlgeschlagen: ${msg} – wird weiter versucht`);
+    }
   }
 }
 
@@ -1397,7 +1536,7 @@ function clamp(n: number, min: number, max: number): number {
 async function getControlCam(cameraId: number): Promise<CameraRuntime> {
   if (!cameras.has(cameraId)) {
     // Task kann vor dem ersten Kamera-Poll eintreffen.
-    await refreshConfigs();
+    await loadConfigs();
   }
   const cam = cameras.get(cameraId);
   if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
@@ -1653,7 +1792,7 @@ export async function cameraScene(
   return { presetId, autoTrack: wantTrack, returnAfterSeconds: returnAfter || null };
 }
 
-/** Weisslicht-Scheinwerfer an/aus (manueller Modus). */
+/** Weisslicht-Scheinwerfer an/aus (manueller Modus), auf Anforderung aus der Cloud. */
 export async function setSpotlight(
   cameraId: number,
   payload: Record<string, unknown> | null
@@ -1661,10 +1800,10 @@ export async function setSpotlight(
   const cam = await getControlCam(cameraId);
   const on = payload?.on === true;
   const brightness = clamp(Number(payload?.brightness) || 100, 1, 100);
-  await ensureLogin(cam);
-  await cgi(cam, "SetWhiteLed", {
-    WhiteLed: { channel: cam.config.channel, state: on ? 1 : 0, mode: 1, bright: brightness },
-  });
+  await switchSpotlight(cam, on, brightness);
+  // Von Hand geschaltet: Das Licht gehoert nicht mehr dem Hub, nach einem
+  // Neustart fasst er es nicht an.
+  void lightMarks.delete(cameraId);
   return { on, brightness };
 }
 
@@ -1759,7 +1898,7 @@ export async function getPtzPresets(cameraId: number): Promise<unknown> {
 }
 
 async function refreshConfigs(): Promise<void> {
-  const res = await api("/api/hub/cameras");
+  const res = await api("/api/hub/cameras", { signal: AbortSignal.timeout(CONFIG_FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`Kamera-Konfig-Abruf fehlgeschlagen: HTTP ${res.status}`);
   const all = (await res.json()) as CameraConfig[];
 
@@ -1791,14 +1930,23 @@ async function refreshConfigs(): Promise<void> {
         log(`Kamera ${config.name}: Host ${oldHost} → ${config.host} (Cloud) – Streams werden umgestellt`);
         void updateLocalStreams(oldHost, config.host).catch(() => {});
       }
-      // Bei geaenderten Zugangsdaten/Adresse Token verwerfen.
+      // Bei geaenderten Zugangsdaten/Adresse Token verwerfen: Die naechste
+      // Abfrage meldet sich neu an. Die Fehlversuche von vorher sagen ueber
+      // die neue Adresse nichts und zaehlen fuer die Reihenfolge im Takt
+      // nicht mehr (pollOrder). Eine Abfrage, die schon laeuft, geht noch an
+      // den alten Stand und zaehlt wie jede andere; die naechste beginnt im
+      // Takt nach ihrem Ende.
       const changed = JSON.stringify(existing.config) !== JSON.stringify(config);
       existing.config = config;
       if (changed) {
         existing.token = null;
         existing.tokenExpiresAt = 0;
+        existing.failStreak = 0;
       }
     } else {
+      // Stand die Kamera schon vor dem Neustart aus, geht die Adresssuche
+      // weiter, wo sie war, statt mit jedem Start neu zu beginnen.
+      const relocate = relocateAtStart(downMarks.get(config.id), Date.now());
       cameras.set(config.id, {
         config,
         token: null,
@@ -1811,7 +1959,12 @@ async function refreshConfigs(): Promise<void> {
         pendingVehicle: false,
         unreachableLogged: false,
         lastMacLearnAt: 0,
-        lastRelocateAt: 0,
+        lastRelocateAt: relocate.lastRelocateAt,
+        relocating: false,
+        pollInFlight: false,
+        pollStartedAt: 0,
+        failStreak: 0,
+        downSince: relocate.downSince,
         reachable: false,
         lastError: null,
         lastEventAt: null,
@@ -1820,15 +1973,49 @@ async function refreshConfigs(): Promise<void> {
       });
     }
   }
+  void downMarks.keepOnly(ids);
   configLoadedAt = Date.now();
   void syncLocalStreamsFromCloud(
     all.map((c) => ({ name: c.name, host: c.host, kind: c.kind }))
   ).catch((e) => log(`Cloud-Stream-Sync: ${e instanceof Error ? e.message : e}`));
 }
 
+/**
+ * Kamera-Liste laden. Mehrere Aufrufer (Poll, Auftrag aus der Cloud) teilen
+ * sich einen Abruf. Scheitert er, lehnt das Promise ab; ins Log kommt die
+ * Stoerung einmal und dann alle 10 min, nicht je Versuch.
+ */
+function loadConfigs(): Promise<void> {
+  configRefresh ??= refreshConfigs()
+    .then(
+      () => {
+        if (configFailedAt > 0) {
+          configFailedAt = 0;
+          configFailLog.shouldLog("config", "", Date.now());
+          log("Kamera-Liste: Cloud wieder erreichbar");
+        }
+      },
+      (e) => {
+        configFailedAt = Date.now();
+        const msg = e instanceof Error ? e.message : String(e);
+        if (configFailLog.shouldLog("config", msg, Date.now())) {
+          log(
+            `Kamera-Liste nicht abrufbar (${msg})` +
+              (cameras.size > 0 ? ` – ${cameras.size} bekannte Kameras werden weiter abgefragt` : "")
+          );
+        }
+        throw e;
+      }
+    )
+    .finally(() => {
+      configRefresh = null;
+    });
+  return configRefresh;
+}
+
 /** Konfiguration sicherstellen – Tasks können vor dem ersten Kamera-Poll eintreffen. */
 export async function ensureCameraConfigs(): Promise<void> {
-  if (configLoadedAt === 0) await refreshConfigs();
+  if (configLoadedAt === 0) await loadConfigs();
 }
 
 /** Nächster Poll zieht die Kamera-Liste neu (z. B. nach Ensure einer Parkkamera). */
@@ -2212,8 +2399,21 @@ export function cameraIdByHost(host: string): number | null {
 
 /** MAC hoechstens einmal pro Stunde pro Kamera nachschlagen/lernen. */
 const MAC_LEARN_INTERVAL_MS = 3_600_000;
-/** Re-Mapping-Versuch hoechstens einmal pro Minute pro Kamera. */
-const RELOCATE_THROTTLE_MS = 60_000;
+/** Abstand der Re-Mapping-Versuche: relocateIntervalMs in camera-poll-rules.ts. */
+const relocateStepLog = new ChangeLog();
+/**
+ * Seit wann eine Kamera nicht antwortet (Kamera-ID und Zeitpunkt), auf der
+ * Platte: Die Stufen der Adresssuche zaehlen ab dem Ausfallbeginn, und der
+ * Hub startet mehrmals am Tag neu (Update).
+ */
+const downMarks = new CameraMarks(path.join(CONFIG.hubDir, ".cache", "cameras-down.json"));
+
+/** Ausfallbeginn einer Kamera setzen (bleibt, wenn sie schon aussteht) oder loeschen; auf die Platte nur bei Aenderung. */
+function setDownSince(cam: CameraRuntime, at: number | null): void {
+  if ((cam.downSince === null) === (at === null)) return;
+  cam.downSince = at;
+  void (at === null ? downMarks.delete(cam.config.id) : downMarks.set(cam.config.id, at));
+}
 
 export async function reportNetworkUpdate(
   cameraId: number,
@@ -2305,20 +2505,36 @@ async function learnCameraMac(cam: CameraRuntime): Promise<void> {
  */
 async function tryRelocateCamera(cam: CameraRuntime): Promise<boolean> {
   if (!cam.config.macAddress) return false;
-  if (Date.now() - cam.lastRelocateAt < RELOCATE_THROTTLE_MS) return false;
+  // Ein Lauf kann laenger dauern als sein Abstand (Ping-Sweep, bis zu 40
+  // Anmeldeversuche): nie zwei nebeneinander.
+  if (cam.relocating) return false;
+  const downForMs = cam.downSince ? Date.now() - cam.downSince : 0;
+  const everyMs = relocateIntervalMs(downForMs);
+  if (Date.now() - cam.lastRelocateAt < everyMs) return false;
   cam.lastRelocateAt = Date.now();
+  cam.relocating = true;
+  improveCount("camera", "relocate_search");
+  if (everyMs > 60_000 && relocateStepLog.shouldLog(String(cam.config.id), String(everyMs), Date.now())) {
+    log(
+      `Kamera ${cam.config.name}: seit ${Math.round(downForMs / 60_000)} min nicht erreichbar – ` +
+        `Suche unter neuer Adresse nur noch alle ${Math.round(everyMs / 60_000)} min`
+    );
+  }
   try {
     // Sucht in lokaler + Router-ARP-Tabelle; ohne Treffer werden die direkt
     // angeschlossenen Subnetze (auch VLAN-Interfaces) einmal angepingt.
     const ip =
       (await findIpByMac(cam.config.macAddress, { sweep: true, exclude: cam.config.host })) ??
-      (await findCameraByApi(cam));
+      (relocateByLoginAllowed(downForMs) ? await findCameraByApi(cam) : null);
     if (ip) {
       const oldHost = cam.config.host;
       cam.config.host = ip;
       cam.token = null;
       cam.tokenExpiresAt = 0;
       log(`Kamera ${cam.config.name}: per MAC unter neuer IP gefunden (${oldHost} → ${ip})`);
+      // Unter der neuen Adresse zaehlen die Fehlversuche von vorher nicht
+      // mehr: Die Kamera reiht sich im Takt wieder vorn ein (pollOrder).
+      cam.failStreak = 0;
       const ok = await reportNetworkUpdate(cam.config.id, { host: ip });
       if (!ok) log(`Kamera ${cam.config.name}: IP-Update in der Cloud fehlgeschlagen`);
       // Lokale Stream-Konfiguration (go2rtc + Kiosk) nachziehen, damit auch
@@ -2328,6 +2544,8 @@ async function tryRelocateCamera(cam: CameraRuntime): Promise<boolean> {
     }
   } catch {
     // Best-effort: naechster Versuch nach Throttle.
+  } finally {
+    cam.relocating = false;
   }
   return false;
 }
@@ -2359,18 +2577,22 @@ interface CloudEvent {
  * Braucht die Cloud fuer eine Meldung lange, fragt der Hub die Kameras
  * trotzdem weiter alle 2 s ab; vorher stand die Abfrage so lange still, wie
  * die Meldung brauchte (bis zum Zeitlimit von 30 s) – auch fuer die
- * Einfahrt. Der Abruf der Kamera-Liste (einmal je Minute, refreshConfigs)
- * laeuft dagegen weiter im Takt. Scheitert eine Meldung, entfallen ihre
- * Beginne wie bisher; ihre Enden gehen noch einmal mit (endsToRetry), und was
- * dann noch laeuft, traegt die Cloud ueber die Liste der laufenden Ereignisse
- * nach. Ein Beginn, der in der Warteschlange zu alt wird, entfaellt ebenfalls
- * (tidyOutbox): Regeln sollen nie zu einem Ereignis von vorhin laufen.
+ * Einfahrt. Auch die Kamera-Liste laedt im Hintergrund (loadConfigs): Ohne
+ * Cloud laeuft die Abfrage mit dem letzten Stand weiter. Scheitert eine
+ * Meldung, entfallen ihre Beginne wie bisher; ihre Enden gehen noch einmal
+ * mit (endsToRetry), und was dann noch laeuft, traegt die Cloud ueber die
+ * Liste der laufenden Ereignisse nach. Ein Beginn, der in der Warteschlange
+ * zu alt wird, entfaellt ebenfalls (tidyOutbox): Regeln sollen nie zu einem
+ * Ereignis von vorhin laufen.
  */
 const EVENT_UPLOAD_TIMEOUT_MS = 15_000;
 const EVENT_BATCH_MAX = 100;
 const EVENT_OUTBOX_MAX = 400;
 /** Nach einer gescheiterten Meldung: naechster Versuch fruehestens so spaet. */
 const EVENT_UPLOAD_RETRY_MS = 10_000;
+/** So lange sammelt der Hub die Meldungen der Kameras eines Takts. */
+const EVENT_COALESCE_MS = 250;
+let eventUploadTimer: ReturnType<typeof setTimeout> | null = null;
 const eventOutbox: CloudEvent[] = [];
 /**
  * Wann ein Ereignis eingereiht wurde, auf einer Uhr, die niemand stellt
@@ -2380,9 +2602,11 @@ const eventOutbox: CloudEvent[] = [];
 const queuedAt = new WeakMap<CloudEvent, number>();
 const seenOutbox = new Set<number>();
 /**
- * Was an den Kameras laeuft, festgehalten beim Einreihen. Spaeter gelesen
- * koennte eine laufende Abfrage schon einen Beginn kennen, der noch nicht
- * eingereiht ist; die Cloud wuerde ihn doppelt anlegen.
+ * Was an den Kameras laeuft, festgehalten beim Einreihen der Erreichbarkeit:
+ * In dem Moment decken sich Entprellung und Warteschlange (jede Abfrage
+ * reiht ihre Ereignisse ohne Pause nach dem Entprellen ein). Gesendet wird
+ * die Liste nur, wenn bis dahin nichts Neues dazukam; sonst legte die Cloud
+ * einen Beginn doppelt an, der noch in der Warteschlange steht.
  */
 const runningReport = new RunningReport<{ cameraId: number; type: string; at: string }>();
 /**
@@ -2467,7 +2691,13 @@ function queueEventUpload(events: CloudEvent[], seen: number[]): void {
   for (const id of seen) seenOutbox.add(id);
   // Mit der Erreichbarkeit (einmal je Minute) geht mit, was gerade laeuft.
   if (seen.length > 0) runningReport.capture(runningEvents());
-  if (!eventUploadRunning) void drainEventUploads();
+  // Jede Kamera meldet fuer sich; was im selben Takt anfaellt, geht trotzdem
+  // in einem Aufruf hinaus (eine laufende Meldung nimmt Neues ohnehin mit).
+  if (eventUploadRunning || eventUploadTimer) return;
+  eventUploadTimer = setTimeout(() => {
+    eventUploadTimer = null;
+    void drainEventUploads();
+  }, EVENT_COALESCE_MS);
 }
 
 /** Gescheiterte Meldung: einmal ins Log, Enden zuruecklegen, bald neu versuchen. */
@@ -2583,202 +2813,294 @@ async function drainEventUploads(): Promise<void> {
   }
 }
 
-/** Haupt-Loop: Konfiguration aktuell halten, Zustaende pollen, Events melden. */
+/*
+ * Abfrage der Kameras: Jede laeuft fuer sich. Der Takt (alle 2 s) stoesst nur
+ * an, was faellig ist; Bild-Pipelines, Regeln und die Meldung an die Cloud
+ * starten, sobald die eine Kamera geantwortet hat. Vorher wartete jede Runde
+ * auf alle Kameras: Eine einzige, die bis zum Zeitlimit von 8 s haengt, hielt
+ * so lange die Erkennung an allen anderen auf, auch den Kennzeichen-Burst an
+ * der Einfahrt.
+ */
+const POLL_CONCURRENCY = 6;
+const pollQueue: CameraRuntime[] = [];
+let pollActive = 0;
+/** Ab dieser Dauer gilt eine Abfrage als langsam und ein Fehlversuch als lang (Zeitlimit der Kamera: 8 s). */
+const POLL_SLOW_MS = 4_000;
+const pollSlowLog = new ChangeLog(10 * 60_000);
+/** Laengste Abfrage im laufenden 5-Minuten-Fenster (fuer das Lagebild). */
+const POLL_STATS_WINDOW_MS = 5 * 60_000;
+let pollStats = { since: Date.now(), maxMs: 0, maxName: null as string | null, slow: 0 };
+
+/**
+ * Dauer einer gelungenen Abfrage festhalten. Eine Zeitueberschreitung zaehlt
+ * hier nicht: Sie steht schon als „nicht erreichbar“ im Log und im Zaehler
+ * camera.unreachable, und im Hoechstwert verdeckte sie die Kamera, die
+ * antwortet, aber langsam.
+ */
+function notePollDuration(cam: CameraRuntime, tookMs: number): void {
+  const now = Date.now();
+  if (now - pollStats.since > POLL_STATS_WINDOW_MS) {
+    pollStats = { since: now, maxMs: 0, maxName: null, slow: 0 };
+  }
+  if (tookMs > pollStats.maxMs) {
+    pollStats.maxMs = tookMs;
+    pollStats.maxName = cam.config.name;
+  }
+  if (tookMs < POLL_SLOW_MS) return;
+  pollStats.slow++;
+  improveCount("camera", "poll_slow");
+  if (pollSlowLog.shouldLog(String(cam.config.id), "slow", now)) {
+    log(`Kamera ${cam.config.name}: Abfrage dauerte ${(tookMs / 1000).toFixed(1)} s (die anderen Kameras laufen weiter)`);
+  }
+}
+
+function pumpPolls(): void {
+  while (pollActive < POLL_CONCURRENCY && pollQueue.length > 0) {
+    const cam = pollQueue.shift()!;
+    pollActive++;
+    cam.pollStartedAt = Date.now();
+    void pollOne(cam)
+      .catch((e) => log(`Kamera ${cam.config.name}: Abfrage: ${e instanceof Error ? e.message : e}`))
+      .finally(() => {
+        pollActive--;
+        cam.pollInFlight = false;
+        pumpPolls();
+      });
+  }
+}
+
+/** Eine Kamera abfragen und alles Weitere fuer sie anstossen. */
+async function pollOne(cam: CameraRuntime): Promise<void> {
+  const startedAt = Date.now();
+  const events: CloudEvent[] = [];
+  let wantVehicle = false;
+  let wantPerson = false;
+  let wantAuto = false;
+  try {
+    const states = await pollStates(cam);
+    // Waehrend der Abfrage entfernt oder deaktiviert (die Kamera-Liste laedt
+    // daneben): Ihre Ereignisse sind schon beendet, nichts Neues beginnen.
+    if (cameras.get(cam.config.id) !== cam) return;
+    notePollDuration(cam, Date.now() - startedAt);
+    seenSinceReport.add(cam.config.id);
+    noteLink(`cam:${cam.config.id}`, cam.config.name, "camera", true);
+    if (!cam.reachable && cam.lastError) {
+      recordHubEvent({
+        kind: "camera",
+        severity: "info",
+        where: cam.config.name,
+        title: "wieder erreichbar",
+      });
+      relocateStepLog.shouldLog(String(cam.config.id), "", Date.now());
+    }
+    cam.reachable = true;
+    cam.lastError = null;
+    cam.unreachableLogged = false;
+    cam.failStreak = 0;
+    setDownSince(cam, null);
+    void learnCameraMac(cam);
+
+    // Rohe Flanken starten die Bild-Pipelines (schnell, zweiter Wagen).
+    for (const [type, active] of Object.entries(states)) {
+      const was = cam.states[type] ?? false;
+      if (active && !was) {
+        if (type === "PERSON") {
+          void motion
+            .onPersonStart(cam.config.id)
+            .catch((e) => log(`Kamera ${cam.config.name}: Folgen: ${e instanceof Error ? e.message : e}`));
+        } else if (type === "VEHICLE") {
+          motion.onVehicleStart(cam.config.id);
+        }
+        // Kennzeichen nie drosseln; ein Anzeige-Bild (Bewegung) sperrt die
+        // Gesichtserkennung nicht mehr (snapshotJobFor in camera-poll-rules.ts).
+        const job = snapshotJobFor(type, {
+          inFlight: cam.snapshotInFlight,
+          now: Date.now(),
+          lastPipelineAt: cam.lastSnapshotAt,
+          lastAutoAt: cam.lastAutoSnapshotAt,
+          throttleMs: EVENT_SNAPSHOT_THROTTLE_MS,
+        });
+        if (job === "vehicle") wantVehicle = true;
+        else if (job === "person") wantPerson = true;
+        else if (job === "auto") wantAuto = true;
+      }
+      cam.states[type] = active;
+    }
+    // Fuer die Ruhe-Regeln im Notbetrieb zaehlt jede Messung mit Alarm,
+    // nicht nur der Beginn eines Ereignisses (ein langes Ereignis galt
+    // sonst nach `idleMinutes` als Ruhe).
+    if (Object.values(states).some(Boolean)) noteCameraActivity(cam.config.id);
+
+    // Entprellte Ereignisse gehen an Cloud, Regeln und Lagebild.
+    for (const ev of debounceEvents(cam.debounce, states, Date.now(), eventEndHold)) {
+      if (ev.type === "PERSON" && ev.phase === "end") {
+        void motion
+          .onPersonEnd(cam.config.id)
+          .catch((e) => log(`Kamera ${cam.config.name}: Folgen beenden: ${e instanceof Error ? e.message : e}`));
+      }
+      const at = new Date(ev.at).toISOString();
+      events.push({ cameraId: cam.config.id, type: ev.type, phase: ev.phase, at });
+      cam.lastEventAt = at;
+      recordHubEvent({
+        kind: "camera",
+        severity: "info",
+        where: cam.config.name,
+        title: `${ev.type} ${ev.phase === "start" ? "erkannt" : "beendet"}`,
+      });
+    }
+  } catch (e) {
+    // Entfernte Kamera: weder melden noch im Netz nach ihr suchen.
+    if (cameras.get(cam.config.id) !== cam) return;
+    const msg = e instanceof Error ? e.message : String(e);
+    if (cam.reachable || !cam.lastError) {
+      recordHubEvent({
+        kind: "camera",
+        severity: "warn",
+        where: cam.config.name,
+        title: "nicht erreichbar",
+        detail: msg,
+      });
+      improveCount("camera", "unreachable");
+    }
+    cam.reachable = false;
+    cam.lastError = msg;
+    // Nur ein Versuch, der lange lief, zaehlt: Solche Kameras kommen im Takt
+    // nach denen an die Reihe, die antworten oder sofort ablehnen (pollOrder).
+    cam.failStreak = failStreakAfter(cam.failStreak, Date.now() - startedAt, POLL_SLOW_MS);
+    setDownSince(cam, Date.now());
+    noteLink(`cam:${cam.config.id}`, cam.config.name, "camera", false, msg);
+    if (!cam.unreachableLogged) {
+      log(`Kamera ${cam.config.name}: ${msg}`);
+      cam.unreachableLogged = true;
+    }
+    void tryRelocateCamera(cam);
+  }
+
+  // Regeln auf dem Hub (Ruhe-Erkennung, Notbetrieb ohne Cloud).
+  for (const e of events) if (e.phase === "start") onCameraEvent(e.cameraId, e.type);
+
+  // Bild-Pipelines laufen ohne await. Fahrzeug vor Person: Das Kennzeichen
+  // entscheidet ueber das Tor, das Gesicht kann die paar Sekunden warten.
+  const cameraId = cam.config.id;
+  if (wantVehicle) {
+    void (async () => {
+      try {
+        await uploadVehicleSnapshot(cameraId);
+      } catch (e) {
+        log(`Fahrzeug-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      }
+      if (!wantPerson) return;
+      try {
+        await uploadPersonSnapshot(cameraId);
+      } catch (e) {
+        log(`Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      }
+    })();
+  } else if (wantPerson) {
+    uploadPersonSnapshot(cameraId).catch((e) =>
+      log(`Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
+    );
+  } else if (wantAuto) {
+    uploadSnapshot(cameraId, { maxPx: DISPLAY_SNAPSHOT_MAX_PX }).catch((e) => {
+      // Ohne Cloud scheitert jedes Anzeige-Bild mit demselben Grund: gezaehlt
+      // wird jedes, ins Log kommt es je Kamera und Grund alle 5 min einmal.
+      const msg = e instanceof Error ? e.message : String(e);
+      improveCount("camera", "snapshot_fail");
+      if (autoSnapshotFailLog.shouldLog(`${cameraId}:${msg}`, msg, Date.now())) {
+        log(`Auto-Snapshot Kamera ${cameraId} fehlgeschlagen: ${msg}`);
+      }
+    });
+  }
+
+  // Erst die Pipelines, dann die Cloud – auch die ohne await
+  // (queueEventUpload): weder die Tuer noch die naechste Abfrage warten auf
+  // den Upload der Ereignisse.
+  if (events.length === 0) return;
+  queueEventUpload(events, []);
+  for (const e of events) {
+    // Reine Bewegung nur zaehlen: Diese Zeilen waren ein Fuenftel des
+    // Hub-Logs; Beginn und Ende stehen in der Cloud (Kamera-Ereignisse).
+    if (e.type === "MOTION") {
+      if (e.phase === "start") improveCount("camera", "motion");
+      continue;
+    }
+    log(`Kamera ${cam.config.name}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);
+  }
+}
+
+/** Haupt-Loop: Konfiguration aktuell halten, faellige Kameras abfragen, Erreichbarkeit melden. */
 export async function pollCameras(): Promise<void> {
   if (pollBusy) return;
   pollBusy = true;
   try {
-    if (Date.now() - configLoadedAt > CONFIG_REFRESH_MS) {
-      await refreshConfigs();
-    }
-    if (cameras.size === 0) {
-      STATE.cameras = { lastPollAt: new Date().toISOString(), configured: 0, reachable: 0, openEvents: 0, error: null };
+    const plan = configRefreshPlan({
+      now: Date.now(),
+      loadedAt: configLoadedAt,
+      failedAt: configFailedAt,
+      running: configRefresh !== null,
+      haveCameras: cameras.size > 0,
+      refreshMs: CONFIG_REFRESH_MS,
+      retryMs: CONFIG_RETRY_MS,
+    });
+    // Mit bekannten Kameras nie auf die Cloud warten: Faellt sie aus, laufen
+    // Erkennung und Notbetrieb mit dem letzten Stand weiter.
+    if (plan === "wait") await loadConfigs();
+    else if (plan === "background") void loadConfigs().catch(() => {});
+
+    settleLightMarks(Date.now());
+
+    const list = [...cameras.values()];
+    if (list.length === 0) {
+      STATE.cameras = {
+        lastPollAt: new Date().toISOString(),
+        configured: 0,
+        reachable: 0,
+        openEvents: 0,
+        error: configFailedAt > 0 ? "Kamera-Liste nicht abrufbar" : null,
+        pollMaxMs: 0,
+        pollSlow: 0,
+        pollSlowest: null,
+      };
       return;
     }
 
-    const events: CloudEvent[] = [];
-    const seen: number[] = [];
-    const snapshotJobs: number[] = [];
-    const personSnapshotJobs: number[] = [];
-    const vehicleSnapshotJobs: number[] = [];
-
-    const list = [...cameras.values()];
-    let pollIndex = 0;
-    const POLL_CONCURRENCY = 6;
-    async function pollOne(cam: CameraRuntime): Promise<void> {
-      try {
-        const states = await pollStates(cam);
-        seen.push(cam.config.id);
-        noteLink(`cam:${cam.config.id}`, cam.config.name, "camera", true);
-        if (!cam.reachable && cam.lastError) {
-          recordHubEvent({
-            kind: "camera",
-            severity: "info",
-            where: cam.config.name,
-            title: "wieder erreichbar",
-          });
-        }
-        cam.reachable = true;
-        cam.lastError = null;
-        cam.unreachableLogged = false;
-        void learnCameraMac(cam);
-
-        // Rohe Flanken starten die Bild-Pipelines (schnell, zweiter Wagen).
-        for (const [type, active] of Object.entries(states)) {
-          const was = cam.states[type] ?? false;
-          if (active && !was) {
-            if (type === "PERSON") {
-              void motion
-                .onPersonStart(cam.config.id)
-                .catch((e) => log(`Kamera ${cam.config.name}: Folgen: ${e instanceof Error ? e.message : e}`));
-            } else if (type === "VEHICLE") {
-              motion.onVehicleStart(cam.config.id);
-            }
-            // Kennzeichen nie drosseln; ein Anzeige-Bild (Bewegung) sperrt die
-            // Gesichtserkennung nicht mehr (snapshotJobFor in camera-poll-rules.ts).
-            const job = snapshotJobFor(type, {
-              inFlight: cam.snapshotInFlight,
-              now: Date.now(),
-              lastPipelineAt: cam.lastSnapshotAt,
-              lastAutoAt: cam.lastAutoSnapshotAt,
-              throttleMs: EVENT_SNAPSHOT_THROTTLE_MS,
-            });
-            if (job === "vehicle") vehicleSnapshotJobs.push(cam.config.id);
-            else if (job === "person") personSnapshotJobs.push(cam.config.id);
-            else if (job === "auto") snapshotJobs.push(cam.config.id);
-          }
-          cam.states[type] = active;
-        }
-        // Fuer die Ruhe-Regeln im Notbetrieb zaehlt jede Messung mit Alarm,
-        // nicht nur der Beginn eines Ereignisses (ein langes Ereignis galt
-        // sonst nach `idleMinutes` als Ruhe).
-        if (Object.values(states).some(Boolean)) noteCameraActivity(cam.config.id);
-
-        // Entprellte Ereignisse gehen an Cloud, Regeln und Lagebild.
-        for (const ev of debounceEvents(cam.debounce, states, Date.now(), eventEndHold)) {
-          if (ev.type === "PERSON" && ev.phase === "end") {
-            void motion
-              .onPersonEnd(cam.config.id)
-              .catch((e) => log(`Kamera ${cam.config.name}: Folgen beenden: ${e instanceof Error ? e.message : e}`));
-          }
-          const at = new Date(ev.at).toISOString();
-          events.push({ cameraId: cam.config.id, type: ev.type, phase: ev.phase, at });
-          cam.lastEventAt = at;
-          recordHubEvent({
-            kind: "camera",
-            severity: "info",
-            where: cam.config.name,
-            title: `${ev.type} ${ev.phase === "start" ? "erkannt" : "beendet"}`,
-          });
-        }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (cam.reachable || !cam.lastError) {
-          recordHubEvent({
-            kind: "camera",
-            severity: "warn",
-            where: cam.config.name,
-            title: "nicht erreichbar",
-            detail: msg,
-          });
-        }
-        cam.reachable = false;
-        cam.lastError = msg;
-        noteLink(`cam:${cam.config.id}`, cam.config.name, "camera", false, msg);
-        if (!cam.unreachableLogged) {
-          log(`Kamera ${cam.config.name}: ${msg}`);
-          cam.unreachableLogged = true;
-        }
-        void tryRelocateCamera(cam);
-      }
-    }
-    async function pollWorker() {
-      while (pollIndex < list.length) {
-        const cam = list[pollIndex++];
-        await pollOne(cam);
-      }
-    }
-    await Promise.all(
-      Array.from({ length: Math.min(POLL_CONCURRENCY, list.length) }, () => pollWorker())
+    const now = Date.now();
+    const due = list.filter((cam) =>
+      pollDue({
+        now,
+        lastStartAt: cam.pollStartedAt,
+        inFlight: cam.pollInFlight,
+        baseMs: CAMERA_POLL_INTERVAL_MS,
+      })
     );
-
-    // Regeln auf dem Hub (Ruhe-Erkennung, Notbetrieb ohne Cloud).
-    for (const e of events) if (e.phase === "start") onCameraEvent(e.cameraId, e.type);
-
-    const vehicleIds = [...new Set(vehicleSnapshotJobs)];
-    const personIds = [...new Set(personSnapshotJobs)];
-    const both = new Set(personIds.filter((id) => vehicleIds.includes(id)));
-
-    for (const cameraId of vehicleIds) {
-      void (async () => {
-        try {
-          await uploadVehicleSnapshot(cameraId);
-        } catch (e) {
-          log(
-            `Fahrzeug-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`
-          );
-        }
-        if (both.has(cameraId)) {
-          try {
-            await uploadPersonSnapshot(cameraId);
-          } catch (e) {
-            log(
-              `Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`
-            );
-          }
-        }
-      })();
+    // Kameras, die antworten, zuerst: Eine haengende haelt ihren Platz bis
+    // zum Zeitlimit und soll ihn nicht vor ihnen bekommen.
+    for (const cam of pollOrder(due)) {
+      cam.pollInFlight = true;
+      pollQueue.push(cam);
     }
-    for (const cameraId of personIds) {
-      if (both.has(cameraId)) continue;
-      uploadPersonSnapshot(cameraId).catch((e) =>
-        log(`Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
-      );
-    }
+    pumpPolls();
 
-    for (const cameraId of [...new Set(snapshotJobs)]) {
-      if (personSnapshotJobs.includes(cameraId) || vehicleSnapshotJobs.includes(cameraId)) continue;
-      uploadSnapshot(cameraId, { maxPx: DISPLAY_SNAPSHOT_MAX_PX }).catch((e) =>
-        log(`Auto-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
-      );
-    }
-
-    // Erst die Pipelines (laufen ohne await), dann die Cloud – und auch die
-    // ohne await (queueEventUpload): weder die Tuer noch der naechste Poll
-    // warten auf den Upload der Ereignisliste.
-    for (const id of seen) seenSinceReport.add(id);
-    const seenDue = seenSinceReport.size > 0 && Date.now() - lastSeenReportAt >= SEEN_REPORT_MS;
-    if (events.length > 0 || seenDue) {
-      const seenNow = seenDue ? [...seenSinceReport] : [];
-      if (seenDue) {
-        seenSinceReport.clear();
-        lastSeenReportAt = Date.now();
-      }
-      queueEventUpload(events, seenNow);
-      for (const e of events) {
-        // Reine Bewegung nur zaehlen: Diese Zeilen waren ein Fuenftel des
-        // Hub-Logs; Beginn und Ende stehen in der Cloud (Kamera-Ereignisse).
-        if (e.type === "MOTION") {
-          if (e.phase === "start") improveCount("camera", "motion");
-          continue;
-        }
-        const cam = cameras.get(e.cameraId);
-        log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);
-      }
+    // Erreichbarkeit hoechstens einmal je Minute; stoesst nach einer
+    // gescheiterten Meldung auch den naechsten Versuch an.
+    if (seenSinceReport.size > 0 && now - lastSeenReportAt >= SEEN_REPORT_MS) {
+      const seenNow = [...seenSinceReport];
+      seenSinceReport.clear();
+      lastSeenReportAt = now;
+      queueEventUpload([], seenNow);
     }
 
     void motion.tick().catch((e) => log(`Kamera-Bewegung: ${e instanceof Error ? e.message : e}`));
 
-    const openEvents = [...cameras.values()].reduce(
-      (sum, c) => sum + Object.values(c.debounce.reported).filter(Boolean).length,
-      0
-    );
     STATE.cameras = {
       lastPollAt: new Date().toISOString(),
-      configured: cameras.size,
-      reachable: seen.length,
-      openEvents,
-      error: null,
+      configured: list.length,
+      reachable: list.filter((c) => c.reachable).length,
+      openEvents: list.reduce((sum, c) => sum + Object.values(c.debounce.reported).filter(Boolean).length, 0),
+      error: configFailedAt > 0 ? "Kamera-Liste nicht abrufbar – Abfrage mit dem letzten Stand" : null,
+      pollMaxMs: pollStats.maxMs,
+      pollSlow: pollStats.slow,
+      pollSlowest: pollStats.maxName,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -2788,8 +3110,12 @@ export async function pollCameras(): Promise<void> {
       reachable: 0,
       openEvents: 0,
       error: msg,
+      pollMaxMs: pollStats.maxMs,
+      pollSlow: pollStats.slow,
+      pollSlowest: pollStats.maxName,
     };
-    log(`Kamera-Poll-Fehler: ${msg}`);
+    // Die Stoerung der Kamera-Liste meldet loadConfigs selbst (gedrosselt).
+    if (configFailedAt === 0) log(`Kamera-Poll-Fehler: ${msg}`);
   } finally {
     pollBusy = false;
   }

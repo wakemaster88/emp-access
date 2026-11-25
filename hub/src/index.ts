@@ -2,6 +2,8 @@ import { startGo2rtcMonitor } from "./go2rtc-status.js";
 import { writeSync } from "node:fs";
 import { CONFIG, api, log } from "./config.js";
 import { executeTask, type HubTask } from "./tasks.js";
+import { errorText, resultBody, runGuarded } from "./task-guard.js";
+import { exitHub, isExiting, onShutdown } from "./shutdown.js";
 import { checkForUpdate, repoAccessStatus } from "./updater.js";
 import { PREFLIGHT_OK, isPreflightRun } from "./updater-rules.js";
 import { startDashboard } from "./dashboard.js";
@@ -60,8 +62,9 @@ function fatal(kind: string, err: unknown): void {
   setTimeout(() => process.exit(1), 5_000).unref();
   try {
     log(`FATAL – ${kind}: ${text} – Hub beendet sich (launchd startet neu).`);
-    stopMowerSidecar();
-    void flushImproveSnapshot("exit").finally(() => process.exit(1));
+    // Derselbe Weg wie jedes andere Beenden: Vom ersten Augenblick an holt
+    // der Hub keine Auftraege mehr ab, die er nicht zu Ende fuehren koennte.
+    exitHub(1);
   } catch {
     process.exit(1);
   }
@@ -188,7 +191,9 @@ async function heartbeat() {
 }
 
 async function runAndReport(task: HubTask): Promise<void> {
-  const result = await executeTask(task);
+  // Ein Handler, der wirft, darf den Hub nicht beenden: Der Fehler geht als
+  // fehlgeschlagen an die Cloud, alle anderen Auftraege laufen weiter.
+  const result = await runGuarded(() => executeTask(task));
   log(`Task #${task.id} ${result.success ? "OK" : "FEHLER"}${result.error ? `: ${result.error}` : ""}`);
   recordTask({ id: task.id, type: task.type, success: result.success, error: result.error, result: result.result });
   const skipped =
@@ -204,8 +209,13 @@ async function runAndReport(task: HubTask): Promise<void> {
   });
   await api(`/api/hub/tasks/${task.id}/result`, {
     method: "POST",
-    body: JSON.stringify(result),
+    body: resultBody(result),
   }).catch((e) => log(`Ergebnis-Upload fehlgeschlagen: ${e?.message ?? e}`));
+}
+
+/** Auftrag im Hintergrund: Auch ein Fehler beim Melden endet im Log, nicht im Hub-Neustart. */
+function runInBackground(task: HubTask, run: (task: HubTask) => Promise<void>): void {
+  run(task).catch((e) => log(`Task #${task.id} (${task.type}): ${errorText(e)}`));
 }
 
 async function runWithSlot(task: HubTask): Promise<void> {
@@ -229,6 +239,9 @@ onTaskKick(() => {
 
 async function pollTasks() {
   if (taskPollBusy) return;
+  // Waehrend des Aufraeumens vor dem Neustart keine Auftraege mehr abholen:
+  // Sie blieben halb ausgefuehrt liegen. Der neu gestartete Hub holt sie.
+  if (isExiting()) return;
   taskPollBusy = true;
   try {
     STATE.taskPolls++;
@@ -242,9 +255,9 @@ async function pollTasks() {
     const rest = tasks.filter((t) => !HIGH_PRIORITY.has(t.type) && !BACKGROUND_TYPES.has(t.type));
 
     // Hoch priorisiert zuerst in die Slots, Scan nie im Pool.
-    for (const task of high) void runWithSlot(task);
-    for (const task of rest) void runWithSlot(task);
-    for (const task of background) void runAndReport(task);
+    for (const task of high) runInBackground(task, runWithSlot);
+    for (const task of rest) runInBackground(task, runWithSlot);
+    for (const task of background) runInBackground(task, runAndReport);
   } catch (e) {
     log(`Task-Poll-Fehler: ${e instanceof Error ? e.message : e}`);
   } finally {
@@ -274,7 +287,7 @@ recordHubEvent({
   title: "Hub gestartet",
   detail: `${CONFIG.name} · Version ${CONFIG.version}`,
 });
-void startDashboard();
+startDashboard().catch((e) => log(`Lokales Dashboard nicht gestartet: ${errorText(e)}`));
 heartbeat();
 pollTasks();
 autoScan();
@@ -354,13 +367,17 @@ setInterval(() => refreshVehicleWhitelist().catch(() => {}), 300_000);
 // STATE.alpr.ready pflegt alpr.ts selbst (true sobald der Daemon „ready“ meldet).
 alprWarmup();
 
+// Vor jedem Beenden (Update, Neustart aus der Cloud, Signal, Fehler):
+// Maeher-Dienst stoppen und den Diagnose-Stand der Sitzung sichern. Ein vom
+// Hub eingeschaltetes Weisslicht meldet sich in cameras.ts selbst an.
+onShutdown("maeher", stopMowerSidecar);
+onShutdown("diagnose", () => flushImproveSnapshot("exit"));
+
 process.on("SIGTERM", () => {
   log("SIGTERM – Hub beendet sich.");
-  stopMowerSidecar();
-  void flushImproveSnapshot("exit").finally(() => process.exit(0));
+  exitHub(0);
 });
 process.on("SIGINT", () => {
   log("SIGINT – Hub beendet sich.");
-  stopMowerSidecar();
-  void flushImproveSnapshot("exit").finally(() => process.exit(0));
+  exitHub(0);
 });

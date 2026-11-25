@@ -10,6 +10,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { log } from "./config.js";
 import { recordHubEvent } from "./state.js";
+import { exitHub } from "./shutdown.js";
 import { trackerBaseUrl } from "./vision.js";
 
 const execFileAsync = promisify(execFile);
@@ -92,7 +93,7 @@ function restartHub(): RestartResult {
   log("Dienst-Neustart: Hub beendet sich in 2 s – launchd startet neu.");
   recordHubEvent({ kind: "system", severity: "info", where: "Hub", title: "Neustart aus der Cloud" });
   // Erst das Task-Ergebnis melden lassen, dann beenden.
-  setTimeout(() => process.exit(0), 2_000).unref();
+  setTimeout(() => exitHub(0), 2_000).unref();
   return {
     success: true,
     result: { service: "hub", restarted: true, note: "Prozess beendet sich in 2 s, launchd startet ihn neu" },
