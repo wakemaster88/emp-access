@@ -6,7 +6,8 @@ import { logEvents } from "@/lib/stocktake-audit";
  * POST /api/warenwirtschaft/stocktakes – Inventur anlegen.
  * Legt für jeden aktiven Artikel (laufende Inventur: nur die gewählten
  * Kategorien) eine Zeile mit dem aktuellen Bestand als Soll an und erzeugt
- * gleich den Zähl-Link fürs Handy (`/zaehlen/<token>`).
+ * gleich den Zähl-Link fürs Handy (`/zaehlen/<token>`), sofern die Verwaltung
+ * anlegt (Zähl-Links stellt nur sie aus).
  */
 export async function POST(request: NextRequest) {
   const s = await wawiSession();
@@ -45,8 +46,8 @@ export async function POST(request: NextRequest) {
       title: title.slice(0, 160),
       date: d,
       note,
-      countToken: newCountToken(),
-      countTokenExpiresAt: countTokenExpiry(),
+      countToken: s.isAdmin ? newCountToken() : null,
+      countTokenExpiresAt: s.isAdmin ? countTokenExpiry() : null,
       lines: {
         create: articles.map((a) => ({
           accountId: s.accountId,

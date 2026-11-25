@@ -1,6 +1,7 @@
 import { isVirtualMac } from "@/lib/oui";
 import { macSpellings, normalizeMac, sameDeviceMac } from "@/lib/mac";
 import { findVlanForIp } from "@/lib/ip";
+import type { Prisma } from "@prisma/client";
 import type { tenantClient } from "@/lib/prisma";
 import { alertNewDevices } from "@/lib/new-device-alert";
 import { alertBlockedDevices } from "@/lib/blocked-devices";
@@ -9,6 +10,13 @@ type Db = ReturnType<typeof tenantClient>;
 
 const MAX_DEVICES_PER_SCAN = 1000;
 const MAX_IP_HISTORY = 10;
+/** Schreibvorgänge je Transaktion (eine Verbindung statt je Zeile eine Anfrage). */
+const WRITE_BATCH = 200;
+
+/** Einzelne Schreibvorgänge in Transaktionen zu je `WRITE_BATCH` ausführen. */
+async function runBatched(db: Db, ops: Prisma.PrismaPromise<unknown>[]): Promise<void> {
+  for (let i = 0; i < ops.length; i += WRITE_BATCH) await db.$transaction(ops.slice(i, i + WRITE_BATCH));
+}
 
 /** Multicast-IPs (224.0.0.0/4) und Broadcast sind keine echten Geraete. */
 function isVirtualIp(ip: string | null): boolean {
@@ -112,7 +120,11 @@ export async function ingestHubScanDevices(
   });
   const existingByMac = new Map(existing.map((e) => [e.macAddress, e]));
 
+  // Neue MACs gesammelt mit createMany, bekannte je Zeile (die Werte sind je
+  // Gerät verschieden) gebündelt in Transaktionen.
   let processed = 0;
+  const fresh: Prisma.DiscoveredDeviceCreateManyInput[] = [];
+  const updates: Prisma.PrismaPromise<unknown>[] = [];
   for (const [mac, info] of byMac) {
     const prev = existingByMac.get(mac);
     const ipChanged = !!prev && !!prev.ipAddress && !!info.ip && prev.ipAddress !== info.ip;
@@ -132,18 +144,16 @@ export async function ingestHubScanDevices(
         ? { ipHistory: pushIpHistory(prev.ipHistory, prev.ipAddress, prev.lastSeenAt) }
         : {}),
     };
-    await db.discoveredDevice.upsert({
-      where: { accountId_macAddress: { accountId, macAddress: mac } },
-      create: {
-        macAddress: mac,
-        firstSeenAt: now,
-        accountId,
-        ...common,
-      },
-      update: common,
-    });
+    if (prev) {
+      // updateMany: eine inzwischen gelöschte Zeile bricht den Stapel nicht ab.
+      updates.push(db.discoveredDevice.updateMany({ where: { accountId, macAddress: mac }, data: common }));
+    } else {
+      fresh.push({ macAddress: mac, firstSeenAt: now, accountId, ...common });
+    }
     processed++;
   }
+  if (fresh.length > 0) await db.discoveredDevice.createMany({ data: fresh, skipDuplicates: true });
+  await runBatched(db, updates);
 
   // Neue, bisher nie gesehene MACs per Telegram melden (nur melden, nie sperren).
   try {
@@ -169,15 +179,18 @@ export async function ingestHubScanDevices(
       },
       select: { id: true, ipAddress: true, ipHistory: true, lastSeenAt: true },
     });
-    for (const s of stale) {
-      await db.discoveredDevice.update({
-        where: { id: s.id },
-        data: {
-          ipAddress: null,
-          ipHistory: pushIpHistory(s.ipHistory, s.ipAddress, s.lastSeenAt),
-        },
-      });
-    }
+    await runBatched(
+      db,
+      stale.map((s) =>
+        db.discoveredDevice.updateMany({
+          where: { id: s.id },
+          data: {
+            ipAddress: null,
+            ipHistory: pushIpHistory(s.ipHistory, s.ipAddress, s.lastSeenAt),
+          },
+        }),
+      ),
+    );
   }
 
   let synced = 0;
@@ -239,6 +252,9 @@ export async function ingestHubScanDevices(
       return routed ? { info: routed, viaMac: false } : null;
     };
 
+    // Nur „gesehen“ gesammelt per updateMany, Änderungen an IP/VLAN je Zeile.
+    const seenOnly = { clients: [] as number[], devices: [] as number[] };
+    const writes: Prisma.PrismaPromise<unknown>[] = [];
     for (const c of managedClients) {
       const hit = match(c.macAddress, c.ipAddress);
       if (!hit) continue;
@@ -248,22 +264,28 @@ export async function ingestHubScanDevices(
       // VLAN folgt der IP (z. B. Kamera von VLAN 1 nach 30 umgezogen).
       const vlan = findVlanForIp(ip, vlans);
       if (vlan && vlan.id !== c.vlanId) data.vlanId = vlan.id;
-      await db.networkClient.update({ where: { id: c.id }, data });
+      if (data.ipAddress === undefined && data.vlanId === undefined) seenOnly.clients.push(c.id);
+      else writes.push(db.networkClient.updateMany({ where: { id: c.id }, data }));
       synced++;
     }
     for (const d of managedDevices) {
       const hit = match(d.macAddress, d.ipAddress);
       if (!hit) continue;
       const ip = hit.viaMac && hit.info.ip ? hit.info.ip : d.ipAddress;
-      await db.networkDevice.update({
-        where: { id: d.id },
-        data: {
-          lastSeenAt: now,
-          ...(ip && ip !== d.ipAddress ? { ipAddress: ip } : {}),
-        },
-      });
+      if (ip && ip !== d.ipAddress) {
+        writes.push(db.networkDevice.updateMany({ where: { id: d.id }, data: { lastSeenAt: now, ipAddress: ip } }));
+      } else {
+        seenOnly.devices.push(d.id);
+      }
       synced++;
     }
+    if (seenOnly.clients.length > 0) {
+      writes.push(db.networkClient.updateMany({ where: { id: { in: seenOnly.clients } }, data: { lastSeenAt: now } }));
+    }
+    if (seenOnly.devices.length > 0) {
+      writes.push(db.networkDevice.updateMany({ where: { id: { in: seenOnly.devices } }, data: { lastSeenAt: now } }));
+    }
+    await runBatched(db, writes);
   }
 
   // Fehlende Hosts: absentScans++. Unzugeordnete nach 2 Scans in Folge loeschen
@@ -304,6 +326,8 @@ export async function ingestHubScanDevices(
     );
 
     const toDelete: number[] = [];
+    /** Neuer Zählerstand -> Zeilen, gesammelt per updateMany. */
+    const absent = new Map<number, number[]>();
     for (const m of missing) {
       const next = m.absentScans + 1;
       const isAssigned =
@@ -313,11 +337,16 @@ export async function ingestHubScanDevices(
         toDelete.push(m.id);
         continue;
       }
-      await db.discoveredDevice.update({
-        where: { id: m.id },
-        data: { absentScans: next, reachable: false },
-      });
+      const ids = absent.get(next) ?? [];
+      ids.push(m.id);
+      absent.set(next, ids);
     }
+    await runBatched(
+      db,
+      [...absent].map(([next, ids]) =>
+        db.discoveredDevice.updateMany({ where: { id: { in: ids } }, data: { absentScans: next, reachable: false } }),
+      ),
+    );
     if (toDelete.length > 0) {
       const del = await db.discoveredDevice.deleteMany({ where: { id: { in: toDelete } } });
       pruned = del.count;

@@ -9,7 +9,7 @@ import { CountLinkCard } from "@/components/warenwirtschaft/count-link-card";
 import { ALL_GROUPS } from "@/lib/inventory-count-link";
 
 export default async function InventarPage({ searchParams }: { searchParams: Promise<{ blatt?: string }> }) {
-  const { session, accountId, db } = await wawiPageSession();
+  const { session, accountId, db, isAdmin } = await wawiPageSession();
   const groupRows = await db.inventoryAsset.groupBy({ by: ["group"], where: { accountId }, _count: { _all: true } });
   const counts = new Map(groupRows.map((g) => [g.group, g._count._all]));
   const groups = [...ASSET_GROUPS, ...[...counts.keys()].filter((g) => !(ASSET_GROUPS as readonly string[]).includes(g)).sort()];
@@ -49,6 +49,7 @@ export default async function InventarPage({ searchParams }: { searchParams: Pro
           createUrl="/api/warenwirtschaft/inventory-links"
           createBody={{ group: ALL_GROUPS, year }}
           revokeUrl={`/api/warenwirtschaft/inventory-links?group=${encodeURIComponent(ALL_GROUPS)}`}
+          canCreate={isAdmin}
           description={`Ein Link für alle Kategorien: Mitarbeiter wählen am Handy das Blatt, zählen ohne Anmeldung die Mengen für ${link?.year ?? year}, sehen das Vorjahr und können fehlende Posten und Fotos ergänzen.`}
         />
         <SegmentedLinks
@@ -65,10 +66,12 @@ export default async function InventarPage({ searchParams }: { searchParams: Pro
             </CardAction>
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
-            <div className="px-4 pb-4 sm:px-[18px]">
-              <WawiImportButton hint="Inventarliste mit Blättern je Bereich und Spalten „Gerätenummer“, „Bereich“, „Menge 2025“." />
-            </div>
-            <AssetsView key={group} assets={assets} group={group} groups={groups} defaultYear={year} />
+            {isAdmin && (
+              <div className="px-4 pb-4 sm:px-[18px]">
+                <WawiImportButton hint="Inventarliste mit Blättern je Bereich und Spalten „Gerätenummer“, „Bereich“, „Menge 2025“." />
+              </div>
+            )}
+            <AssetsView key={group} assets={assets} group={group} groups={groups} defaultYear={year} canDelete={isAdmin} />
           </CardContent>
         </Card>
       </div>

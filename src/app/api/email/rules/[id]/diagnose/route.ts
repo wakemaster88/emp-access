@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { COOLDOWN_STATUSES } from "@/lib/email-automation";
 
 /**
  * Diagnose für eine Email-Regel: zeigt, warum sie ggf. nichts versendet.
@@ -156,7 +157,7 @@ export async function GET(
       where: {
         accountId: accountId!,
         ruleId: rule.id,
-        status: "SENT",
+        status: { in: COOLDOWN_STATUSES },
         sentAt: { gte: cooldownStart },
         ticketId: { in: ticketsInWindowList.map((t) => t.id) },
       },

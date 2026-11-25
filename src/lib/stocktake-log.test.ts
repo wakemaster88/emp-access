@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canonicalContent, describeEvent, lineChanges, shortHash, signBlockedReason, signatureStatus } from "./stocktake-log";
+import { canonicalContent, describeEvent, lineChanges, shortHash, signBlockedReason, signatureStatus, signersBlockedReason } from "./stocktake-log";
 import { hashContent } from "./stocktake-audit";
 
 test("canonicalContent ist unabhängig von der Reihenfolge", () => {
@@ -41,6 +41,16 @@ test("signatureStatus verlangt beide Bestätigungen zum aktuellen Stand", () => 
   const writer = { role: "WRITER" as const, adminId: 2, name: "B", contentHash: "alt" };
   assert.deepEqual(signatureStatus([counter, writer], "neu").missing, ["WRITER"]);
   assert.equal(signatureStatus([counter, { ...writer, contentHash: "neu" }], "neu").complete, true);
+});
+
+test("signersBlockedReason verlangt zwei verschiedene, persönliche Logins", () => {
+  const counter = { role: "COUNTER" as const, adminId: 1, name: "A", contentHash: "h" };
+  const writer = { role: "WRITER" as const, adminId: 2, name: "B", contentHash: "h" };
+  assert.equal(signersBlockedReason([counter, writer]), null);
+  assert.match(signersBlockedReason([counter, { ...writer, adminId: 1 }]) ?? "", /dieselbe Person/);
+  assert.match(signersBlockedReason([counter, { ...writer, adminId: null }]) ?? "", /persönlichen Logins/);
+  assert.match(signersBlockedReason([{ ...counter, adminId: null }, { ...writer, adminId: null }]) ?? "", /persönlichen Logins/);
+  assert.match(signersBlockedReason([counter]) ?? "", /persönlichen Logins/);
 });
 
 test("describeEvent beschreibt Korrekturen mit alt, neu und Grund", () => {

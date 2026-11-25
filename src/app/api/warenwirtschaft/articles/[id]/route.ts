@@ -22,7 +22,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
 
 /** DELETE /api/warenwirtschaft/articles/[id] – abgeschlossene Inventuren behalten ihre Zeilen. */
 export async function DELETE(_request: NextRequest, { params }: Ctx) {
-  const s = await wawiSession();
+  const s = await wawiSession({ requireAdmin: true });
   if ("error" in s) return s.error;
   const id = Number((await params).id);
   const res = await s.db.article.deleteMany({ where: { id, accountId: s.accountId } });

@@ -4,6 +4,9 @@ import { challengeSchema, normalizeChallenge, pollOptions } from "@/lib/gamifica
 import { skillRewardAllowed } from "@/lib/rider-skills";
 import { runAccountAnnouncements } from "@/lib/rider-announce";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 /** POST: Challenge anlegen (bei einer Abstimmung mit Antworten); mit `push` geht eine Meldung an die Kunden. */
 export async function POST(request: NextRequest) {
   const session = await gamiAdminSession();

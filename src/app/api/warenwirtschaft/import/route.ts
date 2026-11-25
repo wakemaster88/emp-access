@@ -4,6 +4,9 @@ import { readXlsx } from "@/lib/xlsx-read";
 import { logEvents } from "@/lib/stocktake-audit";
 import { articleKey, assetKey, parseWawiWorkbook } from "@/lib/warenwirtschaft-import";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 const MAX_BYTES = 10 * 1024 * 1024;
 
 /**
@@ -14,7 +17,7 @@ const MAX_BYTES = 10 * 1024 * 1024;
  * Stichtagsinventur übernommen, sofern es für das Datum noch keine gibt.
  */
 export async function POST(request: NextRequest) {
-  const s = await wawiSession();
+  const s = await wawiSession({ requireAdmin: true });
   if ("error" in s) return s.error;
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");

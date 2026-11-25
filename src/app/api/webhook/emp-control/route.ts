@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 
 export { POST } from "@/app/api/integrations/emp-control/webhook/route";
 
+/** Laufzeitlimit der Route auf Vercel in Sekunden (gleicher Wert wie in vercel.json). */
+export const maxDuration = 60;
+
 export async function GET() {
   return NextResponse.json({
     status: "ok",

@@ -61,11 +61,14 @@ export function StocktakeCount({
   initialLines,
   listPath,
   audit,
+  isAdmin,
 }: {
   info: StocktakeInfo;
   initialLines: CountLine[];
   listPath: string;
   audit: StocktakeAudit;
+  /** Korrekturen nach dem Festschreiben und neue Zähl-Links nur für die Verwaltung. */
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const cutoff = info.kind === "CUTOFF";
@@ -193,7 +196,7 @@ export function StocktakeCount({
         />
       </div>
 
-      {!closed && <StocktakeLinkCard stocktakeId={info.id} token={info.countToken} expiresAt={info.countTokenExpiresAt} />}
+      {!closed && <StocktakeLinkCard stocktakeId={info.id} token={info.countToken} expiresAt={info.countTokenExpiresAt} canCreate={isAdmin} />}
 
       {!closed && (
         <StocktakeConfirmCard stocktakeId={info.id} signatures={audit.signatures} currentAdminId={audit.currentAdminId} pendingSaves={saving} />
@@ -325,16 +328,18 @@ export function StocktakeCount({
                         {closed ? (
                           <span className="inline-flex items-center justify-end gap-1">
                             <span className="font-medium tabular-nums">{formatQty(l.counted)}</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setCorrecting(l)}
-                              aria-label={`${l.name} korrigieren`}
-                              className="h-11 w-11 text-muted-foreground sm:h-8 sm:w-8"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
+                            {isAdmin && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setCorrecting(l)}
+                                aria-label={`${l.name} korrigieren`}
+                                className="h-11 w-11 text-muted-foreground sm:h-8 sm:w-8"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </span>
                         ) : (
                           <QtyInput value={l.counted} field="counted" onCommit={(raw) => commit(l, "counted", raw)} label={`Ist ${l.name}`} invalid={invalid.has(`${l.id}-counted`)} className="w-20" />

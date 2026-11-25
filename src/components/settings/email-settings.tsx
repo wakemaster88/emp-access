@@ -601,6 +601,15 @@ function StatusBadge({ status }: { status: string }) {
       </Badge>
     );
   }
+  if (status === "PENDING") {
+    // Vor dem Versand angelegt; bleibt nur stehen, wenn der Lauf abbrach.
+    return (
+      <Badge variant="neutral">
+        <Clock className="h-3 w-3" />
+        In Arbeit
+      </Badge>
+    );
+  }
   return <Badge variant="neutral">{status}</Badge>;
 }
 

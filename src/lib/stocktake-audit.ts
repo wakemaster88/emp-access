@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import type { TenantDb } from "./prisma";
 import { ROLE_LABEL, canonicalContent, lineChanges, type ContentLine, type LineField, type StocktakeEventType } from "./stocktake-log";
 
@@ -89,6 +90,8 @@ type Patch = { id: number } & Partial<Record<LineField, number | null | undefine
 /**
  * Speichert Mengen einer offenen Inventur und protokolliert jede echte
  * Änderung mit altem und neuem Wert. Bestätigungen werden danach aufgehoben.
+ * Geschrieben wird je Zeile nur, solange die Inventur noch offen ist; was
+ * nach dem Festschreiben ankommt, bleibt unverändert und ohne Protokoll.
  * `extra` setzt zusätzliche Felder je Zeile (z. B. `countedBy`).
  */
 export async function applyLineChanges(
@@ -113,7 +116,21 @@ export async function applyLineChanges(
     if (changes.length === 0) continue;
     const data: Record<string, number | null | string> = { ...extra };
     for (const c of changes) data[c.field] = c.newValue;
-    await db.stocktakeLine.updateMany({ where: { id: p.id, stocktakeId, accountId }, data });
+    // Der Status wird mit FOR SHARE gelesen: läuft gerade das Festschreiben,
+    // wartet die Anweisung darauf und sieht danach CLOSED.
+    const sets = Object.entries(data).map(([k, v]) => Prisma.sql`${Prisma.raw(`"${k}"`)} = ${v}`);
+    const count = await db.$executeRaw`
+      UPDATE "StocktakeLine"
+      SET ${Prisma.join(sets)}, "updatedAt" = (now() AT TIME ZONE 'UTC')
+      WHERE "id" = ${p.id}
+        AND "stocktakeId" = ${stocktakeId}
+        AND "accountId" = ${accountId}
+        AND EXISTS (
+          SELECT 1 FROM "Stocktake"
+          WHERE "id" = ${stocktakeId} AND "accountId" = ${accountId} AND "status" = 'OPEN'
+          FOR SHARE
+        )`;
+    if (count === 0) continue;
     for (const c of changes) events.push({ type: "COUNT", lineId: p.id, lineName: old.name, ...c });
   }
   await logEvents(db, stocktakeId, accountId, actor, events);
