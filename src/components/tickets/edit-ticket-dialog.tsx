@@ -145,7 +145,12 @@ export interface TicketData {
   slotEnd: string | null;
   validityDurationMinutes: number | null;
   firstScanAt: Date | string | null;
-  profileImage: string | null;
+  /** Einzelabruf (/api/tickets/[id]): das Foto selbst. */
+  profileImage?: string | null;
+  /** Ticketliste: Foto als URL auf /api/tickets/[id]/photo. */
+  photoUrl?: string | null;
+  /** Ticketliste: ein Foto ist gespeichert (auch wenn photoUrl null ist). */
+  hasPhoto?: boolean;
   birthDate: Date | string | null;
   uuid: string | null;
   source: string | null;
@@ -229,6 +234,10 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
     validityDurationMinutes: "",
   });
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  // Ein Foto ist gespeichert, kam aber weder als Bild noch als URL mit
+  // (Ticketliste, Format ohne Foto-Route). Bis es geladen ist, schickt der
+  // Dialog profileImage nicht mit, das gespeicherte Foto bleibt.
+  const [photoPending, setPhotoPending] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -245,7 +254,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const selectedService = services.find((s) => String(s.id) === form.serviceId);
-  const needsPhoto = !!selectedService?.requiresPhoto && !profileImage;
+  const needsPhoto = !!selectedService?.requiresPhoto && !profileImage && !photoPending;
 
   // Abo/Service verlangt eine Karte, es ist aber keine hinterlegt. Dann ist
   // dieses Ticket nicht scanbar: Der Scanner findet ueber die Karte nur das
@@ -275,7 +284,10 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
         slotEnd: ticket.slotEnd ?? "",
         validityDurationMinutes: ticket.validityDurationMinutes ? String(ticket.validityDurationMinutes) : "",
       });
-      setProfileImage(ticket.profileImage ?? null);
+      // Aus der Liste kommt das Foto als URL; unverändert zurückgeschickt
+      // lässt der Server das gespeicherte Foto stehen.
+      setProfileImage(ticket.profileImage ?? ticket.photoUrl ?? null);
+      setPhotoPending(!!ticket.hasPhoto && ticket.profileImage === undefined && !ticket.photoUrl);
       setError("");
       setConfirmDelete(false);
       setTab("edit");
@@ -284,10 +296,25 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
     }
   }, [ticket]);
 
+  // Gespeichertes Foto ohne URL: aus dem Einzelabruf holen und wie bisher anzeigen.
+  useEffect(() => {
+    if (!ticket?.hasPhoto || ticket.profileImage !== undefined || ticket.photoUrl) return;
+    let cancelled = false;
+    fetch(`/api/tickets/${ticket.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { profileImage?: string | null } | null) => {
+        if (cancelled || !data || data.profileImage === undefined) return;
+        setProfileImage((prev) => prev ?? data.profileImage ?? null);
+        setPhotoPending(false);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [ticket]);
+
   useEffect(() => {
     if (!ticket || cameraOpen || profileImage) return;
     const svc = services.find((s) => s.id === ticket.serviceId);
-    if (svc?.requiresPhoto && !ticket.profileImage) {
+    if (svc?.requiresPhoto && !ticket.profileImage && !ticket.photoUrl && !ticket.hasPhoto) {
       const timer = setTimeout(() => setCameraOpen(true), 400);
       return () => clearTimeout(timer);
     }
@@ -338,7 +365,8 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
       slotEnd: form.validityType === "TIME_SLOT" && form.slotEnd ? form.slotEnd : null,
       validityDurationMinutes: form.validityType === "DURATION" && form.validityDurationMinutes
         ? Number(form.validityDurationMinutes) : null,
-      profileImage: profileImage,
+      // Noch nicht geladenes gespeichertes Foto: Feld weglassen, nichts ändern.
+      ...(!(photoPending && profileImage === null) && { profileImage }),
       email: form.email.trim() || null,
     };
 
@@ -542,7 +570,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
             <form onSubmit={handleSave} className="space-y-4">
               {cameraOpen && (
                 <CameraCapture
-                  onCapture={(dataUrl) => { setProfileImage(dataUrl); setCameraOpen(false); }}
+                  onCapture={(dataUrl) => { setProfileImage(dataUrl); setPhotoPending(false); setCameraOpen(false); }}
                   onClose={() => setCameraOpen(false)}
                 />
               )}

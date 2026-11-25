@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { runPublicMonitorPoll, parseMonitorIdList } from "@/lib/monitor-public-poll";
+import { wantsPhotoUrls } from "@/lib/photo-url";
 
 /** Kurze Requests – kein Dauer-SSE mehr (Vercel 10s-Limit + Neon-Reconnect-Sturm) */
 export const maxDuration = 25;
@@ -46,6 +47,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       sinceScanId,
       includeTickets,
       scansOnly,
+      // `fotos=url`: Scans ohne Base64-Foto, Bild über die Foto-Route.
+      photoToken: wantsPhotoUrls(request.nextUrl.searchParams) ? token : null,
     });
 
     return NextResponse.json(data, {

@@ -31,9 +31,10 @@ export default async function ScansPage({ searchParams }: Props) {
       ...(deviceId ? { deviceId } : {}),
       ...(resultFilter ? { result: resultFilter } : {}),
     },
+    // Nur die Felder, die die Karten zeigen: ohne Foto und Zugangsdaten.
     include: {
-      device: { include: { camera: { select: { id: true, name: true } } } },
-      ticket: true,
+      device: { select: { name: true, camera: { select: { id: true, name: true } } } },
+      ticket: { select: { name: true, ticketTypeName: true } },
       snapshot: { select: { capturedAt: true } },
     },
     orderBy: { scanTime: "desc" },

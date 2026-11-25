@@ -85,3 +85,59 @@ test("profilePhotoAccepted: urteilt im Browser wie profilePhotoError auf dem Ser
     assert.equal(profilePhotoAccepted(value), profilePhotoError(value) === null, value.slice(0, 40));
   }
 });
+
+test("wantsPhotoUrls: nur mit fotos=url", async () => {
+  const { wantsPhotoUrls, PHOTO_URL_QUERY } = await import("./photo-url");
+  assert.equal(wantsPhotoUrls(new URLSearchParams(PHOTO_URL_QUERY)), true);
+  assert.equal(wantsPhotoUrls(new URLSearchParams("date=2026-11-25&fotos=url")), true);
+  assert.equal(wantsPhotoUrls(new URLSearchParams("")), false);
+  assert.equal(wantsPhotoUrls(new URLSearchParams("fotos=1")), false);
+});
+
+test("ticketPhotoUrl und monitorPhotoUrl: Version haengt am Aenderungszeitpunkt", async () => {
+  const { ticketPhotoUrl, monitorPhotoUrl } = await import("./photo-url");
+  assert.equal(ticketPhotoUrl(7, new Date(1700000000000)), "/api/tickets/7/photo?v=1700000000000");
+  assert.equal(
+    monitorPhotoUrl("ab/c", 7, new Date(1700000000000)),
+    "/api/monitor/public/ab%2Fc/photo?ticketId=7&v=1700000000000",
+  );
+});
+
+test("withPhotoRef: ohne profileImage, mit hasPhoto und photoUrl", async () => {
+  const { withPhotoRef, ticketPhotoUrl } = await import("./photo-url");
+  const updatedAt = new Date(1700000000000);
+  const withPhoto = withPhotoRef({ id: 1, name: "A", updatedAt, profileImage: jpeg }, new Set([1]), ticketPhotoUrl);
+  assert.equal("profileImage" in withPhoto, false);
+  assert.equal(withPhoto.hasPhoto, true);
+  assert.equal(withPhoto.photoUrl, "/api/tickets/1/photo?v=1700000000000");
+  assert.equal(withPhoto.name, "A");
+  const without = withPhotoRef({ id: 2, name: "B", updatedAt }, new Set([1]), ticketPhotoUrl);
+  assert.equal(without.hasPhoto, false);
+  assert.equal(without.photoUrl, null);
+});
+
+test("photoSrc: URL vor altem Base64-Feld, sonst null", async () => {
+  const { photoSrc } = await import("./photo-url");
+  assert.equal(photoSrc({ photoUrl: "/api/tickets/1/photo?v=1" }), "/api/tickets/1/photo?v=1");
+  assert.equal(photoSrc({ profileImage: jpeg }), jpeg);
+  assert.equal(photoSrc({ photoUrl: null, profileImage: null }), null);
+  assert.equal(photoSrc(null), null);
+});
+
+test("withPhotoRef: hasPhoto aus der Foto-Menge, photoUrl nur fuer auslieferbare Fotos", async () => {
+  const { withPhotoRef, ticketPhotoUrl } = await import("./photo-url");
+  const updatedAt = new Date(1700000000000);
+  const ids = Object.assign(new Set([1, 2]), { servable: new Set([1]) });
+  const a = withPhotoRef({ id: 1, updatedAt, profileImage: "x" }, ids, ticketPhotoUrl);
+  assert.equal(a.hasPhoto, true);
+  assert.equal(a.photoUrl, "/api/tickets/1/photo?v=1700000000000");
+  assert.equal("profileImage" in a, false);
+  const b = withPhotoRef({ id: 2, updatedAt }, ids, ticketPhotoUrl);
+  assert.equal(b.hasPhoto, true);
+  assert.equal(b.photoUrl, null);
+  const c = withPhotoRef({ id: 3, updatedAt }, ids, ticketPhotoUrl);
+  assert.equal(c.hasPhoto, false);
+  assert.equal(c.photoUrl, null);
+  // Ohne `servable` (z. B. eigene ID-Abfrage) gilt jedes Foto als auslieferbar.
+  assert.equal(withPhotoRef({ id: 2, updatedAt }, new Set([2]), ticketPhotoUrl).photoUrl, "/api/tickets/2/photo?v=1700000000000");
+});

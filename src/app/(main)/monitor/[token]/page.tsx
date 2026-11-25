@@ -32,6 +32,7 @@ import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
 import { monitorTicketTypeLine, monitorSlotLabel, slotLabelStartMinutes, isMonitorFocusTicket } from "@/lib/monitor-ticket-subtitle";
 import { isLatchingSwitchDevice, visibleDeviceControls } from "@/lib/device-controls";
 import { parseScanDisplayNote, scanDenyReasonLabel } from "@/lib/scan-deny-reason";
+import { PHOTO_URL_QUERY, photoSrc } from "@/lib/photo-url";
 
 function endOfDayMs(dateStr: string): number {
   const d = new Date(dateStr);
@@ -141,6 +142,8 @@ interface Scan {
     serviceId?: number | null;
     status?: string;
     profileImage?: string | null;
+    /** Mit `fotos=url`: Foto über die Foto-Route des Monitors. */
+    photoUrl?: string | null;
     subscription?: { name: string } | null;
     service?: { name: string } | null;
   } | null;
@@ -481,7 +484,7 @@ export default function PublicMonitorPage({ params }: Props) {
       const isFullPoll = tick === 0 || tick % 10 === 0;
       const includeTickets = isFullPoll;
       const scansOnly = !isFullPoll;
-      const url = `/api/monitor/public/${encodeURIComponent(token)}?poll=1&since=${lastScanIdRef.current}&tickets=${includeTickets ? 1 : 0}${scansOnly ? "&scansOnly=1" : ""}`;
+      const url = `/api/monitor/public/${encodeURIComponent(token)}?poll=1&since=${lastScanIdRef.current}&tickets=${includeTickets ? 1 : 0}${scansOnly ? "&scansOnly=1" : ""}&${PHOTO_URL_QUERY}`;
       try {
         const res = await fetch(url, { cache: "no-store" });
         if (cancelled) return;
@@ -809,7 +812,7 @@ export default function PublicMonitorPage({ params }: Props) {
 
       if (lastGroup && lastGroup.groupKey === key && lastGroup.result === scan.result) {
         lastGroup.scans.push(scan);
-        const img = scan.ticket?.profileImage || noteData.picture;
+        const img = photoSrc(scan.ticket) || noteData.picture;
         if (img && !lastGroup.profileImage) lastGroup.profileImage = img;
       } else {
         groups.push({
@@ -828,7 +831,7 @@ export default function PublicMonitorPage({ params }: Props) {
           endDate: scan.ticket?.endDate,
           subscriptionId: scan.ticket?.subscriptionId,
           subscriptionName: scan.ticket?.subscription?.name || null,
-          profileImage: scan.ticket?.profileImage || noteData.picture || undefined,
+          profileImage: photoSrc(scan.ticket) || noteData.picture || undefined,
           noteAge: noteData.age,
           denyReason,
         });

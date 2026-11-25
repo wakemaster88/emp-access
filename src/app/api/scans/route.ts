@@ -23,6 +23,10 @@ export async function GET(request: NextRequest) {
 
   const limit = Number(request.nextUrl.searchParams.get("limit") || "50");
   const offset = Number(request.nextUrl.searchParams.get("offset") || "0");
+  // Optional `since=<letzte Scan-ID>`: nur neuere Scans (wie /api/monitor).
+  // Ohne den Parameter bleibt die Liste wie bisher.
+  const sinceParam = Number(request.nextUrl.searchParams.get("since") ?? "");
+  const since = Number.isInteger(sinceParam) && sinceParam > 0 ? sinceParam : 0;
 
   // Enge Auswahl: Geraet und Ticket nur mit Anzeige-Feldern, ohne
   // Zugangsdaten (Geraete-Token, Shelly-Schluessel, Mobil-Link) und ohne
@@ -30,7 +34,7 @@ export async function GET(request: NextRequest) {
   // auf oberster Ebene; ein Geraet oder Ticket eines anderen Mandanten wird
   // deshalb unten zusaetzlich ausgeblendet.
   const scans = await db.scan.findMany({
-    where: { accountId },
+    where: { accountId, ...(since > 0 ? { id: { gt: since } } : {}) },
     include: {
       device: { select: { id: true, name: true, type: true, category: true, accountId: true } },
       ticket: {

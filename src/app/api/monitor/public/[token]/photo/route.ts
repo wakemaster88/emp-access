@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { publicLinkRateLimit } from "@/lib/rate-limit";
 import { profilePhotoError } from "@/lib/photo-url";
+import { ticketPhotoResponse } from "@/lib/ticket-photo";
 
 /**
  * Profilbild eines Tickets fuer den Scan-Monitor (nur Link-Typ MONITOR).
  * Die Liste laedt die Bilder einzeln beim Scrollen; die Lese-Grenze reicht
  * fuer mehrere Monitore mit voller Ticketliste hinter einer IP.
+ *
+ * GET ohne `v`: JSON `{ profileImage }` wie bisher. GET mit `v=<updatedAt>`
+ * (URL aus dem Poll mit `fotos=url`): das Bild selbst, dauerhaft cachebar.
  */
 const PHOTO_READ_LIMIT = { limit: 1500, windowMs: 60_000 } as const;
 const PHOTO_WRITE_LIMIT = { limit: 60, windowMs: 60_000 } as const;
@@ -32,6 +36,10 @@ export async function GET(
     where: { id: ticketId, accountId: monitor.accountId },
     select: { profileImage: true },
   });
+
+  if (request.nextUrl.searchParams.has("v")) {
+    return ticketPhotoResponse(ticket?.profileImage, true);
+  }
 
   return NextResponse.json(
     { profileImage: ticket?.profileImage ?? null },

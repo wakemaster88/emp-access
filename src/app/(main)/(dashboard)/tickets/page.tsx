@@ -17,6 +17,8 @@ import { TicketSortFilter } from "@/components/tickets/ticket-sort-filter";
 import { AreaFilter } from "@/components/tickets/area-filter";
 import { Eye, EyeOff } from "lucide-react";
 import { riderView } from "@/lib/customer-person";
+import { ticketPhotoUrl, withPhotoRef } from "@/lib/photo-url";
+import { ticketIdsWithPhoto } from "@/lib/ticket-photo";
 
 interface Props {
   searchParams: Promise<{ showAll?: string; area?: string; code?: string; sort?: string; order?: string; source?: string; sub?: string; svc?: string }>;
@@ -84,9 +86,11 @@ export default async function TicketsPage({ searchParams }: Props) {
       // Code- und Quellenfilter bringen beide ein OR mit; als AND-Liste
       // überschreibt der Quellenfilter die Code-Suche nicht mehr.
       where: { ...baseWhere, ...statusFilter, ...areaFilter, ...subFilter, ...svcFilter, AND: [codeFilter, sourceFilter] },
-      // Nur die Spalten, die Tabelle und Bearbeiten-Dialog lesen. Foto und
-      // E-Mail bleiben dabei: der Dialog zeigt sie und schickt sie beim
-      // Speichern mit.
+      // Nur die Spalten, die Tabelle und Bearbeiten-Dialog lesen. Die E-Mail
+      // bleibt dabei: der Dialog zeigt sie und schickt sie beim Speichern
+      // mit. Das Foto kommt als URL (photoUrl, siehe unten); der Dialog
+      // schickt die URL unverändert zurück, und der Server lässt das
+      // gespeicherte Foto dann stehen (lib/photo-url, profilePhotoUpdate).
       select: {
         id: true,
         name: true,
@@ -110,7 +114,7 @@ export default async function TicketsPage({ searchParams }: Props) {
         slotEnd: true,
         validityDurationMinutes: true,
         firstScanAt: true,
-        profileImage: true,
+        updatedAt: true,
         uuid: true,
         source: true,
         extras: true,
@@ -181,6 +185,9 @@ export default async function TicketsPage({ searchParams }: Props) {
       ? Promise.resolve(0)
       : db.ticket.count({ where: { ...baseWhere, ...areaFilter, status: { notIn: ["VALID", "REDEEMED"] } } }),
   ]);
+
+  // Foto-Kennzeichen über eine schlanke ID-Abfrage statt über das Bild.
+  const photoIds = await ticketIdsWithPhoto(db, tickets.map((t) => t.id));
 
   const subsWithAreas = subscriptions.map((s) => ({
     ...s,
@@ -297,7 +304,7 @@ export default async function TicketsPage({ searchParams }: Props) {
                 const r = riderView({ ...t, riderProfile });
                 const hasRider = !!(riderProfile?.firstName?.trim() || riderProfile?.lastName?.trim());
                 return {
-                  ...t,
+                  ...withPhotoRef(t, photoIds, ticketPhotoUrl),
                   rider: hasRider ? { firstName: r.firstName, lastName: r.lastName, birthDate: r.birthDate } : null,
                   riderOpen: r.riderOpen,
                 };

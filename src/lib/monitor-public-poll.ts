@@ -8,6 +8,8 @@ import {
   shellySwitchState,
 } from "@/lib/shelly-cloud";
 import { createTtlCache } from "@/lib/ttl-cache";
+import { monitorPhotoUrl, withPhotoRef } from "@/lib/photo-url";
+import { ticketIdsWithPhoto } from "@/lib/ticket-photo";
 
 export function parseMonitorIdList(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
@@ -59,7 +61,9 @@ export type PublicMonitorPollResult = {
   name: string;
   devices: Awaited<ReturnType<typeof loadDevices>>;
   controlDevices: MonitorControlDevice[];
-  scans: Awaited<ReturnType<typeof loadScans>>;
+  /** Mit `photoToken` (Anfrage mit `fotos=url`) tragen die Tickets der Scans
+   *  `hasPhoto`/`photoUrl` statt `profileImage`. */
+  scans: Awaited<ReturnType<typeof loadScans>> | unknown[];
   tickets: Awaited<ReturnType<typeof loadTickets>> | null;
   /** Höchste Scan-ID in dieser Antwort (für sinceScanId beim nächsten Poll) */
   lastScanId: number;
@@ -195,7 +199,8 @@ async function loadScans(
   prisma: PrismaClient,
   accountId: number,
   deviceFilter: number[] | null,
-  sinceScanId: number
+  sinceScanId: number,
+  photoUrls = false,
 ) {
   const scanWhere: Record<string, unknown> = {
     accountId,
@@ -223,7 +228,8 @@ async function loadScans(
           subscriptionId: true,
           serviceId: true,
           status: true,
-          profileImage: true,
+          profileImage: !photoUrls,
+          updatedAt: photoUrls,
           subscription: { select: { name: true } },
           service: { select: { name: true } },
         },
@@ -520,9 +526,13 @@ export async function runPublicMonitorPoll(
     sinceScanId: number;
     includeTickets: boolean;
     scansOnly?: boolean;
+    /** Token des Monitors, wenn die Anfrage `fotos=url` traegt: Scans dann
+     *  ohne Base64-Foto, mit URL auf die Foto-Route des Monitors. */
+    photoToken?: string | null;
   }
 ): Promise<PublicMonitorPollResult> {
   const { accountId, deviceIds, monitorName, sinceScanId, includeTickets, scansOnly } = opts;
+  const photoToken = opts.photoToken ?? null;
   const controlDeviceIds = opts.controlDeviceIds ?? [];
   const areaIds = opts.areaIds ?? [];
   const areaScoped = areaIds.length > 0;
@@ -548,11 +558,18 @@ export async function runPublicMonitorPoll(
     deviceFilter = null;
   }
 
-  const scans = await loadScans(prisma, accountId, deviceFilter, sinceScanId);
+  const rawScans = await loadScans(prisma, accountId, deviceFilter, sinceScanId, photoToken !== null);
 
   let lastScanId = sinceScanId;
-  if (scans.length > 0) {
-    lastScanId = Math.max(...scans.map((s) => s.id));
+  if (rawScans.length > 0) {
+    lastScanId = Math.max(...rawScans.map((s) => s.id));
+  }
+
+  let scans: PublicMonitorPollResult["scans"] = rawScans;
+  if (photoToken !== null) {
+    const photoIds = await ticketIdsWithPhoto(prisma, rawScans.flatMap((s) => (s.ticket ? [s.ticket.id] : [])));
+    const url = (ticketId: number, updatedAt: Date) => monitorPhotoUrl(photoToken, ticketId, updatedAt);
+    scans = rawScans.map((s) => ({ ...s, ticket: s.ticket ? withPhotoRef(s.ticket, photoIds, url) : null }));
   }
 
   if (scansOnly) {

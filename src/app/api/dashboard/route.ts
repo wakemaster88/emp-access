@@ -6,6 +6,8 @@ import {
   type AvailabilityPeriod,
 } from "@/lib/anny-availability";
 import { berlinDayRange, berlinYmd, isBerlinYmd } from "@/lib/berlin-day";
+import { photoServable, ticketPhotoUrl, wantsPhotoUrls, withPhotoRef } from "@/lib/photo-url";
+import { ticketIdsWithPhoto } from "@/lib/ticket-photo";
 
 function getBookingTimeForDate(qrCode: string | null, dateStr: string): { start: string; end: string } | null {
   if (!qrCode) return null;
@@ -57,6 +59,10 @@ export async function GET(request: NextRequest) {
     serviceId: null,
   };
 
+  // `?fotos=url` (neuer Client): kein Base64-Foto, dafuer hasPhoto und
+  // photoUrl. Ohne den Parameter bleibt die Antwort wie bisher.
+  const photoUrls = wantsPhotoUrls(request.nextUrl.searchParams);
+
   const ticketSelect = {
     id: true,
     name: true,
@@ -71,7 +77,8 @@ export async function GET(request: NextRequest) {
     slotEnd: true,
     validityDurationMinutes: true,
     firstScanAt: true,
-    profileImage: true,
+    profileImage: !photoUrls,
+    updatedAt: photoUrls,
     source: true,
     qrCode: true,
     barcode: true,
@@ -146,7 +153,8 @@ export async function GET(request: NextRequest) {
         firstName: true,
         lastName: true,
         ticketTypeName: true,
-        profileImage: true,
+        profileImage: !photoUrls,
+        updatedAt: photoUrls,
         source: true,
         createdAt: true,
         subscription: { select: { name: true } },
@@ -162,6 +170,17 @@ export async function GET(request: NextRequest) {
   ]);
 
   const checkedInIds = new Set(checkedInToday.map((s) => s.ticketId!));
+
+  // Foto-Kennzeichen über eine schlanke ID-Abfrage statt über das Bild.
+  const photoIds = photoUrls
+    ? await ticketIdsWithPhoto(db, [
+        ...areas.flatMap((a) => a.tickets.map((t) => t.id)),
+        ...unassignedTickets.map((t) => t.id),
+        ...visitedSubscriptions.map((t) => t.id),
+        ...serviceTickets.map((t) => t.id),
+        ...newTicketsToday.map((t) => t.id),
+      ])
+    : null;
 
   const annyLinks = await db.annyResourceLink.findMany({
     where: { accountId: accountId! },
@@ -192,13 +211,13 @@ export async function GET(request: NextRequest) {
   function enrichTicket(ticket: any) {
     const bt = ticket.source === "ANNY" ? getBookingTimeForDate(ticket.qrCode, dateStr) : null;
     const hasRfid = !!ticket.rfidCode;
-    const hasPhoto = !!ticket.profileImage;
+    const hasPhoto = photoIds ? photoIds.has(ticket.id) : !!ticket.profileImage;
     const needsRfid = !hasRfid && (!!ticket.service?.requiresRfid || !!ticket.subscription?.requiresRfid);
     const needsPhoto = !hasPhoto && (!!ticket.service?.requiresPhoto || !!ticket.subscription?.requiresPhoto);
     const groupName = ticket.subscription?.name || ticket.service?.name || null;
     const { qrCode: _, barcode: _b, rfidCode: _r, service: _s, subscription: _sub, ...rest } = ticket;
     return {
-      ...rest,
+      ...(photoIds ? withPhotoRef(rest, photoIds, ticketPhotoUrl) : rest),
       bookingStart: bt?.start || null,
       bookingEnd: bt?.end || null,
       hasRfid,
@@ -411,14 +430,19 @@ export async function GET(request: NextRequest) {
       newTicketsAnny,
     },
     annySyncStatus,
-    newTickets: newTicketsToday.map((t) => ({
-      id: t.id,
-      name: [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name,
-      typeName: t.subscription?.name || t.service?.name || t.ticketTypeName || null,
-      source: t.source,
-      profileImage: t.profileImage,
-      createdAt: t.createdAt,
-    })),
+    newTickets: newTicketsToday.map((t) => {
+      const base = {
+        id: t.id,
+        name: [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name,
+        typeName: t.subscription?.name || t.service?.name || t.ticketTypeName || null,
+        source: t.source,
+      };
+      if (photoIds) {
+        const hasPhoto = photoIds.has(t.id);
+        return { ...base, hasPhoto, photoUrl: photoServable(photoIds, t.id) ? ticketPhotoUrl(t.id, t.updatedAt) : null, createdAt: t.createdAt };
+      }
+      return { ...base, profileImage: t.profileImage, createdAt: t.createdAt };
+    }),
     areas: structuredAreas,
     unassigned: {
       id: null,
