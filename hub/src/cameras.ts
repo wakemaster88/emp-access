@@ -2387,9 +2387,12 @@ const seenOutbox = new Set<number>();
 const runningReport = new RunningReport<{ cameraId: number; type: string; at: string }>();
 /**
  * Beginne aus gescheiterten Meldungen: Die Cloud kann sie trotzdem kennen.
- * Ihr Ende bleibt auch in einer vollen Warteschlange stehen (tidyOutbox).
+ * Ihr Ende bleibt auch in einer vollen Warteschlange stehen (tidyOutbox),
+ * zusammen hoechstens eine halbe Meldung: Was stehen bleibt, geht jedes Mal
+ * wieder mit, und in der Meldung muss Platz fuer juengere Enden bleiben.
  */
 const unconfirmedStarts = new UnconfirmedStarts();
+const UNCONFIRMED_ENDS_MAX = EVENT_BATCH_MAX / 2;
 let eventUploadRunning = false;
 /** Laufende Stoerung: Die Zeile kommt einmal und dann alle 5 min, nicht je Versuch. */
 let eventUploadFailing = false;
@@ -2441,6 +2444,7 @@ function tidyEventOutbox(): void {
   const steady = performance.now();
   const t = tidyOutbox(eventOutbox, Date.now(), START_MAX_AGE_MS, EVENT_OUTBOX_MAX, {
     unconfirmed: unconfirmedStarts,
+    unconfirmedMax: UNCONFIRMED_ENDS_MAX,
     waitedMs: (e) => steady - (queuedAt.get(e) ?? steady),
   });
   if (t.queue.length === eventOutbox.length) return;

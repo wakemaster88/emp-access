@@ -240,6 +240,10 @@ export class UnconfirmedStarts {
  *    Meldung (`unconfirmed`): Den kann die Cloud verarbeitet haben, auch wenn
  *    ein aelteres Ende derselben Kamera und Art davor steht. Diese bleiben;
  *    von den uebrigen gehen die aeltesten. Erst danach fallen Beginne weg.
+ *    Allein wegen `unconfirmed` bleiben hoechstens `unconfirmedMax` Enden
+ *    stehen, die aeltesten: Was stehen bleibt, geht mit jeder Meldung wieder
+ *    hinaus. Verarbeitet die Cloud Meldungen, die der Hub als gescheitert
+ *    wertet, muessen alte Enden weichen, damit juengere an die Reihe kommen.
  */
 export function tidyOutbox<T extends QueuedEvent>(
   queue: T[],
@@ -248,6 +252,8 @@ export function tidyOutbox<T extends QueuedEvent>(
   maxLength: number,
   opts: {
     unconfirmed?: UnconfirmedStarts;
+    /** So viele Enden bleiben hoechstens allein wegen `unconfirmed` stehen (siehe 2.); ohne Angabe alle. */
+    unconfirmedMax?: number;
     /** So lange steht ein Eintrag schon in der Warteschlange (ms), gemessen mit einer Uhr, die niemand stellt. */
     waitedMs?: (e: T) => number;
   } = {}
@@ -277,11 +283,13 @@ export function tidyOutbox<T extends QueuedEvent>(
 
   // Enden, die sicher gebraucht werden: das erste je Kamera und Art, das Ende
   // hinter einem wartenden Beginn und zu jedem Beginn aus einer gescheiterten
-  // Meldung das erste Ende ab dessen Zeitpunkt.
+  // Meldung das erste Ende ab dessen Zeitpunkt (davon hoechstens `unconfirmedMax`).
   const needed = new Set<number>();
   const expectsEnd = new Map<string, boolean>();
   /** Je Kamera und Art: So viele Beginne aus gescheiterten Meldungen haben ihr Ende schon gefunden. */
   const matched = new Map<string, number>();
+  /** So viele Enden bleiben allein wegen eines solchen Beginns stehen. */
+  let held = 0;
   out.queue.forEach((e, i) => {
     const key = queueKey(e);
     if (e.phase === "start") {
@@ -291,8 +299,11 @@ export function tidyOutbox<T extends QueuedEvent>(
       expectsEnd.set(key, false);
       const upTo = opts.unconfirmed?.upTo(e) ?? 0;
       if (upTo > (matched.get(key) ?? 0)) {
-        needed.add(i);
         matched.set(key, upTo);
+        if (!needed.has(i) && held < (opts.unconfirmedMax ?? Infinity)) {
+          needed.add(i);
+          held++;
+        }
       }
     }
   });

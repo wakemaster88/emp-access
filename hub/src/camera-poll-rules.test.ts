@@ -423,6 +423,38 @@ test("Warteschlange voll: jeder Beginn aus einer gescheiterten Meldung haelt sei
   assert.equal(r.cutEnds, 3);
 });
 
+test("Warteschlange voll: allein wegen der Beginne aus gescheiterten Meldungen bleiben hoechstens so viele Enden wie erlaubt, die aeltesten", () => {
+  // Vier Meldungen nacheinander scheiterten, jede mit einem Beginn derselben Kamera und Art.
+  const unconfirmed = new UnconfirmedStarts();
+  for (const ageS of [800, 700, 600, 500]) unconfirmed.failed([queued(5, "MOTION", "start", ageS)]);
+  const q = [
+    queued(5, "MOTION", "end", 780), // erstes Ende der Kamera und Art: bleibt ohnehin und zaehlt nicht mit
+    queued(5, "MOTION", "end", 680), // Ende zum Beginn bei -700
+    queued(5, "MOTION", "end", 580), // Ende zum Beginn bei -600
+    queued(5, "MOTION", "end", 480), // Ende zum Beginn bei -500: das dritte, ueber der Zahl
+    queued(5, "MOTION", "end", 300), // spaetere Enden, deren Beginn nie hinausging
+    queued(5, "MOTION", "end", 200),
+  ];
+  const r = tidyOutbox(q, T, START_MAX_AGE_MS, 4, { unconfirmed, unconfirmedMax: 2 });
+  assert.deepEqual(show(r.queue), ["end:5:MOTION@-780", "end:5:MOTION@-680", "end:5:MOTION@-580", "end:5:MOTION@-200"]);
+  assert.equal(r.cutEnds, 2);
+  // Ohne die Zahl bleibt das Ende zu jedem der Beginne.
+  assert.deepEqual(show(tidyOutbox(q, T, START_MAX_AGE_MS, 4, { unconfirmed }).queue), [
+    "end:5:MOTION@-780",
+    "end:5:MOTION@-680",
+    "end:5:MOTION@-580",
+    "end:5:MOTION@-480",
+  ]);
+  // Ein einziger solcher Beginn: Sein Ende ist hier das erste der Kamera und
+  // Art, dahinter haelt er kein weiteres fest.
+  const single = new UnconfirmedStarts();
+  single.failed([queued(5, "MOTION", "start", 800)]);
+  assert.deepEqual(show(tidyOutbox(q, T, START_MAX_AGE_MS, 2, { unconfirmed: single, unconfirmedMax: 2 }).queue), [
+    "end:5:MOTION@-780",
+    "end:5:MOTION@-200",
+  ]);
+});
+
 test("Beginne aus gescheiterten Meldungen: erledigt, sobald ein Ende ab ihrem Zeitpunkt angekommen ist", () => {
   const unconfirmed = new UnconfirmedStarts();
   const end = (ageS: number) => queued(5, "MOTION", "end", ageS);
