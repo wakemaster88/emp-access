@@ -88,13 +88,16 @@ import {
   endHoldFor,
   endsToRetry,
   failStreakAfter,
+  motionSnapshotMinMs,
+  personOrVehicleActive,
   pollDue,
   pollOrder,
   relocateAtStart,
   relocateByLoginAllowed,
   relocateIntervalMs,
-  snapshotJobFor,
+  snapshotPlan,
   tidyOutbox,
+  type SnapshotPlan,
 } from "./camera-poll-rules.js";
 import {
   nextLastActiveAt,
@@ -108,7 +111,7 @@ import { ChangeLog } from "./change-log.js";
 import { isExiting, onShutdown } from "./shutdown.js";
 import { CameraMarks } from "./camera-marks.js";
 import { BurstLights } from "./vehicle-light.js";
-import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT, shrinkJpeg } from "./image.js";
+import { DISPLAY_SNAPSHOT, DISPLAY_SNAPSHOT_MAX_PX, MOTION_PREVIEW, PERSON_SNAPSHOT, shrinkJpeg } from "./image.js";
 
 export interface CameraConfig {
   id: number;
@@ -176,6 +179,8 @@ interface CameraRuntime {
   lastSnapshotAt: number;
   /** Letztes reines Anzeige-Bild (Bewegung, Tier, Abruf) – drosselt nur weitere Anzeige-Bilder. */
   lastAutoSnapshotAt: number;
+  /** Seit dem Start ist ein Anzeige-Bild dieser Kamera in der Cloud angekommen (autoSnapshotDue). */
+  autoSnapshotSent: boolean;
   /** Personen-/Fahrzeug-Pipeline läuft – keine zweite starten. */
   snapshotInFlight: boolean;
   /**
@@ -256,6 +261,12 @@ const configFailLog = new ChangeLog(10 * 60_000);
 const TOKEN_SAFETY_MS = 60_000;
 /** Bei Ereignis-Beginn hoechstens alle 30 s ein Auto-Snapshot pro Kamera. */
 const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
+/**
+ * Reine Bewegung (MOTION, ANIMAL): Vorschaubild hoechstens alle 300 s je
+ * Kamera (HUB_MOTION_SNAPSHOT_MIN_S, 0 = alle 30 s wie die uebrigen
+ * Anzeige-Bilder), siehe autoSnapshotDue in camera-poll-rules.ts.
+ */
+const MOTION_SNAPSHOT_MIN_MS = motionSnapshotMinMs(process.env.HUB_MOTION_SNAPSHOT_MIN_S);
 /** Ein gescheiterter Auto-Snapshot steht je Kamera und Grund hoechstens alle 5 min im Log. */
 const autoSnapshotFailLog = new ChangeLog(5 * 60_000);
 /** Ereignis endet erst nach so langer Ruhe (KI flackert), siehe event-debounce.ts. */
@@ -635,10 +646,16 @@ export async function captureSnapshot(cameraId: number): Promise<Buffer> {
   return captureSnap(cam);
 }
 
-/** Schnappschuss von der Kamera holen und in die Cloud laden. */
+/**
+ * Schnappschuss von der Kamera holen und in die Cloud laden. `maxPx` und
+ * `quality`: verkleinert hochladen (ohne `quality` die Qualitaet aller
+ * Anzeige-Bilder, 82). `minBytes`: kleinere Bilder unverkleinert (ohne
+ * Angabe 200 KB wie alle Bildwege; das Vorschaubild bei reiner Bewegung
+ * hat 0).
+ */
 export async function uploadSnapshot(
   cameraId: number,
-  opts: { maxPx?: number } = {}
+  opts: { maxPx?: number; quality?: number; minBytes?: number } = {}
 ): Promise<{ bytes: number }> {
   const cam = cameras.get(cameraId);
   if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
@@ -649,13 +666,14 @@ export async function uploadSnapshot(
   // nicht erreichbar, soll nicht jede Bewegung ein neues Vollbild holen.
   cam.lastAutoSnapshotAt = Date.now();
   // Auto-Snapshots bei Bewegung nur fuer die Anzeige: verkleinert hochladen.
-  const buf = opts.maxPx ? await shrinkJpeg(raw, opts.maxPx) : raw;
+  const buf = opts.maxPx ? await shrinkJpeg(raw, opts.maxPx, opts.quality, opts.minBytes) : raw;
   const upload = await api(`/api/hub/cameras/${cameraId}/snapshot`, {
     method: "POST",
     headers: { "Content-Type": "image/jpeg" },
     body: new Uint8Array(buf),
   });
   if (!upload.ok) throw new Error(`Snapshot-Upload fehlgeschlagen: HTTP ${upload.status}`);
+  cam.autoSnapshotSent = true;
   return { bytes: buf.length };
 }
 
@@ -2374,6 +2392,7 @@ async function refreshConfigs(): Promise<void> {
         debounce: newDebounceState(),
         lastSnapshotAt: 0,
         lastAutoSnapshotAt: 0,
+        autoSnapshotSent: false,
         snapshotInFlight: false,
         pendingVehicle: false,
         unreachableLogged: false,
@@ -3327,9 +3346,8 @@ function pumpPolls(): void {
 async function pollOne(cam: CameraRuntime): Promise<void> {
   const startedAt = Date.now();
   const events: CloudEvent[] = [];
-  let wantVehicle = false;
-  let wantPerson = false;
-  let wantAuto = false;
+  /** Bild-Pipelines der neuen Flanken (snapshotPlan in camera-poll-rules.ts). */
+  let plan: SnapshotPlan = { vehicle: false, person: false, auto: null, held: false };
   try {
     const states = await pollStates(cam);
     // Waehrend der Abfrage entfernt oder deaktiviert (die Kamera-Liste laedt
@@ -3354,7 +3372,11 @@ async function pollOne(cam: CameraRuntime): Promise<void> {
     setDownSince(cam, null);
     void learnCameraMac(cam);
 
+    // Person oder Fahrzeug an der Kamera, vor dem Uebernehmen dieser Messung:
+    // Dann ist Bewegung keine reine Bewegung, ihr Bild bleibt wie bisher.
+    const othersActive = personOrVehicleActive(states, cam.states, cam.debounce.reported);
     // Rohe Flanken starten die Bild-Pipelines (schnell, zweiter Wagen).
+    const edges: string[] = [];
     for (const [type, active] of Object.entries(states)) {
       const was = cam.states[type] ?? false;
       if (active && !was) {
@@ -3365,21 +3387,29 @@ async function pollOne(cam: CameraRuntime): Promise<void> {
         } else if (type === "VEHICLE") {
           motion.onVehicleStart(cam.config.id);
         }
-        // Kennzeichen nie drosseln; ein Anzeige-Bild (Bewegung) sperrt die
-        // Gesichtserkennung nicht mehr (snapshotJobFor in camera-poll-rules.ts).
-        const job = snapshotJobFor(type, {
-          inFlight: cam.snapshotInFlight,
-          now: Date.now(),
-          lastPipelineAt: cam.lastSnapshotAt,
-          lastAutoAt: cam.lastAutoSnapshotAt,
-          throttleMs: EVENT_SNAPSHOT_THROTTLE_MS,
-        });
-        if (job === "vehicle") wantVehicle = true;
-        else if (job === "person") wantPerson = true;
-        else if (job === "auto") wantAuto = true;
+        edges.push(type);
       }
       cam.states[type] = active;
     }
+    // Kennzeichen nie drosseln; ein Anzeige-Bild (Bewegung) sperrt die
+    // Gesichtserkennung nicht mehr (snapshotJobFor in camera-poll-rules.ts).
+    // Reine Bewegung holt ihr Vorschaubild hoechstens alle
+    // MOTION_SNAPSHOT_MIN_MS (autoSnapshotDue).
+    plan = snapshotPlan(
+      edges,
+      {
+        inFlight: cam.snapshotInFlight,
+        now: Date.now(),
+        lastPipelineAt: cam.lastSnapshotAt,
+        lastAutoAt: cam.lastAutoSnapshotAt,
+        throttleMs: EVENT_SNAPSHOT_THROTTLE_MS,
+        minMotionMs: MOTION_SNAPSHOT_MIN_MS,
+        autoSent: cam.autoSnapshotSent,
+        othersActive,
+      },
+      MOTION_PREVIEW,
+      DISPLAY_SNAPSHOT
+    );
     // Fuer die Ruhe-Regeln im Notbetrieb zaehlt jede Messung mit Alarm,
     // nicht nur der Beginn eines Ereignisses (ein langes Ereignis galt
     // sonst nach `idleMinutes` als Ruhe).
@@ -3436,7 +3466,9 @@ async function pollOne(cam: CameraRuntime): Promise<void> {
   // Bild-Pipelines laufen ohne await. Fahrzeug vor Person: Das Kennzeichen
   // entscheidet ueber das Tor, das Gesicht kann die paar Sekunden warten.
   const cameraId = cam.config.id;
-  if (wantVehicle) {
+  const wantPerson = plan.person;
+  const auto = plan.auto;
+  if (plan.vehicle) {
     void (async () => {
       try {
         await uploadVehicleSnapshot(cameraId);
@@ -3454,16 +3486,25 @@ async function pollOne(cam: CameraRuntime): Promise<void> {
     uploadPersonSnapshot(cameraId).catch((e) =>
       log(`Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
     );
-  } else if (wantAuto) {
-    uploadSnapshot(cameraId, { maxPx: DISPLAY_SNAPSHOT_MAX_PX }).catch((e) => {
-      // Ohne Cloud scheitert jedes Anzeige-Bild mit demselben Grund: gezaehlt
-      // wird jedes, ins Log kommt es je Kamera und Grund alle 5 min einmal.
-      const msg = e instanceof Error ? e.message : String(e);
-      improveCount("camera", "snapshot_fail");
-      if (autoSnapshotFailLog.shouldLog(`${cameraId}:${msg}`, msg, Date.now())) {
-        log(`Auto-Snapshot Kamera ${cameraId} fehlgeschlagen: ${msg}`);
-      }
-    });
+  } else if (auto) {
+    // Reine Bewegung: kleines Vorschaubild (MOTION_PREVIEW), sonst das
+    // bisherige Anzeige-Bild (snapshotPlan). Nur gezaehlt, keine Zeile je Bild.
+    uploadSnapshot(cameraId, auto)
+      .then(({ bytes }) => {
+        improveCount("camera", "preview_upload");
+        improveCount("camera", "preview_bytes", bytes);
+      })
+      .catch((e) => {
+        // Ohne Cloud scheitert jedes Anzeige-Bild mit demselben Grund: gezaehlt
+        // wird jedes, ins Log kommt es je Kamera und Grund alle 5 min einmal.
+        const msg = e instanceof Error ? e.message : String(e);
+        improveCount("camera", "snapshot_fail");
+        if (autoSnapshotFailLog.shouldLog(`${cameraId}:${msg}`, msg, Date.now())) {
+          log(`Auto-Snapshot ${cam.config.name} (Kamera ${cameraId}) fehlgeschlagen: ${msg}`);
+        }
+      });
+  } else if (plan.held) {
+    improveCount("camera", "preview_skip");
   }
 
   // Erst die Pipelines, dann die Cloud – auch die ohne await

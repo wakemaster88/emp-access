@@ -6,6 +6,7 @@ import {
   alertAction,
   alertMode,
   alertModeText,
+  areasRefreshDue,
   camerasForSpot,
   dayStartLine,
   effectivePerHour,
@@ -223,4 +224,11 @@ test("Erste Messung des Tages: ruhende Bereiche und Bereiche ohne Kamerabild ste
 
 test("Erste Messung des Tages: nach einem Neustart im Lauf des Tages heisst sie Fortsetzung", () => {
   assert.equal(dayStartLine([reading(3, [3])], 0, true), "Belegung: Messung heute fortgesetzt: 1 Bereich, 3 Personen");
+});
+
+test("Drehkreuz-Zahlen: der Takt holt sie nur, wenn er etwas misst; auf Nachfrage immer", () => {
+  assert.equal(areasRefreshDue({ spots: 0, onDemand: false }), false);
+  assert.equal(areasRefreshDue({ spots: 1, onDemand: false }), true);
+  assert.equal(areasRefreshDue({ spots: 0, onDemand: true }), true);
+  assert.equal(areasRefreshDue({ spots: 3, onDemand: true }), true);
 });

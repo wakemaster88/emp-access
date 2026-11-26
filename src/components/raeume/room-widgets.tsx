@@ -30,7 +30,7 @@ import { isLatchingSwitchDevice } from "@/lib/device-controls";
 import type { RoomActivity } from "@/lib/room-activity";
 import type { DeviceStatus } from "@/components/raeume/status";
 import type { RoomCamera, RoomClimateView, RoomDevice, RoomZone } from "@/components/raeume/types";
-import { fmtAgo, shortDeviceName } from "@/components/raeume/shared";
+import { SNAPSHOT_FRESH_MS, fmtAgo, shortDeviceName } from "@/components/raeume/shared";
 import type { ZoneAction } from "@/components/raeume/zone-row";
 
 // ─── Temperatur-Ring ─────────────────────────────────────────────────────────
@@ -494,7 +494,7 @@ export function CameraTile({
   eventLabel: string | null;
   wide: boolean;
 }) {
-  const fresh = camera.snapshotAt && nowMs - new Date(camera.snapshotAt).getTime() < 5 * 60_000;
+  const fresh = camera.snapshotAt && nowMs - new Date(camera.snapshotAt).getTime() < SNAPSHOT_FRESH_MS;
   return (
     <a
       href="/kameras"

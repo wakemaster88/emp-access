@@ -5,7 +5,10 @@
  * nur die Cloud (`GET /api/hub/staff`); der Zugang zu emp-control (Live-
  * Monitor-Link) liegt dort in den Einstellungen und kommt nie auf den Hub.
  *
- * Abruf jede Minute. Der letzte gute Stand liegt in hub/.cache/staff.json,
+ * Abruf jede Minute; nachts (23–6 Uhr Ortszeit) alle 4 Minuten, solange
+ * niemand eingestempelt ist, nach einem Fehlschlag kurz danach ein neuer
+ * Versuch (staff-sync-rules.ts). Der letzte gute Stand
+ * liegt in hub/.cache/staff.json,
  * damit Assistent und Waechter nach einem Neustart nicht blind sind –
  * `staffDataAge()` sagt, wie alt er ist. Wer den Stand nutzt, muss das Alter
  * pruefen: Eingestempelt vor zwei Stunden heisst nicht eingestempelt jetzt.
@@ -14,10 +17,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { parseStaffResponse, type StaffMember, type StaffShift, type StaffSnapshot as Snapshot } from "./staff-parse.js";
+import {
+  STAFF_FETCH_TIMEOUT_MS,
+  STAFF_SYNC_INTERVAL_MS,
+  staffStaleAfterMs,
+  staffSyncDelayMs,
+  staffSyncWaitMs,
+} from "./staff-sync-rules.js";
 
 export type { StaffMember, StaffShift } from "./staff-parse.js";
-
-export const STAFF_SYNC_INTERVAL_MS = 60_000;
+export { STAFF_SYNC_INTERVAL_MS };
 const CACHE_FILE = path.join(CONFIG.hubDir, ".cache", "staff.json");
 
 let snapshot: Snapshot | null = null;
@@ -25,6 +34,10 @@ let snapshot: Snapshot | null = null;
 let configured: boolean | null = null;
 let lastError: string | null = null;
 let lastAttemptAt: string | null = null;
+/** Start des letzten guten Abrufs (performance.now()), null = keiner seit dem Start des Hubs. */
+let lastOkStartAt: number | null = null;
+/** Abstand, der nach dem letzten guten Abruf geplant wurde (staffStaleAfterMs), null = keiner. */
+let okDelayMs: number | null = null;
 
 async function saveCache(data: Snapshot): Promise<void> {
   try {
@@ -46,8 +59,9 @@ async function loadCache(): Promise<void> {
 
 export async function syncStaff(): Promise<{ ok: boolean; error?: string }> {
   lastAttemptAt = new Date().toISOString();
+  const startedAt = performance.now();
   try {
-    const res = await api("/api/hub/staff", { signal: AbortSignal.timeout(20_000) });
+    const res = await api("/api/hub/staff", { signal: AbortSignal.timeout(STAFF_FETCH_TIMEOUT_MS) });
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (body.configured === false) {
       if (configured !== false) log(`Personal: ${String(body.reason ?? "emp-control nicht eingerichtet")}`);
@@ -61,6 +75,7 @@ export async function syncStaff(): Promise<{ ok: boolean; error?: string }> {
     const first = !snapshot || configured !== true;
     snapshot = data;
     configured = true;
+    lastOkStartAt = startedAt;
     if (lastError) log("Personal: emp-control wieder erreichbar");
     lastError = null;
     await saveCache(data);
@@ -74,10 +89,44 @@ export async function syncStaff(): Promise<{ ok: boolean; error?: string }> {
   }
 }
 
+/**
+ * Naechsten Abruf planen, gezaehlt ab dem Start des letzten (tagsueber wie
+ * bisher jede Minute). `lastStartAt` und der Abstand laufen auf
+ * performance.now(): Stellt jemand die Uhr des Rechners (NTP nach dem
+ * Start), verschiebt das den Abgleich nicht (staffSyncWaitMs). Wirft nie:
+ * Ein Fehler hier darf den Abgleich nicht beenden und den Hub nicht
+ * mitnehmen.
+ */
+function scheduleStaffSync(lastStartAt: number): void {
+  let delay = STAFF_SYNC_INTERVAL_MS;
+  // „Nicht eingerichtet“ ist kein Fehler: Ohne Daten gibt es niemanden, der eingestempelt gilt.
+  const failed = lastError !== null && configured !== false;
+  try {
+    delay = staffSyncDelayMs(new Date(), {
+      clockedIn: snapshot?.working.length ?? 0,
+      failed,
+      sinceOkMs: lastOkStartAt === null ? null : performance.now() - lastOkStartAt,
+      staleAfterMs: staffStaleAfterMs(okDelayMs),
+    });
+  } catch {
+    /* Takt des Tages */
+  }
+  if (lastError === null) okDelayMs = delay;
+  const wait = staffSyncWaitMs(lastStartAt, performance.now(), delay);
+  setTimeout(() => {
+    const startAt = performance.now();
+    syncStaff()
+      .catch(() => undefined)
+      .then(() => scheduleStaffSync(startAt))
+      .catch(() => undefined);
+  }, wait);
+}
+
 export async function startStaff(): Promise<void> {
   await loadCache();
+  const startAt = performance.now();
   await syncStaff();
-  setInterval(() => void syncStaff(), STAFF_SYNC_INTERVAL_MS);
+  scheduleStaffSync(startAt);
 }
 
 /* ------------------------------------------------------------- Abfragen */
@@ -114,7 +163,7 @@ export function staffSummary(now = Date.now()) {
     source: "emp-control",
     configured,
     dataAgeMin: age == null ? null : Math.round(age / 60_000),
-    stale: age == null || age > 5 * 60_000,
+    stale: age == null || age > staffStaleAfterMs(okDelayMs),
     error: lastError,
     lastAttemptAt,
     workingCount: snapshot?.working.length ?? 0,

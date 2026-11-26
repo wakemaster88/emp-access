@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { validateApiToken } from "@/lib/api-token-auth";
 import { ingestSwitchSnapshots, type SwitchIngestPayload } from "@/lib/snmp-ingest";
-import { mergeHubAgentStatus } from "@/lib/hub-agent-status";
+import { writeHubAgentStatus } from "@/lib/hub-agent-status";
+import { snmpStatusSummary } from "@/lib/hub-status";
 
 /**
  * POST (Hub): SNMP-Snapshot der Switches. Aktualisiert NetworkDevice/Ports
- * und legt den Rohstand in HubAgent.status.snmp ab.
+ * (`ingestSwitchSnapshots`) und legt in HubAgent.status.snmp eine
+ * Kurzfassung ab: Zeitpunkt, Zahlen des Abgleichs und je Switch Name,
+ * Abfragezeit, Anzahl Ports, verbundene Ports, MAC-Eintraege und Fehler.
+ * Ports und MAC-Tabellen stehen nur in den Netzwerk-Tabellen.
  */
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -22,25 +25,11 @@ export async function POST(request: NextRequest) {
 
   const stats = await ingestSwitchSnapshots(db, account.id, switches);
 
-  // `SwitchIngestPayload` hat optionale Felder; `InputJsonValue` verbietet
-  // `undefined`. Beim Schreiben wird nach JSON serialisiert und sie fallen
-  // weg – der Umweg über `unknown` ist hier die Grenze zwischen beidem.
-  const snmp = { at: new Date().toISOString(), switches, stats };
+  const snmp = { at: new Date().toISOString(), stats, switches: snmpStatusSummary(switches) };
 
-  // Zeile anlegen bzw. lastSeenAt setzen; `status.snmp` danach in einer
-  // eigenen Anweisung, die die uebrigen Teile von status unberuehrt laesst.
-  await db.hubAgent.upsert({
-    where: { accountId_name: { accountId: account.id, name } },
-    create: {
-      name,
-      status: { snmp } as unknown as Prisma.InputJsonValue,
-      lastSeenAt: new Date(),
-      accountId: account.id,
-    },
-    update: { lastSeenAt: new Date() },
-    select: { id: true },
-  });
-  await mergeHubAgentStatus(db, account.id, name, { snmp });
+  // Zeile anlegen bzw. lastSeenAt und `status.snmp` setzen, in einer
+  // Anweisung; die uebrigen Teile von status bleiben unberuehrt.
+  await writeHubAgentStatus(db, account.id, name, { snmp });
 
   return NextResponse.json({ ok: true, ...stats });
 }

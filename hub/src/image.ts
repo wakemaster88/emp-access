@@ -4,7 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { log } from "./config.js";
-import { personSnapshotSettings, sipsArgs } from "./image-rules.js";
+import {
+  SHRINK_MIN_BYTES,
+  motionPreviewSettings,
+  personSnapshotSettings,
+  shrinkNeeded,
+  sipsArgs,
+  type JpegSettings,
+} from "./image-rules.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,20 +25,35 @@ export const DISPLAY_SNAPSHOT_MAX_PX = 1280;
  * neu ein (FACE_ENROLL, FACE_ANALYZE).
  */
 export const PERSON_SNAPSHOT = personSnapshotSettings(process.env);
-/** Qualitaet aller uebrigen Bilder (Anzeige, Fahrzeuge, Halteverbot, Vorschau). */
+/** Qualitaet aller uebrigen Bilder (Anzeige, Fahrzeuge, Halteverbot, Scan). */
 const JPEG_QUALITY = 82;
+/** Anzeige-Bild einer Flanke, die keine reine Bewegung ist (1280 px, Qualitaet 82). */
+export const DISPLAY_SNAPSHOT: JpegSettings = { maxPx: DISPLAY_SNAPSHOT_MAX_PX, quality: JPEG_QUALITY };
+/**
+ * Vorschaubild bei reiner Bewegung (Standard 960 px, Qualitaet 70;
+ * HUB_MOTION_SNAPSHOT_MAX_PX, 0 = wie DISPLAY_SNAPSHOT). Es dient nur der
+ * Kachel in der Cloud.
+ */
+export const MOTION_PREVIEW = motionPreviewSettings(process.env, DISPLAY_SNAPSHOT);
 
 /**
  * JPEG vor dem Upload verkleinern. Die Kameras liefern 4K-Bilder mit mehreren
  * Megabyte; in der Cloud werden sie nur angezeigt. `quality`: JPEG-Qualitaet,
- * ohne Angabe JPEG_QUALITY. Genutzt wird `sips`, das
+ * ohne Angabe JPEG_QUALITY. `minBytes`: kleinere Bilder gehen unverkleinert
+ * hinaus (shrinkNeeded), ohne Angabe SHRINK_MIN_BYTES; das Vorschaubild
+ * hat 0. Genutzt wird `sips`, das
  * auf jedem Mac vorhanden ist – der Hub laeuft laut README nur auf macOS.
- * Schlaegt das Verkleinern fehl oder ist das Bild schon klein genug, geht das
- * Original raus.
+ * Schlaegt das Verkleinern fehl oder wird das Bild dabei nicht kleiner, geht
+ * das Original raus.
  */
-export async function shrinkJpeg(input: Uint8Array, maxPx: number, quality = JPEG_QUALITY): Promise<Buffer> {
+export async function shrinkJpeg(
+  input: Uint8Array,
+  maxPx: number,
+  quality = JPEG_QUALITY,
+  minBytes = SHRINK_MIN_BYTES
+): Promise<Buffer> {
   const buf = Buffer.from(input);
-  if (buf.length < 200 * 1024 || process.platform !== "darwin") return buf;
+  if (!shrinkNeeded(buf.length, minBytes) || process.platform !== "darwin") return buf;
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "emp-hub-img-"));
   const src = path.join(dir, "in.jpg");
   const dst = path.join(dir, "out.jpg");

@@ -10,6 +10,7 @@
  */
 
 import { groupRoomDevices } from "@/components/raeume/room-panel";
+import { SNAPSHOT_FRESH_MS } from "@/components/raeume/shared";
 import { fmtWhen } from "@/components/raeume/schedule-widget";
 import type { DeviceStatus } from "@/components/raeume/status";
 import type { MowerLive } from "@/components/raeume/mower-card";
@@ -51,14 +52,12 @@ export interface RoomSummary {
   irrigationLabel: string | null;
   irrigationRunning: boolean;
   camerasTotal: number;
-  /** Kameras ohne Bild in den letzten 5 Minuten. */
+  /** Kameras ohne Bild in den letzten 10 Minuten. */
   camerasStale: number;
   alerts: RoomAlert[];
   /** Für die Suche: alles, was zum Raum gehört, in Kleinbuchstaben. */
   haystack: string;
 }
-
-const SNAPSHOT_FRESH_MS = 5 * 60_000;
 
 const fmtC = (c: number) => `${c.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} °C`;
 

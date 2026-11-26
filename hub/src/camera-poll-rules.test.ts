@@ -7,17 +7,23 @@ import {
   START_MAX_AGE_MS,
   UnconfirmedStarts,
   aiAlarmState,
+  autoSnapshotDue,
+  autoSnapshotHeld,
   clockDriftKey,
   configRefreshPlan,
   endHoldFor,
   endsToRetry,
   failStreakAfter,
+  isPureMotion,
+  motionSnapshotMinMs,
+  personOrVehicleActive,
   pollDue,
   pollOrder,
   relocateAtStart,
   relocateByLoginAllowed,
   relocateIntervalMs,
   snapshotJobFor,
+  snapshotPlan,
   tidyOutbox,
   type ConfigRefreshState,
   type PollGate,
@@ -56,6 +62,176 @@ test("Bewegung und Tier: Anzeige-Bild hoechstens alle 30 s und nie direkt nach e
   assert.equal(snapshotJobFor("MOTION", gate({ lastPipelineAt: 980_000 })), null);
   assert.equal(snapshotJobFor("MOTION", gate({ inFlight: true })), null);
   assert.equal(snapshotJobFor("MOTION", gate({ lastAutoAt: 969_999 })), "auto");
+});
+
+/* Vorschaubild bei reiner Bewegung (Entscheidung vom 25.11.2026): hoechstens alle 300 s. */
+const MIN_5 = 300_000;
+/** Gate im Betrieb: 300 s fuer reine Bewegung, die Kamera hat seit dem Start schon ein Bild geschickt. */
+const live = (o: Partial<SnapshotGate> = {}): SnapshotGate => gate({ minMotionMs: MIN_5, autoSent: true, ...o });
+/** snapshotJobFor wie vor dem 25.11.2026 (zum Vergleich). */
+function before(type: string, g: SnapshotGate): string | null {
+  if (type === "VEHICLE") return "vehicle";
+  if (g.inFlight) return null;
+  if (g.now - g.lastPipelineAt <= g.throttleMs) return null;
+  if (type === "PERSON") return "person";
+  return g.now - g.lastAutoAt > g.throttleMs ? "auto" : null;
+}
+/** Alle Lagen, die fuer die Entscheidung zaehlen: Pipeline laeuft, Abstand zum letzten Pipeline- und Anzeige-Bild. */
+function* lagen(): Generator<Partial<SnapshotGate>> {
+  for (const inFlight of [false, true]) {
+    for (const lastPipelineAt of [0, 940_000, 969_999, 970_000, 990_000, 999_000]) {
+      for (const lastAutoAt of [0, 600_000, 699_999, 700_000, 940_000, 969_999, 970_000, 990_000, 999_000]) {
+        for (const autoSent of [false, true]) yield { inFlight, lastPipelineAt, lastAutoAt, autoSent };
+      }
+    }
+  }
+}
+
+test("Reine Bewegung und Tier: Vorschaubild hoechstens alle 300 s je Kamera", () => {
+  for (const type of ["MOTION", "ANIMAL"]) {
+    assert.equal(snapshotJobFor(type, live({ lastAutoAt: 960_000 })), null, `${type} nach 40 s`);
+    assert.equal(snapshotJobFor(type, live({ lastAutoAt: 700_000 })), null, `${type} nach genau 300 s`);
+    assert.equal(snapshotJobFor(type, live({ lastAutoAt: 699_999 })), "auto", `${type} nach 301 s`);
+    assert.equal(snapshotJobFor(type, live({ lastAutoAt: 600_000, inFlight: true })), null, `${type} waehrend einer Pipeline`);
+    assert.equal(snapshotJobFor(type, live({ lastAutoAt: 600_000, lastPipelineAt: 980_000 })), null, `${type} direkt nach einer Pipeline`);
+  }
+});
+
+test("Person, Fahrzeug, Klingel und jede andere Art: Entscheidung exakt wie vorher", () => {
+  for (const type of ["PERSON", "VEHICLE", "DOORBELL", "FACE", ""]) {
+    for (const o of lagen()) {
+      assert.equal(snapshotJobFor(type, live(o)), before(type, gate(o)), `${type} ${JSON.stringify(o)}`);
+    }
+  }
+});
+
+test("HUB_MOTION_SNAPSHOT_MIN_S=0: jede Art entscheidet wie vorher", () => {
+  for (const type of ["MOTION", "ANIMAL", "PERSON", "VEHICLE", "DOORBELL"]) {
+    for (const o of lagen()) {
+      assert.equal(snapshotJobFor(type, gate({ ...o, minMotionMs: 0 })), before(type, gate(o)), `${type} ${JSON.stringify(o)}`);
+    }
+  }
+});
+
+test("Erstes Bild ohne Wartezeit: nach dem Start sofort, bis zum ersten angekommenen Bild im 30-s-Abstand", () => {
+  assert.equal(snapshotJobFor("MOTION", live({ lastAutoAt: 0, autoSent: false })), "auto");
+  // Upload gescheitert (Bild geholt, nicht angekommen): naechster Versuch nach 30 s, nicht nach 300 s.
+  assert.equal(snapshotJobFor("MOTION", live({ lastAutoAt: 980_000, autoSent: false })), null);
+  assert.equal(snapshotJobFor("MOTION", live({ lastAutoAt: 969_999, autoSent: false })), "auto");
+  assert.equal(snapshotJobFor("ANIMAL", live({ lastAutoAt: 969_999, autoSent: false })), "auto");
+});
+
+test("Wechsel von Bewegung zu Person oder Fahrzeug: deren Regel gilt sofort", () => {
+  // Vorschaubild der Bewegung vor 1 s; die 300 s gelten nur fuer weitere Bewegung.
+  const g = live({ lastAutoAt: 999_000 });
+  assert.equal(snapshotJobFor("MOTION", g), null);
+  assert.equal(snapshotJobFor("PERSON", g), "person");
+  assert.equal(snapshotJobFor("VEHICLE", g), "vehicle");
+});
+
+test("autoSnapshotDue: Abstand je Art", () => {
+  const g = { now: 1_000_000, inFlight: false, throttleMs: 30_000, minMotionMs: MIN_5, sent: true };
+  assert.equal(autoSnapshotDue({ ...g, type: "MOTION", lastSnapshotAt: 960_000 }), false);
+  assert.equal(autoSnapshotDue({ ...g, type: "MOTION", lastSnapshotAt: 699_999 }), true);
+  assert.equal(autoSnapshotDue({ ...g, type: "DOORBELL", lastSnapshotAt: 969_999 }), true);
+  assert.equal(autoSnapshotDue({ ...g, type: "DOORBELL", lastSnapshotAt: 970_000 }), false);
+  assert.equal(autoSnapshotDue({ ...g, type: "MOTION", lastSnapshotAt: 0, inFlight: true }), false);
+  // Ein Mindestabstand unter 30 s verkuerzt nichts.
+  assert.equal(autoSnapshotDue({ ...g, type: "MOTION", lastSnapshotAt: 980_000, minMotionMs: 5_000 }), false);
+});
+
+const PREVIEW = { maxPx: 960, quality: 70, minBytes: 0 };
+const DISPLAY = { maxPx: 1280, quality: 82 };
+/** Was eine einzelne Flanke vor dem 25.11.2026 ausloeste, als Plan (Anzeige-Bild immer DISPLAY). */
+function planBefore(type: string, g: SnapshotGate) {
+  const job = before(type, g);
+  return { vehicle: job === "vehicle", person: job === "person", auto: job === "auto" ? DISPLAY : null };
+}
+const planOf = (edges: string[], g: SnapshotGate) => {
+  const { vehicle, person, auto } = snapshotPlan(edges, g, PREVIEW, DISPLAY);
+  return { vehicle, person, auto };
+};
+
+test("Groesse des Anzeige-Bilds je Art: nur reine Bewegung bekommt das Vorschaubild", () => {
+  assert.equal(snapshotPlan(["MOTION"], live({ lastAutoAt: 600_000 }), PREVIEW, DISPLAY).auto, PREVIEW);
+  assert.equal(snapshotPlan(["ANIMAL"], live({ lastAutoAt: 600_000 }), PREVIEW, DISPLAY).auto, PREVIEW);
+  for (const type of ["DOORBELL", "FACE", ""]) {
+    assert.equal(snapshotPlan([type], live({ lastAutoAt: 600_000 }), PREVIEW, DISPLAY).auto, DISPLAY, type);
+  }
+  for (const type of ["PERSON", "VEHICLE", "DOORBELL", "FACE", ""]) assert.equal(isPureMotion(type), false, type);
+  // Loest neben der Bewegung eine andere Art das Bild aus, behaelt es deren Groesse.
+  assert.equal(snapshotPlan(["MOTION", "DOORBELL"], live({ lastAutoAt: 600_000 }), PREVIEW, DISPLAY).auto, DISPLAY);
+  assert.equal(snapshotPlan(["DOORBELL", "ANIMAL"], live({ lastAutoAt: 600_000 }), PREVIEW, DISPLAY).auto, DISPLAY);
+  assert.equal(snapshotPlan(["MOTION", "ANIMAL"], live({ lastAutoAt: 600_000 }), PREVIEW, DISPLAY).auto, PREVIEW);
+  assert.equal(snapshotPlan([], live(), PREVIEW, DISPLAY).auto, null);
+});
+
+test("Bewegung oder Tier bei aktiver Person oder aktivem Fahrzeug: Abstand und Groesse wie vorher", () => {
+  for (const type of ["MOTION", "ANIMAL"]) {
+    // Person steht seit Minuten vor der Kamera, ihre Pipeline fand kein Gesicht.
+    const g = { autoSent: true, lastAutoAt: 940_000, lastPipelineAt: 960_000, minMotionMs: MIN_5 };
+    assert.equal(snapshotJobFor(type, gate({ ...g, othersActive: true })), "auto", type);
+    assert.equal(snapshotPlan([type], gate({ ...g, othersActive: true }), PREVIEW, DISPLAY).auto, DISPLAY, type);
+    assert.equal(isPureMotion(type, true), false, type);
+    assert.equal(autoSnapshotHeld(type, gate({ ...g, lastAutoAt: 990_000, othersActive: true })), false, type);
+    // Ohne Person waere es reine Bewegung: 300 s.
+    assert.equal(snapshotJobFor(type, gate(g)), null, type);
+    for (const o of lagen()) {
+      const g2 = live({ ...o, othersActive: true });
+      assert.equal(snapshotJobFor(type, g2), before(type, gate(o)), `${type} ${JSON.stringify(o)}`);
+      assert.deepEqual(planOf([type], g2), planBefore(type, gate(o)), `${type} ${JSON.stringify(o)}`);
+    }
+  }
+});
+
+test("Plan je Ereignisart: Person, Fahrzeug, Klingel und jede andere Art wie vorher", () => {
+  for (const type of ["PERSON", "VEHICLE", "DOORBELL", "FACE", ""]) {
+    for (const othersActive of [false, true]) {
+      for (const o of lagen()) {
+        assert.deepEqual(planOf([type], live({ ...o, othersActive })), planBefore(type, gate(o)), `${type} ${JSON.stringify(o)}`);
+      }
+    }
+  }
+  // Person und Bewegung in derselben Abfrage: Personen-Pipeline wie vorher.
+  const both = planOf(["MOTION", "PERSON"], live({ lastAutoAt: 960_000, othersActive: true }));
+  assert.deepEqual(both, { vehicle: false, person: true, auto: DISPLAY });
+  assert.deepEqual(planOf(["MOTION", "VEHICLE"], live({ othersActive: true, inFlight: true })), { vehicle: true, person: false, auto: null });
+});
+
+test("Person oder Fahrzeug aktiv: Zustand dieser Abfrage, sonst der bisherige, oder ein Ereignis im Nachlauf", () => {
+  assert.equal(personOrVehicleActive({ MOTION: true, PERSON: true }, {}, {}), true);
+  assert.equal(personOrVehicleActive({ MOTION: true, VEHICLE: true }, {}, {}), true);
+  // Gemessen aus: zaehlt nicht mehr, auch wenn es vorher aktiv war.
+  assert.equal(personOrVehicleActive({ MOTION: true, PERSON: false }, { PERSON: true }, {}), false);
+  // Nicht gemessen (Kamera ohne KI-Antwort): der bisherige Zustand.
+  assert.equal(personOrVehicleActive({ MOTION: true }, { PERSON: true }, {}), true);
+  assert.equal(personOrVehicleActive({ MOTION: true }, { VEHICLE: true }, {}), true);
+  // Ereignis laeuft noch nach (Alarm kurz aus).
+  assert.equal(personOrVehicleActive({ MOTION: true, PERSON: false }, {}, { PERSON: true }), true);
+  assert.equal(personOrVehicleActive({ MOTION: true, VEHICLE: false }, {}, { VEHICLE: true }), true);
+  // Bewegung und Tier allein sind keine Person.
+  assert.equal(personOrVehicleActive({ MOTION: true, ANIMAL: true }, { MOTION: true }, { MOTION: true, ANIMAL: true }), false);
+  assert.equal(personOrVehicleActive({}, {}, {}), false);
+});
+
+test("Zaehler: zurueckgehalten nur, was ohne den Mindestabstand hochgeladen worden waere", () => {
+  assert.equal(autoSnapshotHeld("MOTION", live({ lastAutoAt: 960_000 })), true);
+  assert.equal(autoSnapshotHeld("ANIMAL", live({ lastAutoAt: 960_000 })), true);
+  assert.equal(autoSnapshotHeld("MOTION", live({ lastAutoAt: 980_000 })), false);
+  assert.equal(autoSnapshotHeld("MOTION", live({ lastAutoAt: 699_999 })), false);
+  assert.equal(autoSnapshotHeld("MOTION", live({ lastAutoAt: 960_000, inFlight: true })), false);
+  assert.equal(autoSnapshotHeld("MOTION", gate({ lastAutoAt: 960_000, minMotionMs: 0 })), false);
+  assert.equal(autoSnapshotHeld("PERSON", live({ lastPipelineAt: 990_000 })), false);
+});
+
+test("HUB_MOTION_SNAPSHOT_MIN_S: 0 bis 3600 s, ungueltig = 300 s", () => {
+  assert.equal(motionSnapshotMinMs(undefined), 300_000);
+  assert.equal(motionSnapshotMinMs("0"), 0);
+  assert.equal(motionSnapshotMinMs(" 60 "), 60_000);
+  assert.equal(motionSnapshotMinMs("3600"), 3_600_000);
+  for (const v of ["", "abc", "3601", "-5", "1.5", "1e3", "5m"]) {
+    assert.equal(motionSnapshotMinMs(v), 300_000, v);
+  }
 });
 
 test("Nachlauf: nur Bewegung laeuft laenger nach, nie kuerzer als die anderen", () => {

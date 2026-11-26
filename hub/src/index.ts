@@ -17,11 +17,12 @@ import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
 import { alprWarmup } from "./alpr.js";
 import { STATE, recordHeartbeat, recordHubEvent, recordTask } from "./state.js";
-import { collectParkingSnapshot, ensureParkingCameras, uploadParkingTrackerFrames } from "./parking.js";
+import { reportParking } from "./parking.js";
+import { PARKING_REPORT_TICK_MS } from "./parking-rules.js";
 import { checkNoParking, noParkingConfigSummary, NOPARK_INTERVAL_MS } from "./noparking.js";
 import { AUTO_LABEL, runSwitchSync, snmpConfigured } from "./snmp.js";
 import { startVlanCheck } from "./vlan-check.js";
-import { improve, improveCount, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
+import { improve, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
 import { startSystemMetrics } from "./system-metrics.js";
 import { startSystemSetup } from "./system-setup.js";
 import { ensureFfmpeg } from "./ffmpeg-setup.js";
@@ -120,37 +121,6 @@ function setTaskPollInterval(ms: number) {
   taskPollTimer = setInterval(() => {
     void pollTasks();
   }, taskPollEveryMs);
-}
-
-async function reportParking() {
-  try {
-    await ensureParkingCameras();
-    const parking = await collectParkingSnapshot();
-    if (STATE.parking.lastAt && parking.trackerOnline !== STATE.parking.trackerOnline) {
-      recordHubEvent({
-        kind: "system",
-        severity: parking.trackerOnline ? "info" : "warn",
-        where: "Park-Tracker",
-        title: parking.trackerOnline ? "Tracker wieder online" : "Tracker offline",
-      });
-    }
-    STATE.parking = {
-      lastAt: parking.at,
-      trackerOnline: parking.trackerOnline,
-      lots: parking.lots.length,
-    };
-    await api("/api/hub/parking", {
-      method: "POST",
-      body: JSON.stringify({ name: CONFIG.name, parking }),
-    });
-    await uploadParkingTrackerFrames();
-    // Der Normalfall alle 30 s wird nur gezaehlt (keine Zeile in improve.jsonl).
-    if (parking.trackerOnline) improveCount("parking", "report");
-    else improve("parking", "tracker_down", { lots: parking.lots.length });
-  } catch (e) {
-    log(`Parkplatz-Report: ${e instanceof Error ? e.message : e}`);
-    improve("parking", "fail", { error: e instanceof Error ? e.message : String(e) });
-  }
 }
 
 /**
@@ -354,8 +324,10 @@ ensureFaceSidecar()
   })
   .catch((e) => log(`Face-Sidecar: ${e instanceof Error ? e.message : e}`));
 setInterval(heartbeat, CONFIG.heartbeatIntervalMs);
-setInterval(reportParking, 30_000);
-void reportParking();
+// Parkmeldung (parking.ts): faengt jeden Fehler selbst, ein Lauf zur Zeit.
+const parkingReport = () => reportParking().catch((e) => log(`Parkplatz-Report: ${errorText(e)}`));
+setInterval(parkingReport, PARKING_REPORT_TICK_MS);
+void parkingReport();
 setTaskPollInterval(CONFIG.taskIntervalMs);
 setInterval(() => {
   void checkForUpdate();

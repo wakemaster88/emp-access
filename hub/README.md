@@ -20,6 +20,24 @@ ein Mac Studio im Technikraum, Betrieb siehe
   Gesichtserkennung rechnet mit dem Original und schickt ihr Merkmal mit,
   das Bild dient der Anzeige und als Beleg. `HUB_PERSON_SNAPSHOT_MAX_PX=1600`
   und `HUB_PERSON_JPEG_QUALITY=82` stellen die frühere Größe her.
+- **Vorschaubild bei reiner Bewegung** (Bewegung oder Tier ohne Person,
+  Fahrzeug oder Klingel): Die Kachel in der Cloud bekommt höchstens alle
+  5 Minuten je Kamera ein neues Bild, mit 960 px und JPEG-Qualität 70, auch
+  wenn das Kamerabild unter den 200 KB liegt, ab denen alle anderen Bilder
+  verkleinert werden (`HUB_MOTION_SNAPSHOT_MIN_S`, Standard 300, 0 = alle
+  30 s; `HUB_MOTION_SNAPSHOT_MAX_PX`, Standard 960, erlaubt 320–1280,
+  0 = 1280 px mit Qualität 82 und der 200-KB-Schranke; ungültige Werte
+  ergeben den Standard; Regeln `autoSnapshotDue` und `snapshotPlan` in
+  `camera-poll-rules.ts`, `motionPreviewSettings` und `shrinkNeeded` in
+  `image-rules.ts`). Meldet die Kamera dabei eine
+  Person oder ein Fahrzeug (auch ein Ereignis im Nachlauf,
+  `personOrVehicleActive`), ist es keine reine Bewegung: Das Bild kommt wie
+  bisher alle 30 s mit 1280 px. Das erste Bild nach dem Start kommt sofort,
+  bis eines angekommen ist, gilt der Abstand von 30 s. Person, Fahrzeug, Klingel,
+  Scan, Halteverbot und Wächter behalten Takt, Größe und Qualität ihrer
+  Bilder. Zähler `camera.preview_upload`, `camera.preview_bytes` (gesendete
+  Bytes) und `camera.preview_skip` (Bild, das ohne die 5 Minuten
+  hochgeladen worden wäre).
 - **Task-Queue**: pollt offene Tasks, arbeitet zeitkritische parallel
   (`SCAN_SNAPSHOT`, Türöffner, PTZ, Snapshots). `NETWORK_SCAN` läuft im
   Hintergrund und blockiert die Queue nicht.
@@ -167,6 +185,25 @@ ein Mac Studio im Technikraum, Betrieb siehe
   `improve.jsonl` mit Kamera, Abstand in Sekunden (`gapS`) und Ähnlichkeit.
   `skip` lädt Wiederholungen nicht hoch (die 30-s-Drossel der Kamera gilt
   dann wie nach einem Upload), `off` wertet nicht aus.
+
+  Galerie (`refreshGallery` in `face.ts`, Regeln in `gallery-rules.ts`):
+  Der Hub lädt die Merkmale der aktiven Personen beim Start, fest alle
+  15 Minuten und bei einer Personen-Sichtung oder Klingel, wenn der letzte
+  Abruf älter als 5 Minuten ist oder seitdem am Hub angelernt wurde. Er
+  schickt die Version des geladenen Bestands mit (`?v=`); hat sich nichts
+  geändert, antwortet die Cloud nur „unverändert“, und der Hub behält seine
+  Galerie.
+  Die Version ändert sich mit jedem neuen oder gelöschten Merkmal und jeder
+  Änderung an einer aktiven Person (anlegen, umbenennen, sperren,
+  deaktivieren, löschen, zuordnen, lernen). Einmal pro Stunde und nach
+  einer Antwort, die nicht zur geschickten Version passt, holt der Hub den
+  ganzen Bestand ohne Version. Die Merkmale kommen als Base64 (Float32 little
+  endian, `?enc=b64`) statt als Zahlen-Array; eine ältere Cloud kennt weder
+  Version noch Base64 und liefert wie bisher alles, der Hub nimmt beide
+  Formen an. Die Zeile „Face-Gallery: N Embeddings“ steht nur bei geändertem
+  Bestand im Log, ohne Namen und Merkmale. Zähler `face.gallery_full`,
+  `face.gallery_unchanged`, `face.gallery_bytes` (empfangene Bytes) und
+  `face.gallery_dropped` (Einträge ohne brauchbares Merkmal).
 - **Kennzeichen**: fast-alpr (primär), macOS Vision als Fallback; lokale
   Aktoren (DoorBird/Shelly) ohne Cloud-Roundtrip. Tor und Shelly schalten
   nur bei einem **exakten** Treffer auf der Fahrzeugliste (liefert die Lesung
@@ -268,7 +305,23 @@ ein Mac Studio im Technikraum, Betrieb siehe
 - **Dienst-Neustart**: Task `SERVICE_RESTART` startet den YOLO-Tracker
   (`launchctl kickstart -k`, Label `HUB_TRACKER_LAUNCHD_LABEL`) oder den Hub
   selbst neu – nur diese beiden, kein freier Befehl.
-- **Parken**: YOLO-Tracker-Zonen (`vehicleGate`) → Cloud.
+- **Parken**: YOLO-Tracker-Zonen (`vehicleGate`) → Cloud, alle 30 s
+  (`parking.ts`, Regeln in `parking-rules.ts`). Ein Lauf zur Zeit: Hängt
+  die Cloud, fällt der nächste aus (Zähler `parking.busy`). Die Park-Kameras
+  der Kiosk-Konfiguration stellt der Hub beim Start, bei geänderter Liste
+  (id, ip, port, channel, username) und sonst einmal je Stunde in der Cloud
+  sicher (`ensureDue`). Die Kamera-Nummer für das Tracker-Bild kommt aus der
+  Kamera-Liste des Hubs; fehlt die Kamera dort, lädt er die Liste neu,
+  höchstens alle 5 min (Zähler `parking.frame_nocam`). Lehnt die Cloud die
+  Meldung ab, zählt `parking.report_fail`; Fehler und Erholung stehen je
+  einmal im Log. Vorbereitet, ab Werk ohne Wirkung:
+  `HUB_PARKING_IDLE_REPORT_S` (Standard 30 = jede Meldung; länger = nur bei
+  geänderter Zählung, Tracker-Zustand oder Fehlertext und sonst nach so
+  vielen Sekunden) und `HUB_PARKING_FRAME_IDLE_S` (Standard 0 = Tracker-Bild
+  bei jedem Lauf; sonst bei geänderter Zählung und sonst nach so vielen
+  Sekunden), beide 0–3600, ungültige Werte ergeben den Standard. Die
+  Anzeige in der Cloud zeigt das Alter der Zählung in Sekunden; längere
+  Werte machen sie dort sichtbar älter.
 - **Soundweb London (BSS)**: je Prozessor eine DI-Verbindung (TCP 1023,
   `src/soundweb.ts`, Byte-Protokoll in `src/soundweb-protocol.ts`). Geräte
   und Regler kommen aus der Cloud (Audio → Soundweb, `GET /api/hub/soundweb`),
@@ -399,7 +452,7 @@ Sitzung ohne Fenster-Server geprüft werden.
 - **Bewachungs-Zustand** (`sentinel.ts`, Regeln in `sentinel-guard-rules.ts`): Bewacht ist eine Kamera, wenn der Wächter ein Ereignis an ihr bewerten würde (Einstellung „Wächter“, Raum, Nachtfenster, `=always`). Beim Start steht im Log, welche Kameras bewacht sind und warum („Wächter: beim Start bewacht: Kasse, Gastro (Raum Shop geschlossen); Lager (ohne Betriebszeit, Nachtfenster 22-6 Uhr)“, dazu „… nicht bewacht: …“), danach jeder Wechsel einer Kamera mit Grund („Wächter: Bewachung aus: Kasse (Raum Shop offen)“, „Wächter: Bewachung an: Eingang (Raum Strandbad geschlossen (Raumdaten veraltet))“). Kameras, die im selben Takt aus demselben Grund wechseln, stehen in einer Zeile. Die Tagesvorschau (morgens und auf /heute) hat eine Zeile „Heute bewacht: Strandbad ganztägig (Eingang); Shop bis 10:00 und ab 18:00 (Kasse); nachts bis 06:00 und ab 22:00 (Lager). Nicht bewacht: Büro (Wächter aus).“ Für Räume gilt die Zeit außerhalb ihrer Öffnungszeiten von heute (Raumdaten `spans`, heute und morgen); fehlen sie (ältere Cloud, Raumdaten älter als gestern), steht der Zustand von jetzt da („Shop jetzt, Öffnungszeiten von heute fehlen“). Ob das Bildmodell gerade bereit ist, steht nicht in diesen Zeilen, sondern in denen zur Liste für die Cloud (siehe „Ein Meldeweg in der Nacht“).
 - **Zeitmessung des Bildmodells** (`ollama.ts`, `sentinel.ts`, Regeln in `vision-timing-rules.ts`): Der Hub liest aus jeder Antwort des Bildmodells die Zeitangaben von Ollama (`total_duration`, `load_duration`, `prompt_eval_count`, `prompt_eval_duration`, `eval_count`, `eval_duration`). Zu jeder Bewertung des Wächters steht damit eine Zeile im Log, beide Aufrufe zusammen: „Wächter: Eingang: Bildmodell Übersicht 18,4 s (laden 0,1 s · Bild+Prompt 14,9 s/2310 Token · Antwort 3,2 s/96 Token, 280 Zeichen); Nahaufnahme 41,0 s (…); Auslöser bis Urteil 67,8 s“. Bei der Antwort steht, wofür die Antwort-Token verbraucht wurden: die Länge des Antworttexts (`message.content`) in Zeichen, mit „davon … Leerraum“, wenn Leerzeichen und Zeilenumbrüche mindestens die Hälfte ausmachen; die Länge eines Denktexts aus `message.thinking` oder aus einem Denkblock `<think>…</think>` im Antworttext (dann „(im Antworttext)“, der Block zählt nicht zum Antworttext); und `done_reason`, wenn er nicht „stop“ ist. Beispiel: „Antwort 47,0 s/3837 Token, 412 Zeichen, Denktext 14 800 Zeichen, done_reason length“. Vom Denktext steht nur die Länge im Log, nie der Inhalt. „Rest“ ist Zeit, die Ollama keinem Abschnitt zuordnet (zum Beispiel Warten auf einen laufenden Aufruf); „im Hub“ steht dabei, wenn der Hub mindestens eine Sekunde länger misst als Ollama; „von 8192 Token“ steht bei Bild+Prompt, sobald das Kontextfenster zu 90 % gefüllt ist; ein gescheiterter Aufruf steht als „gescheitert nach 120,0 s“ da. „Auslöser“ ist der Takt, in dem der Wächter das Ereignis der Kamera gesehen hat (höchstens 3 Sekunden nach dem Ereignis). Zähler im Verbesserungslog: `camera.sentinel_model_call` (beantwortete Aufrufe), `camera.sentinel_model_error`, `camera.sentinel_model_cut` (an der Obergrenze abgebrochen, siehe unten), `camera.sentinel_model_slow` (ab 30 s), `camera.sentinel_model_cold` (Modell erst geladen, ab 1 s), `camera.sentinel_model_ctx` (Kontextfenster zu 90 % gefüllt), `camera.sentinel_verdict` (Bewertungen mit Antwort) und `camera.sentinel_verdict_late` (letzte Antwort später als 30 s nach dem Auslöser). An den Aufrufen selbst ändert die Messung nichts.
 - **Obergrenze der Antwort** (`ollama.ts`, Regeln in `vision-timing-rules.ts`): `HUB_AGENT_VISION_NUM_PREDICT` begrenzt die Antwort-Token je Bewertung des Wächters (Ollama `num_predict`, Übersicht und Nahaufnahme); Standard ist keine Grenze, und die Anfrage an Ollama bleibt dann wie sie ist. Nur eine ganze Zahl ab 1 gilt, jeder andere Wert gilt als keine Grenze. Ist die Variable gesetzt, steht beim ersten Bereitstellen des Bildmodells eine Zeile im Log („Assistent: Bildmodell: höchstens 400 Antwort-Token je Bewertung des Wächters (HUB_AGENT_VISION_NUM_PREDICT)“ bzw. „… „abc“ ist keine ganze Zahl ab 1 – keine Grenze“). Fragen und Fotos im Chat bleiben ohne Grenze. Bricht eine Antwort an der Grenze ab (`done_reason` „length“), zählt der Aufruf wie ein gescheiterter: Beim Übersichtsbild entscheidet `onVisionError` (Person im Bild oder Nachtfenster: Alarm „ungeprüft“), bei der Nahaufnahme entscheidet `decidePerson` ohne Antwort des Bildmodells, und der Befund „Bildmodell antwortet nicht“ zählt den Aufruf mit. Zeitzeile: „Übersicht an der Grenze abgebrochen 9,1 s (… Antwort 8,0 s/400 Token, 1210 Zeichen, done_reason length); Auslöser bis Abbruch 12,3 s“. Eine Grenze nur setzen, wenn die Zeitzeile ohne Grenze zeigt, dass die Antworten des Modells darunter bleiben.
-- **Personen: Mitarbeiter oder nicht?** (`sentinel.ts`, `people.ts`, Regeln `decidePerson` in `sentinel-rules.ts`): Bei einer Person holt der Wächter eine Nahaufnahme (optisch über `personCloseUp`, sonst digital), bewertet sie (Anzahl, Arbeitskleidung, Tätigkeit, verdächtiges Verhalten) und gleicht sie mit den eingestempelten Mitarbeitern aus emp-control (`staff.ts`) ab. Kein Alarm, wenn höchstens so viele Personen da sind wie eingestempelt und sie Arbeitskleidung tragen oder es tagsüber (6–20 Uhr) ist, oder wenn die bestehende Gesichtserkennung einen Whitelist-Treffer hat. Verdächtiges Verhalten, Blacklist-Treffer, mehr Personen als eingestempelt oder niemand eingestempelt → Alarm mit Nahaufnahme und Übersichtsbild.
+- **Personen: Mitarbeiter oder nicht?** (`sentinel.ts`, `people.ts`, Regeln `decidePerson` in `sentinel-rules.ts`): Bei einer Person holt der Wächter eine Nahaufnahme (optisch über `personCloseUp`, sonst digital), bewertet sie (Anzahl, Arbeitskleidung, Tätigkeit, verdächtiges Verhalten) und gleicht sie mit den eingestempelten Mitarbeitern aus emp-control (`staff.ts`) ab. Den Stempelstand holt der Hub jede Minute über die Cloud; nachts (23–6 Uhr Ortszeit) alle 4 Minuten, solange laut letztem Stand niemand eingestempelt ist und der letzte Abruf geklappt hat (Regel `staffSyncDelayMs` in `staff-sync-rules.ts`). Wer eingestempelt ist, wird auch nachts jede Minute abgeglichen. Die Personal-Übersicht gilt als veraltet, wenn der Stand älter ist als 5 Minuten, im Nacht-Takt als 8 Minuten (`staffStaleAfterMs`): So macht ein Ausfall der Cloud sie nachts nie früher veraltet als im Minuten-Takt. Scheitert nachts ein Abruf, kommt der nächste Versuch nach 15 s, solange der Stand nicht veraltet ist, danach jede Minute. Der Abstand läuft auf einer Uhr, die niemand stellt (`staffSyncWaitMs`): Wird die Uhr des Rechners gestellt, verschiebt das den Abgleich nicht. Kein Alarm, wenn höchstens so viele Personen da sind wie eingestempelt und sie Arbeitskleidung tragen oder es tagsüber (6–20 Uhr) ist, oder wenn die bestehende Gesichtserkennung einen Whitelist-Treffer hat. Verdächtiges Verhalten, Blacklist-Treffer, mehr Personen als eingestempelt oder niemand eingestempelt → Alarm mit Nahaufnahme und Übersichtsbild.
 - **Digitaler Zoom auf Personen** (`person-crop.ts`, Geometrie in `person-crop-rules.ts`): Der Tracker liefert Personen-Boxen (`/classify` → `persons`), ffmpeg schneidet den Bereich aus dem hochaufgelösten Kamerabild aus und vergrößert ihn. Die Gesichtserkennung prüft Kopf-Ausschnitte, wenn im Vollbild kein Gesicht oder kein Treffer war (strengere Schwelle wie bei hochskalierten Gesichtern). Gesichtserkennung und Wächter nutzen ihn, wenn die optische Nahaufnahme nicht geht oder nicht lohnt.
 - **Folgen und optische Nahaufnahme** (`camera-motion.ts`, Regeln in `camera-motion-rules.ts`): Schwenk-Kameras (Gastro, Shop, Halle, Übungslift) schalten beim ersten Personen-Signal das Tracking der Kamera ein (`bSmartTrack`; `aiTrack` ist bei diesen Modellen nicht der Schalter), nur wenn ihr Raum geschlossen ist: derselbe Stand aus den Raumdaten, nach dem der Wächter bewacht (`camera-room.ts`, eingetragen von `startSentinel`). Ist er unbekannt (keine Raumdaten, Kamera ohne Raum mit Betriebszeit, Assistent aus), folgt die Kamera nur im Nachtfenster `HUB_AGENT_SENTINEL_NIGHT` (Regel `followRoomBlocked`; Zähler `follow.start` mit `room` offen, geschlossen oder unbekannt, `follow.skip_open`). `HUB_FOLLOW_ALWAYS=on` folgt wie früher auch bei offenem Raum. Die Nahaufnahme des Wächters zentriert unabhängig davon, die der Gesichtserkennung nur, wenn die Kamera folgen darf. Das Folgen dauert höchstens 2 Minuten, dann zurück in die Grundstellung (Wachposition der Kamera, sonst Preset „Grundstellung“) und 1 Minute Pause. Fehlt die Wachposition, speichert der Hub die aktuelle Stellung, sobald die Kamera 10 Minuten unbewegt war. Kameras mit Zoom-Objektiv zoomen für Gesichtserkennung und Wächter gezielt heran: Schwenk-Kameras nach dem Zentrieren, reine Zoom-Kameras nur so weit, dass die Person im Bild bleibt (unter 1,3-fach bleibt es digital). Für die Gesichtserkennung fährt der Zoom nur, wenn das Gesicht danach voraussichtlich mindestens 64 px groß ist (Größe in Pixeln des Kamerabilds mal Faktor; ohne Gesicht erst ab Faktor 2), Regel `opticalWorth`; das Gesicht der Nahaufnahme ersetzt das bisherige nur mit Treffer oder höherer Güte (`takeOpticalFace` in `person-pipeline-rules.ts`), und der Kopf-Ausschnitt nutzt die Personen-Boxen der Nahaufnahme. Für den Wächter gilt weiter der Mindestfaktor 1,3. Der Abstand zwischen zwei Nahaufnahmen zählt ab dem Zoom-Befehl; ein Versuch ohne Fahrt (nichts zu planen, lohnt nicht) pausiert nur 15 s, ein leeres Ergebnis gilt 10 s. Verzichtet nur die Gesichtserkennung, plant der Wächter selbst (Zähler `camera.closeup_skip_face`, `face.optical`, `face.optical_match`, `face.optical_kept`). Zonen-Kameras (Kennzeichen, Halteverbot, Lieferdienste, Parkfläche) zoomen höchstens 6 s und höchstens alle 2 min (gezählt ab der Fahrt; nach einem Versuch ohne Fahrt auch dort nur 15 s Pause, und die Kamera gilt gleich wieder als in Grundstellung), folgen nie; Halteverbot, Parkfläche und Belegung warten bzw. halten so lange. Handsteuerung (Zentrale, Cloud, Assistent) bricht ab und sperrt 5 min, Regeln „Kamera steuern“ gehen vor. Laufende Bewegungen stehen in `hub/.cache/camera-motion.json` und werden nach einem Neustart zurückgestellt. Abschalten: `HUB_CAMERA_AUTOFOLLOW=off`, `HUB_CAMERA_AUTOZOOM=off`.
 - **Übergabe an die Handsteuerung und Rückfahrt des Zooms** (`camera-motion.ts`, Regeln `shouldRestoreZoom` und `zoomReturnGivenUp` in `camera-motion-rules.ts`): Ein Befehl von Hand (Schwenken, Zoom) geht erst an die Kamera, wenn die Automatik sie abgegeben hat (Tracking des Hubs aus), höchstens nach 2 s (Zähler `camera.hand_handover_late`); ein Folgen, das gerade startet, schaltet der Hub dann nicht mehr ein, ein gerade eingeschaltetes schaltet er gleich wieder aus. Gewartet wird nur, solange das Tracking des Hubs an ist oder gerade eingeschaltet wird, sonst geht der Befehl sofort hinaus. Eine Regel „Kamera steuern“ wartet ebenso, dann aber ohne Obergrenze: Sie liest danach den Zustand des Trackings und stellt ihn am Ende wieder her; ihre Befehle gehen wie die der Automatik über die Warteschlange der Kamera, nie gleichzeitig mit einer Fahrt in die Grundstellung oder einem Zoom-Befehl. Kommt Hand oder Regel, während ein Folgen endet, fährt der Hub nicht mehr in die Grundstellung (Zähler `follow.home_skip_hold`). Bleibt beim Einschalten des Trackings die Antwort aus, liest der Hub den Zustand: Steht es an (oder bleibt es unbekannt), gilt es als Folgen und wird wie eines beendet (Zähler `follow.start_unconfirmed`). Lässt es sich nicht ausschalten und meldet die Kamera nicht „aus“, bleibt das Folgen gemerkt, auch über einen Neustart, und der Hub versucht es alle 30 s erneut, höchstens zehnmal (ein zusätzlicher Versuch bei einem Befehl von Hand zählt nicht), danach steht im Lagebild „Tracking lässt sich nicht ausschalten“ (Zähler `follow.off_retry`, `follow.off_fail`). Übernimmt in dieser Zeit eine Regel, versucht der Hub es während ihrer Sperre nicht weiter. Liest die Regel den Zustand, gehört das Tracking ab dann ihr: Der Hub vergisst sein Folgen, und die Regel behandelt ein „an“ als vom Hub, vorher also „aus“ (Zähler `follow.handed_rule`); liest sie nicht, geht es nach ihrer Sperre weiter. Nach einem Neustart warten Regeln, bis der Hub die Kameras zurückgestellt hat. Die Stellung des Zooms vor einer Nahaufnahme bleibt gemerkt (auch in `hub/.cache/camera-motion.json`), bis die Kamera die Rückfahrt angenommen hat: Der Hub versucht es alle 30 s erneut, höchstens zehnmal, danach steht im Lagebild „Zoom steht nicht in Grundstellung“ (Zähler `camera.zoom_restore_retry`, `_ok`, `_fail`). Bleibt nur die Antwort der Kamera aus, liest der Hub die Stellung: Steht der Zoom schon in der Ausgangsstellung, ist die Rückfahrt erledigt (Zähler `camera.zoom_restore_unconfirmed`). Bis dahin gilt die Kamera nicht als in Grundstellung: Halteverbot und Parkfläche warten wie während einer Nahaufnahme. Der Kennzeichen-Burst wartet darauf nicht, nur auf eine laufende Nahaufnahme, ein Folgen, einen gerade unterwegs befindlichen Versuch der Rückfahrt oder den Fokus nach der Rückkehr (höchstens 3 s). Übernimmt Hand oder Regel während der Nahaufnahme, bleibt der Zoom stehen und fährt nach der Sperre zurück, wenn er noch dort steht, wo die Automatik ihn hingestellt hat; ein inzwischen verstellter Zoom bleibt (Zähler `camera.zoom_restore_skip`). An Schwenk-Kameras fährt dabei nur der Zoom zurück, die Schwenkstellung bleibt bis zum nächsten Folgen. Solange eine Rückfahrt aussteht, macht die Kamera keine neue optische Nahaufnahme (der digitale Zoom übernimmt).
@@ -427,6 +480,8 @@ Wartezeit ≈ Personen ÷ Durchsatz. Den gemessenen Durchsatz liefert die Cloud 
 - `shadow` (Probelauf): Die fällige Meldung steht im Hub-Log („Belegung: … → Meldung (Probelauf, nichts gesendet)“) und im Zähler `occupancy.shadow_alert`, gesendet wird nichts. So lassen sich geänderte Schwellen an echten Messungen prüfen, bevor die Meldungen wieder hinausgehen. Ein unbekannter Wert gilt ebenfalls als Probelauf; die Startzeile meldet ihn als „nicht erkannt“.
 
 Die erste Messung jedes Tages steht mit der Zahl der gemessenen Bereiche und der Summe der Personen im Log („Belegung: erste Messung heute: …“), die weiteren Messungen nicht.
+
+Misst der Takt keinen Punkt (alle Räume geschlossen), holt er auch die Drehkreuz-Zahlen nicht aus der Cloud (Regel `areasRefreshDue`, Zähler `occupancy.areas_skip`); auf Nachfrage im Chat holt er sie immer.
 
 Im Chat: „Wie voll ist es?“ (Werkzeug `occupancy`). Schwellen lassen sich per Chat ändern („Übungslift ist erst ab 20 Leuten voll“, mit Bestätigung) oder direkt in `hub/occupancy.json`, dort auch Zonen je Kamera, damit nur der Wartebereich zählt:
 
@@ -664,8 +719,8 @@ cd hub && npm install && npm start
 iMac (LAN)                          Vercel (Cloud)
 ┌────────────────────────┐          ┌──────────────────────────┐
 │ hub (launchd, Node)    │  https   │ /api/hub/heartbeat        │
-│  • Heartbeat 30s      ─┼─────────▶│ /api/hub/tasks (GET)      │
-│  • Task-Poll 2s / 1s  ─┼─────────▶│ /api/hub/tasks/:id/result │
+│  • Heartbeat 60s      ─┼─────────▶│ /api/hub/tasks (GET)      │
+│  • Task-Poll 5s / 1s  ─┼─────────▶│ /api/hub/tasks/:id/result │
 │  • Kameras / DoorBird  │          │ /api/hub/cameras …        │
 │  • Face + ALPR + YOLO  │          │ HubAgent / HubTask (DB)   │
 │  • Self-Update 5min    │          │                          │

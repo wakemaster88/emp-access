@@ -33,6 +33,7 @@ import { roomsPayload } from "./rooms.js";
 import {
   DEFAULT_SPOTS,
   alertAction,
+  areasRefreshDue,
   alertMode,
   alertModeText,
   camerasForSpot,
@@ -292,7 +293,9 @@ export function measureAll(opts: { skipClosed?: boolean } = {}): Promise<SpotRea
         resting = closed.size;
       }
       lastResting = resting;
-      await refreshAreas();
+      // Nichts zu messen (alle Raeume zu): kein Abruf der Drehkreuz-Zahlen.
+      if (areasRefreshDue({ spots: list.length, onDemand: !opts.skipClosed })) await refreshAreas();
+      else improveCount("occupancy", "areas_skip");
       const out: SpotReading[] = [];
       for (const s of list) {
         const r = await measureSpot(s);

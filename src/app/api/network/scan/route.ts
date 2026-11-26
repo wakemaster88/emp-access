@@ -12,9 +12,11 @@ export async function POST() {
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 
+  // Nur Name und letztes Lebenszeichen, nicht den ganzen Status.
   const hub = await db.hubAgent.findFirst({
     where: { accountId: accountId! },
     orderBy: { lastSeenAt: "desc" },
+    select: { name: true, lastSeenAt: true },
   });
   if (!hub?.lastSeenAt || Date.now() - hub.lastSeenAt.getTime() > HUB_ONLINE_MS) {
     return NextResponse.json(

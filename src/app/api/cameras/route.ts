@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: INVALID_HOST_ERROR }, { status: 400 });
   }
 
-  const existing = await db.camera.findFirst({ where: { accountId: accountId!, name } });
+  const existing = await db.camera.findFirst({ where: { accountId: accountId!, name }, select: { id: true } });
   if (existing) {
     return NextResponse.json({ error: "Eine Kamera mit diesem Namen existiert bereits" }, { status: 400 });
   }
