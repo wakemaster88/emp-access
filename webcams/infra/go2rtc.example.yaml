@@ -23,6 +23,11 @@ api:
 log:
   level: info
 
+# RTSP-Server nur über Loopback: Der Tracker liest die Streams lokal
+# (rtsp://127.0.0.1:8554/<stream>).
+rtsp:
+  listen: "127.0.0.1:8554"
+
 webrtc:
   ice_servers:
     - urls:

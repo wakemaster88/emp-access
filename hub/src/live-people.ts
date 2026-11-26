@@ -14,6 +14,7 @@
  */
 import { log } from "./config.js";
 import { getFrame } from "./frame-cache.js";
+import { improveCount } from "./improve-log.js";
 import { listCameraStatus } from "./cameras.js";
 import { listDoorbirdStatus } from "./doorbird.js";
 import { hubEventsSince } from "./state.js";
@@ -22,6 +23,7 @@ import { restartService } from "./services.js";
 import { activeCleared } from "./agent/people.js";
 import {
   assignBoxLabels,
+  boxesUsable,
   mergeSeen,
   personLabel,
   type FaceHint,
@@ -52,7 +54,11 @@ export interface LiveBoxes {
   people: number;
   /** Wer das vermutlich ist (Gesicht, Waechter), sonst null. */
   label: { text: string; kind: SeenKind } | null;
-  /** Bild war aelter als 3 s (go2rtc lieferte kein frisches). */
+  /**
+   * Kein frisches Bild (go2rtc lieferte keins, nur der Ersatz oder ein
+   * Bild aelter als 3 s): dann persons null, people 0, label null. Die
+   * Zentrale blendet Boxen und Personen-Badge aus.
+   */
   stale: boolean;
 }
 
@@ -117,17 +123,30 @@ async function sources(windowMs: number): Promise<SeenSource[]> {
   return out.sort((a, b) => b.at - a.at);
 }
 
-/** Personen-Boxen im aktuellen Bild der Kamera. `src` ist der go2rtc-Stream, den die Ansicht abspielt. */
+/**
+ * Personen-Boxen im aktuellen Bild der Kamera. `src` ist der go2rtc-Stream
+ * fuer die Boxen (die Zentrale nimmt den Sub-Stream, boxStream in
+ * rtc-rules.js); die Boxen sind normiert und passen auch auf den Hauptstream.
+ */
 export function personBoxes(go2rtcUrl: string, cameraId: number, cameraName: string, src: string): Promise<LiveBoxes> {
   const hit = cache.get(cameraId);
   if (hit && Date.now() - hit.at < MIN_INTERVAL_MS) return hit.value;
   const value = (async (): Promise<LiveBoxes> => {
+    const started = Date.now();
     const got = await getFrame(go2rtcUrl, src, false);
     const at = new Date().toISOString();
+    // Ohne frisches Bild nichts zaehlen und nichts benennen: Boxen und Namen
+    // aus einem alten Bild laegen ueber einer womoeglich leeren Szene. Die
+    // letzten Boxen (lastFrame) bleiben unberuehrt.
+    if (!got || !boxesUsable(got.frame.at ? Date.now() - got.frame.at : null, got.cached)) {
+      improveCount("camera", "boxes_stale");
+      return { cameraId, at, persons: null, people: 0, label: null, stale: true };
+    }
     const recent = await sources(3 * 60_000);
     const label = personLabel(recent.filter((s) => s.camera === cameraName));
-    if (!got) return { cameraId, at, persons: null, people: 0, label, stale: true };
     const r = await classify(got.frame.buf);
+    // Aufwand je Abfrage (Bild plus Tracker), Mittel = live.ms_sum / live.ok.
+    if (r) improveCount("tracker", "live.ms_sum", Date.now() - started);
     let persons: PersonBox[] | null = r?.persons ?? null;
     if (persons) {
       const now = Date.now();
@@ -135,14 +154,7 @@ export function personBoxes(go2rtcUrl: string, cameraId: number, cameraName: str
       persons = persons.map((p, i) => ({ ...p, label: labels[i] }));
       lastFrame.set(cameraId, { at: now, boxes: persons.map((p) => ({ ...p, label: p.label ?? null })) });
     }
-    return {
-      cameraId,
-      at,
-      persons,
-      people: r?.people ?? 0,
-      label,
-      stale: got.cached || Date.now() - got.frame.at > 3000,
-    };
+    return { cameraId, at, persons, people: r?.people ?? 0, label, stale: false };
   })();
   cache.set(cameraId, { at: Date.now(), value });
   value.catch(() => cache.delete(cameraId));

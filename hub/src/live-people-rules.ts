@@ -175,3 +175,20 @@ export function assignBoxLabels(
   if (boxes.length === 1 && !out[0] && cameraLabel && !taken.has(cameraLabel.text)) out[0] = cameraLabel;
   return out;
 }
+
+/* ------------------------------------------ Boxen nur auf frischem Bild */
+
+/** Aelter als das ist ein Bild fuer die Personen-Boxen nicht mehr „jetzt“. */
+export const BOX_FRAME_MAX_AGE_MS = 3000;
+
+/**
+ * Taugt das Bild fuer Personen-Boxen ueber dem Livebild? Nur ein frisch von
+ * go2rtc geholtes Bild, hoechstens 3 s alt. Der Ersatz aus dem Speicher
+ * (go2rtc lieferte nichts) und Bilder unbekannten Alters zeigen womoeglich
+ * eine laengst leere Szene: kein Tracker-Aufruf, keine Namen.
+ * `frameAgeMs` null = Alter unbekannt.
+ */
+export function boxesUsable(frameAgeMs: number | null, cached: boolean): boolean {
+  if (cached || frameAgeMs == null || !Number.isFinite(frameAgeMs)) return false;
+  return frameAgeMs >= 0 && frameAgeMs <= BOX_FRAME_MAX_AGE_MS;
+}

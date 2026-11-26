@@ -7,9 +7,9 @@
  *  - `mower_<name>_<uid>_h264` rechnet es mit ffmpeg in H264 um, damit jeder
  *    Browser es abspielen kann. Die Kamera-Zentrale nutzt diesen Stream.
  *
- * Beide starten erst, wenn jemand zuschaut. Die Vorschaubild-Auffrischung
- * laesst sie aus (isMowerStream), sonst liefe die Kamera dauernd und die
- * Mammotion-App verloere ihr Bild.
+ * Beide starten erst, wenn jemand zuschaut. Standbilder liefert der Hub fuer
+ * sie nie (isMowerStream im Dashboard-Proxy), sonst liefe die Kamera
+ * dauernd und die Mammotion-App verloere ihr Bild.
  */
 
 export const MOWER_STREAM_PREFIX = "mower_";

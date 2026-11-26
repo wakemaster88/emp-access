@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assignBoxLabels, mergeSeen, personLabel, type SeenSource } from "./live-people-rules.js";
+import { BOX_FRAME_MAX_AGE_MS, PREV_MAX_AGE_MS, assignBoxLabels, boxesUsable, mergeSeen, personLabel, type SeenSource } from "./live-people-rules.js";
 
 const src = (p: Partial<SeenSource>): SeenSource => ({ camera: "Halle", at: 1000, title: "", list: null, origin: "face", ...p });
 
@@ -79,4 +79,27 @@ test("Name wandert mit der Person, ohne Lage bei mehreren Personen kein geratene
   assert.deepEqual(assignBoxLabels([moved[1]], [], null, jakob, now), [jakob]);
   // Zu weit gesprungen: kein Weitertragen.
   assert.deepEqual(assignBoxLabels([{ conf: 0.9, x: 0.1, y: 0.7, w: 0.05, h: 0.2 }, moved[0]], [], prev, null, now), [null, null]);
+});
+
+test("Boxen nur auf frischem Bild: frisch ja, 3,5 s alt, Ersatz und unbekanntes Alter nein", () => {
+  assert.equal(boxesUsable(200, false), true);
+  assert.equal(boxesUsable(BOX_FRAME_MAX_AGE_MS, false), true);
+  assert.equal(boxesUsable(3500, false), false);
+  // Ersatz aus dem Speicher, weil go2rtc nichts lieferte: auch wenn er jung ist.
+  assert.equal(boxesUsable(500, true), false);
+  assert.equal(boxesUsable(null, false), false);
+  assert.equal(boxesUsable(Number.NaN, false), false);
+  assert.equal(boxesUsable(-5, false), false);
+});
+
+test("Nach einer Lücke ohne frisches Bild trägt die nächste Abfrage keinen Namen weiter", () => {
+  const named = { text: "Gast", kind: "cleared" as const };
+  const box = { conf: 0.9, x: 0.4, y: 0.3, w: 0.1, h: 0.4 };
+  // Letzte frische Abfrage; danach nur veraltete Bilder (lastFrame bleibt so stehen).
+  const last = { at: 1_000_000, boxes: [{ ...box, label: named }, { ...box, x: 0.1, label: null }] };
+  const now = last.at + PREV_MAX_AGE_MS + 1000;
+  // Zwei Personen und kein Gesichtstreffer: ohne Weitertragen bleibt jede Box ohne Namen.
+  assert.deepEqual(assignBoxLabels([box, { ...box, x: 0.1 }], [], last, null, now), [null, null]);
+  // Innerhalb der Frist wandert der Name dagegen mit.
+  assert.deepEqual(assignBoxLabels([box, { ...box, x: 0.1 }], [], last, null, last.at + 1000), [named, null]);
 });

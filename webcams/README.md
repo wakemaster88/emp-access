@@ -141,8 +141,12 @@ stellt den früheren Befehl her (Lichtmodus 1, Helligkeit 100).
   dürfen im LAN nicht erreichbar sein. Next-Server, Hub und Sidecar laufen
   auf demselben Mac und nutzen `http://127.0.0.1:1984`; die
   **go2rtc-URL in den Einstellungen muss deshalb auf `127.0.0.1` (oder
-  `localhost`) zeigen**, nicht auf die LAN-IP des Macs. Der RTSP-Port 8554
-  und der WebRTC-Port 8555 von go2rtc sind unverändert.
+  `localhost`) zeigen**, nicht auf die LAN-IP des Macs.
+- **RTSP-Server von go2rtc nur über Loopback** (`rtsp.listen: "127.0.0.1:8554"`):
+  Der Tracker liest die Streams lokal über `rtsp://127.0.0.1:8554`. Der Hub
+  ergänzt den Block auch in einer go2rtc.yaml eines älteren Kiosk-Stands und
+  schreibt beim Start die Lausch-Adressen ins Log („go2rtc: API …, RTSP …“).
+  Der WebRTC-Port 8555 bleibt unverändert, darüber laufen die Livebilder.
 - Tür öffnen nur innerhalb des Ring-Fensters (Default 90 s) — **serverseitig
   erzwungen** (abschaltbar unter Admin → Doorbird), plus Hold-to-confirm 1 s.
   Nur ein echtes Klingeln (DoorBird-Webhook mit Secret) öffnet das Fenster;
@@ -189,9 +193,10 @@ lsof -nP -iTCP:1984 -sTCP:LISTEN     # muss 127.0.0.1:1984 zeigen, nicht *:1984
 launchctl kickstart -k gui/$UID/com.local.go2rtc   # falls noch *:1984
 ```
 
-Jedes Neuschreiben der yaml entfernt den `ffmpeg:`-Block, den der Hub dort
-einträgt; er kommt beim nächsten Hub-Start zurück
-(`launchctl kickstart -k gui/$UID/com.emp-access.hub`).
+Den `ffmpeg:`-Block, den der Hub dort einträgt, übernimmt jedes Neuschreiben
+der yaml unverändert. Fehlt er (etwa nach dem Löschen der Datei), trägt der
+Hub ihn spätestens 2 min nach der Änderung wieder ein, ebenso beim nächsten
+Hub-Start (`launchctl kickstart -k gui/$UID/com.emp-access.hub`).
 
 ## Datei-Struktur
 

@@ -2016,6 +2016,16 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
 }
 }
 
+/* Hinweis nach einem Hub-Update: neuer Stand der Oberflaeche (checkUi). */
+.ui-update {
+  position: fixed;
+  z-index: 31;
+  top: max(0.6rem, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+}
+.ui-update:active { transform: translateX(-50%) scale(0.97); }
+
 /* Kiosk = Vollbild-Ersatz fuers iPhone: nur noch das Kamera-Raster. */
 .kiosk-exit {
   position: fixed;
