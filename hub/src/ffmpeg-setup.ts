@@ -1,5 +1,5 @@
 /**
- * go2rtc.yaml auf dem Hub-Rechner: ffmpeg-Pfad und RTSP-Server.
+ * go2rtc.yaml auf dem Hub-Rechner: ffmpeg-Pfad, RTSP-Server und API.
  *
  * ffmpeg: Ohne ffmpeg liefert go2rtc fuer `/api/frame.jpeg` HTTP 500, die
  * Vorschaubilder der Kamera-Zentrale bleiben leer. Beim Start ffmpeg suchen
@@ -15,7 +15,13 @@
  * aendert (Blick alle 2 min aus dem go2rtc-Waechter). Ein vorhandener Block
  * bleibt, wie er ist.
  *
- * Beides in einem Zug: eine Schreibung, ein Neustart von go2rtc und nur,
+ * API: Die Kiosk-App legt die go2rtc-API auf 127.0.0.1:1984 (alle Abnehmer
+ * laufen auf diesem Rechner). Steht in der Datei eine andere Adresse oder
+ * fehlt der Block, setzt der Hub 127.0.0.1, aber nur, wenn er selbst
+ * (HUB_GO2RTC_URL) und der Kiosk (settings.go2rtcUrl) go2rtc ueber diese
+ * Adresse ansprechen; sonst bleibt die Datei und das Log sagt warum.
+ *
+ * Alles in einem Zug: eine Schreibung, ein Neustart von go2rtc und nur,
  * wenn sich der Inhalt wirklich aendert. Nur auf macOS; abschalten mit
  * `HUB_FFMPEG_SETUP=0` (nur ffmpeg) oder `HUB_GO2RTC_YAML=0` (die yaml).
  */
@@ -26,7 +32,14 @@ import { promisify } from "node:util";
 import { CONFIG, log } from "./config.js";
 import { recordHubEvent } from "./state.js";
 import { improve } from "./improve-log.js";
-import { exposureLine, go2rtcExposure, go2rtcSetupSwitches, planGo2rtcYaml } from "./ffmpeg-yaml.js";
+import {
+  apiLoopbackAllowed,
+  exposureLine,
+  go2rtcExposure,
+  go2rtcSetupSwitches,
+  kioskGo2rtcUrl,
+  planGo2rtcYaml,
+} from "./ffmpeg-yaml.js";
 
 const execFileAsync = promisify(execFile);
 const GO2RTC_URL = (process.env.HUB_GO2RTC_URL || "http://127.0.0.1:1984").replace(/\/$/, "");
@@ -47,6 +60,19 @@ let running: Promise<void> | null = null;
 
 function go2rtcYamlPath(): string {
   return path.join(CONFIG.repoDir, "webcams", "infra", "go2rtc.yaml");
+}
+
+/**
+ * go2rtc-Adresse des Kiosks (settings.go2rtcUrl in webcams/config.json, so
+ * setzt es install-launchagents.sh): undefined = keine Konfiguration oder
+ * kein Eintrag (Voreinstellung lokal), null = nicht lesbar.
+ */
+async function readKioskGo2rtcUrl(): Promise<string | null | undefined> {
+  try {
+    return kioskGo2rtcUrl(await fs.readFile(path.join(CONFIG.repoDir, "webcams", "config.json"), "utf8"));
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code === "ENOENT" ? undefined : null;
+  }
 }
 
 async function exists(file: string): Promise<boolean> {
@@ -133,7 +159,9 @@ async function applyNow(): Promise<void> {
     if (failedOnce(Number(st.mtimeMs))) log(`go2rtc.yaml nicht lesbar: ${errText(e)}`);
     return;
   }
-  const plan = planGo2rtcYaml(yaml, ffmpegBin);
+  // API nur auf 127.0.0.1, wenn Hub und Kiosk go2rtc lokal ansprechen (sonst bliebe einer ohne go2rtc).
+  const apiLoopback = apiLoopbackAllowed(GO2RTC_URL, await readKioskGo2rtcUrl());
+  const plan = planGo2rtcYaml(yaml, ffmpegBin, { apiLoopback });
   let written = false;
   let note = "";
   if (plan.added.length) {
@@ -148,9 +176,11 @@ async function applyNow(): Promise<void> {
     }
     if (written) {
       try {
-        await fetch(`${GO2RTC_URL}/api/restart`, { method: "POST", signal: AbortSignal.timeout(5000) });
-      } catch {
-        /* go2rtc laeuft evtl. nicht; beim naechsten Start gilt die yaml */
+        const r = await fetch(`${GO2RTC_URL}/api/restart`, { method: "POST", signal: AbortSignal.timeout(5000) });
+        if (!r.ok) note += ` (Neustart von go2rtc: HTTP ${r.status}, die Datei gilt ab dem nächsten Start von go2rtc)`;
+      } catch (e) {
+        // go2rtc laeuft evtl. nicht oder lauschte vorher woanders: Die Datei gilt ab seinem naechsten Start.
+        note += ` (Neustart von go2rtc nicht erreicht: ${errText(e)}; die Datei gilt ab dem nächsten Start von go2rtc)`;
       }
     }
   }
@@ -160,7 +190,8 @@ async function applyNow(): Promise<void> {
     seenMtimeMs = Number(st.mtimeMs);
   }
   const exp = go2rtcExposure(written ? plan.yaml : yaml);
-  const line = exposureLine(exp);
+  const hold = !exp.apiLocal && !apiLoopback ? " (API bleibt so: Hub oder Kiosk sprechen go2rtc nicht über 127.0.0.1 an)" : "";
+  const line = exposureLine(exp) + hold;
   if (line !== lastLine || note) log(`${line}${note}`);
   lastLine = line;
   if (!exp.apiLocal || !exp.rtspLocal) improve("camera", "go2rtc_exposed", { api: exp.api, rtsp: exp.rtsp });

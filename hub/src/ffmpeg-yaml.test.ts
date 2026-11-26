@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  apiLoopbackAllowed,
   blockListen,
   exposureLine,
   go2rtcExposure,
@@ -8,8 +9,11 @@ import {
   hasFfmpegBlock,
   hasTopLevelBlock,
   isLoopbackListen,
+  isLoopbackUrl,
+  kioskGo2rtcUrl,
   planGo2rtcYaml,
   withFfmpegBin,
+  withLoopbackApi,
   withLoopbackRtsp,
 } from "./ffmpeg-yaml.js";
 
@@ -143,4 +147,93 @@ test("go2rtc-Einrichtung: nur macOS, zwei getrennte Schalter", () => {
   assert.deepEqual(go2rtcSetupSwitches("darwin", { HUB_FFMPEG_SETUP: "0" }), { ffmpeg: false, yaml: true });
   assert.deepEqual(go2rtcSetupSwitches("darwin", { HUB_GO2RTC_YAML: "0" }), { ffmpeg: true, yaml: false });
   assert.deepEqual(go2rtcSetupSwitches("darwin", { HUB_FFMPEG_SETUP: "0", HUB_GO2RTC_YAML: "0" }), { ffmpeg: false, yaml: false });
+});
+
+test("API: nicht lokale listen-Zeile bekommt 127.0.0.1, Port und Rest der Datei bleiben", () => {
+  const yaml = 'api:\n  listen: ":1984"\n  origin: "*"\n\nlog:\n  level: info\n\nstreams:\n  cam-a_sub: rtsp://x\n';
+  const out = withLoopbackApi(yaml);
+  assert.equal(out, 'api:\n  listen: "127.0.0.1:1984"\n  origin: "*"\n\nlog:\n  level: info\n\nstreams:\n  cam-a_sub: rtsp://x\n');
+  assert.equal(go2rtcExposure(out ?? "").apiLocal, true);
+  // Anderer Port und Adresse ohne Anführungszeichen, mit Kommentar.
+  assert.equal(withLoopbackApi("api:\n  listen: 0.0.0.0:1985 # alt\n"), 'api:\n  listen: "127.0.0.1:1985"\n');
+  // LAN-Adresse, Schlüssel in Anführungszeichen, CRLF und BOM bleiben erhalten.
+  assert.equal(withLoopbackApi('\uFEFF"api":\r\n  "listen": "192.168.1.121:1984"\r\nlog:\r\n  level: info\r\n'), '\uFEFF"api":\r\n  "listen": "127.0.0.1:1984"\r\nlog:\r\n  level: info\r\n');
+});
+
+test("API: fehlender Block kommt ans Ende, lokale, leere und unklare Fälle bleiben", () => {
+  assert.equal(withLoopbackApi("streams:\n  a: rtsp://x\n"), 'streams:\n  a: rtsp://x\n\napi:\n  listen: "127.0.0.1:1984"\n');
+  assert.equal(withLoopbackApi('api:\n  listen: "127.0.0.1:1984"\n'), null);
+  assert.equal(withLoopbackApi('api:\n  listen: "localhost:1984"\n'), null);
+  assert.equal(withLoopbackApi('api:\n  listen: ""\n'), null); // API aus
+  assert.equal(withLoopbackApi('api:\n  origin: "*"\n'), null); // Block ohne listen: nicht raten
+  assert.equal(withLoopbackApi('api: { listen: ":1984" }\n'), null); // Kurzform: nicht anfassen
+  // listen eines anderen Blocks zählt nicht.
+  assert.equal(withLoopbackApi('api:\n  origin: "*"\nwebrtc:\n  listen: ":8555"\n'), null);
+  // Eingerückte Quelle mit "api:" im Text ist kein Block.
+  assert.equal(withLoopbackApi("streams:\n  api: rtsp://x\n"), 'streams:\n  api: rtsp://x\n\napi:\n  listen: "127.0.0.1:1984"\n');
+});
+
+test("API nur auf 127.0.0.1, wenn Hub und Kiosk go2rtc lokal ansprechen", () => {
+  assert.equal(isLoopbackUrl("http://127.0.0.1:1984"), true);
+  assert.equal(isLoopbackUrl("http://localhost:1984/"), true);
+  assert.equal(isLoopbackUrl("http://[::1]:1984"), false); // API lauscht nur auf 127.0.0.1
+  assert.equal(isLoopbackUrl("http://127.0.0.2:1984"), false);
+  assert.equal(isLoopbackUrl("http://192.168.1.121:1984"), false);
+  assert.equal(isLoopbackUrl("http://imac.local:1984"), false);
+  assert.equal(isLoopbackUrl("kein url"), false);
+  assert.equal(apiLoopbackAllowed("http://127.0.0.1:1984", undefined), true);
+  assert.equal(apiLoopbackAllowed("http://127.0.0.1:1984", "http://localhost:1984"), true);
+  assert.equal(apiLoopbackAllowed("http://127.0.0.1:1984", "http://192.168.1.121:1984"), false);
+  assert.equal(apiLoopbackAllowed("http://127.0.0.1:1984", null), false);
+  assert.equal(apiLoopbackAllowed("http://192.168.1.121:1984", undefined), false);
+  assert.equal(kioskGo2rtcUrl('{"settings":{"go2rtcUrl":"http://127.0.0.1:1984"}}'), "http://127.0.0.1:1984");
+  assert.equal(kioskGo2rtcUrl('{"settings":{}}'), undefined);
+  assert.equal(kioskGo2rtcUrl('{"settings":{"go2rtcUrl":""}}'), undefined);
+  assert.equal(kioskGo2rtcUrl('{"settings":{"go2rtcUrl":5}}'), null);
+  assert.equal(kioskGo2rtcUrl("{kaputt"), null);
+  assert.equal(kioskGo2rtcUrl("null"), null);
+});
+
+test("Plan: API nur mit Freigabe, sonst unverändert", () => {
+  const yaml = 'api:\n  listen: ":1984"\nrtsp:\n  listen: "127.0.0.1:8554"\n';
+  assert.deepEqual(planGo2rtcYaml(yaml, null), { yaml, added: [] });
+  assert.deepEqual(planGo2rtcYaml(yaml, null, { apiLoopback: false }), { yaml, added: [] });
+  const plan = planGo2rtcYaml(yaml, null, { apiLoopback: true });
+  assert.deepEqual(plan.added, ["api"]);
+  assert.equal(plan.yaml, 'api:\n  listen: "127.0.0.1:1984"\nrtsp:\n  listen: "127.0.0.1:8554"\n');
+  // Zweiter Durchlauf ändert nichts mehr (kein Neustart-Kreislauf).
+  assert.deepEqual(planGo2rtcYaml(plan.yaml, null, { apiLoopback: true }), { yaml: plan.yaml, added: [] });
+});
+
+test("API: leere, null und ~ heißen für go2rtc :1984 und werden ersetzt, \"\" schaltet aus", () => {
+  assert.equal(withLoopbackApi("api:\n  listen:\n  origin: x\n"), 'api:\n  listen: "127.0.0.1:1984"\n  origin: x\n');
+  assert.equal(withLoopbackApi("api:\n  listen: null\n"), 'api:\n  listen: "127.0.0.1:1984"\n');
+  assert.equal(withLoopbackApi("api:\n  listen: ~ # leer\n"), 'api:\n  listen: "127.0.0.1:1984"\n');
+  assert.equal(withLoopbackApi('api:\n  listen: ""\n'), null);
+  assert.equal(withLoopbackApi("api:\n  listen: ''\n"), null);
+  // Lesen wie go2rtc: leer, null, ~ = Voreinstellung, "" = aus.
+  assert.equal(go2rtcExposure("api:\n  listen:\n").api, ":1984");
+  assert.equal(go2rtcExposure("api:\n  listen: null\n").apiLocal, false);
+  assert.equal(go2rtcExposure('api:\n  listen: ""\n').api, "");
+  assert.equal(go2rtcExposure("rtsp:\n  listen: ~\n").rtsp, ":8554");
+});
+
+test("API: mehrzeilige und besondere Werte bleiben unangetastet", () => {
+  assert.equal(withLoopbackApi("api:\n  listen: >-\n    :1984\n"), null);
+  assert.equal(withLoopbackApi("api:\n  listen: |\n    :1984\n"), null);
+  assert.equal(withLoopbackApi('api:\n  listen: ":19\n    84"\n'), null);
+  assert.equal(withLoopbackApi("api:\n  listen: &l \":1984\"\nwebrtc:\n  listen: *l\n"), null);
+  assert.equal(withLoopbackApi("api:\n  listen: !!str :1984\n"), null);
+  assert.equal(withLoopbackApi('api:\n  listen: "a\\"b"\n'), null);
+  // Wert in der nächsten, tiefer eingerückten Zeile.
+  assert.equal(withLoopbackApi("api:\n  listen:\n    \":1984\"\n"), null);
+});
+
+test("API: nur listen auf der Ebene des ersten Kinds, Kopf mit Kommentar", () => {
+  assert.equal(withLoopbackApi('api:\n  x:\n    listen: ":1"\n  listen: ":1984"\n'), 'api:\n  x:\n    listen: ":1"\n  listen: "127.0.0.1:1984"\n');
+  assert.equal(blockListen('api:\n  x:\n    listen: ":1"\n  listen: ":1984"\n', "api"), ":1984");
+  assert.equal(withLoopbackApi('api: # Kommentar\n  listen: ":1984"\n'), 'api: # Kommentar\n  listen: "127.0.0.1:1984"\n');
+  assert.equal(blockListen('api: # Kommentar\n  listen: "127.0.0.1:1984"\n', "api"), "127.0.0.1:1984");
+  // Kinder mit 4 Leerzeichen, Kommentarzeilen dazwischen.
+  assert.equal(withLoopbackApi('api:\n    # alt\n    origin: "*"\n    listen: ":1984"\n'), 'api:\n    # alt\n    origin: "*"\n    listen: "127.0.0.1:1984"\n');
 });
