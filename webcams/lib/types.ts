@@ -312,9 +312,13 @@ export const TailgateSchema = z.object({
 export type TailgateConfig = z.infer<typeof TailgateSchema>;
 
 /**
- * Ausfahrt-Assist: YOLO erkennt Fahrzeuge in einer Fläche (z. B. direkt vor
- * dem Schiebetor). Beim Übergang 0 → ≥1 öffnet die DoorBird und/oder ein
- * emp-access-Gerät. Parkende Autos außerhalb der Fläche zählen nicht.
+ * Fahrzeug-Fläche: YOLO zählt Fahrzeuge in einer Fläche (z. B. direkt vor
+ * dem Schiebetor; der Hub meldet daraus die Parkfläche). Parkende Autos
+ * außerhalb der Fläche zählen nicht. Zählen und Öffnen sind getrennt: Beim
+ * Übergang 0 → ≥1 öffnet die Tor-Automatik nur bei ausdrücklicher Angabe,
+ * also mit `openDoorbirdConfirmed: true` (Schalter „DoorBird öffnen“) oder
+ * Geräten in `deviceIds`. Voreinstellung: nicht öffnen, nur zählen (Tracker:
+ * `should_open` in tracker/vehicle_gate.py).
  */
 export const VehicleGateSchema = z.object({
   enabled: z.boolean().default(false),
@@ -322,9 +326,20 @@ export const VehicleGateSchema = z.object({
   zone: z
     .union([z.array(NormPointSchema).min(3).max(24), z.null()])
     .default(null),
-  /** Physisches Tor über die DoorBird (gleicher Relais wie Einfahrt-ALPR). */
-  openDoorbird: z.boolean().default(true),
-  /** Zusätzliche emp-access-Geräte (Shelly/Rolltor), optional. */
+  /**
+   * Älterer Stand des Schalters „DoorBird öffnen“; öffnet allein nicht mehr:
+   * Frühere Voreinstellungen haben hier true in die Datei geschrieben, ohne
+   * dass jemand es gewählt hat. Der Schalter setzt es weiter mit, damit ein
+   * älterer Tracker dasselbe tut wie der Schalter.
+   */
+  openDoorbird: z.boolean().default(false),
+  /**
+   * Physisches Tor über die DoorBird öffnen (gleicher Relais wie Einfahrt-ALPR).
+   * Setzt nur der Schalter „DoorBird öffnen“ beim Speichern; ab Werk false,
+   * und keine Voreinstellung schreibt es als true in die Datei.
+   */
+  openDoorbirdConfirmed: z.boolean().default(false),
+  /** emp-access-Geräte (Shelly/Rolltor), die beim Fahrzeug in der Fläche öffnen; leer = keine. */
   deviceIds: z.array(z.number().int().positive()).default([]),
   /** Mindestabstand zwischen zwei Öffnungen, während das Auto in der Fläche steht. */
   cooldownSec: z.number().int().min(10).max(600).default(45),
@@ -568,17 +583,7 @@ export const CamSchema = z
         message: "Mindestens drei Punkte für die Fläche vor dem Tor setzen.",
       });
     }
-    if (
-      vehicleGate &&
-      !cam.vehicleGate.openDoorbird &&
-      cam.vehicleGate.deviceIds.length === 0
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["vehicleGate", "openDoorbird"],
-        message: "DoorBird oder mindestens ein emp-access-Gerät zum Öffnen angeben.",
-      });
-    }
+    // Ohne DoorBird und ohne Gerät zählt die Fläche nur (Voreinstellung).
   });
 
 export type Cam = z.infer<typeof CamSchema>;

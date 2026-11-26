@@ -88,13 +88,20 @@ const cloud = {
   held: [] as Array<() => void>,
   /** Kennt die Kamera-Liste der Cloud die Park-Kamera? */
   listHasPark: false,
+  /** Query der hochgeladenen Bilder, in Reihenfolge. */
+  frameQueries: [] as string[],
+  /** Rumpf der Parkmeldungen (JSON), in Reihenfolge. */
+  reports: [] as Array<{ parking: { trackerOnline: boolean; lots: Array<Record<string, unknown>> } }>,
 };
 cloud.server.on("request", (req, res) => {
   res.setHeader("Connection", "close");
-  req.resume();
+  const chunks: Buffer[] = [];
+  req.on("data", (d: Buffer) => chunks.push(d));
   req.on("end", () => {
     const url = new URL(req.url ?? "/", "http://x");
     cloudCalls.push(`${req.method} ${url.pathname}`);
+    if (url.pathname === `/api/hub/cameras/${PARK_CAMERA_ID}/snapshot`) cloud.frameQueries.push(url.search);
+    if (url.pathname === "/api/hub/parking") cloud.reports.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
     const json = (status: number, value: unknown) =>
       res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(value));
     if (req.method === "GET" && url.pathname === "/api/hub/cameras") {
@@ -124,13 +131,31 @@ cloud.server.on("request", (req, res) => {
   });
 });
 
-const tracker = { server: http.createServer(), count: 3 };
+const tracker = {
+  server: http.createServer(),
+  count: 3,
+  lastUpdate: 1_700_000_000,
+  lastError: null as string | null,
+  /** Tor-Automatik der Flaeche, wie der Tracker sie meldet; undefined = aelterer Tracker ohne Angabe. */
+  gate: { opens: false, reason: "DoorBird öffnen aus, keine Geräte" } as { opens: boolean; reason: string } | undefined,
+  /** Tracker antwortet nicht (503 auf alles). */
+  down: false,
+};
 tracker.server.on("request", (req, res) => {
   res.setHeader("Connection", "close");
   req.resume();
   const url = new URL(req.url ?? "/", "http://x");
+  if (tracker.down) return void res.writeHead(503).end();
   if (url.pathname === "/counters") {
-    const counters = { halle: { count: tracker.count, lastUpdate: 1_700_000_000, fps: 5 } };
+    const counters = {
+      halle: {
+        count: tracker.count,
+        lastUpdate: tracker.lastUpdate,
+        lastError: tracker.lastError,
+        fps: 5,
+        ...(tracker.gate ? { gate: tracker.gate } : {}),
+      },
+    };
     return void res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ counters }));
   }
   if (url.pathname === "/debug/halle/snapshot.jpg") return void res.writeHead(200, { "Content-Type": "image/jpeg" }).end(JPEG);
@@ -144,13 +169,22 @@ let improveLog: typeof import("./improve-log.js");
 let kioskFile = "";
 const count = (key: string) => improveLog.improveSnapshot().counts[`parking.${key}`] ?? 0;
 
-/** Kiosk-Konfiguration mit einer Parkflaeche (Tracker-Attrappe). */
-function writeKiosk(port = 80): void {
+/** Kiosk-Konfiguration mit einer Parkflaeche (Tracker-Attrappe); `gate`: weitere Felder von vehicleGate. */
+function writeKiosk(port = 80, gate: Record<string, unknown> = {}): void {
   const url = `http://127.0.0.1:${(tracker.server.address() as AddressInfo).port}`;
   const cfg = {
     settings: { tracker: { url } },
     cams: [
-      { id: "halle", name: "Halle", ip: PARK_HOST, port, username: "admin", password: PASSWORD, channel: 0, vehicleGate: { enabled: true, zone: null } },
+      {
+        id: "halle",
+        name: "Halle",
+        ip: PARK_HOST,
+        port,
+        username: "admin",
+        password: PASSWORD,
+        channel: 0,
+        vehicleGate: { enabled: true, zone: null, ...gate },
+      },
     ],
   };
   fs.writeFileSync(kioskFile, JSON.stringify(cfg));
@@ -295,4 +329,91 @@ test("Ein Lauf zur Zeit: haengt die Cloud, faellt der naechste Lauf aus und laeu
   await tick();
   assert.equal(calls("POST /api/hub/parking") - report, 2);
   assert.equal(count("busy") - busy, 1);
+});
+
+test("Videostrom ausgefallen: Zaehlung unbekannt statt alter Zahl, kein Bild; danach wieder live", async () => {
+  const frames = () => calls(`POST /api/hub/cameras/${PARK_CAMERA_ID}/snapshot`);
+  const lastLot = () => cloud.reports.at(-1)!.parking.lots[0];
+  // Laufender Strom: Bild geht mit live=1 hoch (Tracker hat eben ein Bild verarbeitet).
+  tracker.lastUpdate = clock + TICK_MS;
+  await tick();
+  assert.equal(lastLot().count, 3);
+  assert.equal(lastLot().state, "ok");
+  assert.equal(cloud.frameQueries.at(-1), "?source=parking&live=1");
+
+  // Strom bricht ab: Der Tracker meldet den Fehler, sein letztes Bild bleibt stehen.
+  const before = frames();
+  tracker.lastError = "RTSP-Stream abgebrochen";
+  await tick();
+  await tick();
+  assert.equal(lastLot().count, null);
+  assert.equal(lastLot().state, "unbekannt");
+  assert.equal(lastLot().lastError, "RTSP-Stream abgebrochen");
+  assert.equal(frames() - before, 0, "kein altes Bild als neues");
+  assert.equal(count("frame_skip_error"), 2);
+
+  // Strom laeuft wieder, aber das letzte verarbeitete Bild ist alt: Bild ja, „gesehen“ nicht.
+  tracker.lastError = null;
+  tracker.lastUpdate = clock - 10 * 60_000;
+  await tick();
+  assert.equal(lastLot().count, 3);
+  assert.equal(frames() - before, 1);
+  assert.equal(cloud.frameQueries.at(-1), "?source=parking&live=0");
+});
+
+test("Tracker nicht erreichbar: Zaehlung unbekannt statt 0, kein Bild", async () => {
+  const frames = () => calls(`POST /api/hub/cameras/${PARK_CAMERA_ID}/snapshot`);
+  const before = frames();
+  tracker.down = true;
+  await tick();
+  const report = cloud.reports.at(-1)!.parking;
+  assert.equal(report.trackerOnline, false);
+  assert.equal(report.lots[0].count, null);
+  assert.equal(report.lots[0].state, "unbekannt");
+  assert.equal(frames() - before, 0);
+  tracker.down = false;
+});
+
+test("Tor-Automatik: so, wie der Tracker sie meldet; ohne Angabe unbekannt; eine Zeile bei jedem Wechsel", async () => {
+  const lastLot = () => cloud.reports.at(-1)!.parking.lots[0];
+  const gateLines = () => logged(/^Parkfläche Halle:/);
+  // Tracker meldet: zählt nur – seit dem ersten Lauf eine Zeile.
+  await tick();
+  assert.deepEqual(lastLot().gate, { opens: false, reason: "DoorBird öffnen aus, keine Geräte" });
+  assert.deepEqual(gateLines(), ["Parkfläche Halle: zählt nur, Tor-Automatik öffnet nicht (DoorBird öffnen aus, keine Geräte)"]);
+
+  // Älterer Tracker ohne Angabe, in der Kiosk-Konfiguration die alte Einstellung openDoorbird:
+  // Er öffnet womöglich danach – der Hub zeigt „unbekannt“, nicht „zählt nur“.
+  tracker.gate = undefined;
+  writeKiosk(8080, { openDoorbird: true });
+  await tick();
+  assert.deepEqual(lastLot().gate, { opens: null, reason: "Tracker meldet die Tor-Automatik nicht (älterer Stand)" });
+  assert.equal(gateLines().at(-1), "Parkfläche Halle: Tor-Automatik unbekannt (Tracker meldet die Tor-Automatik nicht (älterer Stand))");
+
+  // Tracker meldet: öffnet – der Hub zeigt es an (er schaltet dabei nichts).
+  const before = cloudCalls.length;
+  tracker.gate = { opens: true, reason: "DoorBird (im Kiosk eingeschaltet)" };
+  await tick();
+  await tick();
+  assert.deepEqual(lastLot().gate, { opens: true, reason: "DoorBird (im Kiosk eingeschaltet)" });
+  assert.equal(gateLines().length, 3);
+  assert.equal(gateLines()[2], "Parkfläche Halle: Tor-Automatik öffnet bei Fahrzeug in der Fläche (DoorBird (im Kiosk eingeschaltet))");
+  assert.deepEqual(
+    cloudCalls.slice(before).filter((c) => !c.startsWith("POST /api/hub/parking") && !c.startsWith(`POST /api/hub/cameras/${PARK_CAMERA_ID}/snapshot`)),
+    [],
+    "nur Meldung und Bild, kein Aufruf zum Oeffnen",
+  );
+
+  // Tracker weg: unbekannt, aber keine neue Zeile (sonst zwei je Ausfall).
+  tracker.down = true;
+  await tick();
+  assert.deepEqual(lastLot().gate, { opens: null, reason: "Tracker nicht erreichbar" });
+  assert.equal(gateLines().length, 3);
+  tracker.down = false;
+
+  tracker.gate = { opens: false, reason: "DoorBird öffnen aus, keine Geräte" };
+  writeKiosk(8080);
+  await tick();
+  assert.equal((lastLot().gate as { opens: boolean | null }).opens, false);
+  assert.equal(gateLines().length, 4);
 });

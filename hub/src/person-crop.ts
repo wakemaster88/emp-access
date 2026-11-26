@@ -12,8 +12,16 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { log } from "./config.js";
 import { embedJpeg, scoreGallery, type FaceEmbedResult } from "./face.js";
-import { trackerBaseUrl } from "./vision.js";
-import { groupRect, headRect, largestFirst, type NormBox } from "./person-crop-rules.js";
+import { classify } from "./tracker-client.js";
+import {
+  PERSON_MARK_LIMIT,
+  PERSON_MIN_CONF,
+  groupRect,
+  headRect,
+  largestFirst,
+  parsePersons,
+  type NormBox,
+} from "./person-crop-rules.js";
 
 const execFileAsync = promisify(execFile);
 const FFMPEG = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"];
@@ -22,26 +30,19 @@ function ffmpegBin(): string | null {
   return FFMPEG.find((p) => existsSync(p)) ?? null;
 }
 
-/** Personen-Boxen (normiert). null = Tracker nicht erreichbar oder kennt keine Boxen. */
-export async function detectPersons(jpeg: Buffer): Promise<NormBox[] | null> {
-  try {
-    const url = await trackerBaseUrl();
-    const res = await fetch(`${url}/classify`, {
-      method: "POST",
-      headers: { "Content-Type": "image/jpeg" },
-      body: new Uint8Array(jpeg),
-      signal: AbortSignal.timeout(6_000),
-    });
-    if (!res.ok) return null;
-    const json = (await res.json()) as { persons?: NormBox[] };
-    if (!Array.isArray(json.persons)) return null;
-    return json.persons
-      .map((p) => ({ conf: Number(p.conf), x: Number(p.x), y: Number(p.y), w: Number(p.w), h: Number(p.h) }))
-      .filter((p) => [p.x, p.y, p.w, p.h].every(Number.isFinite) && p.w > 0 && p.h > 0 && (p.conf ?? 1) >= 0.35)
-      .slice(0, 20);
-  } catch {
-    return null;
-  }
+/**
+ * Personen-Boxen (normiert), höchstens `limit` (Standard PERSON_MARK_LIMIT
+ * für Ausschnitte und Markierungen; die Belegung zählt mit einem höheren).
+ * null = Tracker nicht erreichbar, gilt als aus (tracker-client.ts) oder
+ * kennt keine Boxen.
+ */
+export async function detectPersons(
+  jpeg: Buffer,
+  opts: { limit?: number; caller?: string } = {},
+): Promise<NormBox[] | null> {
+  const r = await classify(jpeg, { caller: opts.caller ?? "persons" });
+  if (!r.ok) return null;
+  return parsePersons(r.json, { minConf: PERSON_MIN_CONF, limit: opts.limit ?? PERSON_MARK_LIMIT });
 }
 
 /** Ausschnitt ausschneiden und auf mindestens `minWidth` Pixel vergroessern. */

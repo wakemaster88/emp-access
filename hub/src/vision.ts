@@ -9,93 +9,32 @@
  * ihr Mittelpunkt in der Einfahrtszone liegt (HUB_VEHICLE_ZONE bzw.
  * HUB_VEHICLE_ZONE_<kameraId>, normierte Polygonpunkte 0..1).
  */
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { CONFIG, log } from "./config.js";
+import { log } from "./config.js";
 import { improve } from "./improve-log.js";
+import { classify, trackerBaseUrl } from "./tracker-client.js";
+import { inside, parseZone, type Point } from "./zone-rules.js";
 
-const TRACKER_DEFAULT = "http://127.0.0.1:8088";
-const CLASSIFY_TIMEOUT_MS = Number(process.env.HUB_VISION_TIMEOUT_MS || 5_000);
 /** Mindestanteil der Bildfläche, den eine Fahrzeug-Box belegen muss (2 % = Auto an der Einfahrt, nicht auf dem Parkplatz dahinter). */
 export const VEHICLE_MIN_AREA = (() => {
   const n = Number(process.env.HUB_VEHICLE_MIN_AREA);
   return Number.isFinite(n) && n >= 0 && n < 1 ? n : 0.02;
 })();
 
-type TrackerTarget = { url: string; pin: string };
-
-let cachedTarget: { at: number; value: TrackerTarget } | null = null;
-const TARGET_TTL_MS = 60_000;
-
-async function trackerTarget(): Promise<TrackerTarget> {
-  if (cachedTarget && Date.now() - cachedTarget.at < TARGET_TTL_MS) {
-    return cachedTarget.value;
-  }
-  const envUrl = (process.env.HUB_TRACKER_URL || "").replace(/\/$/, "");
-  let url = envUrl || TRACKER_DEFAULT;
-  let pin = process.env.HUB_TRACKER_PIN || "";
-  try {
-    const raw = await fs.readFile(
-      path.join(CONFIG.repoDir, "webcams", "config.json"),
-      "utf8"
-    );
-    const cfg = JSON.parse(raw) as {
-      settings?: { adminPin?: string; tracker?: { url?: string } };
-    };
-    if (!envUrl && cfg.settings?.tracker?.url) {
-      url = String(cfg.settings.tracker.url).replace(/\/$/, "");
-    }
-    if (!pin && cfg.settings?.adminPin) pin = String(cfg.settings.adminPin);
-  } catch {
-    // Default reicht, wenn die Kiosk-Config fehlt.
-  }
-  const value = { url, pin };
-  cachedTarget = { at: Date.now(), value };
-  return value;
-}
-
-/** Basis-URL des Trackers (für Health-Checks nach einem Neustart). */
-export async function trackerBaseUrl(): Promise<string> {
-  return (await trackerTarget()).url;
-}
+/** Basis-URL des Trackers (für Health-Checks nach einem Neustart); Aufruf, PIN und Zeitlimit in tracker-client.ts. */
+export { trackerBaseUrl };
 
 /* ---------------------------------------------------------------------------
- * Einfahrtszone: Polygon aus der Umgebung, "x,y;x,y;x,y…" mit Werten 0..1.
+ * Einfahrtszone: Polygon aus der Umgebung, "x,y;x,y;x,y…" mit Werten 0..1
+ * (Lesen und Punkt-in-Polygon in zone-rules.ts).
  * ------------------------------------------------------------------------- */
 
-type Point = { x: number; y: number };
-
-function parseZone(raw: string | undefined): Point[] | null {
-  if (!raw) return null;
-  const pts: Point[] = [];
-  for (const part of raw.split(";")) {
-    const [xs, ys] = part.split(",").map((s) => s.trim());
-    const x = Number(xs);
-    const y = Number(ys);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    pts.push({ x, y });
-  }
-  return pts.length >= 3 ? pts : null;
-}
+/** Punkt-in-Polygon; weiter von hier exportiert für die Belegung (occupancy.ts). */
+export { inside };
 
 /** Zone für eine Kamera: erst HUB_VEHICLE_ZONE_<id>, sonst HUB_VEHICLE_ZONE. */
 export function vehicleZoneFor(cameraId: number | undefined): Point[] | null {
   const specific = cameraId != null ? parseZone(process.env[`HUB_VEHICLE_ZONE_${cameraId}`]) : null;
   return specific ?? parseZone(process.env.HUB_VEHICLE_ZONE);
-}
-
-/** Punkt-in-Polygon (Ray-Casting). */
-export function inside(p: Point, poly: Point[]): boolean {
-  let hit = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i];
-    const b = poly[j];
-    const crosses =
-      a.y > p.y !== b.y > p.y &&
-      p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y || 1e-9) + a.x;
-    if (crosses) hit = !hit;
-  }
-  return hit;
 }
 
 /** Fahrzeug-Box vom Tracker, Koordinaten normiert 0..1. */
@@ -140,23 +79,20 @@ export async function checkVehicle(
       ? opts.zone.map(([x, y]) => ({ x, y }))
       : vehicleZoneFor(opts.cameraId);
   const tag = opts.label ? ` ${opts.label}` : "";
-  try {
-    const { url, pin } = await trackerTarget();
-    const res = await fetch(`${url}/classify`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "image/jpeg",
-        ...(pin ? { "x-admin-token": pin } : {}),
-      },
-      body: new Uint8Array(jpeg),
-      signal: AbortSignal.timeout(CLASSIFY_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      log(`Vision-Check${tag} fehlgeschlagen: HTTP ${res.status}`);
-      improve("vision", "fail", { http: res.status });
-      return { vehicle: null, conf: 0, area: 0 };
+  const r = await classify(jpeg, { caller: "vehicle" });
+  if (!r.ok) {
+    // Tracker gilt als aus: wie ein Fehler, ohne eigene Zeile (die steht einmal in tracker-client.ts).
+    if (r.reason === "http") {
+      log(`Vision-Check${tag} fehlgeschlagen: HTTP ${r.status}`);
+      improve("vision", "fail", { http: r.status });
+    } else if (r.reason === "error") {
+      log(`Vision-Check${tag} Fehler: ${r.error}`);
+      improve("vision", "fail", { error: r.error });
     }
-    const json = (await res.json()) as ClassifyResponse;
+    return { vehicle: null, conf: 0, area: 0 };
+  }
+  try {
+    const json = r.json as ClassifyResponse;
 
     // Alter Tracker ohne Box-Liste: nur das Ja/Nein übernehmen.
     if (!Array.isArray(json.vehicles)) {
@@ -220,32 +156,23 @@ export async function checkVehicle(
  */
 export async function detectVehicles(
   jpeg: Buffer,
-  opts: { label?: string } = {},
+  opts: { label?: string; caller?: string } = {},
 ): Promise<VehicleBox[] | null> {
   const tag = opts.label ? ` ${opts.label}` : "";
-  try {
-    const { url, pin } = await trackerTarget();
-    const res = await fetch(`${url}/classify`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "image/jpeg",
-        ...(pin ? { "x-admin-token": pin } : {}),
-      },
-      body: new Uint8Array(jpeg),
-      signal: AbortSignal.timeout(CLASSIFY_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      log(`Fahrzeug-Erkennung${tag} fehlgeschlagen: HTTP ${res.status}`);
-      improve("vision", "fail", { http: res.status });
-      return null;
+  const r = await classify(jpeg, { caller: opts.caller ?? "vehicles" });
+  if (!r.ok) {
+    // Tracker gilt als aus: wie ein Fehler, ohne eigene Zeile (die steht einmal in tracker-client.ts).
+    if (r.reason === "http") {
+      log(`Fahrzeug-Erkennung${tag} fehlgeschlagen: HTTP ${r.status}`);
+      improve("vision", "fail", { http: r.status });
+    } else if (r.reason === "error") {
+      log(`Fahrzeug-Erkennung${tag} Fehler: ${r.error}`);
+      improve("vision", "fail", { error: r.error });
     }
-    const json = (await res.json()) as ClassifyResponse;
-    return Array.isArray(json.vehicles) ? json.vehicles : [];
-  } catch (e) {
-    log(`Fahrzeug-Erkennung${tag} Fehler: ${e instanceof Error ? e.message : e}`);
-    improve("vision", "fail", { error: e instanceof Error ? e.message : String(e) });
     return null;
   }
+  const json = r.json as ClassifyResponse;
+  return Array.isArray(json.vehicles) ? json.vehicles : [];
 }
 
 /**

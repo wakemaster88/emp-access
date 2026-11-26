@@ -2,11 +2,24 @@
  * Automatisches Verbesserungslog: JSONL + periodischer Snapshot.
  * Keine Secrets (Passwort, Token, Embedding). Dient der Hub-Diagnose.
  */
-import { appendFile, mkdir, open, rename, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, log } from "./config.js";
 import { STATE } from "./state.js";
 import { nearMissHint, recentTimes } from "./face-rules.js";
+import {
+  addDaily,
+  hintsFor,
+  localDay,
+  mergeDaily,
+  newTrail,
+  parseDaily,
+  serializeDaily,
+  trailStep,
+  type DailyCounts,
+  type FailTrail,
+} from "./improve-rules.js";
+import { trackerTimeoutMs } from "./tracker-client-rules.js";
 
 export type ImproveKind =
   | "boot"
@@ -24,6 +37,7 @@ export type ImproveKind =
   | "soundweb"
   | "delivery"
   | "occupancy"
+  | "tracker"
   | "agent"
   | "rules";
 
@@ -41,6 +55,15 @@ let writing = false;
 let lastLoggedHint: string | null = null;
 /** Beinahe-Treffer nicht hochskalierter Gesichter der letzten 24 h (Zeitpunkte), fuer den Hinweis. */
 let directNearMissAt: number[] = [];
+/** Fehler in Folge und letzter Fehlertext je Vorgang (improveOutcome), fuer die Hinweise. */
+const trails = new Map<string, FailTrail>();
+/**
+ * Zaehler je Tag (Ortszeit). Beim Start kommen die gespeicherten Tage aus
+ * hub/.cache/improve-daily.json dazu; geschrieben wird mit dem Snapshot
+ * (alle 5 Minuten und beim Beenden), erst nachdem die Datei gelesen ist.
+ */
+let daily: DailyCounts = {};
+let dailyLoaded = false;
 
 function enabled(): boolean {
   return process.env.HUB_IMPROVE_LOG !== "0";
@@ -58,9 +81,14 @@ function latestPath(): string {
   return path.join(cacheDir(), "improve-latest.md");
 }
 
+function dailyPath(): string {
+  return path.join(cacheDir(), "improve-daily.json");
+}
+
 function bump(kind: ImproveKind, event: string, by = 1): string {
   const key = `${kind}.${event}`;
   counts.set(key, (counts.get(key) ?? 0) + by);
+  addDaily(daily, localDay(new Date()), key, by);
   return key;
 }
 
@@ -80,74 +108,12 @@ function n(key: string): number {
 }
 
 function hints(): string[] {
-  const out: string[] = [];
-  // Zuerst der Mac selbst: ohne Auto-Login und Einschaltplan ist alles andere egal.
-  for (const h of STATE.system?.hints ?? []) out.push(h);
-  const personOk = n("face.person_match") + n("face.person_nomatch");
-  const skipNoFace = n("face.skip_no_face");
-  const personPipelines = personOk + skipNoFace + n("face.skip_inactive") + n("face.skip_inflight");
-  const embedHit = n("face.ok") + n("face.zoom") + n("face.keep");
-  if (personPipelines >= 6 && skipNoFace / personPipelines >= 0.5) {
-    out.push(
-      `Personen-Pipeline oft ohne Gesicht (${skipNoFace}/${personPipelines}) – Abstand, Licht oder Zoom`
-    );
-  }
-  if (n("face.keep") >= 5 && n("face.zoom") === 0) {
-    out.push("Face-Zoom findet Mini-Gesichter nicht – KEEP-Fallback trägt, Matching unsicher");
-  }
-  const nearMiss = nearMissHint(directNearMissAt, Date.now());
-  if (nearMiss) out.push(nearMiss);
-  if (embedHit >= 3 && n("face.person_match") === 0 && n("face.person_nomatch") >= 3 && n("face.near_miss") === 0) {
-    out.push("Gesichter da, kein Match – Unbekannte oder Mini-Gesichter (best-Score im Log)");
-  }
-  if (n("vision.fail") >= 3) {
-    out.push("YOLO-/Vision-Classify schlägt fehl – Tracker oder Timeout (HUB, 2 s)");
-  }
-  if (n("vision.no_small") >= 5 && n("vision.no_small") > 2 * n("vision.yes")) {
-    out.push(
-      "Fahrzeug-Alarme ohne Auto an der Einfahrt – Kamera-KI reagiert auf Hintergrundverkehr (Erkennungszone in der Kamera enger ziehen)"
-    );
-  }
-  if (n("noparking.fail") >= 3) {
-    out.push("Halteverbot-Prüfung schlägt fehl – Kamera erreichbar? (HUB_NOPARK_CAMERAS)");
-  }
-  if (n("noparking.waiting") >= 20 && n("noparking.alert") === 0) {
-    out.push(
-      "Dauerbelegung im Halteverbot ohne Meldung – stehen dort eigene Fahrzeuge? (HUB_NOPARK_ZONE enger ziehen)"
-    );
-  }
-  if (n("camera.talk_fail") >= 2) {
-    out.push("Ansage über den Kamera-Lautsprecher scheitert – LAN oder RTSP-Backchannel der Kamera");
-  }
-  if (n("alpr.repeat") >= 5) {
-    out.push("Kennzeichen mehrfach kurz hintereinander – Alarm flackert, HUB_VEHICLE_GRACE_FRAMES prüfen");
-  }
-  if (n("alpr.skip") >= 4 && n("alpr.plate") === 0) {
-    out.push("Fahrzeug-Bursts ohne Plate – Zufahrt/OCR oder Fehlalarm der Kamera-KI");
-  }
-  if (n("task.stale") >= 1) {
-    out.push("SCAN_SNAPSHOT stale (>30 s) – Hub war beschäftigt oder offline");
-  }
-  if (n("task.fail") >= 2) {
-    out.push(`Tasks fehlgeschlagen: ${n("task.fail")} – Queue/API prüfen`);
-  }
-  if (n("doorbird.monitor_drop") >= 2) {
-    out.push("DoorBird-Monitor bricht ab – LAN oder Idle-Timeout");
-  }
-  if (n("parking.tracker_down") >= 2) {
-    out.push("Park-Tracker offline – YOLO-Dienst auf 8088");
-  }
-  if (n("heartbeat.fail") >= 3) {
-    out.push("Heartbeat zur Cloud unzuverlässig");
-  }
-  if (n("follow.home_fail") >= 1) {
-    out.push("Schwenk-Kamera fand nach dem Folgen nicht in die Grundstellung – Wachposition prüfen");
-  }
-  if (n("follow.no_home") >= 1) {
-    out.push("Schwenk-Kamera ohne Grundstellung folgt nicht – Wachposition setzen oder Preset „Grundstellung“ anlegen");
-  }
-  if (out.length === 0) out.push("Keine auffälligen Raten in dieser Session");
-  return out;
+  return hintsFor(Object.fromEntries(counts), {
+    system: STATE.system?.hints ?? [],
+    nearMiss: nearMissHint(directNearMissAt, Date.now()),
+    trails: Object.fromEntries(trails),
+    trackerTimeoutSec: Math.round(trackerTimeoutMs(process.env.HUB_VISION_TIMEOUT_MS) / 1000),
+  });
 }
 
 export function improveSnapshot(): {
@@ -156,20 +122,24 @@ export function improveSnapshot(): {
   hints: string[];
   summary: string;
   hint: string;
+  /** Zaehler des heutigen Tags (Ortszeit), auch ueber Neustarts hinweg (sobald die Datei gelesen ist). */
+  today: { day: string; counts: Record<string, number> };
 } {
   const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  // Mengen (Bytes) wuerden die Kurzfassung anfuehren, ohne ein Ereignis zu sein.
+  // Mengen (Bytes, Summen) wuerden die Kurzfassung anfuehren, ohne ein Ereignis zu sein.
   const top = entries
-    .filter(([k]) => !k.endsWith("_bytes"))
+    .filter(([k]) => !k.endsWith("_bytes") && !k.endsWith("_sum"))
     .slice(0, 8)
     .map(([k, v]) => `${k}=${v}`);
   const h = hints();
+  const day = localDay(new Date());
   return {
     since,
     counts: Object.fromEntries(entries),
     hints: h,
     summary: top.join(" · ") || "noch keine Ereignisse",
     hint: h[0] ?? "sammelt …",
+    today: { day, counts: Object.fromEntries(Object.entries(daily[day] ?? {}).sort((a, b) => b[1] - a[1])) },
   };
 }
 
@@ -188,7 +158,10 @@ function renderMd(snap: ReturnType<typeof improveSnapshot>): string {
       .sort((a, b) => b[1] - a[1])
       .map(([k, v]) => `- ${k}: ${v}`),
     ``,
-    `Rohdaten: \`hub/.cache/improve.jsonl\``,
+    `## Heute (${snap.today.day}, auch über Neustarts)`,
+    ...Object.entries(snap.today.counts).map(([k, v]) => `- ${k}: ${v}`),
+    ``,
+    `Rohdaten: \`hub/.cache/improve.jsonl\`, Tagessummen: \`hub/.cache/improve-daily.json\``,
     `Journal: \`hub/IMPROVE.md\``,
     ``,
   ];
@@ -203,6 +176,7 @@ export async function flushImproveSnapshot(reason = "interval"): Promise<void> {
   try {
     await mkdir(cacheDir(), { recursive: true });
     await writeFile(latestPath(), renderMd(snap), "utf8");
+    await saveDaily();
     // Der Snapshot wird weiter alle 5 Minuten geschrieben; ins Log kommt er
     // beim Start, beim Beenden und wenn sich der oberste Hinweis aendert.
     // Verglichen wird ohne Zahlen: Zaehler im Hinweis („46/141“) wandern mit
@@ -215,6 +189,24 @@ export async function flushImproveSnapshot(reason = "interval"): Promise<void> {
   } catch {
     // Diagnose darf den Hub nicht stören.
   }
+}
+
+/** Tagessummen sichern (ueber eine Zwischendatei, damit ein Absturz keine halbe Datei hinterlaesst). */
+async function saveDaily(): Promise<void> {
+  if (!dailyLoaded) return;
+  const tmp = `${dailyPath()}.tmp`;
+  await writeFile(tmp, serializeDaily(daily), "utf8");
+  await rename(tmp, dailyPath());
+}
+
+/** Gespeicherte Tagessummen zu den seit dem Start gezaehlten nehmen. Wirft nie. */
+async function loadDaily(): Promise<void> {
+  try {
+    daily = mergeDaily(parseDaily(await readFile(dailyPath(), "utf8")), daily);
+  } catch {
+    // Noch keine Datei (erster Start) oder unlesbar: Es zaehlt ab jetzt.
+  }
+  dailyLoaded = true;
 }
 
 async function rotateIfNeeded(): Promise<void> {
@@ -233,12 +225,23 @@ async function rotateIfNeeded(): Promise<void> {
  * Diese Zeilen fuellten die Datei zu mehr als der Haelfte und verdraengten in
  * der Diagnose-Ansicht (letzte 80 Zeilen) alles, was etwas aussagt.
  * `by`: Menge statt eines Ereignisses (z. B. gesendete Bytes, Zaehler mit
- * der Endung `_bytes`; sie stehen nicht in der Kurzfassung `summary`).
+ * der Endung `_bytes`, oder Summen mit der Endung `_sum`; beide stehen nicht
+ * in der Kurzfassung `summary`).
  */
 export function improveCount(kind: ImproveKind, event: string, by = 1): void {
   if (!enabled()) return;
   bump(kind, event, by);
   if (Date.now() - lastSnapAt >= SNAP_INTERVAL_MS) void flushImproveSnapshot("interval");
+}
+
+/**
+ * Ausgang eines wiederkehrenden Vorgangs fuer die Hinweise (improve-rules.ts):
+ * `error` = Fehlertext, null = gelungen. Zaehlt nichts; die Zaehler kommen
+ * wie bisher aus improve/improveCount. `key` z. B. TRAIL_NOPARKING.
+ */
+export function improveOutcome(key: string, error: string | null): void {
+  if (!enabled()) return;
+  trails.set(key, trailStep(trails.get(key) ?? newTrail(), error));
 }
 
 export function improve(
@@ -317,6 +320,7 @@ export async function recentImproveEvents(limit = 80): Promise<Record<string, un
 
 export function startImproveLog(): void {
   lastSnapAt = Date.now();
+  if (enabled()) void loadDaily();
   STATE.improve = improveSnapshot();
   improve("boot", "start", {
     name: CONFIG.name,

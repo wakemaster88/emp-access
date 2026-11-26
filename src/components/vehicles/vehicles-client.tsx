@@ -40,6 +40,8 @@ export interface SightingRow {
   shellyOk: boolean | null;
   seenAt: string;
   hasSnapshot: boolean;
+  /** Halteverbot: Ausschnitt in voller Auflösung (fehlt bei älteren Sichtungen). */
+  hasEvidence?: boolean;
   camera: { id: number; name: string } | null;
   allowedVehicle: { id: number; name: string; plate: string } | null;
 }
@@ -713,6 +715,22 @@ export function VehiclesClient({
                 <div className="overflow-hidden rounded-xl border border-border bg-black">
                   <img src={`/api/vehicle-sightings/${assignSighting.id}/snapshot`} alt="" decoding="async" className="max-h-64 w-full object-contain" />
                 </div>
+              )}
+              {assignSighting.hasEvidence && (
+                // Ausschnitt in voller Auflösung (Halteverbot); Antippen öffnet ihn in Originalgröße.
+                <a
+                  href={`/api/vehicle-sightings/${assignSighting.id}/evidence`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block overflow-hidden rounded-xl border border-border bg-black"
+                >
+                  <img
+                    src={`/api/vehicle-sightings/${assignSighting.id}/evidence`}
+                    alt="Ausschnitt in voller Auflösung"
+                    decoding="async"
+                    className="max-h-64 w-full object-contain"
+                  />
+                </a>
               )}
               <p className="text-sm text-muted-foreground">
                 {new Date(assignSighting.seenAt).toLocaleString("de-DE")}

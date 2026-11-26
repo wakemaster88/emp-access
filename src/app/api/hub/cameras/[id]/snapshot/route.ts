@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
+import { snapshotMarksSeen } from "@/lib/parking";
 
 // Sub-Stream-JPEGs liegen bei ~100-500 KB, Main-Stream bis ~2 MB.
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
@@ -7,6 +8,9 @@ const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 /**
  * POST (Hub, Token-Auth): nimmt einen Schnappschuss als rohes JPEG
  * (Content-Type image/jpeg) entgegen und speichert ihn an der Kamera.
+ * Ein Bild setzt auch „zuletzt gesehen“ der Kamera; ein Bild der Parkfläche
+ * (`?source=parking`) nur mit `live=1`, also wenn es aus dem laufenden
+ * Videostrom des Trackers stammt (snapshotMarksSeen).
  */
 export async function POST(
   request: NextRequest,
@@ -36,11 +40,12 @@ export async function POST(
   }
 
   const now = new Date();
+  const seen = snapshotMarksSeen(request.nextUrl.searchParams);
   // select {id}: ohne select wuerde Prisma per RETURNING die komplette Zeile
   // inkl. der eben geschriebenen JPEG-Bytes zurueckuebertragen (Neon-Egress).
   await db.camera.update({
     where: { id: cameraId },
-    data: { snapshot: buf, snapshotAt: now, lastSeenAt: now },
+    data: { snapshot: buf, snapshotAt: now, ...(seen ? { lastSeenAt: now } : {}) },
     select: { id: true },
   });
   return NextResponse.json({ ok: true, bytes: buf.length });

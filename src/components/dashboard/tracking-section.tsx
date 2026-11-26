@@ -25,6 +25,8 @@ function parts(...items: (string | false | null | undefined)[]): string {
  */
 export function TrackingSection({ live, now }: { live: DashboardLive; now: number }) {
   const { persons, vehicles, movement, parking } = live.tracking;
+  // Keine Fläche mit bekannter Zählung (Tracker fehlt oder meldet Fehler).
+  const parkingUnknown = !!parking && parking.lots.length > 0 && parking.lots.every((l) => l.state === "unbekannt");
   const busiest = movement.cameras[0];
   const maxMovement = movement.cameras.reduce((m, c) => Math.max(m, c.total), 0);
 
@@ -99,13 +101,13 @@ export function TrackingSection({ live, now }: { live: DashboardLive; now: numbe
             href="/fahrzeuge"
             label="Parkplatz"
             icon={ParkingSquare}
-            tone={parking.trackerOnline ? "info" : "warning"}
-            value={parking.total}
-            suffix="belegt"
+            tone={parking.trackerOnline && !parkingUnknown ? "info" : "warning"}
+            value={parkingUnknown ? "unbekannt" : parking.total}
+            suffix={parkingUnknown ? undefined : "belegt"}
             hint={
               parking.trackerOnline
-                ? parking.lots.map((l) => `${l.name}: ${l.count}`).join(" · ")
-                : "Zählung steht, letzter Stand"
+                ? parking.lots.map((l) => `${l.name}: ${l.state === "unbekannt" ? "unbekannt" : l.count}`).join(" · ")
+                : "Tracker offline, Belegung unbekannt"
             }
           />
         ) : (

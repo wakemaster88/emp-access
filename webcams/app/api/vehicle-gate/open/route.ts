@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Sidecar-Aufruf: Fahrzeug steht in der Ausfahrt-Zone.
- * Öffnet DoorBird und/oder emp-access-Geräte laut Cam-Config.
+ * Öffnet DoorBird (nur mit `openDoorbirdConfirmed`) und/oder emp-access-Geräte
+ * laut Cam-Config.
  *
  * Nur für den Tracker-Sidecar: die Route öffnet ohne Ring-Fenster, also
  * muss der Aufrufer das interne Token vorlegen (`x-internal-token`).
@@ -56,7 +57,8 @@ export async function POST(req: Request) {
     devices: Array<{ id: number; ok: boolean; error?: string }>;
   } = { doorbird: false, devices: [] };
 
-  if (cam.vehicleGate.openDoorbird) {
+  // Nur mit dem Schalter „DoorBird öffnen“; eine alte Einstellung openDoorbird allein öffnet nicht.
+  if (cam.vehicleGate.openDoorbirdConfirmed) {
     if (!config.doorbird.enabled || !config.doorbird.ip) {
       await logEvent({
         action: "vehicle-gate-open",

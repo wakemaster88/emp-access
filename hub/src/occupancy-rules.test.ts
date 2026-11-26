@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { PERSON_MARK_LIMIT, PERSON_MIN_CONF, parsePersons } from "./person-crop-rules.js";
 import {
   ALERT_COOLDOWN_MS,
+  COUNT_PERSON_LIMIT,
   DEFAULT_SPOTS,
   alertAction,
   alertMode,
@@ -15,6 +17,7 @@ import {
   levelFor,
   mergeSpots,
   newAlertState,
+  restingChangeLine,
   smooth,
   spotLine,
   stepAlert,
@@ -231,4 +234,73 @@ test("Drehkreuz-Zahlen: der Takt holt sie nur, wenn er etwas misst; auf Nachfrag
   assert.equal(areasRefreshDue({ spots: 1, onDemand: false }), true);
   assert.equal(areasRefreshDue({ spots: 0, onDemand: true }), true);
   assert.equal(areasRefreshDue({ spots: 3, onDemand: true }), true);
+});
+
+/* ------------------------------------------------ Stufe „voll“ erreichbar */
+
+/** Je Messpunkt eine Kamera mit passendem Namen, Gastro mit zweien (Gastro und Imbiss). */
+const SPOT_CAMERAS = [
+  { id: 1, name: "Übungslift" },
+  { id: 2, name: "Seilbahn A" },
+  { id: 3, name: "Seilbahn B" },
+  { id: 4, name: "Gastro" },
+  { id: 5, name: "Imbisscontainer" },
+  { id: 6, name: "Drehkreuz" },
+];
+
+/** Antwort von /classify mit `n` gut erkennbaren Personen. */
+function personsAnswer(n: number) {
+  return { persons: Array.from({ length: n }, (_, i) => ({ conf: 0.9, x: (i % 25) / 25, y: 0.5, w: 0.03, h: 0.12 })) };
+}
+
+/** Zählung eines Punkts wie occupancy.ts (countCamera ohne Zone, Summe über die Kameras). */
+function countSpot(perCamera: number[], limit: number): number {
+  return perCamera.reduce((sum, n) => sum + (parsePersons(personsAnswer(n), { minConf: PERSON_MIN_CONF, limit })?.length ?? 0), 0);
+}
+
+test("jeder voreingestellte Messpunkt erreicht „voll“ mit seinen Kameras, auch wenn alle Personen in einer Kamera stehen", () => {
+  for (const spot of DEFAULT_SPOTS) {
+    const cams = camerasForSpot(spot, SPOT_CAMERAS);
+    assert.ok(cams.length >= 1, `${spot.key}: keine Kamera`);
+    assert.ok(spot.full <= COUNT_PERSON_LIMIT, `${spot.key}: Schwelle über der Zählgrenze einer Kamera`);
+    // Ungünstigster Fall: alle wartenden Personen im Bild einer einzigen Kamera.
+    const perCamera = cams.map((_, i) => (i === 0 ? spot.full : 0));
+    const persons = countSpot(perCamera, COUNT_PERSON_LIMIT);
+    assert.equal(persons, spot.full, spot.key);
+    assert.equal(levelFor(smooth([persons, persons]), spot.full), "voll", spot.key);
+    const st = newAlertState();
+    const m = { persons, full: spot.full, wait: waitMinutes(persons, spot.perHour), waitAlertMin: spot.waitAlertMin };
+    assert.equal(stepAlert(st, m, 0), null, spot.key);
+    assert.equal(stepAlert(st, m, 300_000), "alert", spot.key);
+  }
+});
+
+test("26 Personen an Seilbahn A in zwei Messungen hintereinander ergeben eine Meldung", () => {
+  const spot = DEFAULT_SPOTS.find((s) => s.key === "seilbahn-a")!;
+  const persons = countSpot([26], COUNT_PERSON_LIMIT);
+  assert.equal(persons, 26);
+  assert.equal(levelFor(persons, spot.full), "voll");
+  const st = newAlertState();
+  const m = { persons, full: spot.full, wait: waitMinutes(persons, spot.perHour), waitAlertMin: spot.waitAlertMin };
+  assert.equal(stepAlert(st, m, 0), null);
+  assert.equal(stepAlert(st, m, 300_000), "alert");
+});
+
+test("mit der Grenze für Markierungen (20) bliebe eine Kamera an Seilbahn A unter „voll“ – darum zählt die Belegung mit 200", () => {
+  const spot = DEFAULT_SPOTS.find((s) => s.key === "seilbahn-a")!;
+  assert.equal(countSpot([26], PERSON_MARK_LIMIT), 20);
+  assert.notEqual(levelFor(20, spot.full), "voll");
+});
+
+test("Ruhende Bereiche: eine Zeile nur, wenn sich ihre Menge ändert", () => {
+  const spots = [
+    { key: "a", name: "Seilbahn A" },
+    { key: "g", name: "Gastro" },
+    { key: "i", name: "Imbiss" },
+  ];
+  assert.equal(restingChangeLine(null, ["g"], spots), null);
+  assert.equal(restingChangeLine(["g", "i"], ["i", "g"], spots), null);
+  assert.equal(restingChangeLine(["g", "i"], ["i"], spots), "Belegung: ruht an Imbiss; misst an Seilbahn A, Gastro");
+  assert.equal(restingChangeLine(["g"], [], spots), "Belegung: ruht an keinem Bereich; misst an Seilbahn A, Gastro, Imbiss");
+  assert.equal(restingChangeLine([], ["a", "g", "i"], spots), "Belegung: ruht an Seilbahn A, Gastro, Imbiss; misst an keinem Bereich");
 });

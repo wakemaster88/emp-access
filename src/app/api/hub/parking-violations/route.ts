@@ -1,12 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
 import { processParkingViolation } from "@/lib/parking-violations";
+import {
+  cameraUpdateForReport,
+  parkingReportReply,
+  parseHubParkingParams,
+  repeatsFirstImage,
+} from "@/lib/parking-violations-rules";
 
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 
 /**
  * POST (Hub): Fahrzeug steht zu lange in einer gesperrten Fläche.
  * Query: cameraId, vehicles, seconds
+ *   ab neuerem Hub zusätzlich: notify (0|1), store (0|1), inZone, reminder –
+ *   dann entscheidet der Hub über Historie und Nachricht; ohne diese Angaben
+ *   gilt die Sperre für ältere Hubs (parking-violations-rules.ts).
+ *   storeKey, notifyKey: gleich bei jedem Versuch derselben Meldung; ein
+ *   wiederholter Versuch legt keine zweite Sichtung an und schickt keine
+ *   zweite Nachricht. Ging nachweislich nichts hinaus, antwortet die Route
+ *   mit 502, und der nächste Versuch schickt die Nachricht.
+ *   evidenceKey: erste Nachricht ohne neuen Eintrag – der Ausschnitt des
+ *   gespeicherten Eintrags mit diesem Schlüssel geht mit an Telegram, genau
+ *   einmal je Nachricht (Antwort: evidenceTelegram).
+ *   retry=1: Das Bild ist das des ersten Versuchs – es wird nicht als
+ *   aktuelles Kamerabild gesetzt.
+ *   Alle Angaben sind optional; ältere Hubs schicken sie nicht.
+ * Antwort mit Sichtung: evidence: true (Ausschnitt über /evidence), auch beim 502.
  * Body: rohes JPEG
  */
 export async function POST(request: NextRequest) {
@@ -40,7 +60,7 @@ export async function POST(request: NextRequest) {
   // select {id}: sonst gibt RETURNING die JPEG-Bytes wieder mit zurück.
   await db.camera.update({
     where: { id: cameraId },
-    data: { snapshot: buf, snapshotAt: now, lastSeenAt: now },
+    data: cameraUpdateForReport(buf, now, repeatsFirstImage(q)),
     select: { id: true },
   });
 
@@ -52,7 +72,10 @@ export async function POST(request: NextRequest) {
     seconds,
     snapshot: buf,
     at: now,
+    params: parseHubParkingParams(q),
   });
 
-  return NextResponse.json({ ok: true, ...result });
+  // evidence: Diese Cloud nimmt den Ausschnitt zur Sichtung an (/evidence), auch nach einem 502.
+  const reply = parkingReportReply(result);
+  return NextResponse.json(reply.body, { status: reply.status });
 }

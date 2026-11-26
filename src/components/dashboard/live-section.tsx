@@ -95,7 +95,12 @@ export interface DashboardLive {
       last60: number;
       cameras: { id: number; name: string; person: number; vehicle: number; other: number; total: number; lastAt: string }[];
     };
-    parking: { trackerOnline: boolean; total: number; lots: { name: string; count: number }[] } | null;
+    parking: {
+      trackerOnline: boolean;
+      total: number;
+      /** state fehlt bei einer älteren Cloud. */
+      lots: { name: string; count: number; state?: "ok" | "unbekannt" }[];
+    } | null;
   };
 }
 

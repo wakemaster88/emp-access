@@ -284,8 +284,9 @@ export async function GET() {
     parkingSnapshot && parkingSnapshot.lots.length > 0
       ? {
           trackerOnline: parkingSnapshot.trackerOnline,
-          total: parkingSnapshot.lots.reduce((sum, l) => sum + l.count, 0),
-          lots: parkingSnapshot.lots.map((l) => ({ name: l.name, count: l.count })),
+          // Unbekannte Zählung zählt 0 (count bleibt eine Zahl für ältere Ansichten).
+          total: parkingSnapshot.lots.reduce((sum, l) => sum + (l.state === "unbekannt" ? 0 : l.count), 0),
+          lots: parkingSnapshot.lots.map((l) => ({ name: l.name, count: l.count, state: l.state })),
         }
       : null;
 

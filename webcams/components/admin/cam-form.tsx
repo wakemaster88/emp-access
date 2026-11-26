@@ -76,7 +76,9 @@ const EMPTY: Cam = {
     vehicleGate: {
       enabled: false,
       zone: null,
-      openDoorbird: true,
+      // Voreinstellung: nur zählen, nicht öffnen.
+      openDoorbird: false,
+      openDoorbirdConfirmed: false,
       deviceIds: [],
       cooldownSec: 45,
     },
@@ -168,6 +170,9 @@ export function CamForm({
       peopleCounter,
       vehicleGate: {
         ...data.vehicleGate,
+        // Geöffnet wird nur, was der Schalter zeigt: Eine alte Einstellung
+        // openDoorbird ohne Schalter geht beim Speichern auf aus.
+        openDoorbird: data.vehicleGate.openDoorbirdConfirmed,
         deviceIds: parseEmpDeviceIds(gateIdsText),
       },
     };
@@ -512,11 +517,12 @@ export function CamForm({
       <div className="sm:col-span-2 mt-2 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-medium">Ausfahrt / Tor öffnen</div>
+            <div className="text-sm font-medium">Fahrzeug-Fläche / Tor öffnen</div>
             <div className="text-xs text-foreground/60">
-              Erkennt ein Fahrzeug in einer Fläche (z. B. rechts vor dem Tor)
-              und öffnet die DoorBird. Parkende Autos außerhalb der Fläche
-              zählen nicht.
+              Zählt Fahrzeuge in einer Fläche (z. B. rechts vor dem Tor, auch
+              als Parkfläche für den Hub). Parkende Autos außerhalb der Fläche
+              zählen nicht. Geöffnet wird nur, wenn „DoorBird öffnen“ an ist
+              oder Geräte eingetragen sind – Voreinstellung: nicht öffnen.
             </div>
           </div>
           <Switch
@@ -552,13 +558,21 @@ export function CamForm({
               </p>
             )}
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="DoorBird öffnen">
+              <Field
+                label="DoorBird öffnen"
+                hint={
+                  data.vehicleGate.openDoorbird && !data.vehicleGate.openDoorbirdConfirmed
+                    ? "Alte Einstellung wird ignoriert – zum Öffnen einschalten"
+                    : "Aus = nur zählen"
+                }
+              >
                 <div className="flex h-10 items-center">
                   <Switch
-                    checked={data.vehicleGate.openDoorbird}
+                    checked={data.vehicleGate.openDoorbirdConfirmed}
                     onChange={(v) =>
                       update("vehicleGate", {
                         ...data.vehicleGate,
+                        openDoorbirdConfirmed: v,
                         openDoorbird: v,
                       })
                     }
@@ -602,7 +616,7 @@ export function CamForm({
                       },
                     }));
                   }}
-                  placeholder="leer = nur DoorBird"
+                  placeholder="leer = keine Geräte"
                 />
               </Field>
             </div>

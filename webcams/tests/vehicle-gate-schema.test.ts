@@ -23,8 +23,47 @@ describe("VehicleGateSchema", () => {
     const cam = CamSchema.parse(baseCam);
     expect(cam.vehicleGate.enabled).toBe(false);
     expect(cam.vehicleGate.zone).toBeNull();
-    expect(cam.vehicleGate.openDoorbird).toBe(true);
+    // Voreinstellung: nicht öffnen, nur bei ausdrücklicher Angabe.
+    expect(cam.vehicleGate.openDoorbird).toBe(false);
+    expect(cam.vehicleGate.deviceIds).toEqual([]);
     expect(cam.vehicleGate.cooldownSec).toBe(45);
+  });
+
+  it("aktive Fläche ohne openDoorbird öffnet nicht (Feld fehlt in der Datei)", () => {
+    const cam = CamSchema.parse({ ...baseCam, vehicleGate: { enabled: true, zone: gateZone } });
+    expect(cam.vehicleGate.openDoorbird).toBe(false);
+  });
+
+  it("ausdrücklich gesetztes openDoorbird bleibt", () => {
+    const cam = CamSchema.parse({ ...baseCam, vehicleGate: { enabled: true, zone: gateZone, openDoorbird: true } });
+    expect(cam.vehicleGate.openDoorbird).toBe(true);
+  });
+
+  it("DoorBird öffnen nur mit openDoorbirdConfirmed: ab Werk false", () => {
+    expect(VehicleGateSchema.parse({}).openDoorbirdConfirmed).toBe(false);
+    expect(CamSchema.parse(baseCam).vehicleGate.openDoorbirdConfirmed).toBe(false);
+  });
+
+  it("alte Datei mit openDoorbird: true (frühere Voreinstellung): openDoorbirdConfirmed bleibt false", () => {
+    const cam = CamSchema.parse({ ...baseCam, vehicleGate: { enabled: true, zone: gateZone, openDoorbird: true } });
+    expect(cam.vehicleGate.openDoorbirdConfirmed).toBe(false);
+  });
+
+  it("keine Voreinstellung schreibt openDoorbirdConfirmed als true in die Datei", () => {
+    // Wie saveConfig: geparst und so geschrieben.
+    const written = JSON.parse(JSON.stringify(CamSchema.parse({ ...baseCam, vehicleGate: { enabled: true, zone: gateZone } })));
+    expect(written.vehicleGate.openDoorbirdConfirmed).toBe(false);
+    expect(written.vehicleGate.openDoorbird).toBe(false);
+    const defaults = JSON.parse(JSON.stringify(CamSchema.parse(baseCam)));
+    expect(defaults.vehicleGate.openDoorbirdConfirmed).toBe(false);
+  });
+
+  it("vom Schalter gesetztes openDoorbirdConfirmed bleibt", () => {
+    const cam = CamSchema.parse({
+      ...baseCam,
+      vehicleGate: { enabled: true, zone: gateZone, openDoorbird: true, openDoorbirdConfirmed: true },
+    });
+    expect(cam.vehicleGate.openDoorbirdConfirmed).toBe(true);
   });
 
   it("erlaubt aktive Ausfahrt-Zone mit Fläche und DoorBird", () => {
@@ -51,7 +90,7 @@ describe("VehicleGateSchema", () => {
     }
   });
 
-  it("lehnt aktive Zone ohne Aktor ab", () => {
+  it("erlaubt eine reine Zählfläche ohne DoorBird und ohne Gerät", () => {
     const parsed = CamSchema.safeParse({
       ...baseCam,
       vehicleGate: {
@@ -61,6 +100,6 @@ describe("VehicleGateSchema", () => {
         deviceIds: [],
       },
     });
-    expect(parsed.success).toBe(false);
+    expect(parsed.success).toBe(true);
   });
 });

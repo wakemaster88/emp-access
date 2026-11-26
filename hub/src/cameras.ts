@@ -2977,6 +2977,32 @@ export function cameraAtHome(cameraId: number): boolean {
   return motion.atHome(cameraId);
 }
 
+/** Die Kamera meldet gerade selbst ein Fahrzeug (VEHICLE aus dem Poll). */
+export function cameraVehicleActive(cameraId: number): boolean {
+  return cameras.get(cameraId)?.states.VEHICLE === true;
+}
+
+const vehicleStartListeners = new Set<(cameraId: number) => void>();
+
+/**
+ * Bei jeder VEHICLE-Flanke einer Kamera aufrufen (Halteverbot: kurzer Takt).
+ * Der Zuhörer schaltet nichts und darf den Poll nicht aufhalten.
+ */
+export function onCameraVehicleStart(fn: (cameraId: number) => void): () => void {
+  vehicleStartListeners.add(fn);
+  return () => vehicleStartListeners.delete(fn);
+}
+
+function notifyVehicleStart(cameraId: number): void {
+  for (const fn of vehicleStartListeners) {
+    try {
+      fn(cameraId);
+    } catch (err) {
+      log(`Kamera ${cameraId}: Fahrzeug-Zuhörer: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+}
+
 export function waitCameraAtHome(cameraId: number, maxMs: number): Promise<boolean> {
   return motion.waitAtHome(cameraId, maxMs);
 }
@@ -3559,6 +3585,7 @@ async function pollOne(cam: CameraRuntime): Promise<void> {
             .catch((e) => log(`Kamera ${cam.config.name}: Folgen: ${e instanceof Error ? e.message : e}`));
         } else if (type === "VEHICLE") {
           motion.onVehicleStart(cam.config.id);
+          notifyVehicleStart(cam.config.id);
         }
         edges.push(type);
       }

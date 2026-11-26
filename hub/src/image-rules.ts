@@ -83,3 +83,40 @@ export function motionPreviewSettings(env: Record<string, string | undefined>, d
 export function sipsArgs(maxPx: number, quality: number, src: string, dst: string): string[] {
   return ["-Z", String(maxPx), "-s", "format", "jpeg", "-s", "formatOptions", String(quality), src, "--out", dst];
 }
+
+/**
+ * Breite und Höhe eines JPEG aus dem SOF-Kopf, ohne das Bild zu dekodieren.
+ * null, wenn der Puffer kein lesbares JPEG ist.
+ */
+export function jpegSize(buf: Uint8Array): { width: number; height: number } | null {
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+  const u16 = (i: number) => (buf[i] << 8) | buf[i + 1];
+  let i = 2;
+  while (i + 3 < buf.length) {
+    if (buf[i] !== 0xff) return null;
+    const marker = buf[i + 1];
+    // Füllbytes
+    if (marker === 0xff) {
+      i++;
+      continue;
+    }
+    // Marker ohne Länge (RSTn, TEM)
+    if ((marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) {
+      i += 2;
+      continue;
+    }
+    // Bilddaten oder Ende ohne SOF davor
+    if (marker === 0xda || marker === 0xd9) return null;
+    const len = u16(i + 2);
+    if (len < 2) return null;
+    const sof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (sof) {
+      if (i + 8 >= buf.length) return null;
+      const height = u16(i + 5);
+      const width = u16(i + 7);
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    i += 2 + len;
+  }
+  return null;
+}

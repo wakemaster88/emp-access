@@ -23,7 +23,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
-import { improveCount } from "./improve-log.js";
+import { ChangeLog } from "./change-log.js";
+import { improve, improveCount } from "./improve-log.js";
 import { captureSnapshot, listCameraConfigs, listCameraStatus, waitCameraAtHome } from "./cameras.js";
 import { detectPersons } from "./person-crop.js";
 import { inside } from "./vision.js";
@@ -31,6 +32,7 @@ import { sendPhoto, sendText } from "./agent/telegram.js";
 import { berlinHour } from "./agent/watch.js";
 import { roomsPayload } from "./rooms.js";
 import {
+  COUNT_PERSON_LIMIT,
   DEFAULT_SPOTS,
   alertAction,
   areasRefreshDue,
@@ -38,6 +40,7 @@ import {
   alertModeText,
   camerasForSpot,
   dayStartLine,
+  restingChangeLine,
   effectivePerHour,
   inHours,
   levelFor,
@@ -131,6 +134,13 @@ let areasAt = 0;
 let running: Promise<SpotReading[]> | null = null;
 /** Bereiche, die die letzte Messung ausgelassen hat, weil ihre Raeume zu sind. */
 let lastResting = 0;
+/** Ihre Schluessel (letzte Messung im Takt) und die eingeschalteten Bereiche dazu. */
+let lastRestingKeys: string[] = [];
+let lastEnabled: Array<{ key: string; name: string }> = [];
+/** Ruhende Bereiche der zuletzt geloggten Messung (null = heute noch keine). */
+let loggedResting: string[] | null = null;
+/** Fehler je Kamera: eine Zeile in improve.jsonl je Fehlerbild, gezaehlt wird jeder. */
+const camFailLog = new ChangeLog();
 /** Tag (Berlin), dessen erste Messung schon im Log steht. */
 let loggedDay: string | null = null;
 let peaks: Record<string, Record<string, { persons: number; waitMin: number; at: string }>> = {};
@@ -213,7 +223,8 @@ async function countCamera(cam: { id: number; name: string }, zone: { x: number;
   }
   try {
     const jpeg = await captureSnapshot(cam.id);
-    const boxes = await detectPersons(jpeg);
+    // Zaehlen: nicht bei 20 Boxen abschneiden wie fuer Ausschnitte und Markierungen.
+    const boxes = await detectPersons(jpeg, { limit: COUNT_PERSON_LIMIT, caller: "occupancy" });
     if (!boxes) return { id: cam.id, name: cam.name, persons: null, error: "Tracker liefert keine Personen" };
     const n = zone ? boxes.filter((b) => inside({ x: b.x + b.w / 2, y: b.y + b.h / 2 }, zone)).length : boxes.length;
     return { id: cam.id, name: cam.name, persons: n };
@@ -229,7 +240,11 @@ async function measureSpot(spot: SpotConfig): Promise<SpotReading | null> {
   if (!cams.length && !area) return null;
 
   const counts: CameraCount[] = [];
-  for (const c of cams) counts.push(await countCamera(c, spot.zones?.[String(c.id)]));
+  for (const c of cams) {
+    const count = await countCamera(c, spot.zones?.[String(c.id)]);
+    noteCameraCount(spot, count);
+    counts.push(count);
+  }
   const ok = counts.filter((c) => c.persons != null);
   const raw = ok.reduce((s, c) => s + (c.persons ?? 0), 0);
 
@@ -266,6 +281,15 @@ async function measureSpot(spot: SpotConfig): Promise<SpotReading | null> {
   return reading;
 }
 
+/** Fehler einer Kamera fuer die Diagnose: Zeile beim ersten Mal und bei neuem Grund, sonst gezaehlt. */
+function noteCameraCount(spot: SpotConfig, c: CameraCount): void {
+  const error = c.persons == null ? c.error ?? "kein Ergebnis" : "";
+  const changed = camFailLog.shouldLog(String(c.id), error, Date.now());
+  if (!error) return;
+  if (changed) improve("occupancy", "cam_fail", { spot: spot.key, cam: c.name, error });
+  else improveCount("occupancy", "cam_fail");
+}
+
 /** Punkte, deren Raeume gerade alle zu sind (siehe spotClosed). */
 function closedSpotKeys(list: SpotConfig[]): Set<string> {
   const rooms = roomsPayload().rooms;
@@ -284,6 +308,7 @@ export function measureAll(opts: { skipClosed?: boolean } = {}): Promise<SpotRea
       let list = (await loadSpots()).filter((s) => s.enabled !== false);
       let resting = 0;
       if (opts.skipClosed) {
+        lastEnabled = list.map((s) => ({ key: s.key, name: s.name }));
         const closed = closedSpotKeys(list);
         for (const key of closed) {
           const rt = runtime.get(key);
@@ -291,6 +316,7 @@ export function measureAll(opts: { skipClosed?: boolean } = {}): Promise<SpotRea
         }
         list = list.filter((s) => !closed.has(s.key));
         resting = closed.size;
+        lastRestingKeys = [...closed];
       }
       lastResting = resting;
       // Nichts zu messen (alle Raeume zu): kein Abruf der Drehkreuz-Zahlen.
@@ -407,7 +433,15 @@ async function tick(chatIds: () => string[]): Promise<void> {
   if (loggedDay !== day) {
     loggedDay = day;
     log(dayStartLine(readings, lastResting, again));
+  } else {
+    // Im Lauf des Tages: eine Zeile, wenn Raeume oeffnen oder schliessen.
+    const line = restingChangeLine(loggedResting, lastRestingKeys, lastEnabled);
+    if (line) {
+      log(line);
+      improve("occupancy", "resting", { resting: lastRestingKeys.length, measuring: lastEnabled.length - lastRestingKeys.length });
+    }
   }
+  loggedResting = lastRestingKeys;
   if (ALERTS.mode === "off") return;
   const ids = chatIds();
   for (const r of readings) {

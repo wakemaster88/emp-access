@@ -69,6 +69,8 @@ jobs:
           python-version: "3.11"
       - run: python -m compileall -q raspberry-pi hub/alpr hub/face hub/plate hub/mower webcams/tracker
       - run: python -m unittest discover -s raspberry-pi/tests
+      # Reine Rechnungen des Trackers (ohne numpy/OpenCV/YOLO).
+      - run: python -m unittest discover -s webcams/tracker/tests
 
   # Kiosk-Dashboard (webcams/): eigenes Paket mit pnpm.
   webcams:

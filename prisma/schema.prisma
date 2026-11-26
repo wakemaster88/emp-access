@@ -2010,6 +2010,11 @@ model Camera {
   noParkZone          Json?
   /// Standzeit in Minuten, ab der gemeldet wird. null = Hub-Standard (2 min).
   noParkMinutes       Float?
+  /// Schlüssel der zuletzt verschickten Halteverbot-Nachricht (Episode und
+  /// Nummer, vom Hub): Ein wiederholter Versuch schickt sie nicht noch einmal.
+  /// Mit der Endung „+e“ ging zur ersten Nachricht auch der Ausschnitt an
+  /// Telegram (genau einmal).
+  noParkNotifyKey     String?
   /// Lieferdienste (DHL, UPS, GLS, Amazon, DPD, Hermes) an der Aufschrift
   /// erkennen: null = aus, "NOTIFY" = nur melden, "OPEN" = Tor oeffnen.
   deliveryMode        String?
@@ -2165,6 +2170,13 @@ model VehicleSighting {
   snapshot         Bytes?
   /// Pfad im Blob-Speicher; gesetzt statt `snapshot` bei neuen Sichtungen.
   snapshotBlob     String?
+  /// Halteverbot: Ausschnitt um das Fahrzeug in voller Auflösung (JPEG), vom Hub nachgereicht.
+  evidence         Bytes?
+  /// Pfad im Blob-Speicher; gesetzt statt `evidence`.
+  evidenceBlob     String?
+  /// Halteverbot: Schlüssel der Meldung vom Hub (erste Sichtung der Fahrzeuge);
+  /// ein wiederholter Versuch mit demselben Schlüssel legt keine zweite Sichtung an.
+  reportKey        String?
   seenAt           DateTime        @default(now())
   createdAt        DateTime        @default(now())
 

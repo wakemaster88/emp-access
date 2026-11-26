@@ -132,6 +132,8 @@ export const STATE = {
     hints: [] as string[],
     summary: "noch keine Ereignisse",
     hint: "sammelt …",
+    /** Zaehler des heutigen Tags, auch ueber Neustarts (improve-log.ts). */
+    today: undefined as undefined | { day: string; counts: Record<string, number> },
   },
   tasks: [] as TaskHistoryEntry[],
   logs: [] as LogEntry[],

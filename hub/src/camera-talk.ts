@@ -24,6 +24,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { CONFIG, log } from "./config.js";
 import { improve } from "./improve-log.js";
+import {
+  SPEECH_TOOL_TIMEOUT_MS,
+  TalkQueue,
+  sendPcmu,
+  talkDeadlineMs,
+  withDeadline,
+} from "./camera-talk-rules.js";
 
 const run = promisify(execFile);
 
@@ -49,8 +56,8 @@ export interface TalkTarget {
   label?: string;
 }
 
-/** Pro Kamera nur eine Ansage – sonst überlagern sich zwei Stimmen. */
-const busy = new Map<string, Promise<void>>();
+/** Pro Kamera eine Ansage nach der anderen – sonst überlagern sich zwei Stimmen. */
+const queue = new TalkQueue();
 
 /* ---------------------------------------------------------------------------
  * Sprache erzeugen (mit kleinem Cache, `say` braucht rund eine Sekunde)
@@ -74,9 +81,12 @@ async function renderSpeech(text: string, voice: string): Promise<Buffer> {
   const wav = path.join(cacheDir(), `${key}.tmp.wav`);
   const ulawWav = path.join(cacheDir(), `${key}.tmp.ulaw.wav`);
   try {
-    // 8 kHz direkt aus `say`; afconvert wandelt nur noch in µ-law.
-    await run("say", ["-v", voice, "-o", wav, "--data-format=LEI16@8000", "--file-format=WAVE", text]);
-    await run("afconvert", ["-f", "WAVE", "-d", "ulaw@8000", wav, ulawWav]);
+    // 8 kHz direkt aus `say`; afconvert wandelt nur noch in µ-law. Beide mit
+    // Zeitlimit: Ein hängendes Hilfsprogramm hielte sonst die Reihe der
+    // Kamera auf.
+    const limit = { timeout: SPEECH_TOOL_TIMEOUT_MS };
+    await run("say", ["-v", voice, "-o", wav, "--data-format=LEI16@8000", "--file-format=WAVE", text], limit);
+    await run("afconvert", ["-f", "WAVE", "-d", "ulaw@8000", wav, ulawWav], limit);
     const raw = dataChunk(await readFile(ulawWav));
     await writeFile(cached, raw);
     return raw;
@@ -111,6 +121,8 @@ class RtspTalk {
   private realm: string | null = null;
   private nonce: string | null = null;
   private session: string | null = null;
+  /** Gesamtfrist abgelaufen: nichts mehr anfangen. */
+  private aborted = false;
   private readonly url: string;
 
   constructor(private readonly target: TalkTarget) {
@@ -132,8 +144,15 @@ class RtspTalk {
 
   async connect(): Promise<void> {
     const port = this.target.rtspPort ?? 554;
+    if (this.aborted) throw new Error("Ansage abgebrochen");
     const sock = net.createConnection({ host: this.target.host, port });
     sock.setNoDelay(true);
+    // Ein Fehler, während gerade niemand auf die Verbindung wartet (zwischen
+    // zwei Paketen), darf den Hub nicht beenden; das nächste Schreiben merkt
+    // den Abbruch ohnehin.
+    sock.on("error", () => {});
+    // Schon jetzt merken: Die Gesamtfrist trennt auch einen laufenden Aufbau.
+    this.sock = sock;
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("RTSP-Verbindung Timeout")), RTSP_TIMEOUT_MS);
       sock.once("connect", () => {
@@ -144,8 +163,11 @@ class RtspTalk {
         clearTimeout(timer);
         reject(err);
       });
+      sock.once("close", () => {
+        clearTimeout(timer);
+        reject(new Error("RTSP-Verbindung beendet"));
+      });
     });
-    this.sock = sock;
   }
 
   /** Antwort einlesen; die Kamera schickt Kopf und optionalen SDP-Rumpf. */
@@ -157,10 +179,12 @@ class RtspTalk {
         clearTimeout(timer);
         sock.off("data", onData);
         sock.off("error", onError);
+        sock.off("close", onClose);
         fn();
       };
       const timer = setTimeout(() => finish(() => reject(new Error("RTSP-Timeout"))), RTSP_TIMEOUT_MS);
       const onError = (err: Error) => finish(() => reject(err));
+      const onClose = () => finish(() => reject(new Error("RTSP-Verbindung beendet")));
       const check = () => {
         const end = this.buf.indexOf("\r\n\r\n");
         if (end < 0) return;
@@ -178,7 +202,9 @@ class RtspTalk {
       };
       sock.on("data", onData);
       sock.on("error", onError);
+      sock.on("close", onClose);
       check(); // Antwort kann schon im Puffer liegen.
+      if (sock.destroyed) onClose();
     });
   }
 
@@ -221,46 +247,26 @@ class RtspTalk {
     await this.request("PLAY", this.url, ["Range: npt=0.000-"]);
   }
 
-  /** PCMU in RTP-Paketen senden, im Tempo der Wiedergabe. */
+  /**
+   * PCMU in RTP-Paketen senden, im Tempo der Wiedergabe. Bricht die Kamera
+   * die Verbindung ab, endet das Senden mit einem Fehler (sendPcmu).
+   */
   async send(audio: Buffer): Promise<void> {
     const sock = this.sock;
     if (!sock) throw new Error("RTSP nicht verbunden");
-    const ssrc = Math.floor(Math.random() * 0xffffffff) >>> 0;
-    let seq = Math.floor(Math.random() * 0xffff);
-    let timestamp = 0;
-    const startedAt = Date.now();
+    await sendPcmu(sock, audio, { packetBytes: PACKET_BYTES, packetMs: PACKET_MS });
+  }
 
-    for (let offset = 0, packet = 0; offset < audio.length; offset += PACKET_BYTES, packet++) {
-      const slice = audio.subarray(offset, offset + PACKET_BYTES);
-      const rtp = Buffer.alloc(12 + slice.length);
-      rtp[0] = 0x80; // Version 2, keine Erweiterungen.
-      rtp[1] = 0x00; // Payload-Typ 0 = PCMU.
-      seq = (seq + 1) & 0xffff;
-      rtp.writeUInt16BE(seq, 2);
-      rtp.writeUInt32BE(timestamp, 4);
-      rtp.writeUInt32BE(ssrc, 8);
-      slice.copy(rtp, 12);
-      timestamp = (timestamp + slice.length) >>> 0;
-
-      // RTP über TCP wird in "$"-Rahmen verpackt (RFC 2326, interleaved).
-      const framed = Buffer.alloc(4 + rtp.length);
-      framed[0] = 0x24;
-      framed[1] = 0x00;
-      framed.writeUInt16BE(rtp.length, 2);
-      rtp.copy(framed, 4);
-      if (!sock.write(framed)) {
-        await new Promise<void>((resolve) => sock.once("drain", resolve));
-      }
-
-      // Absolute Zeitplanung, damit sich der Takt nicht aufsummiert.
-      const wait = startedAt + (packet + 1) * PACKET_MS - Date.now();
-      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    }
+  /** Verbindung sofort trennen (Gesamtfrist abgelaufen). */
+  destroy(): void {
+    this.aborted = true;
+    this.sock?.destroy();
   }
 
   async close(): Promise<void> {
     try {
-      if (this.session) await this.request("TEARDOWN", this.url);
+      // Nach einem Abbruch gibt es nichts mehr abzumelden.
+      if (this.session && this.sock && !this.sock.destroyed) await this.request("TEARDOWN", this.url);
     } catch {
       // Beim Aufräumen ist ein Fehler belanglos.
     }
@@ -285,19 +291,20 @@ function backchannelTrack(sdp: string): string | null {
 
 /**
  * Ansage über den Kamera-Lautsprecher. Läuft eine Ansage auf derselben
- * Kamera, wartet diese – Stimmen sollen sich nicht überlagern.
+ * Kamera, wartet diese – Stimmen sollen sich nicht überlagern. Die Sitzung
+ * hat eine Gesamtfrist (Länge der Ansage plus 10 s); danach wird die
+ * Verbindung getrennt und die Ansage gilt als gescheitert.
  */
-export async function speakOnCamera(
+export function speakOnCamera(
   target: TalkTarget,
   text: string,
   opts: { voice?: string } = {},
 ): Promise<{ seconds: number }> {
-  const label = target.label ?? target.host;
-  const previous = busy.get(target.host);
-  if (previous) await previous.catch(() => {});
+  return queue.run(target.host, () => speakNow(target, text, opts));
+}
 
-  let done: () => void = () => {};
-  busy.set(target.host, new Promise<void>((resolve) => (done = resolve)));
+async function speakNow(target: TalkTarget, text: string, opts: { voice?: string }): Promise<{ seconds: number }> {
+  const label = target.label ?? target.host;
   try {
     const audio = await renderSpeech(text, opts.voice ?? VOICE);
     const maxBytes = MAX_SECONDS * SAMPLE_RATE;
@@ -305,13 +312,16 @@ export async function speakOnCamera(
     const seconds = payload.length / SAMPLE_RATE;
 
     const talk = new RtspTalk(target);
-    try {
-      await talk.connect();
-      await talk.open();
-      await talk.send(payload);
-    } finally {
-      await talk.close();
-    }
+    const session = (async () => {
+      try {
+        await talk.connect();
+        await talk.open();
+        await talk.send(payload);
+      } finally {
+        await talk.close();
+      }
+    })();
+    await withDeadline(session, talkDeadlineMs(seconds), () => talk.destroy(), "Gesamtfrist der Ansage");
     log(`Ansage ${label}: "${text}" (${seconds.toFixed(1)} s)`);
     improve("camera", "talk_ok", { cam: label, seconds });
     return { seconds };
@@ -320,8 +330,5 @@ export async function speakOnCamera(
     log(`Ansage ${label} fehlgeschlagen: ${detail}`);
     improve("camera", "talk_fail", { cam: label, error: detail });
     throw err;
-  } finally {
-    busy.delete(target.host);
-    done();
   }
 }

@@ -1,11 +1,19 @@
 export type ParkingZonePoint = [number, number];
 
+/** ok = Zählung aus dem laufenden Videostrom; unbekannt = Tracker fehlt oder meldet einen Fehler. */
+export type ParkingLotState = "ok" | "unbekannt";
+
 export interface ParkingLotReport {
   kioskId: string;
   name: string;
   ip: string;
   mode: "vehicle-zone" | "zone";
+  /**
+   * Fahrzeuge in der Fläche. Bei unbekannter Zählung 0 (ältere Ansichten
+   * rechnen mit einer Zahl); ob sie stimmt, sagt `state`.
+   */
   count: number;
+  state: ParkingLotState;
   lastUpdate: number;
   lastError: string | null;
   fps: number;
@@ -68,6 +76,28 @@ export function fallbackParkingCameras(cameras: ParkingCamMatch[]): ParkingCamMa
   return [hits.reduce(newest)];
 }
 
+/**
+ * Zustand einer gemeldeten Fläche. Ein neuerer Hub schickt `state` und bei
+ * unbekannter Zählung `count: null`; bei einem älteren gilt die Zählung als
+ * unbekannt, wenn der Tracker offline ist oder einen Fehler meldet.
+ */
+export function parkingLotState(lot: { state?: unknown; count?: unknown; lastError?: unknown }, trackerOnline: boolean): ParkingLotState {
+  if (lot.state === "unbekannt" || lot.count === null) return "unbekannt";
+  if (!trackerOnline) return "unbekannt";
+  if (typeof lot.lastError === "string" && lot.lastError !== "") return "unbekannt";
+  return "ok";
+}
+
+/**
+ * „Zuletzt gesehen“ der Kamera mit diesem Bild setzen? Bilder der Parkfläche
+ * (`source=parking`) nur, wenn der Hub sie als Bild aus dem laufenden
+ * Videostrom kennzeichnet (`live=1`); alle anderen Bilder wie bisher immer.
+ */
+export function snapshotMarksSeen(params: URLSearchParams): boolean {
+  if (params.get("source") !== "parking") return true;
+  return params.get("live") === "1";
+}
+
 export function parseParkingSnapshot(raw: unknown): ParkingSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const status = raw as { parking?: unknown };
@@ -75,9 +105,10 @@ export function parseParkingSnapshot(raw: unknown): ParkingSnapshot | null {
   if (!parking || typeof parking !== "object") return null;
   const p = parking as Record<string, unknown>;
   const lots = Array.isArray(p.lots) ? p.lots : [];
+  const trackerOnline = p.trackerOnline === true;
   return {
     at: typeof p.at === "string" ? p.at : new Date().toISOString(),
-    trackerOnline: p.trackerOnline === true,
+    trackerOnline,
     lots: lots
       .filter((l): l is Record<string, unknown> => !!l && typeof l === "object")
       .map((l) => ({
@@ -86,6 +117,7 @@ export function parseParkingSnapshot(raw: unknown): ParkingSnapshot | null {
         ip: String(l.ip ?? ""),
         mode: (l.mode === "zone" ? "zone" : "vehicle-zone") as ParkingLotReport["mode"],
         count: Number(l.count ?? 0) || 0,
+        state: parkingLotState(l, trackerOnline),
         lastUpdate: Number(l.lastUpdate ?? 0) || 0,
         lastError: typeof l.lastError === "string" ? l.lastError : null,
         fps: Number(l.fps ?? 0) || 0,
