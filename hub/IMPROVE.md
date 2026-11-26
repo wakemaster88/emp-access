@@ -1850,3 +1850,24 @@ Prüfung „Livebilder“ (Log-Fenster 22.11. 11:58 bis 26.11. 20:00 UTC). Keine
 **Bewusst offen**
 
 - Weitere Punkte warten auf eine Entscheidung.
+
+## 2026-11-26 (Gesamtprüfung Hub und Kamera-Erkennung, Livebilder Teil 1b: go2rtc-API wie im Kiosk auf 127.0.0.1)
+
+**Befund**
+
+- Der aktuelle Kiosk-Stand schreibt in die go2rtc.yaml `api: listen: "127.0.0.1:1984"`, ältere Stände nicht. Der Hub ergänzte bisher nur `ffmpeg:` und `rtsp:`; die Zeile beim Start („go2rtc: API …, RTSP …“) zeigt seit Teil 1, welche Adressen gelten.
+
+**Änderungen**
+
+- `hub/src/ffmpeg-yaml.ts` withLoopbackApi, apiLoopbackAllowed, kioskGo2rtcUrl, isLoopbackUrl; `hub/src/ffmpeg-setup.ts`: Fehlt der Block `api:`, hängt der Hub ihn mit `listen: "127.0.0.1:1984"` an. Steht im Block eine einzeilige `listen`-Zeile ohne 127.0.0.1 (etwa ":1984", auch leer, `null` oder `~`, was go2rtc als ":1984" liest), ersetzt er nur deren Wert, der Port bleibt. Gelesen wird nur die Ebene des ersten Kinds. Ein Block ohne `listen`-Zeile, die Kurzform `api: { … }`, mehrzeilige oder besondere Werte (Block-Skalar, Anker, Tag) und `""` (API aus) bleiben unverändert. Die Startzeile liest leere Werte jetzt wie go2rtc. Erreicht der Neustart go2rtc nicht, sagt die Startzeile das; die Datei gilt dann ab dem nächsten Start von go2rtc.
+- Nur wenn der Hub (HUB_GO2RTC_URL) und der Kiosk (settings.go2rtcUrl in webcams/config.json) go2rtc über 127.0.0.1 oder localhost ansprechen (::1 zählt nicht, die API lauscht danach nur auf 127.0.0.1); ist die Kiosk-Konfiguration nicht lesbar, bleibt die Datei. Dann steht in der Startzeile „(API bleibt so: Hub oder Kiosk sprechen go2rtc nicht über 127.0.0.1 an)“.
+- Gleicher Ablauf wie in Teil 1: eine Schreibung, Neustart von go2rtc nur bei Änderung, beim Start und wenn sich die Datei ändert. Kein neuer Schalter (`HUB_GO2RTC_YAML=0` schaltet auch das ab). WebRTC-Port 8555 unverändert, die Zentrale und der Kiosk holen Signalisierung und Standbilder weiter über ihre Proxys.
+
+**Prüfung**
+
+- Neue Fälle in `hub/src/ffmpeg-yaml.test.ts`: Wert ersetzen (Port, Anführungszeichen, Kommentar, CRLF, BOM, leer, `null`, `~`), Block anhängen, lokale und unklare Fälle unverändert (mehrzeilig, Anker, Tag, Kurzform, tiefer eingerückt), fremder `listen` eines anderen Blocks, Kopf mit Kommentar, Freigabe nur mit 127.0.0.1 oder localhost, zweiter Durchlauf ohne Änderung. Unabhängig gegengelesen (Gegenprobe mit dem yaml-Parser von go2rtc), die Befunde behoben.
+
+**Messpunkte**
+
+- Startzeile nach dem Update: „go2rtc: API 127.0.0.1:1984, RTSP 127.0.0.1:8554 (go2rtc.yaml ergänzt: api; …)“, danach camera.go2rtc_exposed 0. Steht „API bleibt so“, nutzt Hub oder Kiosk eine andere go2rtc-Adresse; dann am Hub-Rechner die Einstellung im Kiosk-Admin prüfen.
+- Livebilder in Zentrale und Kiosk, Vorschaubilder und tracker.*.ok je Tag unverändert.
