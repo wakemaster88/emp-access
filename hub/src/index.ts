@@ -2,7 +2,7 @@ import { startGo2rtcMonitor } from "./go2rtc-status.js";
 import { writeSync } from "node:fs";
 import { CONFIG, api, log } from "./config.js";
 import { executeTask, type HubTask } from "./tasks.js";
-import { errorText, resultBody, runGuarded } from "./task-guard.js";
+import { errorText, resultBody, runGuarded, tasksRunning, trackTask } from "./task-guard.js";
 import { exitHub, isExiting, onShutdown } from "./shutdown.js";
 import { checkForUpdate, repoAccessStatus, setRestartHold } from "./updater.js";
 import { serialRuns } from "./heartbeat-rules.js";
@@ -11,7 +11,8 @@ import { startDashboard } from "./dashboard.js";
 import { dashboardAccessMode } from "./dashboard-auth.js";
 import { autoScan } from "./scanner.js";
 import { onTaskKick } from "./task-kick.js";
-import { pollCameras, CAMERA_POLL_INTERVAL_MS, restoreCameraMotion, restoreSceneReturns } from "./cameras.js";
+import { pollCameras, CAMERA_POLL_INTERVAL_MS, activeVehicleBursts, restoreCameraMotion, restoreSceneReturns } from "./cameras.js";
+import { talkActive } from "./camera-talk.js";
 import { ALIVE_INTERVAL_MS, markAlive } from "./alive-mark.js";
 import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
@@ -199,10 +200,12 @@ onCoverageShrink(() => {
 });
 
 /**
- * Neustart nach einem Update (updater.ts): Zuerst meldet der Hub der Cloud
- * eine leere Liste bewachter Kameras, damit sie ab jetzt selbst meldet; dann
- * wartet der Neustart auf laufende Bewertungen des Waechters (hoechstens
- * 3 min), damit deren Alarm noch hinausgeht.
+ * Neustart nach einem Update (updater.ts): Zuerst wartet er auf einen
+ * ruhigen Moment ohne Kennzeichen-Burst, Ansage und Auftrag (hoechstens
+ * 2 min, `activity`). Dann meldet der Hub der Cloud eine leere Liste
+ * bewachter Kameras, damit sie ab jetzt selbst meldet, und der Neustart
+ * wartet auf laufende Bewertungen des Waechters (hoechstens 3 min), damit
+ * deren Alarm noch hinausgeht.
  */
 setRestartHold({
   pending: async () => {
@@ -210,9 +213,15 @@ setRestartHold({
     await heartbeat();
   },
   busy: sentinelBusy,
+  activity: () => ({ burstsAktiv: activeVehicleBursts(), ansageLaeuft: talkActive(), tasksLaufend: tasksRunning() }),
 });
 
-async function runAndReport(task: HubTask): Promise<void> {
+/** Auftrag ausfuehren und melden; zaehlt bis zum Ende als laufend (trackTask). */
+function runAndReport(task: HubTask): Promise<void> {
+  return trackTask(() => runAndReportNow(task));
+}
+
+async function runAndReportNow(task: HubTask): Promise<void> {
   // Ein Handler, der wirft, darf den Hub nicht beenden: Der Fehler geht als
   // fehlgeschlagen an die Cloud, alle anderen Auftraege laufen weiter.
   const result = await runGuarded(() => executeTask(task));

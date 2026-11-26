@@ -4,13 +4,15 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { CONFIG, gitHubCodeRevision, gitVersion, log } from "./config.js";
 import { ensureRepoAccess, type RepoAccessStatus } from "./repo-access.js";
-import { exitHub } from "./shutdown.js";
+import { exitHub, isExiting } from "./shutdown.js";
 import {
   PREFLIGHT_ENV,
   PREFLIGHT_OK,
   RESTART_POLL_MS,
   installCommand,
+  quietStep,
   restartStep,
+  type RestartActivity,
   retryBlocked,
   signatureCheckEnabled,
   type RejectedUpdate,
@@ -39,10 +41,16 @@ async function git(args: string[]): Promise<string> {
  *
  * Vor dem Neustart: Abhaengigkeiten installieren (nur wenn sie sich geaendert
  * haben) und Pre-Flight – der neue Stand wird in einem Kindprozess einmal
- * geladen, ohne etwas zu starten. Laufen dann Bewertungen des Waechters,
- * wartet der Neustart auf ihr Ende, hoechstens 3 Minuten (restartStep). Scheitert eins von beiden, geht der
+ * geladen, ohne etwas zu starten. Scheitert eins von beiden, geht der
  * Checkout zurueck auf den vorherigen Commit und der Hub laeuft mit dem alten
  * Code weiter; auf kaputten Code wird nie neu gestartet.
+ *
+ * Danach wartet der Neustart auf einen ruhigen Moment: Laeuft ein
+ * Kennzeichen-Burst, eine Ansage oder ein Auftrag, hoechstens 2 Minuten
+ * (quietStep). Laufen dann Bewertungen des Waechters, wartet er auf ihr
+ * Ende, hoechstens 3 Minuten (restartStep). Waehrend des Wartens laeuft
+ * keine weitere Update-Pruefung. Ein Neustart aus der Cloud und SIGTERM
+ * warten nicht.
  *
  * Alles laeuft async mit Zeitlimit, damit Tasks, DoorBird-Monitor und
  * Offenhalte-Impulse waehrend der Installation nicht einfrieren.
@@ -241,13 +249,15 @@ async function rollback(resetFrom: string | null, failedRev: string, why: string
 }
 
 /**
- * Was der Neustart nach einem Update abwartet (index.ts meldet den Waechter
- * an): `pending` erfaehrt zuerst, dass er ansteht, `busy` sagt danach, wie
- * viele Bewertungen noch laufen.
+ * Was der Neustart nach einem Update abwartet (index.ts meldet es an):
+ * `activity` sagt zuerst, ob ein Kennzeichen-Burst, eine Ansage oder ein
+ * Auftrag laeuft; danach erfaehrt `pending`, dass der Neustart ansteht, und
+ * `busy` sagt, wie viele Bewertungen des Waechters noch laufen.
  */
 export interface RestartHold {
   pending: () => Promise<void>;
   busy: () => number;
+  activity?: () => RestartActivity;
 }
 let restartHold: RestartHold | null = null;
 
@@ -256,16 +266,47 @@ export function setRestartHold(hold: RestartHold): void {
   restartHold = hold;
 }
 
-/** Vor dem Neustart: Bescheid geben, dann laufende Bewertungen abwarten (hoechstens 3 min, restartStep). */
+const IDLE: RestartActivity = { burstsAktiv: 0, ansageLaeuft: false, tasksLaufend: 0 };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Vor dem Neustart, in zwei Schritten: erst einen ruhigen Moment ohne
+ * Kennzeichen-Burst, Ansage und Auftrag abwarten (hoechstens 2 min,
+ * quietStep); der Hub arbeitet dabei ganz normal weiter. Dann wie bisher den
+ * Waechter bei der Cloud abmelden und laufende Bewertungen abwarten
+ * (hoechstens 3 min, restartStep). Beendet sich der Hub inzwischen auf
+ * anderem Weg (Neustart aus der Cloud, SIGTERM), endet das Warten; exitHub
+ * zaehlt ohnehin nur einmal.
+ */
 async function waitBeforeRestart(): Promise<void> {
-  if (!restartHold) return;
-  await restartHold.pending().catch((e) => log(`Update: Vorbereitung des Neustarts: ${e instanceof Error ? e.message : e}`));
+  const hold = restartHold;
+  if (!hold) return;
+  const quietStarted = Date.now();
+  let waitedFor: string[] = [];
+  for (let round = 0; ; round++) {
+    if (isExiting()) return;
+    let activity = IDLE;
+    try {
+      activity = hold.activity?.() ?? IDLE;
+    } catch (e) {
+      log(`Update: Stand vor dem Neustart nicht lesbar: ${e instanceof Error ? e.message : e}`);
+    }
+    const step = quietStep({ activity, waitedMs: Date.now() - quietStarted, round, waitedFor });
+    waitedFor = step.waitedFor;
+    if (step.then === "weiter") {
+      if (step.line) log(step.line);
+      break;
+    }
+    await sleep(RESTART_POLL_MS);
+  }
+  await hold.pending().catch((e) => log(`Update: Vorbereitung des Neustarts: ${e instanceof Error ? e.message : e}`));
   const started = Date.now();
   for (let round = 0; ; round++) {
-    const step = restartStep(restartHold.busy(), Date.now() - started, round);
+    if (isExiting()) return;
+    const step = restartStep(hold.busy(), Date.now() - started, round);
     if (step.line) log(step.line);
     if (step.then === "neustart") return;
-    await new Promise((r) => setTimeout(r, RESTART_POLL_MS));
+    await sleep(RESTART_POLL_MS);
   }
 }
 
@@ -347,7 +388,8 @@ async function runUpdateCheck(): Promise<void> {
     return;
   }
 
-  // Eine laufende Bewertung des Waechters bringt ihren Alarm noch hinaus.
+  // Eine laufende Bewertung des Waechters bringt ihren Alarm noch hinaus;
+  // ein Kennzeichen-Burst, eine Ansage oder ein Auftrag endet noch.
   await waitBeforeRestart();
   log("Neuer Stand installiert und geprueft – Prozess wird beendet (launchd startet neu).");
   // Mit Aufraeumen (hoechstens 3 s): Diagnose-Stand sichern, Weisslicht aus.

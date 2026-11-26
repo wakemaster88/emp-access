@@ -10,6 +10,7 @@ import {
   parseStateVariable,
   percentToRaw,
   rawToPercent,
+  soundwebDeviceWrite,
   soundwebSetPayload,
 } from "./soundweb";
 
@@ -115,4 +116,28 @@ test("Sollwerte in Hub-Payload uebersetzen", () => {
     "error" in soundwebSetPayload({ ...gain, kind: "SELECT", options: [{ value: 1, label: "A" }] }, 7)
   );
   assert.deepEqual(soundwebSetPayload({ ...gain, kind: "PRESET" }, undefined), { preset: true });
+});
+
+test("soundwebDeviceWrite: verbunden setzt Fehler und Trennzeitpunkt zurueck", () => {
+  const now = new Date("2026-11-26T10:00:00.000Z");
+  assert.deepEqual(soundwebDeviceWrite({ connected: true, error: "alt" }, { disconnectedAt: new Date(0) }, now, "hub"), {
+    connected: true,
+    lastError: null,
+    lastSeenAt: now,
+    hubName: "hub",
+    disconnectedAt: null,
+  });
+});
+
+test("soundwebDeviceWrite: erste Trennung setzt den Zeitpunkt, spaetere lassen ihn stehen (eine Schreibung)", () => {
+  const now = new Date("2026-11-26T10:00:00.000Z");
+  const first = soundwebDeviceWrite({ connected: false, error: "Zeitüberschreitung" }, { disconnectedAt: null }, now, null);
+  assert.deepEqual(first, { connected: false, lastError: "Zeitüberschreitung", lastSeenAt: now, disconnectedAt: now });
+  const later = soundwebDeviceWrite({ connected: false, error: "Zeitüberschreitung" }, { disconnectedAt: new Date("2026-11-04T16:20:00.000Z") }, now, null);
+  assert.deepEqual(later, { connected: false, lastError: "Zeitüberschreitung", lastSeenAt: now });
+  assert.equal("disconnectedAt" in later, false);
+  // Fehlertext gekuerzt, fehlender Fehler bleibt null; nur true zaehlt als verbunden.
+  assert.equal(soundwebDeviceWrite({ connected: false, error: "x".repeat(400) }, { disconnectedAt: null }, now, null).lastError?.length, 300);
+  assert.equal(soundwebDeviceWrite({ connected: "true" }, { disconnectedAt: null }, now, null).connected, false);
+  assert.equal(soundwebDeviceWrite({ connected: false }, { disconnectedAt: null }, now, null).lastError, null);
 });

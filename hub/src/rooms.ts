@@ -210,6 +210,11 @@ export function localShellyHosts(): Array<{ host: string; label: string }> {
   }));
 }
 
+/** Adressen aller eingerichteten Geraete der Raeume: Die Kamerasuche meldet sich dort nie an. */
+export function deviceHosts(): string[] {
+  return [...new Set(allDevices().flatMap((d) => (d.ipAddress && IPV4_RE.test(d.ipAddress) ? [d.ipAddress] : [])))];
+}
+
 /**
  * Klimafuehler, die der Hub im LAN lesen kann: Shellys mit IP, die als Fuehler
  * eingetragen sind oder die Temperatur eines Raumklimas liefern.

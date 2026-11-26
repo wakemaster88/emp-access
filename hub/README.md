@@ -57,9 +57,66 @@ ein Mac Studio im Technikraum, Betrieb siehe
   Das Tor schließt ~1 min nach jedem Impuls von selbst, darum löst der Hub
   das Relais bis zum gewählten Endzeitpunkt alle 50 s erneut aus
   (`HUB_GATE_HOLD_PULSE`) und meldet jeden Impuls an die Cloud. Zielzustand
-  ist `Camera.doorHoldUntil`; nach einem Hub-Neustart wird eine laufende
-  Offenhaltung aus der Kamera-Konfiguration wieder aufgenommen, „Beenden“
-  stoppt sofort.
+  ist `Camera.doorHoldUntil`; die Antwort auf jede Meldung nennt ihn
+  (`hold-rules.ts`): Kennt die Cloud kein Offenhalten mehr, endet es nach
+  diesem Impuls, auch wenn der Auftrag zum Beenden den Hub nie erreicht hat;
+  ein anderes Ende übernimmt der Hub („Offen halten jetzt bis 11:30
+  (Zielzustand der Cloud)“), nie eines mehr als 12 Stunden (plus 5 Minuten
+  Uhrabweichung) in der Zukunft. Ohne Antwort oder ohne das Feld (ältere
+  Cloud) läuft der Takt bis zum lokal bekannten Ende, weder kürzer noch
+  länger. Ein gescheiterter Impuls wird nach 3, 8 und 20 s wiederholt,
+  danach geht es im normalen Takt weiter; nach dem Ende kommt keine
+  Wiederholung mehr. Nach einem Hub-Neustart wird eine laufende
+  Offenhaltung aus der Kamera-Konfiguration wieder aufgenommen, nur mit
+  einem Ende in der Zukunft; „Beenden“ stoppt sofort. Bricht die
+  Dauerverbindung ab, verbindet der Hub nach 3 s neu („wieder erreichbar
+  nach 4.2 s“ im Log); eine neue Adresse sucht er erst nach zwei
+  Netzfehlern in Folge, im Hintergrund und höchstens einmal je Minute.
+  Antwortet unter der Adresse ein Gerät mit anderer MAC als der gelernten
+  (die Adresse ist nach einem DHCP-Wechsel vergeben), zählt das als
+  Netzfehler, auch beim Öffnen und beim Bild: Die DoorBird wird gesucht, und
+  eine Ablehnung (401/403) dieses Geräts zählt nicht für die Sperre unten
+  („monitor.cgi HTTP 401 von einem anderen Gerät unter …“, Zähler
+  `doorbird.foreign_answer`).
+- **Abgelehnte Zugangsdaten** (Regeln in `auth-latch.ts`, Zustand in
+  `.cache/auth-latch.json`): Lehnt ein Gerät dieselben Zugangsdaten zweimal
+  in Folge ab (HTTP 401 oder 403), schickt der Hub sie nicht mehr dorthin.
+  Die Datei enthält nur Gerät, Fingerabdruck (ein Hash, nie die Daten
+  selbst) und Zeitpunkte, ist nur für den Hub-Benutzer lesbar und übersteht
+  einen Neustart. Die Sperre löst sich von selbst, ein Knopf ist nicht
+  nötig:
+  - **Zugangsdaten ändern**: DoorBird in der Cloud (Kameras → Bearbeiten,
+    Benutzer, Passwort, Adresse oder Port), Shelly über
+    `HUB_SHELLY_PASSWORD`/`HUB_SHELLY_USER` in `hub/.env` und Neustart des
+    Hubs. Mit dem nächsten Abgleich der Kamera-Liste (spätestens nach einer
+    Minute) bzw. der nächsten Abfrage versucht es der Hub mit den neuen
+    Daten. Ein bloßes erneutes Speichern ohne Änderung löst die Sperre
+    nicht: Die Kamera-Liste liefert keinen Änderungszeitpunkt.
+  - **Ein Versuch gelingt**: Je Gerät darf alle 24 Stunden ein einzelner
+    Versuch hinaus. Wurde das Passwort am Gerät zurückgestellt, ist die
+    Sperre damit aufgehoben.
+  DoorBird: Im Zustand „Zugangsdaten abgelehnt“ verbindet der Hub nicht
+  neu, sucht keine neue Adresse, und Öffnen oder Bild scheitern sofort
+  („Zugangsdaten abgelehnt – kein Versuch, bis sie in der Cloud geändert
+  werden“). Beim Eintritt und beim Lösen je eine Zeile im Log („DoorBird
+  Tor: Zugangsdaten abgelehnt (HTTP 401, zweimal in Folge) – …“, „DoorBird
+  Tor: Sperre der Zugangsdaten aufgehoben (…)“) und ein Hub-Ereignis, Zähler
+  `doorbird.auth_rejected`, `doorbird.auth_locked`, `doorbird.auth_released`.
+  Der Befund geht wie die übrigen Störungen an die Cloud (`/api/hub/alerts`,
+  Quelle `zugang-<Hub-Name>`, also Push und Alarm-Telegram) und wird beim
+  Lösen dort geschlossen. Shelly: Abfragen und Schaltbefehle an einen
+  gesperrten Shelly scheitern sofort mit „Shelly-Passwort abgelehnt (…) –
+  kein Versuch, bis HUB_SHELLY_PASSWORD geändert wird“; die Früherkennung
+  zeigt das wie ein falsches Passwort. Kamerasuche per Anmeldung
+  (`findCameraByApi`, Regeln in `camera-probe-rules.ts`): Für eine
+  vermisste Kamera mit bekannter MAC fragt der Hub in der ersten Stunde nur
+  Adressen im zuletzt bekannten Subnetz der Kamera und im Kamera-Netz (das
+  Netz in `HUB_VLANS`, dessen Name Kamera, Camera, CCTV oder Video enthält;
+  ohne eines nur das letzte Subnetz), nie eine Adresse, die einer Kamera,
+  DoorBird oder einem Gerät der Räume gehört. Je Adresse höchstens ein
+  Versuch in 24 Stunden, nach einer Ablehnung dort nie wieder mit denselben
+  Zugangsdaten (Zähler `camera.probe`, `camera.probe_rejected`,
+  `camera.probe_skipped`).
 - **Gesichter**: InsightFace-Sidecar (`face/server.py`, `buffalo_l`, nur
   Erkennung und Merkmale). Der Dienst rechnet auf der CPU; CoreML ist
   abgeschaltet, weil es bei `buffalo_l` Shape-Fehler wirft.
@@ -261,6 +318,31 @@ ein Mac Studio im Technikraum, Betrieb siehe
   `HUB_WHITELIST_MAX_AGE_H=0` in `hub/.env` und den Hub neu starten.
   Lieferdienst-Öffnung und Offenhaltung nutzen die Fahrzeugliste nicht und
   bleiben unberührt.
+- **Kamera-Liste ohne Cloud** (`cameras.ts`, Regeln in
+  `camera-cache-rules.ts`): Die Kamera-Liste kommt jede Minute aus der Cloud;
+  fällt die Cloud aus, fragt der Hub die bekannten Kameras mit dem letzten
+  Stand weiter ab. Die letzte gelungene Antwort liegt zusätzlich in
+  `.cache/cameras.json`: Version, Zeitpunkt der Antwort (`savedAt`) und die
+  Einträge so, wie die Cloud sie liefert, also mit Adressen und
+  Zugangsdaten der Kameras und DoorBirds, aber ohne Offenhalten. Die Datei
+  ist wie `hub/.env` nur für den Hub-Benutzer lesbar (0600, schon beim
+  Anlegen, in einem Zug ersetzt, `atomic-file.ts`). Neu geschrieben wird sie
+  bei geändertem Inhalt und sonst einmal am Tag, damit ihr Zeitstempel sagt,
+  wann die Cloud den Stand zuletzt bestätigt hat. Scheitert beim Start der
+  erste Abruf, lädt der Hub die Kopie, wenn sie höchstens 14 Tage alt ist
+  (gerechnet ab dem Zeitstempel in der Datei, nicht ab der Dateizeit), und
+  fragt die Kameras gleich ab; im Log steht eine Zeile („Kamera-Liste aus
+  lokaler Kopie vom 24.11.2026, 10:00 (3 Kameras) – bis die Cloud
+  antwortet“), Zähler `camera.cache_loaded`. Aus der Kopie wird nichts
+  geschaltet: Ein Offenhalten gilt nicht (es kommt erst mit der Antwort der
+  Cloud wieder, und nur mit einem Ende in der Zukunft), „Lieferdienst: Tor
+  öffnen“ gilt bis dahin als „melden“. Tor und Shelly per Kennzeichen hängen
+  wie sonst an der Fahrzeugliste. Eine beschädigte, zu alte oder weit in die
+  Zukunft datierte Kopie wird nicht verwendet („Kamera-Liste: lokale Kopie
+  nicht verwendet (beschädigt)“, ohne Inhalt der Datei, Zähler
+  `camera.cache_rejected`); fehlt sie, steht nichts im Log. Die Kamera-Liste
+  wird weiter alle 15 s nachgeladen, und die erste Antwort der Cloud ersetzt
+  die Kopie und den Stand im Speicher. `hub/.cache` ist von git ausgenommen.
 - **Weißlicht nachts** (`vehicle-light-rules.ts`, `vehicle-light.ts`): Im
   Dunkeln (Sonnenzeiten von Open-Meteo, sonst 17–8 Uhr) schaltet der Hub an
   der Zufahrtskamera (Name mit Eingang/Einfahrt/Tor/Zufahrt oder
@@ -655,6 +737,16 @@ Bevor der Hub auf einen neuen Stand neu startet (`src/updater.ts`):
    `updater-rules.ts`); im Log „Update: Neustart wartet auf 1 laufende
    Bewertung(en) des Wächters (höchstens 3 min)“ und „Update: Bewertung des
    Wächters abgeschlossen, Neustart nach 42 s Warten“.
+5. **Ruhiger Moment** (vor Schritt 4): Läuft ein Kennzeichen-Burst, eine
+   Ansage über einen Kamera-Lautsprecher oder ein Auftrag aus der Cloud,
+   wartet der Neustart auf ihr Ende, höchstens 2 Minuten (Regeln
+   `restartAllowed` und `quietStep` in `updater-rules.ts`). Der Hub arbeitet
+   dabei ganz normal weiter, auch der Wächter; erst danach folgt Schritt 4.
+   Während des Wartens läuft keine weitere Update-Prüfung, Aufträge werden
+   weiter abgeholt. Im Log eine Zeile, wie lange und worauf gewartet wurde
+   („Update: Neustart nach 12 s Warten auf Kennzeichen-Burst und Auftrag“,
+   nach 2 Minuten mit „Höchstdauer 2 min erreicht, noch aktiv: …“). Ein
+   Neustart aus der Cloud und SIGTERM warten nicht.
 
 Die Abfrage `HUB_PREFLIGHT` am Anfang von `src/index.ts` darf nie entfallen
 oder umbenannt werden: Der jeweils laufende (alte) Updater verlässt sich

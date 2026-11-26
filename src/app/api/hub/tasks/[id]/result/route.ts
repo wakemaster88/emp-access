@@ -4,6 +4,7 @@ import { ingestHubScanDevices } from "@/lib/network-scan-ingest";
 import { queueFaceAnalysis } from "@/lib/unknown-persons";
 import { runDeviceSwitchedRules, settleHubHandovers } from "@/lib/room-rules";
 import { switchedFollowUp } from "@/lib/rule-run-rules";
+import { doorHoldRevert } from "@/lib/door-hold";
 
 /** Auftraege, die eine Raumregel an den Hub uebergibt (Hue, Kamera steuern). */
 const RULE_TASK_TYPES = new Set(["HUE_SET", "CAMERA_SCENE"]);
@@ -58,6 +59,17 @@ export async function POST(
       finishedAt: new Date(),
     },
   });
+  // Tor offen halten aus POST /api/hub/tasks gescheitert (der Hub kennt die
+  // DoorBird nicht): Zielzustand zuruecknehmen, sonst begaenne das Offenhalten
+  // spaeter ohne neuen Befehl, sobald der Hub die DoorBird kennt. Nur solange
+  // kein neuerer Auftrag ihn geaendert hat.
+  const holdRevert = doorHoldRevert(task, success);
+  if (holdRevert) {
+    await db.camera.updateMany({
+      where: { id: holdRevert.cameraId, accountId: account.id, doorHoldUntil: holdRevert.until },
+      data: { doorHoldUntil: holdRevert.before, doorHoldError: updated.error },
+    });
+  }
   // Von einer Raumregel uebergeben: Ergebnis im Regel-Verlauf nachtragen.
   const ruleId = Number((task.payload as { ruleId?: unknown } | null)?.ruleId);
   if (RULE_TASK_TYPES.has(task.type) && Number.isInteger(ruleId) && ruleId > 0) {

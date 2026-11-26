@@ -1,19 +1,25 @@
 /**
  * SNMP-Sync für NETGEAR-Switches (v2c). Nutzt `snmpwalk` (net-snmp).
  * Liest Ports, PVID und MAC-Tabelle und schickt sie an die Cloud.
+ *
+ * Alle snmpget/snmpwalk-Aufrufe des Hubs (Switch-Abfrage, VLAN-Pruefung,
+ * Router-ARP) laufen ueber eine gemeinsame Warteschlange (snmp-rules.ts,
+ * HostQueue): je Adresse hoechstens eine Abfrage zur Zeit. Nur lesend.
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { CONFIG, api, log } from "./config.js";
 import { improve, improveCount } from "./improve-log.js";
 import { noteSwitchPoll } from "./health-trends.js";
-import { ChangeLog } from "./change-log.js";
+import { HostQueue, fdbOutcome, snmpRunSummary, switchLine, type SnmpRunState, type SwitchRunEntry } from "./snmp-rules.js";
 
 const execFileAsync = promisify(execFile);
 /** Kennung des regelmaessigen Laufs (index.ts). */
 export const AUTO_LABEL = "SNMP-Auto";
-/** Routinezeilen nur bei Aenderung, sonst einmal am Tag. */
-const routineLog = new ChangeLog(24 * 3_600_000);
+/** Eine Abfrage je Switch zur Zeit, gleiche Abfragen teilen sich das Ergebnis. */
+const queue = new HostQueue();
+/** Letzter Lauf fuer den Vergleich der Log-Zeilen (snmpRunSummary). */
+let lastRun: SnmpRunState | null = null;
 
 const OID_SYS_NAME = "1.3.6.1.2.1.1.5.0";
 const OID_SYS_DESCR = "1.3.6.1.2.1.1.1.0";
@@ -52,6 +58,13 @@ export interface SwitchSnapshot {
   polledAt?: string;
   ports: SwitchPort[];
   macTable: MacEntry[];
+  /**
+   * Teilausfall: "fdb" = die MAC-Tabelle kam leer, obwohl sie vorher gefuellt
+   * war; `macTable` ist dann die vorige mit dem Stand `macsAt`.
+   */
+  partial?: string[];
+  /** Stand der MAC-Tabelle (Abfragezeit, bei einem Teilausfall die vorige). */
+  macsAt?: string | null;
 }
 
 export function snmpTargets(): string[] {
@@ -78,6 +91,9 @@ export function lastSwitchSnapshots(): Array<{
   portsTotal: number;
   macs: number;
   error: string | null;
+  /** MAC-Tabelle ist die vorige (Teilausfall), Stand in macsAt. */
+  partial: boolean;
+  macsAt: string | null;
 }> {
   return [...lastSnapshots.values()].map((s) => ({
     host: s.host,
@@ -89,6 +105,8 @@ export function lastSwitchSnapshots(): Array<{
     portsTotal: s.ports.length,
     macs: s.macTable.length,
     error: s.error ?? null,
+    partial: (s.partial ?? []).includes("fdb"),
+    macsAt: s.macsAt ?? null,
   }));
 }
 
@@ -113,10 +131,8 @@ export function parseWalk(stdout: string): Array<{ oid: string; value: string }>
 
 export async function snmpGet(host: string, oid: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync(
-      "snmpget",
-      ["-v2c", "-c", community(), "-On", "-Oe", host, oid],
-      { timeout: 12_000 }
+    const { stdout } = await queue.run(host, `get ${oid}`, () =>
+      execFileAsync("snmpget", ["-v2c", "-c", community(), "-On", "-Oe", host, oid], { timeout: 12_000 })
     );
     return parseWalk(stdout)[0]?.value ?? null;
   } catch {
@@ -124,15 +140,17 @@ export async function snmpGet(host: string, oid: string): Promise<string | null>
   }
 }
 
+/**
+ * Walk ueber die Warteschlange: Das Zeitlimit (45 s) gilt ab dem Start des
+ * Walks, die Wartezeit davor zaehlt nicht mit.
+ */
 export async function snmpWalk(
   host: string,
   oid: string,
   extraFlags: string[] = []
 ): Promise<Array<{ oid: string; value: string }>> {
-  const { stdout } = await execFileAsync(
-    "snmpwalk",
-    ["-v2c", "-c", community(), "-On", "-Oe", ...extraFlags, host, oid],
-    { timeout: 45_000 }
+  const { stdout } = await queue.run(host, `walk ${extraFlags.join(" ")} ${oid}`, () =>
+    execFileAsync("snmpwalk", ["-v2c", "-c", community(), "-On", "-Oe", ...extraFlags, host, oid], { timeout: 45_000 })
   );
   return parseWalk(stdout);
 }
@@ -170,7 +188,8 @@ function macFromOidDec(suffix: string): string | null {
   return macParts.map((n) => n.toString(16).padStart(2, "0")).join(":").toUpperCase();
 }
 
-function vlanAndMacFromOid(suffix: string): { vlan: number | null; mac: string | null } {
+/** Suffix der MAC-Tabelle: `<VLAN>.<6 MAC-Oktette>` (Q-BRIDGE) oder nur die MAC (BRIDGE-MIB). */
+export function vlanAndMacFromOid(suffix: string): { vlan: number | null; mac: string | null } {
   const parts = suffix.split(".").map(Number);
   if (parts.length >= 7) {
     return { vlan: parts[0], mac: macFromOidDec(parts.slice(1).join(".")) };
@@ -252,6 +271,8 @@ export async function pollSwitch(host: string): Promise<SwitchSnapshot> {
 export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
   ok: boolean;
   switches: number;
+  /** Switches ohne Antwort in diesem Lauf. */
+  failed?: number;
   error?: string;
 }> {
   const hosts = snmpTargets();
@@ -261,47 +282,87 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
   }
   try {
     const switches: SwitchSnapshot[] = [];
+    /** Ganz ausgefallene Switches: gehen als { host, error } mit an die Cloud. */
+    const failed: Array<{ host: string; sysName: string | null; error: string }> = [];
+    const run: SwitchRunEntry[] = [];
     let firstError: string | null = null;
     for (const host of hosts) {
       try {
-        const snap = await pollSwitch(host);
-        switches.push(snap);
+        const raw = await pollSwitch(host);
+        const prev = lastSnapshots.get(host);
+        // Leere MAC-Tabelle nach einer gefuellten: Teilausfall, die vorige
+        // Tabelle bleibt mit ihrem Stand stehen (snmp-rules.ts, fdbOutcome).
+        const fdb = fdbOutcome(
+          prev ? { macTable: prev.macTable, macsAt: prev.macsAt ?? prev.polledAt ?? null } : null,
+          raw.macTable,
+          raw.polledAt ?? new Date().toISOString()
+        );
+        const snap: SwitchSnapshot = {
+          ...raw,
+          macTable: fdb.macTable,
+          macsAt: fdb.macsAt,
+          ...(fdb.partial ? { partial: ["fdb"] } : {}),
+        };
         lastSnapshots.set(host, { ...snap, error: null });
         noteSwitchPoll(host, snap, null);
-        // Der Lauf alle 15 Minuten meldet einen Switch nur, wenn sich Name oder
-        // Port-Zahl aendern oder die MAC-Tabelle leer wird oder sich wieder
-        // fuellt (und einmal am Tag); ein Abruf von Hand immer. Die MAC-Zahl
-        // steht in der Zeile, zaehlt aber nicht zum Vergleich: Sie wandert
-        // mit jedem Geraet, das sendet oder verstummt.
-        const line = `${snap.sysName ?? ""} – ${snap.ports.length} Ports, ${snap.macTable.length} MACs`;
-        const compared = JSON.stringify([snap.sysName, snap.ports.length, snap.macTable.length > 0]);
-        if (label !== AUTO_LABEL || routineLog.shouldLog(host, compared, Date.now())) log(`${label}: ${host} ${line}`);
+        if (fdb.partial) improveCount("snmp", `partial_${host}`);
+        switches.push(snap);
+        run.push({
+          host,
+          name: snap.sysName,
+          error: null,
+          ports: snap.ports.length,
+          portsUp: snap.ports.filter((p) => p.up).length,
+          macs: snap.macTable.length,
+          partial: fdb.partial,
+        });
       } catch (e) {
         const error = friendlySnmpError(e);
-        if (label !== AUTO_LABEL || routineLog.shouldLog(host, `Fehler: ${error}`, Date.now())) log(`${label} ${host}: ${error}`);
         const prev = lastSnapshots.get(host);
         lastSnapshots.set(host, {
           ...(prev ?? { host, sysName: null, ports: [], macTable: [] }),
           error,
         });
         noteSwitchPoll(host, prev ?? null, error);
+        improveCount("snmp", `fail_${host}`);
+        failed.push({ host, sysName: prev?.sysName ?? null, error });
+        run.push({ host, name: prev?.sysName ?? null, error, ports: 0, portsUp: 0, macs: 0, partial: false });
         firstError ??= error;
       }
     }
+    // Der Lauf alle 15 Minuten schreibt nur Aenderungen und einmal je Stunde
+    // eine Sammelzeile (snmpRunSummary); ein Abruf von Hand jede Zeile.
+    const summary = snmpRunSummary(lastRun, { at: Date.now(), switches: run });
+    lastRun = summary.state;
+    const lines = label === AUTO_LABEL ? summary.lines : run.map(switchLine);
+    for (const line of lines) log(`${label}: ${line}`);
+
+    if (switches.length === 0) improve("snmp", "fail", { error: "unreachable" });
+    // Die Cloud gleicht nur die Switches mit Antwort ab (`switches`); die
+    // ausgefallenen stehen getrennt in `failed`, damit auch eine Cloud, die
+    // das Feld noch nicht kennt, sie nicht als gesehen fuehrt. Bei einem
+    // Teilausfall geht die vorige MAC-Tabelle nicht noch einmal hinaus, nur
+    // ihre Groesse und ihr Stand: Die Zuordnungen in der Cloud bleiben ohnehin
+    // stehen, und alte Eintraege sollen dort nichts als gerade gesehen markieren.
+    const upload = switches.map((s) =>
+      s.partial?.includes("fdb")
+        ? { ...s, macTable: undefined, macs: s.macTable.length }
+        : s
+    );
+    const body = JSON.stringify({ hubName: CONFIG.name, switches: upload, failed });
     if (switches.length === 0) {
-      improve("snmp", "fail", { error: "unreachable" });
-      return { ok: false, switches: 0, error: firstError ?? "kein Switch erreichbar" };
+      // Nur der Ausfall geht hinaus; scheitert auch die Meldung, zaehlt der
+      // Fehler der Switches.
+      await api("/api/hub/switch", { method: "POST", body }).catch(() => null);
+      return { ok: false, switches: 0, failed: failed.length, error: firstError ?? "kein Switch erreichbar" };
     }
-    const res = await api("/api/hub/switch", {
-      method: "POST",
-      body: JSON.stringify({ hubName: CONFIG.name, switches }),
-    });
+    const res = await api("/api/hub/switch", { method: "POST", body });
     if (!res.ok) {
       improve("snmp", "fail", { error: `HTTP ${res.status}` });
-      return { ok: false, switches: switches.length, error: `HTTP ${res.status}` };
+      return { ok: false, switches: switches.length, failed: failed.length, error: `HTTP ${res.status}` };
     }
     improveCount("snmp", "ok");
-    return { ok: true, switches: switches.length };
+    return { ok: true, switches: switches.length, failed: failed.length };
   } catch (e) {
     return { ok: false, switches: 0, error: friendlySnmpError(e) };
   }

@@ -11,16 +11,20 @@
  */
 import { noteTriggeredRules, onCameraEvent } from "./rules.js";
 import { kickIfRulesTriggered } from "./task-kick.js";
-import { api, log } from "./config.js";
+import { CONFIG, api, log } from "./config.js";
 import { recordHubEvent } from "./state.js";
 import { embedJpeg, embeddingHeader, noteOtherWay, scoreGallery, refreshGallery } from "./face.js";
 import { faceLabel, galleryMargin, sightingQualityNote, sightingQualityParams } from "./face-rules.js";
 import { jpegContainsVehicle } from "./vision.js";
 import type { CameraConfig, LastPerson } from "./cameras.js";
 import { updateLocalStreams } from "./streams.js";
-import { findIpByMac, macForIp } from "./netmap.js";
-import { improve } from "./improve-log.js";
+import { findIpByMac, invalidateArpCache, macForIp, macTable, normalizeMac, readRouterArp } from "./netmap.js";
+import { improve, improveCount } from "./improve-log.js";
+import { afterReport, fastRetrySafe, reportApplies, retryDelayAfter, retryStillDue } from "./hold-rules.js";
+import { RELOCATE_MIN_GAP_MS, httpAnswerOutcome, shouldRelocate, type ConnectFailure, type HttpAnswerOutcome } from "./camera-poll-rules.js";
 import { PERSON_SNAPSHOT, shrinkJpeg } from "./image.js";
+import { authAlertSource, authOutcome, credentialFingerprint, type LatchGate } from "./auth-latch.js";
+import { authLatches } from "./auth-latch-store.js";
 
 const RECONNECT_MIN_MS = 3_000;
 const RECONNECT_MAX_MS = 60_000;
@@ -75,6 +79,18 @@ interface DoorbirdRuntime {
   /** MAC lernen / per MAC wiederfinden (wie bei den Reolink-Kameras). */
   lastMacLearnAt: number;
   lastRelocateAt: number;
+  /** Suche nach neuer Adresse läuft (im Hintergrund, nie zwei zugleich). */
+  relocating: boolean;
+  /** Verbindungsversuche in Folge, die an einem Netzfehler scheiterten (shouldRelocate). */
+  netFailStreak: number;
+  /** Beginn der Lücke seit „Monitor getrennt“ (ms), 0 = verbunden. */
+  unreachableSince: number;
+  /** Beendet die laufende Wartezeit bis zum nächsten Verbindungsversuch. */
+  wakeReconnect: (() => void) | null;
+  /** Nächster Verbindungsversuch ohne Wartezeit (neue Adresse). */
+  wakePending: boolean;
+  /** Zugangsdaten abgelehnt: keine Anfragen mit ihnen (auth-latch.ts). */
+  authLocked: boolean;
 }
 
 interface DoorbirdHold {
@@ -89,6 +105,10 @@ interface DoorbirdHold {
   lastError: string | null;
   /** Impuls läuft gerade – kein Doppelfeuer, wenn die DoorBird langsam antwortet. */
   busy: boolean;
+  /** Gescheiterte Impulse in Folge seit dem letzten gelungenen (hold-rules.ts retryDelayAfter). */
+  failStreak: number;
+  /** Geplante Wiederholung eines gescheiterten Impulses. */
+  retryTimer: NodeJS.Timeout | null;
 }
 
 /** Offenhalte-Zustand für Task-Antwort und lokales Dashboard. */
@@ -122,13 +142,210 @@ function authHeader(c: CameraConfig): string {
   return "Basic " + Buffer.from(`${c.username}:${c.password}`).toString("base64");
 }
 
+/* ---------------------------------------------------------------------------
+ * Zugangsdaten abgelehnt (Regeln in auth-latch.ts, Zustand in
+ * hub/.cache/auth-latch.json): Nach zwei Antworten 401/403 der
+ * Dauerverbindung (monitor.cgi) in Folge schickt der Hub die Zugangsdaten
+ * nicht mehr an diese DoorBird, weder fuer die Dauerverbindung noch fuer
+ * Oeffnen oder Bild, und sucht keine neue Adresse. Eine Ablehnung beim
+ * Oeffnen oder beim Bild zaehlt nicht: Sie kann an einer fehlenden
+ * Berechtigung fuer genau diese Funktion liegen (etwa Relais 2), und die
+ * Sperre traefe dann auch Relais 1 und die Klingel. Angenommen beim Oeffnen
+ * oder beim Bild loescht eine einzelne Ablehnung der Dauerverbindung.
+ * Die Sperre loest sich mit geaenderten Zugangsdaten (oder Adresse) in der
+ * Cloud und mit einem gelungenen Versuch; einmal in 24 Stunden gibt es einen
+ * einzelnen Versuch. Beim Eintritt und beim Loesen je eine Zeile im Log und
+ * ein Hub-Ereignis; der Befund geht an die Cloud (POST /api/hub/alerts, dort
+ * Push und Telegram) und wird beim Loesen dort geschlossen.
+ * ------------------------------------------------------------------------- */
+
+const authKey = (c: CameraConfig) => `doorbird:${c.id}`;
+/** Zugangsdaten samt Ziel: Eine neue Adresse in der Cloud loest die Sperre wie ein neues Passwort. */
+const authFp = (c: CameraConfig) => credentialFingerprint(c.host, c.httpPort, c.https, c.username, c.password);
+const AUTH_BLOCKED = "Zugangsdaten abgelehnt – kein Versuch, bis sie in der Cloud geändert werden";
+
+const berlinTime = (ms: number) =>
+  new Date(ms).toLocaleString("de-DE", {
+    timeZone: "Europe/Berlin",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+function setAuthLocked(rt: DoorbirdRuntime, locked: boolean, why: string): void {
+  if (rt.authLocked === locked) return;
+  rt.authLocked = locked;
+  if (locked) {
+    log(
+      `DoorBird ${rt.config.name}: Zugangsdaten abgelehnt (${why}) – keine weiteren Versuche, ` +
+        "bis sie in der Cloud geändert werden; ein einzelner Versuch alle 24 h"
+    );
+    improve("doorbird", "auth_locked", { name: rt.config.name, why });
+    recordHubEvent({
+      kind: "doorbird",
+      severity: "warn",
+      where: rt.config.name,
+      title: "Zugangsdaten abgelehnt",
+      detail: "keine weiteren Versuche bis zur Änderung in der Cloud",
+    });
+  } else {
+    log(`DoorBird ${rt.config.name}: Sperre der Zugangsdaten aufgehoben (${why})`);
+    improve("doorbird", "auth_released", { name: rt.config.name, why });
+    recordHubEvent({ kind: "doorbird", severity: "info", where: rt.config.name, title: "Zugangsdaten wieder freigegeben", detail: why });
+    // Die Dauerverbindung wartet womoeglich auf den naechsten einzelnen Versuch.
+    wakeMonitor(rt);
+  }
+  syncAuthAlerts();
+}
+
+/**
+ * Vor jeder Anfrage mit Zugangsdaten: darf sie hinaus? Oeffnen und Bild
+ * (`funktion`) nehmen der Dauerverbindung den einzelnen Versuch je 24 h
+ * nicht weg: Waehrend einer Sperre gehen sie nie hinaus.
+ */
+async function authGate(c: CameraConfig, use: "dauer" | "funktion" = "dauer"): Promise<LatchGate> {
+  await authLatches.ready();
+  if (use === "funktion" && authLatches.locked(authKey(c), authFp(c))) {
+    return { allow: false, entry: null, released: null, single: false, nextTryAt: null };
+  }
+  const g = authLatches.gate(authKey(c), authFp(c), Date.now());
+  const rt = doorbirds.get(c.id);
+  if (g.released && rt) {
+    setAuthLocked(rt, false, g.released === "zugangsdaten" ? "Zugangsdaten oder Adresse in der Cloud geändert" : "Eintrag in der Cloud neu gespeichert");
+  }
+  return g;
+}
+
+/**
+ * HTTP-Antwort werten (camera-poll-rules.ts httpAnswerOutcome) und fuer die
+ * Sperre verbuchen. Nach einem DHCP-Wechsel kann unter der alten Adresse ein
+ * anderes Geraet antworten: Bei einer Antwort ungleich 2xx und bekannter MAC
+ * der DoorBird schlaegt der Hub darum die MAC unter der Adresse frisch nach
+ * (peerMac). Antwortet dort ein anderes Geraet, zaehlt das fuer die Sperre
+ * wie keine Antwort und fuer die Adresssuche als Netzfehler.
+ */
+async function noteAnswer(c: CameraConfig, status: number, use: "dauer" | "funktion"): Promise<HttpAnswerOutcome> {
+  const own = c.macAddress ? normalizeMac(c.macAddress) : null;
+  const peer = own && !(status >= 200 && status < 300) ? await peerMac(c.host, status).catch(() => null) : null;
+  const outcome = httpAnswerOutcome({ status, geraeteMac: own, gegenstelleMac: peer });
+  if (outcome.fremd) improveCount("doorbird", "foreign_answer");
+  authNote(c, outcome.authStatus, use);
+  return outcome;
+}
+
+/**
+ * MAC unter einer Adresse, frisch: die lokale ARP-Tabelle neu gelesen. Kennt
+ * nur der Router die Adresse (geroutetes Netz), wird sein Stand bei einer
+ * Ablehnung (401/403) ebenfalls neu geholt; sonst gilt sein gemerkter Stand
+ * (hoechstens 2 min alt).
+ */
+async function peerMac(host: string, status: number): Promise<string | null> {
+  invalidateArpCache();
+  let seen = (await macTable()).get(host);
+  if (seen?.source !== "arp" && (status === 401 || status === 403)) {
+    await readRouterArp(true);
+    seen = (await macTable()).get(host);
+  }
+  return seen?.mac ?? null;
+}
+
+/** Fehlertext einer Antwort ungleich 2xx, mit Hinweis, wenn ein anderes Geraet antwortete. */
+function answerError(what: string, c: CameraConfig, status: number, outcome: HttpAnswerOutcome): string {
+  return `${what} HTTP ${status}${outcome.fremd ? ` von einem anderen Gerät unter ${c.host}` : ""}`;
+}
+
+/**
+ * Nach der Antwort (status null = keine Antwort). Fuer die Sperre zaehlt
+ * bei Oeffnen und Bild (`funktion`) nur „angenommen“.
+ */
+function authNote(c: CameraConfig, status: number | null, use: "dauer" | "funktion"): void {
+  const outcome = authOutcome(status);
+  if (outcome === "abgelehnt") improveCount("doorbird", use === "dauer" ? "auth_rejected" : "auth_rejected_function");
+  const counted = use === "dauer" || outcome === "ok" ? outcome : "keine";
+  const n = authLatches.note(authKey(c), authFp(c), counted, Date.now());
+  const rt = doorbirds.get(c.id);
+  // Inzwischen andere Zugangsdaten: Die Antwort sagt ueber sie nichts.
+  if (!rt || authFp(rt.config) !== authFp(c)) return;
+  if (n.locked) setAuthLocked(rt, true, `HTTP ${status}, zweimal in Folge`);
+  else if (n.released) setAuthLocked(rt, false, "Zugangsdaten angenommen");
+}
+
+const AUTH_ALERT_SOURCE = authAlertSource(CONFIG.name);
+const AUTH_ALERT_RETRY_MS = 5 * 60_000;
+/** Was die Cloud zuletzt bestaetigt hat (Liste der Befunde als JSON), null = unbekannt. */
+let authAlertReported: string | null = null;
+let authAlertBusy = false;
+let authAlertAgain = false;
+let authAlertTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Befunde „Zugangsdaten abgelehnt“ an die Cloud: immer die ganze Liste dieses
+ * Hubs (was fehlt, schliesst die Cloud). Nur bei Aenderung; nach dem Start
+ * einmal vorsorglich; nach einem Fehlschlag in 5 min erneut.
+ */
+function syncAuthAlerts(): void {
+  if (authAlertBusy) {
+    authAlertAgain = true;
+    return;
+  }
+  const alerts = [...doorbirds.values()]
+    .filter((rt) => authLatches.locked(authKey(rt.config), authFp(rt.config)))
+    .sort((a, b) => a.config.id - b.config.id)
+    .map((rt) => ({
+      key: `${AUTH_ALERT_SOURCE}:doorbird-${rt.config.id}`,
+      title: `DoorBird ${rt.config.name}: Zugangsdaten abgelehnt`,
+      detail:
+        "Die DoorBird lehnt Benutzer oder Passwort ab. Der Hub versucht es nicht weiter, bis die " +
+        "Zugangsdaten in der Cloud geändert werden (ein einzelner Versuch alle 24 Stunden).",
+      severity: "warn",
+    }));
+  const content = JSON.stringify(alerts);
+  if (content === authAlertReported) return;
+  authAlertBusy = true;
+  api("/api/hub/alerts", {
+    method: "POST",
+    body: JSON.stringify({ hubName: CONFIG.name, source: AUTH_ALERT_SOURCE, alerts }),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      authAlertReported = content;
+    })
+    .catch(() => {
+      authAlertReported = null;
+      if (!authAlertTimer) {
+        authAlertTimer = setTimeout(() => {
+          authAlertTimer = null;
+          syncAuthAlerts();
+        }, AUTH_ALERT_RETRY_MS);
+        authAlertTimer.unref?.();
+      }
+    })
+    .finally(() => {
+      authAlertBusy = false;
+      if (authAlertAgain) {
+        authAlertAgain = false;
+        syncAuthAlerts();
+      }
+    });
+}
+
 /** Schnappschuss (JPEG) von der DoorBird holen. */
 async function captureSnap(c: CameraConfig): Promise<Buffer> {
-  const res = await fetch(`${baseUrl(c)}/bha-api/image.cgi`, {
-    headers: { Authorization: authHeader(c) },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`image.cgi HTTP ${res.status}`);
+  if (!(await authGate(c, "funktion")).allow) throw new Error(AUTH_BLOCKED);
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl(c)}/bha-api/image.cgi`, {
+      headers: { Authorization: authHeader(c) },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (e) {
+    authNote(c, null, "funktion");
+    throw e;
+  }
+  if (!res.ok) await res.body?.cancel().catch(() => undefined);
+  const outcome = await noteAnswer(c, res.status, "funktion");
+  if (!res.ok) throw new Error(answerError("image.cgi", c, res.status, outcome));
   return Buffer.from(await res.arrayBuffer());
 }
 
@@ -137,20 +354,42 @@ export async function openDoorbirdDoor(
   cameraId: number,
   relay = 1,
   opts: { quiet?: boolean } = {}
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; retrySafe?: boolean }> {
   const rt = doorbirds.get(cameraId);
+  // Ohne Anfrage an die DoorBird (nicht eingerichtet, gesperrt): keine schnelle Wiederholung, kein „offen“.
   if (!rt) return { ok: false, error: `DoorBird ${cameraId} nicht konfiguriert` };
+  const c = rt.config;
+  if (!(await authGate(c, "funktion")).allow) return { ok: false, error: AUTH_BLOCKED };
   try {
-    const res = await fetch(
-      `${baseUrl(rt.config)}/bha-api/open-door.cgi?r=${encodeURIComponent(relay)}`,
-      { headers: { Authorization: authHeader(rt.config) }, signal: AbortSignal.timeout(8_000) }
-    );
-    if (!res.ok) return { ok: false, error: `open-door.cgi HTTP ${res.status}` };
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl(c)}/bha-api/open-door.cgi?r=${encodeURIComponent(relay)}`, {
+        headers: { Authorization: authHeader(c) },
+        signal: AbortSignal.timeout(8_000),
+      });
+    } catch (e) {
+      authNote(c, null, "funktion");
+      throw e;
+    }
+    if (!res.ok) await res.body?.cancel().catch(() => undefined);
+    const outcome = await noteAnswer(c, res.status, "funktion");
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: answerError("open-door.cgi", c, res.status, outcome),
+        retrySafe: fastRetrySafe({ httpStatus: res.status }),
+      };
+    }
     // Offenhalte-Impulse kommen alle 50 s – die würden das Log fluten.
     if (!opts.quiet) log(`DoorBird ${rt.config.name}: Tür geöffnet (Relais ${relay})`);
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    const err = e as { name?: string; cause?: { code?: string } } | null;
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+      retrySafe: fastRetrySafe({ errorName: err?.name ?? null, causeCode: err?.cause?.code ?? null }),
+    };
   }
 }
 
@@ -160,7 +399,12 @@ export async function openDoorbirdDoor(
  * Zielzustand ist Camera.doorHoldUntil in der Cloud. Start/Verlängern/Beenden
  * kommen als Task (sofort); nach einem Neustart nimmt syncDoorbirds eine
  * laufende Offenhaltung aus der Kamera-Konfiguration wieder auf. Jeder Impuls
- * wird an die Cloud gemeldet (UI zeigt „Impuls vor n s“ bzw. den Fehler).
+ * wird an die Cloud gemeldet (UI zeigt „Impuls vor n s“ bzw. den Fehler). Die
+ * Antwort nennt den Zielzustand: Kennt die Cloud kein Offenhalten mehr, endet
+ * es nach diesem Impuls, auch ohne Task; ein anderer Endzeitpunkt wird
+ * übernommen (hold-rules.ts afterReport). Ohne Antwort läuft der Takt bis zum
+ * lokal bekannten Ende weiter. Ein gescheiterter Impuls wird nach 3, 8 und
+ * 20 s wiederholt, danach geht es im normalen Takt weiter.
  * ------------------------------------------------------------------------- */
 
 const EMPTY_HOLD: DoorbirdHoldState = {
@@ -193,8 +437,15 @@ function fmtClock(ms: number): string {
   });
 }
 
-/** Impuls-Ergebnis an die Cloud melden (doorHoldPulseAt / doorHoldError). */
-async function reportHoldPulse(rt: DoorbirdRuntime, ok: boolean, error?: string): Promise<void> {
+/**
+ * Impuls-Ergebnis an die Cloud melden (doorHoldPulseAt / doorHoldError) und
+ * den Zielzustand aus der Antwort übernehmen: beenden, anderer Endzeitpunkt
+ * oder weiter wie bisher. Die Antwort gilt nur für die Offenhaltung `h`, und
+ * nur wenn sich ihr Ende während der Meldung nicht geändert hat.
+ */
+async function reportHoldPulse(rt: DoorbirdRuntime, h: DoorbirdHold, ok: boolean, error?: string): Promise<void> {
+  const untilAtSend = h.until;
+  let cloudUntil: unknown;
   try {
     const res = await api(`/api/hub/cameras/${rt.config.id}/door-hold`, {
       method: "POST",
@@ -202,15 +453,31 @@ async function reportHoldPulse(rt: DoorbirdRuntime, ok: boolean, error?: string)
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = (await res.json().catch(() => null)) as { until?: unknown } | null;
+    // Eine Cloud ohne das Feld liefert undefined: weiter bis zum lokalen Ende.
+    cloudUntil = body !== null && typeof body === "object" ? body.until : undefined;
   } catch (e) {
     log(`DoorBird ${rt.config.name}: Offenhalte-Meldung fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    return;
+  }
+  if (!reportApplies({ sameHold: rt.hold === h, untilAtSend, untilNow: h.until })) return;
+  const now = Date.now();
+  const next = afterReport(untilAtSend, cloudUntil, now);
+  if (next.action === "stop") {
+    endHold(rt, now >= h.until ? "abgelaufen" : "in der Cloud beendet");
+  } else if (next.action === "adopt") {
+    h.until = next.until;
+    log(`DoorBird ${rt.config.name}: Offen halten jetzt bis ${fmtClock(next.until)} (Zielzustand der Cloud)`);
+    improveCount("doorbird", "hold_adopt");
   }
 }
 
-function endHold(rt: DoorbirdRuntime, reason: "beendet" | "abgelaufen" | "entfernt"): void {
+function endHold(rt: DoorbirdRuntime, reason: "beendet" | "abgelaufen" | "entfernt" | "in der Cloud beendet"): void {
   const h = rt.hold;
   if (!h) return;
   if (h.timer) clearInterval(h.timer);
+  if (h.retryTimer) clearTimeout(h.retryTimer);
+  h.retryTimer = null;
   rt.hold = null;
   rt.holdStoppedUntil = h.until;
   const minutes = Math.round((Date.now() - h.startedAt) / 60_000);
@@ -244,6 +511,13 @@ async function holdPulse(rt: DoorbirdRuntime): Promise<{ ok: boolean; error?: st
     if (r.ok) {
       h.pulses++;
       h.lastPulseAt = Date.now();
+      // Gelungen nach einem gescheiterten Impuls (etwa die Wiederholung nach
+      // 20 s): Der Takt beginnt ab hier neu, sonst kaeme der naechste Impuls
+      // womoeglich schon Sekunden spaeter, waehrend das Tor noch faehrt.
+      if (h.failStreak > 0) startHoldTimer(rt, h);
+      h.failStreak = 0;
+      if (h.retryTimer) clearTimeout(h.retryTimer);
+      h.retryTimer = null;
       if (h.lastError) {
         log(`DoorBird ${rt.config.name}: Offenhalte-Impuls wieder erfolgreich`);
         recordHubEvent({
@@ -256,9 +530,20 @@ async function holdPulse(rt: DoorbirdRuntime): Promise<{ ok: boolean; error?: st
       h.lastError = null;
     } else {
       h.failures++;
+      h.failStreak++;
       const first = h.lastError === null;
       h.lastError = r.error ?? "Impuls fehlgeschlagen";
-      log(`DoorBird ${rt.config.name}: Offenhalte-Impuls fehlgeschlagen: ${h.lastError}`);
+      // Schnelle Wiederholung nur, wenn das Relais sicher nicht geschaltet hat
+      // (hold-rules.ts fastRetrySafe); sonst im normalen Takt.
+      const retryIn = r.retrySafe === true ? scheduleHoldRetry(rt, h) : null;
+      log(
+        `DoorBird ${rt.config.name}: Offenhalte-Impuls fehlgeschlagen: ${h.lastError}` +
+          (retryIn !== null
+            ? ` – neuer Versuch in ${retryIn / 1000} s`
+            : r.retrySafe === false
+              ? " – ob er angekommen ist, ist offen; nächster Impuls im normalen Takt"
+              : "")
+      );
       if (first) {
         recordHubEvent({
           kind: "doorbird",
@@ -270,11 +555,37 @@ async function holdPulse(rt: DoorbirdRuntime): Promise<{ ok: boolean; error?: st
       }
       improve("doorbird", "hold_pulse_fail", { name: rt.config.name, error: h.lastError });
     }
-    void reportHoldPulse(rt, r.ok, r.error);
+    void reportHoldPulse(rt, h, r.ok, r.error).catch(() => undefined);
     return r;
   } finally {
     h.busy = false;
   }
+}
+
+/** Takt der Offenhaltung (alle HOLD_PULSE_MS) ab jetzt, ein laufender Takt endet. */
+function startHoldTimer(rt: DoorbirdRuntime, h: DoorbirdHold): void {
+  if (h.timer) clearInterval(h.timer);
+  h.timer = setInterval(() => {
+    holdPulse(rt).catch((e) => log(`DoorBird ${rt.config.name}: Offenhalte-Impuls: ${e instanceof Error ? e.message : e}`));
+  }, HOLD_PULSE_MS);
+}
+
+/**
+ * Wiederholung eines gescheiterten Impulses planen (3, 8, 20 s; hold-rules.ts).
+ * Höchstens eine geplante Wiederholung zur Zeit; sie entfällt, sobald die
+ * Offenhaltung endet oder ersetzt ist. Liefert die Wartezeit, null = keine.
+ */
+function scheduleHoldRetry(rt: DoorbirdRuntime, h: DoorbirdHold): number | null {
+  if (h.retryTimer) return null;
+  const delay = retryDelayAfter(h.failStreak);
+  if (delay === null) return null;
+  improveCount("doorbird", "hold_retry");
+  h.retryTimer = setTimeout(() => {
+    h.retryTimer = null;
+    if (!retryStillDue({ sameHold: rt.hold === h, now: Date.now(), until: h.until })) return;
+    holdPulse(rt).catch((e) => log(`DoorBird ${rt.config.name}: Offenhalte-Impuls: ${e instanceof Error ? e.message : e}`));
+  }, delay);
+  return delay;
 }
 
 /**
@@ -318,6 +629,8 @@ export async function setDoorbirdHold(
     lastPulseAt: null,
     lastError: null,
     busy: false,
+    failStreak: 0,
+    retryTimer: null,
   };
   rt.hold = hold;
   rt.holdStoppedUntil = null;
@@ -336,9 +649,7 @@ export async function setDoorbirdHold(
     source: opts.source,
     minutes: Math.round((untilMs - Date.now()) / 60_000),
   });
-  hold.timer = setInterval(() => {
-    void holdPulse(rt);
-  }, HOLD_PULSE_MS);
+  startHoldTimer(rt, hold);
   // Erster Impuls sofort – das Ergebnis geht mit in die Task-Antwort.
   const first = await holdPulse(rt);
   return { ok: true, error: first.ok ? undefined : first.error, state: holdState(rt) };
@@ -346,7 +657,8 @@ export async function setDoorbirdHold(
 
 /**
  * Zielzustand aus der Cloud-Konfiguration übernehmen (Neustart, Verlängerung
- * ohne Task). Beenden nur per Task: Eine verspätete, veraltete Konfig-Antwort
+ * ohne Task). Beenden per Task oder über die Antwort auf die Impuls-Meldung
+ * (reportHoldPulse), nicht hier: Eine verspätete, veraltete Konfig-Antwort
  * darf eine frische Offenhaltung nicht stoppen und eine eben beendete nicht
  * neu starten (holdStoppedUntil).
  */
@@ -654,12 +966,15 @@ function handleMonitorLine(rt: DoorbirdRuntime, line: string): void {
 /* ---------------------------------------------------------------------------
  * MAC-basiertes Wiederfinden: Die DoorBird (Tor!) haengt bisher an der festen
  * IP 192.168.1.191. Der Hub lernt ihre MAC, solange sie erreichbar ist, und
- * sucht sie bei Verbindungsabbruch per MAC unter neuer IP (lokale ARP-Tabelle,
- * Router-ARP per SNMP, notfalls Ping-Sweep der direkt angeschlossenen Netze).
+ * sucht sie per MAC unter neuer IP (lokale ARP-Tabelle, Router-ARP per SNMP,
+ * notfalls Ping-Sweep der direkt angeschlossenen Netze). Nach einem Abbruch
+ * verbindet er zuerst neu; gesucht wird erst nach zwei Netzfehlern in Folge
+ * und dann im Hintergrund (camera-poll-rules.ts shouldRelocate). Antwortet
+ * unter der Adresse ein Geraet mit anderer MAC, zaehlt das als Netzfehler
+ * (noteAnswer).
  * ------------------------------------------------------------------------- */
 
 const DOORBIRD_MAC_LEARN_MS = 3_600_000;
-const DOORBIRD_RELOCATE_MS = 60_000;
 
 async function reportDoorbirdNetwork(
   id: number,
@@ -687,18 +1002,28 @@ async function learnDoorbirdMac(rt: DoorbirdRuntime): Promise<void> {
   }
 }
 
+/**
+ * Suche nach neuer IP per MAC, im Hintergrund neben dem Neuverbinden. Findet
+ * sie die DoorBird, endet die laufende Wartezeit (und ein Verbindungsversuch
+ * an die alte Adresse), damit der Monitor sofort dort neu verbindet.
+ */
 async function relocateDoorbird(rt: DoorbirdRuntime): Promise<boolean> {
-  if (!rt.config.macAddress || !rt.unreachableLogged) return false;
-  if (Date.now() - rt.lastRelocateAt < DOORBIRD_RELOCATE_MS) return false;
+  if (!rt.config.macAddress || rt.relocating || rt.stopped) return false;
+  rt.relocating = true;
   rt.lastRelocateAt = Date.now();
   try {
-    const ip = await findIpByMac(rt.config.macAddress, { sweep: true, exclude: rt.config.host });
-    if (!ip) return false;
     const oldHost = rt.config.host;
+    const ip = await findIpByMac(rt.config.macAddress, { sweep: true, exclude: oldHost });
+    // Inzwischen entfernt, wieder verbunden oder von der Cloud umgestellt.
+    if (!ip || rt.stopped || rt.connected || rt.config.host !== oldHost) return false;
     // Erst die Cloud umstellen, sonst setzt der naechste Konfig-Abgleich die
     // alte IP wieder.
     const ok = await reportDoorbirdNetwork(rt.config.id, { host: ip });
+    if (rt.stopped || rt.config.host !== oldHost) return false;
     rt.config.host = ip;
+    rt.reconnectDelay = RECONNECT_MIN_MS;
+    rt.abort?.abort(new Error("host-changed"));
+    wakeMonitor(rt);
     log(`DoorBird ${rt.config.name}: per MAC unter neuer IP gefunden (${oldHost} → ${ip})${ok ? "" : " – Cloud-Update fehlgeschlagen"}`);
     recordHubEvent({
       kind: "doorbird",
@@ -711,12 +1036,61 @@ async function relocateDoorbird(rt: DoorbirdRuntime): Promise<boolean> {
     return true;
   } catch {
     return false;
+  } finally {
+    rt.relocating = false;
   }
+}
+
+/** Dauer einer Lücke fürs Log: „4.2 s“, „3 min“. */
+function gapText(ms: number): string {
+  return ms < 60_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60_000)} min`;
+}
+
+/** Wartezeit bis zum nächsten Verbindungsversuch; wakeMonitor beendet sie früher. */
+function waitReconnect(rt: DoorbirdRuntime, ms: number): Promise<void> {
+  if (rt.wakePending) {
+    rt.wakePending = false;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      if (rt.wakeReconnect === done) rt.wakeReconnect = null;
+      rt.wakePending = false;
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    rt.wakeReconnect = done;
+  });
+}
+
+/** Neue Adresse oder entfernt: sofort neu verbinden bzw. die Schleife beenden. */
+function wakeMonitor(rt: DoorbirdRuntime): void {
+  rt.wakePending = true;
+  rt.wakeReconnect?.();
 }
 
 /** monitor.cgi Dauerverbindung mit Reconnect + Idle-Watchdog. */
 async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
   while (!rt.stopped) {
+    // Zugangsdaten abgelehnt: nicht neu verbinden und keine Adresse suchen,
+    // bis sich die Sperre loest (wakeMonitor) oder der einzelne Versuch faellig ist.
+    const c = rt.config;
+    const gate = await authGate(c);
+    if (rt.stopped) break;
+    if (!gate.allow) {
+      if (!rt.authLocked) {
+        // Sperre aus der Zeit vor dem Neustart.
+        rt.authLocked = true;
+        log(
+          `DoorBird ${rt.config.name}: Zugangsdaten seit ${berlinTime(gate.entry?.lockedAt ?? Date.now())} abgelehnt – ` +
+            `kein Versuch, bis sie in der Cloud geändert werden (nächster einzelner Versuch ${berlinTime(gate.nextTryAt ?? Date.now())})`
+        );
+        syncAuthAlerts();
+      }
+      await waitReconnect(rt, Math.max(1_000, (gate.nextTryAt ?? Date.now()) - Date.now()));
+      continue;
+    }
     const abort = new AbortController();
     rt.abort = abort;
     let idleTimer: NodeJS.Timeout | null = null;
@@ -725,17 +1099,41 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => abort.abort(new Error("idle")), IDLE_TIMEOUT_MS);
     };
+    /** Ausgang dieses Versuchs: null = Verbindung stand (oder vom Hub selbst abgebrochen). */
+    const attempt: { failure: ConnectFailure | null } = { failure: null };
 
     try {
-      const res = await fetch(
-        `${baseUrl(rt.config)}/bha-api/monitor.cgi?ring=doorbell,motionsensor`,
-        { headers: { Authorization: authHeader(rt.config) }, signal: abort.signal }
-      );
-      if (!res.ok || !res.body) throw new Error(`monitor.cgi HTTP ${res.status}`);
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl(c)}/bha-api/monitor.cgi?ring=doorbell,motionsensor`, {
+          headers: { Authorization: authHeader(c) },
+          signal: abort.signal,
+        });
+      } catch (e) {
+        // Keine Antwort: Netzfehler. Ein Abbruch durch den Hub selbst
+        // (Adresse geändert, entfernt) zählt nicht als Fehlversuch.
+        if (!abort.signal.aborted) {
+          attempt.failure = "netz";
+          authNote(c, null, "dauer");
+        }
+        throw e;
+      }
+      if (!res.ok) await res.body?.cancel().catch(() => undefined);
+      // Antwortet unter der Adresse ein anderes Geraet (DHCP-Wechsel), zaehlt
+      // das wie ein Netzfehler: Nach zweien in Folge sucht der Hub die DoorBird.
+      const outcome = await noteAnswer(c, res.status, "dauer");
+      if (!res.ok || !res.body) {
+        if (!abort.signal.aborted) attempt.failure = outcome.fehlerArt ?? "http";
+        await res.body?.cancel().catch(() => undefined);
+        throw new Error(answerError("monitor.cgi", c, res.status, outcome));
+      }
       if (rt.unreachableLogged) {
-        log(`DoorBird ${rt.config.name}: wieder erreichbar`);
+        const gapMs = rt.unreachableSince > 0 ? Date.now() - rt.unreachableSince : 0;
+        log(`DoorBird ${rt.config.name}: wieder erreichbar nach ${gapText(gapMs)}`);
         rt.unreachableLogged = false;
-        improve("doorbird", "monitor_ok", { name: rt.config.name });
+        rt.unreachableSince = 0;
+        improve("doorbird", "monitor_ok", { name: rt.config.name, gapMs });
+        improveCount("doorbird", "monitor_gap_ms", gapMs);
         recordHubEvent({
           kind: "doorbird",
           severity: "info",
@@ -744,6 +1142,9 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
         });
       }
       rt.connected = true;
+      // Ein Weckruf (wakeMonitor) aus der Zeit vor dieser Verbindung ist
+      // erfuellt; sonst verbaende der Hub nach dem naechsten Abbruch ohne Pause.
+      rt.wakePending = false;
       rt.reconnectDelay = RECONNECT_MIN_MS;
       void learnDoorbirdMac(rt);
       resetIdle();
@@ -780,6 +1181,7 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
           `DoorBird ${rt.config.name}: Monitor getrennt (${e instanceof Error ? e.message : e}) – Reconnect …`
         );
         rt.unreachableLogged = true;
+        rt.unreachableSince = Date.now();
         improve("doorbird", "monitor_drop", {
           name: rt.config.name,
           error: e instanceof Error ? e.message : String(e),
@@ -800,12 +1202,24 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
     }
 
     if (rt.stopped) break;
-    // Neue IP nach VLAN-Umzug/DHCP-Wechsel? Dann sofort dort neu verbinden.
-    if (await relocateDoorbird(rt)) {
-      rt.reconnectDelay = RECONNECT_MIN_MS;
-      continue;
+    rt.netFailStreak = attempt.failure === "netz" ? rt.netFailStreak + 1 : 0;
+    // Neue IP nach VLAN-Umzug/DHCP-Wechsel? Erst nach zwei Netzfehlern in
+    // Folge suchen, im Hintergrund: Das Neuverbinden wartet nicht darauf.
+    // Waehrend einer Sperre gibt es nur den einzelnen Versuch je 24 h:
+    // Antwortet dabei niemand oder ein anderes Geraet, sucht der Hub sofort.
+    // Findet er die DoorBird unter neuer Adresse, loest sich die Sperre.
+    const singleMissed = gate.single && attempt.failure === "netz";
+    if (
+      (singleMissed && Date.now() - rt.lastRelocateAt >= RELOCATE_MIN_GAP_MS) ||
+      shouldRelocate({
+        fehlversucheInFolge: rt.netFailStreak,
+        fehlerArt: attempt.failure,
+        msSeitLetzterSuche: Date.now() - rt.lastRelocateAt,
+      })
+    ) {
+      relocateDoorbird(rt).catch((e) => log(`DoorBird ${rt.config.name}: Adresssuche: ${e instanceof Error ? e.message : e}`));
     }
-    await new Promise((r) => setTimeout(r, rt.reconnectDelay));
+    await waitReconnect(rt, rt.reconnectDelay);
     rt.reconnectDelay = Math.min(rt.reconnectDelay * 2, RECONNECT_MAX_MS);
   }
 }
@@ -821,6 +1235,7 @@ export function syncDoorbirds(configs: CameraConfig[]): void {
       rt.stopped = true;
       endHold(rt, "entfernt");
       rt.abort?.abort(new Error("removed"));
+      wakeMonitor(rt);
       doorbirds.delete(id);
       log(`DoorBird ${rt.config.name}: entfernt`);
     }
@@ -835,11 +1250,16 @@ export function syncDoorbirds(configs: CameraConfig[]): void {
         log(`DoorBird ${config.name}: Host ${oldHost} → ${config.host} (Cloud) – Streams werden umgestellt`);
         void updateLocalStreams(oldHost, config.host).catch(() => {});
         existing.config = config;
+        existing.reconnectDelay = RECONNECT_MIN_MS;
         existing.abort?.abort(new Error("host-changed"));
+        wakeMonitor(existing);
         applyConfigHold(existing);
         continue;
       }
+      const oldFp = authFp(existing.config);
       existing.config = config;
+      // Gesperrt und die Zugangsdaten sind neu: gleich mit ihnen verbinden.
+      if (existing.authLocked && authFp(config) !== oldFp) wakeMonitor(existing);
       applyConfigHold(existing);
       continue;
     }
@@ -859,12 +1279,24 @@ export function syncDoorbirds(configs: CameraConfig[]): void {
       lastPerson: null,
       lastMacLearnAt: 0,
       lastRelocateAt: 0,
+      relocating: false,
+      netFailStreak: 0,
+      unreachableSince: 0,
+      wakeReconnect: null,
+      wakePending: false,
+      authLocked: false,
     };
     doorbirds.set(config.id, rt);
     log(`DoorBird ${config.name}: Monitor startet (${config.host})`);
     improve("doorbird", "monitor_start", { name: config.name, host: config.host });
-    void monitorLoop(rt);
+    monitorLoop(rt).catch((e) => log(`DoorBird ${config.name}: Monitor beendet (${e instanceof Error ? e.message : e})`));
     // Laufende Offenhaltung (z. B. nach Hub-Neustart) wieder aufnehmen.
     applyConfigHold(rt);
   }
+  // Befunde „Zugangsdaten abgelehnt“: entfernte DoorBirds fallen heraus,
+  // nach dem Start geht die Liste einmal vorsorglich an die Cloud.
+  authLatches
+    .ready()
+    .then(syncAuthAlerts)
+    .catch(() => undefined);
 }

@@ -15,6 +15,7 @@ import {
   endHoldFor,
   endsToRetry,
   failStreakAfter,
+  httpAnswerOutcome,
   isPureMotion,
   motionSnapshotMinMs,
   personOrVehicleActive,
@@ -23,6 +24,7 @@ import {
   relocateAtStart,
   relocateByLoginAllowed,
   relocateIntervalMs,
+  shouldRelocate,
   snapshotJobFor,
   snapshotPlan,
   tidyOutbox,
@@ -593,6 +595,62 @@ test("Suche nach neuer Adresse: erst jede Minute, nach einer Stunde nur noch all
   assert.equal(relocateIntervalMs(10 * 60_000), 5 * 60_000);
   assert.equal(relocateIntervalMs(59 * 60_000), 5 * 60_000);
   assert.equal(relocateIntervalMs(10 * 24 * 3_600_000), 15 * 60_000);
+});
+
+test("DoorBird: nach einem Abbruch zuerst neu verbinden, gesucht wird erst nach zwei Netzfehlern in Folge", () => {
+  const never = Number.MAX_SAFE_INTEGER;
+  // Verbindung stand und ist abgebrochen: neu verbinden, nicht suchen.
+  assert.equal(shouldRelocate({ fehlversucheInFolge: 0, fehlerArt: null, msSeitLetzterSuche: never }), false);
+  // Erster Versuch scheitert am Netz: noch nicht.
+  assert.equal(shouldRelocate({ fehlversucheInFolge: 1, fehlerArt: "netz", msSeitLetzterSuche: never }), false);
+  // Zweiter Netzfehler in Folge: suchen.
+  assert.equal(shouldRelocate({ fehlversucheInFolge: 2, fehlerArt: "netz", msSeitLetzterSuche: never }), true);
+  assert.equal(shouldRelocate({ fehlversucheInFolge: 7, fehlerArt: "netz", msSeitLetzterSuche: never }), true);
+  // Eine HTTP-Antwort (auch 401) kommt vom Geraet unter seiner Adresse.
+  assert.equal(shouldRelocate({ fehlversucheInFolge: 2, fehlerArt: "http", msSeitLetzterSuche: never }), false);
+  assert.equal(shouldRelocate({ fehlversucheInFolge: 9, fehlerArt: "http", msSeitLetzterSuche: never }), false);
+});
+
+test("DoorBird: eine HTTP-Antwort eines anderen Geraets unter der Adresse zaehlt als Netzfehler und nicht fuer die Sperre", () => {
+  const own = "02:00:5E:10:00:01";
+  const other = "02:00:00:AA:BB:CC";
+  // Angenommen: kein Fehler, die Sperre sieht den Status.
+  assert.deepEqual(httpAnswerOutcome({ status: 200, geraeteMac: own, gegenstelleMac: other }), {
+    fehlerArt: null,
+    authStatus: 200,
+    fremd: false,
+  });
+  for (const status of [401, 403, 404, 503]) {
+    // Unter der Adresse meldet die ARP-Tabelle eine andere MAC: wie keine Antwort des Geraets.
+    assert.deepEqual(httpAnswerOutcome({ status, geraeteMac: own, gegenstelleMac: other }), {
+      fehlerArt: "netz",
+      authStatus: null,
+      fremd: true,
+    });
+    // Dieselbe MAC, oder eine der beiden unbekannt: die Antwort kommt vom Geraet.
+    for (const [geraeteMac, gegenstelleMac] of [
+      [own, own],
+      [own, null],
+      [null, other],
+      [null, null],
+    ]) {
+      // Eigene MAC bekannt, die der Gegenstelle nicht: Eine Ablehnung zaehlt nicht fuer die Sperre.
+      const ungeprueft = geraeteMac === own && gegenstelleMac === null && (status === 401 || status === 403);
+      assert.deepEqual(httpAnswerOutcome({ status, geraeteMac, gegenstelleMac }), {
+        fehlerArt: "http",
+        authStatus: ungeprueft ? null : status,
+        fremd: false,
+      });
+    }
+  }
+  // Zwei solche Versuche in Folge loesen die Suche aus.
+  const fehlerArt = httpAnswerOutcome({ status: 401, geraeteMac: own, gegenstelleMac: other }).fehlerArt;
+  assert.equal(shouldRelocate({ fehlversucheInFolge: 2, fehlerArt, msSeitLetzterSuche: 60_000 }), true);
+});
+
+test("DoorBird: hoechstens eine Suche je Minute", () => {
+  assert.equal(shouldRelocate({ fehlversucheInFolge: 3, fehlerArt: "netz", msSeitLetzterSuche: 59_999 }), false);
+  assert.equal(shouldRelocate({ fehlversucheInFolge: 3, fehlerArt: "netz", msSeitLetzterSuche: 60_000 }), true);
 });
 
 test("Suche per Anmeldung bei anderen Geraeten: nur in der ersten Stunde", () => {

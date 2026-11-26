@@ -16,6 +16,7 @@ import { analyzeVlans, Confirmer, parsePortList, type VlanIssue } from "./vlan-a
 import { recordHubEvent } from "./state.js";
 import { improve, improveCount } from "./improve-log.js";
 import { ChangeLog } from "./change-log.js";
+import { VLAN_CHECK_OFFSET_MS } from "./snmp-rules.js";
 
 const OID_SYS_NAME = "1.3.6.1.2.1.1.5.0";
 const OID_BASE_PORT_IFINDEX = "1.3.6.1.2.1.17.1.4.1.2";
@@ -206,8 +207,10 @@ export function vlanCheckSummary(): {
  * Dauer der Laeufe: die Zeit, in der die Switches abgefragt werden, ohne die
  * Meldung an die Cloud. Der Normalfall („alles in Ordnung“) wird nur gezaehlt;
  * fuer den Vergleich mit Abbruechen der Livebilder (IMPROVE.md) reicht: Der
- * erste Lauf beginnt 45 s nach dem Hub-Start, die weiteren alle `every`
- * Sekunden ab dem Start (bei 300 s also nach 0:45, 5:00 und 10:00). Beginn
+ * erste Lauf beginnt 150 s nach dem Hub-Start, die weiteren alle `every`
+ * Sekunden danach (bei 300 s also nach 2:30, 7:30 und 12:30), die
+ * Switch-Abfrage bei 0:00, 15:00 und 30:00. Wartet eine Abfrage in der
+ * gemeinsamen Warteschlange (snmp.ts), zaehlt die Wartezeit mit. Beginn
  * und Dauer stehen in der Antwort von /api/network (`vlanCheck`), und ein
  * langer Lauf kommt ins Log (hoechstens alle 30 min eine Zeile).
  */
@@ -313,7 +316,12 @@ export function startVlanCheck(): void {
   }
   const every = vlanCheckIntervalMs();
   log(`Netzwerk-Prüfung (VLAN/SNMP): alle ${Math.round(every / 1000)} s, ${snmpTargets().length} Switches`);
-  // Kurz nach dem Start, damit der SNMP-Sync nicht gleichzeitig laeuft.
-  setTimeout(() => void runVlanCheck(), 45_000);
-  setInterval(() => void runVlanCheck(), every);
+  // Fester Versatz zur Switch-Abfrage (index.ts: Start, dann alle 900 s):
+  // erster Lauf 150 s nach dem Start, dann alle `every` (snmp-rules.ts).
+  // Beide fragen dieselben Switches; die gemeinsame Warteschlange in snmp.ts
+  // haelt je Switch ohnehin nur eine Abfrage zur Zeit.
+  setTimeout(() => {
+    void runVlanCheck();
+    setInterval(() => void runVlanCheck(), every);
+  }, VLAN_CHECK_OFFSET_MS);
 }

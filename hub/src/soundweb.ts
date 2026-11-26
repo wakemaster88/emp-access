@@ -15,6 +15,14 @@
  * Damit eine still gestorbene Verbindung (Neustart des Prozessors, gezogenes
  * Kabel) nicht unbemerkt bleibt, abonniert der Hub alle zwei Minuten eine SV
  * erneut – die Antwort darauf ist der Lebensbeweis.
+ *
+ * Nicht erreichbare Prozessoren bleiben eingerichtet und werden seltener
+ * angewählt (soundweb-rules.ts, reconnectDelay): die ersten 10 Versuche nach
+ * 3 bis 60 s, danach alle 5 min, nach rund einer Stunde alle 15 min, ein
+ * Gerät ohne Regler von Anfang an alle 15 min. Ein Sync- oder Stell-Auftrag
+ * und jede geänderte Konfiguration verbinden sofort. In der Meldung an die
+ * Cloud stehen getrennte Geräte nur bei einem Wechsel und alle 10 min
+ * (shouldReport); verbundene jede Minute.
  */
 import net from "node:net";
 import { api, CONFIG, log } from "./config.js";
@@ -32,6 +40,7 @@ import {
   type DecodedMessage,
   type SvAddress,
 } from "./soundweb-protocol.js";
+import { reconnectDelay, shouldReport, type ReportedState } from "./soundweb-rules.js";
 
 export type SoundwebControlKind = "GAIN" | "MUTE" | "PERCENT" | "SELECT" | "PRESET";
 
@@ -62,8 +71,6 @@ function numEnv(key: string, fallback: number, min = 0): number {
 }
 
 const CONNECT_TIMEOUT_MS = 5_000;
-const RECONNECT_MIN_MS = 3_000;
-const RECONNECT_MAX_MS = 60_000;
 /** Konfiguration aus der Cloud neu holen (Sekunden). */
 const CONFIG_INTERVAL_MS = numEnv("HUB_SOUNDWEB_CONFIG_INTERVAL", 300, 30) * 1000;
 /** Lebenszeichen: eine SV erneut abonnieren und auf die Antwort warten. */
@@ -76,7 +83,10 @@ const PROBE_TIMEOUT_MS = 5_000;
 const SUBSCRIBE_RATE_MS = numEnv("HUB_SOUNDWEB_SUBSCRIBE_RATE", 0);
 /** Wertänderungen gebündelt melden, statt pro Faderschritt einen Request. */
 const REPORT_DEBOUNCE_MS = 400;
-/** Vollständiger Zustand im Takt, damit `lastSeenAt` in der Cloud frisch bleibt. */
+/**
+ * Zustand im Takt, damit `lastSeenAt` in der Cloud frisch bleibt: verbundene
+ * Geräte mit ihren Werten, getrennte nur nach shouldReport.
+ */
 const REPORT_FULL_MS = 60_000;
 /** Nach einem Befehl auf das Echo des Geräts warten. */
 const ECHO_WAIT_MS = 1_500;
@@ -98,9 +108,17 @@ class SoundwebLink {
   lastSeenAt: string | null = null;
   readonly values = new Map<number, ControlValue>();
 
+  /** Zuletzt an die Cloud gemeldet (shouldReport). */
+  reported: ReportedState | null = null;
+
   private socket: net.Socket | null = null;
   private parser = new FrameParser();
-  private reconnectDelay = RECONNECT_MIN_MS;
+  /** Gescheiterte Verbindungsversuche in Folge (reconnectDelay). */
+  private failures = 0;
+  /** Zuletzt geloggter Fehlergrund; neue Zeile nur bei einem anderen. */
+  private loggedReason: string | null = null;
+  /** Wartende auf den Ausgang des laufenden Verbindungsversuchs (connectNow). */
+  private attemptWaiters: Array<(connected: boolean) => void> = [];
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private probeTimer: ReturnType<typeof setInterval> | null = null;
   private probeDeadline: ReturnType<typeof setTimeout> | null = null;
@@ -154,6 +172,37 @@ class SoundwebLink {
     this.socket?.destroy();
     this.socket = null;
     this.connected = false;
+    this.settleAttempt(false);
+  }
+
+  /**
+   * Sofort verbinden, ohne die Wartezeit abzuwarten (Sync- oder Stell-
+   * Auftrag). Laeuft schon ein Versuch, zaehlt dessen Ausgang. Liefert, ob
+   * die Verbindung steht; spaetestens nach dem Zeitlimit des Aufbaus.
+   */
+  connectNow(): Promise<boolean> {
+    if (this.stopped) return Promise.resolve(false);
+    if (this.connected) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => done(false), CONNECT_TIMEOUT_MS + 1_000);
+      const done = (ok: boolean) => {
+        clearTimeout(timer);
+        this.attemptWaiters = this.attemptWaiters.filter((fn) => fn !== done);
+        resolve(ok);
+      };
+      this.attemptWaiters.push(done);
+      if (!this.socket) {
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+        this.connect();
+      }
+    });
+  }
+
+  private settleAttempt(connected: boolean): void {
+    const waiting = this.attemptWaiters;
+    this.attemptWaiters = [];
+    for (const fn of waiting) fn(connected);
   }
 
   private connect(): void {
@@ -173,7 +222,8 @@ class SoundwebLink {
       socket.setTimeout(0);
       this.connected = true;
       this.lastError = null;
-      this.reconnectDelay = RECONNECT_MIN_MS;
+      this.failures = 0;
+      this.loggedReason = null;
       this.touch();
       log(`Soundweb ${this.label}: verbunden, ${this.byKey.size} SVs abonnieren`);
       recordHubEvent({
@@ -187,6 +237,7 @@ class SoundwebLink {
       this.subscribeAll();
       this.startProbe();
       this.onChange(this, []);
+      this.settleAttempt(true);
     });
     socket.on("data", (chunk: Buffer) => this.handleData(chunk));
     socket.on("error", (err: Error) => {
@@ -212,21 +263,25 @@ class SoundwebLink {
       } else if (!this.lastError) {
         this.lastError = "Verbindung abgelehnt";
       }
+      this.settleAttempt(false);
       this.scheduleReconnect();
     });
   }
 
   private scheduleReconnect(): void {
     if (this.stopped || this.reconnectTimer) return;
-    const delay = this.reconnectDelay;
-    this.reconnectDelay = Math.min(RECONNECT_MAX_MS, this.reconnectDelay * 2);
+    this.failures++;
+    const delay = reconnectDelay(this.failures, this.config.controls.length > 0);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
     }, delay);
-    // Erster Fehlversuch wird geloggt, danach nur noch bei Wechsel des Grunds.
-    if (delay === RECONNECT_MIN_MS) {
-      log(`Soundweb ${this.label}: nicht erreichbar (${this.lastError ?? "unbekannt"}), neuer Versuch in ${delay / 1000} s`);
+    // Erster Fehlversuch und jeder Wechsel des Grunds kommen ins Log und in
+    // die naechste Meldung an die Cloud; gleiche Fehlschlaege bleiben still.
+    const reason = this.lastError ?? "unbekannt";
+    if (reason !== this.loggedReason) {
+      this.loggedReason = reason;
+      log(`Soundweb ${this.label}: nicht erreichbar (${reason}), neuer Versuch in ${waitText(delay)}`);
       this.onChange(this, []);
     }
   }
@@ -373,6 +428,10 @@ class SoundwebLink {
   }
 }
 
+function waitText(ms: number): string {
+  return ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`;
+}
+
 /* ---------------------------------------------------------------------------
  * Verwaltung aller Verbindungen und Meldung an die Cloud
  * ------------------------------------------------------------------------- */
@@ -412,46 +471,63 @@ function scheduleReport(): void {
   if (reportTimer) return;
   reportTimer = setTimeout(() => {
     reportTimer = null;
-    void flushReport(false);
+    void flushReport("dirty");
   }, REPORT_DEBOUNCE_MS);
 }
 
-async function flushReport(full: boolean): Promise<void> {
+/**
+ * Meldung an die Cloud. "dirty": nur Geaendertes; "tick" (jede Minute):
+ * verbundene Geraete mit ihren Werten, dazu Geaendertes und getrennte Geraete
+ * nach shouldReport; "all" (Sync-Auftrag): jedes Geraet.
+ */
+async function flushReport(mode: "dirty" | "tick" | "all"): Promise<void> {
   if (reportBusy) {
     scheduleReport();
     return;
   }
-  const deviceIds = full ? [...links.keys()] : [...dirtyDevices];
+  const now = Date.now();
+  const ids = new Set(dirtyDevices);
   const values: Array<{ controlId: number; value: number; at: string }> = [];
-  if (full) {
+  for (const [controlId, v] of dirtyValues) values.push({ controlId, value: v.raw, at: v.at });
+  if (mode !== "dirty") {
+    const sent = new Set(values.map((v) => v.controlId));
     for (const link of links.values()) {
-      for (const [controlId, v] of link.values) values.push({ controlId, value: v.raw, at: v.at });
+      const error = link.connected ? null : link.lastError;
+      if (mode === "all" || shouldReport({ connected: link.connected, error, reported: link.reported }, now)) {
+        ids.add(link.config.id);
+      }
+      // Werte im Takt nur von verbundenen Geraeten: Die eines getrennten
+      // stehen unveraendert in der Cloud.
+      if (!link.connected && mode !== "all") continue;
+      for (const [controlId, v] of link.values) {
+        if (!sent.has(controlId)) values.push({ controlId, value: v.raw, at: v.at });
+      }
     }
-  } else {
-    for (const [controlId, v] of dirtyValues) values.push({ controlId, value: v.raw, at: v.at });
   }
+  const deviceIds = [...ids];
   if (deviceIds.length === 0 && values.length === 0) return;
   dirtyDevices.clear();
   dirtyValues.clear();
   reportBusy = true;
   try {
+    const reported = deviceIds.map((id) => links.get(id)).filter((l): l is SoundwebLink => !!l);
+    const devices = reported.map((l) => ({
+      id: l.config.id,
+      connected: l.connected,
+      error: l.connected ? null : l.lastError,
+      at: l.lastSeenAt,
+    }));
     const res = await api("/api/hub/soundweb/state", {
       method: "POST",
-      body: JSON.stringify({
-        hub: CONFIG.name,
-        devices: deviceIds
-          .map((id) => links.get(id))
-          .filter((l): l is SoundwebLink => !!l)
-          .map((l) => ({
-            id: l.config.id,
-            connected: l.connected,
-            error: l.connected ? null : l.lastError,
-            at: l.lastSeenAt,
-          })),
-        values,
-      }),
+      body: JSON.stringify({ hub: CONFIG.name, devices, values }),
     });
     if (!res.ok) log(`Soundweb: Zustandsmeldung fehlgeschlagen: HTTP ${res.status}`);
+    else {
+      // Gemeldeten Stand merken: Getrennte kommen erst bei einem Wechsel wieder mit.
+      devices.forEach((d, i) => {
+        reported[i].reported = { connected: d.connected, error: d.error, at: now };
+      });
+    }
   } catch (e) {
     log(`Soundweb: Zustandsmeldung fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
     // Beim nächsten Durchlauf erneut mitnehmen.
@@ -552,7 +628,7 @@ export async function loadSoundwebConfig(reason = "Takt"): Promise<void> {
 export function startSoundweb(): void {
   void loadSoundwebConfig("Start");
   setInterval(() => void loadSoundwebConfig(), CONFIG_INTERVAL_MS);
-  setInterval(() => void flushReport(true), REPORT_FULL_MS);
+  setInterval(() => void flushReport("tick"), REPORT_FULL_MS);
 }
 
 /** Je Prozessor verbunden ja/nein (Frueherkennung). */
@@ -600,8 +676,10 @@ export async function runSoundwebTask(
 ): Promise<SoundwebTaskResult> {
   if (type === "SOUNDWEB_SYNC") {
     await loadSoundwebConfig("Sync-Task");
+    // Getrennte Geraete sofort anwaehlen, ohne die Wartezeit abzuwarten.
+    await Promise.all([...links.values()].filter((l) => !l.connected).map((l) => l.connectNow()));
     // Frischen Zustand gleich mitmelden, die Karte wartet darauf.
-    await flushReport(true);
+    await flushReport("all");
     return { success: true, result: soundwebSummary() };
   }
   if (type !== "SOUNDWEB_SET") return { success: false, error: `Unbekannter Soundweb-Task: ${type}` };
@@ -618,7 +696,8 @@ export async function runSoundwebTask(
   if (!found) return { success: false, error: "Regler ist dem Hub nicht bekannt – Konfiguration prüfen" };
   const { link, control } = found;
 
-  if (!link.connected) {
+  // Getrennt: sofort anwaehlen statt auf den naechsten Versuch zu warten.
+  if (!link.connected && !(await link.connectNow())) {
     return {
       success: false,
       error: `${link.config.name} nicht verbunden${link.lastError ? `: ${link.lastError}` : ""}`,

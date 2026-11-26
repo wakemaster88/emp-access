@@ -6,7 +6,23 @@
  */
 import { noteLink } from "./health-trends.js";
 import { zoomStep } from "./zoom-step.js";
-import { clockOffsetSeconds, type ReolinkTime } from "./camera-clock.js";
+import {
+  CLOCK_TARGET_BERLIN,
+  classifyClockOffset,
+  clockKindLabel,
+  clockOffsetSeconds,
+  clockPlan,
+  clockPlanDue,
+  clockPlanKeyAfter,
+  clockPlanLine,
+  clockSettingsDue,
+  parseClockMemo,
+  parseClockSettings,
+  serializeClockMemo,
+  type ClockKind,
+  type ClockMemo,
+  type ReolinkTime,
+} from "./camera-clock.js";
 import { noteCameraActivity, noteTriggeredRules, onCameraEvent } from "./rules.js";
 import { kickTaskPoll } from "./task-kick.js";
 import { promises as fs } from "node:fs";
@@ -62,10 +78,13 @@ import {
   type FrameRead,
 } from "./vehicle-burst-rules.js";
 import { speakOnCamera } from "./camera-talk.js";
-import { syncDoorbirds } from "./doorbird.js";
+import { listDoorbirdStatus, syncDoorbirds } from "./doorbird.js";
 import { actuateIfAllowed } from "./vehicle-actuate.js";
 import { checkDelivery, type DeliveryResult } from "./delivery.js";
-import { findIpByMac, macForIp, normalizeMac } from "./netmap.js";
+import { configuredVlans, findIpByMac, macForIp, normalizeMac, subnetForIp } from "./netmap.js";
+import { apiProbeCandidates, cameraNetOf, probeLoginOutcome } from "./camera-probe-rules.js";
+import { AUTH_SINGLE_TRY_MS, credentialFingerprint, type AuthOutcome } from "./auth-latch.js";
+import { authLatches } from "./auth-latch-store.js";
 import { lastScanResult } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
 import { improve, improveCount } from "./improve-log.js";
@@ -118,6 +137,7 @@ import {
   takeOpticalFace,
 } from "./person-pipeline-rules.js";
 import { ChangeLog } from "./change-log.js";
+import { CAMERA_CACHE_MAX_AGE_DAYS, cacheContentKey, cacheFileText, cacheStamp, cacheWriteDue, usableCache, type CacheStamp } from "./camera-cache-rules.js";
 import { isExiting, onShutdown } from "./shutdown.js";
 import { CameraMarks } from "./camera-marks.js";
 import { BurstLights } from "./vehicle-light.js";
@@ -252,9 +272,13 @@ export interface CameraStatus {
 export interface CameraClock {
   /** Sekunden, positiv = Kamera geht vor. */
   offsetS: number;
+  /** Art der Abweichung (classifyClockOffset): im Takt, Zeitzone/Sommerzeit oder Drift. */
+  kind: ClockKind;
   /** NTP an der Kamera eingeschaltet; null = nicht lesbar. */
   ntp: boolean | null;
   ntpServer: string | null;
+  /** Vorschlaege aus clockPlan (nur gelesen, nichts umgestellt). */
+  plan: string[];
   checkedAt: string;
 }
 
@@ -268,6 +292,19 @@ const CONFIG_FETCH_TIMEOUT_MS = 15_000;
 let configFailedAt = 0;
 let configRefresh: Promise<void> | null = null;
 const configFailLog = new ChangeLog(10 * 60_000);
+/**
+ * Letzte gelungene Antwort der Kamera-Liste (camera-cache-rules.ts). Enthaelt
+ * die Zugangsdaten der Kameras und ist nur fuer den Hub-Benutzer lesbar.
+ */
+const CAMERA_CACHE_FILE = path.join(CONFIG.hubDir, ".cache", "cameras.json");
+/** In diesem Lauf hat die Cloud die Kamera-Liste schon geliefert. */
+let cloudListLoaded = false;
+/** Die lokale Kopie wurde in diesem Lauf schon versucht (geladen oder verworfen). */
+let cameraCacheTried = false;
+/** Stand der Datei fuer cacheWriteDue; undefined = noch nicht gelesen. */
+let cameraCacheSaved: CacheStamp | null | undefined;
+let cameraCacheWrite: Promise<void> = Promise.resolve();
+const cameraCacheFailLog = new ChangeLog(60 * 60_000);
 const TOKEN_SAFETY_MS = 60_000;
 /** Bei Ereignis-Beginn hoechstens alle 30 s ein Auto-Snapshot pro Kamera. */
 const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
@@ -1137,6 +1174,14 @@ interface VehicleRun {
   minFrames: number;
 }
 
+/** Laufende Kennzeichen-Bursts (uploadVehicleSnapshot), über alle Kameras. */
+let vehicleBurstsActive = 0;
+
+/** Laufende Kennzeichen-Bursts. Der Neustart nach einem Update wartet darauf (restartAllowed). */
+export function activeVehicleBursts(): number {
+  return vehicleBurstsActive;
+}
+
 /**
  * Fahrzeug-Erkennung: dichter Burst → lokal dumpen → Plate-OCR wählt Frame.
  * Ohne Plate: Fallback Vision (Fahrzeug?). Ohne beides → kein Upload.
@@ -1155,6 +1200,7 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     return null;
   }
   cam.snapshotInFlight = true;
+  vehicleBurstsActive++;
   try {
     const lightOff = await vehicleLightOn(cam, cameraId);
     const run: VehicleRun = { lightOff, evaluated: 0, empty: false, minFrames: 0 };
@@ -1183,6 +1229,7 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     }
   } finally {
     cam.snapshotInFlight = false;
+    vehicleBurstsActive--;
     // Kam während des Bursts eine neue VEHICLE-Flanke (zweiter Wagen direkt
     // dahinter), jetzt nachziehen. Der Body prüft zuerst, ob der Alarm noch
     // steht; ist er aus, entscheidet das erste Bild, und ohne Kennzeichen und
@@ -2495,7 +2542,23 @@ async function refreshConfigs(): Promise<void> {
   if (!res.ok) throw new Error(`Kamera-Konfig-Abruf fehlgeschlagen: HTTP ${res.status}`);
   const all = (await res.json()) as CameraConfig[];
 
+  applyCameraList(all);
+  // Nur aus der Antwort der Cloud: Das Schliessen alter Ereignisse nach dem
+  // Start soll keine Kamera auslassen, die nach der Kopie dazukam.
   knownCameraIds = all.map((c) => c.id);
+  cloudListLoaded = true;
+  configLoadedAt = Date.now();
+  saveCameraCache(all, configLoadedAt);
+  void syncLocalStreamsFromCloud(
+    all.map((c) => ({ name: c.name, host: c.host, kind: c.kind }))
+  ).catch((e) => log(`Cloud-Stream-Sync: ${e instanceof Error ? e.message : e}`));
+}
+
+/**
+ * Kamera-Liste in den Speicher uebernehmen: aus der Antwort der Cloud oder,
+ * wenn beim Start der erste Abruf scheitert, aus der lokalen Kopie.
+ */
+function applyCameraList(all: CameraConfig[]): void {
   // DoorBirds laufen über ihr eigenes Modul (Event-Push statt Polling).
   syncDoorbirds(all.filter((c) => c.kind === "DOORBIRD"));
   const configs = all.filter((c) => c.kind !== "DOORBIRD");
@@ -2568,10 +2631,83 @@ async function refreshConfigs(): Promise<void> {
     }
   }
   void downMarks.keepOnly(ids);
-  configLoadedAt = Date.now();
-  void syncLocalStreamsFromCloud(
-    all.map((c) => ({ name: c.name, host: c.host, kind: c.kind }))
-  ).catch((e) => log(`Cloud-Stream-Sync: ${e instanceof Error ? e.message : e}`));
+}
+
+/**
+ * Antwort der Cloud als lokale Kopie sichern: nur bei geaendertem Inhalt und
+ * sonst einmal am Tag (Zeitstempel fuer das Alter), atomar und von Anfang an
+ * mit 0600. Schreibvorgaenge laufen nacheinander; ein Fehler kommt ins Log
+ * (stuendlich), nie die Zugangsdaten.
+ */
+function saveCameraCache(all: CameraConfig[], at: number): void {
+  cameraCacheWrite = cameraCacheWrite
+    .then(async () => {
+      if (cameraCacheSaved === undefined) cameraCacheSaved = cacheStamp(await readCameraCache().catch(() => null));
+      const content = cacheContentKey(all);
+      if (!cacheWriteDue(cameraCacheSaved, content, at)) return;
+      const text = cacheFileText(all, at);
+      // Nur schreiben, was sich auch wieder laden liesse: Eine unerwartete
+      // Antwort ersetzt keine brauchbare Kopie.
+      if (!cacheStamp(JSON.parse(text))) return;
+      await writeFileAtomic(CAMERA_CACHE_FILE, text, { mode: 0o600 });
+      cameraCacheSaved = { content, savedAt: at };
+    })
+    .catch((e) => {
+      const code = (e as NodeJS.ErrnoException)?.code ?? "unbekannt";
+      if (cameraCacheFailLog.shouldLog("write", code, Date.now())) {
+        log(`Kamera-Liste: lokale Kopie nicht gespeichert (${code})`);
+      }
+    });
+}
+
+/** Datei lesen und parsen; null = keine Datei. Ein Lesefehler wirft. */
+async function readCameraCache(): Promise<unknown> {
+  let text: string;
+  try {
+    text = await fs.readFile(CAMERA_CACHE_FILE, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+    throw e;
+  }
+  return JSON.parse(text) as unknown;
+}
+
+/**
+ * Lokale Kopie laden, wenn beim Start der erste Abruf scheitert. Eine
+ * beschaedigte oder zu alte Datei wird verworfen und geloggt (ohne Inhalt:
+ * Die Meldung von JSON.parse zitierte die Datei), eine fehlende ist still.
+ */
+async function loadCameraCache(): Promise<void> {
+  let raw: unknown;
+  try {
+    raw = await readCameraCache();
+  } catch (e) {
+    const why = e instanceof SyntaxError ? "beschädigt" : ((e as NodeJS.ErrnoException)?.code ?? "nicht lesbar");
+    log(`Kamera-Liste: lokale Kopie nicht verwendet (${why})`);
+    improve("camera", "cache_rejected", { reason: why });
+    return;
+  }
+  if (raw === null) return;
+  const now = Date.now();
+  const r = usableCache<CameraConfig>(raw, now, CAMERA_CACHE_MAX_AGE_DAYS);
+  if (!r.ok) {
+    log(`Kamera-Liste: lokale Kopie nicht verwendet (${r.reason})`);
+    improve("camera", "cache_rejected", { reason: r.reason });
+    return;
+  }
+  // Die Cloud hat inzwischen geantwortet: Ihre Antwort gilt.
+  if (cloudListLoaded) return;
+  applyCameraList(r.cameras);
+  const when = new Date(r.savedAt).toLocaleString("de-DE", {
+    timeZone: "Europe/Berlin",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  log(`Kamera-Liste aus lokaler Kopie vom ${when} (${r.cameras.length} Kameras) – bis die Cloud antwortet`);
+  improve("camera", "cache_loaded", { cameras: r.cameras.length, ageH: Math.round((now - r.savedAt) / 3_600_000) });
 }
 
 /**
@@ -2597,6 +2733,17 @@ function loadConfigs(): Promise<void> {
             `Kamera-Liste nicht abrufbar (${msg})` +
               (cameras.size > 0 ? ` – ${cameras.size} bekannte Kameras werden weiter abgefragt` : "")
           );
+        }
+        // Beim Start ohne Cloud: einmal die lokale Kopie. Der Abruf gilt
+        // weiter als gescheitert (configLoadedAt bleibt 0), die Kamera-Liste
+        // wird im Hintergrund nachgeladen.
+        if (!cloudListLoaded && !cameraCacheTried) {
+          cameraCacheTried = true;
+          return loadCameraCache()
+            .catch((err) => log(`Kamera-Liste: lokale Kopie nicht verwendet (${err instanceof Error ? err.name : "Fehler"})`))
+            .then(() => {
+              throw e;
+            });
         }
         throw e;
       }
@@ -2650,6 +2797,14 @@ export function listCameraStatus(): CameraStatus[] {
  * Uhrzeit der Kameras (nur lesen). Zeigt in der Zentrale, ob die
  * eingeblendeten Uhrzeiten auseinanderlaufen. Alle 30 Minuten, angestossen
  * vom Dashboard.
+ *
+ * Zeit-Einstellungen (Zeitzone und Sommerzeit aus GetTime, Zeitserver aus
+ * GetNtp) hoechstens einmal am Tag, in derselben Sitzung wie die Uhrzeit,
+ * ohne eigene Anmeldung und ohne eigenen Takt. Daraus ein Plan je Kamera
+ * (clockPlan, camera-clock.ts): fuer eine betroffene Kamera eine Zeile einmal
+ * am Tag und bei Aenderung, dieselbe in der Diagnose; ist sie wieder im Takt,
+ * einmal. Der Hub schickt dafuer keinen Befehl an eine
+ * Kamera; umgestellt wird von Hand, nach Rueckfrage.
  * ------------------------------------------------------------------------- */
 
 const CLOCK_EVERY_MS = 30 * 60_000;
@@ -2657,6 +2812,42 @@ const clockCache = new Map<number, CameraClock>();
 let clockCheckAt = 0;
 /** Routinezeilen nur bei Aenderung, sonst einmal am Tag. */
 const routineLog = new ChangeLog(24 * 3_600_000);
+/** Letzter Grund, warum Uhr oder Zeitserver einer Kamera nicht lesbar war: eine Zeile je Grund. */
+const clockFailReason = new Map<string, string>();
+/** Einstellungen und Plan-Zeile je Kamera, auch ueber einen Neustart (camera-clock.json). */
+const CLOCK_MEMO_FILE = path.join(CONFIG.hubDir, ".cache", "camera-clock.json");
+let clockMemo = new Map<number, ClockMemo>();
+let clockMemoLoad: Promise<void> | null = null;
+let clockMemoWrite: Promise<void> = Promise.resolve();
+/** Seit dem letzten Schreiben geaendert: refreshCameraClocks schreibt einmal am Ende. */
+let clockMemoDirty = false;
+
+function loadClockMemo(): Promise<void> {
+  clockMemoLoad ??= fs
+    .readFile(CLOCK_MEMO_FILE, "utf8")
+    .then((raw) => {
+      clockMemo = parseClockMemo(JSON.parse(raw), Date.now());
+    })
+    .catch(() => {
+      // Fehlt oder unlesbar: Die Einstellungen werden beim naechsten Mal gelesen.
+    });
+  return clockMemoLoad;
+}
+
+function saveClockMemo(): void {
+  if (!clockMemoDirty) return;
+  clockMemoDirty = false;
+  const data = serializeClockMemo(clockMemo);
+  clockMemoWrite = clockMemoWrite
+    .then(() => writeFileAtomic(CLOCK_MEMO_FILE, data, { mode: 0o600 }))
+    .catch((e) => log(`Kamera-Uhren: ${path.basename(CLOCK_MEMO_FILE)} nicht geschrieben (${e instanceof Error ? e.message : e})`));
+}
+
+function clockFailOnce(key: string, line: string, why: string): void {
+  if (clockFailReason.get(key) === why) return;
+  clockFailReason.set(key, why);
+  log(line);
+}
 
 async function readCameraClock(cam: CameraRuntime): Promise<CameraClock> {
   await ensureLogin(cam);
@@ -2672,18 +2863,40 @@ async function readCameraClock(cam: CameraRuntime): Promise<CameraClock> {
     { year: +time.year!, mon: +time.mon!, day: +time.day!, hour: +time.hour!, min: +time.min!, sec: +time.sec! },
     mid
   );
-  let ntp: boolean | null = null;
-  let ntpServer: string | null = null;
-  try {
-    const n = (await cgi(cam, "GetNtp", {})).Ntp as { enable?: number; server?: string } | undefined;
-    if (n) {
-      ntp = n.enable === 1;
-      ntpServer = typeof n.server === "string" && n.server ? n.server : null;
+  const id = cam.config.id;
+  await loadClockMemo();
+  if (clockSettingsDue(clockMemo.get(id), Date.now())) {
+    // GetNtp nur hier, einmal am Tag. Ohne Antwort (aeltere Firmware, Fehler):
+    // eine Zeile, der naechste Versuch erst am naechsten Tag.
+    let ntpValue: unknown = null;
+    try {
+      ntpValue = await cgi(cam, "GetNtp", {});
+      clockFailReason.delete(`ntp:${id}`);
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      clockFailOnce(`ntp:${id}`, `Kamera ${cam.config.name}: Zeitserver-Einstellung nicht lesbar (${why}) – nächster Versuch in 24 h`, why);
     }
-  } catch {
-    // aeltere Firmware ohne GetNtp
+    const prev = clockMemo.get(id);
+    clockMemo.set(id, { settingsAt: Date.now(), settings: parseClockSettings(v, ntpValue), planKey: prev?.planKey ?? null, planAt: prev?.planAt ?? 0 });
+    clockMemoDirty = true;
   }
-  return { offsetS, ntp, ntpServer, checkedAt: new Date().toISOString() };
+  const memo = clockMemo.get(id);
+  const settings = memo?.settings ?? null;
+  const plan = clockPlan({ offsetS, settings }, CLOCK_TARGET_BERLIN);
+  if (memo && clockPlanDue(memo, plan, Date.now())) {
+    log(clockPlanLine(cam.config.name, offsetS, plan));
+    improve("camera", "clock_plan", { cam: cam.config.name, offsetS, kind: plan.kind, state: plan.state, steps: plan.steps });
+    clockMemo.set(id, { ...memo, planKey: clockPlanKeyAfter(plan), planAt: Date.now() });
+    clockMemoDirty = true;
+  }
+  return {
+    offsetS,
+    kind: plan.kind,
+    ntp: settings?.ntp ?? null,
+    ntpServer: settings?.ntpServer ?? null,
+    plan: plan.steps,
+    checkedAt: new Date().toISOString(),
+  };
 }
 
 /** Uhren aller erreichbaren Kameras lesen (hoechstens alle 30 min, force = sofort). */
@@ -2697,15 +2910,25 @@ export async function refreshCameraClocks(force = false): Promise<void> {
     tried++;
     try {
       clockCache.set(cam.config.id, await readCameraClock(cam));
+      clockFailReason.delete(`time:${cam.config.id}`);
       read++;
     } catch (e) {
-      log(`Kamera ${cam.config.name}: Uhrzeit nicht lesbar (${e instanceof Error ? e.message : e})`);
+      const why = e instanceof Error ? e.message : String(e);
+      clockFailOnce(`time:${cam.config.id}`, `Kamera ${cam.config.name}: Uhrzeit nicht lesbar (${why})`, why);
     }
   }
   // Der letzte Stand einer entfernten Kamera zaehlt nicht mehr mit.
   for (const id of clockCache.keys()) {
     if (!cameras.has(id)) clockCache.delete(id);
   }
+  // Gemerkte Einstellungen nur fuer Kameras, die es noch gibt (bei leerer Liste bleibt alles).
+  for (const id of clockMemo.keys()) {
+    if (cameras.size > 0 && !cameras.has(id)) {
+      clockMemo.delete(id);
+      clockMemoDirty = true;
+    }
+  }
+  saveClockMemo();
   // Ohne gelesene Uhr gibt es nichts zu melden („alle im Takt“ waere geraten).
   // War noch keine Kamera erreichbar (kurz nach dem Start), gleich beim
   // naechsten Abruf wieder versuchen statt erst in 30 min.
@@ -2713,7 +2936,7 @@ export async function refreshCameraClocks(force = false): Promise<void> {
     if (tried === 0) clockCheckAt = 0;
     return;
   }
-  const off = [...clockCache.entries()].filter(([, c]) => Math.abs(c.offsetS) >= 3);
+  const off = [...clockCache.entries()].filter(([, c]) => classifyClockOffset(c.offsetS).kind !== "ok");
   // Alle 30 min gelesen, aber nur gemeldet, wenn sich die Lage aendert
   // (und einmal am Tag zur Erinnerung): Die Zeile war sonst immer dieselbe.
   const key = clockDriftKey(
@@ -2723,7 +2946,11 @@ export async function refreshCameraClocks(force = false): Promise<void> {
   if (off.length) {
     log(
       `Kamera-Uhren weichen ab: ${off
-        .map(([id, c]) => `${cameras.get(id)?.config.name ?? id} ${c.offsetS > 0 ? "+" : ""}${c.offsetS} s${c.ntp === false ? " (NTP aus)" : ""}`)
+        .map(
+          ([id, c]) =>
+            `${cameras.get(id)?.config.name ?? id} ${c.offsetS > 0 ? "+" : ""}${c.offsetS} s ` +
+            `(${clockKindLabel(classifyClockOffset(c.offsetS).kind)}${c.ntp === false ? ", NTP aus" : ""})`
+        )
         .join(", ")}`
     );
   } else {
@@ -3093,43 +3320,86 @@ async function readMacFromCamera(cam: CameraRuntime): Promise<string | null> {
   }
 }
 
-/** Per Kamera-API gelesene MACs fremder IPs (geroutete VLANs), 10 min gueltig. */
+/**
+ * Per Kamera-API gelesene MACs fremder IPs (geroutete VLANs), so lange
+ * gueltig, wie eine Adresse nicht erneut gefragt wird: Eine zweite vermisste
+ * Kamera findet sich so auch an einer Adresse, die die Suche nach der ersten
+ * schon gefragt hat.
+ */
 const probedMacs = new Map<string, { mac: string | null; at: number }>();
-const PROBE_TTL_MS = 600_000;
 const MAX_PROBES = 40;
+
+/** Anmelden und die MAC lesen, mit dem Ausgang der Anmeldung fuer die Sperre (auth-latch.ts). */
+async function probeCameraMac(cam: CameraRuntime): Promise<{ outcome: AuthOutcome; mac: string | null }> {
+  try {
+    await ensureLogin(cam);
+  } catch (e) {
+    return { outcome: probeLoginOutcome(e instanceof Error ? e : { message: String(e) }), mac: null };
+  }
+  try {
+    const value = await cgi(cam, "GetLocalLink", {});
+    const mac = (value.LocalLink as { mac?: string } | undefined)?.mac;
+    return { outcome: "ok", mac: mac ? normalizeMac(mac) : null };
+  } catch {
+    return { outcome: "ok", mac: null };
+  }
+}
+
+/** Adressen aller eingerichteten Geraete: Kameras, DoorBirds und Geraete der Raeume. */
+async function configuredHosts(): Promise<Set<string>> {
+  const hosts = new Set([...cameras.values()].map((c) => c.config.host));
+  for (const d of listDoorbirdStatus()) hosts.add(d.host);
+  try {
+    const { deviceHosts } = await import("./rooms.js");
+    for (const h of deviceHosts()) hosts.add(h);
+  } catch {
+    // Ohne Raumdaten bleiben Kameras und DoorBirds.
+  }
+  return hosts;
+}
 
 /**
  * Fallback ohne ARP-Treffer (geroutetes VLAN, kein Router-SNMP): Kandidaten
- * aus dem letzten Netzwerk-Scan (Reolink/RTSP, keiner anderen Kamera
- * zugeordnet) mit den Zugangsdaten dieser Kamera nach ihrer MAC fragen.
+ * aus dem letzten Netzwerk-Scan mit den Zugangsdaten dieser Kamera nach ihrer
+ * MAC fragen. Nur im zuletzt bekannten Subnetz der Kamera und im Kamera-Netz
+ * (HUB_VLANS), nie bei einem anderen eingerichteten Geraet
+ * (camera-probe-rules.ts). Je Adresse hoechstens ein Versuch in 24 Stunden,
+ * nach einer Ablehnung dort nie wieder mit denselben Zugangsdaten; der
+ * Merker steht in hub/.cache/auth-latch.json und uebersteht einen Neustart.
  */
 async function findCameraByApi(cam: CameraRuntime): Promise<string | null> {
   const wanted = cam.config.macAddress;
   if (!wanted) return null;
-  const taken = new Set([...cameras.values()].map((c) => c.config.host));
-  const candidates = lastScanResult()
-    .devices.filter(
-      (d) =>
-        !taken.has(d.ip) &&
-        (d.mac === null || d.mac === wanted) &&
-        (/reolink/i.test(d.vendor ?? "") || d.openPorts.includes(554))
-    )
-    .map((d) => d.ip)
-    .slice(0, MAX_PROBES);
+  await authLatches.ready();
+  const taken = await configuredHosts();
+  const lastSubnet = subnetForIp(cam.config.host)?.cidr ?? `${cam.config.host}/24`;
+  const cameraNet = cameraNetOf(configuredVlans());
+  const candidates = apiProbeCandidates(lastScanResult().devices, taken, wanted, lastSubnet, cameraNet);
+  const fp = credentialFingerprint(cam.config.httpPort, cam.config.https, cam.config.username, cam.config.password);
+  let probes = 0;
   for (const ip of candidates) {
     const cached = probedMacs.get(ip);
-    let mac = cached && Date.now() - cached.at < PROBE_TTL_MS ? cached.mac : undefined;
-    if (mac === undefined) {
-      const probe: CameraRuntime = {
-        ...cam,
-        config: { ...cam.config, host: ip },
-        token: null,
-        tokenExpiresAt: 0,
-      };
-      mac = await readMacFromCamera(probe);
-      probedMacs.set(ip, { mac, at: Date.now() });
+    if (cached && Date.now() - cached.at < AUTH_SINGLE_TRY_MS) {
+      if (cached.mac === wanted) return ip;
+      continue;
     }
-    if (mac === wanted) return ip;
+    if (probes >= MAX_PROBES) break;
+    if (!authLatches.probeAllowed(ip, fp, Date.now())) {
+      improveCount("camera", "probe_skipped");
+      continue;
+    }
+    probes++;
+    const probe: CameraRuntime = {
+      ...cam,
+      config: { ...cam.config, host: ip },
+      token: null,
+      tokenExpiresAt: 0,
+    };
+    const r = await probeCameraMac(probe);
+    authLatches.noteProbe(ip, fp, r.outcome, Date.now());
+    improveCount("camera", r.outcome === "abgelehnt" ? "probe_rejected" : "probe");
+    if (r.outcome === "ok") probedMacs.set(ip, { mac: r.mac, at: Date.now() });
+    if (r.mac === wanted) return ip;
   }
   return null;
 }
@@ -3750,8 +4020,13 @@ export async function pollCameras(): Promise<void> {
     });
     // Mit bekannten Kameras nie auf die Cloud warten: Faellt sie aus, laufen
     // Erkennung und Notbetrieb mit dem letzten Stand weiter.
-    if (plan === "wait") await loadConfigs();
-    else if (plan === "background") void loadConfigs().catch(() => {});
+    // Scheitert der erste Abruf, kann die lokale Kopie die Kameras schon
+    // geliefert haben: dann gleich in dieser Runde abfragen.
+    if (plan === "wait") {
+      await loadConfigs().catch((e: unknown) => {
+        if (cameras.size === 0) throw e;
+      });
+    } else if (plan === "background") void loadConfigs().catch(() => {});
 
     settleLightMarks(Date.now());
 

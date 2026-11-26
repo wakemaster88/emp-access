@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hasSnmpDetail, mergeHubStatus, snmpStatusSummary } from "./hub-status";
+import { failedSwitches, hasSnmpDetail, mergeHubStatus, snmpStatusSummary } from "./hub-status";
 
 /** Switch, wie ihn der Hub hochlaedt (hub/src/snmp.ts): Ports und MAC-Tabelle als Listen. */
 const uploaded = {
@@ -154,4 +154,38 @@ test("hasSnmpDetail: eine Port-Liste oder eine MAC-Tabelle allein ist schon Altb
   ]);
   // Ohne Liste in irgendeinem Eintrag bleibt alles, wie es ist.
   assert.equal(hasSnmpDetail({ snmp: { switches: [summary, { host: "x", ports: 2, macs: 0 }] } }), false);
+});
+
+test("snmpStatusSummary: Teilausfall und Stand der MAC-Tabelle nur, wenn der Hub sie meldet", () => {
+  // Hub meldet bei leerer MAC-Tabelle nach gefuellter nur die Zahl der vorigen.
+  const partial = { ...uploaded, macTable: undefined, macs: 40, partial: ["fdb"], macsAt: "2026-11-25T09:45:00.000Z" };
+  assert.deepEqual(snmpStatusSummary([partial]), [
+    { ...summary, macs: 40, partial: ["fdb"], macsAt: "2026-11-25T09:45:00.000Z" },
+  ]);
+  // Ohne Angaben bleibt die Kurzfassung wie bisher (keine zusaetzlichen Felder).
+  assert.deepEqual(Object.keys(snmpStatusSummary([uploaded])[0]).sort(), Object.keys(summary).sort());
+  assert.equal("partial" in snmpStatusSummary([{ ...uploaded, partial: [] }])[0], false);
+  assert.deepEqual(snmpStatusSummary([{ ...uploaded, partial: ["fdb", 3, null] }])[0].partial, ["fdb"]);
+});
+
+test("failedSwitches: Adresse und Fehlertext je ausgefallenem Switch, ohne Adresse weg, Fehler nie leer", () => {
+  assert.deepEqual(
+    failedSwitches([
+      { host: " 10.0.0.3 ", sysName: "sw-tor", error: "keine SNMP-Antwort" },
+      { host: "10.0.0.4", error: "" },
+      { error: "ohne Adresse" },
+      null,
+      "10.0.0.5",
+    ]),
+    [
+      { host: "10.0.0.3", sysName: "sw-tor", error: "keine SNMP-Antwort" },
+      { host: "10.0.0.4", sysName: null, error: "keine Antwort" },
+    ]
+  );
+  assert.deepEqual(failedSwitches(undefined), []);
+  assert.deepEqual(failedSwitches({ host: "10.0.0.3" }), []);
+  // In der Kurzfassung steht ein ausgefallener Switch mit seinem Fehler.
+  assert.deepEqual(snmpStatusSummary(failedSwitches([{ host: "10.0.0.3", error: "keine SNMP-Antwort" }])), [
+    { host: "10.0.0.3", sysName: null, polledAt: null, ports: 0, portsUp: 0, macs: 0, error: "keine SNMP-Antwort" },
+  ]);
 });

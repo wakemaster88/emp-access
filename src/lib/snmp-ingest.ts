@@ -10,6 +10,22 @@ export interface SwitchIngestPayload {
   sysName?: string | null;
   ports?: Array<{ number: number; descr?: string; up?: boolean; pvid?: number | null }>;
   macTable?: Array<{ mac: string; port: number; vlan?: number | null }>;
+  /** Switch hat nicht geantwortet (Hub: `{ host, error }`). */
+  error?: string | null;
+}
+
+/**
+ * Switches, die in den Abgleich gehen: mit Adresse und ohne Fehler. Ein
+ * ausgefallener Switch (`error` gesetzt) bleibt aussen vor: Er zaehlt
+ * nicht als gesehen, und an seinen Ports und Zuordnungen aendert sich
+ * nichts.
+ */
+export function switchesToIngest(switches: SwitchIngestPayload[]): Array<{ sw: SwitchIngestPayload; host: string }> {
+  return switches
+    .filter((sw) => !!sw && typeof sw === "object" && !(typeof sw.error === "string" && sw.error.trim()))
+    .slice(0, 20)
+    .map((sw) => ({ sw, host: String(sw.host ?? "").trim() }))
+    .filter((x) => x.host);
 }
 
 function macNorm(raw: string): string | null {
@@ -20,6 +36,8 @@ function macNorm(raw: string): string | null {
 /**
  * SNMP-Snapshot: vorhandene NetworkDevices per IP, Ports/PVID, Client-Port
  * bei eindeutiger MAC, DiscoveredDevice.iface als Switch-Port.
+ *
+ * Ausgefallene Switches (`error`) überspringt der Abgleich (switchesToIngest).
  *
  * Switches, Ports, Clients und gefundene Geräte werden einmal vorab geladen;
  * geschrieben wird nur, was sich ändert, gebündelt in einer Transaktion je
@@ -36,10 +54,7 @@ export async function ingestSwitchSnapshots(
   let clients = 0;
   const now = new Date();
 
-  const list = switches
-    .slice(0, 20)
-    .map((sw) => ({ sw, host: String(sw.host ?? "").trim() }))
-    .filter((x) => x.host);
+  const list = switchesToIngest(switches);
   if (list.length === 0) return { devices, ports, clients };
 
   const deviceRows = await db.networkDevice.findMany({

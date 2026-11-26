@@ -48,3 +48,20 @@ export function resultBody(r: GuardedResult): string {
     });
   }
 }
+
+let running = 0;
+
+/** Laufende Auftraege (trackTask). Der Neustart nach einem Update wartet auf sie (restartAllowed). */
+export function tasksRunning(): number {
+  return running;
+}
+
+/** `run` als laufenden Auftrag zaehlen, bis es endet – auch wenn es wirft. */
+export async function trackTask<T>(run: () => Promise<T>): Promise<T> {
+  running++;
+  try {
+    return await run();
+  } finally {
+    running--;
+  }
+}

@@ -198,4 +198,11 @@ export class TalkQueue {
   pending(key: string): number {
     return this.counts.get(key) ?? 0;
   }
+
+  /** Ansagen auf allen Kameras, die laufen oder warten. */
+  total(): number {
+    let n = 0;
+    for (const c of this.counts.values()) n += c;
+    return n;
+  }
 }

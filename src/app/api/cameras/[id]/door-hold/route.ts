@@ -19,7 +19,9 @@ import { recordDeviceAction } from "@/lib/device-action-log";
  * Die Cloud setzt Camera.doorHoldUntil (Zielzustand) und legt einen
  * DOORBIRD_HOLD-Task an, damit der Hub sofort reagiert. Der Hub loest das
  * Relais dann im Takt aus (das Tor schliesst sonst nach ~1 min) und meldet
- * jeden Impuls an /api/hub/cameras/[id]/door-hold zurueck. Nach einem
+ * jeden Impuls an /api/hub/cameras/[id]/door-hold zurueck. Die Antwort darauf
+ * nennt den Zielzustand: Erreicht ihn der Task nicht, endet bzw. verlaengert
+ * er das Offenhalten mit der naechsten Impuls-Meldung. Nach einem
  * Hub-Neustart nimmt er eine laufende Offenhaltung aus der Kamera-
  * Konfiguration (/api/hub/cameras) wieder auf.
  */
@@ -158,8 +160,9 @@ export async function DELETE(
   const camera = await loadCamera(ctx);
   if (!camera) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  // Zielzustand zuerst loeschen – selbst wenn der Hub gerade offline ist,
-  // pulst er nach dem naechsten Task/Konfig-Abruf nicht weiter.
+  // Zielzustand zuerst loeschen: Erreicht den Hub der Task nicht, liest er
+  // das Ende aus der Antwort auf seine naechste Impuls-Meldung und pulst
+  // danach nicht weiter; nach einem Neustart nimmt er nichts wieder auf.
   await db.camera.update({
     where: { id: camera.id },
     data: { doorHoldUntil: null, doorHoldError: null },

@@ -37,6 +37,36 @@ export function soundwebOnline(device: {
   return Number.isFinite(seen) && Date.now() - seen < SOUNDWEB_STALE_AFTER_MS;
 }
 
+/**
+ * Schreibung einer Zustandsmeldung des Hubs fuer ein Geraet (eine je Geraet):
+ * Verbunden setzt den Fehler und den Trennzeitpunkt zurueck; getrennt setzt
+ * den Fehler (hoechstens 300 Zeichen) und den Trennzeitpunkt nur, wenn noch
+ * keiner gespeichert ist (`current.disconnectedAt`, vorab gelesen). Die
+ * Meldung selbst ist das Lebenszeichen (`lastSeenAt`), auch „getrennt“.
+ */
+export function soundwebDeviceWrite(
+  report: { connected?: unknown; error?: unknown },
+  current: { disconnectedAt: Date | null },
+  now: Date,
+  hubName: string | null,
+): {
+  connected: boolean;
+  lastError: string | null;
+  lastSeenAt: Date;
+  hubName?: string;
+  disconnectedAt?: Date | null;
+} {
+  const connected = report.connected === true;
+  const lastError = connected || report.error == null ? null : String(report.error).slice(0, 300);
+  return {
+    connected,
+    lastError,
+    lastSeenAt: now,
+    ...(hubName ? { hubName } : {}),
+    ...(connected ? { disconnectedAt: null } : current.disconnectedAt ? {} : { disconnectedAt: now }),
+  };
+}
+
 /* ---------------------------------------------------------------------------
  * Gain-Law: linear zwischen -10 und +10 dB, darunter logarithmisch
  * ------------------------------------------------------------------------- */
