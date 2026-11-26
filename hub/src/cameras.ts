@@ -7,11 +7,20 @@
 import { noteLink } from "./health-trends.js";
 import { zoomStep } from "./zoom-step.js";
 import { clockOffsetSeconds, type ReolinkTime } from "./camera-clock.js";
-import { noteCameraActivity, onCameraEvent } from "./rules.js";
+import { noteCameraActivity, noteTriggeredRules, onCameraEvent } from "./rules.js";
 import { kickTaskPoll } from "./task-kick.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
+import { writeFileAtomic } from "./atomic-file.js";
+import {
+  SCENE_RETURN_RETRY_MS,
+  dueSceneReturns,
+  parseSceneReturns,
+  sceneReturnCamera,
+  sceneReturnsToSave,
+  type SavedSceneReturn,
+} from "./scene-return-rules.js";
 import { STATE, recordHubEvent } from "./state.js";
 import { appliedScore, embedJpeg, embeddingHeader, noteOtherWay, scoreGallery, refreshGallery, type FaceEmbedResult } from "./face.js";
 import {
@@ -79,6 +88,7 @@ import { debounceEvents, endAll, newDebounceState, runningOf, type DebounceState
 import { previousAliveAt } from "./alive-mark.js";
 import {
   CameraLease,
+  EventGates,
   RunningReport,
   START_MAX_AGE_MS,
   UnconfirmedStarts,
@@ -2128,8 +2138,167 @@ export async function setAutoTrack(cameraId: number, on: boolean): Promise<{ aut
   return { autoTrack: on, was: cur.on };
 }
 
-/** Laufende „zurueck nach N s“-Timer je Kamera; ein neuer Lauf verlaengert. */
-const sceneReturns = new Map<number, { timer: NodeJS.Timeout; restoreTrack: boolean | null; presetId: number | null }>();
+/**
+ * Laufende „zurueck nach N s“-Timer je Kamera; ein neuer Lauf verlaengert.
+ * Faelligkeit und Zustand vorher stehen auch in hub/.cache/scene-returns.json
+ * (in einem Zug ersetzt): Nach einem Neustart stellt der Hub eine abgelaufene
+ * Szene sofort zurueck und setzt eine laufende neu an (`restoreSceneReturns`).
+ */
+const sceneReturns = new Map<
+  number,
+  { timer: NodeJS.Timeout; restoreTrack: boolean | null; presetId: number | null; dueAt: number; savedAt: number }
+>();
+const SCENE_RETURNS_FILE = path.join(CONFIG.hubDir, ".cache", "scene-returns.json");
+let sceneReturnsWrite: Promise<void> = Promise.resolve();
+/** Nach dem Start gespeichert, aber die Kamera-Liste war nicht zu laden: spaeter erneut (`restoreSceneReturns`). */
+let waitingSceneReturns: SavedSceneReturn[] = [];
+let sceneReturnRetry: NodeJS.Timeout | null = null;
+
+/** Stand der Rueckkehr auf die Platte; Schreibvorgaenge nacheinander. Wirft nie. */
+function saveSceneReturns(): void {
+  const active = [...sceneReturns.entries()].map(([cameraId, r]) => ({
+    cameraId,
+    dueAt: r.dueAt,
+    presetId: r.presetId,
+    restoreTrack: r.restoreTrack,
+    savedAt: r.savedAt,
+  }));
+  const data = JSON.stringify(sceneReturnsToSave(active, waitingSceneReturns));
+  sceneReturnsWrite = sceneReturnsWrite
+    .then(() => writeFileAtomic(SCENE_RETURNS_FILE, data))
+    .catch((e) => log(`Kamera-Szenen: Rückkehr nicht gespeichert (${e instanceof Error ? e.message : e})`));
+}
+
+/**
+ * Kamera nach einer Szene zurueckstellen: Tracking aus, Preset der Szene
+ * erneut anfahren, Tracking wie vor der Szene. Nach einem Neustart haelt die
+ * Automatik vorher still (`noteRule`, wartet auf ihr eigenes Zurueckstellen),
+ * wie waehrend der Szene. Wirft nie.
+ */
+async function returnScene(
+  cam: CameraRuntime,
+  presetId: number | null,
+  restoreTrack: boolean | null,
+  afterRestart = false
+): Promise<void> {
+  const cameraId = cam.config.id;
+  const send = <T>(fn: () => Promise<T>) => ptzSerial(cameraId, fn);
+  try {
+    if (afterRestart) await motion.noteRule(cameraId, SCENE_SETTLE_MS + 5_000);
+    const now = await readAutoTrack(cam).catch(() => null);
+    if (now?.on) await send(() => writeAutoTrack(cam, now.key, false));
+    if (presetId != null) {
+      await send(() => cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "ToPos", id: presetId, speed: 48 }));
+    }
+    if (now && restoreTrack) {
+      await new Promise((r) => setTimeout(r, SCENE_SETTLE_MS));
+      await send(() => writeAutoTrack(cam, now.key, true));
+    }
+    log(
+      `Kamera ${cam.config.name}: Szene beendet${afterRestart ? " (nach Neustart)" : ""}, zurück${
+        presetId != null ? ` auf Preset ${presetId}` : ""
+      }`
+    );
+  } catch (e) {
+    log(`Kamera ${cam.config.name}: Zurückstellen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+/** Rueckkehr ansetzen und sichern. */
+function armSceneReturn(
+  cam: CameraRuntime,
+  presetId: number | null,
+  restoreTrack: boolean | null,
+  dueAt: number,
+  savedAt: number,
+  afterRestart = false
+): void {
+  const cameraId = cam.config.id;
+  const timer = setTimeout(() => {
+    sceneReturns.delete(cameraId);
+    saveSceneReturns();
+    void returnScene(cam, presetId, restoreTrack, afterRestart);
+  }, Math.max(0, dueAt - Date.now()));
+  sceneReturns.set(cameraId, { timer, restoreTrack, presetId, dueAt, savedAt });
+  saveSceneReturns();
+}
+
+/**
+ * Nach dem Start: gespeicherte Rueckkehr der Szenen (scene-return-rules.ts).
+ * Abgelaufene sofort, laufende neu angesetzt, Eintraege aelter als 24 h
+ * verworfen (mit Log-Zeile). Eine Szene, die seit dem Start schon lief, hat
+ * Vorrang. Ist die Kamera-Liste nicht zu laden (Cloud nicht erreichbar),
+ * bleibt der Eintrag stehen, und der Hub versucht es jede Minute erneut
+ * (`sceneReturnCamera`). Wirft nie.
+ */
+export async function restoreSceneReturns(): Promise<void> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await fs.readFile(SCENE_RETURNS_FILE, "utf8"));
+  } catch {
+    return;
+  }
+  await applySceneReturns(parseSceneReturns(raw), true);
+}
+
+async function applySceneReturns(saved: SavedSceneReturn[], first: boolean): Promise<void> {
+  const plan = dueSceneReturns(saved, Date.now());
+  for (const r of plan.discarded) {
+    const hours = Math.round((Date.now() - r.savedAt) / 3_600_000);
+    log(`Kamera #${r.cameraId}: Rückkehr der Szene verworfen (vor ${hours} h gespeichert)`);
+  }
+  // Bis zur Entscheidung bleibt jeder Eintrag auf der Platte stehen; eine
+  // neue Szene derselben Kamera uebernimmt ihn (`cameraScene`).
+  waitingSceneReturns = [...plan.due, ...plan.later];
+  let changed = plan.discarded.length > 0;
+  const settle = (r: SavedSceneReturn) => {
+    waitingSceneReturns = waitingSceneReturns.filter((w) => w !== r);
+    changed = true;
+  };
+  for (const r of [...plan.due, ...plan.later]) {
+    if (!waitingSceneReturns.includes(r) || sceneReturns.has(r.cameraId)) {
+      settle(r);
+      continue;
+    }
+    let listLoaded = true;
+    if (!cameras.has(r.cameraId)) {
+      try {
+        await loadConfigs();
+      } catch {
+        listLoaded = false;
+      }
+    }
+    const cam = cameras.get(r.cameraId);
+    if (sceneReturnCamera(!!cam, listLoaded) === "retry") continue;
+    // Waehrend des Ladens kann eine neue Szene begonnen haben: Sie hat Vorrang.
+    const taken = !waitingSceneReturns.includes(r) || sceneReturns.has(r.cameraId);
+    settle(r);
+    if (taken) continue;
+    if (!cam) {
+      log(`Kamera #${r.cameraId}: Rückkehr der Szene verworfen (Kamera nicht konfiguriert oder deaktiviert)`);
+    } else if (r.dueAt <= Date.now()) {
+      saveSceneReturns();
+      await returnScene(cam, r.presetId, r.restoreTrack, true);
+    } else {
+      armSceneReturn(cam, r.presetId, r.restoreTrack, r.dueAt, r.savedAt, true);
+      log(`Kamera ${cam.config.name}: Rückkehr der Szene nach dem Neustart in ${Math.round((r.dueAt - Date.now()) / 1000)} s`);
+    }
+  }
+  if (changed) saveSceneReturns();
+  const waiting = waitingSceneReturns.length;
+  if (waiting === 0) return;
+  if (first || changed) {
+    log(`Kamera-Szenen: ${waiting} Rückkehr nach dem Neustart wartet auf die Kamera-Liste, nächster Versuch in ${SCENE_RETURN_RETRY_MS / 1000} s`);
+  }
+  if (!sceneReturnRetry) {
+    sceneReturnRetry = setTimeout(() => {
+      sceneReturnRetry = null;
+      void applySceneReturns([...waitingSceneReturns], false).catch((e) =>
+        log(`Kamera-Szenen: Rückkehr nach dem Neustart fehlgeschlagen (${e instanceof Error ? e.message : e})`)
+      );
+    }, SCENE_RETURN_RETRY_MS);
+  }
+}
 
 /**
  * Regel-Aktion „Kamera steuern“: erst automatisch folgen aus (sonst zieht die
@@ -2167,10 +2336,15 @@ export async function cameraScene(
   // Gelesen: Ab jetzt bestimmt die Regel das Tracking, der Hub versucht nicht
   // mehr, es auszuschalten. Ohne Lesen bleibt es beim Hub.
   if (track && hubTrackOn) await motion.ruleOwnsTracking(cameraId);
+  // Rueckkehr von vor dem Neustart, die noch auf die Kamera-Liste wartet:
+  // Diese Szene uebernimmt sie wie eine Verlaengerung.
+  const waited = waitingSceneReturns.find((w) => w.cameraId === cameraId);
+  if (waited) waitingSceneReturns = waitingSceneReturns.filter((w) => w !== waited);
   const before = track ? (hubTrackOn ? false : track.on) : null;
-  const restoreTrack = pending ? pending.restoreTrack : before;
+  const restoreTrack = pending ? pending.restoreTrack : waited ? waited.restoreTrack : before;
   if (pending) clearTimeout(pending.timer);
   sceneReturns.delete(cameraId);
+  if ((pending || waited) && returnAfter <= 0) saveSceneReturns();
 
   // Befehle an die Kamera ueber ihre Warteschlange: Eine Fahrt der Automatik
   // (Grundstellung, Zoom, Tracking) kann gerade unterwegs sein, und zwei
@@ -2192,26 +2366,8 @@ export async function cameraScene(
   }
 
   if (returnAfter > 0) {
-    const timer = setTimeout(() => {
-      sceneReturns.delete(cameraId);
-      void (async () => {
-        try {
-          const now = await readAutoTrack(cam).catch(() => null);
-          if (now?.on) await send(() => writeAutoTrack(cam, now.key, false));
-          if (presetId != null) {
-            await send(() => cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "ToPos", id: presetId, speed: 48 }));
-          }
-          if (now && restoreTrack) {
-            await new Promise((r) => setTimeout(r, SCENE_SETTLE_MS));
-            await send(() => writeAutoTrack(cam, now.key, true));
-          }
-          log(`Kamera ${cam.config.name}: Szene beendet, zurück${presetId != null ? ` auf Preset ${presetId}` : ""}`);
-        } catch (e) {
-          log(`Kamera ${cam.config.name}: Zurückstellen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
-        }
-      })();
-    }, returnAfter * 1000);
-    sceneReturns.set(cameraId, { timer, restoreTrack, presetId });
+    const at = Date.now();
+    armSceneReturn(cam, presetId, restoreTrack, at + returnAfter * 1000, at);
   }
 
   log(
@@ -3043,6 +3199,8 @@ interface CloudEvent {
   phase: "start" | "end";
   at: string;
   plate?: string;
+  /** Beginn: Bewegungs-Regeln, die der Hub dazu selbst geschaltet hat (rules.ts, `onCameraEvent`). */
+  hubRules?: Array<{ ruleId: number; configAt: string }>;
 }
 
 /*
@@ -3073,6 +3231,14 @@ const eventOutbox: CloudEvent[] = [];
  * allein an der Wanduhr des Hubs (tidyOutbox).
  */
 const queuedAt = new WeakMap<CloudEvent, number>();
+/**
+ * Beginne, zu denen der Hub gerade Bewegungs-Regeln selbst schaltet: Die
+ * Meldung wartet, bis feststeht, welche gelangen (hoechstens 5 s, rules.ts),
+ * damit die Cloud genau diese auslaesst. Was dahinter steht, wartet mit, die
+ * Reihenfolge bleibt; was davor steht, geht gleich (camera-poll-rules.ts,
+ * `EventGates`).
+ */
+const eventGates = new EventGates<CloudEvent>();
 const seenOutbox = new Set<number>();
 /**
  * Was an den Kameras laeuft, festgehalten beim Einreihen der Erreichbarkeit:
@@ -3210,7 +3376,10 @@ async function drainEventUploads(): Promise<void> {
       // ein Beginn zu alt geworden sein (gescheiterte Versuche davor).
       tidyEventOutbox();
       if (eventOutbox.length === 0 && seenOutbox.size === 0) break;
-      const events = eventOutbox.splice(0, EVENT_BATCH_MAX);
+      // Bis vor den ersten Beginn, dessen Regeln der Hub noch schaltet; steht
+      // er vorn, wartet die Meldung auf ihn. Kein Beginn geht ohne hubRules hinaus.
+      const events = await eventGates.take(eventOutbox, EVENT_BATCH_MAX);
+      if (events.length === 0 && seenOutbox.size === 0) continue;
       const seen = [...seenOutbox];
       seenOutbox.clear();
       const lastAlive = previousAliveAt();
@@ -3226,6 +3395,7 @@ async function drainEventUploads(): Promise<void> {
       const running = runningReport.take(eventOutbox.length === 0) ?? undefined;
       let ok = false;
       try {
+        const sentAt = performance.now();
         const res = await api("/api/hub/camera-events", {
           method: "POST",
           body: JSON.stringify({
@@ -3247,6 +3417,9 @@ async function drainEventUploads(): Promise<void> {
             orphansMore?: boolean;
             runningCreated?: number;
           } | null;
+          // Je ausgeloester Regel eine Log-Zeile mit Kamera, Ereignisart und
+          // Antwortzeit der Cloud (eine aeltere Cloud nennt nur die Zahl).
+          noteTriggeredRules(body, performance.now() - sentAt);
           // Abgleich der laufenden Ereignisse (eine aeltere Cloud-Version
           // kennt die Liste nicht und antwortet ohne diese Angabe).
           if (running && typeof body?.runningCreated === "number" && body.runningCreated > 0) {
@@ -3460,8 +3633,19 @@ async function pollOne(cam: CameraRuntime): Promise<void> {
     void tryRelocateCamera(cam);
   }
 
-  // Regeln auf dem Hub (Ruhe-Erkennung, Notbetrieb ohne Cloud).
-  for (const e of events) if (e.phase === "start") onCameraEvent(e.cameraId, e.type);
+  // Regeln auf dem Hub (Ruhe-Erkennung, Notbetrieb ohne Cloud, markierte
+  // Bewegungs-Regeln direkt): Die Meldung des Beginns nennt, was gelang.
+  for (const e of events) {
+    if (e.phase !== "start") continue;
+    const local = onCameraEvent(e.cameraId, e.type, { at: Date.parse(e.at), camera: cam.config.name, source: "camera" });
+    if (!local) continue;
+    eventGates.set(
+      e,
+      local.then((ran) => {
+        if (ran.length > 0) e.hubRules = ran;
+      }),
+    );
+  }
 
   // Bild-Pipelines laufen ohne await. Fahrzeug vor Person: Das Kennzeichen
   // entscheidet ueber das Tor, das Gesicht kann die paar Sekunden warten.

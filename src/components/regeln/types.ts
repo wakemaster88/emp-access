@@ -29,7 +29,8 @@ export interface RuleAction {
   sortOrder: number;
   kind: RuleActionKind;
   deviceId: number | null;
-  device: { id: number; name: string; type: string } | null;
+  /** category fehlt bei einer Antwort aus der Zeit vor der Selbstabschaltung je Gerät. */
+  device: { id: number; name: string; type: string; category?: string | null } | null;
   deviceAction: string | null;
   timerSeconds: number | null;
   channel: RuleNotifyChannel | null;
@@ -99,6 +100,8 @@ export interface RuleRun {
   success: boolean;
   durationMs: number | null;
   errorMessage: string | null;
+  /** Aktionen des Laufs (RoomRuleRun.details), u. a. offene Hub-Auftraege. */
+  details?: unknown;
 }
 
 /** Auswahllisten für den Regel-Dialog. */

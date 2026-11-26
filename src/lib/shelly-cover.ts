@@ -29,9 +29,11 @@ import {
   type ShellyDeviceStatusMap,
 } from "./shelly-cloud";
 import { shellySetRelay, type ShellyCloudCreds } from "./shelly-relay";
+import { lanUnreachable } from "./shelly-lan";
 import { shellyCoverCommandCloud, shellyCoverCommandLocal } from "./shelly-cover-rpc";
 import {
   coverChannels,
+  coverDrivePlan,
   coverMotion,
   coverMotionFromState,
   type CoverAction,
@@ -54,13 +56,6 @@ export {
   type CoverAction,
   type CoverMotion,
 } from "./cover-constants";
-
-/**
- * Wartezeit zwischen Abschalten der Gegenrichtung und Einschalten der
- * Zielrichtung. Gibt dem Relais Zeit zum Abfallen, bevor das zweite anzieht.
- * Nur im Switch-Profil relevant; im Cover-Profil verriegelt der Shelly selbst.
- */
-const INTERLOCK_MS = 500;
 
 /**
  * Zeitlimit fuer den lokalen Statusabruf vor einer Fahrt.
@@ -166,6 +161,23 @@ type CoverRoute =
   | { mode: "relays"; via: "local" | "cloud" };
 
 /**
+ * Den Status vor einer Fahrt zuerst im LAN lesen? Nur mit IP, und nicht, wo
+ * das LAN des Standorts nie erreichbar ist (Vercel, `lanUnreachable`) und es
+ * einen Cloud-Weg gibt: Dort wartete der Versuch nur bis zum Zeitlimit, wie
+ * beim einfachen Relais in device-open.ts. Die Verriegelung der
+ * Fahrtrichtungen haengt nicht daran.
+ */
+export function probeCoverLocally(
+  ipAddress: string | null,
+  cloud: ShellyCloudCreds | null,
+  baseId: string | null,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  if (!ipAddress) return false;
+  return !(cloud && baseId && lanUnreachable(env));
+}
+
+/**
  * Profil und Weg aus dem Geraetestatus bestimmen. `null` heisst: Das Geraet hat
  * weder lokal noch ueber die Cloud geantwortet – dann ist auch jeder Fahrbefehl
  * zwecklos.
@@ -175,7 +187,7 @@ async function resolveCoverRoute(
   cloud: ShellyCloudCreds | null,
   baseId: string | null,
 ): Promise<CoverRoute | null> {
-  if (device.ipAddress) {
+  if (device.ipAddress && probeCoverLocally(device.ipAddress, cloud, baseId)) {
     const status = await shellyLocalStatusMap(device.ipAddress, LOCAL_PROBE_TIMEOUT_MS);
     if (status) {
       const coverId = shellyCoverComponentId(status);
@@ -217,13 +229,11 @@ async function runRelayCoverAction(
   via: "local" | "cloud",
   action: CoverAction,
 ): Promise<CoverResult> {
-  const channels = coverChannels(device);
-  if (!channels) {
-    return {
-      ok: false,
-      error: "Antrieb ist nicht eingerichtet – für Auf und Zu müssen zwei verschiedene Shelly-Kanäle hinterlegt sein",
-    };
-  }
+  // Kanaele und Reihenfolge der Fahrt: reine Rechnung in cover-constants.ts,
+  // dieselbe wie im Notbetrieb des Hubs.
+  const plan = coverDrivePlan(null, device, action);
+  if (plan.kind === "refuse") return { ok: false, error: plan.error };
+  if (plan.kind === "cover") return { ok: false, error: "Antrieb im Cover-Profil" };
 
   // Auf welchem Weg das Geraet antwortet, ist beim Lesen des Status schon
   // festgestellt worden. Antwortete es nur ueber die Cloud, wuerde jeder
@@ -233,20 +243,17 @@ async function runRelayCoverAction(
 
   // `stop` gilt nur als erfolgreich, wenn wirklich beide Kanaele abgeschaltet
   // wurden – ein haengendes Relais darf nicht als "gestoppt" gemeldet werden.
-  if (action === "stop") {
+  if (plan.kind === "relays-stop") {
     const [upOff, downOff] = await Promise.all([
-      shellySetRelay(target, cloud, channels.up, false),
-      shellySetRelay(target, cloud, channels.down, false),
+      shellySetRelay(target, cloud, plan.channels[0], false),
+      shellySetRelay(target, cloud, plan.channels[1], false),
     ]);
     if (upOff && downOff) return { ok: true };
     return { ok: false, error: "Antrieb nicht erreichbar – Fahrt konnte nicht gestoppt werden" };
   }
 
-  const moveChannel = action === "open" ? channels.up : channels.down;
-  const idleChannel = action === "open" ? channels.down : channels.up;
-
   // Verriegelung: Gegenrichtung zwingend zuerst abschalten.
-  const released = await shellySetRelay(target, cloud, idleChannel, false);
+  const released = await shellySetRelay(target, cloud, plan.release, false);
   if (!released) {
     return {
       ok: false,
@@ -255,9 +262,9 @@ async function runRelayCoverAction(
     };
   }
 
-  await sleep(INTERLOCK_MS);
+  await sleep(plan.pauseMs);
 
-  const started = await shellySetRelay(target, cloud, moveChannel, true, channels.runtimeSec);
+  const started = await shellySetRelay(target, cloud, plan.move, true, plan.runtimeSec);
   if (!started) return { ok: false, error: "Antrieb nicht erreichbar" };
   return { ok: true };
 }

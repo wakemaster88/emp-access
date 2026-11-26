@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { debounceEvents, newDebounceState, runningOf } from "./event-debounce.js";
 import {
   CameraLease,
+  EventGates,
   RunningReport,
   START_MAX_AGE_MS,
   UnconfirmedStarts,
@@ -1024,4 +1025,69 @@ test("Warteschlange: unter der Obergrenze bleibt alles in seiner Reihenfolge", (
   const q = [queued(5, "PERSON", "end", 50), queued(6, "VEHICLE", "start", 3), queued(5, "PERSON", "start", 2), queued(6, "VEHICLE", "end", 1)];
   const r = tidy(q);
   assert.deepEqual(r.queue, q);
+});
+
+test("EventGates: bis vor das erste offene Gate, steht es vorn, wartet die Meldung darauf", async () => {
+  type Ev = { id: string };
+  const gates = new EventGates<Ev>();
+  const a = { id: "a" };
+  const b = { id: "b" };
+  const c = { id: "c" };
+  let release: () => void = () => undefined;
+  gates.set(b, new Promise<void>((r) => (release = r)));
+  const queue = [a, b, c];
+  // a hat kein Gate und geht gleich; b und c warten (Reihenfolge).
+  assert.deepEqual(await gates.take(queue, 100), [a]);
+  assert.deepEqual(queue, [b, c]);
+  assert.equal(gates.isOpen(b), true);
+  const next = gates.take(queue, 100);
+  release();
+  assert.deepEqual(await next, [b, c]);
+  assert.equal(gates.isOpen(b), false);
+  assert.deepEqual(queue, []);
+  // Leere Warteschlange: leeres Stueck. Obergrenze je Meldung.
+  assert.deepEqual(await gates.take([], 100), []);
+  const many = Array.from({ length: 5 }, (_, i) => ({ id: String(i) }));
+  assert.equal((await gates.take(many, 3)).length, 3);
+  assert.equal(many.length, 2);
+  // Ein Gate, dessen Lauf scheitert, schliesst trotzdem.
+  const d = { id: "d" };
+  gates.set(d, Promise.reject(new Error("Lauf gescheitert")));
+  assert.deepEqual(await gates.take([d], 100), [d]);
+  assert.equal(gates.isOpen(d), false);
+});
+
+test("EventGates: Beginn waehrend des Wartens mit eigenem Gate geht nicht ohne hubRules hinaus (Nachbau gate-race)", async () => {
+  // Wie drainEventUploads (cameras.ts): Ereignis A mit lokalem Lauf 80 ms, B
+  // 30 ms spaeter eingereiht, sein Lauf dauert ebenfalls 80 ms; die Meldung
+  // startet 25 ms nach A, die Cloud antwortet in 10 ms.
+  type Ev = { cam: number; rule: number; hubRules?: number[] };
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const gates = new EventGates<Ev>();
+  const queue: Ev[] = [];
+  const sent: Array<{ cam: number; hubRules: number[] | null }> = [];
+  const enqueue = (e: Ev, ms: number) => {
+    gates.set(
+      e,
+      sleep(ms).then(() => {
+        e.hubRules = [e.rule];
+      }),
+    );
+    queue.push(e);
+  };
+  enqueue({ cam: 1, rule: 11 }, 80);
+  setTimeout(() => enqueue({ cam: 2, rule: 22 }, 80), 30);
+  await sleep(25);
+  while (sent.length < 2) {
+    const batch = await gates.take(queue, 100);
+    for (const e of batch) {
+      assert.equal(gates.isOpen(e), false, `Kamera ${e.cam} mit offenem Gate`);
+      sent.push({ cam: e.cam, hubRules: e.hubRules ?? null });
+    }
+    await sleep(10);
+  }
+  assert.deepEqual(sent, [
+    { cam: 1, hubRules: [11] },
+    { cam: 2, hubRules: [22] },
+  ]);
 });

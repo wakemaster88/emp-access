@@ -12,7 +12,7 @@
  * dashboard-guard.ts). Cookie-Wert und Fehlversuche: dashboard-auth.ts.
  */
 import { staffPayload } from "./staff-insights.js";
-import { deviceAction, liveStates, roomsPayload, syncRooms } from "./rooms.js";
+import { liveStates, roomsPayload, switchAndReport, syncRooms } from "./rooms.js";
 import { climatePayload, recordClimatePush } from "./climate.js";
 import { controlSmart, listSmartDevices, pairSmart } from "./smart-devices.js";
 import { onDeviceSwitched, refreshPlan, rulesStatus } from "./rules.js";
@@ -879,10 +879,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       const body = await readBody(req);
       const id = Number(body.id);
       if (!Number.isInteger(id) || id <= 0) return json(res, 400, { error: "Ungültige Geräte-ID" });
-      const r = await deviceAction(id, String(body.action ?? ""));
       // Lokal geschaltet: Die Cloud bekommt es sonst nicht mit ("Gerät
       // geschaltet"-Regeln). Ueber die Cloud geschaltet startet sie sie selbst.
-      if (r.ok && r.via === "lokal") void onDeviceSwitched(id, String(body.action));
+      const r = await switchAndReport(id, String(body.action ?? ""), onDeviceSwitched);
       const local = --actionCounter;
       recordTask({
         id: local,

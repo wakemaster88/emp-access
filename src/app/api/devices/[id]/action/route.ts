@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import {
   triggerDeviceAction,
@@ -8,7 +8,7 @@ import {
 } from "@/lib/device-open";
 import { isAudioDevice } from "@/lib/device-controls";
 import { audioInputFromDeviceAction, controlAudioDevice } from "@/lib/audio-integration";
-import { runDeviceSwitchedRules } from "@/lib/room-rules";
+import { actionSucceeded, runDeviceSwitchedRules } from "@/lib/room-rules";
 import { hubTaskActor, type HubTaskActor } from "@/lib/hub-task-rules";
 
 function hasApiToken(request: NextRequest) {
@@ -75,7 +75,7 @@ export async function POST(
     return NextResponse.json({ ok: true, sent: true });
   }
 
-  const { task, sent, error } = await triggerDeviceAction(
+  const { task, sent, error, hubTaskId } = await triggerDeviceAction(
     db,
     existing,
     accountId!,
@@ -86,16 +86,21 @@ export async function POST(
       // Protokoll: angemeldeter Benutzer. Mit Account-Token schalten auch
       // Automatiken (Hub, Schranke) – die Quelle bleibt dann "unbekannt".
       actor: by ? { source: "admin", actorId: by.adminId } : { source: "unbekannt", actorLabel: "API-Token" },
+      switched: { action, depth: 0 },
     },
   );
 
-  // Raumregeln, die an diesem Schaltvorgang haengen. Nur bei Erfolg und
-  // bewusst nicht abgewartet – der Knopf in der Oberflaeche soll nicht auf
-  // Folgeaktionen warten.
-  if (!error) {
-    void runDeviceSwitchedRules(accountId!, existing.id, action).catch((err) => {
-      console.error("[device action] room rules failed:", err);
-    });
+  // Raumregeln, die an diesem Schaltvorgang haengen. Nur wenn das Geraet den
+  // Befehl angenommen hat (actionSucceeded). Der Knopf in der Oberflaeche
+  // wartet nicht darauf; after() haelt die Funktion bis zum Ende der Regeln
+  // am Leben, die Plattform friert sie sonst nach der Antwort ein. An den
+  // Hub uebergeben (Hue): Sie starten mit seinem Ergebnis.
+  if (actionSucceeded(existing.type, { sent, error }) && hubTaskId == null) {
+    after(() =>
+      runDeviceSwitchedRules(accountId!, existing.id, action).catch((err) => {
+        console.error("[device action] room rules failed:", err);
+      }),
+    );
   }
 
   const hasRemoteAction = deviceSendsRemoteCommand(existing.type);

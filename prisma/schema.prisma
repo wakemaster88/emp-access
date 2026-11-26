@@ -3394,7 +3394,21 @@ model RoomRule {
 
   /// Sperrzeit nach dem Auslösen, verhindert Dauerfeuer bei Bewegung.
   cooldownSeconds Int       @default(60)
+  /// Letzter Start; bei Zeit-Regeln die Sperre gegen gleichzeitige Läufe.
   lastRunAt       DateTime?
+  /// Zeit-Regeln: Soll-Zeit des zuletzt erfolgreich gelaufenen Termins
+  /// (src/lib/rule-due.ts), gesetzt erst nach dem Erfolg. Beim Anlegen und bei
+  /// Änderungen am Zeitplan der Zeitpunkt der Änderung: Termine davor werden
+  /// weder nachgeholt noch gemeldet. Leer bei Regeln aus der Zeit davor.
+  lastOccurrenceAt DateTime?
+  /// Zeit-Regeln: Soll-Zeit des zuletzt als verpasst gemeldeten Termins
+  /// (Nachholfrist abgelaufen); verhindert eine zweite Meldung.
+  lastMissedAt     DateTime?
+  /// Zuletzt angelegt oder bearbeitet. Anders als `updatedAt` bleibt der Wert
+  /// bei Laeufen stehen; er bestimmt die Regel-Version, nach der der Hub
+  /// seinen Plan neu holt (src/lib/rule-version.ts). Leer bei Regeln, die
+  /// seitdem nicht bearbeitet wurden; dann zaehlt `createdAt`.
+  configChangedAt  DateTime?
 
   actions RoomRuleAction[]
   runs    RoomRuleRun[]
@@ -3463,13 +3477,21 @@ model RoomRuleRun {
   /// Name der Regel zum Zeitpunkt des Laufs, damit der Verlauf lesbar bleibt.
   ruleName     String
   roomId       Int?
+  /// Ende des Laufs (beim Hub-Notbetrieb: sein Beginn).
   triggeredAt  DateTime  @default(now())
   triggerKind  String
   success      Boolean
-  /// Ergebnis je Aktion als JSON-Liste.
+  /// Ergebnis je Aktion als JSON-Liste, je Aktion mit Dauer in ms (`ms`).
   details      Json?
   durationMs   Int?
   errorMessage String?
+  /// Zeit des ausloesenden Ereignisses (Kamera-Ereignis laut Hub,
+  /// Schaltvorgang, Scan) bzw. Soll-Zeit des Termins; leer, wo es keines
+  /// gibt (von Hand, Sicherheitsnetz) und bei Laeufen aus der Zeit davor.
+  eventAt      DateTime?
+  /// Beginn der Ausfuehrung in der Cloud (bzw. im Hub); leer bei Laeufen aus
+  /// der Zeit davor.
+  startedAt    DateTime?
 
   @@index([accountId, triggeredAt])
   @@index([ruleId])

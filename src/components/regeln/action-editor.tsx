@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { deviceControls } from "@/lib/device-controls";
+import { ruleTimerApplies } from "@/lib/rule-timer";
 import { deviceMetaLabel } from "@/components/raeume/shared";
 import type { RuleActionKind, RuleOptions } from "@/components/regeln/types";
 
@@ -293,19 +294,23 @@ function DeviceFields({
         </NativeSelect>
       </div>
 
-      <div className="space-y-1">
-        <Label>Selbstabschaltung</Label>
-        <Input
-          type="number"
-          min={1}
-          placeholder="Sek., optional"
-          disabled={disabled}
-          value={action.timerSeconds ?? ""}
-          onChange={(e) =>
-            onChange({ ...action, timerSeconds: e.target.value ? Number(e.target.value) : null })
-          }
-        />
-      </div>
+      {/* Nur wo der Timer wirkt: Ventil-Laufzeit, Schalter und Licht beim
+          Einschalten (rule-timer.ts). Ein gespeicherter Wert bleibt stehen. */}
+      {ruleTimerApplies(device, action.deviceAction) && (
+        <div className="space-y-1">
+          <Label>Selbstabschaltung</Label>
+          <Input
+            type="number"
+            min={1}
+            placeholder="Sek., optional"
+            disabled={disabled}
+            value={action.timerSeconds ?? ""}
+            onChange={(e) =>
+              onChange({ ...action, timerSeconds: e.target.value ? Number(e.target.value) : null })
+            }
+          />
+        </div>
+      )}
 
       {device && controls.length === 0 && (
         <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground sm:col-span-3">

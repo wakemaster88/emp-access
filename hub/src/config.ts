@@ -1,5 +1,6 @@
 import { config as loadEnv } from "dotenv";
 import { pushLog } from "./state.js";
+import { noteCloudContact } from "./cloud-contact.js";
 import { execSync } from "node:child_process";
 import { hostname } from "node:os";
 import path from "node:path";
@@ -106,8 +107,12 @@ export const CONFIG = {
   ],
 };
 
+/**
+ * Aufruf an die Cloud. Jede Antwort mit Status 2xx zaehlt als Kontakt fuer
+ * den Notbetrieb der Regeln (cloud-contact.ts), nicht nur das Lebenszeichen.
+ */
 export async function api(pathname: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${CONFIG.apiUrl}${pathname}`, {
+  const res = await fetch(`${CONFIG.apiUrl}${pathname}`, {
     ...init,
     signal: init?.signal ?? AbortSignal.timeout(30_000),
     headers: {
@@ -116,6 +121,8 @@ export async function api(pathname: string, init?: RequestInit): Promise<Respons
       ...init?.headers,
     },
   });
+  if (res.ok) noteCloudContact();
+  return res;
 }
 
 export function log(msg: string) {

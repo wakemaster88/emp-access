@@ -20,9 +20,25 @@ import { TRIGGER_HINTS, TRIGGER_LABELS } from "@/components/regeln/shared";
 import { OperatingExtentSelect } from "@/components/betriebszeiten/operating-extent-select";
 import { deviceControls } from "@/lib/device-controls";
 import type { OperatingExtentKind } from "@/lib/operating-extent";
+import { RULE_EVENT_TYPES, RULE_EVENT_TYPE_LABELS } from "@/lib/rule-event-types";
 import type { Rule, RuleOptions, RuleTrigger } from "@/components/regeln/types";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+/**
+ * „Ruhe im Raum“: was als Bewegung zaehlt (src/lib/rule-due.ts,
+ * idleActivityTypes). Ohne Angabe Person oder Fahrzeug.
+ */
+const IDLE_EVENT_OPTIONS = [
+  { value: "", label: "Person oder Fahrzeug" },
+  { value: "MOTION", label: "jede Bewegung (auch Wasser, Regen, Bäume)" },
+  { value: "PERSON", label: "nur Person" },
+  { value: "VEHICLE", label: "nur Fahrzeug" },
+] as const;
+
+function idleEventType(value: string): string {
+  return IDLE_EVENT_OPTIONS.some((o) => o.value === value) ? value : "";
+}
 
 const TRIGGER_ORDER: RuleTrigger[] = [
   "TIME",
@@ -185,7 +201,12 @@ export function RuleDialog({
       timeOfDay: trigger === "TIME" ? timeOfDay : null,
       offsetMinutes: needsOffset ? offsetMinutes : 0,
       cameraId: trigger === "MOTION" ? cameraId : null,
-      eventType: trigger === "MOTION" && eventType ? eventType : null,
+      eventType:
+        trigger === "MOTION" && eventType
+          ? eventType
+          : trigger === "IDLE" && idleEventType(eventType)
+            ? idleEventType(eventType)
+            : null,
       triggerDeviceId: trigger === "DEVICE_SWITCHED" ? triggerDeviceId : null,
       triggerAction: trigger === "DEVICE_SWITCHED" && triggerAction ? triggerAction : null,
       areaId: trigger === "SCAN" ? areaId : null,
@@ -354,10 +375,11 @@ export function RuleDialog({
                       onChange={(e) => setEventType(e.target.value)}
                     >
                       <option value="">jede</option>
-                      <option value="PERSON">Person</option>
-                      <option value="VEHICLE">Fahrzeug</option>
-                      <option value="MOTION">Bewegung</option>
-                      <option value="DOORBELL">Klingel (DoorBird)</option>
+                      {RULE_EVENT_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {RULE_EVENT_TYPE_LABELS[t]}
+                        </option>
+                      ))}
                     </NativeSelect>
                   </div>
                 </div>
@@ -433,18 +455,37 @@ export function RuleDialog({
               )}
 
               {trigger === "IDLE" && (
-                <div className="w-40 space-y-1">
-                  <Label>Ruhe seit (Min.)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={1440}
-                    disabled={disabled}
-                    value={idleMinutes}
-                    onChange={(e) => setIdleMinutes(Number(e.target.value) || 1)}
-                  />
+                <div className="space-y-1">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label>Ruhe seit (Min.)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={1440}
+                        disabled={disabled}
+                        value={idleMinutes}
+                        onChange={(e) => setIdleMinutes(Number(e.target.value) || 1)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Als Bewegung zählt</Label>
+                      <NativeSelect
+                        disabled={disabled}
+                        value={idleEventType(eventType)}
+                        onChange={(e) => setEventType(e.target.value)}
+                      >
+                        {IDLE_EVENT_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Wird alle fünf Minuten geprüft, gemessen an den Kameras des Raums.
+                    Wird alle fünf Minuten geprüft, gemessen an den Kameras des Raums, und löst
+                    einmal je Ruhephase aus. Nur für Räume mit Kamera.
                   </p>
                 </div>
               )}
@@ -454,6 +495,12 @@ export function RuleDialog({
               <div className="space-y-1">
                 <Label>Wochentage</Label>
                 <WeekdayPicker mask={daysOfWeek} disabled={disabled} onChange={setDaysOfWeek} />
+                {(trigger === "OPENING" || trigger === "CLOSING") && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Die Wochentage gelten für den Betriebstag, auch wenn das Betriebsende nach
+                    Mitternacht liegt.
+                  </p>
+                )}
               </div>
 
               <div className="grid gap-2 sm:grid-cols-2">
@@ -531,6 +578,12 @@ export function RuleDialog({
                 Ein Zeitfenster über Mitternacht ist erlaubt: 22:00 bis 06:00 gilt über Nacht. Die
                 Sperrzeit verhindert, dass dieselbe Regel kurz hintereinander mehrfach auslöst.
               </p>
+              {windowStart && windowEnd && windowStart > windowEnd && (
+                <p className="text-[11px] text-muted-foreground">
+                  Ein Wochentag gilt für die Nacht, die an diesem Tag beginnt: „Sa“ mit{" "}
+                  {windowStart} bis {windowEnd} heißt Samstag {windowStart} bis Sonntag {windowEnd}.
+                </p>
+              )}
 
               {/* Kästchen-Baustein; die Beschriftung umschließt es, Antippen des Texts schaltet mit. */}
               <label className="flex items-center gap-2 text-sm max-sm:min-h-11">

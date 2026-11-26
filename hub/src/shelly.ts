@@ -217,6 +217,29 @@ export async function shellyEnvironment(host: string): Promise<ShellyEnvironment
 }
 
 /**
+ * Vollstaendiger Status eines Shellys im LAN (Gen2+: `Shelly.GetStatus`,
+ * Gen1: `/status`), mit Anmeldung wie `shellyGet`. null = keine Antwort.
+ * Fuer Antriebe: Das Profil (Cover oder zwei Relais) steht nur hier.
+ */
+export async function shellyStatusMap(host: string): Promise<Record<string, unknown> | null> {
+  const info = await probeShelly(host, TIMEOUT_MS);
+  if (!info) return null;
+  try {
+    const st = await shellyGet(host, info.gen >= 2 ? "/rpc/Shelly.GetStatus" : "/status");
+    return st && typeof st === "object" && !Array.isArray(st) ? (st as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Antrieb im Cover-Profil zufahren (Gen2+: `Cover.Close`, Gen1: `/roller/N?go=close`). Wirft bei Fehler. */
+export async function shellyCoverClose(host: string, coverId: number): Promise<void> {
+  const info = await probeShelly(host, TIMEOUT_MS);
+  if (!info) throw new Error(`${host} ist kein erreichbarer Shelly`);
+  await shellyGet(host, info.gen >= 2 ? `/rpc/Cover.Close?id=${coverId}` : `/roller/${coverId}?go=close`);
+}
+
+/**
  * Relais schalten: on = true/false, oder "toggle". Liefert den neuen Zustand.
  *
  * `autoOffSec` (nur beim Einschalten): Der Shelly faellt nach so vielen

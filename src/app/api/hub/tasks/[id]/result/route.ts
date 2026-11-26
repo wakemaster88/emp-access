@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
 import { ingestHubScanDevices } from "@/lib/network-scan-ingest";
 import { queueFaceAnalysis } from "@/lib/unknown-persons";
+import { runDeviceSwitchedRules, settleHubHandovers } from "@/lib/room-rules";
+import { switchedFollowUp } from "@/lib/rule-run-rules";
+
+/** Auftraege, die eine Raumregel an den Hub uebergibt (Hue, Kamera steuern). */
+const RULE_TASK_TYPES = new Set(["HUE_SET", "CAMERA_SCENE"]);
 
 /** Hub meldet das Ergebnis eines Tasks zurueck (Token-Auth). */
 export async function POST(
@@ -53,6 +58,29 @@ export async function POST(
       finishedAt: new Date(),
     },
   });
+  // Von einer Raumregel uebergeben: Ergebnis im Regel-Verlauf nachtragen.
+  const ruleId = Number((task.payload as { ruleId?: unknown } | null)?.ruleId);
+  if (RULE_TASK_TYPES.has(task.type) && Number.isInteger(ruleId) && ruleId > 0) {
+    await settleHubHandovers(account.id, { hubTaskId: taskId, ruleId }).catch((e) => {
+      console.error(`[hub/tasks] Regel-Verlauf fuer Auftrag ${taskId} nicht nachgetragen:`, (e as Error).message);
+    });
+  }
+
+  // Hue geschaltet: Regeln „Geraet geschaltet“ jetzt, nicht schon bei der
+  // Uebergabe. Nach der Antwort, aber verlaesslich zu Ende (after).
+  const followUp = switchedFollowUp(
+    task,
+    { success, wasOpen: task.status !== "DONE" && task.status !== "FAILED" },
+    new Date(),
+  );
+  if (followUp) {
+    after(() =>
+      runDeviceSwitchedRules(account.id, followUp.deviceId, followUp.action, followUp.depth).catch((e) => {
+        console.error(`[hub/tasks] Folgeregeln fuer Auftrag ${taskId} fehlgeschlagen:`, (e as Error).message);
+      }),
+    );
+  }
+
   // Gesichts-Analyse alter Sichtungen: naechsten Stapel gleich nachschieben,
   // bis der Rueckstand abgearbeitet ist (stoppt, wenn nichts mehr analysiert wurde).
   let nextAnalyze: { queued: number; taskId: number | null } | null = null;

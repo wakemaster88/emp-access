@@ -6,6 +6,24 @@ import {
   validateRuleReferences,
 } from "@/lib/room-rule-queries";
 import { roomRuleUpdateSchema } from "@/lib/validators";
+import { scheduleChanged, type RuleScheduleFields } from "@/lib/rule-due";
+
+const SCHEDULE_SELECT = {
+  id: true,
+  trigger: true,
+  timeOfDay: true,
+  offsetMinutes: true,
+  daysOfWeek: true,
+  roomId: true,
+  operatingScheduleId: true,
+  operatingExtent: true,
+  operating: true,
+  windowStart: true,
+  windowEnd: true,
+  onlyWhenDark: true,
+  isActive: true,
+  lastOccurrenceAt: true,
+} as const;
 
 export async function PUT(
   request: NextRequest,
@@ -28,13 +46,34 @@ export async function PUT(
   const { db, accountId } = session;
   const existing = await db.roomRule.findFirst({
     where: { id: ruleId, accountId },
-    select: { id: true },
+    select: SCHEDULE_SELECT,
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   const { actions, ...data } = parsed.data;
-  const problem = await validateRuleReferences(db, accountId, { ...data, actions });
+  // „Ruhe im Raum“ braucht eine Kamera im Raum; geprueft, wenn Ausloeser oder
+  // Raum gespeichert werden (nicht beim reinen Ein- und Ausschalten).
+  const touchesIdle = data.trigger !== undefined || data.roomId !== undefined;
+  const problem = await validateRuleReferences(db, accountId, {
+    ...data,
+    actions,
+    ...(touchesIdle
+      ? { trigger: data.trigger ?? existing.trigger, roomId: data.roomId !== undefined ? data.roomId : existing.roomId }
+      : {}),
+  });
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+
+  // Aendert sich der Zeitplan, holt die Regel Termine vor dieser Aenderung
+  // nicht nach und meldet sie nicht (src/lib/rule-due.ts, scheduleChanged).
+  const before: RuleScheduleFields = existing;
+  const after: RuleScheduleFields = { ...before };
+  for (const key of Object.keys(before) as Array<keyof RuleScheduleFields>) {
+    const value = (data as Record<string, unknown>)[key];
+    if (value !== undefined) (after as unknown as Record<string, unknown>)[key] = value;
+  }
+  const now = new Date();
+  const watermark =
+    scheduleChanged(before, after) && (!existing.lastOccurrenceAt || existing.lastOccurrenceAt < now) ? now : undefined;
 
   await db.roomRule.update({
     where: { id: ruleId },
@@ -64,6 +103,9 @@ export async function PUT(
       ...(data.windowEnd !== undefined && { windowEnd: data.windowEnd }),
       ...(data.onlyWhenDark !== undefined && { onlyWhenDark: data.onlyWhenDark }),
       ...(data.cooldownSeconds !== undefined && { cooldownSeconds: data.cooldownSeconds }),
+      ...(watermark && { lastOccurrenceAt: watermark }),
+      // Neue Regel-Version: Der Hub holt seinen Plan (src/lib/rule-version.ts).
+      configChangedAt: now,
     },
     select: { id: true },
   });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
 import type { TenantDb } from "@/lib/prisma";
-import { runMotionRules } from "@/lib/room-rules";
+import { motionRuleRunner, type HubRanRule, type TriggeredRuleRun } from "@/lib/room-rules";
 import { sendDoorbellPush } from "@/lib/doorbell-push";
 import {
   ORPHAN_BATCH,
@@ -112,6 +112,18 @@ async function addMissingRunning(db: TenantDb, accountId: number, running: Runni
   return created;
 }
 
+/** `hubRules` eines Beginns: [{ ruleId, configAt }], hoechstens 50; Unbrauchbares faellt weg. */
+function parseHubRules(raw: unknown): HubRanRule[] {
+  if (!Array.isArray(raw)) return [];
+  const out: HubRanRule[] = [];
+  for (const r of raw.slice(0, 50)) {
+    const ruleId = Number((r as { ruleId?: unknown })?.ruleId);
+    const configAt = (r as { configAt?: unknown })?.configAt;
+    if (Number.isInteger(ruleId) && typeof configAt === "string" && configAt.length <= 40) out.push({ ruleId, configAt });
+  }
+  return out;
+}
+
 /**
  * POST (Hub, Token-Auth): Bewegungs-/KI-Ereignisse melden.
  * Body: { events: [{ cameraId, type, phase: "start"|"end", at }] }
@@ -127,6 +139,14 @@ async function addMissingRunning(db: TenantDb, accountId: number, running: Runni
  *   offen blieben.
  * - { running: [{ cameraId, type, at }] } nennt, was am Hub gerade laeuft
  *   (Stand nach den Ereignissen dieser Meldung); Fehlendes wird nachgetragen.
+ * - Ein Beginn kann `hubRules: [{ ruleId, configAt }]` tragen: Bewegungs-
+ *   Regeln, die der Hub dazu schon selbst ausgefuehrt hat, mit dem Stand der
+ *   Regel laut seinem Plan (src/lib/rule-executor.ts). Die Cloud sperrt sie
+ *   und fuehrt sie nicht noch einmal aus, wenn der Stand aktuell ist; den
+ *   Lauf meldet der Hub ueber POST /api/hub/rules.
+ * Antwort: Zaehler wie bisher; loest ein Beginn Regeln aus, zusaetzlich
+ * `rules: [{ ruleId, name, state, durationMs, cameraId, camera, type }]`,
+ * und `rulesByHub` mit der Zahl der vom Hub ausgefuehrten.
  */
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -147,7 +167,7 @@ export async function POST(request: NextRequest) {
     events.length > 0 || closeOpen || (running && running.length > 0)
       ? await db.camera.findMany({
           where: { accountId: account.id },
-          select: { id: true, name: true, kind: true, lastSeenAt: true },
+          select: { id: true, name: true, kind: true, lastSeenAt: true, keyRoomId: true },
         })
       : [];
   const cameraById = new Map(cameras.map((c) => [c.id, c]));
@@ -183,6 +203,13 @@ export async function POST(request: NextRequest) {
   let created = 0;
   let closed = 0;
   let rulesTriggered = 0;
+  /** Regeln, die der Hub zu einem Beginn dieser Meldung selbst ausgefuehrt hat. */
+  let rulesByHub = 0;
+  // Bewegungs-Regeln einmal je Meldung laden (beim ersten Beginn); ohne
+  // aktive Regel kostet ein Beginn keine weitere Abfrage.
+  const motionRules = motionRuleRunner(account.id, now);
+  /** Ausgeloeste Regeln mit Kamera und Ereignisart: Der Hub schreibt je Regel eine Log-Zeile. */
+  const triggeredRules: Array<TriggeredRuleRun & { cameraId: number; camera: string; type: string }> = [];
   let pushed = 0;
   /** Kamera und Art mit einem Beginn in dieser Meldung. */
   const started = new Map<string, { cameraId: number; type: string }>();
@@ -212,7 +239,11 @@ export async function POST(request: NextRequest) {
       // offene Promises nach der Antwort), Fehler blockieren den Ingest nicht.
       // Der Hub holt danach sofort seine Tasks ab (z. B. Kamera steuern).
       try {
-        rulesTriggered += (await runMotionRules(account.id, cameraId, type, at)).triggered;
+        const hubRules = parseHubRules(e?.hubRules);
+        const motion = await motionRules(cameraId, camera.keyRoomId ?? null, type, at, hubRules);
+        rulesTriggered += motion.triggered;
+        rulesByHub += motion.byHub;
+        for (const r of motion.rules) triggeredRules.push({ ...r, cameraId, camera: camera.name, type });
       } catch (err) {
         console.error("[camera-events] room rules failed:", err);
       }
@@ -267,6 +298,8 @@ export async function POST(request: NextRequest) {
     created,
     closed,
     rulesTriggered,
+    ...(triggeredRules.length > 0 ? { rules: triggeredRules } : {}),
+    ...(rulesByHub > 0 ? { rulesByHub } : {}),
     pushed,
     ...(staleClosed > 0 ? { staleClosed } : {}),
     ...(orphans ? { orphansClosed: orphans.closed, orphansMore: orphans.more } : {}),

@@ -520,6 +520,54 @@ export class RunningReport<T> {
 }
 
 /**
+ * Beginne, zu denen der Hub gerade Bewegungs-Regeln selbst schaltet (rules.ts,
+ * `onCameraEvent`): Ihre Meldung an die Cloud wartet, bis feststeht, welche
+ * gelangen (`hubRules` am Ereignis), damit die Cloud genau diese auslaesst.
+ * Kein Ereignis darf mit offenem Gate hinausgehen.
+ *
+ * `take` nimmt vom Kopf der Warteschlange hoechstens `max` Ereignisse, aber
+ * nur bis vor das erste mit offenem Gate; steht ein solches vorn, wartet es
+ * darauf und schaut neu. Die Entscheidung faellt ohne Pause zwischen Pruefen
+ * und Entnehmen: Was waehrend des Wartens eingereiht wird, auch mit eigenem
+ * Gate, geht erst hinaus, wenn dessen Gate zu ist. Die Reihenfolge bleibt,
+ * und ein Strom neuer Ereignisse haelt die vorderen nicht auf.
+ */
+export class EventGates<T extends object> {
+  private readonly open = new Map<T, Promise<void>>();
+
+  /** Gate setzen; es schliesst, sobald `done` endet, auch bei einem Fehler. */
+  set(e: T, done: Promise<unknown>): void {
+    const gate: Promise<void> = done
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        if (this.open.get(e) === gate) this.open.delete(e);
+      });
+    this.open.set(e, gate);
+  }
+
+  isOpen(e: T): boolean {
+    return this.open.has(e);
+  }
+
+  /** Naechstes Stueck fuer die Cloud, aus `queue` entnommen; leer, wenn `queue` leer ist. */
+  async take(queue: T[], max: number): Promise<T[]> {
+    for (;;) {
+      const head = queue.length > 0 ? this.open.get(queue[0]) : undefined;
+      if (head) {
+        await head;
+        continue;
+      }
+      let n = 0;
+      while (n < Math.min(max, queue.length) && !this.open.has(queue[n])) n++;
+      return queue.splice(0, n);
+    }
+  }
+}
+
+/**
  * Uhren-Abweichungen fuer den Vergleich grob runden: Die Sekunden wandern
  * von Abfrage zu Abfrage, die Aussage („geht 9 Stunden nach“) bleibt gleich.
  */

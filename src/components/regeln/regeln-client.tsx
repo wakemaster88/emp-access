@@ -46,6 +46,7 @@ import {
   weekdayLabel,
 } from "@/components/regeln/shared";
 import type { RegelnData, Rule } from "@/components/regeln/types";
+import { HANDED_OVER_LABEL, pendingHubTaskIds, runState } from "@/lib/rule-run-rules";
 
 function RuleCard({
   rule,
@@ -229,20 +230,23 @@ export function RegelnClient({ data }: { data: RegelnData }) {
     setBusyId(rule.id);
     setError("");
     setNotice("");
-    const res = await apiRequest<{ success: boolean; actions: Array<{ target: string; ok: boolean; error?: string }> }>(
-      `/api/regeln/${rule.id}/run`,
-      "POST",
-    );
+    const res = await apiRequest<{
+      success: boolean;
+      actions: Array<{ target: string; ok: boolean; error?: string; pending?: boolean }>;
+    }>(`/api/regeln/${rule.id}/run`, "POST");
     setBusyId(null);
     if (!res.ok) {
       setError(res.message);
       return;
     }
-    const failed = res.data.actions.filter((a) => !a.ok);
+    const failed = res.data.actions.filter((a) => !a.ok && !a.pending);
+    const handedOver = res.data.actions.filter((a) => a.pending);
+    const handedOverText =
+      handedOver.length > 0 ? ` ${HANDED_OVER_LABEL}: ${handedOver.map((a) => a.target).join(", ")}.` : "";
     setNotice(
       failed.length === 0
-        ? `„${rule.name}“ ausgeführt.`
-        : `„${rule.name}“ teilweise ausgeführt: ${failed.map((a) => `${a.target} (${a.error})`).join(", ")}`,
+        ? `„${rule.name}“ ausgeführt.${handedOverText}`
+        : `„${rule.name}“ teilweise ausgeführt: ${failed.map((a) => `${a.target} (${a.error})`).join(", ")}.${handedOverText}`,
     );
     router.refresh();
   }
@@ -351,28 +355,41 @@ export function RegelnClient({ data }: { data: RegelnData }) {
           ) : (
             // Zeilen mit Haarlinie in einer Karte (docs/design-regeln.md, Abschnitt 17).
             <Card flush="y" className="divide-y divide-border/60">
-              {data.runs.map((run) => (
-                <div key={run.id} className="flex items-start gap-2 px-4 py-2.5 text-xs sm:px-[18px]">
-                  {run.success ? (
-                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-                  ) : (
-                    <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-medium">{run.ruleName}</span>
-                      <span className="text-muted-foreground">
-                        {/* Verlauf kennt beide Schreibweisen („closing“ und „CLOSING“) – nie den rohen Code zeigen. */}
-                        {TRIGGER_KIND_LABELS[run.triggerKind] ?? triggerLabel(run.triggerKind)}
-                      </span>
-                    </div>
-                    {run.errorMessage && (
-                      <p className="mt-0.5 text-destructive">{run.errorMessage}</p>
+              {data.runs.map((run) => {
+                // Erfolg erst, wenn das Gerät geschaltet hat; offene Hub-Aufträge
+                // stehen als „an Hub übergeben“ da (lib/rule-run-rules.ts).
+                const state = runState(run);
+                const tasks = state === "uebergeben" ? pendingHubTaskIds(run.details) : [];
+                return (
+                  <div key={run.id} className="flex items-start gap-2 px-4 py-2.5 text-xs sm:px-[18px]">
+                    {state === "ok" ? (
+                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+                    ) : state === "uebergeben" ? (
+                      <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
                     )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-medium">{run.ruleName}</span>
+                        <span className="text-muted-foreground">
+                          {/* Verlauf kennt beide Schreibweisen („closing“ und „CLOSING“) – nie den rohen Code zeigen. */}
+                          {TRIGGER_KIND_LABELS[run.triggerKind] ?? triggerLabel(run.triggerKind)}
+                        </span>
+                      </div>
+                      {run.errorMessage && (
+                        <p className="mt-0.5 text-destructive">{run.errorMessage}</p>
+                      )}
+                      {state === "uebergeben" && (
+                        <p className="mt-0.5 text-muted-foreground">
+                          {HANDED_OVER_LABEL}, Ergebnis steht aus (Auftrag {tasks.map((t) => `#${t}`).join(", ")})
+                        </p>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-muted-foreground tabular-nums">{fmtAgo(run.triggeredAt, nowMs)}</span>
                   </div>
-                  <span className="shrink-0 text-muted-foreground tabular-nums">{fmtAgo(run.triggeredAt, nowMs)}</span>
-                </div>
-              ))}
+                );
+              })}
             </Card>
           )}
         </TabsContent>

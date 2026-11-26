@@ -33,6 +33,25 @@ function zone(tz: string | null | undefined): string {
   return tz || DEFAULT_TIMEZONE;
 }
 
+/**
+ * Formatter je Sprache, Zeitzone und Optionssatz einmal anlegen und danach
+ * wiederverwenden: Das Anlegen kostet ein Vielfaches des Formatierens, und
+ * der Plan fuer den Hub sowie der Cron-Lauf rufen diese Helfer tausendfach
+ * auf. Eine ungueltige Zeitzone wirft wie bisher beim Anlegen und landet
+ * nicht im Speicher.
+ */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatter(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let f = formatters.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, options);
+    formatters.set(key, f);
+  }
+  return f;
+}
+
 /** "HH:mm" in Minuten seit Mitternacht. `null` bei ungueltiger Eingabe. */
 export function parseHhmm(hhmm: string): number | null {
   const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
@@ -50,7 +69,7 @@ export function formatHhmm(minutes: number): string {
 
 /** Minuten seit Mitternacht in der angegebenen Zeitzone. */
 export function tzMinutesOfDay(at: Date, tz: string | null | undefined): number {
-  const parts = new Intl.DateTimeFormat("en-GB", {
+  const parts = formatter("en-GB", {
     timeZone: zone(tz),
     hour: "2-digit",
     minute: "2-digit",
@@ -64,7 +83,7 @@ export function tzMinutesOfDay(at: Date, tz: string | null | undefined): number 
 
 /** Wochentag als Bit-Index (0=Mo … 6=So) in der angegebenen Zeitzone. */
 export function tzWeekdayBit(at: Date, tz: string | null | undefined): WeekdayBit {
-  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: zone(tz), weekday: "short" })
+  const weekday = formatter("en-US", { timeZone: zone(tz), weekday: "short" })
     .format(at)
     .toLowerCase();
   return WEEKDAY_BITS[weekday] ?? 0;
@@ -72,7 +91,8 @@ export function tzWeekdayBit(at: Date, tz: string | null | undefined): WeekdayBi
 
 /** Kalendertag "YYYY-MM-DD" in der angegebenen Zeitzone. */
 export function tzYmd(at: Date, tz: string | null | undefined): string {
-  return at.toLocaleDateString("sv-SE", { timeZone: zone(tz) });
+  // Wie at.toLocaleDateString("sv-SE", …), nur mit wiederverwendetem Formatter.
+  return formatter("sv-SE", { timeZone: zone(tz), year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
 }
 
 /** Kalendertag verschieben, ohne ueber Monats- und Jahresgrenzen zu stolpern. */
@@ -111,7 +131,7 @@ export function tzInstant(ymd: string, hhmm: string, tz: string | null | undefin
 
   let guess = new Date(targetUtc);
   for (let i = 0; i < 2; i++) {
-    const shown = new Intl.DateTimeFormat("en-GB", {
+    const shown = formatter("en-GB", {
       timeZone,
       hour12: false,
       year: "numeric",
@@ -155,4 +175,24 @@ export function isWithinWindow(
   if (startM === endM) return true;
   if (startM < endM) return mins >= startM && mins < endM;
   return mins >= startM || mins < endM;
+}
+
+/**
+ * Wochentag, fuer den ein Zeitpunkt in einem Zeitfenster zaehlt. Ein Fenster
+ * ueber Mitternacht (22:00–08:00) gehoert zu dem Tag, an dem die Nacht
+ * beginnt: Sonntag 02:00 zaehlt dann als Samstag. Ausserhalb des Morgen-Teils
+ * und bei Fenstern ohne Mitternacht gilt der Kalendertag.
+ */
+export function windowWeekday(
+  at: Date,
+  start: string | null | undefined,
+  end: string | null | undefined,
+  tz: string | null | undefined,
+): WeekdayBit {
+  const weekday = tzWeekdayBit(at, tz);
+  const startM = start ? parseHhmm(start) : null;
+  const endM = end ? parseHhmm(end) : null;
+  if (startM == null || endM == null || startM <= endM) return weekday;
+  if (tzMinutesOfDay(at, tz) >= endM) return weekday;
+  return (((weekday + 6) % 7) as WeekdayBit);
 }

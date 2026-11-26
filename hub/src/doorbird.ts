@@ -9,7 +9,7 @@
  *
  * Klingel/Bewegung → Snapshot → Gesichts-Pipeline (wie Reolink-PERSON).
  */
-import { onCameraEvent } from "./rules.js";
+import { noteTriggeredRules, onCameraEvent } from "./rules.js";
 import { kickIfRulesTriggered } from "./task-kick.js";
 import { api, log } from "./config.js";
 import { recordHubEvent } from "./state.js";
@@ -426,8 +426,10 @@ async function reportEvent(
   at = new Date().toISOString(),
   attempt = 0
 ): Promise<void> {
-  if (phase === "start" && attempt === 0) onCameraEvent(cameraId, type);
+  // DoorBird: Bewegungs-Regeln schaltet die Cloud (source), der Hub nur im Notbetrieb.
+  if (phase === "start" && attempt === 0) onCameraEvent(cameraId, type, { source: "doorbird" });
   try {
+    const sentAt = performance.now();
     const res = await api("/api/hub/camera-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -439,7 +441,9 @@ async function reportEvent(
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     // Regel ausgelöst (z. B. Klingel → Kamera auf Preset): Tasks sofort holen.
-    await kickIfRulesTriggered(res);
+    const body = await kickIfRulesTriggered(res);
+    // Je ausgelöster Regel eine Log-Zeile mit Antwortzeit der Cloud.
+    noteTriggeredRules(body, performance.now() - sentAt);
   } catch (e) {
     const retryIn = phase === "end" ? END_RETRY_MS[attempt] : undefined;
     log(

@@ -3,6 +3,7 @@ import { MAX_SCAN_LOCK_SECONDS } from "@/lib/scan-lock";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/password-rules";
 import { profilePhotoError } from "@/lib/photo-url";
 import { isUploadImageDataUrl } from "@/lib/list-images";
+import { RULE_EVENT_TYPES } from "@/lib/rule-event-types";
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -860,7 +861,7 @@ export const roomRuleCreateSchema = z
     offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
 
     cameraId: z.coerce.number().int().positive().nullable().optional(),
-    eventType: z.enum(["PERSON", "VEHICLE", "MOTION"]).nullable().optional(),
+    eventType: z.enum(RULE_EVENT_TYPES).nullable().optional(),
 
     triggerDeviceId: z.coerce.number().int().positive().nullable().optional(),
     triggerAction: z.string().max(40).nullable().optional(),
@@ -912,7 +913,7 @@ export const roomRuleUpdateSchema = z.object({
   timeOfDay: hhmm.optional(),
   offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
   cameraId: z.coerce.number().int().positive().nullable().optional(),
-  eventType: z.enum(["PERSON", "VEHICLE", "MOTION"]).nullable().optional(),
+  eventType: z.enum(RULE_EVENT_TYPES).nullable().optional(),
   triggerDeviceId: z.coerce.number().int().positive().nullable().optional(),
   triggerAction: z.string().max(40).nullable().optional(),
   areaId: z.coerce.number().int().positive().nullable().optional(),

@@ -143,6 +143,24 @@ interface TriggerOptions {
   /// Wer schaltet – fuer das Protokoll (DeviceActionLog). Ohne Angabe steht
   /// dort die Quelle "unbekannt".
   actor?: DeviceActionBy;
+  /// Von einer Raumregel geschaltet: steht im Hub-Auftrag (HUE_SET), damit
+  /// dessen Ergebnis den Lauf im Regel-Verlauf nachtraegt.
+  ruleId?: number;
+  /// Regeln „Geraet geschaltet“ dieses Schaltvorgangs: Bei einem Hub-Auftrag
+  /// (HUE_SET) startet sie erst dessen Ergebnis (rule-run-rules.ts,
+  /// `switchedFollowUp`); `depth` ist die Tiefe dieser Folgeregeln.
+  switched?: { action: string; depth: number };
+}
+
+/**
+ * Ergebnis einer Schaltung. `hubTaskId`: Der Befehl ist als Hub-Auftrag
+ * angelegt (Hue); ob er ausgefuehrt wurde, meldet der Hub spaeter.
+ */
+export interface DeviceActionResponse {
+  task: number;
+  sent: boolean;
+  error?: string;
+  hubTaskId?: number;
 }
 
 /**
@@ -156,9 +174,18 @@ interface DbLike {
       data: {
         accountId: number;
         type: string;
-        payload: { deviceId: number; bridgeId: string; lightId: string; on: boolean; by?: HubTaskActor };
+        payload: {
+          deviceId: number;
+          bridgeId: string;
+          lightId: string;
+          on: boolean;
+          by?: HubTaskActor;
+          ruleId?: number;
+          switched?: { action: string; depth: number };
+        };
       };
-    }) => Promise<unknown>;
+      select: { id: true };
+    }) => Promise<{ id: number }>;
   };
   device: {
     update: (args: { where: { id: number }; data: { task: number; taskSetAt: Date | null } }) => Promise<unknown>;
@@ -281,7 +308,7 @@ export async function triggerDeviceAction(
   accountId: number,
   action: DeviceAction,
   options: TriggerOptions = {},
-): Promise<{ task: number; sent: boolean; error?: string }> {
+): Promise<DeviceActionResponse> {
   const log = (result: DeviceActionResult) =>
     recordDeviceAction({
       accountId,
@@ -307,7 +334,7 @@ async function switchDevice(
   accountId: number,
   action: DeviceAction,
   options: TriggerOptions,
-): Promise<{ task: number; sent: boolean; error?: string }> {
+): Promise<DeviceActionResponse> {
   const task = ALL_TASK_MAP[action];
   await db.device.update({
     where: { id: device.id },
@@ -316,11 +343,13 @@ async function switchDevice(
   });
 
   if (device.type === "GARDENA_VALVE") {
-    if (!device.gardenaServiceId) return { task, sent: false };
+    if (!device.gardenaServiceId) {
+      return { task, sent: false, error: "Für dieses Ventil ist keine GARDENA-Kennung hinterlegt – bitte unter Einstellungen → GARDENA abgleichen." };
+    }
     // Zugangsdaten der zugeordneten GARDENA-Verbindung; Fallback auf die erste
     // GARDENA-Verbindung des Accounts (Alt-Geraete ohne gardenaConfigId).
     const creds = await gardenaCreds(db, accountId, device.gardenaConfigId ?? null);
-    if (!creds) return { task, sent: false };
+    if (!creds) return { task, sent: false, error: "GARDENA ist nicht eingerichtet – bitte unter Einstellungen die Zugangsdaten eintragen." };
 
     // open/emergency => bewässern (START), deactivate/reset => stoppen (STOP).
     const start = action === "open" || action === "emergency";
@@ -348,15 +377,19 @@ async function switchDevice(
         flowLph: device.flowLph ?? null,
       });
     }
-    return { task, sent: res.ok };
+    return res.ok
+      ? { task, sent: true }
+      : { task, sent: false, error: res.error || `GARDENA hat den Befehl nicht angenommen (HTTP ${res.status})` };
   }
 
   if (device.type === "NUKI_SMARTLOCK") {
-    if (!device.nukiSmartlockId) return { task, sent: false };
+    if (!device.nukiSmartlockId) {
+      return { task, sent: false, error: "Für dieses Schloss ist keine Nuki-Kennung hinterlegt – bitte unter Einstellungen → Nuki abgleichen." };
+    }
     const config = await db.apiConfig.findFirst({
       where: { accountId, provider: "NUKI" },
     });
-    if (!config?.token) return { task, sent: false };
+    if (!config?.token) return { task, sent: false, error: "Nuki ist nicht eingerichtet – bitte unter Einstellungen den Zugriffstoken eintragen." };
 
     // open/emergency => unlatch (kurz aufdruecken), deactivate/reset => lock.
     const nukiActionId =
@@ -364,7 +397,9 @@ async function switchDevice(
         ? NUKI_ACTION.UNLATCH
         : NUKI_ACTION.LOCK;
     const res = await nukiAction(config.token, device.nukiSmartlockId, nukiActionId);
-    return { task, sent: res.ok };
+    return res.ok
+      ? { task, sent: true }
+      : { task, sent: false, error: res.error || `Nuki hat den Befehl nicht angenommen (HTTP ${res.status})` };
   }
 
   if (device.type === "LOQED_SMARTLOCK") {
@@ -402,7 +437,7 @@ async function switchDevice(
     if (!device.hueBridgeId || !device.hueLightId) {
       return { task, sent: false, error: "Hue-Lampe ohne Bridge-Zuordnung – im Hub unter Geräte neu zuordnen." };
     }
-    await db.hubTask.create({
+    const created = await db.hubTask.create({
       data: {
         accountId,
         type: "HUE_SET",
@@ -412,10 +447,13 @@ async function switchDevice(
           lightId: device.hueLightId,
           on: action === "open" || action === "emergency",
           ...(options.by ? { by: options.by } : {}),
+          ...(options.ruleId ? { ruleId: options.ruleId } : {}),
+          ...(options.switched ? { switched: options.switched } : {}),
         },
       },
+      select: { id: true },
     });
-    return { task, sent: true };
+    return { task, sent: true, hubTaskId: created.id };
   }
 
   if (device.type !== "SHELLY") return { task, sent: false };
@@ -474,17 +512,27 @@ async function switchDevice(
       timerSec,
     );
   }
+  let cloudConfig: Awaited<ReturnType<typeof loadCloud>> | undefined = cloud;
   if (!sent && baseId) {
+    cloudConfig = cloud !== undefined ? cloud : await loadCloud();
     sent = await shellySetRelay(
       { ipAddress: null, baseId },
-      cloud !== undefined ? cloud : await loadCloud(),
+      cloudConfig,
       switchIdx,
       turnOn,
       timerSec,
     );
   }
 
-  return { task, sent };
+  if (sent) return { task, sent };
+  return { task, sent, error: relayError(device.ipAddress, baseId, cloudConfig ?? null) };
+}
+
+/** Warum ein einfaches Shelly-Relais den Befehl nicht bekam. */
+export function relayError(ipAddress: string | null | undefined, baseId: string | null, cloud: object | null): string {
+  if (!ipAddress && !baseId) return "Shelly ohne IP-Adresse und Cloud-Kennung – bitte in der Geräteverwaltung ergänzen.";
+  if (baseId && !cloud && !ipAddress) return "Shelly-Cloud ist nicht eingerichtet – bitte unter Einstellungen den Zugang eintragen.";
+  return "Shelly hat den Befehl nicht angenommen (weder im LAN noch über die Shelly-Cloud erreichbar).";
 }
 
 export const DEVICE_TASK_MAP = TASK_MAP;
