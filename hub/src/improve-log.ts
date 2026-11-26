@@ -57,9 +57,9 @@ function latestPath(): string {
   return path.join(cacheDir(), "improve-latest.md");
 }
 
-function bump(kind: ImproveKind, event: string): string {
+function bump(kind: ImproveKind, event: string, by = 1): string {
   const key = `${kind}.${event}`;
-  counts.set(key, (counts.get(key) ?? 0) + 1);
+  counts.set(key, (counts.get(key) ?? 0) + by);
   return key;
 }
 
@@ -157,7 +157,11 @@ export function improveSnapshot(): {
   hint: string;
 } {
   const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  const top = entries.slice(0, 8).map(([k, v]) => `${k}=${v}`);
+  // Mengen (Bytes) wuerden die Kurzfassung anfuehren, ohne ein Ereignis zu sein.
+  const top = entries
+    .filter(([k]) => !k.endsWith("_bytes"))
+    .slice(0, 8)
+    .map(([k, v]) => `${k}=${v}`);
   const h = hints();
   return {
     since,
@@ -227,10 +231,12 @@ async function rotateIfNeeded(): Promise<void> {
  * Minutentakt („Halteverbot frei“, „Parkplatz gemeldet“, reine Bewegung).
  * Diese Zeilen fuellten die Datei zu mehr als der Haelfte und verdraengten in
  * der Diagnose-Ansicht (letzte 80 Zeilen) alles, was etwas aussagt.
+ * `by`: Menge statt eines Ereignisses (z. B. gesendete Bytes, Zaehler mit
+ * der Endung `_bytes`; sie stehen nicht in der Kurzfassung `summary`).
  */
-export function improveCount(kind: ImproveKind, event: string): void {
+export function improveCount(kind: ImproveKind, event: string, by = 1): void {
   if (!enabled()) return;
-  bump(kind, event);
+  bump(kind, event, by);
   if (Date.now() - lastSnapAt >= SNAP_INTERVAL_MS) void flushImproveSnapshot("interval");
 }
 

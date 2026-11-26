@@ -22,6 +22,7 @@ import {
   type SeriesQuality,
 } from "./face-rules.js";
 import { ChangeLog } from "./change-log.js";
+import { galleryRequest, parseGallery, type GalleryEntry } from "./gallery-rules.js";
 
 const FACE_URL = process.env.FACE_URL || "http://127.0.0.1:8790";
 const FACE_PORT = Number(process.env.FACE_PORT || 8790);
@@ -89,16 +90,16 @@ interface SidecarFace {
   embedding_scaled?: number[];
 }
 
-interface GalleryEntry {
-  id: number;
-  listedPersonId: number;
-  name: string;
-  listType: string;
-  embedding: number[];
-}
-
 let gallery: GalleryEntry[] = [];
 let galleryLoadedAt = 0;
+/**
+ * Version des geladenen Bestands laut Cloud (gallery-rules.ts); null = noch
+ * keine oder Cloud ohne Versionen. Mit Version antwortet die Cloud bei
+ * gleichem Bestand nur „unveraendert“.
+ */
+let galleryVersion: string | null = null;
+/** Letzter Abruf mit ganzem Bestand (spaetestens stuendlich einer ohne Version). */
+let galleryFullAt = 0;
 /** Geladener Bestand (welche Merkmale, nicht nur wie viele); null = noch nie geladen. */
 let gallerySignature: string | null = null;
 /** Der letzte Abruf ist gescheitert: Der naechste Erfolg wird gemeldet. */
@@ -329,11 +330,34 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
 export async function refreshGallery(force = false): Promise<void> {
   if (!force && Date.now() - galleryLoadedAt < GALLERY_TTL_MS) return;
   try {
-    const res = await api("/api/hub/person-embeddings");
+    const { path: galleryUrl, sent } = galleryRequest({ version: galleryVersion, fullAt: galleryFullAt, now: Date.now() });
+    const res = await api(galleryUrl);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = (await res.json()) as { embeddings?: GalleryEntry[] };
-    gallery = Array.isArray(data.embeddings) ? data.embeddings : [];
+    const text = await res.text();
+    improveCount("face", "gallery_bytes", Buffer.byteLength(text));
+    const reply = parseGallery(JSON.parse(text), sent);
+    if (reply.kind === "invalid") {
+      // Naechster Abruf ohne Version, also mit ganzem Bestand.
+      galleryVersion = null;
+      throw new Error(reply.reason);
+    }
+    if (reply.kind === "unchanged") {
+      // Bestand wie geladen: nur die Gueltigkeit verlaengern, keine Zeile.
+      galleryLoadedAt = Date.now();
+      improveCount("face", "gallery_unchanged");
+      if (galleryFailed) {
+        galleryFailed = false;
+        log(`Face-Gallery: ${gallery.length} Embeddings (Abruf klappt wieder)`);
+        galleryFailLog.shouldLog("fetch", "", Date.now());
+      }
+      return;
+    }
+    gallery = reply.entries;
+    galleryVersion = reply.version;
     galleryLoadedAt = Date.now();
+    galleryFullAt = galleryLoadedAt;
+    improveCount("face", "gallery_full");
+    if (reply.dropped > 0) improveCount("face", "gallery_dropped", reply.dropped);
     STATE.face.gallery = gallery.length;
     // Nur melden, wenn sich der Bestand aendert (vorher alle 5 Minuten dieselbe
     // Zeile) oder der Abruf davor gescheitert war.

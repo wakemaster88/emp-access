@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
-import { Prisma } from "@prisma/client";
-import { mergeHubAgentStatus } from "@/lib/hub-agent-status";
+import { writeHubAgentStatus } from "@/lib/hub-agent-status";
 
 /**
  * POST (Hub): Parkplatz-Belegung aus Kiosk-Tracker (vehicleGate-Zonen).
@@ -19,22 +18,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "parking fehlt" }, { status: 400 });
   }
 
-  // Zeile anlegen bzw. lastSeenAt setzen; `status.parking` danach in einer
-  // eigenen Anweisung, die die uebrigen Teile von status unberuehrt laesst.
-  const agent = await db.hubAgent.upsert({
-    where: { accountId_name: { accountId: account.id, name } },
-    create: {
-      name,
-      lastSeenAt: new Date(),
-      status: { parking } as Prisma.InputJsonValue,
-      accountId: account.id,
-    },
-    update: {
-      lastSeenAt: new Date(),
-    },
-    select: { id: true },
-  });
-  await mergeHubAgentStatus(db, account.id, name, { parking });
+  // Zeile anlegen bzw. lastSeenAt und `status.parking` setzen, in einer
+  // Anweisung; die uebrigen Teile von status bleiben unberuehrt.
+  const agentId = await writeHubAgentStatus(db, account.id, name, { parking });
 
-  return NextResponse.json({ ok: true, agentId: agent.id });
+  return NextResponse.json({ ok: true, agentId });
 }

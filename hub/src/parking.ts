@@ -1,11 +1,27 @@
 /**
  * Parkplatz-Belegung aus der lokalen Kiosk-Config (webcams/config.json)
- * und dem YOLO-Tracker (nur Cams mit vehicleGate).
+ * und dem YOLO-Tracker (nur Cams mit vehicleGate). Meldung an die Cloud alle
+ * 30 s (reportParking, Takt in index.ts); die Regeln dazu stehen in
+ * parking-rules.ts.
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
-import { cameraAtHome, cameraIdByHost, markCameraConfigStale } from "./cameras.js";
+import { cameraAtHome, cameraIdByHost, ensureCameraConfigs, markCameraConfigStale } from "./cameras.js";
+import { ChangeLog } from "./change-log.js";
+import { improve, improveCount } from "./improve-log.js";
+import {
+  ensureDue,
+  parkingCamsHash,
+  parkingFrameIdleMs,
+  parkingIdleReportMs,
+  parkingReportDue,
+  parkingReportKey,
+  staleMarkDue,
+  trackerFrameDue,
+  type ParkingReported,
+} from "./parking-rules.js";
+import { STATE, recordHubEvent } from "./state.js";
 
 export interface ParkingLotReport {
   kioskId: string;
@@ -146,16 +162,48 @@ export async function collectParkingSnapshot(): Promise<ParkingSnapshot> {
   });
 }
 
-const lastSnapAt = new Map<string, number>();
+/**
+ * Belegung ohne Aenderung hoechstens so oft melden (HUB_PARKING_IDLE_REPORT_S,
+ * Standard 30 s = jeder Lauf), siehe parkingReportDue.
+ */
+const IDLE_REPORT_MS = parkingIdleReportMs(process.env.HUB_PARKING_IDLE_REPORT_S);
+/**
+ * Tracker-Bild ohne geaenderte Zaehlung hoechstens so oft hochladen
+ * (HUB_PARKING_FRAME_IDLE_S, Standard 0 = jeder Lauf), siehe trackerFrameDue.
+ */
+const FRAME_IDLE_MS = parkingFrameIdleMs(process.env.HUB_PARKING_FRAME_IDLE_S);
 
-/** Legt fehlende Parkkameras in der Cloud an (neue Halle-IP nicht mit alter verwechseln). */
-export async function ensureParkingCameras(): Promise<void> {
+/** Letztes hochgeladenes Tracker-Bild je Flaeche (Kiosk-ID): wann und bei welcher Zaehlung. */
+const lastFrame = new Map<string, { at: number; count: number | null }>();
+/** Zuletzt markiert, dass die Kamera-Liste des Hubs die Park-Kamera nicht kennt. */
+let lastStaleMarkAt = 0;
+/** Letztes Sicherstellen, bei dem alle Aufrufe angekommen sind (ensureDue). */
+let ensured: { hash: string | null; at: number } = { hash: null, at: 0 };
+
+/**
+ * Legt fehlende Parkkameras in der Cloud an (neue Halle-IP nicht mit alter
+ * verwechseln). Laeuft beim Start, bei geaenderten Park-Kameras der
+ * Kiosk-Konfiguration und sonst einmal je Stunde (ensureDue); bis alle
+ * Aufrufe angekommen sind, bei jedem Lauf.
+ */
+export async function ensureParkingCameras(now = Date.now()): Promise<void> {
   const cfg = await loadKioskConfig();
   if (!cfg) return;
-  const cams = Array.isArray(cfg.cams) ? cfg.cams : [];
+  const cams = (Array.isArray(cfg.cams) ? cfg.cams : []).filter((cam) => parkingSetup(cam));
+  const hash = parkingCamsHash(
+    cams.map((cam) => ({
+      id: String(cam.id ?? ""),
+      ip: String(cam.ip ?? "").trim(),
+      port: Number(cam.port) || 80,
+      channel: Number(cam.channel) || 0,
+      username: String(cam.username ?? "").trim(),
+      hasPassword: String(cam.password ?? "") !== "",
+    })),
+  );
+  if (!ensureDue(ensured.hash, hash, ensured.at, now)) return;
   let created = false;
+  let complete = true;
   for (const cam of cams) {
-    if (!parkingSetup(cam)) continue;
     const host = String(cam.ip ?? "").trim();
     const username = String(cam.username ?? "").trim();
     const password = String(cam.password ?? "");
@@ -176,44 +224,70 @@ export async function ensureParkingCameras(): Promise<void> {
       if (res.ok) {
         const json = (await res.json()) as { created?: boolean };
         if (json.created) created = true;
+      } else {
+        complete = false;
       }
     } catch (e) {
+      complete = false;
       log(`Parkkamera ${host}: ${e instanceof Error ? e.message : e}`);
     }
   }
   if (created) markCameraConfigStale();
+  if (complete) ensured = { hash, at: now };
 }
 
-/** Tracker-Bild der Parkfläche hochladen, damit nicht die alte Halle-Kamera angezeigt wird. */
-export async function uploadParkingTrackerFrames(): Promise<void> {
+/**
+ * Tracker-Bild der Parkfläche hochladen, damit nicht die alte Halle-Kamera
+ * angezeigt wird. Die Kamera-Nummer der Cloud kommt aus der Kamera-Liste des
+ * Hubs (cameraIdByHost). Fehlt die Kamera dort (Hub gerade gestartet,
+ * Kamera gerade angelegt), wird die Liste als veraltet markiert und gleich
+ * geladen, hoechstens alle 5 min (staleMarkDue); jeder weitere Lauf schaut
+ * wieder in die Liste. Ist die Kamera in der Cloud deaktiviert, kennt sie
+ * auch die Liste nicht: Dann geht kein Bild hoch. `snapshot`: die eben
+ * gemeldete Belegung (Zaehlung fuer trackerFrameDue).
+ */
+export async function uploadParkingTrackerFrames(snapshot?: ParkingSnapshot): Promise<void> {
   const cfg = await loadKioskConfig();
   if (!cfg) return;
   const trackerUrl = (cfg.settings?.tracker?.url || TRACKER_DEFAULT).replace(/\/$/, "");
   const pin = cfg.settings?.adminPin || "";
   const cams = Array.isArray(cfg.cams) ? cfg.cams : [];
+  const counts = new Map((snapshot?.lots ?? []).map((l) => [l.kioskId, l.count]));
   const now = Date.now();
   const due = cams.filter((cam) => {
     if (!parkingSetup(cam)) return false;
     const host = String(cam.ip ?? "").trim();
     const kioskId = String(cam.id ?? "");
-    return !!host && !!kioskId && now - (lastSnapAt.get(kioskId) ?? 0) >= 15_000;
+    if (!host || !kioskId) return false;
+    const prev = lastFrame.get(kioskId);
+    // Zwei Laeufe kurz hintereinander laden nicht zweimal hoch.
+    if (now - (prev?.at ?? 0) < 15_000) return false;
+    return trackerFrameDue({
+      prevCount: prev ? prev.count : null,
+      count: counts.get(kioskId) ?? null,
+      lastUploadAt: prev?.at ?? 0,
+      now,
+      idleMs: FRAME_IDLE_MS,
+    });
   });
   if (due.length === 0) return;
-
-  let cameras: Array<{ id: number; host: string }> = [];
-  try {
-    const list = await api("/api/hub/cameras");
-    if (!list.ok) return;
-    cameras = (await list.json()) as Array<{ id: number; host: string }>;
-  } catch {
-    return;
-  }
 
   for (const cam of due) {
     const host = String(cam.ip ?? "").trim();
     const kioskId = String(cam.id ?? "");
-    const cloud = cameras.find((c) => c.host === host);
-    if (!cloud) continue;
+    let cameraId = cameraIdByHost(host);
+    if (cameraId == null && staleMarkDue(lastStaleMarkAt, now)) {
+      lastStaleMarkAt = now;
+      markCameraConfigStale();
+      // Dieselbe Ladung wie die der Kamera-Abfrage (keine zweite daneben).
+      // Scheitert sie, steht das schon im Log (loadConfigs in cameras.ts).
+      await ensureCameraConfigs().catch(() => undefined);
+      cameraId = cameraIdByHost(host);
+    }
+    if (cameraId == null) {
+      improveCount("parking", "frame_nocam");
+      continue;
+    }
     try {
       const img = await fetch(`${trackerUrl}/debug/${encodeURIComponent(kioskId)}/snapshot.jpg`, {
         headers: pin ? { "x-admin-token": pin } : {},
@@ -223,14 +297,91 @@ export async function uploadParkingTrackerFrames(): Promise<void> {
       const buf = Buffer.from(await img.arrayBuffer());
       if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) continue;
 
-      const up = await api(`/api/hub/cameras/${cloud.id}/snapshot`, {
+      const up = await api(`/api/hub/cameras/${cameraId}/snapshot`, {
         method: "POST",
         headers: { "Content-Type": "image/jpeg" },
         body: new Uint8Array(buf),
       });
-      if (up.ok) lastSnapAt.set(kioskId, now);
+      if (up.ok) {
+        lastFrame.set(kioskId, { at: now, count: counts.get(kioskId) ?? null });
+        improveCount("parking", "frame");
+      }
     } catch {
       // Best-effort – Belegungszahl ist wichtiger als das Bild.
     }
+  }
+}
+
+/** Ein Lauf der Parkmeldung ist unterwegs: kein zweiter daneben. */
+let reportBusy = false;
+/** Zuletzt von der Cloud angenommene Meldung (parkingReportDue). */
+let reported: ParkingReported | null = null;
+/** Fehler und Erholung der Meldung stehen je einmal im Log. */
+const reportLog = new ChangeLog();
+let reportFailing = false;
+
+function noteReport(error: string | null): void {
+  const now = Date.now();
+  if (error) {
+    improveCount("parking", "report_fail");
+    if (reportLog.shouldLog("report", error, now)) log(`Parkplatz-Report fehlgeschlagen: ${error}`);
+    reportFailing = true;
+  } else if (reportFailing) {
+    reportFailing = false;
+    reportLog.shouldLog("report", "", now);
+    log("Parkplatz-Report: Cloud nimmt die Meldung wieder an");
+  }
+}
+
+/**
+ * Belegung der Parkflaechen an die Cloud melden, dazu das Tracker-Bild.
+ * Laeuft im Takt (index.ts); ein Lauf, der noch nicht fertig ist (Cloud
+ * haengt, jeder Aufruf hat 30 s Zeit), verhindert den naechsten. Wirft nie.
+ */
+export async function reportParking(): Promise<void> {
+  if (reportBusy) {
+    improveCount("parking", "busy");
+    return;
+  }
+  reportBusy = true;
+  try {
+    await ensureParkingCameras();
+    const parking = await collectParkingSnapshot();
+    if (STATE.parking.lastAt && parking.trackerOnline !== STATE.parking.trackerOnline) {
+      recordHubEvent({
+        kind: "system",
+        severity: parking.trackerOnline ? "info" : "warn",
+        where: "Park-Tracker",
+        title: parking.trackerOnline ? "Tracker wieder online" : "Tracker offline",
+      });
+    }
+    STATE.parking = {
+      lastAt: parking.at,
+      trackerOnline: parking.trackerOnline,
+      lots: parking.lots.length,
+    };
+    const now = Date.now();
+    if (parkingReportDue(reported, parking, now, IDLE_REPORT_MS)) {
+      const res = await api("/api/hub/parking", {
+        method: "POST",
+        body: JSON.stringify({ name: CONFIG.name, parking }),
+      });
+      if (res.ok) {
+        reported = { at: now, key: parkingReportKey(parking) };
+        noteReport(null);
+        // Der Normalfall alle 30 s wird nur gezaehlt (keine Zeile in improve.jsonl).
+        if (parking.trackerOnline) improveCount("parking", "report");
+      } else {
+        noteReport(`HTTP ${res.status}`);
+      }
+    } else {
+      improveCount("parking", "report_skip");
+    }
+    if (!parking.trackerOnline) improve("parking", "tracker_down", { lots: parking.lots.length });
+    await uploadParkingTrackerFrames(parking);
+  } catch (e) {
+    noteReport(e instanceof Error ? e.message : String(e));
+  } finally {
+    reportBusy = false;
   }
 }

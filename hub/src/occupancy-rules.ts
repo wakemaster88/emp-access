@@ -274,6 +274,17 @@ export function spotClosed(
   });
 }
 
+/**
+ * Drehkreuz-Zahlen aus der Cloud (`/api/hub/occupancy`) holen? Der Takt
+ * (`onDemand` false) nur, wenn er mindestens einen Punkt misst: Sind alle
+ * Raeume zu oder ist kein Punkt eingeschaltet, braucht er sie nicht. Auf
+ * Nachfrage (Werkzeug „occupancy“) immer, denn die Antwort nennt die
+ * Drehkreuz-Bereiche auch ohne Messpunkt.
+ */
+export function areasRefreshDue(opts: { spots: number; onDemand: boolean }): boolean {
+  return opts.onDemand || opts.spots > 0;
+}
+
 /** Ein Satz je Punkt fuer Telegram. */
 export function spotLine(s: { name: string; persons: number; level: Level; wait: number; partial?: boolean }): string {
   const who = s.persons === 1 ? "1 Person" : `${s.persons} Personen`;

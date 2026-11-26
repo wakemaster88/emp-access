@@ -6,6 +6,16 @@ import { prisma } from "@/lib/prisma";
 import { deleteBlobs } from "@/lib/blob-store";
 import { EXPIRED_TASK_ERROR } from "@/lib/hub-task-rules";
 import { parseDataRetention, cutoffDate, type DataRetentionConfig, type RetentionKey } from "@/lib/data-retention-config";
+import {
+  RETENTION_BUDGET_MS,
+  personSightingsWhere,
+  retentionCutoffs,
+  scanSnapshotBlobsWhere,
+  scanSnapshotsWhere,
+  scansWhere,
+  unknownSightingsWhere,
+} from "@/lib/data-retention-rules";
+import { deleteInBatches, type RetentionBudget } from "@/lib/data-retention-batches";
 
 export * from "@/lib/data-retention-config";
 
@@ -31,23 +41,40 @@ export const DEVICE_ACTION_LOG_DAYS = 365;
 export type RetentionPurgeResult = {
   accountId: number;
   deleted: Partial<Record<RetentionKey | "deviceActions", number>>;
+  /**
+   * Schritte in Portionen, die vor dem Ende aufgehoert haben (Obergrenze
+   * bzw. Zeitbudget des Laufs): so viele Zeilen sind noch faellig, der
+   * naechste Lauf macht weiter.
+   */
+  remaining?: Partial<Record<RetentionKey, number>>;
 };
 
-/** Löscht abgelaufene Datensätze eines Accounts gemäß Config. */
+/** Zeitbudget der Schritte in Portionen (data-retention-batches.ts). */
+export type { RetentionBudget };
+
+/**
+ * Löscht abgelaufene Datensätze eines Accounts gemäß Config. Welche Schritte
+ * laufen und mit welchem Stichtag, entscheidet `retentionCutoffs`
+ * (data-retention-rules.ts); die Teil-Fristen „Unbekannte Personen“ und
+ * „Scan-Fotos“ laufen nur mit eigenem, kürzerem Wert, in Portionen.
+ */
 export async function purgeAccountRetention(
   accountId: number,
   config: DataRetentionConfig,
-  now = new Date()
+  now = new Date(),
+  budget: RetentionBudget = { untilMs: Date.now() + RETENTION_BUDGET_MS }
 ): Promise<RetentionPurgeResult> {
   const deleted: RetentionPurgeResult["deleted"] = {};
+  const remaining: NonNullable<RetentionPurgeResult["remaining"]> = {};
+  const cutoffs = retentionCutoffs(config, now);
 
   async function del(
     key: RetentionKey,
     run: (cutoff: Date) => Promise<number>
   ) {
-    const days = config[key];
-    if (days == null) return;
-    const n = await run(cutoffDate(days, now));
+    const cutoff = cutoffs[key];
+    if (!cutoff) return;
+    const n = await run(cutoff);
     if (n > 0) deleted[key] = n;
   }
 
@@ -64,7 +91,7 @@ export async function purgeAccountRetention(
   });
 
   await del("personSightings", async (cutoff) => {
-    const where = { accountId, seenAt: { lt: cutoff } };
+    const where = personSightingsWhere(accountId, cutoff);
     const blobs = await prisma.personSighting.findMany({
       where: { ...where, snapshotBlob: { not: null } },
       select: { snapshotBlob: true },
@@ -73,6 +100,29 @@ export async function purgeAccountRetention(
     const r = await prisma.personSighting.deleteMany({ where });
     await deleteBlobs(blobs.map((b) => b.snapshotBlob));
     return r.count;
+  });
+
+  // Nach dem Schritt „Personen“: nur Sichtungen ohne Person, die juenger
+  // als dessen Frist und aelter als die eigene sind. Am Eingang einer
+  // Sichtung (Ueberwachungs-Alarm) aendert das nichts.
+  await del("personSightingsUnknown", (cutoff) => {
+    const where = unknownSightingsWhere(accountId, cutoff);
+    return deleteInBatches(accountId, "personSightingsUnknown", budget, remaining, {
+      find: async (take) =>
+        (
+          await prisma.personSighting.findMany({
+            where,
+            select: { id: true, snapshotBlob: true },
+            orderBy: { seenAt: "asc" },
+            take,
+          })
+        ).map((r) => ({ id: r.id, blob: r.snapshotBlob })),
+      remove: async (ids) => (await prisma.personSighting.deleteMany({ where: { ...where, id: { in: ids } } })).count,
+      existing: async (ids) =>
+        (await prisma.personSighting.findMany({ where: { id: { in: ids } }, select: { id: true } })).map((r) => r.id),
+      count: () => prisma.personSighting.count({ where }),
+      dropBlobs: deleteBlobs,
+    });
   });
 
   await del("cameraEvents", async (cutoff) => {
@@ -85,15 +135,37 @@ export async function purgeAccountRetention(
   await del("scans", async (cutoff) => {
     // Snapshots haengen per Cascade am Scan; ihre Blobs vorher einsammeln.
     const blobs = await prisma.scanSnapshot.findMany({
-      where: { accountId, blobPathname: { not: null }, scan: { scanTime: { lt: cutoff } } },
+      where: scanSnapshotBlobsWhere(accountId, cutoff),
       select: { blobPathname: true },
       take: BLOB_BATCH,
     });
     const r = await prisma.scan.deleteMany({
-      where: { accountId, scanTime: { lt: cutoff } },
+      where: scansWhere(accountId, cutoff),
     });
     await deleteBlobs(blobs.map((b) => b.blobPathname));
     return r.count;
+  });
+
+  // Nach dem Schritt „Scans“: nur das Foto, der Scan-Eintrag bleibt
+  // (ScanSnapshot haengt am Scan, nicht umgekehrt).
+  await del("scanSnapshots", (cutoff) => {
+    const where = scanSnapshotsWhere(accountId, cutoff);
+    return deleteInBatches(accountId, "scanSnapshots", budget, remaining, {
+      find: async (take) =>
+        (
+          await prisma.scanSnapshot.findMany({
+            where,
+            select: { id: true, blobPathname: true },
+            orderBy: { capturedAt: "asc" },
+            take,
+          })
+        ).map((r) => ({ id: r.id, blob: r.blobPathname })),
+      remove: async (ids) => (await prisma.scanSnapshot.deleteMany({ where: { ...where, id: { in: ids } } })).count,
+      existing: async (ids) =>
+        (await prisma.scanSnapshot.findMany({ where: { id: { in: ids } }, select: { id: true } })).map((r) => r.id),
+      count: () => prisma.scanSnapshot.count({ where }),
+      dropBlobs: deleteBlobs,
+    });
   });
 
   await del("irrigationRuns", async (cutoff) => {
@@ -174,7 +246,7 @@ export async function purgeAccountRetention(
   });
   if (actions.count > 0) deleted.deviceActions = actions.count;
 
-  return { accountId, deleted };
+  return Object.keys(remaining).length > 0 ? { accountId, deleted, remaining } : { accountId, deleted };
 }
 
 /**
@@ -190,10 +262,11 @@ export async function purgeAllAccountsRetention(now = new Date()): Promise<{
   });
 
   const results: RetentionPurgeResult[] = [];
+  const budget: RetentionBudget = { untilMs: Date.now() + RETENTION_BUDGET_MS };
   for (const a of accounts) {
     const config = parseDataRetention(a.dataRetention);
-    const r = await purgeAccountRetention(a.id, config, now);
-    if (Object.keys(r.deleted).length > 0) results.push(r);
+    const r = await purgeAccountRetention(a.id, config, now, budget);
+    if (Object.keys(r.deleted).length > 0 || r.remaining) results.push(r);
   }
 
   return { accounts: accounts.length, results };

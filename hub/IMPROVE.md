@@ -1591,3 +1591,64 @@ Prüfung: Typprüfung Hub und Cloud ohne Fehler, Hub-Tests 890 (889 grün, 1 üb
 - SQL: Verteilung von faceUpscaled, faceSize und faceMargin bei Treffern, Anteil lernbarer Treffer.
 - Vergleiche mit der Zeit davor: Größen von small_keep stehen bei 4K jetzt etwa doppelt so hoch, „[face] zoom miss“ erscheint je Bild für beide Wege.
 - Sind die Zähler eindeutig: den zweiten Weg in on abschalten (Rechenzeit).
+
+## 2026-11-26 (Gesamtprüfung Hub und Kamera-Erkennung, Speicher und Cloud-Last: Vorschaubilder bei Bewegung, Parkmeldung, Hub-Status, Löschfristen, Gesichter-Galerie, Personal-Abgleich)
+
+Entscheidungen des Betreibers vom 25.11.2026: „Vorschaubilder bei reiner Bewegung seltener speichern: höchstens alle 5 Minuten und in 960 Pixeln, bei Person und Fahrzeug bleibt alles, wie es ist“ (Ja), „Unbekannte Personen kürzer aufbewahren“ (7 Tage) und „Fotos vom Drehkreuz-Scan kürzer aufbewahren“ (90 Tage). Vor dem ersten Löschen fragt der Betreiber im Chat nach; dieser Stand baut nur die Möglichkeit, eingestellt ist keine Frist.
+
+**Befund**
+
+- PERF-1/ERG-5: Jede rohe MOTION- oder ANIMAL-Flanke holte ein Anzeige-Bild nach Camera.snapshot, gedrosselt nur auf 30 s je Kamera, mit 1280 px bei Qualität 82 (34 bis 340 KB, im Mittel 163 KB). CameraEvent 17. bis 23.11.: im Mittel 2.673 MOTION/ANIMAL-Starts am Tag, 1.617 davon mit mehr als 30 s Abstand je Kamera, 332 mit mehr als 5 min; rund die Hälfte zwischen 22 und 7 Uhr. Das ganze WAL lag bei rund 1,1 GB am Tag, Bewegungsbilder, Tracker-Bilder und Bildkopien zusammen bei 30 bis 55 %.
+- PERF-6/BETR-8/PARK-3: Die Parkmeldung machte alle 30 s vier Aufrufe (Park-Kameras sicherstellen mit Zugangsdaten, Meldung, ganze Kamera-Liste, Tracker-Bild), rund 11.500 am Tag. Die Antwort der Cloud wurde nicht geprüft, ein hängender Lauf konnte sich mit dem nächsten überlappen.
+- PERF-2/NETZ-9: HubAgent.status war 48,5 KB groß, davon 47,6 KB Switch-Rohdaten (Port-Listen, MAC-Tabellen), die niemand aus dem Status liest. Jede der rund 5.850 Meldungen am Tag schrieb sie neu (12,3 KB in 7 TOAST-Chunks), in zwei Anweisungen (upsert und Zusammenführen).
+- PERF-3/PERS-4: Scan-Fotos hingen per Cascade am Scan und damit an dessen 365 Tagen (ScanSnapshot 7.881 Zeilen, 3.149 MB, 7.812 älter als 90 Tage, kein Bild im Blob-Speicher). Sichtungen ohne zugeordnete Person hatten dieselbe Frist wie zugeordnete (30 Tage): 4.357 von 4.891 Sichtungen (2.146 MiB), davon 3.470 älter als 7 Tage (1.698 MiB).
+- PERF-10: Die Gesichter-Galerie (107 Merkmale, 219 KB binär) ging als JSON mit Zahlen-Arrays hinaus, rund 1,1 MB je Abruf bei gut 140 Abrufen am Tag, fast immer mit demselben Bestand.
+- PERF-12: Personal-Abgleich rund um die Uhr jede Minute (1.440 Abrufe am Tag, jeder fragt emp-control live); die Belegung fragte die Drehkreuz-Zahlen auch ab, wenn alle Räume geschlossen waren; das README-Schaubild nannte Heartbeat 30 s und Task-Abruf 2 s; drei seltene Abfragen luden ganze Zeilen samt Bild oder Status.
+
+**Änderungen**
+
+Hub, Vorschaubild (`camera-poll-rules.ts`, `image-rules.ts`, `image.ts`, `cameras.ts`, `improve-log.ts`):
+- Die bestehende Drossel snapshotJobFor entscheidet über die reinen Funktionen autoSnapshotDue und snapshotPlan. Reine Bewegung (MOTION oder ANIMAL, solange an der Kamera weder Person noch Fahrzeug aktiv ist, im letzten Zustand stand oder im Nachlauf eines offenen Ereignisses ist: personOrVehicleActive) holt ein Bild höchstens alle 300 s, sobald eines angekommen ist; das erste nach dem Start geht sofort, bis dahin gilt 30 s.
+- Das Vorschaubild bei reiner Bewegung hat 960 px und Qualität 70 und wird immer verkleinert, auch unter 200 KB (shrinkNeeded, minBytes). Alle anderen Bildwege behalten 1280 px, Qualität 82 und die 200-KB-Schranke.
+- Schalter `HUB_MOTION_SNAPSHOT_MIN_S` (300) und `HUB_MOTION_SNAPSHOT_MAX_PX` (960); je 0 bedeutet das Verhalten vor diesem Paket.
+- Zähler `camera.preview_upload`, `camera.preview_bytes`, `camera.preview_skip`; die Fehlerzeile nennt den Kamera-Namen.
+- Unverändert: Personen- und Fahrzeug-Sichtungen, Kennzeichen-Burst, CAMERA_SNAPSHOT, SCAN_SNAPSHOT, DoorBird, Halteverbot, Wächter, Takt des Tracker-Bilds.
+
+Hub, Parkmeldung (`parking-rules.ts`, `parking.ts`, `index.ts`):
+- reportParking liegt in parking.ts. ensureDue: Park-Kameras werden beim Start, bei geändertem Fingerabdruck (id, ip, port, channel, username, Passwort gesetzt ja oder nein) und sonst stündlich sichergestellt.
+- Die Kamera-Nummer kommt aus cameraIdByHost; fehlt sie, lädt der Hub die Kamera-Liste neu, höchstens alle 5 min.
+- Ein Lauf zur Zeit (Zähler `parking.busy`), `res.ok` wird geprüft (`parking.report_fail` statt der improve-Zeile `parking.fail`), Fehler und Erholung je einmal im Log. Neu auch `parking.frame`, `parking.frame_nocam`, `parking.report_skip`.
+- Vorbereitet, ab Werk ohne Wirkung: `HUB_PARKING_IDLE_REPORT_S` (30 = jede Meldung) und `HUB_PARKING_FRAME_IDLE_S` (0 = Bild bei jedem Lauf).
+
+Cloud, Hub-Status (`src/lib/hub-status.ts`, `src/lib/hub-agent-status.ts`, Routen heartbeat, parking, switch):
+- status.snmp enthält je Switch nur die Kurzfassung (snmpStatusSummary: host, sysName, polledAt, ports, portsUp, macs, error). Der Abgleich in die Switch-Tabellen bekommt weiter die vollen Listen.
+- writeHubAgentStatus schreibt jede Meldung in einer parametrisierten Anweisung INSERT … ON CONFLICT … DO UPDATE mit Konto-Filter und gibt nur die id zurück; jeder Schreiber ändert nur seinen Schlüssel (mergeHubStatus als reine Regel, in SQL gleich umgesetzt). Ein alter Status mit Rohdaten wird beim nächsten Schreiben gekürzt, ohne Migration. Die Antworten der Routen bleiben gleich.
+
+Cloud, Löschfristen (`data-retention-config.ts`, `data-retention-rules.ts`, `data-retention-batches.ts`, `data-retention.ts`, Karte Löschfristen):
+- Teil-Fristen „Unbekannte Personen“ (personSightingsUnknown) und „Scan-Fotos“ (scanSnapshots), ab Werk null („Wie Personen“, „Wie Scans“) und damit ohne eigenen Lösch-Schritt.
+- retentionCutoffs: Ohne die neuen Schlüssel ergeben sich exakt die bisherigen Stichtage und Bedingungen. Eine Teil-Frist läuft nur, wenn sie kürzer ist als die übergeordnete.
+- Mit gesetztem Wert: Löschen in Portionen zu 500 über die IDs, höchstens 2.000 je Schritt und Lauf, innerhalb von 90 s; bei Scan-Fotos nur das Foto (der Scan bleibt), bei Sichtungen nur die ohne zugeordnete Person. Ein Rest steht im Ergebnis und im Cloud-Log („[retention] … übrig“).
+
+Gesichter-Galerie (`src/lib/face-gallery-rules.ts`, Route person-embeddings, `hub/src/gallery-rules.ts`, `hub/src/face.ts`):
+- Version aus Anzahl, höchster id, jüngstem createdAt der Merkmale und jüngstem updatedAt der aktiven Personen. Mit `?v=` und gleichem Bestand antwortet die Route `{ unchanged: true, version }`, mit `?enc=b64` kommen die Merkmale als Base64 (Float32 LE); ohne Parameter wie bisher.
+- Der Hub merkt sich die Version, holt stündlich und nach einer unpassenden Antwort den ganzen Bestand und nimmt Base64 und Zahlen-Array an. Zähler `face.gallery_full`, `face.gallery_unchanged`, `face.gallery_bytes`, `face.gallery_dropped`.
+
+Personal und Belegung (`staff-sync-rules.ts`, `staff.ts`, `occupancy-rules.ts`, `occupancy.ts`, `README.md`):
+- Nachts (23 bis 6 Uhr Ortszeit) alle 4 min, wenn niemand eingestempelt ist und der letzte Abruf geklappt hat. Die Personal-Übersicht gilt dann erst ab 8 statt 5 min als veraltet (staffStaleAfterMs), damit ein Ausfall sie nachts nie früher veraltet als im Minuten-Takt. Nach einem Fehlschlag nachts nach 15 s erneut, solange der Stand nicht veraltet ist, danach jede Minute. Abstand mit der monotonen Uhr ab dem Start des letzten Abrufs, höchstens ein Takt.
+- Kein Drehkreuz-Abruf der Belegung, wenn der Takt nichts misst (Zähler `occupancy.areas_skip`); auf Nachfrage im Chat weiter.
+- README-Schaubild mit den Standardwerten des Codes; drei Abfragen holen nur die nötigen Spalten.
+
+Cloud, Räume (`src/components/raeume/shared.tsx`, `room-summary.ts`, `room-widgets.tsx`): Der Hinweis „Kamera ohne Bild“ und das Abzeichen „Live“ der Kachel gelten ab 10 statt 5 min (SNAPSHOT_FRESH_MS), weil das Vorschaubild bei reiner Bewegung bis zu 5 min alt sein darf. Die Karte Löschfristen sagt bei den Teil-Fristen, dass sie nur kürzer wirken.
+
+Prüfung: Typprüfung Hub und Cloud ohne Fehler, ESLint ohne Befund. Hub-Tests 943 (942 grün, 1 übersprungen). Cloud-Tests data-retention-batches, data-retention-rules, face-gallery-rules, hub-agent-status, hub-status: 39 grün. Wegwerf-Postgres 16: 1.500 Zufallsfälle SQL gleich mergeHubStatus, 1.500 gleichzeitige Schreibungen ohne Verlust, WAL je Parkmeldung 12,3 → 1,5 KB (synthetischer Status). 20.000 Konfigurationen ohne die neuen Schlüssel: 0 Abweichungen der Stichtage, 0 neue Lösch-Schritte. Simulation: reine Bewegung 9 → 3 Vorschaubilder in 135 s; Bewegung neben einer Person, Fahrzeug, „Person vor Fahrzeug“ und Standard mit denselben Uploads und Bildabrufen wie vorher; mit `HUB_MOTION_SNAPSHOT_MIN_S=0` dieselben Zeitpunkte wie vorher; Parken: Sicherstellen 6 → 1, ein HTTP 500 wird einmal geloggt. Aus zwei Blickwinkeln gegengelesen, sechs Punkte nachgebessert (Bewegung neben Person oder Fahrzeug, kleine Nachtbilder, Personal-Abgleich bei gestellter Uhr und nach Fehlschlägen, Testlücken), danach unabhängig nachgeprüft und drei weitere Punkte behoben (Grenze zum Veralten im Nacht-Takt, Frischegrenze der Raum-Kacheln, Hinweis zu Teil-Fristen). Nachstellung des Personal-Abgleichs: Ausfälle von 75 bis 239 s in jeder Lage nach dem letzten guten Abruf machen die Übersicht nie veraltet, ein Ausfall von einer Stunde nie früher als im Minuten-Takt.
+
+**Nächster Schritt** (nach 7 Tagen Betrieb)
+
+- improve.jsonl: `camera.preview_upload` je Tag (vorher 1.600 bis 2.700 Bewegungsbilder, erwartet einige Hundert), `camera.preview_bytes / camera.preview_upload` deutlich unter 163 KB, `camera.snapshot_fail`. Kameras mit einer Person ohne Gesicht behalten den 30-s-Takt.
+- Parkmeldung: `parking.report` und `parking.frame` je etwa 2.880 am Tag wie vorher; `parking.report_fail`, `parking.busy`, `parking.frame_nocam` etwa 0.
+- Vercel: /api/hub/cameras/ensure von etwa 2.880 auf etwa 24 am Tag, GET /api/hub/cameras rund 2.880 weniger, /api/hub/staff etwa 1.125 statt 1.440.
+- Neon: `octet_length(status::text)` von HubAgent unter 2.000 nach der ersten Meldung; Zuwachs der TOAST-Tabellen von HubAgent und Camera je Stunde; WAL am Tag (vorher rund 1,1 GB).
+- Galerie: `face.gallery_unchanged` etwa 120 am Tag, `face.gallery_full` etwa 24 plus Änderungen, `face.gallery_bytes` unter 10 MB am Tag, `face.gallery_dropped` 0.
+- Galerie: Das Auslösen eines Shelly an einer erkannten Person ändert updatedAt der Person und damit die Version; zählen, wie oft `face.gallery_full` deshalb kommt, und gegebenenfalls nur Namen, Liste und Aktiv-Stand in die Version nehmen.
+- Löschfristen: vor dem Eintragen die Zahl der betroffenen Zeilen und MB für 7 und 90 Tage abfragen, im Chat nachfragen, erst dann 7 bzw. 90 Tage wählen. Danach `deleted.personSightingsUnknown` und `deleted.scanSnapshots` je Nacht (höchstens 2.000), der Rest ist nach etwa 2 bzw. 4 Nächten abgearbeitet.
+- Ob `HUB_PARKING_IDLE_REPORT_S` und `HUB_PARKING_FRAME_IDLE_S` eingeschaltet werden, entscheidet der Betreiber; ein Bild-Abstand bis 240 s hält „Live“ auf der Parkfläche.

@@ -19,8 +19,11 @@ const retentionPatchSchema = z
   .object({
     vehicleSightings: dayOrNull.optional(),
     personSightings: dayOrNull.optional(),
+    // Teil-Fristen: null = keine eigene Frist (es gilt die übergeordnete).
+    personSightingsUnknown: dayOrNull.optional(),
     cameraEvents: dayOrNull.optional(),
     scans: dayOrNull.optional(),
+    scanSnapshots: dayOrNull.optional(),
     irrigationRuns: dayOrNull.optional(),
     automationRuns: dayOrNull.optional(),
     emailSends: dayOrNull.optional(),

@@ -4,6 +4,14 @@
 
 import { Notice } from "@/components/ui/notice";
 
+/**
+ * Ab diesem Alter gilt das Kachelbild einer Kamera als alt (Raum-Übersicht,
+ * Abzeichen „Live“). Bei reiner Bewegung schickt der Hub höchstens alle
+ * 5 Minuten ein neues Bild (HUB_MOTION_SNAPSHOT_MIN_S); die Grenze liegt mit
+ * Abstand darüber.
+ */
+export const SNAPSHOT_FRESH_MS = 10 * 60_000;
+
 const DEVICE_TYPE_LABELS: Record<string, string> = {
   RASPBERRY_PI: "Raspberry Pi",
   SHELLY: "Shelly",

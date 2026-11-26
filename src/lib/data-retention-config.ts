@@ -10,8 +10,10 @@ import type { Prisma } from "@prisma/client";
 export const RETENTION_KEYS = [
   "vehicleSightings",
   "personSightings",
+  "personSightingsUnknown",
   "cameraEvents",
   "scans",
+  "scanSnapshots",
   "irrigationRuns",
   "automationRuns",
   "emailSends",
@@ -23,16 +25,42 @@ export const RETENTION_KEYS = [
 
 export type RetentionKey = (typeof RETENTION_KEYS)[number];
 
+/**
+ * Teil-Fristen: Sie gelten für einen Teil der Daten eines anderen
+ * Schlüssels und können dessen Frist nur verkürzen. null heißt hier
+ * nicht „unbegrenzt“, sondern „keine eigene Frist“: Es gilt die Frist des
+ * übergeordneten Schlüssels, und es läuft kein eigener Lösch-Schritt.
+ *  - personSightingsUnknown: Sichtungen ohne zugeordnete Person (Teil von personSightings).
+ *  - scanSnapshots: nur das Kamerafoto zum Scan, der Scan-Eintrag bleibt (Teil von scans).
+ */
+export const RETENTION_PARENT = {
+  personSightingsUnknown: "personSightings",
+  scanSnapshots: "scans",
+} as const satisfies Partial<Record<RetentionKey, RetentionKey>>;
+
+export type SubRetentionKey = keyof typeof RETENTION_PARENT;
+
+export function isSubRetentionKey(key: RetentionKey): key is SubRetentionKey {
+  return Object.prototype.hasOwnProperty.call(RETENTION_PARENT, key);
+}
+
 export type DataRetentionConfig = {
   [K in RetentionKey]: number | null;
 };
 
-/** Sinnvolle Defaults (Tage) – DSGVO-orientiert, Historie bleibt nutzbar. */
+/**
+ * Sinnvolle Defaults (Tage) – DSGVO-orientiert, Historie bleibt nutzbar.
+ * Die Teil-Fristen stehen auf null (keine eigene Frist): Ein Konto ohne
+ * gespeicherten Wert löscht damit genau das, was die übergeordnete Frist
+ * löscht. Ein Wert wird nur von Hand in den Einstellungen gesetzt.
+ */
 export const DEFAULT_DATA_RETENTION: DataRetentionConfig = {
   vehicleSightings: 30,
   personSightings: 30,
+  personSightingsUnknown: null,
   cameraEvents: 14,
   scans: 365,
+  scanSnapshots: null,
   irrigationRuns: 365,
   automationRuns: 90,
   emailSends: 180,
@@ -54,6 +82,11 @@ export const RETENTION_LABELS: Record<
     label: "Personen",
     description: "Personen-Historie inkl. Face-Snaps",
   },
+  personSightingsUnknown: {
+    label: "Unbekannte Personen",
+    description:
+      "Löscht Sichtungen ohne zugeordnete Person samt Bild und Gesichtsmerkmal; zugeordnete und gesperrte Personen behalten die Frist „Personen“. Wirkt nur, wenn kürzer als „Personen“.",
+  },
   cameraEvents: {
     label: "Kamera-Ereignisse",
     description: "MOTION/PERSON/VEHICLE-Events vom Hub",
@@ -61,6 +94,10 @@ export const RETENTION_LABELS: Record<
   scans: {
     label: "Scans",
     description: "Zutrittsscan-Protokoll",
+  },
+  scanSnapshots: {
+    label: "Scan-Fotos",
+    description: "Löscht nur das Kamerafoto zum Scan; der Scan-Eintrag bleibt bis zur Frist „Scans“. Wirkt nur, wenn kürzer als „Scans“.",
   },
   irrigationRuns: {
     label: "Bewässerung",
@@ -103,6 +140,14 @@ export const RETENTION_DAY_OPTIONS = [
   { value: 180, label: "180 Tage" },
   { value: 365, label: "365 Tage" },
 ] as const;
+
+/**
+ * Beschriftung der Auswahl „null“: bei Teil-Fristen „Wie …“ (Frist des
+ * übergeordneten Schlüssels), sonst „Unbegrenzt“.
+ */
+export function retentionNullLabel(key: RetentionKey): string {
+  return isSubRetentionKey(key) ? `Wie „${RETENTION_LABELS[RETENTION_PARENT[key]].label}“` : "Unbegrenzt";
+}
 
 function isRetentionDays(v: unknown): v is number | null {
   if (v === null) return true;

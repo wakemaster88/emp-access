@@ -18,6 +18,7 @@ import {
   RETENTION_KEYS,
   RETENTION_LABELS,
   RETENTION_DAY_OPTIONS,
+  retentionNullLabel,
   type DataRetentionConfig,
   type RetentionKey,
 } from "@/lib/data-retention-config";
@@ -102,7 +103,8 @@ export function DataRetentionCard({ initial }: Props) {
                   <SelectContent>
                     {RETENTION_DAY_OPTIONS.map((opt) => (
                       <SelectItem key={optionValue(opt.value)} value={optionValue(opt.value)}>
-                        {opt.label}
+                        {/* Teil-Fristen: null = Frist des übergeordneten Bereichs, nicht unbegrenzt. */}
+                        {opt.value == null ? retentionNullLabel(key) : opt.label}
                       </SelectItem>
                     ))}
                   </SelectContent>

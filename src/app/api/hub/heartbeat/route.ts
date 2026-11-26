@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
-import { Prisma } from "@prisma/client";
-import { mergeHubAgentStatus } from "@/lib/hub-agent-status";
+import { writeHubAgentStatus } from "@/lib/hub-agent-status";
 import { parseSentinelReport } from "@/lib/hub-sentinel";
 
 /**
  * Heartbeat des lokalen Hubs. Auth per Account-API-Token (Bearer/`?token=`).
  * Upsert per (accountId, name); liefert die Anzahl offener Tasks zurueck,
- * damit der Hub sein Poll-Intervall dynamisch verkuerzen kann.
+ * damit der Hub sein Poll-Intervall dynamisch verkuerzen kann. Mit
+ * Status-Teilen schreibt eine einzige Anweisung Zeile und Status
+ * (`writeHubAgentStatus`).
  */
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
   const sentinel = parseSentinelReport(body.sentinel, new Date()) ?? undefined;
 
   // Nur die gemeldeten Teile von status ersetzen, die uebrigen (z. B. snmp
-  // vom Switch-Upload) bleiben stehen.
+  // vom Switch-Upload, parking von der Parkmeldung) bleiben stehen.
   const statusPatch: Record<string, unknown> | undefined =
     parking || system || repoAccess || sentinel
       ? {
@@ -50,30 +51,24 @@ export async function POST(request: NextRequest) {
         }
       : undefined;
 
-  const agent = await db.hubAgent.upsert({
-    where: { accountId_name: { accountId: account.id, name } },
-    create: {
-      name,
-      hostname: body.hostname || null,
-      version: body.version || null,
-      modules: body.modules ?? undefined,
-      ...(statusPatch ? { status: statusPatch as Prisma.InputJsonValue } : {}),
-      lastSeenAt: new Date(),
-      accountId: account.id,
-    },
-    update: {
-      hostname: body.hostname || null,
-      version: body.version || null,
-      modules: body.modules ?? undefined,
-      lastSeenAt: new Date(),
-    },
-    select: { id: true },
-  });
-  if (statusPatch) await mergeHubAgentStatus(db, account.id, name, statusPatch);
+  const hostname = typeof body.hostname === "string" && body.hostname ? body.hostname : null;
+  const version = typeof body.version === "string" && body.version ? body.version : null;
+  const modules = body.modules ?? undefined;
+
+  const agentId = statusPatch
+    ? await writeHubAgentStatus(db, account.id, name, statusPatch, { hostname, version, modules })
+    : (
+        await db.hubAgent.upsert({
+          where: { accountId_name: { accountId: account.id, name } },
+          create: { name, hostname, version, modules, lastSeenAt: new Date(), accountId: account.id },
+          update: { hostname, version, modules, lastSeenAt: new Date() },
+          select: { id: true },
+        })
+      ).id;
 
   const pendingTasks = await db.hubTask.count({
     where: { accountId: account.id, status: "PENDING" },
   });
 
-  return NextResponse.json({ ok: true, agentId: agent.id, pendingTasks });
+  return NextResponse.json({ ok: true, agentId, pendingTasks });
 }

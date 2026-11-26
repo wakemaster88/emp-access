@@ -40,9 +40,27 @@ const advance = (ms: number) => {
 const noProgram = () => {
   throw new Error("im Test gesperrt");
 };
+/**
+ * Ausnahmen, die ein Test setzt: Attrappe je Programm, nur ueber execFile
+ * (so ruft image.ts `sips`). Sie bekommt die Argumente; ohne Eintrag
+ * scheitert der Aufruf wie alle anderen.
+ */
+const programs = new Map<string, (args: string[]) => void>();
+const execFileStub = (file: unknown, args: unknown, ...rest: unknown[]) => {
+  const fake = typeof file === "string" ? programs.get(file) : undefined;
+  if (!fake) return noProgram();
+  const done = rest.find((r) => typeof r === "function") as ((err: Error | null, out?: unknown) => void) | undefined;
+  let err: Error | null = null;
+  try {
+    fake(Array.isArray(args) ? args.map(String) : []);
+  } catch (e) {
+    err = e instanceof Error ? e : new Error(String(e));
+  }
+  setImmediate(() => done?.(err, { stdout: "", stderr: "" }));
+};
 Object.assign(childProcess, {
   exec: noProgram,
-  execFile: noProgram,
+  execFile: execFileStub,
   execSync: noProgram,
   execFileSync: noProgram,
   spawn: noProgram,
@@ -189,6 +207,7 @@ cloud.server.on("request", (req, res) => {
 
 let hub: typeof import("./cameras.js");
 let STATE: (typeof import("./state.js"))["STATE"];
+let improveLog: typeof import("./improve-log.js");
 let marksFile = "";
 /** Was C laut Merker beim Start schon aussteht. */
 const C_DOWN_SINCE = T0 - 3 * 3_600_000;
@@ -273,6 +292,7 @@ before(async () => {
 
   hub = await import(pathToFileURL(path.join(hubDir, "src", "cameras.ts")).href);
   ({ STATE } = await import(pathToFileURL(path.join(hubDir, "src", "state.ts")).href));
+  improveLog = await import(pathToFileURL(path.join(hubDir, "src", "improve-log.ts")).href);
 
   // Erster Takt: A und D bis H antworten, B und C lehnen ab.
   B.mode = "fail";
@@ -388,7 +408,7 @@ test("Anzeige-Bild ohne Cloud: 30 s lang kein zweites, und je Grund steht alle 5
   cloud.snapshotStatus = 500;
   await motionAfter(0);
   assert.equal(snaps(), 1);
-  assert.deepEqual(logged(/^Auto-Snapshot/), ["Auto-Snapshot Kamera 1 fehlgeschlagen: Snapshot-Upload fehlgeschlagen: HTTP 500"]);
+  assert.deepEqual(logged(/^Auto-Snapshot/), ["Auto-Snapshot A (Kamera 1) fehlgeschlagen: Snapshot-Upload fehlgeschlagen: HTTP 500"]);
   // Das Bild ist geholt, auch wenn die Cloud es nicht nahm: 30 s lang kein neues.
   await motionAfter(4);
   await motionAfter(30);
@@ -410,6 +430,79 @@ test("Anzeige-Bild ohne Cloud: 30 s lang kein zweites, und je Grund steht alle 5
   await motionAfter(332);
   assert.equal(snaps(), 5);
   assert.deepEqual(failed(), ["HTTP 500", "HTTP 503", "HTTP 500"]);
+});
+
+test("Vorschaubild bei reiner Bewegung: sofort, bis eins angekommen ist, dann hoechstens alle 300 s", async () => {
+  const statusBefore = cloud.snapshotStatus;
+  cloud.snapshotStatus = 200;
+  // Abstand zum letzten (gescheiterten) Bild des vorigen Tests.
+  advance(31_000);
+  const firstAt = clock + hub.CAMERA_POLL_INTERVAL_MS;
+  const motionAfter = async (s: number) => {
+    advance(firstAt + s * 1000 - hub.CAMERA_POLL_INTERVAL_MS - clock);
+    A.motion = true;
+    await tick();
+    await quiet();
+    A.motion = false;
+    await tick();
+    await quiet();
+  };
+  const count = (key: string) => improveLog.improveSnapshot().counts[`camera.${key}`] ?? 0;
+  const [snapsBefore, uploadsBefore, skipsBefore, bytesBefore] = [A.snaps, count("preview_upload"), count("preview_skip"), count("preview_bytes")];
+  const snaps = () => A.snaps - snapsBefore;
+  const logBefore = hubLog.length;
+
+  // Bisher kam seit dem Start kein Bild von A an: sofort.
+  await motionAfter(0);
+  assert.equal(snaps(), 1);
+  // Mit 30 s Abstand waeren das zwei weitere Bilder gewesen.
+  await motionAfter(40);
+  await motionAfter(299);
+  assert.equal(snaps(), 1);
+  await motionAfter(304);
+  assert.equal(snaps(), 2);
+  assert.equal(count("preview_upload") - uploadsBefore, 2);
+  assert.equal(count("preview_skip") - skipsBefore, 2);
+  assert.equal(count("preview_bytes") - bytesBefore, 2 * JPEG.length);
+  // Keine Zeile je Bild.
+  assert.deepEqual(hubLog.slice(logBefore).filter((line) => /snapshot|vorschau|bild/i.test(line)), []);
+  cloud.snapshotStatus = statusBefore;
+});
+
+test("Vorschaubild bei reiner Bewegung: auch ein kleines Kamerabild geht verkleinert auf 960 px mit Qualitaet 70 hinaus", async () => {
+  // Wie auf dem Mac: image.ts verkleinert mit `sips` (hier eine Attrappe,
+  // die ein kleineres JPEG schreibt). Das Bild der Kamera hat nur wenige
+  // Bytes, weit unter den 200 KB, ab denen andere Bilder verkleinert werden.
+  const statusBefore = cloud.snapshotStatus;
+  cloud.snapshotStatus = 200;
+  const SMALLER = Buffer.from([0xff, 0xd8, 0xff, 0xd9, 0x00]);
+  const calls: string[][] = [];
+  programs.set("sips", (args) => {
+    calls.push(args);
+    fs.writeFileSync(args[args.length - 1], SMALLER);
+  });
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { ...platform, value: "darwin" });
+  const count = (key: string) => improveLog.improveSnapshot().counts[`camera.${key}`] ?? 0;
+  const [uploadsBefore, bytesBefore] = [count("preview_upload"), count("preview_bytes")];
+  try {
+    // Abstand zum letzten Vorschaubild von A (voriger Test): mehr als 300 s.
+    advance(310_000);
+    A.motion = true;
+    await tick();
+    await until("Vorschaubild hochgeladen", () => count("preview_upload") > uploadsBefore);
+    A.motion = false;
+    await tick();
+    await quiet();
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+    programs.delete("sips");
+    cloud.snapshotStatus = statusBefore;
+  }
+  assert.equal(calls.length, 1);
+  assert.deepEqual([calls[0][0], calls[0][1], calls[0][6], calls[0][7]], ["-Z", "960", "formatOptions", "70"]);
+  assert.equal(count("preview_upload") - uploadsBefore, 1);
+  assert.equal(count("preview_bytes") - bytesBefore, SMALLER.length);
 });
 
 test("Ausfallbeginn auf der Platte: beim Start gelesen, bei Beginn und Ende eines Ausfalls je einmal geschrieben", async () => {

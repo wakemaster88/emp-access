@@ -3,6 +3,7 @@
  * eine neue Alarm-Flanke startet, wie lange ein Ereignis nachlaeuft, was nach
  * einer gescheiterten Meldung an die Cloud nachgereicht wird.
  */
+import type { JpegSettings } from "./image-rules.js";
 
 export type SnapshotJob = "person" | "vehicle" | "auto" | null;
 
@@ -15,6 +16,20 @@ export interface SnapshotGate {
   /** Letztes reines Anzeige-Bild (Bewegung, Tier, Abruf aus der Cloud). */
   lastAutoAt: number;
   throttleMs: number;
+  /**
+   * Reine Bewegung (MOTION, ANIMAL): Mindestabstand ihrer Vorschaubilder
+   * (HUB_MOTION_SNAPSHOT_MIN_S, motionSnapshotMinMs). Fehlt er oder ist er 0,
+   * gilt `throttleMs` wie fuer alle anderen Anzeige-Bilder.
+   */
+  minMotionMs?: number;
+  /** Diese Kamera hat seit dem Start des Hubs schon ein Anzeige-Bild in die Cloud gebracht. */
+  autoSent?: boolean;
+  /**
+   * An der Kamera ist gerade eine Person oder ein Fahrzeug aktiv
+   * (personOrVehicleActive). Eine Flanke von Bewegung oder Tier ist dann
+   * keine reine Bewegung: Ihr Bild gehoert zur Person bzw. zum Fahrzeug.
+   */
+  othersActive?: boolean;
 }
 
 /**
@@ -26,15 +41,160 @@ export interface SnapshotGate {
  *   und das Anzeige-Bild dieser Bewegung sperrte vorher 30 s lang die
  *   Gesichtserkennung (Hub-Log 22.–24.11.2026: 127 von 843 Personen-
  *   Ereignissen, an Innenkameras rund jedes dritte).
- * - Alles andere (Bewegung, Tier) holt hoechstens alle `throttleMs` ein
- *   Anzeige-Bild und nie direkt nach einem Bild einer Erkennungs-Pipeline.
+ * - Alles andere holt nie direkt nach einem Bild einer Erkennungs-Pipeline
+ *   ein Anzeige-Bild; wie oft sonst, entscheidet autoSnapshotDue.
  */
 export function snapshotJobFor(type: string, g: SnapshotGate): SnapshotJob {
   if (type === "VEHICLE") return "vehicle";
   if (g.inFlight) return null;
   if (g.now - g.lastPipelineAt <= g.throttleMs) return null;
   if (type === "PERSON") return "person";
-  return g.now - g.lastAutoAt > g.throttleMs ? "auto" : null;
+  const due = autoSnapshotDue({
+    type,
+    now: g.now,
+    lastSnapshotAt: g.lastAutoAt,
+    inFlight: g.inFlight,
+    throttleMs: g.throttleMs,
+    minMotionMs: g.minMotionMs ?? 0,
+    sent: g.autoSent ?? false,
+    othersActive: g.othersActive ?? false,
+  });
+  return due ? "auto" : null;
+}
+
+/**
+ * Reine Bewegung: Die Flanke holt nur ein Vorschaubild fuer die Kachel in
+ * der Cloud. Person, Fahrzeug und Klingel haben eigene Pipelines. Bewegung
+ * oder Tier, waehrend an derselben Kamera eine Person oder ein Fahrzeug
+ * aktiv ist (`othersActive`), ist keine reine Bewegung: Das Bild zeigt die
+ * Person oder das Fahrzeug und bleibt, wie es vor dem 25.11.2026 war.
+ */
+export function isPureMotion(type: string, othersActive = false): boolean {
+  return (type === "MOTION" || type === "ANIMAL") && !othersActive;
+}
+
+/** Arten mit eigener Erkennungs-Pipeline, deren Bilder unveraendert bleiben. */
+const PIPELINE_TYPES = ["PERSON", "VEHICLE"] as const;
+
+/**
+ * Ist an der Kamera gerade eine Person oder ein Fahrzeug aktiv? `states`:
+ * Zustand dieser Abfrage; eine Art, die sie nicht gemessen hat, behaelt den
+ * bisherigen (`prev`). `open`: entprellte Ereignisse, die noch laufen (auch
+ * im Nachlauf, wenn der Alarm der Kamera gerade aus ist).
+ */
+export function personOrVehicleActive(
+  states: Record<string, boolean>,
+  prev: Record<string, boolean>,
+  open: Record<string, boolean>
+): boolean {
+  return PIPELINE_TYPES.some((t) => (states[t] ?? prev[t]) === true || open[t] === true);
+}
+
+/** Was die neuen Flanken einer Abfrage ausloesen. */
+export interface SnapshotPlan {
+  vehicle: boolean;
+  person: boolean;
+  /** Groesse und Qualitaet des Anzeige-Bilds; null = keins. */
+  auto: JpegSettings | null;
+  /** Eine Flanke reiner Bewegung, deren Bild allein der Mindestabstand zurueckhaelt (Zaehler camera.preview_skip). */
+  held: boolean;
+}
+
+/**
+ * Bild-Pipelines der neuen Flanken einer Abfrage (`edges`: Arten, die in
+ * dieser Abfrage aktiv wurden), je Flanke nach snapshotJobFor. Das
+ * Anzeige-Bild bekommt das Vorschaubild (`preview`) nur, wenn jede Flanke,
+ * die es ausloest, reine Bewegung ist; sonst das bisherige Anzeige-Bild
+ * (`display`).
+ */
+export function snapshotPlan(
+  edges: string[],
+  g: SnapshotGate,
+  preview: JpegSettings,
+  display: JpegSettings
+): SnapshotPlan {
+  const plan: SnapshotPlan = { vehicle: false, person: false, auto: null, held: false };
+  let wantAuto = false;
+  let pure = true;
+  for (const type of edges) {
+    const job = snapshotJobFor(type, g);
+    if (job === "vehicle") plan.vehicle = true;
+    else if (job === "person") plan.person = true;
+    else if (job === "auto") {
+      wantAuto = true;
+      if (!isPureMotion(type, g.othersActive)) pure = false;
+    } else if (autoSnapshotHeld(type, g)) plan.held = true;
+  }
+  if (wantAuto) plan.auto = pure ? preview : display;
+  return plan;
+}
+
+export interface AutoSnapshotGate {
+  type: string;
+  now: number;
+  /** Letztes Anzeige-Bild dieser Kamera (Bewegung, Tier, Abruf aus der Cloud); 0 = keins seit dem Start. */
+  lastSnapshotAt: number;
+  /** Personen-/Fahrzeug-Pipeline laeuft gerade. */
+  inFlight: boolean;
+  /** Abstand der Anzeige-Bilder aller anderen Arten (30 s). */
+  throttleMs: number;
+  /** Abstand der Vorschaubilder reiner Bewegung; 0 = throttleMs. */
+  minMotionMs: number;
+  /** Seit dem Start des Hubs ist schon ein Anzeige-Bild dieser Kamera in der Cloud angekommen. */
+  sent: boolean;
+  /** Person oder Fahrzeug an der Kamera aktiv (personOrVehicleActive): keine reine Bewegung. */
+  othersActive?: boolean;
+}
+
+/**
+ * Ist ein Anzeige-Bild faellig?
+ *
+ * Reine Bewegung (MOTION, ANIMAL) holt hoechstens alle `minMotionMs` ein
+ * Vorschaubild (Entscheidung des Betreibers vom 25.11.2026: hoechstens alle
+ * 5 Minuten). Fast jede Bewegung schrieb vorher ein neues Bild in die
+ * Datenbank, rund 1.600 bis 2.700 am Tag; die Kachel in der Cloud ist damit
+ * bis zu 5 Minuten alt.
+ *
+ * Solange seit dem Start des Hubs noch kein Bild dieser Kamera angekommen
+ * ist (`sent`), gilt der kurze Abstand `throttleMs`: Die Kachel bekommt ihr
+ * erstes Bild ohne Wartezeit, und ein gescheiterter Upload wird nach 30 s
+ * wiederholt statt nach 5 Minuten. Die Kachel liest Camera.snapshot; das
+ * loescht niemand, ein fehlendes Bild in der Cloud heisst also, dass der Hub
+ * seit dem Start noch keins geschickt hat.
+ *
+ * Alle anderen Arten behalten `throttleMs`, ebenso Bewegung und Tier,
+ * waehrend eine Person oder ein Fahrzeug aktiv ist (`othersActive`).
+ */
+export function autoSnapshotDue(g: AutoSnapshotGate): boolean {
+  if (g.inFlight) return false;
+  const gap = isPureMotion(g.type, g.othersActive) && g.sent ? Math.max(g.throttleMs, g.minMotionMs) : g.throttleMs;
+  return g.now - g.lastSnapshotAt > gap;
+}
+
+/**
+ * Haelt allein der Mindestabstand fuer reine Bewegung dieses Bild zurueck?
+ * (Mit dem bisherigen Abstand waere es hochgeladen worden; Zaehler
+ * camera.preview_skip.)
+ */
+export function autoSnapshotHeld(type: string, g: SnapshotGate): boolean {
+  if (!isPureMotion(type, g.othersActive) || snapshotJobFor(type, g) !== null) return false;
+  return snapshotJobFor(type, { ...g, minMotionMs: 0 }) === "auto";
+}
+
+/** Standard-Abstand der Vorschaubilder reiner Bewegung (HUB_MOTION_SNAPSHOT_MIN_S). */
+export const MOTION_SNAPSHOT_MIN_S_DEFAULT = 300;
+const MOTION_SNAPSHOT_MIN_S_LIMIT = 3_600;
+
+/**
+ * HUB_MOTION_SNAPSHOT_MIN_S in Millisekunden: ganze Sekunden von 0 bis 3600;
+ * 0 = Abstand wie bei allen anderen Anzeige-Bildern (30 s, wie vor dem
+ * 25.11.2026). Leer, keine ganze Zahl oder ausserhalb = Standard 300 s.
+ */
+export function motionSnapshotMinMs(raw: string | undefined): number {
+  const t = (raw ?? "").trim();
+  if (!/^\d+$/.test(t)) return MOTION_SNAPSHOT_MIN_S_DEFAULT * 1000;
+  const s = Number(t);
+  return s <= MOTION_SNAPSHOT_MIN_S_LIMIT ? s * 1000 : MOTION_SNAPSHOT_MIN_S_DEFAULT * 1000;
 }
 
 /**

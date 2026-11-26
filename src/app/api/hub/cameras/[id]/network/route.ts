@@ -55,7 +55,8 @@ export async function POST(
     return NextResponse.json({ error: "macAddress oder host erforderlich" }, { status: 400 });
   }
 
-  await db.camera.update({ where: { id: cameraId }, data });
+  // select {id}: RETURNING soll das Vorschaubild (Camera.snapshot) nicht zurueckuebertragen.
+  await db.camera.update({ where: { id: cameraId }, data, select: { id: true } });
 
   if (data.host && data.host !== camera.host) {
     console.log(
