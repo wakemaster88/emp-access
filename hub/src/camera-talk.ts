@@ -59,6 +59,11 @@ export interface TalkTarget {
 /** Pro Kamera eine Ansage nach der anderen – sonst überlagern sich zwei Stimmen. */
 const queue = new TalkQueue();
 
+/** Läuft oder wartet eine Ansage? Der Neustart nach einem Update wartet darauf (restartAllowed). */
+export function talkActive(): boolean {
+  return queue.total() > 0;
+}
+
 /* ---------------------------------------------------------------------------
  * Sprache erzeugen (mit kleinem Cache, `say` braucht rund eine Sekunde)
  * ------------------------------------------------------------------------- */

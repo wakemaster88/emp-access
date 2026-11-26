@@ -18,15 +18,33 @@
  *
  * Kopplungsdaten liegen nur auf dem Hub (hub/.cache/smart-pairings.json,
  * nicht im Repo), damit keine lokalen Tokens in der Cloud landen.
+ *
+ * Proben und Hersteller-Suche (smart-devices-rules.ts): Eingerichtete
+ * Kameras, DoorBirds und Switches werden nie geprobt; eine erfolglose Probe
+ * gilt je Adresse plus MAC 24 Stunden, ein Treffer 15 Minuten; hoechstens 8
+ * Proben gleichzeitig. Die Hersteller-Suche laeuft alle 6 Stunden und beim
+ * Oeffnen der Geraeteliste im Dashboard.
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
+import { improveCount } from "./improve-log.js";
 import { lastScanResult } from "./scanner.js";
 import { shellyStatus, shellySwitch, type ShellyStatus } from "./shelly.js";
+import {
+  PROBE_CONCURRENCY,
+  discoveryDue,
+  hueUnpairAllowed,
+  mapPool,
+  probeCandidates,
+  probeFresh,
+  probeKey,
+  pruneProbes,
+  type DiscoveryState,
+  type KnownHosts,
+} from "./smart-devices-rules.js";
 
 const TIMEOUT_MS = 3000;
-const DISCOVERY_TTL_MS = 10 * 60_000;
 const PAIR_FILE = path.join(CONFIG.hubDir, ".cache", "smart-pairings.json");
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
 
@@ -68,11 +86,13 @@ interface Bridge {
   port?: number;
 }
 
-let hueCloud: { at: number; list: Bridge[] } = { at: 0, list: [] };
-let nukiCloud: { at: number; list: Bridge[] } = { at: 0, list: [] };
+/** Letzte Hersteller-Suche je Anbieter; die Liste bleibt bis zur naechsten Antwort. */
+let hueCloud: DiscoveryState & { list: Bridge[] } = { at: 0, ok: false, list: [] };
+let nukiCloud: DiscoveryState & { list: Bridge[] } = { at: 0, ok: false, list: [] };
 
-async function hueDiscovery(): Promise<Bridge[]> {
-  if (Date.now() - hueCloud.at < DISCOVERY_TTL_MS) return hueCloud.list;
+async function hueDiscovery(force: boolean): Promise<Bridge[]> {
+  if (!discoveryDue(hueCloud, Date.now(), force)) return hueCloud.list;
+  improveCount("smart", "discovery_hue");
   try {
     const list = (await getJson("https://discovery.meethue.com/", undefined, 5000)) as {
       id: string;
@@ -80,28 +100,31 @@ async function hueDiscovery(): Promise<Bridge[]> {
     }[];
     hueCloud = {
       at: Date.now(),
+      ok: true,
       list: list.filter((b) => IPV4_RE.test(b.internalipaddress)).map((b) => ({ id: b.id.toLowerCase(), ip: b.internalipaddress })),
     };
   } catch {
-    hueCloud = { at: Date.now(), list: hueCloud.list };
+    hueCloud = { at: Date.now(), ok: false, list: hueCloud.list };
   }
   return hueCloud.list;
 }
 
-async function nukiDiscovery(): Promise<Bridge[]> {
-  if (Date.now() - nukiCloud.at < DISCOVERY_TTL_MS) return nukiCloud.list;
+async function nukiDiscovery(force: boolean): Promise<Bridge[]> {
+  if (!discoveryDue(nukiCloud, Date.now(), force)) return nukiCloud.list;
+  improveCount("smart", "discovery_nuki");
   try {
     const data = (await getJson("https://api.nuki.io/discover/bridges", undefined, 5000)) as {
       bridges?: { bridgeId: number; ip: string; port: number }[];
     };
     nukiCloud = {
       at: Date.now(),
+      ok: true,
       list: (data.bridges ?? [])
         .filter((b) => IPV4_RE.test(b.ip) && b.ip !== "0.0.0.0")
         .map((b) => ({ id: String(b.bridgeId), ip: b.ip, port: b.port || 8080 })),
     };
   } catch {
-    nukiCloud = { at: Date.now(), list: nukiCloud.list };
+    nukiCloud = { at: Date.now(), ok: false, list: nukiCloud.list };
   }
   return nukiCloud.list;
 }
@@ -168,8 +191,13 @@ export interface SmartDevice {
 let cache: { at: number; list: SmartDevice[] } | null = null;
 let building: Promise<SmartDevice[]> | null = null;
 const LIST_TTL_MS = 5_000;
-const probeCache = new Map<string, { at: number; hue: Awaited<ReturnType<typeof probeHue>>; tasmota: Awaited<ReturnType<typeof probeTasmota>> }>();
-const PROBE_TTL_MS = 15 * 60_000;
+/** Proben je Adresse plus MAC (probeKey): Treffer 15 min, erfolglos 24 h. */
+const probeCache = new Map<
+  string,
+  { at: number; found: boolean; hue: Awaited<ReturnType<typeof probeHue>>; tasmota: Awaited<ReturnType<typeof probeTasmota>> }
+>();
+/** Hersteller-Suche beim naechsten Aufbau der Liste erzwingen (Geraeteliste geoeffnet). */
+let discoverWanted = false;
 
 function shellyControls(ip: string, st: ShellyStatus | null): SmartControl[] {
   if (!st) return [{ key: `shelly:${ip}:0`, name: "Kanal 1", kind: "switch", on: null, reachable: false, channel: 0 }];
@@ -242,7 +270,16 @@ async function hueDevice(bridge: { id: string; ip: string; name: string | null; 
     if (Array.isArray(lights)) {
       const err = lights[0]?.error;
       if (err?.type === 1) {
-        // Kopplung wurde in der Hue-App geloescht.
+        // Benutzer abgelehnt: Die Kopplung wurde in der Hue-App geloescht, oder
+        // unter der gemerkten Adresse antwortet inzwischen eine andere Bridge.
+        // Geloescht wird nur, wenn die Bridge dort ihre eigene Kennung meldet.
+        const here = await probeHue(bridge.ip);
+        if (!hueUnpairAllowed(bridge.id, here?.id)) {
+          improveCount("smart", "hue_unpair_kept");
+          return { ...base, error: `Unter ${bridge.ip} antwortet eine andere oder keine Hue Bridge – Kopplung bleibt erhalten` };
+        }
+        improveCount("smart", "hue_unpair");
+        log(`Geräte: Hue Bridge ${bridge.ip} lehnt die Kopplung ab – Kopplung gelöscht, neu koppeln`);
         delete pairings.hue[bridge.id];
         void savePairings().catch(() => {});
         return { ...base, needsPairing: true, pairingHint: "Kopplung ungültig – neu koppeln." };
@@ -342,8 +379,42 @@ async function tasmotaPower(ip: string): Promise<boolean | null> {
   }
 }
 
+/**
+ * Eingerichtete Kameras, DoorBirds und Switches (Adressen und MACs): Diese
+ * Geraete werden nie auf Tasmota oder Hue geprobt. Jede Quelle einzeln; fehlt
+ * eine, bleiben die anderen.
+ */
+async function knownHosts(): Promise<KnownHosts> {
+  const hosts: string[] = [];
+  const macs: Array<string | null | undefined> = [];
+  try {
+    const { listCameraConfigs } = await import("./cameras.js");
+    for (const c of listCameraConfigs()) {
+      hosts.push(c.host);
+      macs.push(c.macAddress);
+    }
+  } catch {
+    // Ohne Kamera-Liste bleiben DoorBirds und Switches.
+  }
+  try {
+    const { listDoorbirdStatus } = await import("./doorbird.js");
+    for (const d of listDoorbirdStatus()) hosts.push(d.host);
+  } catch {
+    // Ohne DoorBird-Liste bleiben die anderen.
+  }
+  try {
+    const { snmpTargets } = await import("./snmp.js");
+    hosts.push(...snmpTargets());
+  } catch {
+    // Ohne Switch-Liste bleiben die anderen.
+  }
+  return { hosts, macs };
+}
+
 async function buildList(): Promise<SmartDevice[]> {
   await loadPairings();
+  const forceDiscovery = discoverWanted;
+  discoverWanted = false;
   const scan = lastScanResult().devices;
   const out: SmartDevice[] = [];
 
@@ -367,27 +438,31 @@ async function buildList(): Promise<SmartDevice[]> {
     });
   });
 
-  // Kandidaten fuer Hue/Tasmota einmal pro Viertelstunde proben.
-  const candidates = scan.filter((d) => !d.shelly && d.openPorts.includes(80));
+  // Kandidaten fuer Hue/Tasmota proben: ohne eingerichtete Geraete, mit
+  // gemerktem Ergebnis je Adresse plus MAC, hoechstens 8 gleichzeitig.
+  const { candidates, skippedKnown } = probeCandidates(scan, await knownHosts());
+  if (skippedKnown) improveCount("smart", "probe_skip_known", skippedKnown);
   const now = Date.now();
-  await Promise.all(
-    candidates.map(async (d) => {
-      const hit = probeCache.get(d.ip);
-      if (hit && now - hit.at < PROBE_TTL_MS) return;
-      const isHueVendor = /philips|signify|hue/i.test(d.vendor ?? "");
-      const hue = isHueVendor || /hue/i.test(d.hostname ?? "") ? await probeHue(d.ip) : null;
-      const tasmota = hue ? null : await probeTasmota(d.ip);
-      probeCache.set(d.ip, { at: now, hue, tasmota });
-    })
-  );
+  pruneProbes(probeCache, now);
+  const due = candidates.filter((d) => !probeFresh(probeCache.get(probeKey(d.ip, d.mac)), now));
+  if (candidates.length > due.length) improveCount("smart", "probe_skip_cached", candidates.length - due.length);
+  await mapPool(due, PROBE_CONCURRENCY, async (d) => {
+    improveCount("smart", "probe");
+    const isHueVendor = /philips|signify|hue/i.test(d.vendor ?? "");
+    const hue = isHueVendor || /hue/i.test(d.hostname ?? "") ? await probeHue(d.ip) : null;
+    const tasmota = hue ? null : await probeTasmota(d.ip);
+    if (!hue && !tasmota) improveCount("smart", "probe_miss");
+    probeCache.set(probeKey(d.ip, d.mac), { at: Date.now(), found: !!(hue || tasmota), hue, tasmota });
+  });
+  const probed = (d: { ip: string; mac: string | null }) => probeCache.get(probeKey(d.ip, d.mac));
 
   // Hue: Scan-Treffer plus Cloud-Discovery, je Bridge-ID einmal.
   const hueBridges = new Map<string, { id: string; ip: string; name: string | null; model: string | null }>();
   for (const d of candidates) {
-    const h = probeCache.get(d.ip)?.hue;
+    const h = probed(d)?.hue;
     if (h) hueBridges.set(h.id, { id: h.id, ip: d.ip, name: h.name, model: h.model });
   }
-  for (const b of await hueDiscovery()) {
+  for (const b of await hueDiscovery(forceDiscovery)) {
     if (hueBridges.has(b.id)) continue;
     const h = await probeHue(b.ip);
     if (h) hueBridges.set(h.id, { id: h.id, ip: b.ip, name: h.name, model: h.model });
@@ -401,20 +476,20 @@ async function buildList(): Promise<SmartDevice[]> {
 
   // Nuki Bridges.
   const nukiBridges = new Map<string, Bridge>();
-  for (const b of await nukiDiscovery()) nukiBridges.set(b.id, b);
+  for (const b of await nukiDiscovery(forceDiscovery)) nukiBridges.set(b.id, b);
   for (const [id, p] of Object.entries(pairings.nuki)) {
     if (!nukiBridges.has(id)) nukiBridges.set(id, { id, ip: p.ip, port: p.port });
   }
   out.push(...(await Promise.all([...nukiBridges.values()].map(nukiDevice))));
 
   // Tasmota.
-  const tasmotas = candidates.filter((d) => probeCache.get(d.ip)?.tasmota);
+  const tasmotas = candidates.filter((d) => probed(d)?.tasmota);
   const powers = await Promise.all(tasmotas.map((d) => tasmotaPower(d.ip)));
   tasmotas.forEach((d, i) => {
     out.push({
       id: `tasmota:${d.ip}`,
       vendor: "Tasmota",
-      name: probeCache.get(d.ip)?.tasmota?.name || d.hostname || `Tasmota ${d.ip}`,
+      name: probed(d)?.tasmota?.name || d.hostname || `Tasmota ${d.ip}`,
       ip: d.ip,
       mac: d.mac,
       model: null,
@@ -438,8 +513,18 @@ async function buildList(): Promise<SmartDevice[]> {
   return out;
 }
 
-export async function listSmartDevices(fresh = false): Promise<{ scannedAt: string | null; devices: SmartDevice[] }> {
+/**
+ * Liste der Geraete. `fresh`: neu aufbauen. `discover`: Geraeteliste im
+ * Dashboard geoeffnet, Hersteller-Suche jetzt (hoechstens einmal je Minute).
+ */
+export async function listSmartDevices(fresh = false, discover = false): Promise<{ scannedAt: string | null; devices: SmartDevice[] }> {
   const scannedAt = lastScanResult().lastRunAt;
+  if (discover) {
+    discoverWanted = true;
+    // Ein Aufbau laeuft schon ohne die Suche: danach neu, mit der Suche.
+    if (building) await building.catch(() => undefined);
+    fresh = true;
+  }
   if (!fresh && cache && Date.now() - cache.at < LIST_TTL_MS) return { scannedAt, devices: cache.list };
   if (!building) {
     building = buildList()

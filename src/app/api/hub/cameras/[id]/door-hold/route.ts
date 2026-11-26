@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
+import { holdPulseAnswer } from "@/lib/door-hold";
 
 /**
  * POST (Hub, Token-Auth): Rueckmeldung eines Offenhalte-Impulses.
  * Body: { pulsedAt: ISO, ok: boolean, error?: string }
  * Bei Erfolg wird doorHoldPulseAt gesetzt (und lastSeenAt, die DoorBird hat
  * geantwortet); bei Fehler nur doorHoldError. Die UI zeigt beides an.
+ * Antwort: { ok: true, until } mit dem Zielzustand (Camera.doorHoldUntil,
+ * null = aus). Der Hub beendet danach ein Offenhalten, das die Cloud nicht
+ * mehr kennt, und uebernimmt einen anderen Endzeitpunkt, auch wenn der
+ * Auftrag dazu ihn nicht erreicht hat.
  */
 export async function POST(
   request: NextRequest,
@@ -37,12 +42,12 @@ export async function POST(
   const ok = body.ok === true;
   const error = ok ? null : String(body.error ?? "Impuls fehlgeschlagen").slice(0, 300);
 
-  await db.camera.update({
+  const updated = await db.camera.update({
     where: { id: camera.id },
     data: ok
       ? { doorHoldPulseAt: pulsedAt, doorHoldError: null, lastSeenAt: pulsedAt }
       : { doorHoldError: error },
-    select: { id: true },
+    select: { doorHoldUntil: true },
   });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json(holdPulseAnswer(updated.doorHoldUntil));
 }

@@ -24,6 +24,12 @@ export interface SwitchStatusSummary {
   /** Eintraege der MAC-Tabelle. */
   macs: number;
   error: string | null;
+  /**
+   * Nur wenn gemeldet: Teilausfall der Abfrage ("fdb" = MAC-Tabelle leer
+   * geliefert, `macs` zaehlt die vorige) und Stand der MAC-Tabelle.
+   */
+  partial?: string[];
+  macsAt?: string | null;
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -55,8 +61,37 @@ export function snmpStatusSummary(switches: unknown): SwitchStatusSummary[] {
       portsUp: ports ? ports.filter((p) => isObject(p) && p.up === true).length : num(s.portsUp),
       macs: Array.isArray(s.macTable) ? s.macTable.length : num(s.macs),
       error: str(s.error),
+      ...partialOf(s),
     };
   });
+}
+
+/** Teilausfall und Stand der MAC-Tabelle, nur wenn der Hub sie meldet. */
+function partialOf(s: Record<string, unknown>): Pick<SwitchStatusSummary, "partial" | "macsAt"> {
+  const partial = Array.isArray(s.partial) ? s.partial.filter((p): p is string => typeof p === "string") : [];
+  return {
+    ...(partial.length > 0 ? { partial } : {}),
+    ...(typeof s.macsAt === "string" ? { macsAt: s.macsAt } : {}),
+  };
+}
+
+/**
+ * Ausgefallene Switches aus dem Upload (`failed`): je Eintrag Adresse und
+ * Fehlertext, Name nur, wenn der Hub ihn noch kennt. Eintraege ohne
+ * Adresse fallen weg; ein fehlender Fehlertext wird zu „keine Antwort“,
+ * damit der Abgleich den Switch sicher ueberspringt.
+ */
+export function failedSwitches(raw: unknown): Array<{ host: string; sysName: string | null; error: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(isObject)
+    .map((f) => ({
+      host: (str(f.host) ?? "").trim(),
+      sysName: str(f.sysName),
+      error: (str(f.error) ?? "").trim() || "keine Antwort",
+    }))
+    .filter((f) => f.host)
+    .slice(0, 20);
 }
 
 /** Steht unter `snmp.switches` noch ein Switch mit Port-Liste oder MAC-Tabelle? */

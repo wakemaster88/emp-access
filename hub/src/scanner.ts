@@ -30,7 +30,10 @@ import {
   type Subnet,
 } from "./netmap.js";
 import { probeShelly, type ShellyInfo } from "./shelly.js";
+import { scanStep, type ScanBaseline } from "./scanner-rules.js";
 let busy = false;
+/** Letzter guter Lauf (MACs) fuer die Erkennung eines Teilscans (scanner-rules.ts). */
+let scanBaseline: ScanBaseline | null = null;
 /** Letztes Scan-Ergebnis fuer das lokale Dashboard (nicht nur die Anzahl). */
 let lastDevices: ScannedDevice[] = [];
 let lastSubnets: SubnetSummary[] = [];
@@ -179,7 +182,7 @@ async function scanPorts(ip: string): Promise<number[]> {
 }
 
 /** Grobe Geraetetyp-Heuristik aus offenen Ports, Hostname, Hersteller und Shelly-Probe. */
-function guessDeviceType(
+export function guessDeviceType(
   ports: number[],
   hostname: string | null,
   vendor: string | null,
@@ -325,11 +328,22 @@ export async function runCloudScan(label = "Auto-Scan"): Promise<CloudScanResult
     // Die Cloud identifiziert Geraete per MAC. Erreichbare Geraete ohne MAC
     // (geroutete VLANs) gehen trotzdem mit: die Cloud markiert damit bekannte
     // Geraete mit genau dieser IP als online, legt aber nichts Neues an.
+    const upload = devices.filter((d) => d.mac || d.reachable);
+    // Weniger als die Haelfte der MACs des letzten guten Laufs: Teilscan. Die
+    // Cloud schreibt das Gesehene, zaehlt und loescht aber keine fehlenden.
+    const withMac = upload.filter((d) => d.mac).length;
+    const before = scanBaseline?.withMac ?? 0;
+    const step = scanStep(scanBaseline, withMac, Date.now());
+    scanBaseline = step.baseline;
+    if (step.partial) {
+      log(`${label}: nur ${withMac} von zuletzt ${before} MAC-Adressen – Teilscan, fehlende Geräte zählen in der Cloud nicht`);
+    }
     const res = await api("/api/hub/scan", {
       method: "POST",
       body: JSON.stringify({
         hubName: CONFIG.name,
-        devices: devices.filter((d) => d.mac || d.reachable),
+        devices: upload,
+        ...(step.partial ? { partial: true } : {}),
       }),
     });
     if (!res.ok) {

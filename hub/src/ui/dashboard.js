@@ -47,6 +47,8 @@ const state = {
   smart: null,
   smartVendor: "alle",
   smartBusy: new Set(),
+  /** Geraeteliste gerade geoeffnet: naechstes Laden mit Hersteller-Suche. */
+  smartDiscover: false,
   /** Regeln aus der Cloud (GET /api/rules -> /api/regeln). */
   rules: null,
   rulesError: null,
@@ -172,11 +174,15 @@ function clockText(s) {
   const v = a >= 3600 && a % 3600 < 60 ? `${Math.round(a / 3600)} h` : a >= 120 ? `${Math.round(a / 60)} min` : `${a} s`;
   return `${s > 0 ? "+" : "−"}${v}`;
 }
+/** Art der Abweichung (camera-clock.ts classifyClockOffset): Zeitzone/Sommerzeit oder Drift. */
+function clockKind(clock) {
+  return clock.kind === "zeitzone" ? " (Zeitzone)" : clock.kind === "drift" ? " (Drift)" : "";
+}
 /** Hinweis fuer die Zentrale, wenn eingeblendete Uhrzeiten auseinanderlaufen. */
 function clockNote(cams) {
   const off = cams.filter((c) => c.clock && Math.abs(c.clock.offsetS) >= CLOCK_WARN_S);
   if (!off.length) return "";
-  return ` · Kamera-Uhren weichen ab: ${off.map((c) => `${c.name} ${clockText(c.clock.offsetS)}`).join(", ")}`;
+  return ` · Kamera-Uhren weichen ab: ${off.map((c) => `${c.name} ${clockText(c.clock.offsetS)}${clockKind(c.clock)}`).join(", ")}`;
 }
 
 /* -------------------------------------------- Erkannte Personen (Zentrale) */
@@ -602,7 +608,10 @@ function currentView() {
 }
 
 function applyRoute() {
+  const prev = state.view;
   state.view = currentView();
+  // Geraeteliste geoeffnet: Hersteller-Suche (Hue, Nuki) beim naechsten Laden.
+  if (state.view === "geraete" && prev !== "geraete") state.smartDiscover = true;
   if (state.view !== "zentrale") stopLive();
   for (const view of VIEWS) {
     $(`view-${view}`).hidden = view !== state.view;
@@ -666,7 +675,11 @@ async function refresh() {
       wantRooms ? getJson("/api/rooms?live=1") : (state.view === "geraete" || state.view === "regeln") && !state.rooms ? getJson("/api/rooms") : null,
     ]);
     if (rooms) state.rooms = rooms;
-    if (state.view === "geraete") state.smart = await getJson("/api/smart");
+    if (state.view === "geraete") {
+      const discover = state.smartDiscover;
+      state.smartDiscover = false;
+      state.smart = await getJson(discover ? "/api/smart?discover=1" : "/api/smart");
+    }
     if (state.view === "maeher") await loadMower();
     // Geraete und Raeume zeigen die Maeher mit, ohne Karte.
     else if (state.view === "geraete" || state.view === "raeume") await loadMowerStatus();
@@ -1815,7 +1828,12 @@ function renderFocusState(d) {
     : "";
   const clk =
     c.clock && Math.abs(c.clock.offsetS) >= CLOCK_WARN_S
-      ? `<span class="badge warn" title="${esc(c.clock.ntp === false ? "NTP an der Kamera aus" : c.clock.ntpServer ? `NTP: ${c.clock.ntpServer}` : "Uhr der Kamera")}">Uhr ${clockText(c.clock.offsetS)}</span>`
+      ? `<span class="badge warn" title="${esc(
+          [
+            c.clock.ntp === false ? "NTP an der Kamera aus" : c.clock.ntpServer ? `NTP: ${c.clock.ntpServer}` : "Uhr der Kamera",
+            ...(c.clock.plan || []),
+          ].join(" · ")
+        )}">Uhr ${clockText(c.clock.offsetS)}${clockKind(c.clock)}</span>`
       : "";
   const sub =
     !mower && live.mainBroken.has(c.id)
@@ -2661,7 +2679,7 @@ function renderNetzwerk() {
         <div class="place-head"><span class="tile-ico ${s.error ? "alert" : "accent"}">${icon("switch")}</span><h3>${esc(s.sysName || s.host)}</h3><span class="host mono">${esc(s.host)}</span></div>
         ${s.error ? `<div class="chips">${badge("alert", s.error)}</div>` : `<div class="line"><span class="k">Ports aktiv</span><span class="v"><strong>${esc(s.portsUp)}</strong><span class="muted"> / ${esc(s.portsTotal)}</span></span></div><div class="meter accent"><span style="width:${p.toFixed(1)}%"></span></div>`}
         <div class="line"><span class="k">Laufzeit</span><span class="v">${esc(typeof s.uptimeS === "number" ? uptime(s.uptimeS) : "–")}</span></div>
-        <div class="line"><span class="k">MACs</span><span class="v">${esc(s.macs)}</span></div>
+        <div class="line"><span class="k">MACs</span><span class="v">${esc(s.macs)}${s.partial ? `<span class="muted"> · vorige Tabelle, Stand ${esc(ago(s.macsAt))}</span>` : ""}</span></div>
         ${vlanLine(s.host)}
         <div class="line"><span class="k">Stand</span><span class="v muted">${esc(ago(s.polledAt))}</span></div>
       </article>`;

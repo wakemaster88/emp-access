@@ -250,7 +250,7 @@ export async function pingSweep(subnets: Subnet[]): Promise<Map<string, number |
 
 // ── ARP lokal + Router ───────────────────────────────────────────────────────
 
-function parseArp(stdout: string): Map<string, { mac: string; iface: string | null }> {
+export function parseArp(stdout: string): Map<string, { mac: string; iface: string | null }> {
   const map = new Map<string, { mac: string; iface: string | null }>();
   for (const line of stdout.split("\n")) {
     // macOS: "? (192.168.1.4) at 8c:3b:ad:65:b1:0 on en0 ifscope [ethernet]"

@@ -6,8 +6,13 @@ import {
   PREFLIGHT_OK,
   RESTART_HOLD_MAX_MS,
   RESTART_POLL_MS,
+  RESTART_QUIET_MAX_MS,
   installCommand,
+  quietWaitLine,
+  restartAllowed,
+  quietStep,
   restartStep,
+  type RestartActivity,
   isPreflightRun,
   retryBlocked,
   signatureCheckEnabled,
@@ -89,4 +94,73 @@ test("Neustart nach einem Update wartet auf laufende Bewertungen des Wächters, 
   // Die Uhr springt zurueck: Die Zahl der Runden begrenzt das Warten.
   assert.equal(restartStep(1, -600_000, Math.ceil(RESTART_HOLD_MAX_MS / RESTART_POLL_MS)).then, "neustart");
   assert.equal(restartStep(1, -600_000, 10).then, "warten");
+});
+
+const idle: RestartActivity = { burstsAktiv: 0, ansageLaeuft: false, tasksLaufend: 0 };
+
+test("restartAllowed: wartet auf Kennzeichen-Burst, Ansage und Auftrag, hoechstens 2 min", () => {
+  assert.equal(RESTART_QUIET_MAX_MS, 2 * 60_000);
+  assert.deepEqual(restartAllowed({ ...idle, wartetSeitMs: 0 }), { allowed: true, waitingFor: [], timedOut: false });
+  assert.deepEqual(restartAllowed({ burstsAktiv: 1, ansageLaeuft: true, tasksLaufend: 3, wartetSeitMs: 5_000 }), {
+    allowed: false,
+    waitingFor: ["Kennzeichen-Burst", "Ansage", "Auftrag"],
+    timedOut: false,
+  });
+  assert.equal(restartAllowed({ ...idle, burstsAktiv: 2, wartetSeitMs: RESTART_QUIET_MAX_MS - 1 }).allowed, false);
+  assert.equal(restartAllowed({ ...idle, ansageLaeuft: true, wartetSeitMs: 0 }).allowed, false);
+  assert.equal(restartAllowed({ ...idle, tasksLaufend: 1, wartetSeitMs: 0 }).allowed, false);
+  assert.deepEqual(restartAllowed({ ...idle, tasksLaufend: 1, wartetSeitMs: RESTART_QUIET_MAX_MS }), {
+    allowed: true,
+    waitingFor: ["Auftrag"],
+    timedOut: true,
+  });
+});
+
+test("quietWaitLine: eine Zeile, wie lange und worauf", () => {
+  assert.equal(quietWaitLine([], 30_000, []), null);
+  assert.equal(quietWaitLine(["Auftrag"], 14_400, []), "Update: Neustart nach 14 s Warten auf Auftrag");
+  assert.equal(
+    quietWaitLine(["Kennzeichen-Burst", "Ansage", "Auftrag"], 8_000, []),
+    "Update: Neustart nach 8 s Warten auf Kennzeichen-Burst, Ansage und Auftrag"
+  );
+  assert.equal(
+    quietWaitLine(["Kennzeichen-Burst", "Auftrag"], RESTART_QUIET_MAX_MS, ["Auftrag"]),
+    "Update: Neustart nach 120 s Warten auf Kennzeichen-Burst und Auftrag – Höchstdauer 2 min erreicht, noch aktiv: Auftrag"
+  );
+});
+
+/** Schritte ablaufen lassen wie updater.ts: alle 2 s einer, `at(t)` liefert den Stand. */
+function runQuiet(at: (t: number) => RestartActivity, clock = (t: number) => t) {
+  let waitedFor: string[] = [];
+  for (let round = 0; round < 1_000; round++) {
+    const t = round * RESTART_POLL_MS;
+    const step = quietStep({ activity: at(t), waitedMs: clock(t), round, waitedFor });
+    waitedFor = step.waitedFor;
+    if (step.then === "weiter") return { t, line: step.line };
+  }
+  throw new Error("kein Ende");
+}
+
+test("quietStep: nichts laeuft – sofort weiter, ohne Zeile", () => {
+  assert.deepEqual(runQuiet(() => idle), { t: 0, line: null });
+});
+
+test("quietStep: Burst und Auftrag enden, danach weiter mit einer Zeile", () => {
+  const r = runQuiet((t) => ({ burstsAktiv: t < 6_000 ? 1 : 0, ansageLaeuft: false, tasksLaufend: t < 12_000 ? 1 : 0 }));
+  assert.deepEqual(r, { t: 12_000, line: "Update: Neustart nach 12 s Warten auf Kennzeichen-Burst und Auftrag" });
+  // Was nacheinander lief, steht in fester Reihenfolge in der Zeile.
+  const later = runQuiet((t) => ({ burstsAktiv: t >= 4_000 && t < 8_000 ? 1 : 0, ansageLaeuft: t < 4_000, tasksLaufend: 0 }));
+  assert.equal(later.line, "Update: Neustart nach 8 s Warten auf Kennzeichen-Burst und Ansage");
+});
+
+test("quietStep: hoechstens 2 min, auch bei zurueckgestellter Uhr", () => {
+  const busy = () => ({ ...idle, ansageLaeuft: true });
+  assert.deepEqual(runQuiet(busy), {
+    t: RESTART_QUIET_MAX_MS,
+    line: "Update: Neustart nach 120 s Warten auf Ansage – Höchstdauer 2 min erreicht, noch aktiv: Ansage",
+  });
+  // Uhr springt um 10 min zurueck: Die Runden begrenzen das Warten.
+  assert.equal(runQuiet(busy, (t) => t - 600_000).t, RESTART_QUIET_MAX_MS);
+  // Uhr springt vor: lieber frueher neu starten.
+  assert.equal(runQuiet(busy, (t) => t + 600_000).t, 0);
 });

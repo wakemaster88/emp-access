@@ -10,6 +10,7 @@ import {
   withActor,
 } from "@/lib/hub-task-rules";
 import { recordDeviceAction } from "@/lib/device-action-log";
+import { doorHoldTaskPayload, doorHoldTaskPlan, type DoorHoldTaskPlan } from "@/lib/door-hold";
 
 /** Tuer-Auftraege an Kamera-Tueren, die im Geraete-Protokoll stehen. */
 const LOGGED_DOOR_TASKS: Record<string, string> = {
@@ -142,20 +143,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: check.error }, { status: 400 });
   }
   let cameraName: string | null = null;
+  let holdPlan: DoorHoldTaskPlan | null = null;
   if (check.cameraId != null) {
     const camera = await db.camera.findFirst({
       where: { id: check.cameraId, accountId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, kind: true, enabled: true, doorHoldUntil: true },
     });
     if (!camera) return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 400 });
     cameraName = camera.name;
+    if (body.type === "DOORBIRD_HOLD") holdPlan = doorHoldTaskPlan(camera, body.payload);
+  }
+  if (holdPlan?.action === "ablehnen") {
+    return NextResponse.json({ error: holdPlan.error }, { status: 400 });
+  }
+  // Tor offen halten: Zielzustand wie /api/cameras/[id]/door-hold vor dem
+  // Auftrag setzen. Der Hub liest ihn aus der Antwort auf jede Impuls-Meldung
+  // und beendet ein Offenhalten, das dort nicht steht. Scheitert ein Start,
+  // setzt die Ergebnis-Route den Zielzustand davor zurueck (doorHoldRevert).
+  if (holdPlan?.action === "setzen" && check.cameraId != null) {
+    await db.camera.update({
+      where: { id: check.cameraId },
+      data: holdPlan.until
+        ? { doorHoldUntil: holdPlan.until, doorHoldPulseAt: null, doorHoldError: null }
+        : { doorHoldUntil: null, doorHoldError: null },
+      select: { id: true },
+    });
   }
 
   const by = hubTaskActor(session.session.user);
+  const payload = holdPlan ? doorHoldTaskPayload(check.payload, holdPlan) : check.payload;
   const task = await db.hubTask.create({
     data: {
       type: body.type,
-      payload: withActor(check.payload, by) as object,
+      payload: withActor(payload, by) as object,
       accountId,
     },
   });

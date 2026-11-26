@@ -927,7 +927,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       return json(res, 200, climatePayload());
     }
     if (req.method === "GET" && url.pathname === "/api/smart") {
-      return json(res, 200, await listSmartDevices(url.searchParams.get("fresh") === "1"));
+      return json(
+        res,
+        200,
+        await listSmartDevices(url.searchParams.get("fresh") === "1", url.searchParams.get("discover") === "1")
+      );
     }
 
     if (req.method === "POST" && url.pathname === "/api/smart/control") {

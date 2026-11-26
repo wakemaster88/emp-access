@@ -6,7 +6,11 @@ import { ingestHubScanDevices } from "@/lib/network-scan-ingest";
  * POST (Hub, Token-Auth): nimmt das Ergebnis eines aktiven Netzwerk-Scans
  * entgegen und upserted die Geraete per (accountId, MAC). Body:
  * { hubName?, devices: [{ ip, mac, iface?, hostname?, vendor?, openPorts?,
- *   deviceType?, responseMs?, reachable? }] }
+ *   deviceType?, responseMs?, reachable? }], partial? }
+ *
+ * `partial: true` (neuere Hubs): Der Scan hat weniger als die Haelfte der
+ * MACs des letzten guten Laufs geliefert. Gesehenes wird geschrieben,
+ * fehlende Geraete werden aber weder gezaehlt noch geloescht.
  */
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -27,7 +31,8 @@ export async function POST(request: NextRequest) {
     db,
     account.id,
     rawDevices,
-    hubName
+    hubName,
+    { partial: body.partial === true }
   );
   return NextResponse.json({ ok: true, processed, synced });
 }

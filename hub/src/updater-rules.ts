@@ -86,3 +86,82 @@ export function restartStep(busy: number, waitedMs: number, round: number): { th
   }
   return { then: "warten", line: null };
 }
+
+/**
+ * Ruhiger Moment fuer den Neustart nach einem Update: Laeuft ein
+ * Kennzeichen-Burst, eine Ansage ueber einen Kamera-Lautsprecher oder ein
+ * Auftrag aus der Cloud, wartet der Neustart, hoechstens
+ * RESTART_QUIET_MAX_MS. Ein Neustart mitten darin braeche den Burst (und
+ * damit das Tor fuer dieses Fahrzeug), die Ansage oder den Auftrag ab. Gilt
+ * nur fuer den Neustart nach einem Update; ein Neustart aus der Cloud und
+ * SIGTERM warten nicht. Danach folgt wie bisher das Warten auf den Waechter
+ * (restartStep, hoechstens 3 min).
+ */
+export const RESTART_QUIET_MAX_MS = 2 * 60_000;
+
+export interface RestartActivity {
+  /** Laufende Kennzeichen-Bursts (cameras.ts). */
+  burstsAktiv: number;
+  /** Eine Ansage laeuft oder wartet (camera-talk.ts). */
+  ansageLaeuft: boolean;
+  /** Laufende Auftraege aus der Cloud (task-guard.ts). */
+  tasksLaufend: number;
+}
+
+const QUIET_LABELS = { burst: "Kennzeichen-Burst", ansage: "Ansage", auftrag: "Auftrag" } as const;
+
+/**
+ * Darf der Neustart jetzt? Ja, wenn nichts davon laeuft oder seit
+ * `wartetSeitMs` schon 2 Minuten gewartet wurde (`timedOut`).
+ * `waitingFor`: was gerade laeuft, in fester Reihenfolge.
+ */
+export function restartAllowed(
+  a: RestartActivity & { wartetSeitMs: number }
+): { allowed: boolean; waitingFor: string[]; timedOut: boolean } {
+  const waitingFor: string[] = [];
+  if (a.burstsAktiv > 0) waitingFor.push(QUIET_LABELS.burst);
+  if (a.ansageLaeuft) waitingFor.push(QUIET_LABELS.ansage);
+  if (a.tasksLaufend > 0) waitingFor.push(QUIET_LABELS.auftrag);
+  if (waitingFor.length === 0) return { allowed: true, waitingFor, timedOut: false };
+  if (a.wartetSeitMs >= RESTART_QUIET_MAX_MS) return { allowed: true, waitingFor, timedOut: true };
+  return { allowed: false, waitingFor, timedOut: false };
+}
+
+function joinDe(parts: readonly string[]): string {
+  return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} und ${parts[parts.length - 1]}`;
+}
+
+/** Die eine Zeile nach dem Warten auf einen ruhigen Moment; null = nicht gewartet. */
+export function quietWaitLine(waitedFor: readonly string[], waitedMs: number, stillActive: readonly string[]): string | null {
+  if (waitedFor.length === 0) return null;
+  const sec = Math.round(Math.max(0, waitedMs) / 1000);
+  const base = `Update: Neustart nach ${sec} s Warten auf ${joinDe(waitedFor)}`;
+  return stillActive.length
+    ? `${base} – Höchstdauer ${RESTART_QUIET_MAX_MS / 60_000} min erreicht, noch aktiv: ${joinDe(stillActive)}`
+    : base;
+}
+
+/**
+ * Ein Schritt des Wartens auf einen ruhigen Moment, vor dem Warten auf den
+ * Waechter (restartStep) und vor der Abmeldung des Waechters bei der Cloud:
+ * Solange gewartet wird, arbeitet der Hub ganz normal weiter. Die Wartezeit
+ * zaehlt mindestens die Runden (je RESTART_POLL_MS), damit eine
+ * zurueckgestellte Uhr das Warten nicht verlaengert. `waitedFor` sammelt,
+ * worauf gewartet wurde; `line` steht beim Neustart einmal im Log.
+ */
+export function quietStep(input: {
+  activity: RestartActivity;
+  /** Seit dem ersten Schritt (Uhr). */
+  waitedMs: number;
+  /** Nummer des Schritts ab 0. */
+  round: number;
+  /** Aus dem vorigen Schritt: worauf bisher gewartet wurde. */
+  waitedFor: readonly string[];
+}): { then: "warten" | "weiter"; line: string | null; waitedFor: string[] } {
+  const waited = Math.max(input.waitedMs, input.round * RESTART_POLL_MS);
+  const quiet = restartAllowed({ ...input.activity, wartetSeitMs: waited });
+  const order = Object.values(QUIET_LABELS) as string[];
+  const waitedFor = [...new Set([...input.waitedFor, ...quiet.waitingFor])].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  if (!quiet.allowed) return { then: "warten", line: null, waitedFor };
+  return { then: "weiter", line: quietWaitLine(waitedFor, waited, quiet.timedOut ? quiet.waitingFor : []), waitedFor };
+}

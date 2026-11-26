@@ -5,11 +5,11 @@ import type { Prisma } from "@prisma/client";
 import type { tenantClient } from "@/lib/prisma";
 import { alertNewDevices } from "@/lib/new-device-alert";
 import { alertBlockedDevices } from "@/lib/blocked-devices";
+import { absentPlan, pushIpHistory, scanDiff, type ScanSeen } from "@/lib/network-scan-diff";
 
 type Db = ReturnType<typeof tenantClient>;
 
 const MAX_DEVICES_PER_SCAN = 1000;
-const MAX_IP_HISTORY = 10;
 /** Schreibvorgänge je Transaktion (eine Verbindung statt je Zeile eine Anfrage). */
 const WRITE_BATCH = 200;
 
@@ -25,26 +25,13 @@ function isVirtualIp(ip: string | null): boolean {
   return (firstOctet >= 224 && firstOctet <= 239) || ip.endsWith(".255");
 }
 
-interface DeviceInfo {
-  ip: string | null;
-  iface: string | null;
-  hostname: string | null;
-  vendor: string | null;
-  openPorts: number[];
-  deviceType: string | null;
-  responseMs: number | null;
-  reachable: boolean;
-}
-
 /**
- * Bewusst ein Type-Alias und kein Interface: nur Aliase bekommen von
+ * Ein Geraet aus dem Scan. `IpHistoryEntry` (network-scan-diff.ts) ist
+ * bewusst ein Type-Alias und kein Interface: nur Aliase bekommen von
  * TypeScript einen impliziten Index-Signature und passen damit in Prismas
  * `InputJsonValue` der JSON-Spalte `ipHistory`.
  */
-type IpHistoryEntry = {
-  ip: string;
-  seenUntil: string;
-};
+type DeviceInfo = ScanSeen;
 
 function str(v: unknown, max: number): string | null {
   return typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
@@ -58,17 +45,6 @@ function ports(v: unknown): number[] {
     .slice(0, 100);
 }
 
-function pushIpHistory(history: unknown, ip: string | null, seenUntil: Date): IpHistoryEntry[] {
-  const entries: IpHistoryEntry[] = Array.isArray(history)
-    ? (history as IpHistoryEntry[]).filter((e) => e && typeof e.ip === "string")
-    : [];
-  if (!ip) return entries;
-  return [
-    { ip, seenUntil: seenUntil.toISOString() },
-    ...entries.filter((e) => e.ip !== ip),
-  ].slice(0, MAX_IP_HISTORY);
-}
-
 /**
  * Hub-Scan-Ergebnisse (Auto-Scan oder NETWORK_SCAN-Task) in DiscoveredDevice
  * schreiben und bekannte Clients/Infra per MAC/IP aktualisieren.
@@ -76,14 +52,22 @@ function pushIpHistory(history: unknown, ip: string | null, seenUntil: Date): Ip
  * Eintraege ohne MAC kommen aus gerouteten VLANs (der Hub sieht dort keine
  * ARP-Tabelle). Sie landen nicht in DiscoveredDevice (Schluessel ist die MAC),
  * markieren aber bekannte Clients/Infra mit genau dieser IP als gesehen.
+ *
+ * Bekannte Geraete gleicht `scanDiff` (network-scan-diff.ts) mit den
+ * gespeicherten Zeilen ab: unveraenderte bekommen in einer gemeinsamen
+ * Schreibung nur `lastSeenAt`, geaenderte je Zeile alle Felder. Jede
+ * Abfrage und Schreibung ist an das Konto gebunden.
+ *
+ * `partial` (der Hub hat deutlich weniger MACs gesehen als im letzten guten
+ * Lauf, hub/src/scanner-rules.ts): fehlende Geraete werden dann weder
+ * gezaehlt noch geloescht; alles Gesehene wird wie sonst geschrieben.
  */
-const ABSENT_SCANS_BEFORE_PRUNE = 2;
-
 export async function ingestHubScanDevices(
   db: Db,
   accountId: number,
   rawDevices: unknown[],
-  hubName: string | null = null
+  hubName: string | null = null,
+  options: { partial?: boolean } = {}
 ): Promise<{ processed: number; synced: number; pruned: number }> {
   const byMac = new Map<string, DeviceInfo>();
   /** Erreichbare Geraete ohne MAC (geroutete VLANs), per IP. */
@@ -116,41 +100,44 @@ export async function ingestHubScanDevices(
   const now = new Date();
   const existing = await db.discoveredDevice.findMany({
     where: { accountId, macAddress: { in: [...byMac.keys()] } },
-    select: { macAddress: true, ipAddress: true, ipHistory: true, lastSeenAt: true },
+    select: {
+      macAddress: true,
+      ipAddress: true,
+      iface: true,
+      hostname: true,
+      vendor: true,
+      openPorts: true,
+      deviceType: true,
+      responseMs: true,
+      reachable: true,
+      absentScans: true,
+      hubName: true,
+      ipHistory: true,
+      lastSeenAt: true,
+    },
   });
-  const existingByMac = new Map(existing.map((e) => [e.macAddress, e]));
 
-  // Neue MACs gesammelt mit createMany, bekannte je Zeile (die Werte sind je
-  // Gerät verschieden) gebündelt in Transaktionen.
-  let processed = 0;
-  const fresh: Prisma.DiscoveredDeviceCreateManyInput[] = [];
-  const updates: Prisma.PrismaPromise<unknown>[] = [];
-  for (const [mac, info] of byMac) {
-    const prev = existingByMac.get(mac);
-    const ipChanged = !!prev && !!prev.ipAddress && !!info.ip && prev.ipAddress !== info.ip;
-    const common = {
-      ipAddress: info.ip,
-      iface: info.iface,
-      hostname: info.hostname,
-      vendor: info.vendor,
-      openPorts: info.openPorts,
-      deviceType: info.deviceType,
-      responseMs: info.responseMs,
-      reachable: info.reachable,
-      absentScans: 0,
-      hubName,
-      lastSeenAt: now,
-      ...(ipChanged
-        ? { ipHistory: pushIpHistory(prev.ipHistory, prev.ipAddress, prev.lastSeenAt) }
-        : {}),
-    };
-    if (prev) {
-      // updateMany: eine inzwischen gelöschte Zeile bricht den Stapel nicht ab.
-      updates.push(db.discoveredDevice.updateMany({ where: { accountId, macAddress: mac }, data: common }));
-    } else {
-      fresh.push({ macAddress: mac, firstSeenAt: now, accountId, ...common });
-    }
-    processed++;
+  // Neue MACs gesammelt mit createMany, geaenderte je Zeile (die Werte sind
+  // je Gerät verschieden), unveraenderte in einer Schreibung (nur lastSeenAt).
+  const plan = scanDiff(existing, byMac, now, hubName);
+  const processed = plan.fresh.length + plan.changed.length + plan.unchanged.length;
+  const fresh: Prisma.DiscoveredDeviceCreateManyInput[] = plan.fresh.map((f) => ({
+    macAddress: f.mac,
+    firstSeenAt: now,
+    accountId,
+    ...f.data,
+  }));
+  // updateMany: eine inzwischen gelöschte Zeile bricht den Stapel nicht ab.
+  const updates: Prisma.PrismaPromise<unknown>[] = plan.changed.map((c) =>
+    db.discoveredDevice.updateMany({ where: { accountId, macAddress: c.mac }, data: c.data }),
+  );
+  if (plan.unchanged.length > 0) {
+    updates.push(
+      db.discoveredDevice.updateMany({
+        where: { accountId, macAddress: { in: plan.unchanged } },
+        data: { lastSeenAt: now },
+      }),
+    );
   }
   if (fresh.length > 0) await db.discoveredDevice.createMany({ data: fresh, skipDuplicates: true });
   await runBatched(db, updates);
@@ -183,7 +170,7 @@ export async function ingestHubScanDevices(
       db,
       stale.map((s) =>
         db.discoveredDevice.updateMany({
-          where: { id: s.id },
+          where: { accountId, id: s.id },
           data: {
             ipAddress: null,
             ipHistory: pushIpHistory(s.ipHistory, s.ipAddress, s.lastSeenAt),
@@ -265,7 +252,7 @@ export async function ingestHubScanDevices(
       const vlan = findVlanForIp(ip, vlans);
       if (vlan && vlan.id !== c.vlanId) data.vlanId = vlan.id;
       if (data.ipAddress === undefined && data.vlanId === undefined) seenOnly.clients.push(c.id);
-      else writes.push(db.networkClient.updateMany({ where: { id: c.id }, data }));
+      else writes.push(db.networkClient.updateMany({ where: { accountId, id: c.id }, data }));
       synced++;
     }
     for (const d of managedDevices) {
@@ -273,25 +260,26 @@ export async function ingestHubScanDevices(
       if (!hit) continue;
       const ip = hit.viaMac && hit.info.ip ? hit.info.ip : d.ipAddress;
       if (ip && ip !== d.ipAddress) {
-        writes.push(db.networkDevice.updateMany({ where: { id: d.id }, data: { lastSeenAt: now, ipAddress: ip } }));
+        writes.push(db.networkDevice.updateMany({ where: { accountId, id: d.id }, data: { lastSeenAt: now, ipAddress: ip } }));
       } else {
         seenOnly.devices.push(d.id);
       }
       synced++;
     }
     if (seenOnly.clients.length > 0) {
-      writes.push(db.networkClient.updateMany({ where: { id: { in: seenOnly.clients } }, data: { lastSeenAt: now } }));
+      writes.push(db.networkClient.updateMany({ where: { accountId, id: { in: seenOnly.clients } }, data: { lastSeenAt: now } }));
     }
     if (seenOnly.devices.length > 0) {
-      writes.push(db.networkDevice.updateMany({ where: { id: { in: seenOnly.devices } }, data: { lastSeenAt: now } }));
+      writes.push(db.networkDevice.updateMany({ where: { accountId, id: { in: seenOnly.devices } }, data: { lastSeenAt: now } }));
     }
     await runBatched(db, writes);
   }
 
   // Fehlende Hosts: absentScans++. Unzugeordnete nach 2 Scans in Folge loeschen
   // (gleiche Zuordnungslogik wie in der UI: Client/Infra per MAC, IoT per IP).
-  // Nur MAC-lose Eintraege (geroutete VLANs) sagen nichts ueber fehlende MACs.
-  if (byMac.size === 0) return { processed, synced, pruned: 0 };
+  // Nur MAC-lose Eintraege (geroutete VLANs) sagen nichts ueber fehlende MACs,
+  // ebenso wenig ein Scan, den der Hub als unvollstaendig meldet.
+  if (byMac.size === 0 || options.partial) return { processed, synced, pruned: 0 };
   const missing = await db.discoveredDevice.findMany({
     where: { accountId, macAddress: { notIn: [...byMac.keys()] } },
     select: { id: true, macAddress: true, ipAddress: true, absentScans: true },
@@ -325,30 +313,16 @@ export async function ingestHubScanDevices(
       knownIot.map((d) => d.ipAddress).filter((ip): ip is string => !!ip)
     );
 
-    const toDelete: number[] = [];
-    /** Neuer Zählerstand -> Zeilen, gesammelt per updateMany. */
-    const absent = new Map<number, number[]>();
-    for (const m of missing) {
-      const next = m.absentScans + 1;
-      const isAssigned =
-        assignedMacs.has(m.macAddress.toUpperCase()) ||
-        (!!m.ipAddress && assignedIps.has(m.ipAddress));
-      if (!isAssigned && next >= ABSENT_SCANS_BEFORE_PRUNE) {
-        toDelete.push(m.id);
-        continue;
-      }
-      const ids = absent.get(next) ?? [];
-      ids.push(m.id);
-      absent.set(next, ids);
+    const { absent, toDelete } = absentPlan(missing, assignedMacs, assignedIps);
+    // Alle uebrigen fehlenden in einer Schreibung: Zaehler +1, nicht erreichbar.
+    if (absent.length > 0) {
+      await db.discoveredDevice.updateMany({
+        where: { accountId, id: { in: absent } },
+        data: { absentScans: { increment: 1 }, reachable: false },
+      });
     }
-    await runBatched(
-      db,
-      [...absent].map(([next, ids]) =>
-        db.discoveredDevice.updateMany({ where: { id: { in: ids } }, data: { absentScans: next, reachable: false } }),
-      ),
-    );
     if (toDelete.length > 0) {
-      const del = await db.discoveredDevice.deleteMany({ where: { id: { in: toDelete } } });
+      const del = await db.discoveredDevice.deleteMany({ where: { accountId, id: { in: toDelete } } });
       pruned = del.count;
     }
   }

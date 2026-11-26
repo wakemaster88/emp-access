@@ -197,3 +197,16 @@ test("TalkQueue: drei gleichzeitige Aufrufe starten nie gleichzeitig", async () 
   await Promise.all([q.run("cam", job), q.run("cam", job), q.run("cam", job)]);
   assert.equal(most, 1);
 });
+
+test("TalkQueue.total: laufende und wartende Ansagen ueber alle Kameras", async () => {
+  const q = new TalkQueue();
+  assert.equal(q.total(), 0);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const jobs = [q.run("a", () => gate), q.run("a", async () => undefined), q.run("b", () => gate)];
+  assert.equal(q.total(), 3);
+  release();
+  await Promise.all(jobs);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(q.total(), 0);
+});

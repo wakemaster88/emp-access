@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { errorText, resultBody, runGuarded } from "./task-guard.js";
+import { errorText, resultBody, runGuarded, tasksRunning, trackTask } from "./task-guard.js";
 
 test("Ergebnis eines Handlers geht unveraendert durch", async () => {
   const r = { success: true, result: { opened: true } };
@@ -46,4 +46,20 @@ test("Meldung an die Cloud: nicht serialisierbares Ergebnis geht ohne Nutzdaten 
   const failed = JSON.parse(resultBody({ success: false, result: { big: 1n } }));
   assert.equal(failed.success, false);
   assert.equal(failed.error, "Unbekannter Fehler");
+});
+
+test("trackTask: zaehlt laufende Auftraege, auch wenn einer wirft", async () => {
+  assert.equal(tasksRunning(), 0);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const a = trackTask(() => gate.then(() => "a"));
+  const b = trackTask(async () => {
+    throw new Error("weg");
+  });
+  assert.equal(tasksRunning(), 2);
+  await assert.rejects(b, /weg/);
+  assert.equal(tasksRunning(), 1);
+  release();
+  assert.equal(await a, "a");
+  assert.equal(tasksRunning(), 0);
 });

@@ -681,6 +681,70 @@ export function relocateByLoginAllowed(downForMs: number): boolean {
   return downForMs < 60 * 60_000;
 }
 
+/** Woran ein Verbindungsversuch gescheitert ist: keine Antwort (Netz) oder eine HTTP-Antwort. */
+export type ConnectFailure = "netz" | "http";
+
+/** Hoechstens eine Suche je Minute und Geraet (wie die erste Stufe der Kamera-Suche). */
+export const RELOCATE_MIN_GAP_MS = 60_000;
+
+/**
+ * Suche nach einer neuen Adresse fuer ein Geraet mit Dauerverbindung
+ * (DoorBird). Nach einem Abbruch verbindet der Hub zuerst neu: Meist ist das
+ * Geraet unter seiner Adresse weiter da. Gesucht wird erst, wenn zwei
+ * Verbindungsversuche in Folge an einem Netzfehler scheitern. Eine
+ * HTTP-Antwort kommt vom Geraet unter seiner Adresse; dann sucht er nicht.
+ * Antwortet dort ein anderes Geraet (httpAnswerOutcome), zaehlt das als
+ * Netzfehler. `fehlerArt` ist der Ausgang des letzten Versuchs (null:
+ * Verbindung stand).
+ */
+export function shouldRelocate(s: {
+  fehlversucheInFolge: number;
+  fehlerArt: ConnectFailure | null;
+  msSeitLetzterSuche: number;
+}): boolean {
+  if (s.fehlerArt !== "netz") return false;
+  if (s.fehlversucheInFolge < 2) return false;
+  return s.msSeitLetzterSuche >= RELOCATE_MIN_GAP_MS;
+}
+
+/** Wie eine HTTP-Antwort eines Geraets mit Zugangsdaten zaehlt (httpAnswerOutcome). */
+export interface HttpAnswerOutcome {
+  /** Fuer die Adresssuche (shouldRelocate): null = angenommen (2xx). */
+  fehlerArt: ConnectFailure | null;
+  /** Fuer die Sperre nach abgelehnten Zugangsdaten (auth-latch.ts authOutcome): null = keine Antwort des Geraets. */
+  authStatus: number | null;
+  /** Unter der Adresse hat ein anderes Geraet geantwortet. */
+  fremd: boolean;
+}
+
+/**
+ * Von wem kam eine HTTP-Antwort? Nach einem DHCP-Wechsel kann unter der alten
+ * Adresse eines Geraets ein anderes mit Webserver antworten (Switch, Drucker,
+ * Kamera). `geraeteMac` ist die gemerkte MAC des Geraets, `gegenstelleMac`
+ * die, die die ARP-Tabelle jetzt unter der Adresse nennt (beide wie
+ * netmap.ts normalizeMac, null = unbekannt). Sind beide bekannt und
+ * verschieden, ist das Geraet dort nicht erreichbar: Der Versuch zaehlt fuer
+ * die Adresssuche wie ein Netzfehler, und eine Ablehnung 401/403 sagt nichts
+ * ueber seine Zugangsdaten. Sonst gilt die Antwort als vom Geraet: 2xx
+ * angenommen, alles andere ein HTTP-Fehler, nach dem nicht gesucht wird.
+ * Eine Ausnahme: Ist die MAC des Geraets bekannt, die der Gegenstelle aber
+ * gerade nicht (ARP-Tabelle nicht lesbar), zaehlt eine Ablehnung 401/403
+ * nicht fuer die Sperre. Sonst koennte ein anderes Geraet unter der alten
+ * Adresse die Zugangsdaten sperren.
+ */
+export function httpAnswerOutcome(s: {
+  status: number;
+  geraeteMac: string | null;
+  gegenstelleMac: string | null;
+}): HttpAnswerOutcome {
+  if (s.status >= 200 && s.status < 300) return { fehlerArt: null, authStatus: s.status, fremd: false };
+  if (s.geraeteMac && s.gegenstelleMac && s.geraeteMac !== s.gegenstelleMac) {
+    return { fehlerArt: "netz", authStatus: null, fremd: true };
+  }
+  const ungeprueft = !!s.geraeteMac && !s.gegenstelleMac && (s.status === 401 || s.status === 403);
+  return { fehlerArt: "http", authStatus: ungeprueft ? null : s.status, fremd: false };
+}
+
 /**
  * Stand der Adresssuche beim Anlegen einer Kamera. `downSince` ist ihr
  * gemerkter Ausfallbeginn aus der Zeit vor dem Neustart des Hubs (null: sie
