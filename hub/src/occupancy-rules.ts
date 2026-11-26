@@ -45,6 +45,13 @@ export const DEFAULT_SPOTS: SpotConfig[] = [
   { key: "drehkreuz", name: "Drehkreuz", cameras: "drehkreuz", full: 10, perHour: 120, waitAlertMin: 10, area: "seilbahn a" },
 ];
 
+/**
+ * Hoechstens so viele Personen zaehlt eine Kamera (detectPersons mit diesem
+ * Limit). Weit ueber jeder Schwelle „voll“; die Ausschnitte und Markierungen
+ * kommen mit 20 aus (PERSON_MARK_LIMIT in person-crop-rules.ts).
+ */
+export const COUNT_PERSON_LIMIT = 200;
+
 /** Gemessener Durchsatz zaehlt erst ab so vielen Eintritten pro Stunde (sonst ist wenig los, nicht langsam). */
 export const MIN_MEASURED_PER_HOUR = 20;
 
@@ -321,4 +328,27 @@ export function dayStartLine(
     `${persons === 1 ? "1 Person" : `${persons} Personen`}` +
     (notes.length ? ` (${notes.join("; ")})` : "")
   );
+}
+
+/**
+ * Log-Zeile, wenn sich im Lauf des Tages die Menge der ruhenden Bereiche
+ * ändert (Räume öffnen oder schließen): welche ruhen, welche gemessen
+ * werden. null, wenn sie gleich geblieben ist oder noch keine vorherige
+ * Messung vorliegt (die erste Messung des Tages hat ihre eigene Zeile).
+ * `spots`: die eingeschalteten Bereiche in ihrer Reihenfolge.
+ */
+export function restingChangeLine(
+  prev: readonly string[] | null,
+  next: readonly string[],
+  spots: ReadonlyArray<{ key: string; name: string }>,
+): string | null {
+  if (prev === null) return null;
+  const was = new Set(prev);
+  const now = new Set(next);
+  if (was.size === now.size && [...now].every((k) => was.has(k))) return null;
+  const names = (keep: (key: string) => boolean) => {
+    const list = spots.filter((s) => keep(s.key)).map((s) => s.name);
+    return list.length ? list.join(", ") : "keinem Bereich";
+  };
+  return `Belegung: ruht an ${names((k) => now.has(k))}; misst an ${names((k) => !now.has(k))}`;
 }

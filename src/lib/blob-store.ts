@@ -119,8 +119,12 @@ async function existingPaths(prefix: BlobPrefix, paths: string[]): Promise<Set<s
       return new Set(rows.map((r) => r.snapshotBlob!));
     }
     case "vehicle-sightings": {
-      const rows = await prisma.vehicleSighting.findMany({ where: { snapshotBlob: where }, select: { snapshotBlob: true } });
-      return new Set(rows.map((r) => r.snapshotBlob!));
+      // Übersichtsbild und Ausschnitt (Halteverbot) liegen unter demselben Präfix.
+      const rows = await prisma.vehicleSighting.findMany({
+        where: { OR: [{ snapshotBlob: where }, { evidenceBlob: where }] },
+        select: { snapshotBlob: true, evidenceBlob: true },
+      });
+      return new Set(rows.flatMap((r) => [r.snapshotBlob, r.evidenceBlob]).filter((p): p is string => p != null));
     }
     case "alert-images": {
       const rows = await prisma.monitorAlertImage.findMany({ where: { blobPathname: where }, select: { blobPathname: true } });

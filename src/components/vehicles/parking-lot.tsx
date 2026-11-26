@@ -112,7 +112,10 @@ export function ParkingLot({
     }));
   }, [lots, live.cameras]);
 
-  const occupiedCount = lots.reduce((sum, l) => sum + l.count, 0);
+  // Unbekannte Zählung (Tracker fehlt oder meldet einen Fehler) zählt nicht mit.
+  const known = lots.filter((l) => l.state !== "unbekannt");
+  const occupiedCount = known.reduce((sum, l) => sum + l.count, 0);
+  const allUnknown = lots.length > 0 && known.length === 0;
   const waitingForHub = lots.length === 0 && matchedLots.length > 0;
 
   if (matchedLots.length === 0) {
@@ -133,15 +136,17 @@ export function ParkingLot({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <StatCard
           label="Fahrzeuge in Fläche"
-          value={waitingForHub ? "…" : occupiedCount}
+          value={waitingForHub ? "…" : allUnknown ? "unbekannt" : occupiedCount}
           icon={ParkingSquare}
           tone={occupiedCount > 0 ? "warning" : "neutral"}
           hint={
             waitingForHub
               ? "warte auf Hub-Tracker"
-              : live.parking?.trackerOnline
-                ? "YOLO-Tracker"
-                : "Tracker offline"
+              : !live.parking?.trackerOnline
+                ? "Tracker offline"
+                : known.length < lots.length
+                  ? "Zählung nicht überall bekannt"
+                  : "YOLO-Tracker"
           }
         />
         <StatCard
@@ -168,7 +173,8 @@ export function ParkingLot({
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
         {matchedLots.map(({ lot, cam }) => {
-          const count = lot?.count ?? 0;
+          const unknown = lot?.state === "unbekannt";
+          const count = unknown ? 0 : (lot?.count ?? 0);
           const occupiedNow = count > 0;
           const key = lot?.kioskId || cam?.id || "lot";
           const title = cam?.name ?? lot?.name ?? "Parkfläche";
@@ -197,10 +203,16 @@ export function ParkingLot({
                     preserveAspectRatio="none"
                     aria-hidden
                   >
-                    {/* Fläche in Zustandsfarbe: belegt Warnung, frei Erfolg. */}
+                    {/* Fläche in Zustandsfarbe: belegt Warnung, frei Erfolg, unbekannt gedämpft. */}
                     <polygon
                       points={lot.zone.map(([x, y]) => `${x},${y}`).join(" ")}
-                      className={occupiedNow ? "fill-warning/30 stroke-warning" : "fill-success/20 stroke-success"}
+                      className={
+                        unknown
+                          ? "fill-muted-foreground/10 stroke-muted-foreground"
+                          : occupiedNow
+                            ? "fill-warning/30 stroke-warning"
+                            : "fill-success/20 stroke-success"
+                      }
                       strokeWidth={0.006}
                     />
                   </svg>
@@ -211,9 +223,11 @@ export function ParkingLot({
                     {occupiedNow && <StatusDot tone="warning" />}
                     {waitingForHub
                       ? "Parkfläche Halle"
-                      : occupiedNow
-                        ? `${count} Fahrzeug${count === 1 ? "" : "e"}`
-                        : "frei"}
+                      : unknown
+                        ? "Belegung unbekannt"
+                        : occupiedNow
+                          ? `${count} Fahrzeug${count === 1 ? "" : "e"}`
+                          : "frei"}
                   </Badge>
                 </div>
               </div>
@@ -232,9 +246,11 @@ export function ParkingLot({
                       ? `Neue Kamera ${lot?.ip} – Bild kommt nach Hub-Update.`
                       : waitingForHub
                         ? "Hub-Update ausstehend — Fläche liegt an dieser Kamera."
-                        : live.parking?.trackerOnline
-                          ? `Belegung der gezeichneten Fläche · ${lot?.fps ?? 0} fps`
-                          : "Tracker am Hub nicht erreichbar."}
+                        : !live.parking?.trackerOnline
+                          ? "Tracker am Hub nicht erreichbar."
+                          : unknown
+                            ? "Tracker liefert für diese Fläche keine Zählung."
+                            : `Belegung der gezeichneten Fläche · ${lot?.fps ?? 0} fps`}
                   </p>
                 )}
               </CardContent>

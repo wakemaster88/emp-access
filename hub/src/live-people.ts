@@ -17,7 +17,7 @@ import { getFrame } from "./frame-cache.js";
 import { listCameraStatus } from "./cameras.js";
 import { listDoorbirdStatus } from "./doorbird.js";
 import { hubEventsSince } from "./state.js";
-import { trackerBaseUrl } from "./vision.js";
+import { classify as classifyJpeg } from "./tracker-client.js";
 import { restartService } from "./services.js";
 import { activeCleared } from "./agent/people.js";
 import {
@@ -75,17 +75,11 @@ function faceHints(cameraName: string, since: number): FaceHint[] {
 }
 let trackerRestartTried = false;
 
+/** Personen im Bild über den gemeinsamen Tracker-Aufruf; null = kein Ergebnis (Fehler oder Tracker gilt als aus). */
 async function classify(jpeg: Buffer): Promise<{ persons: PersonBox[] | null; people: number } | null> {
-  const url = await trackerBaseUrl();
-  const res = await fetch(`${url}/classify`, {
-    method: "POST",
-    headers: { "Content-Type": "image/jpeg" },
-    body: new Uint8Array(jpeg),
-    signal: AbortSignal.timeout(5000),
-  }).catch(() => null);
-  if (!res || !res.ok) return null;
-  const json = (await res.json().catch(() => null)) as { people?: number; persons?: PersonBox[] } | null;
-  if (!json) return null;
+  const r = await classifyJpeg(jpeg, { caller: "live" });
+  if (!r.ok) return null;
+  const json = r.json as { people?: number; persons?: PersonBox[] };
   const people = Number(json.people) || 0;
   if (!Array.isArray(json.persons)) {
     // Tracker laeuft noch mit altem Code (kein Neustart nach dem Update):

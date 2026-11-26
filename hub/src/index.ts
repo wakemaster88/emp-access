@@ -19,7 +19,7 @@ import { alprWarmup } from "./alpr.js";
 import { STATE, recordHeartbeat, recordHubEvent, recordTask } from "./state.js";
 import { reportParking } from "./parking.js";
 import { PARKING_REPORT_TICK_MS } from "./parking-rules.js";
-import { checkNoParking, noParkingConfigSummary, NOPARK_INTERVAL_MS } from "./noparking.js";
+import { noParkingConfigSummary, startNoParking } from "./noparking.js";
 import { AUTO_LABEL, runSwitchSync, snmpConfigured } from "./snmp.js";
 import { startVlanCheck } from "./vlan-check.js";
 import { improve, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
@@ -380,11 +380,10 @@ void startHealthTrends();
 void startAgent();
 // Welche Kameras geprüft werden, steht in der Cloud ("Halteverbot" an der
 // Kamera) und ist beim Start noch nicht bekannt – der Takt läuft deshalb
-// immer und ist ohne ausgewählte Kamera ein Leerlauf.
+// immer und ist ohne ausgewählte Kamera ein Leerlauf. Er plant sich nach
+// jedem Durchlauf selbst (leer 60 s, nachts 120 s, sonst 20 s).
 log(`Halteverbot-Prüfung: ${noParkingConfigSummary()}`);
-setInterval(() => {
-  void checkNoParking();
-}, NOPARK_INTERVAL_MS);
+startNoParking();
 // Gallery/Whitelist werden von den Pipelines TTL-basiert bei Bedarf geladen;
 // das Intervall dient nur als Auffangnetz (statt frueher 60 s Dauer-Polling).
 setInterval(() => refreshGallery(true).catch(() => {}), 900_000);

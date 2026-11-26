@@ -3027,11 +3027,13 @@ function renderFahrzeuge(d) {
           .map(
             (lot) => `<article class="card place">
         <div class="place-head"><span class="tile-ico accent">${icon("parking")}</span><h3>${esc(lot.name)}</h3><span class="host mono">${esc(lot.ip)}</span></div>
-        <div class="stat"><div class="value">${esc(lot.count)}</div><div class="label">Fahrzeuge erkannt</div></div>
+        <div class="stat"><div class="value">${lot.count == null ? "?" : esc(lot.count)}</div><div class="label">${lot.count == null ? "Belegung unbekannt" : "Fahrzeuge erkannt"}</div></div>
         <div class="chips">
           ${d.parking.trackerOnline ? badge("ok", `${num(lot.fps, 1)} fps`) : badge("warn", "Tracker offline")}
           ${lot.lastError ? badge("warn", lot.lastError) : ""}
+          ${lot.gate ? (lot.gate.opens === true ? badge("outline", "Tor öffnet bei Fahrzeug") : lot.gate.opens === false ? badge("idle", "nur zählen") : badge("warn", "Tor-Automatik unbekannt")) : ""}
         </div>
+        ${lot.gate ? `<div class="line"><span class="k">Tor-Automatik</span><span class="v muted">${esc(lot.gate.opens === true ? "öffnet" : lot.gate.opens === false ? "öffnet nicht" : "unbekannt")} · ${esc(lot.gate.reason)}</span></div>` : ""}
         <div class="line"><span class="k">Stand</span><span class="v muted">${esc(lot.lastUpdate ? ago(new Date(lot.lastUpdate).toISOString()) : "unbekannt")}</span></div>
       </article>`
           )

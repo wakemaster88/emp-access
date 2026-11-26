@@ -81,12 +81,12 @@ export async function purgeAccountRetention(
   await del("vehicleSightings", async (cutoff) => {
     const where = { accountId, seenAt: { lt: cutoff } };
     const blobs = await prisma.vehicleSighting.findMany({
-      where: { ...where, snapshotBlob: { not: null } },
-      select: { snapshotBlob: true },
+      where: { ...where, OR: [{ snapshotBlob: { not: null } }, { evidenceBlob: { not: null } }] },
+      select: { snapshotBlob: true, evidenceBlob: true },
       take: BLOB_BATCH,
     });
     const r = await prisma.vehicleSighting.deleteMany({ where });
-    await deleteBlobs(blobs.map((b) => b.snapshotBlob));
+    await deleteBlobs(blobs.flatMap((b) => [b.snapshotBlob, b.evidenceBlob]));
     return r.count;
   });
 

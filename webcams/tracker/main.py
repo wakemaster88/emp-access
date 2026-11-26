@@ -8,6 +8,10 @@ YOLOv8 + ByteTrack erkennt.
 
 - crossing: Schwerpunkt überquert eine Linie → rein/raus
 - zone: Fußpunkt liegt in einem Polygon → aktuelle Belegung
+- vehicleGate: Fahrzeuge in einer Fläche zählen (Parkfläche des Hubs);
+  öffnen nur bei ausdrücklicher Angabe (``openDoorbirdConfirmed: true`` vom
+  Kiosk-Schalter „DoorBird öffnen“ oder ``deviceIds``), siehe vehicle_gate.py;
+  die Betriebsart steht je Kamera in ``/counters`` (``gate``)
 
 Die Linie kommt als zwei normierte Punkte (0..1) aus ``config.json`` —
 Auflösungs-/Profil-Wechsel der Cam beeinflussen die Konfiguration nicht.
@@ -16,6 +20,7 @@ HTTP-API (für die Next-App):
 
     GET  /health                  – { ok, workers }
     GET  /counters                – alle Cams: { in, out, delta, fps, lastUpdate, lastError }
+                                    (Fahrzeug-Fläche zusätzlich gate: { opens, reason, … })
     GET  /counters/{cam_id}       – einzelne Cam
     POST /counters/{cam_id}/reset – setzt in/out auf 0
     POST /reload                  – liest Config neu, syncht Worker
@@ -60,6 +65,9 @@ from ptz import (  # type: ignore
     follow_loop,
     patrol_loop,
 )
+from classify_roi import box_to_full, parse_imgsz, parse_roi, roi_pixels  # type: ignore
+from vehicle_gate import gate_mode, gate_mode_line, should_open  # type: ignore
+from worker_state import note_worker_error  # type: ignore
 from people_history import (  # type: ignore
     aggregate_days,
     cleanup_all_in_root,
@@ -249,6 +257,8 @@ class CamCounter:
     # Letzter annotierter JPEG-Buffer (für /debug-Endpoint)
     last_jpeg: bytes | None = None
     last_person_count: int = 0
+    # Tor-Automatik der Fahrzeug-Fläche (gate_mode in vehicle_gate.py), sonst None
+    gate: dict[str, Any] | None = None
 
 
 # COCO: car, motorcycle, bus, truck — kein Fahrrad (zu viele Fehltreffer am Zaun).
@@ -290,6 +300,7 @@ def _hash_config(cam: dict[str, Any]) -> str:
                 "enabled": vg.get("enabled"),
                 "zone": vg.get("zone"),
                 "openDoorbird": vg.get("openDoorbird"),
+                "openDoorbirdConfirmed": vg.get("openDoorbirdConfirmed"),
                 "deviceIds": vg.get("deviceIds"),
                 "cooldownSec": vg.get("cooldownSec"),
             },
@@ -1030,8 +1041,8 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                 break
 
         except Exception as exc:  # broad, weil Stream-Probleme vielfältig sind
-            counter.last_error = str(exc)
-            counter.last_update = time.time()
+            # last_update bleibt beim letzten verarbeiteten Bild (worker_state.py).
+            note_worker_error(counter, exc)
             log.warning("worker[%s] error: %s — reconnect in %.1fs", cam_id, exc, backoff)
             if counter.stop_event.wait(backoff):
                 break
@@ -1222,8 +1233,9 @@ def zone_worker_loop(
                 break
 
         except Exception as exc:
-            counter.last_error = str(exc)
-            counter.last_update = time.time()
+            # last_update bleibt beim letzten verarbeiteten Bild: Der Hub meldet
+            # die Belegung dann als unbekannt (worker_state.py).
+            note_worker_error(counter, exc)
             log.warning(
                 "zone-worker[%s] error: %s — reconnect in %.1fs",
                 cam_id,
@@ -1242,8 +1254,16 @@ def vehicle_gate_worker_loop(
     counter: CamCounter,
     open_cb: Any,
 ) -> None:
-    """Ausfahrt: Fahrzeuge in der Fläche vor dem Tor → DoorBird/Gerät öffnen."""
+    """Fahrzeuge in der Fläche zählen; öffnen nur bei ausdrücklicher Angabe.
+
+    Die Zählung läuft immer (Parkfläche des Hubs). DoorBird oder Geräte
+    öffnet der Worker nur, wenn ``openDoorbirdConfirmed`` ausdrücklich true
+    ist oder ``deviceIds`` Geräte nennt (``should_open`` in vehicle_gate.py);
+    beim Start steht je Kamera eine Zeile im Log, welcher Fall gilt.
+    """
     vg = cam.get("vehicleGate") or {}
+    opens = should_open(vg)
+    log.info("%s", gate_mode_line(str(cam.get("id")), vg))
     zone_worker_loop(
         cam,
         counter,
@@ -1253,7 +1273,7 @@ def vehicle_gate_worker_loop(
         leave_frames=12,
         overlay_label="ausfahrt",
         kind="vehicle-zone",
-        on_occupancy_rise=lambda: open_cb(cam["id"]),
+        on_occupancy_rise=(lambda: open_cb(cam["id"])) if opens else None,
         cooldown_sec=float(vg.get("cooldownSec") or 45),
     )
 
@@ -1387,7 +1407,10 @@ class TrackerManager:
                     mode = (cam.get("peopleCounter") or {}).get("mode") or "crossing"
                     target = zone_worker_loop if mode == "zone" else worker_loop
                 counter = CamCounter(
-                    cam_id=cam_id, config_hash=wanted_hash[cam_id], kind=mode
+                    cam_id=cam_id,
+                    config_hash=wanted_hash[cam_id],
+                    kind=mode,
+                    gate=gate_mode(vg) if mode == "vehicle-zone" else None,
                 )
                 t = threading.Thread(
                     target=target,
@@ -1696,6 +1719,9 @@ class TrackerManager:
                     "fps": c.fps,
                     "personsVisible": c.last_person_count,
                 }
+                # Fahrzeug-Fläche: öffnet sie oder zählt sie nur (der Hub zeigt es an).
+                if c.gate is not None:
+                    out[cam_id]["gate"] = c.gate
         return out
 
     def get_jpeg(self, cam_id: str) -> bytes | None:
@@ -1779,7 +1805,13 @@ def health() -> dict[str, Any]:
 
 @app.post("/classify")
 async def classify(request: Request) -> dict[str, Any]:
-    """Einzelnes JPEG: Fahrzeug ja/nein + Personenzahl (Hub / Presence)."""
+    """Einzelnes JPEG: Fahrzeug ja/nein + Personenzahl (Hub / Presence).
+
+    Optional ``?roi=x,y,w,h`` (normiert) und ``imgsz`` (höchstens 1280):
+    Ausschnitt aus dem Originalbild vor dem Verkleinern, Erkennung mit
+    ``imgsz``, Boxen normiert auf das ganze Bild (classify_roi.py). Die
+    Antwort nennt dann ``roi`` und ``imgsz``. Ohne die Angaben wie bisher.
+    """
     data = await request.body()
     if not data:
         raise HTTPException(status_code=400, detail="empty body")
@@ -1787,8 +1819,18 @@ async def classify(request: Request) -> dict[str, Any]:
     frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if frame is None:
         raise HTTPException(status_code=400, detail="invalid jpeg")
-    # 4K-Vollbilder sind für ja/nein unnötig – lange erste Inferenz.
+    roi = parse_roi(request.query_params.get("roi"))
+    imgsz = parse_imgsz(request.query_params.get("imgsz"))
     ih, iw = frame.shape[:2]
+    full_size = (iw, ih)
+    rect: tuple[int, int, int, int] | None = None
+    if roi is not None:
+        # Erst ausschneiden, dann verkleinern: Der Ausschnitt behält die
+        # Auflösung des Originalbilds, soweit er unter 1280 px Kante bleibt.
+        rect = roi_pixels(roi, iw, ih)
+        frame = frame[rect[1] : rect[3], rect[0] : rect[2]]
+        ih, iw = frame.shape[:2]
+    # 4K-Vollbilder sind für ja/nein unnötig – lange erste Inferenz.
     edge = max(ih, iw)
     if edge > 1280:
         z = 1280 / edge
@@ -1799,8 +1841,22 @@ async def classify(request: Request) -> dict[str, Any]:
         classes=CLASSIFY_CLASSES,
         verbose=False,
         conf=0.25,
+        **({"imgsz": imgsz} if imgsz is not None else {}),
     )
     fh, fw = frame.shape[:2]
+
+    def norm(box: list[float]) -> dict[str, float]:
+        """Box in Pixeln des gesehenen Bilds → normiert auf das ganze Bild."""
+        x1, y1, x2, y2 = box
+        if rect is not None:
+            return box_to_full((x1, y1, x2, y2), rect, (fw, fh), full_size)
+        return {
+            "x": round(x1 / fw, 4),
+            "y": round(y1 / fh, 4),
+            "w": round((x2 - x1) / fw, 4),
+            "h": round((y2 - y1) / fh, 4),
+        }
+
     vehicle_conf = 0.0
     people = 0
     people_conf = 0.0
@@ -1820,31 +1876,12 @@ async def classify(request: Request) -> dict[str, Any]:
             if int(c) == PERSON_CLASS:
                 people += 1
                 people_conf = max(people_conf, score)
-                x1, y1, x2, y2 = box
-                persons.append(
-                    {
-                        "conf": round(score, 3),
-                        "x": round(x1 / fw, 4),
-                        "y": round(y1 / fh, 4),
-                        "w": round((x2 - x1) / fw, 4),
-                        "h": round((y2 - y1) / fh, 4),
-                    }
-                )
+                persons.append({"conf": round(score, 3), **norm(box)})
             elif int(c) in VEHICLE_CLASSES:
                 vehicle_conf = max(vehicle_conf, score)
-                x1, y1, x2, y2 = box
-                vehicles.append(
-                    {
-                        "cls": int(c),
-                        "conf": round(score, 3),
-                        "x": round(x1 / fw, 4),
-                        "y": round(y1 / fh, 4),
-                        "w": round((x2 - x1) / fw, 4),
-                        "h": round((y2 - y1) / fh, 4),
-                    }
-                )
+                vehicles.append({"cls": int(c), "conf": round(score, 3), **norm(box)})
     vehicles.sort(key=lambda v: float(v["conf"]), reverse=True)
-    return {
+    out: dict[str, Any] = {
         "vehicle": vehicle_conf > 0,
         "conf": round(vehicle_conf, 3),
         "vehicles": vehicles,
@@ -1852,6 +1889,12 @@ async def classify(request: Request) -> dict[str, Any]:
         "peopleConf": round(people_conf, 3),
         "persons": sorted(persons, key=lambda p: p["conf"], reverse=True),
     }
+    # Nur mit Angabe: Daran erkennt der Hub einen Tracker, der Ausschnitte kennt.
+    if roi is not None:
+        out["roi"] = [round(v, 4) for v in roi]
+    if imgsz is not None:
+        out["imgsz"] = imgsz
+    return out
 
 
 @app.get("/counters")

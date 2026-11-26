@@ -10,6 +10,38 @@ export interface NormBox {
   conf?: number;
 }
 
+/** Personen unter dieser Sicherheit des Trackers zählen nicht. */
+export const PERSON_MIN_CONF = 0.35;
+/**
+ * Höchstens so viele Personen für Ausschnitte und Markierungen (Wächter,
+ * digitaler Zoom, Folgen): Mehr braucht dort niemand, und die größten
+ * stehen ohnehin vorn.
+ */
+export const PERSON_MARK_LIMIT = 20;
+
+/**
+ * Personen-Boxen aus der Antwort von /classify: Zahlen geprüft, Breite und
+ * Höhe größer 0, Sicherheit ab `minConf`, höchstens `limit` (in der
+ * Reihenfolge des Trackers, die sicherste zuerst). null = die Antwort kennt
+ * keine Personen-Boxen (älterer Tracker).
+ */
+export function parsePersons(json: unknown, opts: { minConf: number; limit: number }): NormBox[] | null {
+  if (!json || typeof json !== "object") return null;
+  const raw = (json as { persons?: unknown }).persons;
+  if (!Array.isArray(raw)) return null;
+  const out: NormBox[] = [];
+  for (const item of raw) {
+    if (out.length >= opts.limit) break;
+    if (!item || typeof item !== "object") continue;
+    const p = item as Record<string, unknown>;
+    const box = { conf: Number(p.conf), x: Number(p.x), y: Number(p.y), w: Number(p.w), h: Number(p.h) };
+    if (![box.x, box.y, box.w, box.h].every(Number.isFinite) || box.w <= 0 || box.h <= 0) continue;
+    if (!(box.conf >= opts.minConf)) continue;
+    out.push(box);
+  }
+  return out;
+}
+
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 function clampRect(x: number, y: number, w: number, h: number): NormBox {

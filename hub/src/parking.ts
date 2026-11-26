@@ -12,6 +12,10 @@ import { ChangeLog } from "./change-log.js";
 import { improve, improveCount } from "./improve-log.js";
 import {
   ensureDue,
+  frameLive,
+  gateMode,
+  gateModeLine,
+  lotFromCounter,
   parkingCamsHash,
   parkingFrameIdleMs,
   parkingIdleReportMs,
@@ -19,6 +23,9 @@ import {
   parkingReportKey,
   staleMarkDue,
   trackerFrameDue,
+  type GateMode,
+  type LotCount,
+  type LotState,
   type ParkingReported,
 } from "./parking-rules.js";
 import { STATE, recordHubEvent } from "./state.js";
@@ -28,11 +35,15 @@ export interface ParkingLotReport {
   name: string;
   ip: string;
   mode: "vehicle-zone" | "zone";
-  count: number;
+  /** Fahrzeuge in der Flaeche; null = unbekannt (Tracker fehlt oder meldet einen Fehler). */
+  count: number | null;
+  state: LotState;
   lastUpdate: number;
   lastError: string | null;
   fps: number;
   zone: [number, number][] | null;
+  /** Tor-Automatik der Flaeche, wie der Tracker sie meldet: oeffnet, zaehlt nur oder unbekannt (gateMode). */
+  gate: GateMode;
 }
 
 export interface ParkingSnapshot {
@@ -74,9 +85,7 @@ async function loadKioskConfig(): Promise<KioskFile | null> {
   }
 }
 
-function parkingSetup(
-  c: KioskCam,
-): { mode: "vehicle-zone" | "zone"; zone: [number, number][] | null } | null {
+function parkingSetup(c: KioskCam): { mode: "vehicle-zone" | "zone"; zone: [number, number][] | null } | null {
   if (c.enabled === false) return null;
   if (c.vehicleGate?.enabled) {
     return {
@@ -85,6 +94,16 @@ function parkingSetup(
     };
   }
   return null;
+}
+
+/** Zuletzt geloggte Tor-Automatik je Flaeche (Kiosk-ID): eine Zeile beim Start und bei jedem Wechsel. */
+const gateLogged = new Map<string, string>();
+
+function noteGateMode(kioskId: string, name: string, gate: GateMode): void {
+  const line = gateModeLine(name, gate);
+  if (gateLogged.get(kioskId) === line) return;
+  gateLogged.set(kioskId, line);
+  log(line);
 }
 
 let parkingHostsCache: { at: number; hosts: Set<string> } | null = null;
@@ -100,6 +119,8 @@ export async function parkingCameraHosts(): Promise<Set<string>> {
 }
 
 let lastSnapshot: ParkingSnapshot = emptySnapshot();
+/** Zaehlung je Flaeche (Kiosk-ID) aus dem letzten Lauf: darf ihr Bild hoch, ist es live? */
+const lotCounts = new Map<string, LotCount>();
 
 /** Zuletzt eingesammelte Belegung – fuer das Dashboard, ohne neuen Tracker-Call. */
 export function lastParkingSnapshot(): ParkingSnapshot {
@@ -120,7 +141,7 @@ export async function collectParkingSnapshot(): Promise<ParkingSnapshot> {
   const pin = cfg.settings?.adminPin || "";
   let counters: Record<
     string,
-    { count?: number; lastUpdate?: number; lastError?: string | null; fps?: number }
+    { count?: number; lastUpdate?: number; lastError?: string | null; fps?: number; gate?: unknown }
   > = {};
   let trackerOnline = false;
   try {
@@ -138,25 +159,33 @@ export async function collectParkingSnapshot(): Promise<ParkingSnapshot> {
   }
 
   const prevLots = new Map(lastSnapshot.lots.map((l) => [l.kioskId, l]));
+  lotCounts.clear();
   return (lastSnapshot = {
     at: new Date().toISOString(),
     trackerOnline,
     lots: lotsCfg.map(({ cam, setup }) => {
       const id = String(cam.id ?? "");
-      const live = counters[id] ?? {};
-      // Kamera zoomt gerade auf eine Person: letzte Zaehlung halten.
+      // Kamera zoomt gerade auf eine Person: letzte Zaehlung halten (lotFromCounter).
       const camId = cameraIdByHost(String(cam.ip ?? "").trim());
-      const held = camId != null && !cameraAtHome(camId) ? prevLots.get(id) : undefined;
+      const atHome = camId == null || cameraAtHome(camId);
+      const lot = lotFromCounter(trackerOnline ? counters[id] : null, prevLots.get(id), atHome);
+      lotCounts.set(id, lot);
+      const name = String(cam.name ?? id);
+      // Tor-Automatik, wie der Tracker sie meldet; geloggt nur bei erreichbarem Tracker (sonst je Ausfall zwei Zeilen).
+      const gate = gateMode(counters[id], trackerOnline);
+      if (trackerOnline) noteGateMode(id, name, gate);
       return {
         kioskId: id,
-        name: String(cam.name ?? id),
+        name,
         ip: String(cam.ip ?? ""),
         mode: setup.mode,
-        count: held ? held.count : Number(live.count ?? 0) || 0,
-        lastUpdate: Number(live.lastUpdate ?? 0) || 0,
-        lastError: typeof live.lastError === "string" ? live.lastError : null,
-        fps: Number(live.fps ?? 0) || 0,
+        count: lot.count,
+        state: lot.state,
+        lastUpdate: lot.lastUpdate,
+        lastError: lot.lastError,
+        fps: lot.fps,
         zone: setup.zone,
+        gate,
       };
     }),
   });
@@ -259,6 +288,11 @@ export async function uploadParkingTrackerFrames(snapshot?: ParkingSnapshot): Pr
     const host = String(cam.ip ?? "").trim();
     const kioskId = String(cam.id ?? "");
     if (!host || !kioskId) return false;
+    // Meldet der Tracker einen Fehler (oder fehlt er), ist sein Bild alt: keins hochladen.
+    if (lotCounts.get(kioskId)?.upload === false) {
+      improveCount("parking", "frame_skip_error");
+      return false;
+    }
     const prev = lastFrame.get(kioskId);
     // Zwei Laeufe kurz hintereinander laden nicht zweimal hoch.
     if (now - (prev?.at ?? 0) < 15_000) return false;
@@ -297,7 +331,11 @@ export async function uploadParkingTrackerFrames(snapshot?: ParkingSnapshot): Pr
       const buf = Buffer.from(await img.arrayBuffer());
       if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) continue;
 
-      const up = await api(`/api/hub/cameras/${cameraId}/snapshot`, {
+      // Bild der Parkflaeche: „zuletzt gesehen“ setzt die Cloud nur bei live=1
+      // (letzte Aktualisierung des Trackers frisch, frameLive).
+      const lot = lotCounts.get(kioskId);
+      const q = new URLSearchParams({ source: "parking", live: lot && frameLive(lot.lastUpdate, Date.now()) ? "1" : "0" });
+      const up = await api(`/api/hub/cameras/${cameraId}/snapshot?${q.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "image/jpeg" },
         body: new Uint8Array(buf),
@@ -319,6 +357,8 @@ let reported: ParkingReported | null = null;
 /** Fehler und Erholung der Meldung stehen je einmal im Log. */
 const reportLog = new ChangeLog();
 let reportFailing = false;
+/** Tracker antwortete im letzten Lauf nicht (Zeile in improve.jsonl schon geschrieben). */
+let trackerDownNoted = false;
 
 function noteReport(error: string | null): void {
   const now = Date.now();
@@ -377,7 +417,12 @@ export async function reportParking(): Promise<void> {
     } else {
       improveCount("parking", "report_skip");
     }
-    if (!parking.trackerOnline) improve("parking", "tracker_down", { lots: parking.lots.length });
+    // Tracker weg: eine Zeile beim Wechsel, danach nur gezaehlt.
+    if (!parking.trackerOnline) {
+      if (trackerDownNoted) improveCount("parking", "tracker_down");
+      else improve("parking", "tracker_down", { lots: parking.lots.length });
+    }
+    trackerDownNoted = !parking.trackerOnline;
     await uploadParkingTrackerFrames(parking);
   } catch (e) {
     noteReport(e instanceof Error ? e.message : String(e));

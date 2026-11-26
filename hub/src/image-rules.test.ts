@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   SHRINK_MIN_BYTES,
+  jpegSize,
   motionPreviewSettings,
   personSnapshotSettings,
   shrinkNeeded,
@@ -77,4 +78,35 @@ test("Verkleinern: unter 200 KB nur das Vorschaubild, alle anderen Bildwege wie 
   // HUB_MOTION_SNAPSHOT_MAX_PX=0: Groesse und Schranke wie vor dem 25.11.2026.
   assert.equal(shrinkNeeded(180 * 1024, motionPreviewSettings({ HUB_MOTION_SNAPSHOT_MAX_PX: "0" }, DISPLAY).minBytes), false);
   assert.equal(shrinkNeeded(180 * 1024, DISPLAY.minBytes), false);
+});
+
+/** JPEG-Kopf wie von Kamera oder ffmpeg: APP0, DQT, optional Füllbytes, SOF, SOS. */
+function jpegHead(width: number, height: number, sof = 0xc0, fill = 0): Buffer {
+  const seg = (marker: number, body: number[]) => [0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff, ...body];
+  return Buffer.from([
+    0xff, 0xd8,
+    ...seg(0xe0, [0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]),
+    ...seg(0xdb, new Array(65).fill(1)),
+    ...new Array(fill).fill(0xff),
+    ...seg(sof, [8, height >> 8, height & 0xff, width >> 8, width & 0xff, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]),
+    ...seg(0xda, [3, 1, 0, 2, 0x11, 3, 0x11, 0, 0x3f, 0]),
+    0x12, 0x34, 0xff, 0xd9,
+  ]);
+}
+
+test("jpegSize: Breite und Höhe aus dem SOF-Kopf", () => {
+  assert.deepEqual(jpegSize(jpegHead(3840, 2160)), { width: 3840, height: 2160 });
+  assert.deepEqual(jpegSize(jpegHead(2560, 1440, 0xc2)), { width: 2560, height: 1440 });
+  assert.deepEqual(jpegSize(jpegHead(640, 360, 0xc0, 3)), { width: 640, height: 360 });
+});
+
+test("jpegSize: kein JPEG, abgeschnitten oder ohne SOF – null", () => {
+  assert.equal(jpegSize(Buffer.alloc(0)), null);
+  assert.equal(jpegSize(Buffer.from([0x89, 0x50, 0x4e, 0x47])), null);
+  assert.equal(jpegSize(jpegHead(3840, 2160).subarray(0, 30)), null);
+  assert.equal(jpegSize(Buffer.from([0xff, 0xd8, 0xff, 0xda, 0, 2, 0xff, 0xd9])), null);
+  assert.equal(jpegSize(jpegHead(0, 2160)), null);
+  // DHT (0xC4) ist kein SOF, trotz Nummer im Bereich.
+  const dht = Buffer.from([0xff, 0xd8, 0xff, 0xc4, 0, 7, 0, 1, 0, 1, 0, 0xff, 0xd9]);
+  assert.equal(jpegSize(dht), null);
 });

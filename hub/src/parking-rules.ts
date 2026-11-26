@@ -64,7 +64,8 @@ export interface ParkingLotLike {
   name: string;
   ip: string;
   mode: string;
-  count: number;
+  /** null = unbekannt (siehe lotFromCounter). */
+  count: number | null;
   lastError: string | null;
   zone: [number, number][] | null;
 }
@@ -147,4 +148,121 @@ export function parkingIdleReportMs(raw: string | undefined): number {
 /** HUB_PARKING_FRAME_IDLE_S in ms: 0 bis 3600 s, ungueltig = 0 (Bild bei jedem Lauf). */
 export function parkingFrameIdleMs(raw: string | undefined): number {
   return secondsEnv(raw, 0);
+}
+
+/* ---------------------------------------------------------------------------
+ * Zaehlung einer Flaeche aus /counters des Trackers
+ * ------------------------------------------------------------------------- */
+
+/** Eintrag einer Flaeche in /counters (aeltere Tracker kennen nicht alle Felder). */
+export interface TrackerCounterLike {
+  count?: unknown;
+  lastUpdate?: unknown;
+  lastError?: unknown;
+  fps?: unknown;
+}
+
+/** ok = Zaehlung aus dem laufenden Videostrom; unbekannt = Tracker fehlt oder meldet einen Fehler. */
+export type LotState = "ok" | "unbekannt";
+
+export interface LotCount {
+  /** Fahrzeuge in der Flaeche; null = unbekannt. */
+  count: number | null;
+  state: LotState;
+  /** Letzte Aktualisierung laut Tracker (ms), 0 = keine. */
+  lastUpdate: number;
+  lastError: string | null;
+  fps: number;
+  /** Bild des Trackers hochladen: nur ohne Fehler, sonst zeigte die Cloud ein altes Bild als neues. */
+  upload: boolean;
+}
+
+const finite = (v: unknown): number => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * Zaehlung einer Flaeche. `live`: ihr Eintrag in /counters, undefined/null
+ * wenn der Tracker nicht antwortet oder die Flaeche nicht kennt. `prev`: die
+ * zuletzt gemeldete Zaehlung. `atHome`: Die Kamera steht in Grundstellung
+ * (sonst zoomt sie gerade und die letzte Zaehlung bleibt stehen).
+ *
+ * Meldet der Tracker einen Fehler oder fehlt er, ist die Zaehlung unbekannt
+ * (null) – nicht die alte Zahl und nicht 0 – und es geht kein Bild hoch.
+ */
+export function lotFromCounter(
+  live: TrackerCounterLike | null | undefined,
+  prev: { count: number | null } | null | undefined,
+  atHome: boolean,
+): LotCount {
+  if (!live) return { count: null, state: "unbekannt", lastUpdate: 0, lastError: null, fps: 0, upload: false };
+  const lastUpdate = finite(live.lastUpdate);
+  const fps = finite(live.fps);
+  const lastError = typeof live.lastError === "string" && live.lastError !== "" ? live.lastError : null;
+  if (lastError) return { count: null, state: "unbekannt", lastUpdate, lastError, fps, upload: false };
+  // Kamera zoomt gerade auf eine Person: letzte Zaehlung halten.
+  if (!atHome && prev) {
+    return { count: prev.count, state: prev.count === null ? "unbekannt" : "ok", lastUpdate, lastError, fps, upload: true };
+  }
+  return { count: Number(live.count ?? 0) || 0, state: "ok", lastUpdate, lastError, fps, upload: true };
+}
+
+/**
+ * So alt darf die letzte Aktualisierung des Trackers sein, damit sein Bild
+ * als Bild aus dem laufenden Videostrom gilt (live=1 an die Cloud).
+ */
+export const FRAME_LIVE_MAX_AGE_MS = 120_000;
+
+/**
+ * Bild aus dem laufenden Videostrom? Nur dann setzt die Cloud „zuletzt
+ * gesehen“ der Kamera. Der Tracker setzt lastUpdate nur bei einem
+ * verarbeiteten Bild.
+ */
+export function frameLive(lastUpdate: number, now: number, maxAgeMs = FRAME_LIVE_MAX_AGE_MS): boolean {
+  return lastUpdate > 0 && Math.abs(now - lastUpdate) <= maxAgeMs;
+}
+
+/* ---------------------------------------------------------------------------
+ * Tor-Automatik einer Fahrzeug-Flaeche (wie der Tracker sie meldet)
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Oeffnet die Tor-Automatik der Flaeche, und warum (Text fuer Log und
+ * Dashboard). `opens` null: unbekannt – der Tracker meldet es nicht (aelterer
+ * Stand, der womoeglich noch nach der alten Einstellung oeffnet), zaehlt die
+ * Flaeche nicht oder ist nicht erreichbar.
+ */
+export interface GateMode {
+  opens: boolean | null;
+  reason: string;
+}
+
+/** Laengster Grund, den der Hub vom Tracker uebernimmt. */
+const GATE_REASON_MAX = 200;
+
+/**
+ * Tor-Automatik aus der Zaehlung des Trackers (/counters, Feld `gate` je
+ * Kamera, `gate_mode` in webcams/tracker/vehicle_gate.py). Der Tracker
+ * entscheidet, ob er oeffnet; der Hub zeigt es nur an und schaltet nichts.
+ * Fehlt die Angabe, ist es unbekannt – nie „zaehlt nur“.
+ */
+export function gateMode(counter: { gate?: unknown } | null | undefined, trackerOnline: boolean): GateMode {
+  if (!trackerOnline) return { opens: null, reason: "Tracker nicht erreichbar" };
+  if (!counter || typeof counter !== "object") return { opens: null, reason: "Tracker zählt diese Fläche nicht" };
+  const gate = counter.gate;
+  if (!gate || typeof gate !== "object" || typeof (gate as { opens?: unknown }).opens !== "boolean") {
+    return { opens: null, reason: "Tracker meldet die Tor-Automatik nicht (älterer Stand)" };
+  }
+  const g = gate as { opens: boolean; reason?: unknown };
+  const reason = typeof g.reason === "string" && g.reason.trim() ? g.reason.trim().slice(0, GATE_REASON_MAX) : "laut Tracker";
+  return { opens: g.opens, reason };
+}
+
+/** Log-Zeile des Hubs, wenn eine Flaeche neu dazukommt oder ihre Tor-Automatik wechselt. */
+export function gateModeLine(name: string, mode: GateMode): string {
+  if (mode.opens === null) return `Parkfläche ${name}: Tor-Automatik unbekannt (${mode.reason})`;
+  return mode.opens
+    ? `Parkfläche ${name}: Tor-Automatik öffnet bei Fahrzeug in der Fläche (${mode.reason})`
+    : `Parkfläche ${name}: zählt nur, Tor-Automatik öffnet nicht (${mode.reason})`;
 }

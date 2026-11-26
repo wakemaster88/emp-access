@@ -43,12 +43,15 @@ const ENV_SETTINGS: Array<{ key: string; label: string; fallback: string }> = [
   { key: "HUB_DELIVERY_DAYS", label: "Lieferdienst: Öffnungstage (1=Mo … 7=So)", fallback: "1,2,3,4,5,6" },
   { key: "HUB_DELIVERY_DOORBIRD_ID", label: "Lieferdienst: DoorBird-Kamera-ID", fallback: "einziger DoorBird" },
   { key: "HUB_NOPARK_MINUTES", label: "Halteverbot: Standzeit (min)", fallback: "2" },
-  { key: "HUB_NOPARK_INTERVAL", label: "Halteverbot: Prüftakt (s)", fallback: "20" },
-  { key: "HUB_NOPARK_REPEAT_MINUTES", label: "Halteverbot: erneut melden nach (min)", fallback: "10" },
+  { key: "HUB_NOPARK_INTERVAL", label: "Halteverbot: Prüftakt bei belegter Fläche (s)", fallback: "20" },
+  { key: "HUB_NOPARK_FIXED_INTERVAL", label: "Halteverbot: fester Prüftakt", fallback: "aus (leer 60 s, nachts 120 s)" },
   { key: "HUB_NOPARK_SPEAK", label: "Halteverbot: Ansage", fallback: "an" },
   { key: "HUB_NOPARK_SPEAK_FROM", label: "Halteverbot: Ansage ab (Uhr)", fallback: "8" },
   { key: "HUB_NOPARK_SPEAK_TO", label: "Halteverbot: Ansage bis (Uhr)", fallback: "22" },
+  { key: "HUB_NOPARK_NOTIFY_FROM", label: "Halteverbot: Nachricht ab (Uhr)", fallback: "7" },
+  { key: "HUB_NOPARK_NOTIFY_TO", label: "Halteverbot: Nachricht bis (Uhr)", fallback: "22" },
   { key: "HUB_NOPARK_TEXT", label: "Halteverbot: Ansagetext", fallback: "Standardtext" },
+  { key: "HUB_NOPARK_SHADOW", label: "Halteverbot: Vergleich mit Ausschnitt (nur Zähler)", fallback: "an" },
 ];
 
 function cameraSettings(c: CameraConfig) {

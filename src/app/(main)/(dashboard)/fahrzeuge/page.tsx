@@ -82,14 +82,22 @@ export default async function FahrzeugePage() {
   const uniqueIds = [...new Set(allSightingIds)];
 
   const snapIds = new Set<number>();
+  // Halteverbot: Ausschnitt in voller Auflösung zur Sichtung.
+  const evidenceIds = new Set<number>();
   if (uniqueIds.length > 0) {
-    const rows = await prisma.$queryRaw<{ id: number }[]>`
-      SELECT id FROM "VehicleSighting"
+    const rows = await prisma.$queryRaw<{ id: number; hasSnapshot: boolean; hasEvidence: boolean }[]>`
+      SELECT id,
+        (snapshot IS NOT NULL OR "snapshotBlob" IS NOT NULL) AS "hasSnapshot",
+        (evidence IS NOT NULL OR "evidenceBlob" IS NOT NULL) AS "hasEvidence"
+      FROM "VehicleSighting"
       WHERE "accountId" = ${accountId}
-        AND (snapshot IS NOT NULL OR "snapshotBlob" IS NOT NULL)
+        AND (snapshot IS NOT NULL OR "snapshotBlob" IS NOT NULL OR evidence IS NOT NULL OR "evidenceBlob" IS NOT NULL)
         AND id IN (${Prisma.join(uniqueIds)})
     `;
-    for (const r of rows) snapIds.add(r.id);
+    for (const r of rows) {
+      if (r.hasSnapshot) snapIds.add(r.id);
+      if (r.hasEvidence) evidenceIds.add(r.id);
+    }
   }
 
   function mapSighting(s: (typeof sightings)[number]) {
@@ -97,6 +105,7 @@ export default async function FahrzeugePage() {
       ...s,
       seenAt: s.seenAt.toISOString(),
       hasSnapshot: snapIds.has(s.id),
+      hasEvidence: evidenceIds.has(s.id),
     };
   }
 

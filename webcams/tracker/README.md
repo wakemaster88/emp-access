@@ -43,6 +43,21 @@ Auf Apple Silicon läuft YOLO auf MPS (Metal). Falls das instabil ist
 WEBCAMS_TRACKER_DEVICE=cpu uvicorn main:app --host 127.0.0.1 --port 8088
 ```
 
+## Einzelbild: `POST /classify`
+
+Der Hub schickt einzelne JPEGs (Fahrzeug-Prüfung, Halteverbot, Personen).
+Ohne Angaben verkleinert der Tracker das Bild auf 1280 px Kante und rechnet
+mit der Standardauflösung von YOLO. Optional:
+
+- `roi=x,y,w,h` (normiert 0..1): Ausschnitt aus dem Originalbild *vor* dem
+  Verkleinern; die Boxen kommen normiert auf das ganze Bild zurück.
+- `imgsz` (höchstens 1280, Vielfaches von 32): Auflösung der Erkennung.
+
+Die Antwort nennt dann `roi` und `imgsz`; daran erkennt der Hub einen
+Tracker, der die Angaben kennt (ein älterer ignoriert sie). Rechnung in
+`classify_roi.py`, Tests in `tests/` (`python3 -m unittest discover -s
+webcams/tracker/tests`).
+
 ## Umgebungsvariablen
 
 | Variable                       | Default              | Bedeutung                                   |
@@ -155,6 +170,24 @@ POST /reload
 
 `/reload` muss nach jedem Speichern der `config.json` aufgerufen werden
 — die Next-App tut das in `app/api/config/route.ts`.
+
+## Fahrzeug-Fläche (`vehicleGate`)
+
+Eine Kamera mit `vehicleGate.enabled` und Fläche zählt die Fahrzeuge darin
+(`/counters`, Modus `vehicle-zone`; daraus meldet der Hub die Parkfläche).
+Zählen und Öffnen sind getrennt: Beim Übergang von 0 auf mindestens 1
+Fahrzeug ruft der Tracker `/api/vehicle-gate/open` nur auf, wenn
+`openDoorbird` ausdrücklich `true` ist oder `deviceIds` mindestens ein Gerät
+nennt (`should_open` in `vehicle_gate.py`). Die Voreinstellung öffnet nicht.
+Beim Start steht je Kamera eine Zeile im Log, etwa
+`vehicle-gate[cam-halle-2] zählt nur, öffnet nicht (openDoorbird nicht gesetzt, keine Geräte)`
+oder `vehicle-gate[…] zählt und öffnet bei Fahrzeug in der Fläche: DoorBird (openDoorbird ausdrücklich an)`.
+
+In `/counters` steht `lastUpdate` für das zuletzt verarbeitete Bild aus dem
+Videostrom. Bricht der Strom ab, setzt der Worker nur `lastError`; Zählung,
+Bild unter `/debug/{cam_id}/snapshot.jpg` und `lastUpdate` bleiben auf dem
+letzten Stand. Der Hub meldet die Fläche dann als unbekannt und lädt das Bild
+nicht hoch (`lotFromCounter` in `hub/src/parking-rules.ts`).
 
 ## LaunchAgent (macOS)
 
