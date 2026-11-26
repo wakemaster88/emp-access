@@ -62,6 +62,46 @@ export function coverChannels(device: CoverDeviceConfig): CoverChannels | null {
 }
 
 /**
+ * Wartezeit zwischen Abschalten der Gegenrichtung und Einschalten der
+ * Zielrichtung. Gibt dem Relais Zeit zum Abfallen, bevor das zweite anzieht.
+ * Nur im Switch-Profil relevant; im Cover-Profil verriegelt der Shelly selbst.
+ */
+export const COVER_INTERLOCK_MS = 500;
+
+export const COVER_NOT_CONFIGURED =
+  "Antrieb ist nicht eingerichtet – für Auf und Zu müssen zwei verschiedene Shelly-Kanäle hinterlegt sein";
+
+/** Wie eine Fahrt auszufuehren ist (`coverDrivePlan`). */
+export type CoverDrivePlan =
+  /** Cover-Profil: ein Befehl an `cover:N`, der Shelly verriegelt selbst. */
+  | { kind: "cover"; coverId: number; action: CoverAction }
+  /** Zwei Relais, Stopp: beide abschalten. */
+  | { kind: "relays-stop"; channels: [number, number] }
+  /**
+   * Zwei Relais, Fahrt: erst `release` (Gegenrichtung) abschalten, nur wenn
+   * das gelang `pauseMs` warten, dann `move` fuer `runtimeSec` einschalten.
+   */
+  | { kind: "relays"; release: number; move: number; runtimeSec: number; pauseMs: number }
+  /** Keine Fahrt: die Verriegelung liesse sich nicht einhalten. */
+  | { kind: "refuse"; error: string };
+
+/**
+ * Fahrt eines Antriebs: `coverId` ist der Antrieb im Cover-Profil laut
+ * Geraetestatus (`shellyCoverComponentId`), null im Switch-Profil. Dieselbe
+ * Rechnung fuehrt der Hub im Notbetrieb aus (hub/src/cover-rules.ts); beide
+ * pruefen dieselben Testfaelle (hub/src/cover-interlock-cases.ts).
+ */
+export function coverDrivePlan(coverId: number | null, device: CoverDeviceConfig, action: CoverAction): CoverDrivePlan {
+  if (coverId !== null) return { kind: "cover", coverId, action };
+  const channels = coverChannels(device);
+  if (!channels) return { kind: "refuse", error: COVER_NOT_CONFIGURED };
+  if (action === "stop") return { kind: "relays-stop", channels: [channels.up, channels.down] };
+  const move = action === "open" ? channels.up : channels.down;
+  const release = action === "open" ? channels.down : channels.up;
+  return { kind: "relays", release, move, runtimeSec: channels.runtimeSec, pauseMs: COVER_INTERLOCK_MS };
+}
+
+/**
  * Fahrzustand eines Antriebs.
  *
  * `open`/`closed` gibt es nur, wenn der Shelly den Antrieb selbst als Rollladen

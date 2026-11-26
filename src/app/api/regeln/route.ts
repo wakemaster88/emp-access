@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
   const problem = await validateRuleReferences(db, accountId, { ...data, actions });
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
+  const now = new Date();
   const created = await db.roomRule.create({
     data: {
       accountId,
@@ -70,6 +71,10 @@ export async function POST(request: NextRequest) {
       windowEnd: data.windowEnd ?? null,
       onlyWhenDark: data.onlyWhenDark ?? false,
       cooldownSeconds: data.cooldownSeconds ?? 60,
+      // Termine vor dem Anlegen holt die Regel nicht nach (src/lib/rule-due.ts).
+      lastOccurrenceAt: now,
+      // Neue Regel-Version: Der Hub holt seinen Plan (src/lib/rule-version.ts).
+      configChangedAt: now,
     },
     select: { id: true },
   });

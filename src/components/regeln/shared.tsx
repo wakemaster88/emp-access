@@ -3,6 +3,7 @@
 /** Beschriftungen und Kurzfassungen für Regeln. */
 
 import { deviceControls } from "@/lib/device-controls";
+import { ruleTimerApplies } from "@/lib/rule-timer";
 import { OPERATING_EXTENT_SHORT } from "@/lib/operating-extent";
 import { eventTypeLabel } from "@/components/raeume/shared";
 import type { Rule, RuleAction, RuleTrigger } from "@/components/regeln/types";
@@ -62,6 +63,19 @@ export const TRIGGER_KIND_LABELS: Record<string, string> = {
   scan: "Zutritt",
   idle: "Ruhe im Raum",
   manual: "von Hand",
+  // Zeit-Regeln: Meldung nach abgelaufener Nachholfrist und Schließen nach
+  // Betriebsende (src/lib/rule-due.ts).
+  missed: "Termin verpasst",
+  "closing-net": "Sicherheitsnetz nach Betriebsende",
+  // Vom Hub im Notbetrieb ausgeführt und nachgemeldet.
+  "hub:time": "Uhrzeit (Hub)",
+  "hub:opening": "Betriebsbeginn (Hub)",
+  "hub:closing": "Betriebsende (Hub)",
+  "hub:sunrise": "Sonnenaufgang (Hub)",
+  "hub:sunset": "Sonnenuntergang (Hub)",
+  "hub:motion": "Bewegung (Hub)",
+  "hub:device": "Gerät geschaltet (Hub)",
+  "hub:idle": "Ruhe im Raum (Hub)",
   // Aus der Zeit vor der Regel-Engine, taucht im übernommenen Verlauf auf.
   schedule: "Uhrzeit",
   camera: "Bewegung",
@@ -130,8 +144,18 @@ export function describeTrigger(rule: Rule): string {
         rule.scanDirection === "IN" ? "Eingang" : rule.scanDirection === "OUT" ? "Ausgang" : "beide Richtungen";
       return `Zutritt · ${where} · ${dir}`;
     }
-    case "IDLE":
-      return `${rule.idleMinutes ?? "–"} Min. ohne Bewegung`;
+    case "IDLE": {
+      // Was als Bewegung zaehlt, siehe idleActivityTypes in src/lib/rule-due.ts.
+      const what =
+        rule.eventType === "MOTION"
+          ? "Bewegung"
+          : rule.eventType === "PERSON"
+            ? "Person"
+            : rule.eventType === "VEHICLE"
+              ? "Fahrzeug"
+              : "Person oder Fahrzeug";
+      return `${rule.idleMinutes ?? "–"} Min. ohne ${what}`;
+    }
     case "MANUAL":
       return "Von Hand, als Szene in der Raumkarte";
     default:
@@ -170,7 +194,12 @@ export function describeAction(action: RuleAction): string {
     const verb = action.deviceAction
       ? deviceActionLabel(action.deviceAction, action.device ? { type: action.device.type, category: null } : null)
       : "schalten";
-    const timer = action.timerSeconds ? ` für ${action.timerSeconds} Sek.` : "";
+    // Nur nennen, wo der Timer wirkt (rule-timer.ts); bei Tür, Taster, Antrieb
+    // und Hue bleibt es beim Standard des Geräts.
+    const timer =
+      action.timerSeconds && ruleTimerApplies(action.device, action.deviceAction)
+        ? ` für ${action.timerSeconds} Sek.`
+        : "";
     return `${name}: ${verb}${timer}`;
   }
   if (action.kind === "NOTIFY") {

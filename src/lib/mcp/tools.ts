@@ -12,13 +12,15 @@
  * Bewusst NICHT vorhanden: Änderungen an Router, Switches, VLANs, DHCP, WLAN
  * oder Firewall, Tickets anlegen/löschen, Regeln oder Einstellungen ändern.
  */
+import { after } from "next/server";
 import type { TenantDb } from "@/lib/prisma";
 import { waitForHubTask } from "@/lib/hub-task-wait";
 import { isValidDeviceAction, isActionAllowedForDevice, triggerDeviceAction, deviceSendsRemoteCommand } from "@/lib/device-open";
 import { recordDeviceAction } from "@/lib/device-action-log";
 import { availableDeviceActions, isAudioDevice } from "@/lib/device-controls";
 import { audioInputFromDeviceAction, controlAudioDevice } from "@/lib/audio-integration";
-import { runDeviceSwitchedRules } from "@/lib/room-rules";
+import { actionSucceeded, runDeviceSwitchedRules } from "@/lib/room-rules";
+import { runState } from "@/lib/rule-run-rules";
 import { deviceSwitchLevel } from "./device-level";
 import { maskScanCode, mcpScanNote } from "./scan-mask";
 import { describeDay, isOperatingAt, openingForDay } from "@/lib/operating-hours";
@@ -703,11 +705,21 @@ const cloudTools: Tool[] = [
       const r = await triggerDeviceAction(ctx.db, device, ctx.accountId, action, {
         seconds: minutes ? minutes * 60 : undefined,
         actor: { source: "mcp", actorLabel: mcpActorLabel(ctx) },
+        switched: { action, depth: 0 },
       });
-      if (!r.error) {
-        void runDeviceSwitchedRules(ctx.accountId, device.id, action).catch((err) => {
-          console.error("[mcp] room rules failed:", err);
-        });
+      if (actionSucceeded(device.type, r) && r.hubTaskId == null) {
+        // Nach der Antwort, aber verlaesslich zu Ende (after); ausserhalb
+        // einer Anfrage (Skript, Test) laeuft es ohne after weiter. An den
+        // Hub uebergeben (Hue): Sie starten mit seinem Ergebnis.
+        const followUp = () =>
+          runDeviceSwitchedRules(ctx.accountId, device.id, action).catch((err) => {
+            console.error("[mcp] room rules failed:", err);
+          });
+        try {
+          after(followUp);
+        } catch {
+          void followUp();
+        }
       }
       if (r.error) throw new McpToolError(`${device.name}: ${r.error}`);
       return {
@@ -859,14 +871,25 @@ const backendTools: Tool[] = [
           ...(args.failedOnly === true ? { success: false } : {}),
           ...(rule ? { ruleName: { contains: rule, mode: "insensitive" as const } } : {}),
         },
-        select: { ruleName: true, triggeredAt: true, triggerKind: true, success: true, errorMessage: true, durationMs: true },
+        select: { ruleName: true, triggeredAt: true, triggerKind: true, success: true, errorMessage: true, durationMs: true, details: true },
         orderBy: { triggeredAt: "desc" },
         take: 100,
       });
+      // An den Hub uebergeben (Hue, Kamera) und noch ohne Ergebnis: kein Fehlschlag.
+      const states = rows.map((r) => runState(r));
       return {
         count: rows.length,
-        failed: rows.filter((r) => !r.success).length,
-        runs: rows.map((r) => ({ ...r, triggeredAt: iso(r.triggeredAt), errorMessage: r.errorMessage ?? undefined })),
+        failed: states.filter((st) => st === "fehler").length,
+        handedOver: states.filter((st) => st === "uebergeben").length,
+        runs: rows.map((r, i) => ({
+          ruleName: r.ruleName,
+          triggeredAt: iso(r.triggeredAt),
+          triggerKind: r.triggerKind,
+          success: r.success,
+          errorMessage: r.errorMessage ?? undefined,
+          durationMs: r.durationMs,
+          ...(states[i] === "uebergeben" ? { handedOver: true } : {}),
+        })),
       };
     },
   },

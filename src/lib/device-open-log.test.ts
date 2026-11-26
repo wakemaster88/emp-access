@@ -1,7 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "./prisma";
-import { triggerDeviceAction } from "./device-open";
+import { relayError, triggerDeviceAction } from "./device-open";
 
 // triggerDeviceAction schreibt den Protokoll-Eintrag ueber
 // prisma.deviceActionLog.create. Der Writer wird hier ersetzt, ohne Datenbank.
@@ -98,5 +98,13 @@ test("triggerDeviceAction: Shelly ohne Versandweg wird als fehler protokolliert"
   const res = await triggerDeviceAction(fakeDb(), { id: 9, name: "Licht", type: "SHELLY", shellyId: null, ipAddress: null }, 1, "open");
   await tick();
   assert.equal(res.sent, false);
+  assert.match(res.error ?? "", /ohne IP-Adresse und Cloud-Kennung/);
   assert.equal(rows[0].result, "fehler");
+});
+
+test("relayError: Grund, warum ein Relais den Befehl nicht bekam", () => {
+  assert.match(relayError(null, null, null), /ohne IP-Adresse und Cloud-Kennung/);
+  assert.match(relayError(null, "abc123", null), /Shelly-Cloud ist nicht eingerichtet/);
+  assert.match(relayError("192.0.2.10", "abc123", {}), /nicht angenommen/);
+  assert.match(relayError("192.0.2.10", null, null), /nicht angenommen/);
 });

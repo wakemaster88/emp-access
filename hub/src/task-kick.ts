@@ -16,9 +16,10 @@ export function kickTaskPoll(): void {
   handler?.();
 }
 
-/** Antwort von /api/hub/camera-events auswerten; liest den Body. */
-export async function kickIfRulesTriggered(res: Response): Promise<void> {
-  if (!res.ok) return;
+/** Antwort von /api/hub/camera-events auswerten; liest den Body und gibt ihn zurueck. */
+export async function kickIfRulesTriggered(res: Response): Promise<unknown> {
+  if (!res.ok) return null;
   const body = (await res.json().catch(() => null)) as { rulesTriggered?: number } | null;
   if ((body?.rulesTriggered ?? 0) > 0) kickTaskPoll();
+  return body;
 }

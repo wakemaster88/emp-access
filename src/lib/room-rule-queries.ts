@@ -21,7 +21,7 @@ export const ruleInclude = {
   actions: {
     orderBy: { sortOrder: "asc" as const },
     include: {
-      device: { select: { id: true, name: true, type: true } },
+      device: { select: { id: true, name: true, type: true, category: true } },
       audioZone: { select: { id: true, name: true } },
       audioAnnouncement: { select: { id: true, name: true } },
       audioPlaylist: { select: { id: true, name: true } },
@@ -79,6 +79,8 @@ export async function validateRuleReferences(
   db: TenantDb,
   accountId: number,
   input: {
+    /** Nur angeben, wenn Ausloeser oder Raum gespeichert werden (Pruefung „Ruhe im Raum“). */
+    trigger?: string;
     roomId?: number | null;
     cameraId?: number | null;
     triggerDeviceId?: number | null;
@@ -93,6 +95,13 @@ export async function validateRuleReferences(
     checks.push([
       "Raum nicht gefunden",
       db.keyRoom.findFirst({ where: { id: input.roomId, accountId }, select: { id: true } }),
+    ]);
+  }
+  if (input.trigger === "IDLE" && input.roomId) {
+    // Ohne Kamera kaeme nie ein Ereignis, der Raum gaelte immer als ruhig.
+    checks.push([
+      "Ruhe im Raum braucht eine aktive Kamera in diesem Raum. Ohne Kamera erkennt die Regel keine Bewegung und hielte den Raum immer für ruhig.",
+      db.camera.findFirst({ where: { accountId, keyRoomId: input.roomId, enabled: true }, select: { id: true } }),
     ]);
   }
   if (input.cameraId) {

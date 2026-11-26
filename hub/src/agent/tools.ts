@@ -21,9 +21,9 @@ import { captureSnapshot, findCameraByRef, listCameraStatus } from "../cameras.j
 import { captureDoorbirdSnapshot, isDoorbird, listDoorbirdStatus } from "../doorbird.js";
 import { systemMetrics } from "../system-metrics.js";
 import { go2rtcSummary } from "../go2rtc-status.js";
-import { deviceAction, liveStates, roomsPayload } from "../rooms.js";
+import { liveStates, roomsPayload, switchAndReport } from "../rooms.js";
 import { climatePayload } from "../climate.js";
-import { rulesStatus } from "../rules.js";
+import { onDeviceSwitched, rulesStatus } from "../rules.js";
 import { soundwebSummary } from "../soundweb.js";
 import { mowerRelogin, mowerStatus } from "../mower.js";
 import { getForecast, weatherError, weatherText } from "../weather.js";
@@ -464,7 +464,9 @@ export const TOOLS: AgentTool[] = [
     },
     run: async (args) => {
       const d = deviceByRef(args.device);
-      return deviceAction(d.id, String(args.action));
+      // Wie im Dashboard: eine Schaltung im LAN der Cloud melden, damit
+      // Regeln „Gerät geschaltet“ greifen.
+      return switchAndReport(d.id, String(args.action), onDeviceSwitched);
     },
   },
   {

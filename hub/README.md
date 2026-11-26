@@ -349,6 +349,93 @@ ein Mac Studio im Technikraum, Betrieb siehe
   nach `MOWER_CAMERA_MAX_S` (900 s), beendet der Dienst die Sitzung und
   schaltet die Kamera ab. Bei Bildproblemen helfen `MOWER_CAMERA_STRIP_MID=0`
   oder `MOWER_CAMERA_H265_FMTP=0` in `hub/.env`.
+- **Regeln im Notbetrieb** (`rules.ts`, Regeln in `outage-rules.ts`,
+  `cover-rules.ts`): Gelingt 180 s lang kein Aufruf an die Cloud (jede
+  Antwort mit Status 2xx zählt, nicht nur das Lebenszeichen), führt der Hub
+  die Regeln mit dem Plan der Cloud selbst aus. Termine, die seit dem letzten
+  Kontakt fällig wurden, holt er bis zum Ende ihrer Nachholfrist laut Plan
+  nach; was er ausgeführt hat, steht in `.cache/rule-outage.json`, damit ein
+  Neustart nichts zweimal schaltet. Termine bis 6 Minuten vor dem letzten
+  Kontakt holt er ebenfalls nach, aber nur Aus an Licht, Schaltern und Hue und
+  Zu am Rolltor: Die Cloud schaltet erst mit ihrem nächsten Cron-Lauf und
+  erreicht die Geräte nicht mehr, wenn das Netz am Standort dazwischen
+  ausfällt. Ein und Kamera-Szenen aus diesem Fenster lässt er aus („Nicht
+  nachgeholt: Termin lag vor dem letzten Kontakt …“), weil die Cloud sie schon
+  geschaltet haben kann. Mehrere Termine in einem Takt schaltet er der Zeit
+  nach, ältester zuerst, damit am Ende der jüngere gilt. Schaltet der Plan
+  dasselbe Gerät nach einem Termin und bis jetzt noch einmal, holt er dessen
+  Aus oder Zu von vor dem Kontakt nicht nach und wiederholt es nicht
+  („Entfällt: Ein späterer Termin im Plan schaltet dasselbe Gerät“): Sonst
+  bliebe nach „aus 22:00“ und „an 22:05“ das Licht aus. Im Notbetrieb öffnet
+  der Hub nie etwas:
+  Er schaltet nur Licht, Schalter und Hue ein und aus, Kamera-Szenen und
+  Rolltore zu. Türöffner, Drehkreuze, Taster und Shellys ohne Kategorie
+  schaltet er gar nicht, weder zu einem Termin noch auf ein Ereignis hin;
+  solche Aktionen stehen als gescheitert im Lauf („Im Notbetrieb öffnet der
+  Hub nichts …“), und die Cloud holt sie nach ihrer Rückkehr in der Frist
+  nach oder meldet den Termin. Ein Rolltor (Shelly mit
+  IP) fährt er nur zu, nur bei einer Zeit-Regel und mit derselben
+  Verriegelung wie die Cloud: Profil aus dem Status des Shellys, bei zwei
+  Relais erst die Gegenrichtung ab, 500 ms Pause, dann Zu mit Fahrzeit;
+  antwortet der Shelly nicht oder lässt sich die Gegenrichtung nicht
+  abschalten, fährt nichts. Auf und Stopp bleiben der Cloud vorbehalten.
+  Log: „Notbetrieb: Rolltor Einfahrt geschlossen (Regel Betriebsende)“ bzw.
+  „… nicht geschlossen (Regel …): Grund“, Zähler `rules.cover_close`,
+  `rules.cover_close_failed`, `rules.outage_failed`. Scheitert ein Aus oder
+  ein Zu im LAN, versucht der Hub genau diese Aktionen in der Nachholfrist
+  noch einmal: höchstens drei Versuche, mindestens 60 s auseinander, nur
+  solange der Notbetrieb dauert und nicht über einen Neustart hinweg. Was
+  gelang, schaltet er nicht noch einmal; Ein und Kamera-Szenen wiederholt er
+  nie (Log „Notbetrieb: Regel „…“, Termin …: Aus/Zu 2. Versuch von 3“, Zähler
+  `rules.outage_retry`; entfällt ein Versuch, „… kein weiterer Versuch
+  (Grund)“). Jeder Lauf geht danach an die Cloud; erledigt ist
+  der Termin für sie erst, wenn die Läufe zusammen jede Aktion geschafft
+  haben, sonst holt sie nach oder meldet den Termin. Eine Wiederholung meldet
+  der Hub nur als Erfolg, wenn dem Termin über alle seine Läufe nichts mehr
+  fehlt (sonst „Noch offen aus diesem Termin: 1 Aktion“); so vermerkt auch
+  eine ältere Cloud den Termin nicht zu früh. `HUB_EMERGENCY_COVER_CLOSE=0`
+  (auch `false`, `nein`, `aus`, `no`, `off`) lässt Rolltore wie bisher allein
+  der Cloud.
+- **Bewegungs-Regeln direkt vom Hub** (`rules.ts`, Regeln in
+  `motion-rules.ts`, Cloud: `src/lib/rule-executor.ts`): Die Cloud markiert
+  im Plan jede Bewegungs-Regel, deren Aktionen der Hub genau so schalten kann
+  wie sie: nur Shelly-Relais der Kategorie Beleuchtung oder Schalter mit IP,
+  Hue-Lichter und Kamera-Szenen, nur Ein und Aus, kein Gerät, das eine Regel
+  „Gerät geschaltet“ auslöst, keine Betriebszeit mit gebuchten Terminen.
+  Antriebe, Türöffner, Drehkreuze, DoorBird, Relais ohne Kategorie und
+  Benachrichtigungen lassen die ganze Regel in der Cloud. Beginnt an einer
+  Kamera ein passendes Ereignis, schaltet der Hub die markierte Regel sofort
+  selbst, mit Zeiträumen ohne Raster und der Abklingzeit wie die Cloud, und
+  nennt die gelungenen in der Meldung des Ereignisses; die Cloud sperrt sie
+  und führt sie nicht noch einmal aus. Die Meldung wartet darauf höchstens
+  5 s. Gelingt ein Lauf nicht oder dauert er länger, nennt der Hub die Regel
+  nicht, und die Cloud führt sie aus wie bisher. Im Notbetrieb nennt er die
+  markierten Regeln, die er selbst ganz geschaltet hat, ebenso: Erreicht die
+  Meldung die Cloud doch noch (sie ist gerade zurück), schaltet sie diese
+  nicht ein zweites Mal (Meldungen der DoorBird nennen keine Regeln).
+  Voraussetzung: Plan in
+  diesem Lauf geholt und auf dem Stand der Regel-Version im Lebenszeichen.
+  Log je Regel: „Regel „Licht Hof“ vom Hub ausgeführt: Einfahrt, Person,
+  0,4 s vom Ereignis bis geschaltet (Lauf 0,2 s)“, sonst „Regel „…“ läuft
+  über die Cloud: Grund“. Zähler `rules.motion_local`,
+  `rules.motion_local_failed`, `rules.motion_local_late`, `rules.motion_cloud`.
+  Den Lauf trägt die Cloud im Verlauf als „Bewegung (Hub)“ ein.
+  `HUB_RULES_LOCAL_MOTION=0` (auch `false`, `nein`, `aus`, `no`, `off`) lässt
+  alle Bewegungs-Regeln wie bisher über die Cloud laufen. Beide Schalter
+  stehen ohne Angabe auf an (auch `1`, `true`, `ja`, `an`, `yes`, `on`); einen
+  anderen Wert (etwa einen Tippfehler) meldet der Hub beim Start einmal im Log
+  („Warnung: HUB_RULES_LOCAL_MOTION="…" ist kein bekannter Wert – bleibt an“),
+  und der Schalter bleibt an.
+- **Kamera-Szenen mit Rückkehr** (`cameras.ts`, Regeln in
+  `scene-return-rules.ts`): Eine Regel „Kamera steuern … zurück nach N s“
+  stellt die Kamera nach Ablauf zurück (Tracking aus, Preset der Szene erneut,
+  Tracking wie vor der Szene). Fälligkeit und Zustand vorher stehen in
+  `.cache/scene-returns.json` (in einem Zug ersetzt). Nach einem Neustart
+  stellt der Hub eine abgelaufene Rückkehr sofort zurück („Kamera Einfahrt:
+  Szene beendet (nach Neustart), zurück auf Preset 2“) und setzt eine
+  laufende neu an; die Automatik der Kamera hält dabei still wie während der
+  Szene. Einträge, die älter als 24 h sind, verwirft er mit einer Zeile im
+  Log („Kamera #4: Rückkehr der Szene verworfen (vor 26 h gespeichert)“).
 - **Streams**: Cloud-Camera ist führend; der Hub schreibt IPs in
   `webcams/config.json` und `go2rtc.yaml` (gitignored, kein Auto-Commit).
 - **Selbst-Update**: alle 5 min `git fetch` (async). Bei neuen Commits:

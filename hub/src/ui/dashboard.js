@@ -4586,6 +4586,7 @@ function openRuleEditor(rule) {
   ruleDraft = {
     id: rule ? rule.id : null,
     actions: rule ? rule.actions.map((a) => ({ ...a })) : [{ kind: "DEVICE", deviceId: null, deviceAction: "open" }],
+    idleEventType: rule && rule.trigger === "IDLE" ? rule.eventType ?? null : null,
   };
   syncTriggerFields();
   renderRuleActions();
@@ -4607,7 +4608,9 @@ function ruleFormPayload() {
     ...(t === "TIME" ? { timeOfDay: f.timeOfDay.value } : {}),
     offsetMinutes: ["OPENING", "CLOSING", "SUNRISE", "SUNSET"].includes(t) ? Number(f.offsetMinutes.value) || 0 : 0,
     cameraId: t === "MOTION" ? num(f.cameraId.value) : null,
-    eventType: t === "MOTION" ? f.eventType.value || null : null,
+    // Bei „Ruhe im Raum“ sagt eventType, was als Bewegung zaehlt (Auswahl
+    // nur im Cloud-Dialog); der gespeicherte Wert bleibt erhalten.
+    eventType: t === "MOTION" ? f.eventType.value || null : t === "IDLE" ? ruleDraft.idleEventType : null,
     triggerDeviceId: t === "DEVICE_SWITCHED" ? num(f.triggerDeviceId.value) : null,
     triggerAction: t === "DEVICE_SWITCHED" ? f.triggerAction.value || null : null,
     idleMinutes: t === "IDLE" ? num(f.idleMinutes.value) : null,
@@ -4776,8 +4779,12 @@ $("ruleGrid").addEventListener("click", async (ev) => {
     run.disabled = true;
     const r = await ruleRequest("POST", `/api/rules/${rule.id}/run`);
     run.disabled = false;
-    const failed = r.data && Array.isArray(r.data.actions) ? r.data.actions.filter((a) => !a.ok) : [];
-    toast(r.ok ? "Regel ausgeführt" : failed.length ? `Teilweise fehlgeschlagen: ${failed.map((a) => `${a.target}: ${a.error}`).join("; ")}` : ruleError(r.data, r.status), r.ok ? "ok" : "err");
+    // Aktionen als Hub-Auftrag (Hue, Kamera) sind kein Fehler: Ergebnis folgt.
+    const actions = r.data && Array.isArray(r.data.actions) ? r.data.actions : [];
+    const failed = actions.filter((a) => !a.ok && !a.pending);
+    const handed = actions.filter((a) => a.pending);
+    if (r.ok && !failed.length) toast(handed.length ? `Regel ausgeführt, an Hub übergeben: ${handed.map((a) => a.target).join(", ")}` : "Regel ausgeführt", "ok");
+    else toast(failed.length ? `Teilweise fehlgeschlagen: ${failed.map((a) => `${a.target}: ${a.error}`).join("; ")}` : ruleError(r.data, r.status), "err");
     await loadRules();
     renderRegeln(state.overview);
   }

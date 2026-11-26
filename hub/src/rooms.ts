@@ -18,9 +18,10 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
-import { shellyStatus, shellySwitch } from "./shelly.js";
+import { shellyCoverClose, shellyStatus, shellyStatusMap, shellySwitch } from "./shelly.js";
+import { coverComponentId, coverDrivePlan } from "./cover-rules.js";
 import { controlSmart, hueLightStates } from "./smart-devices.js";
-import { cacheSyncedAt } from "./rooms-rules.js";
+import { cacheSyncedAt, cloudActionOutcome, ruleAutoOffSec, shouldReportSwitch } from "./rooms-rules.js";
 import { ChangeLog } from "./change-log.js";
 
 export interface RoomDevice {
@@ -189,6 +190,11 @@ function allDevices(): RoomDevice[] {
   return snapshot.rooms.flatMap((r) => r.devices).concat(snapshot.unassigned);
 }
 
+/** Geraet aus den Raumdaten der Cloud; null = unbekannt (Raeume neu laden). */
+export function findDevice(id: number): RoomDevice | null {
+  return allDevices().find((d) => d.id === id) ?? null;
+}
+
 /** Alle Shellys mit IP (je Host einmal), fuer die Frueherkennung. */
 export function localShellyHosts(): Array<{ host: string; label: string }> {
   const byHost = new Map<string, string[]>();
@@ -355,8 +361,10 @@ async function viaCloud(id: number, action: DeviceAction): Promise<ActionOutcome
       signal: AbortSignal.timeout(15_000),
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string; sent?: boolean };
-    if (!res.ok) return { ok: false, via: "cloud", error: body.error ?? `HTTP ${res.status}` };
-    return { ok: true, via: "cloud", ...(body.error ? { error: body.error } : {}) };
+    // HTTP 200 heisst nur: Die Cloud hat den Befehl bearbeitet. Ob das Geraet
+    // ihn annahm, steht in sent und error (cloudActionOutcome).
+    const outcome = cloudActionOutcome(res.ok, res.status, body);
+    return outcome.ok ? { ok: true, via: "cloud" } : { ok: false, via: "cloud", error: outcome.error };
   } catch (e) {
     return { ok: false, via: "cloud", error: `Cloud nicht erreichbar (${e instanceof Error ? e.message : e})` };
   }
@@ -364,12 +372,15 @@ async function viaCloud(id: number, action: DeviceAction): Promise<ActionOutcome
 
 /**
  * `localOnly` (Regel-Notbetrieb): nur im LAN schalten, nie die Cloud fragen –
- * die ist in dem Moment ohnehin nicht erreichbar.
+ * die ist in dem Moment ohnehin nicht erreichbar. `autoOffSec`: Selbst-
+ * abschaltung einer Regel-Aktion; wirkt nur bei Shelly-Schaltern und
+ * -Beleuchtung beim Einschalten (`ruleAutoOffSec`), sonst gilt der Standard
+ * des Geraets.
  */
 export async function deviceAction(
   id: number,
   action: string,
-  opts: { localOnly?: boolean } = {}
+  opts: { localOnly?: boolean; autoOffSec?: number | null } = {}
 ): Promise<ActionOutcome> {
   if (!ACTIONS.has(action as DeviceAction)) return { ok: false, via: "lokal", error: "Ungültige Aktion" };
   const act = action as DeviceAction;
@@ -391,9 +402,10 @@ export async function deviceAction(
   if (isLocalDevice(dev) && act !== "close" && act !== "stop") {
     const on = act === "open" || act === "emergency";
     try {
-      const r = await shellySwitch(dev.ipAddress as string, channelOf(dev), on, autoOffSec(dev, act));
+      const timer = ruleAutoOffSec(dev, act, opts.autoOffSec) ?? autoOffSec(dev, act);
+      const r = await shellySwitch(dev.ipAddress as string, channelOf(dev), on, timer);
       statusCache.delete(dev.ipAddress as string);
-      log(`Raum-Steuerung: ${dev.name} ${on ? "ein" : "aus"} (lokal)`);
+      log(`Raum-Steuerung: ${dev.name} ${on ? "ein" : "aus"} (lokal${timer ? `, aus nach ${timer} s` : ""})`);
       return withName({ ok: true, via: "lokal", on: r.on });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -407,6 +419,72 @@ export async function deviceAction(
   const r = await viaCloud(id, act);
   log(`Raum-Steuerung: ${dev.name} ${act} über Cloud → ${r.ok ? "ok" : r.error}`);
   return withName(r);
+}
+
+/**
+ * Rolltor im LAN zufahren (Regel-Notbetrieb), mit derselben Verriegelung wie
+ * die Cloud (cover-rules.ts): Profil aus dem Status des Shellys; bei zwei
+ * Relais erst die Gegenrichtung ab, nur wenn sie sicher aus ist die
+ * Umschaltpause, dann Zu mit Fahrzeit. Ohne Status-Antwort faehrt nichts.
+ * Nur Rolltore mit IP; Auf und Stopp gibt es hier nicht.
+ */
+export async function closeCoverLocal(id: number): Promise<ActionOutcome> {
+  const dev = allDevices().find((d) => d.id === id);
+  if (!dev) return { ok: false, via: "lokal", error: "Gerät unbekannt – Räume neu laden" };
+  const name = dev.name;
+  const fail = (error: string): ActionOutcome => ({ ok: false, via: "lokal", error, name });
+  if (dev.type !== "SHELLY" || dev.category !== "ROLLTOR" || !dev.ipAddress || !IPV4_RE.test(dev.ipAddress)) {
+    return fail("Nur über die Cloud schaltbar");
+  }
+  const host = dev.ipAddress;
+  const status = await shellyStatusMap(host);
+  if (!status) return fail("Antrieb nicht erreichbar – Status ließ sich im LAN nicht lesen");
+  const plan = coverDrivePlan(coverComponentId(status), dev, "close");
+  try {
+    if (plan.kind === "refuse") return fail(plan.error);
+    if (plan.kind === "cover") {
+      await shellyCoverClose(host, plan.coverId);
+    } else if (plan.kind === "relays") {
+      // Verriegelung: Gegenrichtung zwingend zuerst ab, und sie muss aus sein.
+      let released = false;
+      try {
+        released = (await shellySwitch(host, plan.release, false)).on === false;
+      } catch {
+        released = false;
+      }
+      if (!released) return fail("Gegenrichtung ließ sich nicht abschalten – Fahrt wurde aus Sicherheitsgründen nicht gestartet");
+      await new Promise((resolve) => setTimeout(resolve, plan.pauseMs));
+      await shellySwitch(host, plan.move, true, plan.runtimeSec);
+    } else {
+      return fail("Nur über die Cloud schaltbar");
+    }
+  } catch (e) {
+    return fail(`Antrieb nicht erreichbar (${e instanceof Error ? e.message : e})`);
+  }
+  statusCache.delete(host);
+  log(`Raum-Steuerung: ${name} zu (lokal${plan.kind === "relays" ? `, Fahrzeit ${plan.runtimeSec} s` : ""})`);
+  return { ok: true, via: "lokal", name };
+}
+
+/**
+ * Schalten wie `deviceAction` und eine Schaltung im LAN danach melden
+ * (`report`, in der Regel `onDeviceSwitched` aus rules.ts): Die Cloud startet
+ * damit ihre Regeln „Geraet geschaltet“, im Notbetrieb der Hub selbst. Fuer
+ * Dashboard und Assistent. Die Meldung laeuft im Hintergrund und faengt ihre
+ * Fehler selbst ab.
+ */
+export async function switchAndReport(
+  id: number,
+  action: string,
+  report: (deviceId: number, action: string) => Promise<void>,
+): Promise<ActionOutcome> {
+  const r = await deviceAction(id, action);
+  if (shouldReportSwitch(r)) {
+    void report(id, action).catch((e) => {
+      log(`Regeln: Schaltmeldung fehlgeschlagen (${e instanceof Error ? e.message : e})`);
+    });
+  }
+  return r;
 }
 
 /** Standort des Accounts (Cloud), fuer den Wetterbericht. */

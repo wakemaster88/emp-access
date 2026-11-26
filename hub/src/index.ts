@@ -11,7 +11,7 @@ import { startDashboard } from "./dashboard.js";
 import { dashboardAccessMode } from "./dashboard-auth.js";
 import { autoScan } from "./scanner.js";
 import { onTaskKick } from "./task-kick.js";
-import { pollCameras, CAMERA_POLL_INTERVAL_MS, restoreCameraMotion } from "./cameras.js";
+import { pollCameras, CAMERA_POLL_INTERVAL_MS, restoreCameraMotion, restoreSceneReturns } from "./cameras.js";
 import { ALIVE_INTERVAL_MS, markAlive } from "./alive-mark.js";
 import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
@@ -30,7 +30,7 @@ import { startHueSync } from "./smart-devices.js";
 import { startSoundweb } from "./soundweb.js";
 import { startRooms } from "./rooms.js";
 import { startClimate } from "./climate.js";
-import { startRules } from "./rules.js";
+import { noteRuleVersion, rulesHeartbeat, startRules } from "./rules.js";
 import { startMower, stopMowerSidecar } from "./mower.js";
 import { startAgent } from "./agent/agent.js";
 import { holdSentinelCoverage, onCoverageShrink, sentinelBusy, sentinelCoverage } from "./agent/sentinel.js";
@@ -152,6 +152,10 @@ async function sendHeartbeat(): Promise<void> {
         // (sentinel-cover-rules.ts): Dort meldet die Cloud unbekannte Personen
         // nicht selbst, solange diese Meldung hoechstens 5 Minuten alt ist.
         sentinel: sentinelCoverage(),
+        // Notbetrieb der Regeln und noch nicht gemeldete Termine: Zu einem
+        // angekuendigten Termin holt die Cloud nichts nach, was der Hub selbst
+        // geschaltet hat (src/lib/rule-due.ts, hubRunAnnounced).
+        rules: rulesHeartbeat(),
       }),
     });
     if (!res.ok) {
@@ -160,11 +164,13 @@ async function sendHeartbeat(): Promise<void> {
       improve("heartbeat", "fail", { error: `HTTP ${res.status}` });
     } else {
       recordHeartbeat(true);
-      const data = (await res.json().catch(() => ({}))) as { pendingTasks?: number };
+      const data = (await res.json().catch(() => ({}))) as { pendingTasks?: number; ruleVersion?: unknown };
       const pending = Number(data.pendingTasks) || 0;
       STATE.pendingTasks = pending;
       setTaskPollInterval(pending > 0 ? 1_000 : CONFIG.taskIntervalMs);
       if (pending > 0) void pollTasks();
+      // Regeln geaendert: Plan fuer den Notbetrieb sofort neu holen (rules.ts).
+      noteRuleVersion(data.ruleVersion);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -347,6 +353,8 @@ if (snmpConfigured()) {
 startVlanCheck();
 // Folgen/Nahaufnahme, die ein Neustart unterbrochen hat: Kameras zurueckstellen.
 void restoreCameraMotion();
+// Szenen mit „zurück nach N s“, deren Rückkehr ein Neustart unterbrochen hat.
+void restoreSceneReturns().catch((e) => log(`Kamera-Szenen: Rückkehr nach dem Neustart fehlgeschlagen (${e instanceof Error ? e.message : e})`));
 setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 // Lebenszeichen auf der Platte: Nach einem Neustart ist bekannt, bis wann der
 // Vorgaenger lief (fuer das Ende der Ereignisse, die dabei offen blieben).

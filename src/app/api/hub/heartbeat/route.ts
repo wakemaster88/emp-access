@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
 import { writeHubAgentStatus } from "@/lib/hub-agent-status";
 import { parseSentinelReport } from "@/lib/hub-sentinel";
+import { parseHubRulesReport } from "@/lib/rule-due";
+import { loadRuleVersion } from "@/lib/rule-version";
 
 /**
  * Heartbeat des lokalen Hubs. Auth per Account-API-Token (Bearer/`?token=`).
@@ -39,15 +41,23 @@ export async function POST(request: NextRequest) {
   // ohne das Feld laesst den abgelegten Stand stehen, er veraltet dann.
   const sentinel = parseSentinelReport(body.sentinel, new Date()) ?? undefined;
 
+  // Notbetrieb der Regeln: Modus, noch nicht gemeldete Laeufe und ihre
+  // Termine, Rolltore im Notbetrieb, Ende des Plans. Zu einem angekuendigten
+  // Termin holt die Cloud nichts nach, was der Hub selbst geschaltet hat
+  // (lib/rule-due.ts, hubRunAnnounced). Ein Hub ohne das Feld laesst den
+  // abgelegten Stand stehen.
+  const rules = parseHubRulesReport(body.rules, new Date()) ?? undefined;
+
   // Nur die gemeldeten Teile von status ersetzen, die uebrigen (z. B. snmp
   // vom Switch-Upload, parking von der Parkmeldung) bleiben stehen.
   const statusPatch: Record<string, unknown> | undefined =
-    parking || system || repoAccess || sentinel
+    parking || system || repoAccess || sentinel || rules
       ? {
           ...(parking ? { parking } : {}),
           ...(system ? { system } : {}),
           ...(repoAccess ? { repoAccess } : {}),
           ...(sentinel ? { sentinel } : {}),
+          ...(rules ? { rules } : {}),
         }
       : undefined;
 
@@ -66,9 +76,14 @@ export async function POST(request: NextRequest) {
         })
       ).id;
 
-  const pendingTasks = await db.hubTask.count({
-    where: { accountId: account.id, status: "PENDING" },
-  });
+  // Regel-Version: Weicht sie von der Version seines Plans ab, holt der Hub
+  // den Plan sofort neu, sonst alle 6 Stunden (src/lib/rule-version.ts). Ohne
+  // Version bleibt der Hub beim 15-Minuten-Takt. Nur fuer Hubs, die ihren
+  // Regel-Stand melden; aeltere holen den Plan ohnehin im festen Takt.
+  const [pendingTasks, ruleVersion] = await Promise.all([
+    db.hubTask.count({ where: { accountId: account.id, status: "PENDING" } }),
+    rules ? loadRuleVersion(db, account.id).catch(() => null) : null,
+  ]);
 
-  return NextResponse.json({ ok: true, agentId, pendingTasks });
+  return NextResponse.json({ ok: true, agentId, pendingTasks, ...(ruleVersion ? { ruleVersion } : {}) });
 }
