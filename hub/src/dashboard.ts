@@ -53,8 +53,10 @@ import {
   sameSecret,
 } from "./dashboard-auth.js";
 import { personBoxes, seenPeople } from "./live-people.js";
-import { getFrame, startFrameWarmer } from "./frame-cache.js";
-import { GO2RTC_URL, fetchGo2rtcStreams, noteWebrtcClient, noteWebrtcFailure } from "./go2rtc-status.js";
+import { getFrame } from "./frame-cache.js";
+import { GO2RTC_URL, fetchGo2rtcStreams, noteWebrtcClient, noteWebrtcFailure, noteWebrtcOk } from "./go2rtc-status.js";
+import { maskUrlAuth } from "./go2rtc-status-rules.js";
+import { assetEtag, uiHtmlEtag, uiStampFromEtags, withUiStamp } from "./ui-stamp.js";
 import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
 import { isMowerStream } from "./mower-streams.js";
 import { assistantHealth } from "./agent/agent.js";
@@ -69,6 +71,8 @@ const ASSETS: Record<string, { file: string; type: string }> = {
   "/index.html": { file: "dashboard.html", type: "text/html; charset=utf-8" },
   "/dashboard.css": { file: "dashboard.css", type: "text/css; charset=utf-8" },
   "/dashboard.js": { file: "dashboard.js", type: "text/javascript; charset=utf-8" },
+  // Regeln der Livebild-Kacheln (Zeitlimits, Neuversuche, Neu laden); auch von den Tests geladen.
+  "/rtc-rules.js": { file: "rtc-rules.js", type: "text/javascript; charset=utf-8" },
   "/pwa.js": { file: "pwa.js", type: "text/javascript; charset=utf-8" },
   // Home-Bildschirm-App (PWA): Manifest, Service Worker, Icons.
   "/manifest.webmanifest": { file: "manifest.webmanifest", type: "application/manifest+json; charset=utf-8" },
@@ -199,7 +203,9 @@ async function proxyGo2rtc(
         signal: AbortSignal.timeout(isMowerStream(src) ? 40_000 : 10_000),
       });
       const answer = await r.text();
-      if (!r.ok) noteWebrtcFailure(src, `HTTP ${r.status} ${answer.replace(/\s+/g, " ").trim().slice(0, 160)}`);
+      // Zugangsdaten in Quell-URLs maskieren, bevor gekuerzt wird (sonst bliebe ein Rest stehen).
+      if (!r.ok) noteWebrtcFailure(src, `HTTP ${r.status} ${maskUrlAuth(answer.replace(/\s+/g, " ").trim()).slice(0, 160)}`);
+      else noteWebrtcOk(src);
       res.writeHead(r.status, { "Content-Type": "application/sdp", "Cache-Control": "no-store" });
       res.end(answer);
       return;
@@ -212,7 +218,7 @@ async function proxyGo2rtc(
       res.writeHead(200, {
         "Content-Type": got.frame.type,
         "Cache-Control": "no-store",
-        // Alter in Sekunden; -1 = unbekannt (vom Datentraeger nach Neustart).
+        // Alter in Sekunden; -1 = unbekannt.
         "X-Frame-Age": String(got.frame.at ? Math.round((Date.now() - got.frame.at) / 1000) : -1),
         "X-Frame-Cached": got.cached ? "1" : "0",
       });
@@ -690,6 +696,24 @@ function overviewPayload() {
  * Statische Dateien
  * ------------------------------------------------------------------------- */
 
+/** Dateien der Oberflaeche; aendert sich eine, liefert /api/status einen neuen Wert `ui`. */
+const UI_FILES = ["dashboard.html", "dashboard.js", "dashboard.css", "rtc-rules.js"];
+
+/**
+ * Stand der Oberflaeche aus den rohen ETags ihrer Dateien (ui-stamp.ts).
+ * Die Seite traegt ihn beim Ausliefern, /api/status nennt den aktuellen;
+ * weichen sie ab, laedt eine offene Zentrale neu (shouldReload in
+ * rtc-rules.js). null = Dateien nicht lesbar.
+ */
+async function uiVersion(): Promise<string | null> {
+  try {
+    const tags = await Promise.all(UI_FILES.map(async (f) => assetEtag(await stat(path.join(ASSET_DIR, f)))));
+    return uiStampFromEtags(tags);
+  } catch {
+    return null;
+  }
+}
+
 async function serveAsset(
   res: http.ServerResponse,
   req: http.IncomingMessage,
@@ -698,13 +722,16 @@ async function serveAsset(
   try {
     const full = path.join(ASSET_DIR, asset.file);
     const info = await stat(full);
-    const etag = `W/"${info.size}-${Math.floor(info.mtimeMs)}"`;
+    // Die Seite selbst traegt den Stand der Oberflaeche, mit dem sie ausgeliefert wird.
+    const stamp = asset.file === "dashboard.html" ? await uiVersion() : null;
+    const etag = stamp ? uiHtmlEtag(stamp) : assetEtag(info);
     if (req.headers["if-none-match"] === etag) {
       res.writeHead(304, { ETag: etag });
       res.end();
       return;
     }
-    const body = await readFile(full);
+    const raw = await readFile(full);
+    const body = stamp ? withUiStamp(raw.toString("utf8"), stamp) : raw;
     res.writeHead(200, {
       "Content-Type": asset.type,
       "Cache-Control": "no-cache",
@@ -801,7 +828,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     }
 
     if (req.method === "GET" && url.pathname === "/api/status") {
-      return json(res, 200, statusPayload());
+      return json(res, 200, { ...statusPayload(), ui: await uiVersion() });
     }
 
     if (req.method === "GET" && url.pathname === "/api/overview") {
@@ -1040,7 +1067,6 @@ export async function startDashboard(): Promise<void> {
       else res.end();
     });
   };
-  startFrameWarmer(GO2RTC_URL);
   const httpServer = http.createServer(onRequest);
   httpServer.on("error", (e) => log(`Dashboard-Server-Fehler: ${e.message}`));
 

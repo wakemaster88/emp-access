@@ -11,7 +11,8 @@ import { startDashboard } from "./dashboard.js";
 import { dashboardAccessMode } from "./dashboard-auth.js";
 import { autoScan } from "./scanner.js";
 import { onTaskKick } from "./task-kick.js";
-import { pollCameras, CAMERA_POLL_INTERVAL_MS, activeVehicleBursts, restoreCameraMotion, restoreSceneReturns } from "./cameras.js";
+import { pollCameras, CAMERA_POLL_INTERVAL_MS, activeVehicleBursts, listCameraStatus, restoreCameraMotion, restoreSceneReturns } from "./cameras.js";
+import { listDoorbirdStatus } from "./doorbird.js";
 import { talkActive } from "./camera-talk.js";
 import { ALIVE_INTERVAL_MS, markAlive } from "./alive-mark.js";
 import { ensureFaceSidecar, refreshGallery } from "./face.js";
@@ -303,11 +304,18 @@ async function pollTasks() {
 // Lokales Dashboard starten, sofort melden, dann in Intervallen weiterarbeiten.
 startImproveLog();
 startSystemMetrics();
-// go2rtc beobachten: Streams ohne Daten oder in H.265 landen im Hub-Log.
-startGo2rtcMonitor();
+// go2rtc beobachten: Streams ohne Daten oder in H.265 landen im Hub-Log,
+// ebenso Kameras ohne Stream und Streams ohne Kamera (Abgleich ueber den Host).
+startGo2rtcMonitor({
+  cameras: () => [
+    ...listCameraStatus().map((c) => ({ name: c.name, host: c.host, reachable: c.reachable, kind: c.kind })),
+    ...listDoorbirdStatus().map((b) => ({ name: b.name, host: b.host, reachable: b.connected, kind: "DOORBIRD" })),
+  ],
+});
 // Ruhezustand verhindern, pmset nachziehen (falls sudoers-Regel), Auto-Login melden.
 startSystemSetup();
-// ffmpeg fuer go2rtc-Standbilder: bei Bedarf per Homebrew nachinstallieren.
+// go2rtc.yaml: RTSP-Server nur ueber 127.0.0.1, ffmpeg fuer Standbilder
+// (bei Bedarf per Homebrew nachinstalliert). Eine Schreibung, ein Neustart.
 void ensureFfmpeg();
 // Hue-Lampen und -Gruppen in die Cloud melden (dort im Raum zuordnen).
 startHueSync();

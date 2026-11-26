@@ -12,6 +12,8 @@
 <meta name="apple-mobile-web-app-title" content="Hub">
 <meta name="application-name" content="Hub">
 <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+<!-- Stand der Oberflaeche; setzt der Hub beim Ausliefern ein (hub/src/ui-stamp.ts). -->
+<meta name="hub-ui" content="">
 <title>EMP-Access Hub</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
@@ -536,6 +538,8 @@
 <!-- Telefon: weitere Bereiche hinter "Mehr" (pwa.js) -->
 <div class="more-sheet" id="moreSheet" hidden></div>
 
+<!-- Neuer Stand der Oberflaeche auf dem Hub (checkUi in dashboard.js) -->
+<button type="button" class="btn small primary ui-update" id="uiUpdate" hidden><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Neue Version, neu laden</button>
 <button type="button" class="kiosk-exit" id="kioskExit" hidden aria-label="Vollbild beenden"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
 <dialog class="dialog form-dlg" id="vehDlg" aria-labelledby="vehDlgTitle">
   <form method="dialog" class="form-dlg-body" id="vehForm">
@@ -646,6 +650,7 @@
 </dialog>
 
 <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+<script src="/rtc-rules.js"></script>
 <script src="/dashboard.js"></script>
 <script src="/pwa.js" defer></script>
 </body>

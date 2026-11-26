@@ -11,11 +11,12 @@
  * Standbilder) und alles mit Query-String (z. B. ?token=…): Das geht immer
  * direkt ans Netz, damit nichts Veraltetes oder Geheimes im Cache landet.
  */
-const CACHE = "hub-shell-v1";
+const CACHE = "hub-shell-v2";
 const SHELL = [
   "/",
   "/dashboard.css",
   "/dashboard.js",
+  "/rtc-rules.js",
   "/manifest.webmanifest",
   "/icons/icon.svg",
   "/icons/icon-192.png",

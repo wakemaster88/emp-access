@@ -460,7 +460,9 @@ function stopBoxes() {
 async function pollBoxes() {
   const c = focusCam();
   if (!c || !$("camDlg").open || document.hidden || live.boxBusy) return;
-  const src = streamFor(c, "main");
+  // Boxen aus dem Sub-Stream (640 px reichen dem Tracker, kein 4K-Bild je
+  // Sekunde); sie sind normiert und passen auch ueber den Hauptstream.
+  const src = RtcRules.boxStream(c, live.streams);
   if (!src) return;
   live.boxBusy = true;
   try {
@@ -498,6 +500,12 @@ function renderBoxes() {
   const r = live.boxes;
   if (!layer) return;
   layoutBoxes();
+  // Kein frisches Bild beim Hub: keine Boxen, sonst laegen sie ueber einer
+  // womoeglich laengst leeren Szene (Hinweis im Kopf, renderFocusState).
+  if (r && r.stale) {
+    if (layer.innerHTML) layer.innerHTML = "";
+    return;
+  }
   const persons = (r && Array.isArray(r.persons) ? r.persons : []).slice().sort((a, b) => b.w * b.h - a.w * a.h);
   const kind = r && r.label ? r.label.kind : "unknown";
   // Neuer Hub: Name je Box (dort, wo das Gesicht erkannt wurde). Aelterer
@@ -870,6 +878,8 @@ const live = {
   kiosk: false,
   /** Kamera, deren Grossansicht nach dem Wechsel in die Zentrale aufgehen soll. */
   pendingFocus: null,
+  /** Kamera-ID -> zuletzt gesehene Erreichbarkeit (wieder erreichbar = sofort neu verbinden). */
+  reach: new Map(),
 };
 
 /** Finger statt Maus: andere Hinweise, Gesten in der Grossansicht. */
@@ -1119,12 +1129,67 @@ function videoIsBlack(video) {
   }
 }
 
+/*
+ * Staffelung beim Verbindungsaufbau der Kacheln (RtcRules.gatePlan): Beim
+ * Oeffnen der Zentrale verbanden alle sichtbaren Kacheln im selben Moment,
+ * Safari blieb dabei bei den meisten in „ICE checking“ haengen. Jetzt
+ * hoechstens drei gleichzeitig im Aufbau, die naechste, sobald eine
+ * verbunden ist, spaetestens nach 2 s.
+ */
+const rtcGate = { queue: [], busy: new Map(), timer: null };
+
+function gateEnter(run) {
+  const ticket = { run };
+  rtcGate.queue.push(ticket);
+  gatePump();
+  return ticket;
+}
+
+function gateLeave(ticket) {
+  const i = rtcGate.queue.indexOf(ticket);
+  if (i >= 0) rtcGate.queue.splice(i, 1);
+  if (rtcGate.busy.delete(ticket)) gatePump();
+}
+
+function gatePump() {
+  clearTimeout(rtcGate.timer);
+  rtcGate.timer = null;
+  const now = Date.now();
+  for (const [t, at] of rtcGate.busy) if (now - at >= RtcRules.GATE_HOLD_MS) rtcGate.busy.delete(t);
+  const plan = RtcRules.gatePlan([...rtcGate.busy.values()], rtcGate.queue.length, now);
+  for (let i = 0; i < plan.start; i++) {
+    const t = rtcGate.queue.shift();
+    rtcGate.busy.set(t, now);
+    // Nicht im selben Aufruf starten: Ein sofortiger Fehlschlag gibt den
+    // Platz wieder frei und darf diese Schleife nicht erneut betreten.
+    setTimeout(t.run, 0);
+  }
+  if (plan.waitMs != null) rtcGate.timer = setTimeout(gatePump, plan.waitMs);
+}
+
+/** Kandidat der Gegenseite fuer die Meldung an den Hub (Typ, Adresse, Port, Zustand). */
+async function candidateInfo(peer) {
+  try {
+    const stats = await peer.getStats();
+    const list = [];
+    stats.forEach((r) => list.push(r));
+    const c = RtcRules.pickCandidate(list);
+    return c ? { candType: c.type, candAddr: c.address, candPort: c.port, candState: c.state } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Minimaler WebRTC-Client fuer go2rtc; verbindet bei Abbruch neu.
  * maxAttempts begrenzt die Fehlversuche in Folge (Maeher: jeder Versuch
  * holt ein Token bei Mammotion), danach meldet er "failed".
+ * kind: Art der Kamera (Zeitlimit, RtcRules.rtcTimeoutMs). reachable:
+ * Funktion, die sagt, ob die Kamera laut Hub erreichbar ist (Wartezeit,
+ * RtcRules.tileRetryDelay). gate: Aufbau ueber die Staffelung (Kacheln).
+ * Die Stop-Funktion hat `kick()`: wartenden Neuversuch sofort starten.
  */
-function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
+function startRtc(video, src, onState, { maxAttempts = 0, kind = "", reachable = null, gate = false } = {}) {
   if (typeof RTCPeerConnection === "undefined") {
     onState("error");
     return () => {};
@@ -1133,6 +1198,11 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
   let stopped = false;
   let timer = null;
   let attempts = 0;
+  /** Platz in der Staffelung, solange diese Verbindung im Aufbau ist. */
+  let ticket = null;
+  /** Zeitpunkte je Verbindung: Angebot gesendet, "connected" erreicht (fuer `ms` in der Meldung). */
+  let offerAt = 0;
+  let connectedAt = 0;
   let watch = null;
   let prevStats = null;
   let lateSince = 0;
@@ -1256,7 +1326,14 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
     prevStats = cur;
   };
 
+  const release = () => {
+    if (!ticket) return;
+    gateLeave(ticket);
+    ticket = null;
+  };
+
   const cleanup = () => {
+    release();
     clearInterval(watch);
     watch = null;
     prevStats = null;
@@ -1281,7 +1358,7 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
    * aus der Ferne nicht zu sehen, ob ICE scheitert, ob Bilder ankommen, aber
    * nicht dekodiert werden, oder ob das Video nur schwarz bleibt.
    */
-  const report = (event) => {
+  const report = (event, extra) => {
     try {
       const body = {
         src,
@@ -1294,6 +1371,9 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
         h: video.videoHeight || 0,
         paused: !!video.paused,
         hidden: document.visibilityState === "hidden",
+        // Angebot bis "connected"; ohne Verbindung die Zeit bis zu dieser Meldung.
+        ms: offerAt ? (connectedAt || Date.now()) - offerAt : 0,
+        ...(extra || {}),
       };
       fetch("/api/go2rtc/client", {
         method: "POST",
@@ -1306,9 +1386,9 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
     }
   };
 
-  const retry = (resync = false, why = "abbruch") => {
+  const retry = (resync = false, why = "abbruch", extra = null) => {
     if (stopped) return;
-    if (!resync) report(why);
+    if (!resync) report(why, extra);
     cleanup();
     clearTimeout(timer);
     // Neu verbinden wegen Verzoegerung: sofort und ohne Fehlversuch zu zaehlen.
@@ -1322,12 +1402,28 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
       return;
     }
     onState("error");
-    timer = setTimeout(connect, Math.min(15000, 2000 * 2 ** Math.min(3, attempts - 1)));
+    // Online 2, 4, 8, 15 s; nach ICE-Zeitlimit sofort; Kamera offline 120 s.
+    timer = setTimeout(connect, RtcRules.tileRetryDelay(attempts, reachable ? reachable() : null, why));
   };
 
-  async function connect() {
+  /* Kacheln reihen sich in die Staffelung ein, die Grossansicht verbindet sofort. */
+  function connect() {
+    if (stopped) return;
+    if (!gate) return void connectNow();
+    release();
+    const mine = gateEnter(() => {
+      // Inzwischen gestoppt oder neu eingereiht: Dieser Platz gilt nicht mehr.
+      if (stopped || ticket !== mine) return;
+      connectNow();
+    });
+    ticket = mine;
+  }
+
+  async function connectNow() {
     if (stopped) return;
     try {
+      offerAt = 0;
+      connectedAt = 0;
       pc = new RTCPeerConnection({ iceServers: [] });
       pc.addTransceiver("video", { direction: "recvonly" });
       pc.addTransceiver("audio", { direction: "recvonly" });
@@ -1341,6 +1437,8 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
         if (!pc) return;
         const st = pc.connectionState;
         if (st === "connected") {
+          if (!connectedAt) connectedAt = Date.now();
+          release();
           lowLatency();
           clearInterval(watch);
           lastFrameAt = Date.now();
@@ -1350,8 +1448,11 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
           // Oft nur ein kurzer Aussetzer (WLAN): ICE erholt sich meist von
           // selbst. Erst nach 8 s ohne Erholung neu verbinden.
           clearTimeout(timer);
-          timer = setTimeout(() => {
-            if (pc && pc.connectionState === "disconnected") retry();
+          timer = setTimeout(async () => {
+            if (!pc || pc.connectionState !== "disconnected") return;
+            const thisPc = pc;
+            const cand = await candidateInfo(thisPc);
+            if (pc === thisPc && pc.connectionState === "disconnected") retry(false, "abbruch", cand);
           }, 8000);
         } else if (st === "failed" || st === "closed") {
           retry(false, `verbindung-${st}`);
@@ -1359,6 +1460,7 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
       };
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+      offerAt = Date.now();
       const res = await fetch(`/api/go2rtc/webrtc?src=${encodeURIComponent(src)}`, {
         method: "POST",
         headers: { "Content-Type": "application/sdp" },
@@ -1371,11 +1473,15 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
       lowLatency();
       // Bleibt die Verbindung danach in "new"/"connecting" haengen (ICE findet
       // keinen Weg), gab es bisher nie einen neuen Versuch: Die Kachel stand
-      // ewig auf "Verbindung wird aufgebaut". Nach 15 s ohne "connected" neu.
+      // ewig auf "Verbindung wird aufgebaut". Erster Versuch nach 6 s ohne
+      // "connected" neu, weitere nach 15 s (RtcRules.rtcTimeoutMs); die
+      // Meldung nennt den zuletzt geprueften Kandidaten.
       const thisPc = pc;
-      setTimeout(() => {
-        if (!stopped && pc === thisPc && pc.connectionState !== "connected") retry(false, "ice-timeout");
-      }, 15000);
+      setTimeout(async () => {
+        if (stopped || pc !== thisPc || pc.connectionState === "connected") return;
+        const cand = await candidateInfo(thisPc);
+        if (!stopped && pc === thisPc && pc.connectionState !== "connected") retry(false, "ice-timeout", cand);
+      }, RtcRules.rtcTimeoutMs(attempts, kind));
     } catch (e) {
       retry(false, `signal: ${e && e.message ? e.message : "fehler"}`);
     }
@@ -1384,13 +1490,21 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
   onState("connecting");
   const stopMirror = mirrorVideo(video);
   connect();
-  return () => {
+  const stop = () => {
     stopped = true;
     clearTimeout(timer);
     cleanup();
     stopMirror();
     video.srcObject = null;
   };
+  // Wartet die Kachel auf den naechsten Versuch (keine Verbindung, nicht in
+  // der Staffelung), sofort neu verbinden, z. B. wenn die Kamera wieder da ist.
+  stop.kick = () => {
+    if (stopped || pc || ticket) return;
+    clearTimeout(timer);
+    connect();
+  };
+  return stop;
 }
 
 /** Kleine Symbole fuer das, was die Kamera kann. */
@@ -1484,22 +1598,42 @@ function updateTileHint(tile, c) {
   if (text && el && el.textContent !== text) el.textContent = text;
 }
 
+/** Erreichbarkeit laut Hub-Ueberblick; null = unbekannt. */
+function camReachable(id) {
+  const d = state.overview;
+  if (!d) return null;
+  const cam = d.cameras.find((x) => x.id === id);
+  if (cam) return cam.reachable;
+  const b = d.doorbirds.find((x) => x.id === id);
+  return b ? b.connected : null;
+}
+
 function ensureTileStream(tile, c) {
   // Maeher-Kameras nur auf Wunsch in der Grossansicht (kein Dauer-Livebild, kein Standbild).
   if (c.kind === "MOWER") return;
   const src = streamFor(c, "sub");
   if (!src) return;
+  const wasReachable = live.reach.get(c.id);
+  live.reach.set(c.id, c.reachable);
   const visible = tile.dataset.vis !== "0";
   if (!visible) stopTile(tile, c.id);
-  if (visible && !live.peers.has(c.id)) {
+  const running = live.peers.get(c.id);
+  // Kamera wieder erreichbar: nicht die 120 s Pause abwarten.
+  if (visible && running && running.kick && RtcRules.reconnectNow(wasReachable, c.reachable)) running.kick();
+  if (visible && !running) {
     const video = tile.querySelector("video");
     video.onloadedmetadata = () => markWide(c.id, video.videoWidth, video.videoHeight);
-    const stop = startRtc(video, src, (st) => {
-      tile.dataset.rtc = st;
-      tile.classList.toggle("is-live", st === "live");
-      setTileMode(tile);
-      updateTileHint(tile, c);
-    });
+    const stop = startRtc(
+      video,
+      src,
+      (st) => {
+        tile.dataset.rtc = st;
+        tile.classList.toggle("is-live", st === "live");
+        setTileMode(tile);
+        updateTileHint(tile, c);
+      },
+      { kind: c.kind, gate: true, reachable: () => camReachable(c.id) }
+    );
     live.peers.set(c.id, stop);
   }
 }
@@ -1770,7 +1904,8 @@ function openFocus(id) {
         if (isMower && st === "failed") loadMowerStatus().then(() => renderFocusState(state.overview));
         renderFocusState(state.overview);
       },
-      { maxAttempts: isMower ? 3 : 0 }
+      // Ohne `reachable`: Wer die Grossansicht oeffnet, will das Bild jetzt (kurze Wartezeiten auch offline).
+      { maxAttempts: isMower ? 3 : 0, kind: c.kind }
     );
     if (!isMower && src.endsWith("_main")) watchMainStream(c, video);
   }
@@ -1822,10 +1957,13 @@ function renderFocusState(d) {
   $("camDlgWait").classList.toggle("is-static", !streamFor(c, "main") || rtc === "failed");
   const why = mower && rtc !== "live" && c.cam.error ? `<span class="badge warn">${esc(c.cam.error)}</span>` : "";
   const b = live.boxes && live.boxes.cameraId === c.id ? live.boxes : null;
-  const n = b ? (Array.isArray(b.persons) ? b.persons.length : b.people) : 0;
-  const who = n
-    ? `<span class="badge ${b.label ? SEEN_TONE[b.label.kind] : "sky"}">${icon("user")}${n === 1 ? "1 Person" : `${n} Personen`}${b.label ? ` · ${esc(b.label.text)}` : ""}</span>`
-    : "";
+  const stale = !!(b && b.stale);
+  const n = b && !stale ? (Array.isArray(b.persons) ? b.persons.length : b.people) : 0;
+  const who = stale
+    ? '<span class="badge idle" title="go2rtc lieferte dem Hub gerade kein frisches Bild, die Personen-Boxen ruhen.">Personen: kein aktuelles Bild</span>'
+    : n
+      ? `<span class="badge ${b.label ? SEEN_TONE[b.label.kind] : "sky"}">${icon("user")}${n === 1 ? "1 Person" : `${n} Personen`}${b.label ? ` · ${esc(b.label.text)}` : ""}</span>`
+      : "";
   const clk =
     c.clock && Math.abs(c.clock.offsetS) >= CLOCK_WARN_S
       ? `<span class="badge warn" title="${esc(
@@ -4974,12 +5112,76 @@ function tickClock() {
 setInterval(tickClock, 15000);
 tickClock();
 
+/*
+ * Neuer Oberflaechen-Stand nach einem Hub-Update: Der Hub zieht main ohne
+ * Neustart, eine lange offene Zentrale (oder Home-Bildschirm-App) liefe
+ * sonst mit dem alten Code weiter. Die Seite traegt den Stand, mit dem der
+ * Hub sie ausgeliefert hat (`<meta name="hub-ui">`), /api/status liefert den
+ * aktuellen (`ui`, beide aus den ETags von HTML, JS und CSS).
+ * RtcRules.shouldReload: neu laden, wenn der Tab wieder sichtbar wird und
+ * nichts Grosses offen ist, sonst nur der Hinweis „Neue Version, neu laden“.
+ */
+function pageUiStamp() {
+  const v = document.querySelector('meta[name="hub-ui"]')?.getAttribute("content") || "";
+  return /^[0-9a-f]{1,64}$/.test(v) ? v : null;
+}
+const uiStamp = { loaded: pageUiStamp(), current: null, busy: false };
+const UI_CHECK_MS = 60_000;
+
+/** Grossansicht, Dialog oder Vollbild offen: nicht von selbst neu laden. */
+function uiOccupied() {
+  return !!document.querySelector("dialog[open]") || isFullscreen();
+}
+
+/** Hoechstens einmal je neuem Stand von selbst neu laden (keine Schleife). */
+function reloadOnce(stamp) {
+  try {
+    if (sessionStorage.getItem("hub-ui-reload") === stamp) return false;
+    sessionStorage.setItem("hub-ui-reload", stamp);
+  } catch {
+    // privater Modus: trotzdem neu laden, danach stimmt der Stand
+  }
+  return true;
+}
+
+async function checkUi(waking = false) {
+  if (uiStamp.busy) return;
+  uiStamp.busy = true;
+  try {
+    const r = await getJson("/api/status");
+    uiStamp.current = r && typeof r.ui === "string" ? r.ui : null;
+  } catch {
+    return;
+  } finally {
+    uiStamp.busy = false;
+  }
+  const what = RtcRules.shouldReload({
+    loadedUi: uiStamp.loaded,
+    currentUi: uiStamp.current,
+    view: state.view,
+    dialogOpen: uiOccupied(),
+    hidden: waking || document.hidden,
+  });
+  if (what === "reload" && reloadOnce(uiStamp.current)) {
+    location.reload();
+    return;
+  }
+  $("uiUpdate").hidden = what === "none";
+}
+
+$("uiUpdate").addEventListener("click", () => location.reload());
+setInterval(() => {
+  if (!document.hidden) checkUi();
+}, UI_CHECK_MS);
+
 window.addEventListener("hashchange", applyRoute);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     // Hintergrund-Tab: keine Videoverbindungen offen halten.
     stopLive();
   } else {
+    // Wieder sichtbar: zuerst schauen, ob der Hub inzwischen neuen Code hat.
+    checkUi(true);
     refresh();
   }
 });
@@ -4987,3 +5189,4 @@ document.addEventListener("visibilitychange", () => {
 renderEventFilter();
 applyRoute();
 scheduleTick();
+checkUi();
