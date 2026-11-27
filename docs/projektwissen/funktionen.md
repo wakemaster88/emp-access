@@ -4,6 +4,53 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Newsletter mit Amazon SES, Teil 1 (27.11.2026)
+
+Aaron hat am 27.11.2026 Amazon SES als Versand gewählt (statt Gmail-SMTP).
+Der Newsletter lebt in emp-access, die Website schickt Anmeldungen hierher.
+Ab Werk ist der Versand aus (`NewsletterConfig.enabled`).
+
+- **Daten**: `NewsletterConfig` (je Mandant, Absender, SES-Konfigurationssatz,
+  SNS-Thema, Link-Basis, Einwilligungstext, Schlüssel der Links),
+  `NewsletterSubscriber` (Status `PENDING`/`ACTIVE`/`UNSUBSCRIBED`/`BOUNCED`/
+  `COMPLAINED`, Nachweis der Einwilligung: Wortlaut, Zeit, IP, Browser der
+  Anmeldung, Zeit und IP der Bestätigung), `NewsletterCampaign` (Bausteine
+  als JSON) und `NewsletterSend` (Warteschlange und Protokoll je Empfänger).
+- **SES ohne SDK**: `src/lib/newsletter/sigv4.ts` signiert die Aufrufe
+  (Test mit dem Beispiel aus der AWS-Doku), `ses.ts` kennt Senden (Raw-MIME),
+  Konto-Zustand und Domain-Zustand. Zugangsdaten nur in Vercel:
+  `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`, `SES_REGION` (Standard
+  `eu-central-1`). Nicht `AWS_…`, diese Namen reserviert Vercel. Der
+  IAM-Benutzer braucht `ses:SendRawEmail`, `ses:SendEmail`, `ses:GetAccount`,
+  `ses:GetEmailIdentity`.
+- **Anmelden**: `POST /api/newsletter/subscribe` mit einem Integrations-Token
+  (Scope „Newsletter-Anmeldungen“), Server zu Server von der Website, mit IP
+  und Browser der Person. Antwort immer gleich. Bestätigungsmail höchstens
+  einmal je Stunde und fünfmal je Woche. Ohne fertiges SES bleibt die
+  Anmeldung offen, der Cron schickt die Mail innerhalb von 7 Tagen nach.
+- **Bestätigen und Abmelden**: `/nl/bestaetigen` und `/nl/abmelden`, schlichtes
+  HTML ohne Skripte, damit die Website sie unter
+  `tuttenbrocksee.com/newsletter/…` weiterleiten kann (Link-Basis in den
+  Einstellungen). Erst die Taste (POST) bestätigt oder meldet ab, damit
+  Link-Scanner nichts auslösen. Jede Aussendung hat `List-Unsubscribe` und
+  `List-Unsubscribe-Post` (Ein-Klick nach RFC 8058). Links:
+  `src/lib/newsletter/tokens.ts`, HMAC mit dem Schlüssel des Mandanten;
+  Bestätigung gilt 30 Tage, Abmelden für immer.
+- **Versand**: `POST /api/newsletter/campaigns/[id]/send` stellt alle
+  Angemeldeten in die Warteschlange; `/api/cron/newsletter` (jede Minute)
+  schickt höchstens 10 Mails je Sekunde (oder weniger, wenn SES weniger
+  erlaubt). Übernahme mit `FOR UPDATE SKIP LOCKED`, Drosselung und Netzfehler
+  werden bis zu fünfmal wiederholt, Konto- oder Domain-Fehler halten die
+  Aussendung an (`lastError`, neuer Versuch nach 10 Minuten). In der
+  SES-Sandbox startet keine Aussendung, Testmails gehen.
+- **Rückmeldungen**: `POST /api/newsletter/ses-events` nimmt SNS-Meldungen
+  an, prüft die Signatur und nur das eingetragene Thema (ARN). Dauerhafte
+  Rückläufer setzen `BOUNCED`, Beschwerden `COMPLAINED`; beide bekommen
+  nichts mehr.
+- Die Verwaltung (Gäste › Newsletter) folgt in Teil 2, die Website in
+  `tuttenbrocksee` danach. Die 358 Adressen der alten Website-Liste sind nie
+  bestätigt worden und werden nicht übernommen, bis Aaron entscheidet.
+
 ## Dashboard der Verwaltung (22.11.2026)
 
 - Reihenfolge bleibt: 1. „Jetzt“, 2. Tracking, 3. Statistik mit Tag-Wahl und

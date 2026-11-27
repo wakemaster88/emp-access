@@ -1,0 +1,48 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  confirmLink, isSnsTopicArn, linkBase, nextConfirmMailCount, readinessGaps, subscribeAction, unsubscribeLink,
+} from "./rules";
+
+const NOW = new Date("2026-11-27T12:00:00Z");
+const ago = (ms: number) => new Date(NOW.getTime() - ms);
+const H = 60 * 60 * 1000;
+
+test("subscribeAction: neu, angemeldet, offen, abgemeldet", () => {
+  assert.equal(subscribeAction(null, NOW), "create");
+  assert.equal(subscribeAction({ status: "ACTIVE", confirmMailSentAt: null, confirmMailCount: 0 }, NOW), "active");
+  assert.equal(subscribeAction({ status: "PENDING", confirmMailSentAt: ago(2 * H), confirmMailCount: 1 }, NOW), "resend");
+  assert.equal(subscribeAction({ status: "UNSUBSCRIBED", confirmMailSentAt: ago(30 * 24 * H), confirmMailCount: 1 }, NOW), "reopen");
+  assert.equal(subscribeAction({ status: "BOUNCED", confirmMailSentAt: null, confirmMailCount: 0 }, NOW), "reopen");
+});
+
+test("subscribeAction: höchstens eine Mail je Stunde und fünf je Woche", () => {
+  assert.equal(subscribeAction({ status: "PENDING", confirmMailSentAt: ago(10 * 60 * 1000), confirmMailCount: 1 }, NOW), "throttled");
+  assert.equal(subscribeAction({ status: "PENDING", confirmMailSentAt: ago(3 * H), confirmMailCount: 5 }, NOW), "throttled");
+  assert.equal(subscribeAction({ status: "PENDING", confirmMailSentAt: ago(8 * 24 * H), confirmMailCount: 5 }, NOW), "resend");
+});
+
+test("nextConfirmMailCount: zählt hoch, nach einer Woche neu", () => {
+  assert.equal(nextConfirmMailCount(null, NOW), 1);
+  assert.equal(nextConfirmMailCount({ confirmMailSentAt: ago(2 * H), confirmMailCount: 2 }, NOW), 3);
+  assert.equal(nextConfirmMailCount({ confirmMailSentAt: ago(8 * 24 * H), confirmMailCount: 4 }, NOW), 1);
+});
+
+test("readinessGaps: alles da = leer", () => {
+  assert.deepEqual(readinessGaps({ enabled: true, fromEmail: "a@b.de", hasSesCredentials: true }), []);
+  assert.equal(readinessGaps({ enabled: false, fromEmail: null, hasSesCredentials: false }).length, 3);
+});
+
+test("linkBase und Links", () => {
+  assert.equal(linkBase(null, "https://www.emp-access.de/"), "https://www.emp-access.de/nl");
+  assert.equal(linkBase("https://www.tuttenbrocksee.com/newsletter/", "https://x.de"), "https://www.tuttenbrocksee.com/newsletter");
+  assert.equal(linkBase("http://unsicher.de", "https://x.de"), "https://x.de/nl");
+  assert.equal(confirmLink("https://a.de/nl", "c.1.2.0.3.abc"), "https://a.de/nl/bestaetigen?t=c.1.2.0.3.abc");
+  assert.equal(unsubscribeLink("https://a.de/nl", "u.1.2.0.3.abc"), "https://a.de/nl/abmelden?t=u.1.2.0.3.abc");
+});
+
+test("isSnsTopicArn", () => {
+  assert.ok(isSnsTopicArn("arn:aws:sns:eu-central-1:123456789012:newsletter-events"));
+  assert.ok(!isSnsTopicArn("arn:aws:sqs:eu-central-1:123456789012:x"));
+  assert.ok(!isSnsTopicArn("newsletter"));
+});

@@ -122,6 +122,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/newsletter",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/tick-5min",
       "schedule": "*/5 * * * *"
     },

@@ -24,6 +24,7 @@ const ROUTES: IntegrationRoute[] = [
   "/api/lost-items",
   "/api/lost-items/[id]",
   "/api/lost-items/[id]/image",
+  "/api/newsletter/subscribe",
 ];
 const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
 
@@ -43,6 +44,7 @@ const EXPECTED: Record<string, string[]> = {
     "GET /api/lost-items/[id]/image",
     "HEAD /api/lost-items/[id]/image",
   ],
+  newsletter: ["POST /api/newsletter/subscribe"],
 };
 
 test("Scope-Matrix: jeder Scope gegen jede Route und Methode", () => {
