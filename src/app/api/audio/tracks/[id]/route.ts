@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { audioBlobDeleteMode } from "@/lib/audio-blob-path";
+import { publicBlobToken } from "@/lib/blob-token";
 import { prisma } from "@/lib/prisma";
 
 export async function PUT(
@@ -65,13 +66,14 @@ export async function DELETE(
   // wenn kein anderer Eintrag (auch keines anderen Mandanten) dieselbe Datei
   // nutzt.
   const mode = audioBlobDeleteMode(existing, accountId!);
-  if (existing.blobPathname && mode !== "keep" && process.env.BLOB_READ_WRITE_TOKEN) {
+  const blobToken = publicBlobToken();
+  if (existing.blobPathname && mode !== "keep" && blobToken) {
     try {
       const stillUsed =
         (await prisma.audioTrack.count({ where: { blobPathname: existing.blobPathname } })) > 0;
       if (!stillUsed) {
         const { del } = await import("@vercel/blob");
-        await del(existing.blobPathname);
+        await del(existing.blobPathname, { token: blobToken });
       }
     } catch {
       // bewusst ignoriert

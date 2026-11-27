@@ -118,7 +118,10 @@ async function migrateKeyPdfs() {
 }
 
 async function main() {
-  if (!blobConfigured()) throw new Error("BLOB_PRIVATE_READ_WRITE_TOKEN fehlt");
+  // Ausserhalb von Vercel gibt es kein OIDC: hier zaehlt nur der statische Token.
+  if (!blobConfigured() || !process.env.BLOB_PRIVATE_READ_WRITE_TOKEN?.trim()) {
+    throw new Error("BLOB_PRIVATE_READ_WRITE_TOKEN fehlt (das Skript braucht den statischen Token des privaten Speichers)");
+  }
   await migrateScanSnapshots();
   await migratePersonSightings();
   await migrateVehicleSightings();

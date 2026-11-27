@@ -7,6 +7,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { publicBlobToken } from "@/lib/blob-token";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { isAllowedAudioUploadPath } from "@/lib/audio-blob-path";
 
@@ -25,7 +26,8 @@ export async function POST(request: NextRequest) {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  const blobToken = publicBlobToken();
+  if (!blobToken) {
     return NextResponse.json(
       { error: "Blob-Storage ist nicht konfiguriert (BLOB_READ_WRITE_TOKEN fehlt)" },
       { status: 501 }
@@ -39,6 +41,7 @@ export async function POST(request: NextRequest) {
     const result = await handleUpload({
       body,
       request,
+      token: blobToken,
       // Der Pfad kommt vom Browser: audio/<accountId>/<Dateiname>, aus noch
       // offenen Tabs mit älterem Code auch nur der Dateiname. Alles andere
       // wird abgelehnt.

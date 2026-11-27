@@ -21,6 +21,7 @@ import {
 } from "@/lib/audio-constants";
 import { hasPlaceholders, resolveAnnouncementText, type AnnouncementContext } from "./announcement-text";
 import { ttsBlobPath } from "./audio-blob-path";
+import { publicBlobToken } from "./blob-token";
 import { scheduleSpecInclude, toScheduleSpec } from "./operating-queries";
 
 type Db = TenantDb;
@@ -340,6 +341,9 @@ export async function renderTtsTrack(
 
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) throw new TtsNotConfiguredError();
+  // Vor dem kostenpflichtigen TTS-Aufruf: ohne Audio-Speicher kein Upload.
+  const blobToken = publicBlobToken();
+  if (!blobToken) throw new Error("Blob-Storage ist nicht konfiguriert (BLOB_READ_WRITE_TOKEN fehlt)");
 
   const response = await fetch(TTS_ENDPOINT, {
     method: "POST",
@@ -367,6 +371,7 @@ export async function renderTtsTrack(
   // Ansage hochgeladen, der Eintrag aber nicht mehr gespeichert wurde.
   const blob = await put(ttsBlobPath(accountId, hash), audio, {
     access: "public",
+    token: blobToken,
     contentType: "audio/mpeg",
     addRandomSuffix: false,
     allowOverwrite: true,
