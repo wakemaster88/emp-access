@@ -40,6 +40,11 @@ export interface CachedCamera {
   channel: number;
   deliveryMode?: string | null;
   doorHoldUntil?: string | null;
+  /**
+   * Livebild und Vorschau (live-mode-rules.ts). Bleibt in der Kopie wie
+   * geliefert: Eine Kamera mit „aus“ bleibt auch ohne Cloud aus.
+   */
+  liveMode?: string | null;
 }
 
 export interface CameraCacheFile<T extends CachedCamera = CachedCamera> {

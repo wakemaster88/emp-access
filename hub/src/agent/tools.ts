@@ -41,7 +41,8 @@ import type { ToolSpec } from "./ollama.js";
 export type ToolRisk = "read" | "act";
 
 export interface ToolContext {
-  sendPhoto: (jpeg: Buffer, caption: string) => Promise<void>;
+  /** `camera`: Name der Kamera, fuers KI-Protokoll der Zentrale (Livebild und Vorschau). */
+  sendPhoto: (jpeg: Buffer, caption: string, camera?: string) => Promise<void>;
 }
 
 export interface AgentTool {
@@ -248,7 +249,7 @@ export const TOOLS: AgentTool[] = [
     run: async (args, ctx) => {
       const cam = cameraRef(args);
       const jpeg = isDoorbird(cam.id) ? await captureDoorbirdSnapshot(cam.id) : await captureSnapshot(cam.id);
-      await ctx.sendPhoto(jpeg, `${cam.name} · ${new Date().toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin" })}`);
+      await ctx.sendPhoto(jpeg, `${cam.name} · ${new Date().toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin" })}`, cam.name);
       return { sent: true, camera: cam.name };
     },
   },
@@ -262,7 +263,7 @@ export const TOOLS: AgentTool[] = [
       const cam = cameraRef(args);
       const jpeg = isDoorbird(cam.id) ? await captureDoorbirdSnapshot(cam.id) : await captureSnapshot(cam.id);
       const q = String(args.question ?? "").trim() || "Was ist zu sehen? Fällt etwas auf?";
-      await ctx.sendPhoto(jpeg, cam.name);
+      await ctx.sendPhoto(jpeg, cam.name, cam.name);
       const answer = await askVision(jpeg, `Bild der Kamera „${cam.name}“ einer Wasserski- und Freizeitanlage. ${q}\nAntworte kurz und sachlich auf Deutsch.`);
       return { camera: cam.name, answer };
     },

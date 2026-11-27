@@ -119,6 +119,8 @@ export interface AlarmMessage {
 
 /** Ein eingereihter Alarm: Hat er einen Chat erreicht? null = Ausgang noch offen. */
 export interface SentAlarm {
+  /** Kamera des Alarms; die Zusatzbilder tragen sie fuers KI-Protokoll weiter. */
+  camera?: string;
   reached(chatId: string): boolean | null;
   /** Ein Zusatzbild des Alarms kam im Chat mit Ton an. */
   rang(chatId: string): boolean;
@@ -146,6 +148,7 @@ export function sendAlarm(a: AlarmMessage): SentAlarm {
       text: a.caption,
       jpeg: a.jpeg,
       buttons: a.buttons,
+      camera: a.camera,
       textFallback: { note: NO_PHOTO_NOTE },
       meta: {
         label: `Wächter: Alarm ${a.camera}${toChat(a.chatIds, chatId)}`,
@@ -186,7 +189,12 @@ export function sendAlarm(a: AlarmMessage): SentAlarm {
   openAlarms.set(booked, { camera: a.camera, at });
   /** Chats, in denen ein Zusatzbild des Alarms mit Ton ankam. */
   const rang = new Set<string>();
-  return { reached: (chatId) => reached.get(chatId) ?? null, rang: (chatId) => rang.has(chatId), noteRang: (chatId) => void rang.add(chatId) };
+  return {
+    camera: a.camera,
+    reached: (chatId) => reached.get(chatId) ?? null,
+    rang: (chatId) => rang.has(chatId),
+    noteRang: (chatId) => void rang.add(chatId),
+  };
 }
 
 /** Kein Chat gekoppelt: Der Alarm bleibt im KI-Protokoll, im Log steht hoechstens eine Zeile je Stunde. */
@@ -218,6 +226,7 @@ export function sendAlarmImage(a: { chatIds: string[]; jpeg: Buffer; caption: st
       text: a.caption,
       jpeg: a.jpeg,
       optional: true,
+      camera: a.alarm.camera,
       silent: () => {
         const silent = imageSilent(a.alarm.reached(chatId), a.alarm.rang(chatId));
         loud = !silent;

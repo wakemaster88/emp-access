@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { INVALID_HOST_ERROR, isHostAddress } from "@/lib/net-address";
 import { parseSentinelMode } from "@/lib/camera-detection";
+import { LIVE_MODE_ERROR, parseLiveMode, shownSnapshotAt } from "@/lib/camera-live-mode";
 
 // Felder ohne Passwort und ohne Snapshot-Bytes (die UI laedt das Bild ueber
 // die eigene Snapshot-Route).
@@ -16,6 +17,7 @@ const LIST_SELECT = {
   channel: true,
   enabled: true,
   vehicleDetection: true,
+  liveMode: true,
   notes: true,
   snapshotAt: true,
   lastSeenAt: true,
@@ -32,7 +34,8 @@ export async function GET() {
     select: LIST_SELECT,
     orderBy: { name: "asc" },
   });
-  return NextResponse.json(cameras);
+  // Ohne Vorschaubild (Livebild und Vorschau: nur auf Tippen oder aus) kein Zeitpunkt.
+  return NextResponse.json(cameras.map((c) => ({ ...c, snapshotAt: shownSnapshotAt(c.liveMode, c.snapshotAt) })));
 }
 
 export async function POST(request: NextRequest) {
@@ -65,6 +68,10 @@ export async function POST(request: NextRequest) {
   if (sentinelMode === "invalid") {
     return NextResponse.json({ error: "Wächter: wie der Raum, nur nachts oder aus wählen" }, { status: 400 });
   }
+  const liveMode = body.liveMode === undefined ? null : parseLiveMode(body.liveMode);
+  if (liveMode === "invalid") {
+    return NextResponse.json({ error: LIVE_MODE_ERROR }, { status: 400 });
+  }
 
   const camera = await db.camera.create({
     data: {
@@ -79,6 +86,7 @@ export async function POST(request: NextRequest) {
       enabled: body.enabled !== false,
       vehicleDetection: body.vehicleDetection !== false,
       sentinelMode,
+      liveMode,
       notes: body.notes?.trim() || null,
       accountId: accountId!,
     },

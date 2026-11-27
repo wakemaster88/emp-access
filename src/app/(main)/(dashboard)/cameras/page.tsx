@@ -3,6 +3,7 @@ import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { CamerasView } from "@/components/cameras/cameras-view";
+import { shownSnapshotAt } from "@/lib/camera-live-mode";
 
 export default async function CamerasPage() {
   const session = await safeAuth();
@@ -35,6 +36,7 @@ export default async function CamerasPage() {
         deliveryFrom: true,
         deliveryTo: true,
         sentinelMode: true,
+        liveMode: true,
         notes: true,
         snapshotAt: true,
         lastSeenAt: true,
@@ -77,7 +79,8 @@ export default async function CamerasPage() {
             // JSON-Spalte → Punktliste; alles andere (null, kaputt) heisst „keine Zone“.
             vehicleZone: Array.isArray(c.vehicleZone) ? (c.vehicleZone as [number, number][]) : null,
             noParkZone: Array.isArray(c.noParkZone) ? (c.noParkZone as [number, number][]) : null,
-            snapshotAt: c.snapshotAt?.toISOString() ?? null,
+            // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild.
+            snapshotAt: shownSnapshotAt(c.liveMode, c.snapshotAt?.toISOString() ?? null),
             lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
             doorHoldUntil: c.doorHoldUntil?.toISOString() ?? null,
             doorHoldPulseAt: c.doorHoldPulseAt?.toISOString() ?? null,

@@ -32,6 +32,7 @@ import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { WebRTCVideo } from "./webrtc-video";
 import { DoorHoldBadge, DoorHoldButton, useNow, type DoorHoldState } from "@/components/cameras/door-hold";
 import { isDoorHoldActive } from "@/lib/door-hold";
+import { LIVE_MODE_CLICK_TEXT, liveTileShown, readLiveMode } from "@/lib/camera-live-mode";
 
 export interface WebcamRow {
   id: number;
@@ -42,6 +43,8 @@ export interface WebcamRow {
   channel: number;
   snapshotAt: string | null;
   lastSeenAt: string | null;
+  /** Livebild und Vorschau: null = automatisch, "CLICK" = nur auf Tippen, "OFF" = aus. */
+  liveMode: string | null;
 }
 
 interface ControlCenterProps {
@@ -436,7 +439,7 @@ const PTZ_LABEL: Partial<Record<PtzOp, string>> = {
 function CameraPanel({
   cam,
   hubOnline,
-  go2rtcUrl,
+  go2rtcUrl: go2rtcProbeUrl,
   streamBase,
   events,
   scan,
@@ -462,7 +465,13 @@ function CameraPanel({
   const [error, setError] = useState("");
   const now = useNow();
   const holdActive = !!now && !!hold && isDoorHoldActive(hold, now);
-  const [snapshotAt, setSnapshotAt] = useState(cam.snapshotAt);
+  // Livebild und Vorschau „nur auf Tippen“ oder „aus“: hier weder Video noch
+  // Vorschaubild (das Livebild gibt es nur in der Zentrale auf Tippen). Bei
+  // „aus“ entfaellt auch die Bildflaeche. Die Steuerung bleibt in beiden Faellen.
+  const off = !liveTileShown(cam.liveMode);
+  const clickOnly = readLiveMode(cam.liveMode) !== "AUTO";
+  const go2rtcUrl = clickOnly ? null : go2rtcProbeUrl;
+  const [snapshotAt, setSnapshotAt] = useState(clickOnly ? null : cam.snapshotAt);
   const [presets, setPresets] = useState<Preset[] | null>(null);
   const [presetsLoading, setPresetsLoading] = useState(false);
   const [spotlightOn, setSpotlightOn] = useState(false);
@@ -541,6 +550,56 @@ function CameraPanel({
 
   return (
     <>
+      {off ? (
+        // „aus“: keine Bildflaeche, nur Name, Hinweis und dieselben Tasten.
+        <div className="glass-tile flex flex-col gap-2 p-3">
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{cam.name}</p>
+            <div className="flex shrink-0 items-center gap-1">
+              {isDoorbird ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-11 text-muted-foreground hover:text-success sm:size-8"
+                    title="Tür öffnen"
+                    onClick={() => setDoorConfirm(true)}
+                    disabled={disabled}
+                  >
+                    {busy === "door"
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <DoorOpen className="h-4 w-4" />}
+                  </Button>
+                  <DoorHoldButton
+                    cameraId={cam.id}
+                    cameraName={cam.name}
+                    hold={hold}
+                    disabled={!hubOnline}
+                    onChange={onHoldChange}
+                    onError={setError}
+                    className="size-11 text-muted-foreground sm:size-8"
+                  />
+                </>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 text-muted-foreground sm:size-8"
+                  title="Kamera steuern (PTZ, Licht, IR, Sirene)"
+                  onClick={() => setControlsOpen(true)}
+                >
+                  <Gamepad2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge variant="neutral" className="text-xs h-5">Livebild und Vorschau aus</Badge>
+            {isDoorbird && <DoorHoldBadge hold={hold} now={now} className="h-5" />}
+          </div>
+          {isDoorbird && error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      ) : (
       <div className="@container group relative aspect-video overflow-hidden rounded-tile bg-black flex items-center justify-center">
         {go2rtcUrl && streamSrc ? (
           <WebRTCVideo
@@ -557,6 +616,8 @@ function CameraPanel({
             alt={`Schnappschuss ${cam.name}`}
             className="h-full w-full object-cover"
           />
+        ) : clickOnly ? (
+          <p className="px-4 pb-6 text-center text-xs text-white/70">{LIVE_MODE_CLICK_TEXT}</p>
         ) : (
           <Cctv className="h-10 w-10 text-white/25" />
         )}
@@ -627,7 +688,7 @@ function CameraPanel({
               HD
             </Button>
           )}
-          {!(go2rtcUrl && streamSrc) && (
+          {!(go2rtcUrl && streamSrc) && !clickOnly && (
             <Button
               variant="secondary"
               size="icon"
@@ -688,6 +749,7 @@ function CameraPanel({
           </p>
         )}
       </div>
+      )}
 
       <Dialog
         open={controlsOpen}

@@ -167,8 +167,12 @@ export function summarizeRoom(
     }
   }
 
+  // Livebild und Vorschau „nur auf Tippen“ oder „aus“: Diese Kameras haben gewollt kein Bild.
   const camerasStale = room.cameras.filter(
-    (c) => c.enabled && !(c.snapshotAt && nowMs - new Date(c.snapshotAt).getTime() < SNAPSHOT_FRESH_MS),
+    (c) =>
+      c.enabled &&
+      c.liveMode === "AUTO" &&
+      !(c.snapshotAt && nowMs - new Date(c.snapshotAt).getTime() < SNAPSHOT_FRESH_MS),
   ).length;
 
   const alerts: RoomAlert[] = [];

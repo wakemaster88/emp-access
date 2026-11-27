@@ -2025,6 +2025,12 @@ model Camera {
   /// solange der Raum geschlossen ist; ohne Betriebszeit im Nachtfenster),
   /// "NIGHT" = nur im Nachtfenster, "OFF" = nicht bewerten.
   sentinelMode        String?
+  /// Livebild und Vorschau dieser Kamera: null oder "AUTO" = automatisch
+  /// (Livebild in der Zentrale, Vorschaubild in der Cloud), "CLICK" = nur auf
+  /// Tippen (kein Vorschaubild, das Livebild startet in der Zentrale erst auf
+  /// Tippen), "OFF" = aus (keine Kachel, kein Livebild, kein Vorschaubild).
+  /// Unbekannte Werte gelten wie "CLICK".
+  liveMode            String?
   notes               String?
   /// Letzter Schnappschuss (JPEG) + Zeitpunkt.
   snapshot            Bytes?

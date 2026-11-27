@@ -28,6 +28,7 @@ import {
 } from "@/lib/access-rules";
 import { loadAccessRules, loadAreaHasExitReader, type LoadedAccessRules } from "@/lib/access-rules-cache";
 import { shouldQueueScanSnapshot } from "@/lib/scan-snapshot-hub";
+import { previewAllowed } from "@/lib/camera-live-mode";
 
 /**
  * Meldung des Raspberry Pi, dass das Relais per Dashboard-Button geoeffnet
@@ -281,6 +282,12 @@ export async function POST(request: NextRequest) {
     const at = new Date().toISOString();
     after(async () => {
       if (!(await shouldQueueScanSnapshot(db, accountId))) return;
+      // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Bild zum Scan.
+      const camera = await db.camera.findFirst({
+        where: { id: cameraId, accountId },
+        select: { liveMode: true },
+      }).catch(() => null);
+      if (!camera || !previewAllowed(camera.liveMode)) return;
       await db.hubTask.create({
         data: {
           type: "SCAN_SNAPSHOT",

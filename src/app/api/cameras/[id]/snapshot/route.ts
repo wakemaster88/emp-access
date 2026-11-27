@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { previewAllowed } from "@/lib/camera-live-mode";
 
-/** GET (Session): liefert den zuletzt gespeicherten Schnappschuss als JPEG. */
+/**
+ * GET (Session): liefert den zuletzt gespeicherten Schnappschuss als JPEG.
+ * Bei „Livebild und Vorschau: nur auf Tippen oder aus“ gibt es keinen (404).
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -19,9 +23,12 @@ export async function GET(
   // zu uebertragen – spart DB-Egress bei Browser-Refreshes.
   const meta = await db.camera.findFirst({
     where: { id: cameraId, accountId: accountId! },
-    select: { snapshotAt: true },
+    select: { snapshotAt: true, liveMode: true },
   });
   if (!meta) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+  if (!previewAllowed(meta.liveMode)) {
+    return NextResponse.json({ error: "Für diese Kamera gibt es kein Vorschaubild" }, { status: 404 });
+  }
   if (!meta.snapshotAt) {
     return NextResponse.json({ error: "Noch kein Schnappschuss vorhanden" }, { status: 404 });
   }
@@ -38,8 +45,12 @@ export async function GET(
 
   const camera = await db.camera.findFirst({
     where: { id: cameraId, accountId: accountId! },
-    select: { snapshot: true },
+    select: { snapshot: true, liveMode: true },
   });
+  // Zwischen beiden Abfragen umgestellt: auch dann kein Bild.
+  if (camera && !previewAllowed(camera.liveMode)) {
+    return NextResponse.json({ error: "Für diese Kamera gibt es kein Vorschaubild" }, { status: 404 });
+  }
   if (!camera?.snapshot) {
     return NextResponse.json({ error: "Noch kein Schnappschuss vorhanden" }, { status: 404 });
   }

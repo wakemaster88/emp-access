@@ -411,7 +411,7 @@ async function notify(chatIds: string[], reading: SpotReading, kind: "alert" | "
   let jpeg: Buffer | null = null;
   if (best) jpeg = await captureSnapshot(best.id).catch(() => null);
   for (const id of chatIds) {
-    if (jpeg) await sendPhoto(id, jpeg, caption).catch(() => sendText(id, caption).catch(() => undefined));
+    if (jpeg) await sendPhoto(id, jpeg, caption, undefined, { camera: best?.name }).catch(() => sendText(id, caption).catch(() => undefined));
     else await sendText(id, caption).catch(() => undefined);
   }
   OCCUPANCY.alerts++;

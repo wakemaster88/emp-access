@@ -23,6 +23,14 @@ interface Rules {
   pickCandidate(stats: unknown[]): Cand | null;
   boxStream(cam: { host: string | null; kind?: string }, streams: Array<{ name: string; host: string | null }>): string | null;
   shouldReload(o: { loadedUi: string | null; currentUi: string | null; view: string; dialogOpen: boolean; hidden: boolean }): string;
+  CLICK_LIVE_MAX_MS: number;
+  liveModeOf(cam: { liveMode?: unknown } | null | undefined): string;
+  tileShown(cam: { liveMode?: unknown }): boolean;
+  zentraleCams<T extends { liveMode?: unknown }>(cams: T[]): T[];
+  tapExpired(tappedAt: number | null | undefined, now: number): boolean;
+  liveAllowed(cam: { liveMode?: unknown }, tappedAt: number | null | undefined, now: number, hidden: boolean): boolean;
+  tapExpiry(taps: Array<[number, number]>, now: number): { expired: number[]; nextMs: number | null };
+  modeChanges(prev: Map<number | string, string>, cams: Array<{ id: number | string; liveMode?: unknown }>): Array<number | string>;
 }
 
 /** Laedt hub/src/ui/rtc-rules.js wie der Browser (klassisches Skript) in eine Sandbox. */
@@ -172,4 +180,92 @@ test("Neu laden nach Hub-Update: nur verdeckt und ohne offene Großansicht, sons
   assert.equal(R.shouldReload({ ...base, currentUi: "b2", hidden: false }), "hint");
   // Bereich mit Eingabefeldern: nie von selbst.
   assert.equal(R.shouldReload({ ...base, currentUi: "b2", view: "aktionen" }), "hint");
+});
+
+test("Livebild und Vorschau: Wert aus dem Überblick, fehlend automatisch, Unbekanntes wie nur auf Tippen", () => {
+  assert.equal(R.liveModeOf({ liveMode: "auto" }), "auto");
+  assert.equal(R.liveModeOf({ liveMode: "click" }), "click");
+  assert.equal(R.liveModeOf({ liveMode: "off" }), "off");
+  assert.equal(R.liveModeOf({ liveMode: " OFF " }), "off");
+  // Maeher und aelterer Hub ohne das Feld: wie bisher.
+  assert.equal(R.liveModeOf({}), "auto");
+  assert.equal(R.liveModeOf({ liveMode: null }), "auto");
+  assert.equal(R.liveModeOf(null), "auto");
+  assert.equal(R.liveModeOf({ liveMode: "nachts" }), "click");
+});
+
+test("Bei aus keine Kachel und keine Großansicht, die anderen bleiben in ihrer Reihenfolge", () => {
+  const cams = [
+    { id: 1, name: "Kamera A", liveMode: "auto" },
+    { id: 2, name: "Kamera B", liveMode: "off" },
+    { id: 3, name: "Kamera C", liveMode: "click" },
+    { id: -1010, name: "Mäher", kind: "MOWER" },
+  ];
+  assert.deepEqual(plain(R.zentraleCams(cams).map((c) => c.id)), [1, 3, -1010]);
+  assert.equal(R.tileShown(cams[1]), false);
+  assert.equal(R.tileShown(cams[2]), true);
+  assert.deepEqual(plain(R.zentraleCams(undefined as unknown as never[])), []);
+});
+
+test("Nur auf Tippen: Livebild erst nach dem Tippen, höchstens 5 Minuten, nie bei verdeckter Seite", () => {
+  const t0 = 1_000_000;
+  const click = { liveMode: "click" };
+  assert.equal(R.CLICK_LIVE_MAX_MS, 5 * 60 * 1000);
+  // Ohne Tippen nichts, auch nicht beim Neuladen (kein gemerkter Zeitpunkt).
+  assert.equal(R.liveAllowed(click, null, t0, false), false);
+  assert.equal(R.liveAllowed(click, undefined, t0, false), false);
+  assert.equal(R.liveAllowed(click, t0, t0, false), true);
+  assert.equal(R.liveAllowed(click, t0, t0 + 5 * 60 * 1000 - 1, false), true);
+  assert.equal(R.liveAllowed(click, t0, t0 + 5 * 60 * 1000, false), false);
+  // Seite verdeckt: aus, auch kurz nach dem Tippen.
+  assert.equal(R.liveAllowed(click, t0, t0 + 1000, true), false);
+  // Ein Zeitpunkt in der Zukunft (Uhr verstellt) zaehlt nicht.
+  assert.equal(R.liveAllowed(click, t0 + 60_000, t0, false), false);
+  // Automatisch laeuft ohne Tippen, aus nie.
+  assert.equal(R.liveAllowed({ liveMode: "auto" }, null, t0, false), true);
+  assert.equal(R.liveAllowed({}, null, t0, false), true);
+  assert.equal(R.liveAllowed({ liveMode: "off" }, t0, t0, false), false);
+  // Unbekannter Wert: wie nur auf Tippen.
+  assert.equal(R.liveAllowed({ liveMode: "etwas" }, null, t0, false), false);
+});
+
+test("Abgelaufene Tippen: diese Livebilder enden, Wartezeit bis zum nächsten Ablauf", () => {
+  const t0 = 2_000_000;
+  const max = 5 * 60 * 1000;
+  assert.deepEqual(plain(R.tapExpiry([], t0)), { expired: [], nextMs: null });
+  assert.deepEqual(
+    plain(
+      R.tapExpiry(
+        [
+          [1, t0 - max],
+          [2, t0 - 60_000],
+          [3, t0 - 240_000],
+        ],
+        t0
+      )
+    ),
+    { expired: [1], nextMs: 60_000 }
+  );
+  assert.equal(R.tapExpired(null, t0), true);
+  assert.equal(R.tapExpired(t0 - 1000, t0), false);
+});
+
+test("Einstellung geändert, in beide Richtungen: diese Kameras, neue Kameras nicht", () => {
+  const prev = new Map<number | string, string>([
+    [1, "auto"],
+    [2, "click"],
+    [3, "click"],
+    [4, "off"],
+    ["maeher-1", "auto"],
+  ]);
+  const cams = [
+    { id: 1, liveMode: "CLICK" },
+    { id: 2, liveMode: null },
+    { id: 3, liveMode: "click" },
+    { id: 4, liveMode: "CLICK" },
+    { id: 5, liveMode: "OFF" },
+    { id: "maeher-1" },
+  ];
+  assert.deepEqual(plain(R.modeChanges(prev, cams)), [1, 2, 4]);
+  assert.deepEqual(plain(R.modeChanges(new Map(), cams)), []);
 });

@@ -37,6 +37,57 @@ export interface ActivityEntry {
   telegram?: boolean;
   /** Bild-ID fuer /api/agent/activity/img/<id>. */
   img?: number;
+  /** Kamera, von der das Bild stammt (Name), wenn `where` sie nicht nennt (Telegram-Bilder). */
+  camera?: string;
+  /** Nur in der Antwort an die Zentrale: Bild erst auf Tippen zeigen. */
+  imgTap?: boolean;
+}
+
+/** Einstellung „Livebild und Vorschau“ der Kamera eines Eintrags (live-mode-rules.ts). */
+export type ImageCameraMode = "auto" | "click" | "off";
+
+/**
+ * Wie zeigt die Zentrale das Bild eines Eintrags? Nach der Einstellung
+ * „Livebild und Vorschau“ seiner Kamera: "show" wie bisher, "tap" erst nach
+ * einem Tippen auf den Eintrag („nur auf Tippen“), "hide" gar nicht („aus“).
+ * Der Text bleibt immer. Die Kamera steht in `camera` oder, ausser bei
+ * Nachrichten von Personen, in `where` (Waechter, Alarme). Ohne Kamera oder
+ * bei unbekanntem Namen entscheidet `modeOf("")` bzw. `modeOf(name)`: aus
+ * imageModeByName heisst das „nur auf Tippen“, sobald eine Kamera nicht auf
+ * automatisch steht (aeltere Eintraege ohne Kamera, umbenannte Kameras),
+ * sonst wie bisher. Bilder in Nachrichten von Personen ohne Kamera bleiben.
+ */
+export function activityImageView(
+  e: Pick<ActivityEntry, "kind" | "where" | "camera">,
+  modeOf: (camera: string) => ImageCameraMode | null
+): "show" | "tap" | "hide" {
+  const cam = e.camera ?? (e.kind === "user" ? undefined : e.where);
+  if (!cam && e.kind === "user") return "show";
+  const mode = modeOf(cam ?? "");
+  if (mode === "off") return "hide";
+  if (mode === "click") return "tap";
+  return "show";
+}
+
+/**
+ * Einstellung je Kameraname fuer activityImageView. Tragen mehrere Kameras
+ * denselben Namen, gilt die strengste („aus“ vor „nur auf Tippen“). Ein
+ * leerer oder unbekannter Name gilt als „nur auf Tippen“, sobald irgendeine
+ * Kamera nicht auf automatisch steht: Die Kamera eines solchen Eintrags ist
+ * nicht sicher bekannt.
+ */
+export function imageModeByName(
+  cameras: Array<{ name: string; mode: ImageCameraMode }>
+): (camera: string) => ImageCameraMode | null {
+  const rank: Record<ImageCameraMode, number> = { auto: 0, click: 1, off: 2 };
+  const byName = new Map<string, ImageCameraMode>();
+  for (const c of cameras) {
+    const key = c.name.trim();
+    const prev = byName.get(key);
+    if (!prev || rank[c.mode] > rank[prev]) byName.set(key, c.mode);
+  }
+  const restricted = [...byName.values()].some((m) => m !== "auto");
+  return (camera) => byName.get(camera.trim()) ?? (restricted ? "click" : null);
 }
 
 /** Art einer ausgehenden Telegram-Nachricht aus ihrem Anfang ableiten. */

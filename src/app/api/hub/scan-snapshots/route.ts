@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
 import { storeImageColumn } from "@/lib/blob-store";
+import { previewAllowed } from "@/lib/camera-live-mode";
 
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 
@@ -36,6 +37,16 @@ export async function POST(request: NextRequest) {
   // hoher Wahrscheinlichkeit die falsche Person.
   if (Date.now() - at.getTime() > 45_000) {
     return NextResponse.json({ ok: true, attached: false, stale: true });
+  }
+
+  // Livebild und Vorschau „nur auf Tippen“ oder „aus“: Bild verwerfen. Die
+  // Antwort ist ein Erfolg, damit ein älterer Hub nicht neu versucht.
+  const camera = await db.camera.findFirst({
+    where: { id: cameraId, accountId: account.id },
+    select: { liveMode: true },
+  });
+  if (camera && !previewAllowed(camera.liveMode)) {
+    return NextResponse.json({ ok: true, attached: false, skipped: "liveMode" });
   }
 
   const buf = Buffer.from(await request.arrayBuffer());

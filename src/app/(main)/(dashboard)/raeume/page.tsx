@@ -26,6 +26,7 @@ import { readMowerMap, readMowerState } from "@/lib/mower";
 import { getWeather } from "@/lib/weather";
 import { getIrrigationRecommendation, parseRunState, parseValveSequence } from "@/lib/irrigation";
 import { bucketRunsByDay, nextScheduleRun, type RoomIrrigation, type RoomIrrigationSchedule } from "@/lib/room-irrigation";
+import { readLiveMode, shownSnapshotAt } from "@/lib/camera-live-mode";
 
 /** Fenster, in dem eine Bewegung im Raum noch als "zuletzt" gezeigt wird. */
 const EVENT_LOOKBACK_HOURS = 24;
@@ -49,6 +50,7 @@ const cameraSelect = {
   enabled: true,
   snapshotAt: true,
   lastSeenAt: true,
+  liveMode: true,
 } as const;
 
 const zoneSelect = {
@@ -92,6 +94,7 @@ type CameraRecord = {
   enabled: boolean;
   snapshotAt: Date | null;
   lastSeenAt: Date | null;
+  liveMode: string | null;
 };
 
 function toDevice(d: DeviceRecord): RoomDevice {
@@ -140,8 +143,10 @@ function toCamera(c: CameraRecord): RoomCamera {
     name: c.name,
     kind: c.kind,
     enabled: c.enabled,
-    snapshotAt: c.snapshotAt ? c.snapshotAt.toISOString() : null,
+    // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild.
+    snapshotAt: shownSnapshotAt(c.liveMode, c.snapshotAt ? c.snapshotAt.toISOString() : null),
     lastSeenAt: c.lastSeenAt ? c.lastSeenAt.toISOString() : null,
+    liveMode: readLiveMode(c.liveMode),
   };
 }
 

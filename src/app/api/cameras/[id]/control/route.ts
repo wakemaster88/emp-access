@@ -3,6 +3,7 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { waitForHubTask } from "@/lib/hub-task-wait";
 import { hubTaskActor } from "@/lib/hub-task-rules";
 import { recordDeviceAction } from "@/lib/device-action-log";
+import { PREVIEW_BLOCKED_ERROR, previewAllowed } from "@/lib/camera-live-mode";
 
 /**
  * Kamera-Steuerung (Kontrollzentrum): legt einen Hub-Task an und wartet
@@ -39,7 +40,7 @@ export async function POST(
 
   const camera = await db.camera.findFirst({
     where: { id: cameraId, accountId: accountId! },
-    select: { id: true, name: true, kind: true, enabled: true },
+    select: { id: true, name: true, kind: true, enabled: true, liveMode: true },
   });
   if (!camera) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   if (!camera.enabled) {
@@ -61,6 +62,11 @@ export async function POST(
       { error: `Ungültige Aktion für ${camera.kind} (${allowed.join(", ")})` },
       { status: 400 }
     );
+  }
+
+  // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Bild beim Hub anfordern.
+  if (taskType === "CAMERA_SNAPSHOT" && !previewAllowed(camera.liveMode)) {
+    return NextResponse.json({ error: PREVIEW_BLOCKED_ERROR }, { status: 400 });
   }
 
   const payload =

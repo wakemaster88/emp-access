@@ -24,6 +24,11 @@ export interface TgButton {
 export interface SendOptions {
   /** Ohne Ton (disable_notification): Telegram zeigt sie, klingelt aber nicht. */
   silent?: boolean;
+  /**
+   * Kamera, von der das Bild stammt (Name). Nur fuers KI-Protokoll der
+   * Zentrale: Dort richtet sich das Bild nach „Livebild und Vorschau“.
+   */
+  camera?: string;
 }
 
 export interface TgUpdate {
@@ -131,7 +136,7 @@ export async function sendPhoto(chatId: string, jpeg: Buffer, caption?: string, 
   if (opts.silent) form.set("disable_notification", "true");
   form.set("photo", new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), "bild.jpg");
   await call("sendPhoto", form, 60_000);
-  recordTelegramOut(caption || "Bild", { buttons: !!buttons, jpeg });
+  recordTelegramOut(caption || "Bild", { buttons: !!buttons, jpeg, camera: opts.camera });
 }
 
 export async function editText(chatId: string, messageId: number, text: string): Promise<void> {
