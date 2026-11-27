@@ -7,7 +7,7 @@ import {
   Plus, Save, Send, Trash2, Type, X, type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import {
@@ -525,8 +526,12 @@ export function CampaignEditor({
   );
 }
 
-/** Mail-Vorschau in einem abgeschotteten Rahmen (keine Skripte, keine Links). */
+/**
+ * Mail-Vorschau in einem abgeschotteten Rahmen (keine Skripte, keine Links).
+ * „Handy“ zeigt sie 375 px breit, so greift die Handy-Ansicht der Mail.
+ */
 export function PreviewCard({ html, subject, preheader }: { html: string; subject: string; preheader: string }) {
+  const [view, setView] = useState<"computer" | "handy">("computer");
   return (
     <Card className="lg:sticky lg:top-20">
       <CardHeader>
@@ -538,13 +543,29 @@ export function PreviewCard({ html, subject, preheader }: { html: string; subjec
           <span className="font-medium text-foreground">{subject.trim() || "Ohne Betreff"}</span>
           {preheader.trim() && <> · {preheader.trim()}</>}
         </CardDescription>
+        <CardAction>
+          <Segmented
+            aria-label="Ansicht der Vorschau"
+            size="sm"
+            value={view}
+            onValueChange={setView}
+            options={[
+              { value: "computer", label: "Computer" },
+              { value: "handy", label: "Handy" },
+            ]}
+          />
+        </CardAction>
       </CardHeader>
       <CardContent>
         <iframe
-          title="Vorschau der Mail"
+          title={view === "handy" ? "Vorschau der Mail auf dem Handy" : "Vorschau der Mail"}
           srcDoc={html}
           sandbox=""
-          className="h-[70vh] min-h-[480px] w-full rounded-tile border border-border"
+          className={
+            view === "handy"
+              ? "mx-auto block h-[70vh] min-h-[480px] w-full max-w-[375px] rounded-tile border border-border"
+              : "h-[70vh] min-h-[480px] w-full rounded-tile border border-border"
+          }
         />
       </CardContent>
     </Card>

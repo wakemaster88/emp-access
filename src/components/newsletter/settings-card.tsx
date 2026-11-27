@@ -20,6 +20,9 @@ export interface NewsletterSettings {
   snsTopicArn: string;
   linkBaseUrl: string;
   consentText: string;
+  brandColor: string;
+  accentColor: string;
+  logoUrl: string;
 }
 
 type TextKey = Exclude<keyof NewsletterSettings, "enabled">;
@@ -33,7 +36,20 @@ const FIELDS: Array<{ key: TextKey; label: string; hint: string; placeholder?: s
   { key: "linkBaseUrl", label: "Adresse der Links", hint: "Wo Bestätigen und Abmelden liegen. Leer: diese App unter /nl.", placeholder: "https://www.tuttenbrocksee.com/newsletter", max: 300 },
 ];
 
-/** Absender, AWS-Anbindung, Links und Einwilligungstext. */
+/** Aussehen der Mails und der Seiten Bestätigen/Abmelden; leer = wie die Website. */
+const DESIGN_FIELDS: typeof FIELDS = [
+  { key: "brandColor", label: "Farbe", hint: "Tasten und Links, als #RRGGBB. Leer: Petrol #1a6d73 wie die Website.", placeholder: "#1a6d73", max: 7 },
+  { key: "accentColor", label: "Akzentfarbe", hint: "Linie unter dem Logo und „Newsletter abbestellen“ im dunklen Fuß. Leer: Gelb #fbbf24.", placeholder: "#fbbf24", max: 7 },
+  { key: "logoUrl", label: "Logo", hint: "https-Adresse eines PNG oder JPG, am besten etwa 4:1 und 500 px breit. Leer: Logo aus den E-Mail-Einstellungen, sonst der Name.", placeholder: "https://…/logo.png", max: 2000 },
+];
+const ALL_FIELDS = [...FIELDS, ...DESIGN_FIELDS];
+
+function Swatch({ value }: { value: string }) {
+  if (!/^#[0-9a-f]{6}$/i.test(value)) return null;
+  return <span aria-hidden className="inline-block h-4 w-4 shrink-0 rounded-full ring-1 ring-inset ring-glass-border" style={{ background: value }} />;
+}
+
+/** Absender, AWS-Anbindung, Links, Einwilligungstext und Aussehen. */
 export function NewsletterSettingsCard({
   config,
   defaultFromName,
@@ -54,7 +70,7 @@ export function NewsletterSettingsCard({
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
-  const dirty = FIELDS.some((f) => form[f.key] !== config[f.key]) || form.consentText !== config.consentText;
+  const dirty = ALL_FIELDS.some((f) => form[f.key] !== config[f.key]) || form.consentText !== config.consentText;
   const canEnable = hasCredentials && !!config.fromEmail;
 
   async function put(body: Partial<NewsletterSettings>): Promise<Record<string, unknown> | null> {
@@ -88,7 +104,7 @@ export function NewsletterSettingsCard({
       // Gespeicherte Schreibweise übernehmen (Adressen klein, Links ohne Schrägstrich am Ende).
       setForm((f) => {
         const next = { ...f };
-        for (const { key } of FIELDS) next[key] = typeof result[key] === "string" ? (result[key] as string) : "";
+        for (const { key } of ALL_FIELDS) next[key] = typeof result[key] === "string" ? (result[key] as string) : "";
         next.consentText = typeof result.consentText === "string" ? result.consentText : "";
         return next;
       });
@@ -176,6 +192,33 @@ export function NewsletterSettingsCard({
             <p className="text-xs text-muted-foreground">
               Wird mit jeder Anmeldung gespeichert, wenn die Website keinen eigenen Text schickt. Leer: der Text oben in Grau.
             </p>
+          </div>
+
+          <div className="space-y-4 border-t border-border pt-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Aussehen</p>
+              <p className="text-xs text-muted-foreground">Für alle Mails des Newsletters und die Seiten zum Bestätigen und Abmelden.</p>
+            </div>
+            {DESIGN_FIELDS.map((f) => (
+              <div key={f.key} className="space-y-1.5">
+                <Label htmlFor={`nl-${f.key}`} className="flex items-center gap-2">
+                  {f.label}
+                  {f.key !== "logoUrl" && <Swatch value={form[f.key] || (f.placeholder ?? "")} />}
+                </Label>
+                <Input
+                  id={`nl-${f.key}`}
+                  type={f.key === "logoUrl" ? "url" : "text"}
+                  value={form[f.key]}
+                  maxLength={f.max}
+                  placeholder={f.placeholder}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(e) => setForm((s) => ({ ...s, [f.key]: e.target.value }))}
+                  className="max-sm:h-11"
+                />
+                <p className="text-xs text-muted-foreground">{f.hint}</p>
+              </div>
+            ))}
           </div>
 
           {error && <Notice tone="danger" compact title={error} />}

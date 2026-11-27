@@ -1,4 +1,4 @@
-import { escapeHtml, isHttpsUrl, type NewsletterBrand } from "./blocks";
+import { NEWSLETTER_FONT, escapeHtml, isHttpsUrl, newsletterColors, type NewsletterBrand } from "./blocks";
 
 /**
  * Öffentliche Seiten „Anmeldung bestätigen“ und „Abmelden“ als schlichtes
@@ -19,10 +19,17 @@ export interface PublicPage {
   status?: number;
 }
 
-const DEFAULT_COLOR = "#1a6d73";
+/** Kopf wie in der Mail: Logo (oder Name) auf Weiß mit Akzentlinie. */
+function pageHeader(brand: NewsletterBrand | null | undefined, name: string): string {
+  const logo = brand?.logoUrl && isHttpsUrl(brand.logoUrl)
+    ? `<img src="${escapeHtml(brand.logoUrl)}" alt="${name}" height="32">`
+    : `<span class="name">${name}</span>`;
+  const href = brand?.websiteUrl && isHttpsUrl(brand.websiteUrl) ? escapeHtml(brand.websiteUrl) : "";
+  return `<header>${href ? `<a href="${href}">${logo}</a>` : logo}</header>`;
+}
 
 export function publicPageHtml(p: PublicPage): string {
-  const color = p.brand?.color && /^#[0-9a-f]{6}$/i.test(p.brand.color) ? p.brand.color : DEFAULT_COLOR;
+  const { color, onColor, accent } = newsletterColors(p.brand);
   const name = escapeHtml(p.brand?.accountName ?? "Newsletter");
   const website =
     p.brand?.websiteUrl && isHttpsUrl(p.brand.websiteUrl)
@@ -42,24 +49,28 @@ export function publicPageHtml(p: PublicPage): string {
 <meta name="robots" content="noindex,nofollow">
 <title>${escapeHtml(p.title)} · ${name}</title>
 <style>
-:root{color-scheme:light dark}
+:root{color-scheme:light}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:#f3f4f6;color:#16181b;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-main{width:100%;max-width:440px;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:16px;overflow:hidden}
-header{background:${color};color:#fff;padding:16px 24px;font-weight:700}
-section{padding:24px}
-h1{margin:0 0 12px;font-size:22px;line-height:1.3}
-p{margin:0 0 12px;color:#3c4043}
-button{width:100%;margin-top:8px;padding:13px 16px;border:0;border-radius:10px;background:${color};color:#fff;font:inherit;font-weight:700;cursor:pointer}
-button:focus-visible{outline:3px solid #fbbf24;outline-offset:2px}
-label{display:block;margin:4px 0 6px;font-size:14px;font-weight:600}
-input[type=email]{width:100%;padding:12px 14px;border:1px solid rgba(0,0,0,.2);border-radius:10px;background:#fff;color:inherit;font:inherit}
-input[type=email]:focus-visible{outline:3px solid ${color};outline-offset:1px}
-.foot{margin-top:16px;font-size:14px}
-.foot a{color:${color}}
-@media (prefers-color-scheme:dark){body{background:#0f1114;color:#eceff1}main{background:#1a1d21;border-color:rgba(255,255,255,.08)}p{color:#c4c7cb}.foot a{color:#8fd3d8}input[type=email]{background:#0f1114;border-color:rgba(255,255,255,.2)}}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:#f1f5f9;color:#334155;font:16px/1.6 ${NEWSLETTER_FONT}}
+main{width:100%;max-width:460px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.06)}
+header{padding:18px 24px;border-bottom:4px solid ${accent}}
+header a{display:inline-block}
+header img{display:block;height:32px;width:auto;max-width:100%}
+header .name{font-weight:700;font-size:18px;color:#0f172a}
+section{padding:28px 24px 24px}
+h1{margin:0 0 12px;font-size:26px;line-height:1.2;font-weight:700;letter-spacing:-.3px;color:#0f172a}
+p{margin:0 0 12px}
+button{width:100%;margin-top:12px;padding:14px 20px;border:0;border-radius:999px;background:${color};color:${onColor};font:inherit;font-weight:600;cursor:pointer}
+button:hover{filter:brightness(.92)}
+button:focus-visible{outline:3px solid ${accent};outline-offset:2px}
+label{display:block;margin:8px 0 6px;font-size:14px;font-weight:600;color:#0f172a}
+input[type=email]{width:100%;padding:12px 16px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#0f172a;font:inherit}
+input[type=email]:focus-visible{outline:3px solid ${color};outline-offset:1px;border-color:${color}}
+.foot{margin:20px 0 0;font-size:14px}
+.foot a{color:${color};font-weight:600}
+@media (max-width:480px){body{align-items:flex-start;padding:0}main{border-radius:0;box-shadow:none;min-height:100vh}section{padding:24px 20px}header{padding:16px 20px}}
 </style>
-</head><body><main><header>${name}</header><section>
+</head><body><main>${pageHeader(p.brand, name)}<section>
 <h1>${escapeHtml(p.title)}</h1>
 ${p.lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("\n")}
 ${form}

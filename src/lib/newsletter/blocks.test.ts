@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  confirmMailBlocks, inlineHtml, inlineText, isLinkUrl, parseBlocks, renderNewsletterHtml, renderNewsletterText,
+  confirmMailBlocks, inlineHtml, inlineText, isLinkUrl, parseBlocks, renderNewsletterHtml, renderNewsletterText, textOn,
 } from "./blocks";
+import { publicPageHtml } from "./public-page";
 
 test("parseBlocks: gültige Bausteine, leere Texte fallen weg", () => {
   const r = parseBlocks([
@@ -76,4 +77,55 @@ test("renderNewsletterText: Abmeldelink im Text", () => {
 test("confirmMailBlocks: Taste mit dem Bestätigungslink", () => {
   const blocks = confirmMailBlocks("Tuttenbrocksee", "https://example.com/c");
   assert.ok(blocks.some((b) => b.type === "button" && b.url === "https://example.com/c"));
+});
+
+test("renderNewsletterHtml: Website-Design mit Logo, Akzentlinie und großer erster Überschrift", () => {
+  const html = renderNewsletterHtml(
+    [
+      { type: "heading", text: "Nikolausfahren" },
+      { type: "text", text: "Am 6. Dezember" },
+      { type: "heading", text: "Kostüm" },
+      { type: "button", label: "Mehr", url: "https://a.de" },
+    ],
+    { brand: { accountName: "TwinCable", logoUrl: "https://x.de/logo.png", websiteUrl: "https://www.tuttenbrocksee.com" } },
+  );
+  assert.match(html, /<img src="https:\/\/x.de\/logo.png" alt="TwinCable"/);
+  assert.match(html, /border-bottom:4px solid #fbbf24/);
+  assert.match(html, /<h1 class="nl-h1"[^>]*>Nikolausfahren<\/h1>/);
+  assert.match(html, /<h2[^>]*>Kostüm<\/h2>/);
+  assert.match(html, /background:#1a6d73;"><a href="https:\/\/a.de" style="[^"]*color:#ffffff/);
+  assert.match(html, />tuttenbrocksee.com<\/a>/);
+  assert.match(html, /@media only screen and \(max-width:620px\)/);
+  assert.doesNotMatch(html, /fonts.googleapis/);
+});
+
+test("renderNewsletterHtml: erstes Bild randlos als Titelbild, eigene Farben", () => {
+  const html = renderNewsletterHtml(
+    [{ type: "image", url: "https://x.de/a.jpg", alt: "See" }, { type: "text", text: "Hallo" }, { type: "image", url: "https://x.de/b.jpg" }],
+    { brand: { accountName: "X", color: "#fbbf24", accentColor: "#ff0000" } },
+  );
+  assert.match(html, /<img src="https:\/\/x.de\/a.jpg" alt="See" width="600"/);
+  assert.match(html, /<img src="https:\/\/x.de\/b.jpg" alt="" width="536"/);
+  assert.match(html, /border-bottom:4px solid #ff0000/);
+  // Ohne Logo steht der Name im Kopf.
+  assert.match(html, /font-weight:700;color:#0f172a;">X<\/div>/);
+});
+
+test("textOn: weiße Schrift auf Petrol, dunkle auf Gelb", () => {
+  assert.equal(textOn("#1a6d73"), "#ffffff");
+  assert.equal(textOn("#fbbf24"), "#0f172a");
+  assert.equal(textOn("#4f46e5"), "#ffffff");
+});
+
+test("publicPageHtml: Logo, Akzentlinie und Taste in der Hauptfarbe", () => {
+  const html = publicPageHtml({
+    title: "Newsletter abbestellen",
+    lines: ["Text"],
+    emailForm: { label: "Abmeldelink schicken" },
+    brand: { accountName: "TwinCable", logoUrl: "https://x.de/logo.png", websiteUrl: "https://www.tuttenbrocksee.com" },
+  });
+  assert.match(html, /<a href="https:\/\/www.tuttenbrocksee.com"><img src="https:\/\/x.de\/logo.png" alt="TwinCable"/);
+  assert.match(html, /border-bottom:4px solid #fbbf24/);
+  assert.match(html, /background:#1a6d73;color:#ffffff/);
+  assert.doesNotMatch(html, /<script/i);
 });
