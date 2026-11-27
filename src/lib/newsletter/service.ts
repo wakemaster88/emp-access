@@ -51,7 +51,7 @@ export async function loadSendContext(accountId: number): Promise<SendContext> {
     prisma.account.findUnique({ where: { id: accountId }, select: { name: true } }),
     prisma.emailConfig.findUnique({
       where: { accountId },
-      select: { brandColor: true, logoUrl: true, websiteUrl: true, legalFooter: true },
+      select: { logoUrl: true, websiteUrl: true, legalFooter: true },
     }),
   ]);
   const accountName = account?.name ?? "Newsletter";
@@ -62,8 +62,11 @@ export async function loadSendContext(accountId: number): Promise<SendContext> {
     config,
     brand: {
       accountName,
-      color: mail?.brandColor ?? null,
-      logoUrl: mail?.logoUrl ?? null,
+      // Eigene Farben des Newsletters (leer: wie die Website), nicht die
+      // Brand-Farbe der übrigen Mails.
+      color: config.brandColor ?? null,
+      accentColor: config.accentColor ?? null,
+      logoUrl: config.logoUrl ?? mail?.logoUrl ?? null,
       websiteUrl: mail?.websiteUrl ?? null,
       legalFooter: mail?.legalFooter ?? null,
     },

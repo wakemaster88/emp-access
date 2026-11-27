@@ -153,6 +153,28 @@ IAM liegen in `eu-north-1`, Vercel hat `SES_REGION=eu-north-1`. Frankfurt
   Formular oder, wenn nur einer einen Absender hat, dieser. Zum Verlinken auf
   der Website: `<Link-Basis>/abmelden` (steht in den Einstellungen).
 
+## Newsletter, Teil 5: Design wie die Website (27.11.2026)
+
+- Mails (`renderNewsletterHtml` in `src/lib/newsletter/blocks.ts`) sehen aus
+  wie tuttenbrocksee.com: weißer Kopf mit Logo und 4 px Akzentlinie (Gelb),
+  erste Überschrift groß (30 px, Slate-900), Fließtext Slate-700, Tasten als
+  Pille in der Hauptfarbe (Petrol), dunkler Fuß mit Name, Website, Grund,
+  „Newsletter abbestellen“ in Gelb und Pflichtangaben. Ist der erste Baustein
+  ein Bild, steht es randlos unter dem Kopf (Titelbild).
+- Handy (bis 620 px): randlos, Innenabstand 20 px, Überschrift 26 px, Tasten
+  über die ganze Breite (Media Query, greift in Apple Mail, iOS, Gmail-App).
+  Schrift: Inter, wo installiert, sonst Systemschrift; bewusst keine
+  Web-Schrift von Google (würde die IP jedes Lesers übertragen).
+- Eigene Farben und Logo je Mandant in `NewsletterConfig` (`brandColor`,
+  `accentColor`, `logoUrl`), Einstellungen › Aussehen. Leer: Petrol `#1a6d73`,
+  Gelb `#fbbf24`, Logo aus den E-Mail-Einstellungen. Die Brand-Farbe der
+  übrigen Mails (`EmailConfig.brandColor`) gilt für den Newsletter nicht mehr.
+  Schriftfarbe auf Tasten je nach Helligkeit (`textOn`).
+- Logo Tuttenbrocksee als PNG unter `public/brand/tuttenbrocksee-logo.png`
+  (aus dem WebP der Website, Hintergrund transparent): Webp zeigt Outlook nicht.
+- Seiten Bestätigen/Abmelden (`public-page.ts`) im selben Stil, nur hell.
+- Editor-Vorschau mit Umschalter „Computer“/„Handy“ (375 px).
+
 ## Dashboard der Verwaltung (22.11.2026)
 
 - Reihenfolge bleibt: 1. „Jetzt“, 2. Tracking, 3. Statistik mit Tag-Wahl und

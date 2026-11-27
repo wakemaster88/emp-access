@@ -247,6 +247,9 @@ export default async function NewsletterPage({
             snsTopicArn: ctx.config.snsTopicArn ?? "",
             linkBaseUrl: ctx.config.linkBaseUrl ?? "",
             consentText: ctx.config.consentText ?? "",
+            brandColor: ctx.config.brandColor ?? "",
+            accentColor: ctx.config.accentColor ?? "",
+            logoUrl: ctx.config.logoUrl ?? "",
           }}
           defaultFromName={ctx.accountName}
           defaultConsent={defaultConsentText(ctx.accountName)}

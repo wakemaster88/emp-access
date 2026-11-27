@@ -4,6 +4,7 @@ import { newsletterAdmin } from "@/lib/newsletter/admin-auth";
 import { loadNewsletterConfig } from "@/lib/newsletter/service";
 import { syncAnnyAboGroup } from "@/lib/newsletter/groups";
 import { isConfigurationSetName, isPlainEmail, isSnsTopicArn } from "@/lib/newsletter/rules";
+import { isHexColor, isHttpsUrl } from "@/lib/newsletter/blocks";
 import { prisma } from "@/lib/prisma";
 
 /** Einstellungen des Newsletters ändern (nur Admins). Der Schlüssel der Links bleibt unberührt. */
@@ -62,6 +63,17 @@ export async function PUT(request: NextRequest) {
     }
     const consentText = text("consentText", 2_000);
     if (consentText !== undefined) data.consentText = consentText;
+    for (const [key, label] of [["brandColor", "Farbe"], ["accentColor", "Akzentfarbe"]] as const) {
+      const v = text(key, 7);
+      if (v === undefined) continue;
+      if (v && !isHexColor(v)) throw new Error(`${label}: bitte als #RRGGBB angeben, z. B. #1a6d73`);
+      data[key] = v?.toLowerCase() ?? null;
+    }
+    const logoUrl = text("logoUrl", 2_000);
+    if (logoUrl !== undefined) {
+      if (logoUrl && !isHttpsUrl(logoUrl)) throw new Error("Logo: Bitte eine https-Adresse angeben");
+      data.logoUrl = logoUrl;
+    }
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Ungültige Anfrage" }, { status: 400 });
   }

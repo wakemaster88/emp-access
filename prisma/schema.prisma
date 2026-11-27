@@ -4930,6 +4930,14 @@ model NewsletterConfig {
   linkBaseUrl      String?
   /// Wortlaut der Einwilligung; wird mit jeder Anmeldung gespeichert.
   consentText      String?
+  /// Aussehen der Mails und der Seiten Bestätigen/Abmelden (#RRGGBB). Leer:
+  /// Petrol #1a6d73 und Gelb #fbbf24 wie die Website. Unabhängig von der
+  /// Brand-Farbe der übrigen Mails (EmailConfig).
+  brandColor       String?
+  accentColor      String?
+  /// Logo im Kopf (https, am besten PNG, etwa 4:1). Leer: Logo aus den
+  /// E-Mail-Einstellungen, sonst der Name als Text.
+  logoUrl          String?
   /// Gruppe „Abos aus anny“: Inhaber laufender anny-Abos automatisch als
   /// angemeldet aufnehmen (Bestandskunden, § 7 Abs. 3 UWG). Ab Werk aus.
   annyAutoSubscribe Boolean  @default(false)

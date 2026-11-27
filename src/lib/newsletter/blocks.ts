@@ -150,8 +150,10 @@ export function inlineText(text: string): string {
 
 export interface NewsletterBrand {
   accountName: string;
-  /** #RRGGBB */
+  /** Hauptfarbe (#RRGGBB) für Tasten und Links. Leer: Petrol der Website. */
   color?: string | null;
+  /** Akzent (#RRGGBB) für die Linie unter dem Kopf und Links im Fuß. Leer: Gelb der Website. */
+  accentColor?: string | null;
   logoUrl?: string | null;
   websiteUrl?: string | null;
   /** Pflichtangaben (Impressum), eine Angabe je Zeile. */
@@ -167,37 +169,76 @@ export interface RenderContext {
   reason?: string | null;
 }
 
-const DEFAULT_COLOR = "#1a6d73";
-const TEXT_COLOR = "#16181b";
-const MUTED_COLOR = "#5f6368";
+/*
+ * Aussehen wie tuttenbrocksee.com: weißer Kopf mit Logo und gelber Linie,
+ * Petrol für Tasten (Pille) und Links, Überschriften in Slate-900, Fuß dunkel.
+ * Schrift Inter, wo sie installiert ist (keine Web-Schrift von Google: das
+ * würde die IP jedes Lesers an Google geben), sonst die Systemschrift.
+ */
+export const NEWSLETTER_DEFAULT_COLOR = "#1a6d73";
+export const NEWSLETTER_DEFAULT_ACCENT = "#fbbf24";
+const INK = "#0f172a";
+const TEXT_COLOR = "#334155";
+const FOOT_TEXT = "#cbd5e1";
+const PAGE_BG = "#f1f5f9";
+const LINE = "#e2e8f0";
+export const NEWSLETTER_FONT = "Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const FONT = NEWSLETTER_FONT;
 
-function brandColor(c: string | null | undefined): string {
-  return c && /^#[0-9a-f]{6}$/i.test(c) ? c : DEFAULT_COLOR;
+export function isHexColor(c: unknown): c is string {
+  return typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c);
 }
 
-function blockHtml(b: NewsletterBlock, color: string): string {
+function hexOr(c: string | null | undefined, fallback: string): string {
+  return isHexColor(c) ? c : fallback;
+}
+
+/** Schrift auf einer Fläche: dunkel auf hellen Farben, sonst weiß. */
+export function textOn(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const lin = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const l = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  // Kontrast zu Weiß gegen Kontrast zu Slate-900 (Leuchtdichte 0,0089).
+  return 1.05 / (l + 0.05) >= (l + 0.05) / 0.0589 ? "#ffffff" : INK;
+}
+
+/** Farben der Mail und der öffentlichen Seiten aus den Einstellungen. */
+export function newsletterColors(brand: NewsletterBrand | null | undefined): { color: string; onColor: string; accent: string } {
+  const color = hexOr(brand?.color, NEWSLETTER_DEFAULT_COLOR);
+  return { color, onColor: textOn(color), accent: hexOr(brand?.accentColor, NEWSLETTER_DEFAULT_ACCENT) };
+}
+
+function paragraphs(text: string, color: string, style: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((p) => `<p style="${style}">${p.split("\n").map((line) => inlineHtml(line, color)).join("<br>")}</p>`)
+    .join("");
+}
+
+function blockHtml(b: NewsletterBlock, c: { color: string; onColor: string }, h1: boolean): string {
   switch (b.type) {
     case "heading":
-      return `<h2 style="margin:0 0 14px;font-size:22px;line-height:1.3;font-weight:700;color:${TEXT_COLOR};">${escapeHtml(b.text)}</h2>`;
+      return h1
+        ? `<h1 class="nl-h1" style="margin:0 0 16px;font-family:${FONT};font-size:30px;line-height:1.2;font-weight:700;letter-spacing:-0.3px;color:${INK};">${escapeHtml(b.text)}</h1>`
+        : `<h2 style="margin:8px 0 12px;font-family:${FONT};font-size:22px;line-height:1.3;font-weight:700;color:${INK};">${escapeHtml(b.text)}</h2>`;
     case "text":
-      return b.text
-        .split(/\n{2,}/)
-        .map(
-          (p) =>
-            `<p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${TEXT_COLOR};">${p
-              .split("\n")
-              .map((line) => inlineHtml(line, color))
-              .join("<br>")}</p>`,
-        )
-        .join("");
+      return paragraphs(b.text, c.color, `margin:0 0 16px;font-family:${FONT};font-size:16px;line-height:1.65;color:${TEXT_COLOR};`);
     case "image": {
-      const img = `<img src="${escapeHtml(b.url)}" alt="${escapeHtml(b.alt ?? "")}" width="536" style="display:block;width:100%;max-width:536px;height:auto;border:0;border-radius:12px;">`;
-      return `<div style="margin:0 0 18px;">${b.link ? `<a href="${escapeHtml(b.link)}">${img}</a>` : img}</div>`;
+      const img = `<img src="${escapeHtml(b.url)}" alt="${escapeHtml(b.alt ?? "")}" width="536" style="display:block;width:100%;max-width:536px;height:auto;border:0;border-radius:16px;">`;
+      return `<div style="margin:4px 0 20px;">${b.link ? `<a href="${escapeHtml(b.link)}">${img}</a>` : img}</div>`;
     }
     case "button":
-      return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:4px 0 20px;"><tr><td style="border-radius:10px;background:${color};"><a href="${escapeHtml(b.url)}" style="display:inline-block;padding:13px 24px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;">${escapeHtml(b.label)}</a></td></tr></table>`;
+      return (
+        `<table role="presentation" class="nl-btn" cellspacing="0" cellpadding="0" border="0" style="margin:8px 0 24px;border-collapse:separate;">` +
+        `<tr><td align="center" style="border-radius:999px;background:${c.color};">` +
+        `<a href="${escapeHtml(b.url)}" style="display:inline-block;padding:14px 28px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:${c.onColor};text-decoration:none;border-radius:999px;">${escapeHtml(b.label)}</a>` +
+        `</td></tr></table>`
+      );
     case "divider":
-      return `<hr style="margin:6px 0 22px;border:0;border-top:1px solid #e3e5e8;">`;
+      return `<hr style="margin:8px 0 24px;border:0;border-top:1px solid ${LINE};">`;
   }
 }
 
@@ -216,13 +257,28 @@ function blockText(b: NewsletterBlock): string {
   }
 }
 
-/** Die ganze Mail als HTML. */
+/** Logo (oder Name) für den Kopf der Mail. */
+function headerLogo(brand: NewsletterBrand): string {
+  const name = escapeHtml(brand.accountName);
+  if (brand.logoUrl && isHttpsUrl(brand.logoUrl)) {
+    return `<img src="${escapeHtml(brand.logoUrl)}" alt="${name}" height="36" style="display:block;height:36px;width:auto;max-width:260px;border:0;">`;
+  }
+  return `<div style="font-family:${FONT};font-size:18px;line-height:1.3;font-weight:700;color:${INK};">${name}</div>`;
+}
+
+/**
+ * Die ganze Mail als HTML: 600 px breit, auf dem Handy (bis 620 px) randlos
+ * mit schmalerem Innenabstand und Tasten über die ganze Breite. Ist der erste
+ * Baustein ein Bild, steht es randlos unter dem Kopf wie das Titelbild der
+ * Website; die erste Überschrift ist die große.
+ */
 export function renderNewsletterHtml(blocks: NewsletterBlock[], ctx: RenderContext): string {
-  const color = brandColor(ctx.brand.color);
+  const c = newsletterColors(ctx.brand);
   const name = escapeHtml(ctx.brand.accountName);
-  const logo = ctx.brand.logoUrl && isHttpsUrl(ctx.brand.logoUrl)
-    ? `<img src="${escapeHtml(ctx.brand.logoUrl)}" alt="${name}" height="44" style="display:block;height:44px;width:auto;border:0;">`
-    : `<div style="font-size:18px;font-weight:700;color:#ffffff;">${name}</div>`;
+  const hero = blocks[0]?.type === "image" ? blocks[0] : null;
+  const body = hero ? blocks.slice(1) : blocks;
+  const firstHeading = body.findIndex((b) => b.type === "heading");
+
   const legal = (ctx.brand.legalFooter ?? "")
     .split("\n")
     .map((l) => l.trim())
@@ -230,33 +286,60 @@ export function renderNewsletterHtml(blocks: NewsletterBlock[], ctx: RenderConte
     .map(escapeHtml)
     .join("<br>");
   const website = ctx.brand.websiteUrl && isHttpsUrl(ctx.brand.websiteUrl)
-    ? `<a href="${escapeHtml(ctx.brand.websiteUrl)}" style="color:${MUTED_COLOR};">${escapeHtml(ctx.brand.websiteUrl.replace(/^https:\/\//, "").replace(/\/$/, ""))}</a>`
+    ? `<a href="${escapeHtml(ctx.brand.websiteUrl)}" style="color:#ffffff;text-decoration:none;font-weight:600;">${escapeHtml(ctx.brand.websiteUrl.replace(/^https:\/\//, "").replace(/^www\./, "").replace(/\/$/, ""))}</a>`
+    : "";
+  const unsubscribe = ctx.unsubscribeUrl
+    ? `<a href="${escapeHtml(ctx.unsubscribeUrl)}" style="color:${c.accent};text-decoration:underline;">Newsletter abbestellen</a>`
     : "";
   const footer = [
+    `<span style="font-size:15px;font-weight:700;color:#ffffff;">${name}</span>${website ? `<br>${website}` : ""}`,
     ctx.reason ? escapeHtml(ctx.reason) : "",
-    ctx.unsubscribeUrl
-      ? `<a href="${escapeHtml(ctx.unsubscribeUrl)}" style="color:${MUTED_COLOR};text-decoration:underline;">Newsletter abbestellen</a>`
-      : "",
-    website,
+    unsubscribe,
     legal,
   ].filter(Boolean);
+
+  const heroHtml = hero
+    ? (() => {
+        const img = `<img src="${escapeHtml(hero.url)}" alt="${escapeHtml(hero.alt ?? "")}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;">`;
+        return `<tr><td style="background:#ffffff;padding:0;line-height:0;font-size:0;">${hero.link ? `<a href="${escapeHtml(hero.link)}">${img}</a>` : img}</td></tr>`;
+      })()
+    : "";
+  // Füllzeichen nach der Vorschauzeile, damit das Postfach keinen Text aus der Mail anhängt.
+  const preheader = ctx.preheader
+    ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">${escapeHtml(ctx.preheader)}${"&#847;&zwnj;&nbsp;".repeat(40)}</div>`
+    : "";
 
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
 <meta name="color-scheme" content="light">
 <meta name="supported-color-schemes" content="light">
 <title>${name}</title>
+<style>
+body{margin:0;padding:0;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+table{border-collapse:collapse}
+img{-ms-interpolation-mode:bicubic}
+@media only screen and (max-width:620px){
+.nl-outer{padding:0!important}
+.nl-top,.nl-bottom{border-radius:0!important}
+.nl-pad{padding-left:20px!important;padding-right:20px!important}
+.nl-h1{font-size:26px!important}
+.nl-btn{width:100%!important}
+.nl-btn a{display:block!important}
+}
+</style>
 </head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${TEXT_COLOR};">
-${ctx.preheader ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${escapeHtml(ctx.preheader)}</div>` : ""}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f3f4f6;"><tr><td align="center" style="padding:24px 12px;">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;">
-<tr><td style="background:${color};border-radius:16px 16px 0 0;padding:20px 32px;">${logo}</td></tr>
-<tr><td style="background:#ffffff;padding:32px 32px 16px;">
-${blocks.map((b) => blockHtml(b, color)).join("\n")}
+<body style="margin:0;padding:0;background:${PAGE_BG};font-family:${FONT};color:${TEXT_COLOR};">
+${preheader}
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${PAGE_BG};"><tr><td align="center" class="nl-outer" style="padding:24px 12px;">
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;">
+<tr><td class="nl-top nl-pad" style="background:#ffffff;border-radius:16px 16px 0 0;border-bottom:4px solid ${c.accent};padding:20px 32px;">${headerLogo(ctx.brand)}</td></tr>
+${heroHtml}
+<tr><td class="nl-pad" style="background:#ffffff;padding:32px 32px 12px;">
+${body.map((b, i) => blockHtml(b, c, i === firstHeading)).join("\n")}
 </td></tr>
-<tr><td style="background:#ffffff;border-radius:0 0 16px 16px;padding:0 32px 28px;"><div style="border-top:1px solid #e3e5e8;padding-top:18px;font-size:12px;line-height:1.6;color:${MUTED_COLOR};">${footer.join("<br><br>")}</div></td></tr>
+<tr><td class="nl-bottom nl-pad" style="background:${INK};border-radius:0 0 16px 16px;padding:28px 32px 32px;font-family:${FONT};font-size:13px;line-height:1.6;color:${FOOT_TEXT};">${footer.join("<br><br>")}</td></tr>
 </table>
 </td></tr></table>
 </body></html>`;
