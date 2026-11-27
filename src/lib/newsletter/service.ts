@@ -10,7 +10,7 @@ import {
   confirmLink, defaultConsentText, linkBase, nextConfirmMailCount, readinessGaps, reasonLine, subscribeAction,
   unsubscribeLink,
 } from "./rules";
-import { SesError, sesEnv, sesGetAccount, sesSendRaw, type SesEnv, type SesTag } from "./ses";
+import { SesError, sesEnv, sesErrorText, sesGetAccount, sesSendRaw, type SesEnv, type SesTag } from "./ses";
 import type { SesEvent } from "./sns";
 import { createLinkToken, newTokenSecret, verifyLinkToken } from "./tokens";
 
@@ -312,7 +312,7 @@ export async function sendTestMail(
       });
       sent.push(to);
     } catch (err) {
-      failed.push({ to, error: err instanceof Error ? err.message : String(err) });
+      failed.push({ to, error: sesErrorText(err) });
     }
   }
   return { sent, failed };
@@ -517,11 +517,12 @@ export async function runNewsletterTick(budgetMs = 45_000, now: Date = new Date(
             return "sent" as const;
           } catch (err) {
             const e = err instanceof SesError ? err : new SesError(String(err), "Unknown", 0, "retry");
+            const reason = sesErrorText(e);
             if (e.kind === "stop") {
-              stop.error = e.message;
+              stop.error = reason;
               await prisma.newsletterSend.update({
                 where: { id: row.id },
-                data: { status: "QUEUED", claimedAt: null, attempts: { decrement: 1 }, error: e.message.slice(0, 300) },
+                data: { status: "QUEUED", claimedAt: null, attempts: { decrement: 1 }, error: reason.slice(0, 300) },
               });
               return "stopped" as const;
             }
@@ -529,8 +530,8 @@ export async function runNewsletterTick(budgetMs = 45_000, now: Date = new Date(
             await prisma.newsletterSend.update({
               where: { id: row.id },
               data: giveUp
-                ? { status: "FAILED", error: e.message.slice(0, 300), claimedAt: null }
-                : { status: "QUEUED", error: e.message.slice(0, 300), claimedAt: null },
+                ? { status: "FAILED", error: reason.slice(0, 300), claimedAt: null }
+                : { status: "QUEUED", error: reason.slice(0, 300), claimedAt: null },
             });
             return giveUp ? ("failed" as const) : ("retried" as const);
           }

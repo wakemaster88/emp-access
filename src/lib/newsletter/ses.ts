@@ -83,6 +83,40 @@ export function sesErrorCode(headerType: string | null, body: unknown): string {
   return raw.split(":")[0].split("#").pop()?.trim() || "";
 }
 
+const CREDENTIAL_CODES = new Set([
+  "UnrecognizedClientException",
+  "InvalidClientTokenId",
+  "InvalidSignatureException",
+  "SignatureDoesNotMatch",
+  "IncompleteSignature",
+  "MissingAuthenticationToken",
+]);
+
+/**
+ * Fehler von SES als Satz für die Verwaltung: was passiert ist und was zu
+ * tun ist. Unbekannte Fehler behalten die Meldung von AWS.
+ */
+export function sesErrorText(err: unknown): string {
+  if (!(err instanceof SesError)) return err instanceof Error ? err.message : String(err);
+  const c = err.code;
+  if (CREDENTIAL_CODES.has(c)) return "Zugangsdaten ungültig · SES_ACCESS_KEY_ID und SES_SECRET_ACCESS_KEY in Vercel prüfen, danach neu deployen";
+  if (c === "ExpiredToken" || c === "ExpiredTokenException") return "Zugangsdaten abgelaufen · neuen Schlüssel in Vercel eintragen";
+  if (c === "AccessDeniedException" || c === "AccessDenied") return "Keine Berechtigung bei AWS · Richtlinie des IAM-Benutzers prüfen (ses:SendRawEmail, ses:GetAccount, ses:GetEmailIdentity)";
+  if (c === "AccountSuspendedException") return "SES-Konto gesperrt · Nachricht von AWS im Konto lesen";
+  if (c === "SendingPausedException") return "Versand bei AWS angehalten · im SES-Konto wieder freigeben";
+  if (c === "MailFromDomainNotVerifiedException") return "MAIL-FROM-Domain bei AWS nicht bestätigt · DNS-Einträge (MX, SPF) prüfen";
+  if (c === "NotFoundException") return "Bei AWS nicht gefunden · Absender-Domain und Konfigurationssatz in SES prüfen";
+  if (c === "NotConfigured") return "SES ist nicht eingerichtet · Zugangsdaten und Absender fehlen";
+  if (c === "NetworkError") return "SES nicht erreichbar · später erneut versuchen";
+  if (c === "MessageRejected" && /not verified/i.test(err.message)) {
+    return "Adresse oder Domain in SES nicht bestätigt · im Sandkasten gehen Mails nur an bestätigte Adressen";
+  }
+  if (c === "TooManyRequestsException" || c === "ThrottlingException" || c === "Throttling" || c === "LimitExceededException") {
+    return "SES drosselt gerade · der Versand wird wiederholt";
+  }
+  return err.message;
+}
+
 export function classifySesError(status: number, code: string): SesErrorKind {
   if (STOP_CODES.has(code)) return "stop";
   if (RETRY_CODES.has(code) || status === 429 || status >= 500) return "retry";
@@ -195,6 +229,10 @@ export interface SesIdentity {
   dkimStatus: string | null;
   /** CNAME-Einträge für DKIM: <token>._domainkey.<domain> → <token>.dkim.amazonses.com */
   dkimTokens: string[];
+  /** Eigene MAIL-FROM-Domain, z. B. mail.tuttenbrocksee.com */
+  mailFromDomain: string | null;
+  /** PENDING | SUCCESS | FAILED | TEMPORARY_FAILURE */
+  mailFromStatus: string | null;
 }
 
 /** Zustand einer Domain oder Adresse in SES; null, wenn sie dort fehlt. */
@@ -203,11 +241,14 @@ export async function sesGetIdentity(env: SesEnv, identity: string): Promise<Ses
     const r = await sesCall<{
       VerifiedForSendingStatus?: boolean;
       DkimAttributes?: { Status?: string; Tokens?: string[] };
+      MailFromAttributes?: { MailFromDomain?: string; MailFromDomainStatus?: string };
     }>(env, "GET", `/v2/email/identities/${encodeURIComponent(identity)}`);
     return {
       verifiedForSending: r?.VerifiedForSendingStatus === true,
       dkimStatus: r?.DkimAttributes?.Status ?? null,
       dkimTokens: Array.isArray(r?.DkimAttributes?.Tokens) ? r!.DkimAttributes!.Tokens! : [],
+      mailFromDomain: r?.MailFromAttributes?.MailFromDomain || null,
+      mailFromStatus: r?.MailFromAttributes?.MailFromDomainStatus ?? null,
     };
   } catch (err) {
     if (err instanceof SesError && err.code === "NotFoundException") return null;
