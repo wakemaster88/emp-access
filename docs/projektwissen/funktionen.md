@@ -78,6 +78,18 @@ Gäste › Newsletter (`/newsletter`, nur Admins) mit drei Reitern:
 - SES-Fehler erscheinen als deutscher Satz mit nächstem Schritt
   (`sesErrorText` in `src/lib/newsletter/ses.ts`), auch an der Aussendung.
 
+### Altbestand von der Website (27.11.2026)
+
+Die alte Liste der Website (Neon `tuttenbrocksee`, Tabelle
+`newsletter_subscribers`, 358 Adressen, alle ohne Bestätigung) ist geprüft:
+134 Einträge von Dezember 2025 bis August 2026 sehen echt aus, die 224 ab
+September 2026 sind Bot-Einträge (US-Firmen, US-Behörden, SMS-Adressen von
+US-Mobilfunkern) und dürfen nie angeschrieben werden. Auf Aarons Entscheidung
+sind 133 der 134 direkt als angemeldet übernommen (`source = "import"`,
+Anzeige „Alte Website-Liste“, `consentAt` = Datum der Eintragung,
+Einwilligungstext nennt die Übernahme ohne Bestätigung). Weggelassen ist eine
+Adresse mit Tippfehler-Domain (googlemai.com).
+
 ## Dashboard der Verwaltung (22.11.2026)
 
 - Reihenfolge bleibt: 1. „Jetzt“, 2. Tracking, 3. Statistik mit Tag-Wahl und

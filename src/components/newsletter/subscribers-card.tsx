@@ -43,6 +43,7 @@ const SOURCE_LABEL: Record<string, string> = {
   website: "Website",
   verwaltung: "Verwaltung",
   app: "Kunden-App",
+  import: "Alte Website-Liste",
 };
 
 const REASON_LABEL: Record<string, string> = {
