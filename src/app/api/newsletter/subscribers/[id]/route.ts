@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readRequestBody } from "@/lib/api-body";
 import { idParam, newsletterAdmin } from "@/lib/newsletter/admin-auth";
 import { loadSendContext, sendConfirmMail } from "@/lib/newsletter/service";
+import { sesErrorText } from "@/lib/newsletter/ses";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -37,7 +38,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     try {
       await sendConfirmMail(ctx, subscriber);
     } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : "Senden fehlgeschlagen" }, { status: 502 });
+      return NextResponse.json({ error: sesErrorText(err) }, { status: 502 });
     }
     return NextResponse.json({ ok: true });
   }

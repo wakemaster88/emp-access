@@ -25,6 +25,7 @@ import {
   Monitor,
   MonitorCog,
   Network,
+  Newspaper,
   Package,
   PackageSearch,
   PartyPopper,
@@ -68,7 +69,7 @@ export interface NavGroup {
  *
  *  - Übersicht:             Wie läuft der Betrieb gerade, wie lief er?
  *  - Gäste:                 Wer kommt, was hat er gekauft, was gehört ihm?
- *                           (künftig: Kundenkartei, Newsletter, Bewertungen)
+ *                           (künftig: Kundenkartei, Bewertungen)
  *  - Angebot:               Was verkaufen wir, wo gilt es, wann ist geöffnet,
  *                           was zeigen die Anzeigen dazu?
  *                           (künftig: Preise, Kurse, Verleih)
@@ -108,6 +109,7 @@ export const navGroups: NavGroup[] = [
       { href: "/subscriptions", label: "Abos", icon: CreditCard, keywords: ["abonnement", "mitgliedschaft", "kundenkonto", "familie", "fahrer"] },
       { href: "/vouchers", label: "Gutscheine", icon: Gift },
       { href: "/gamification", label: "Kunden App", icon: Trophy, keywords: ["gamification", "app", "meilensteine", "awards", "challenges", "starts", "besuchstage"] },
+      { href: "/newsletter", label: "Newsletter", icon: Newspaper, keywords: ["mail", "aussendung", "abonnenten", "anmeldung", "marketing", "ses"] },
       { href: "/vereine", label: "Vereine", icon: Users, keywords: ["buchungen", "portal"] },
       { href: "/lockers", label: "Schließfächer", icon: Lock, keywords: ["spind", "fach"] },
       { href: "/fundsachen", label: "Fundsachen", icon: PackageSearch, keywords: ["verloren", "gefunden"] },

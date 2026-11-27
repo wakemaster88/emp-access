@@ -47,9 +47,36 @@ Ab Werk ist der Versand aus (`NewsletterConfig.enabled`).
   an, prüft die Signatur und nur das eingetragene Thema (ARN). Dauerhafte
   Rückläufer setzen `BOUNCED`, Beschwerden `COMPLAINED`; beide bekommen
   nichts mehr.
-- Die Verwaltung (Gäste › Newsletter) folgt in Teil 2, die Website in
-  `tuttenbrocksee` danach. Die 358 Adressen der alten Website-Liste sind nie
-  bestätigt worden und werden nicht übernommen, bis Aaron entscheidet.
+- Die Website in `tuttenbrocksee` folgt. Die 358 Adressen der alten
+  Website-Liste sind nie bestätigt worden und werden nicht übernommen, bis
+  Aaron entscheidet.
+
+## Newsletter, Teil 2: Verwaltung (27.11.2026)
+
+Gäste › Newsletter (`/newsletter`, nur Admins) mit drei Reitern:
+
+- **Aussendungen**: Liste mit Empfängern, Zugestellt und Status. „Aussendung
+  anlegen“ fragt den Betreff und öffnet den Editor `/newsletter/<id>`.
+- **Editor** (nur Entwürfe): Bausteine Überschrift, Text, Bild (https-Adresse),
+  Taste und Trennlinie, verschieben und entfernen, Vorschau rechts mit
+  denselben Funktionen wie die echte Mail (`renderNewsletterHtml`, Rahmen mit
+  `sandbox`). Testmail speichert vorher und geht auch bei ausgeschaltetem
+  Versand. „An N senden“ speichert, startet und braucht alles bereit.
+  Gestartete Aussendungen zeigen Zahlen (`campaignStats` in
+  `src/lib/newsletter/stats.ts`), laden alle 10 s neu, lassen sich anhalten
+  und als neuer Entwurf kopieren.
+- **Abonnenten**: Kennzahlen als Filter, Suche, Tabelle (die neuesten 200),
+  Fenster je Adresse mit Nachweis (Quelle, Zeit, IP, Einwilligungstext),
+  Bestätigung erneut senden, Abmelden, Löschen. „Adresse eintragen“ schickt
+  die Bestätigungsmail (Double-Opt-in gilt auch hier). CSV mit Einwilligungen.
+- **Einstellungen**: Schalter „Versand eingeschaltet“ (wirkt sofort, geht
+  erst mit Zugangsdaten und gespeicherter Absender-Adresse), Absender,
+  Antwortadresse, Konfigurationssatz, SNS-Thema, Adresse der Links,
+  Einwilligungstext. Daneben der Stand bei AWS (`loadSesStatus`): Zugangsdaten,
+  Sandkasten oder freigegeben mit Kontingent, Domain, DKIM mit den
+  CNAME-Einträgen, MAIL FROM und der Endpunkt für SNS.
+- SES-Fehler erscheinen als deutscher Satz mit nächstem Schritt
+  (`sesErrorText` in `src/lib/newsletter/ses.ts`), auch an der Aussendung.
 
 ## Dashboard der Verwaltung (22.11.2026)
 
