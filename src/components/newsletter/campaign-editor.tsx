@@ -277,7 +277,7 @@ export function CampaignEditor({
       const json = await res.json().catch(() => ({}));
       throw new Error(typeof json.error === "string" ? json.error : "Löschen fehlgeschlagen");
     }
-    router.push("/newsletter");
+    router.push("/newsletter?tab=aussendungen");
     router.refresh();
   }
 

@@ -13,6 +13,8 @@ export interface PublicPage {
   lines: string[];
   /** Taste, die das Formular an dieselbe Adresse schickt. */
   form?: { token: string; label: string };
+  /** Feld für die E-Mail-Adresse mit Taste; schickt `email` (und `a`) an dieselbe Adresse. */
+  emailForm?: { label: string; accountId?: number | null };
   brand?: NewsletterBrand | null;
   status?: number;
 }
@@ -28,7 +30,12 @@ export function publicPageHtml(p: PublicPage): string {
       : "";
   const form = p.form
     ? `<form method="post"><input type="hidden" name="t" value="${escapeHtml(p.form.token)}"><button type="submit">${escapeHtml(p.form.label)}</button></form>`
-    : "";
+    : p.emailForm
+      ? `<form method="post">${p.emailForm.accountId ? `<input type="hidden" name="a" value="${p.emailForm.accountId}">` : ""}` +
+        `<label for="email">E-Mail-Adresse</label>` +
+        `<input id="email" type="email" name="email" required maxlength="180" autocomplete="email" inputmode="email" spellcheck="false">` +
+        `<button type="submit">${escapeHtml(p.emailForm.label)}</button></form>`
+      : "";
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -45,9 +52,12 @@ h1{margin:0 0 12px;font-size:22px;line-height:1.3}
 p{margin:0 0 12px;color:#3c4043}
 button{width:100%;margin-top:8px;padding:13px 16px;border:0;border-radius:10px;background:${color};color:#fff;font:inherit;font-weight:700;cursor:pointer}
 button:focus-visible{outline:3px solid #fbbf24;outline-offset:2px}
+label{display:block;margin:4px 0 6px;font-size:14px;font-weight:600}
+input[type=email]{width:100%;padding:12px 14px;border:1px solid rgba(0,0,0,.2);border-radius:10px;background:#fff;color:inherit;font:inherit}
+input[type=email]:focus-visible{outline:3px solid ${color};outline-offset:1px}
 .foot{margin-top:16px;font-size:14px}
 .foot a{color:${color}}
-@media (prefers-color-scheme:dark){body{background:#0f1114;color:#eceff1}main{background:#1a1d21;border-color:rgba(255,255,255,.08)}p{color:#c4c7cb}.foot a{color:#8fd3d8}}
+@media (prefers-color-scheme:dark){body{background:#0f1114;color:#eceff1}main{background:#1a1d21;border-color:rgba(255,255,255,.08)}p{color:#c4c7cb}.foot a{color:#8fd3d8}input[type=email]{background:#0f1114;border-color:rgba(255,255,255,.2)}}
 </style>
 </head><body><main><header>${name}</header><section>
 <h1>${escapeHtml(p.title)}</h1>

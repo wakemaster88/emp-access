@@ -58,7 +58,7 @@ export function CampaignActions({ id, canCancel, canDelete }: { id: number; canC
         description="Mit ihr verschwindet das Versandprotokoll. Abmeldungen bleiben bei den Abonnenten gespeichert."
         onConfirm={async () => {
           await call(`/api/newsletter/campaigns/${id}`, "DELETE", "Löschen fehlgeschlagen");
-          router.push("/newsletter");
+          router.push("/newsletter?tab=aussendungen");
           router.refresh();
         }}
       />

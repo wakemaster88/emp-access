@@ -46,7 +46,7 @@ export default async function NewsletterCampaignPage({ params }: { params: Promi
 
   const back = (
     <Button asChild variant="ghost" size="sm" className="-ml-2 max-sm:h-11">
-      <Link href="/newsletter">
+      <Link href="/newsletter?tab=aussendungen">
         <ArrowLeft className="h-4 w-4" />
         Aussendungen
       </Link>
@@ -129,7 +129,7 @@ export default async function NewsletterCampaignPage({ params }: { params: Promi
                 value={stats.sent}
                 icon={Send}
                 tone="info"
-                progress={stats.progress}
+                progress={stats.progress / 100}
                 hint={stats.waiting ? `${stats.waiting} warten` : undefined}
               />
               <StatCard variant="tile" size="sm" label="Zugestellt" value={stats.delivered} icon={MailCheck} tone="success" hint={percent(stats.delivered, stats.sent)} />
