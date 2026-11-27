@@ -6,18 +6,20 @@
  * Blob-Speicher liegen die Dateien privat (nur mit Server-Token lesbar) und
  * kosten einen Bruchteil. Die Datenbank haelt nur noch den Pfad.
  *
- * Die Dateien brauchen einen eigenen, privaten Blob-Speicher mit dem Token
- * BLOB_PRIVATE_READ_WRITE_TOKEN. Der Speicher hinter BLOB_READ_WRITE_TOKEN
- * ist oeffentlich (Audio) und lehnt private Dateien ab („Cannot use private
- * access on a public store“); Personen- und Scan-Bilder gehoeren dort nicht
- * hin. Ohne den privaten Token fallen alle Schreiber still auf Bytes in der
- * DB zurueck; die Leser koennen beides. `scripts/migrate-images-to-blob.ts`
+ * Die Dateien brauchen einen eigenen, privaten Blob-Speicher, angebunden mit
+ * dem Praefix BLOB_PRIVATE (src/lib/blob-token.ts). Der Speicher hinter
+ * BLOB_READ_WRITE_TOKEN ist oeffentlich (Audio) und lehnt private Dateien
+ * ab („Cannot use private access on a public store“); Personen- und
+ * Scan-Bilder gehoeren dort nicht hin. Ohne privaten Speicher fallen alle
+ * Schreiber still auf Bytes in der DB zurueck; die Leser koennen beides.
+ * Den privaten Speicher nie wieder abkoppeln, sobald Dateien darin liegen:
+ * sonst sind sie nicht mehr lesbar und werden nicht mehr geloescht. `scripts/migrate-images-to-blob.ts`
  * zieht den Altbestand um, `gcOrphanBlobs` raeumt Dateien weg, deren
  * Datensatz per Cascade verschwunden ist.
  */
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { privateBlobToken } from "@/lib/blob-token";
+import { privateBlobAuth, privateBlobConfigured } from "@/lib/blob-token";
 
 export const BLOB_PREFIXES = [
   "scan-snapshots",
@@ -35,12 +37,12 @@ const GC_MIN_AGE_MS = 24 * 60 * 60_000;
 const DEL_BATCH = 100;
 
 export function blobConfigured(): boolean {
-  return privateBlobToken() !== undefined;
+  return privateBlobConfigured();
 }
 
 /**
  * Laedt Bytes privat in den Blob-Speicher. Liefert den Pfad, oder null,
- * wenn kein Token gesetzt ist oder der Upload fehlschlaegt – der Aufrufer
+ * wenn kein privater Speicher erreichbar ist oder der Upload fehlschlaegt – der Aufrufer
  * speichert dann die Bytes in der Datenbank.
  */
 export async function storeBlob(
@@ -50,14 +52,14 @@ export async function storeBlob(
   contentType: string,
   ext: string,
 ): Promise<string | null> {
-  const token = privateBlobToken();
-  if (!token || bytes.length === 0) return null;
+  const auth = await privateBlobAuth();
+  if (!auth || bytes.length === 0) return null;
   const pathname = `${prefix}/${accountId}/${Date.now()}-${randomBytes(12).toString("base64url")}.${ext}`;
   try {
     const { put } = await import("@vercel/blob");
     const res = await put(pathname, Buffer.from(bytes), {
       access: "private",
-      token,
+      ...auth,
       contentType,
       addRandomSuffix: false,
       cacheControlMaxAge: 60 * 60 * 24 * 365,
@@ -69,13 +71,13 @@ export async function storeBlob(
   }
 }
 
-/** Datei aus dem Blob-Speicher lesen; null bei fehlendem Token, 404 oder Fehler. */
+/** Datei aus dem Blob-Speicher lesen; null ohne privaten Speicher, bei 404 oder Fehler. */
 export async function readBlob(pathname: string): Promise<Buffer | null> {
-  const token = privateBlobToken();
-  if (!token) return null;
+  const auth = await privateBlobAuth();
+  if (!auth) return null;
   try {
     const { get } = await import("@vercel/blob");
-    const res = await get(pathname, { access: "private", token });
+    const res = await get(pathname, { access: "private", ...auth });
     if (!res || res.statusCode !== 200) return null;
     return Buffer.from(await new Response(res.stream).arrayBuffer());
   } catch (err) {
@@ -103,12 +105,12 @@ export async function resolveBinary(row: {
 /** Dateien loeschen; unbekannte Pfade ignoriert der Dienst. */
 export async function deleteBlobs(pathnames: Array<string | null | undefined>): Promise<number> {
   const list = pathnames.filter((p): p is string => typeof p === "string" && p.length > 0);
-  const token = privateBlobToken();
-  if (list.length === 0 || !token) return 0;
+  const auth = await privateBlobAuth();
+  if (list.length === 0 || !auth) return 0;
   const { del } = await import("@vercel/blob");
   for (let i = 0; i < list.length; i += DEL_BATCH) {
     try {
-      await del(list.slice(i, i + DEL_BATCH), { token });
+      await del(list.slice(i, i + DEL_BATCH), auth);
     } catch (err) {
       console.error("[blob] Loeschen fehlgeschlagen:", err instanceof Error ? err.message : err);
     }
@@ -164,8 +166,8 @@ async function existingPaths(prefix: BlobPrefix, paths: string[]): Promise<Set<s
  * Datenbank nicht mehr referenziert wird.
  */
 export async function gcOrphanBlobs(now = new Date()): Promise<{ listed: number; deleted: number }> {
-  const token = privateBlobToken();
-  if (!token) return { listed: 0, deleted: 0 };
+  const auth = await privateBlobAuth();
+  if (!auth) return { listed: 0, deleted: 0 };
   const { list } = await import("@vercel/blob");
   let listed = 0;
   let deleted = 0;
@@ -174,7 +176,7 @@ export async function gcOrphanBlobs(now = new Date()): Promise<{ listed: number;
   for (const prefix of BLOB_PREFIXES) {
     let cursor: string | undefined;
     do {
-      const page = await list({ prefix: `${prefix}/`, cursor, limit: 1000, token });
+      const page = await list({ prefix: `${prefix}/`, cursor, limit: 1000, ...auth });
       cursor = page.hasMore ? page.cursor : undefined;
       const candidates = page.blobs
         .filter((b) => new Date(b.uploadedAt).getTime() < minAge)

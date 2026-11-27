@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
+import { publicBlobToken } from "@/lib/blob-token";
 import { newsletterAdmin } from "@/lib/newsletter/admin-auth";
 import { encodeNewsletterImage, NEWSLETTER_IMAGE_MAX_BYTES } from "@/lib/newsletter/image";
 
@@ -14,7 +15,8 @@ export const maxDuration = 30;
 export async function POST(request: NextRequest) {
   const auth = await newsletterAdmin();
   if ("error" in auth) return auth.error;
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  const blobToken = publicBlobToken();
+  if (!blobToken) {
     return NextResponse.json({ error: "Bilder-Speicher ist nicht eingerichtet" }, { status: 501 });
   }
 
@@ -31,14 +33,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Die Datei lässt sich nicht als Bild lesen" }, { status: 400 });
   }
 
-  // Token ausdrücklich: Mit angebundenem privatem Speicher (BLOB_STORE_ID,
-  // OIDC) nähme @vercel/blob sonst diesen und lehnte öffentliche Dateien ab.
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  // Token ausdrücklich: Mit angebundenem privatem Speicher (OIDC) nähme
+  // @vercel/blob sonst diesen und lehnte öffentliche Dateien ab.
   const path = `newsletter/${auth.accountId}/${Date.now()}-${randomBytes(9).toString("base64url")}.${image.ext}`;
   try {
     const blob = await put(path, Buffer.from(image.bytes), {
       access: "public",
-      token,
+      token: blobToken,
       contentType: image.contentType,
       addRandomSuffix: false,
       cacheControlMaxAge: 60 * 60 * 24 * 365,

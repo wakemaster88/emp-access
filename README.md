@@ -57,7 +57,8 @@ npm test             # node:test in src/lib/*.test.ts
 Umgebungsvariablen (lokal in `.env`, auf Vercel unter Settings → Environment
 Variables): `DATABASE_URL`, `DATABASE_URL_UNPOOLED` (Migrationen),
 `AUTH_SECRET`, `AUTH_URL`, `CRON_SECRET`, `BLOB_READ_WRITE_TOKEN`, optional
-`XAI_API_KEY` (TTS), `NEXT_PUBLIC_VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/
+`BLOB_PRIVATE_READ_WRITE_TOKEN` oder `BLOB_PRIVATE_STORE_ID` (privater
+Bilder-Speicher), `XAI_API_KEY` (TTS), `NEXT_PUBLIC_VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/
 `VAPID_SUBJECT` (Web-Push), `TWO_FACTOR_KEY`, `WEBSITE_DATABASE_URL`
 (Nur-Lese-Zugang `emp_access_reader` auf die Datenbank der Website, für den
 Abgleich unter Betriebszeiten; gilt nur für Mandant `WEBSITE_ACCOUNT_ID`,
@@ -127,12 +128,18 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
 
 **Umgebungsvariablen (Vercel → Settings → Environment Variables):**
 
-- `BLOB_READ_WRITE_TOKEN` – Vercel Blob. Ohne den Token schlagen Uploads und
-  das Rendern von Sprachansagen fehl (die API antwortet dann mit 501).
-- `BLOB_PRIVATE_READ_WRITE_TOKEN` – zweiter, privater Vercel-Blob-Speicher für
-  Scan-, Personen- und Fahrzeugbilder, Alarmbilder, PDFs und Challenge-Fotos
-  (`src/lib/blob-store.ts`). Der Audio-Speicher ist öffentlich und nimmt diese
-  Dateien nicht an. Ohne den Token bleiben sie als Bytes in der Datenbank.
+- `BLOB_READ_WRITE_TOKEN` – öffentlicher Vercel-Blob-Speicher für Audio und
+  Newsletter-Bilder. Ohne den Token schlagen Uploads und das Rendern von
+  Sprachansagen fehl. Der Code übergibt ihn immer ausdrücklich.
+- `BLOB_PRIVATE_READ_WRITE_TOKEN` oder `BLOB_PRIVATE_STORE_ID` – zweiter,
+  privater Vercel-Blob-Speicher für Scan-, Personen- und Fahrzeugbilder,
+  Alarmbilder, PDFs und Challenge-Fotos (`src/lib/blob-store.ts`). Im
+  Dashboard mit dem Präfix `BLOB_PRIVATE` anbinden, nie ohne Präfix. Mit
+  statischem Token entsteht `BLOB_PRIVATE_READ_WRITE_TOKEN`, bei OIDC die
+  Store-ID; den OIDC-Token gibt der Code dann ausdrücklich mit. Das Skript
+  `scripts/migrate-images-to-blob.ts` braucht den statischen Token. Der Audio-Speicher ist öffentlich und nimmt diese Dateien
+  nicht an. Ohne privaten Speicher bleiben sie als Bytes in der Datenbank. Den
+  Speicher nicht wieder abkoppeln, sobald Dateien darin liegen.
 - `XAI_API_KEY` – Text-zu-Sprache für Durchsagen (xAI, `POST /v1/tts`, deutsch).
   Gleicher Text mit gleicher Stimme wird gecacht, es fällt also nur beim ersten
   Mal ein Aufruf an. Die Stimmenauswahl im Dialog kommt aus
