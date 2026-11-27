@@ -226,6 +226,8 @@ model Account {
   newsletterGroups       NewsletterGroup[]
   newsletterGroupMembers NewsletterGroupMember[]
   newsletterSends        NewsletterSend[]
+  socialCampaigns        SocialCampaign[]
+  socialPosts            SocialPost[]
   chips                  Chip[]
   chipEvents             ChipEvent[]
   riderPasskeys          RiderPasskey[]
@@ -5049,12 +5051,17 @@ model NewsletterCampaign {
   lastError   String?
   lastErrorAt DateTime?
   createdBy   String?
+  /// Kampagne im Modul Social Media, zu der diese Aussendung gehört. Links
+  /// zur eigenen Website bekommen dann den Kampagnen-Zusatz (utm_…).
+  socialCampaignId Int?
+  socialCampaign   SocialCampaign?  @relation(fields: [socialCampaignId], references: [id], onDelete: SetNull)
   sends       NewsletterSend[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
   @@index([accountId, createdAt])
   @@index([status])
+  @@index([socialCampaignId])
 }
 
 /// Versand einer Aussendung an einen Abonnenten (Warteschlange und Protokoll).
@@ -5087,4 +5094,75 @@ model NewsletterSend {
   @@index([sesMessageId])
   @@index([accountId])
   @@index([subscriberId])
+}
+
+/// Kampagne im Modul Social Media (Newsletter › Social Media): ein Anlass wie
+/// „Nikolausfahren“ mit Zeitraum, Ziel-Link und Kürzel für die Statistik.
+/// Bündelt die Beiträge der Kanäle (SocialPost) und die Newsletter-
+/// Aussendungen (NewsletterCampaign.socialCampaignId). Gepostet wird von Hand.
+model SocialCampaign {
+  id          Int                  @id @default(autoincrement())
+  accountId   Int
+  account     Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name        String
+  /// Kürzel für Links (utm_campaign), z. B. "nikolaus-2026": a–z, 0–9, "-".
+  slug        String
+  /// Anlass, Ziel, Botschaft, Absprachen.
+  description String?
+  /// Zeitraum der Kampagne (Kalendertage, Berlin). Leer: offen.
+  startsOn    DateTime?            @db.Date
+  endsOn      DateTime?            @db.Date
+  /// Seite, auf die Beiträge und Newsletter führen (Website, Buchung).
+  landingUrl  String?
+  /// Hashtags, die in jeden Beitrag gehören, z. B. "#tuttenbrocksee #wakeboard".
+  hashtags    String?
+  createdBy   String?
+  posts       SocialPost[]
+  newsletters NewsletterCampaign[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([accountId, slug])
+  @@index([accountId, startsOn])
+}
+
+/// Beitrag einer Kampagne auf einem Kanal: Text, Bilder, Termin, Zustand und
+/// nach dem Veröffentlichen die Zahlen (von Hand aus Instagram/Facebook).
+model SocialPost {
+  id           Int            @id @default(autoincrement())
+  accountId    Int
+  account      Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  campaignId   Int
+  campaign     SocialCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  /// "INSTAGRAM" | "FACEBOOK" | "TIKTOK" | "YOUTUBE" | "WHATSAPP" | "GOOGLE" | "OTHER"
+  channel      String
+  /// "POST" | "STORY" | "REEL" | "CAROUSEL"
+  format       String         @default("POST")
+  text         String         @default("")
+  /// Bild- und Video-Adressen (https) in der Reihenfolge im Beitrag.
+  media        String[]       @default([])
+  /// Link im Beitrag, in der Story oder in der Bio.
+  link         String?
+  /// Geplanter Termin. Leer: noch offen.
+  plannedAt    DateTime?
+  /// "IDEA" | "DRAFT" | "READY" | "PUBLISHED"
+  status       String         @default("IDEA")
+  publishedAt  DateTime?
+  /// Adresse des veröffentlichten Beitrags.
+  postUrl      String?
+  /// ID des Beitrags beim Kanal (z. B. Instagram-Media-ID). Für einen späteren
+  /// Abgleich über die Meta Graph API; leer, solange von Hand gepostet wird.
+  externalId   String?
+  /// Zahlen nach dem Veröffentlichen, von Hand eingetragen.
+  reach        Int?
+  interactions Int?
+  clicks       Int?
+  statsAt      DateTime?
+  notes        String?
+  createdBy    String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([accountId, plannedAt])
+  @@index([campaignId])
 }

@@ -183,6 +183,49 @@ IAM liegen in `eu-north-1`, Vercel hat `SES_REGION=eu-north-1`. Frankfurt
   `newsletter/<accountId>/…`, weil Mailprogramme Bilder ohne Anmeldung laden.
   Größere Dateien oder HEIC verkleinert der Browser vorher auf 2400 px.
 
+## Newsletter › Social Media: Kampagnen (27.11.2026)
+
+Reiter „Social Media“ unter Gäste › Newsletter (`/newsletter?tab=social`, nur
+Admins). Eine **Kampagne** (z. B. „Nikolausfahren 2026“) bündelt die Beiträge
+auf den Kanälen und die Newsletter-Aussendungen zu einem Anlass. Gepostet wird
+von Hand; emp-access spricht noch mit keinem Kanal.
+
+- **Daten**: `SocialCampaign` (Name, Kürzel `slug` = utm_campaign, Zeitraum
+  `startsOn`/`endsOn` als Kalendertage, Ziel-Link, Hashtags, Beschreibung) und
+  `SocialPost` (Kanal Instagram/Facebook/TikTok/YouTube/WhatsApp-Kanal/
+  Google-Profil, Format Beitrag/Story/Reel/Karussell, Text, Bilder als
+  https-Adressen, Termin, Stand Idee → In Arbeit → Fertig → Veröffentlicht,
+  danach Link zum Beitrag und Zahlen von Hand: Erreicht, Interaktionen,
+  Link-Klicks). `externalId` ist für einen späteren Abgleich über die Meta
+  Graph API vorgesehen und bleibt bis dahin leer.
+- **Kopplung an den Newsletter**: `NewsletterCampaign.socialCampaignId`. Auf
+  der Kampagnen-Seite: Aussendung für die Kampagne anlegen, vorhandene
+  zuordnen oder lösen. Beim Versand (`renderFor` in
+  `src/lib/newsletter/service.ts`) bekommen Links zur eigenen Website
+  (Website aus E-Mail-Einstellungen und Rechner des Ziel-Links)
+  `utm_source=newsletter&utm_medium=email&utm_campaign=<Kürzel>`. Links mit
+  vorhandenem `utm_`, `/nl/…` und Abmelden bleiben unverändert
+  (`tagNewsletterBlocks` in `src/lib/social/utm.ts`).
+- **Links je Kanal**: Ziel-Link mit `utm_source=<kanal>&utm_medium=social`
+  zum Kopieren; im Beitrag lässt er sich mit einem Klick einsetzen. Die
+  Website wertet das mit Google Analytics aus.
+- **Bilder**: `POST /api/social/media` (Body = Datei, höchstens 4 MB, der
+  Browser verkleinert größere und HEIC vorher). Der Server kodiert mit sharp
+  neu (JPEG, höchstens 1440 px, ohne EXIF/GPS) und legt sie im öffentlichen
+  Blob-Speicher unter `social/<accountId>/` ab, immer mit ausdrücklichem
+  `BLOB_READ_WRITE_TOKEN`. Gelöscht wird nichts automatisch, weil eine
+  kopierte Bildadresse in einem Newsletter stehen kann.
+- **Posten von Hand**: „Text kopieren“ hängt fehlende Hashtags der Kampagne
+  an; auf dem Handy teilt „Teilen“ die Bilder über das Teilen-Menü (Text liegt
+  dann in der Zwischenablage). Danach Stand „Veröffentlicht“ setzen.
+- **Übersicht**: Kennzahlen (laufende Kampagnen, geplant in 14 Tagen,
+  überfällig, veröffentlicht in 30 Tagen), Kampagnen (laufende zuerst) und
+  „Nächste Beiträge“ über alle Kampagnen. `?beitrag=<id>` auf der
+  Kampagnen-Seite öffnet einen Beitrag direkt.
+- **Code**: `src/lib/social/` (Regeln, Links, Laden, Bilder, Tests),
+  `src/components/social/`, Seiten `newsletter/social/[id]`, APIs unter
+  `/api/social/…`.
+
 ## Dashboard der Verwaltung (22.11.2026)
 
 - Reihenfolge bleibt: 1. „Jetzt“, 2. Tracking, 3. Statistik mit Tag-Wahl und

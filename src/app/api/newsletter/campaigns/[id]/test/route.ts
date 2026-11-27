@@ -17,7 +17,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const to = [...new Set(list.map((v: unknown) => normalizeEmail(v)).filter((v: string | null): v is string => !!v))].slice(0, 5);
   if (to.length === 0) return NextResponse.json({ error: "Bitte mindestens eine gültige Adresse angeben" }, { status: 400 });
 
-  const campaign = await auth.db.newsletterCampaign.findFirst({ where: { id, accountId: auth.accountId } });
+  const campaign = await auth.db.newsletterCampaign.findFirst({
+    where: { id, accountId: auth.accountId },
+    include: { socialCampaign: { select: { slug: true, landingUrl: true } } },
+  });
   if (!campaign) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   const ctx = await loadSendContext(auth.accountId);
   const blocking = ctx.gaps.filter((g) => !g.startsWith("Versand ist ausgeschaltet"));

@@ -102,6 +102,8 @@ export const TENANT_MODELS = new Set<string>([
   "ScanSnapshot",
   "Service",
   "SlotBlock",
+  "SocialCampaign",
+  "SocialPost",
   "SoundwebControl",
   "SoundwebDevice",
   "Stocktake",
