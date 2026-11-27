@@ -173,7 +173,17 @@ IAM liegen in `eu-north-1`, Vercel hat `SES_REGION=eu-north-1`. Frankfurt
 - Logo Tuttenbrocksee als PNG unter `public/brand/tuttenbrocksee-logo.png`
   (aus dem WebP der Website, Hintergrund transparent): Webp zeigt Outlook nicht.
 - Seiten Bestätigen/Abmelden (`public-page.ts`) im selben Stil, nur hell.
-- Editor-Vorschau mit Umschalter „Computer“/„Handy“ (375 px).
+- Editor-Vorschau mit Umschaltern „Computer“/„Handy“ (375 px) und
+  „Hell“/„Dunkel“ (`forceColorScheme` ersetzt die Media Query).
+- Dunkelmodus: Die Mail meldet `color-scheme: light dark` und bringt eine
+  eigene dunkle Ansicht mit (`@media (prefers-color-scheme: dark)`: Seite
+  `#020617`, Karte `#0f172a`, Fuß `#1e293b`, Schrift hell, Links in der
+  Hauptfarbe mit 45 % Weiß), für Apple Mail, Spark und Outlook für Mac;
+  Outlook.com über `[data-ogsc]`/`[data-ogsb]`. Programme, die Farben selbst
+  umdrehen (Gmail-App, Outlook-Apps), lassen Bilder unverändert. Deshalb hat
+  das Mail-Logo einen weißen, abgerundeten Grund im Bild
+  (`public/brand/tuttenbrocksee-logo-mail.png`, 608×115, im Kopf 44 px hoch):
+  hell unsichtbar, dunkel als weiße Pille lesbar.
 - Bilder hochladen (Bild-Baustein, Taste „Hochladen“): `POST /api/newsletter/images`
   mit der Datei als Body (höchstens 4 MB). Der Server kodiert mit sharp neu
   (`src/lib/newsletter/image.ts`): höchstens 1200 px breit, nach EXIF gedreht,

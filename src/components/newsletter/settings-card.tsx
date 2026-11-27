@@ -40,7 +40,7 @@ const FIELDS: Array<{ key: TextKey; label: string; hint: string; placeholder?: s
 const DESIGN_FIELDS: typeof FIELDS = [
   { key: "brandColor", label: "Farbe", hint: "Tasten und Links, als #RRGGBB. Leer: Petrol #1a6d73 wie die Website.", placeholder: "#1a6d73", max: 7 },
   { key: "accentColor", label: "Akzentfarbe", hint: "Linie unter dem Logo und „Newsletter abbestellen“ im dunklen Fuß. Leer: Gelb #fbbf24.", placeholder: "#fbbf24", max: 7 },
-  { key: "logoUrl", label: "Logo", hint: "https-Adresse eines PNG oder JPG, am besten etwa 4:1 und 500 px breit. Leer: Logo aus den E-Mail-Einstellungen, sonst der Name.", placeholder: "https://…/logo.png", max: 2000 },
+  { key: "logoUrl", label: "Logo", hint: "https-Adresse eines PNG oder JPG, etwa 5:1 und 600 px breit. Dunkle Schrift braucht einen weißen Grund im Bild, sonst ist sie im Dunkelmodus nicht lesbar. Leer: Logo aus den E-Mail-Einstellungen, sonst der Name.", placeholder: "https://…/logo.png", max: 2000 },
 ];
 const ALL_FIELDS = [...FIELDS, ...DESIGN_FIELDS];
 

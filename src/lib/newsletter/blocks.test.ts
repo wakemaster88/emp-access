@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  confirmMailBlocks, inlineHtml, inlineText, isLinkUrl, parseBlocks, renderNewsletterHtml, renderNewsletterText, textOn,
+  confirmMailBlocks, forceColorScheme, inlineHtml, inlineText, isLinkUrl, parseBlocks, renderNewsletterHtml, renderNewsletterText, textOn,
 } from "./blocks";
 import { publicPageHtml } from "./public-page";
 
@@ -91,7 +91,7 @@ test("renderNewsletterHtml: Website-Design mit Logo, Akzentlinie und großer ers
   );
   assert.match(html, /<img src="https:\/\/x.de\/logo.png" alt="TwinCable"/);
   assert.match(html, /border-bottom:4px solid #fbbf24/);
-  assert.match(html, /<h1 class="nl-h1"[^>]*>Nikolausfahren<\/h1>/);
+  assert.match(html, /<h1 class="nl-h1 nl-ink"[^>]*>Nikolausfahren<\/h1>/);
   assert.match(html, /<h2[^>]*>Kostüm<\/h2>/);
   assert.match(html, /background:#1a6d73;"><a href="https:\/\/a.de" style="[^"]*color:#ffffff/);
   assert.match(html, />tuttenbrocksee.com<\/a>/);
@@ -109,6 +109,26 @@ test("renderNewsletterHtml: erstes Bild randlos als Titelbild, eigene Farben", (
   assert.match(html, /border-bottom:4px solid #ff0000/);
   // Ohne Logo steht der Name im Kopf.
   assert.match(html, /font-weight:700;color:#0f172a;">X<\/div>/);
+});
+
+test("renderNewsletterHtml: eigene dunkle Ansicht, Vorschau fest hell oder dunkel", () => {
+  const html = renderNewsletterHtml(
+    [{ type: "heading", text: "Hallo" }, { type: "text", text: "Mehr [hier](https://a.de)" }, { type: "divider" }],
+    { brand: { accountName: "X" } },
+  );
+  assert.match(html, /<meta name="color-scheme" content="light dark">/);
+  const dark = html.slice(html.indexOf("@media (prefers-color-scheme: dark)"));
+  assert.match(dark, /\.nl-card\{background:#0f172a!important\}/);
+  assert.match(dark, /\.nl-ink\{color:#f8fafc!important\}/);
+  // Links auf dunklem Grund heller: Petrol 45 % mit Weiß gemischt.
+  assert.match(dark, /\.nl-text a\{color:#81afb2!important\}/);
+  assert.match(html, /\[data-ogsc\] \.nl-ink\{/);
+  assert.match(html, /<p class="nl-text" style=/);
+  assert.match(html, /<hr class="nl-line"/);
+
+  assert.ok(forceColorScheme(html, "dark").includes("@media all{"));
+  assert.ok(!forceColorScheme(html, "dark").includes("prefers-color-scheme"));
+  assert.ok(forceColorScheme(html, "light").includes("@media not all{"));
 });
 
 test("textOn: weiße Schrift auf Petrol, dunkle auf Gelb", () => {

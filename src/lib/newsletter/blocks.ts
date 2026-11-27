@@ -182,6 +182,21 @@ const TEXT_COLOR = "#334155";
 const FOOT_TEXT = "#cbd5e1";
 const PAGE_BG = "#f1f5f9";
 const LINE = "#e2e8f0";
+/*
+ * Dunkelmodus: eigene Farben für Mailprogramme, die prefers-color-scheme
+ * kennen (Apple Mail, Spark, Outlook für Mac), und Outlook.com über dessen
+ * data-ogsc/data-ogsb. Programme, die Farben selbst umdrehen (Gmail-App,
+ * Outlook-Apps), lassen Bilder unverändert: Das Logo braucht deshalb einen
+ * eigenen weißen Grund im Bild, sonst verschwindet dunkle Schrift.
+ */
+const DARK_PAGE = "#020617";
+const DARK_CARD = "#0f172a";
+const DARK_FOOT = "#1e293b";
+const DARK_INK = "#f8fafc";
+const DARK_TEXT = "#cbd5e1";
+const DARK_LINE = "#334155";
+/** Media-Query der dunklen Ansicht; die Vorschau im Editor ersetzt sie (forceColorScheme). */
+const DARK_MEDIA = "@media (prefers-color-scheme: dark)";
 export const NEWSLETTER_FONT = "Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 const FONT = NEWSLETTER_FONT;
 
@@ -205,6 +220,17 @@ export function textOn(hex: string): string {
   return 1.05 / (l + 0.05) >= (l + 0.05) / 0.0589 ? "#ffffff" : INK;
 }
 
+/** Farbe mit Weiß gemischt (Anteil 0–1), für Links auf dunklem Grund. */
+function mixWhite(hex: string, share: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `#${[16, 8, 0]
+    .map((shift) => {
+      const v = (n >> shift) & 255;
+      return Math.round(v + (255 - v) * share).toString(16).padStart(2, "0");
+    })
+    .join("")}`;
+}
+
 /** Farben der Mail und der öffentlichen Seiten aus den Einstellungen. */
 export function newsletterColors(brand: NewsletterBrand | null | undefined): { color: string; onColor: string; accent: string } {
   const color = hexOr(brand?.color, NEWSLETTER_DEFAULT_COLOR);
@@ -214,7 +240,7 @@ export function newsletterColors(brand: NewsletterBrand | null | undefined): { c
 function paragraphs(text: string, color: string, style: string): string {
   return text
     .split(/\n{2,}/)
-    .map((p) => `<p style="${style}">${p.split("\n").map((line) => inlineHtml(line, color)).join("<br>")}</p>`)
+    .map((p) => `<p class="nl-text" style="${style}">${p.split("\n").map((line) => inlineHtml(line, color)).join("<br>")}</p>`)
     .join("");
 }
 
@@ -222,8 +248,8 @@ function blockHtml(b: NewsletterBlock, c: { color: string; onColor: string }, h1
   switch (b.type) {
     case "heading":
       return h1
-        ? `<h1 class="nl-h1" style="margin:0 0 16px;font-family:${FONT};font-size:30px;line-height:1.2;font-weight:700;letter-spacing:-0.3px;color:${INK};">${escapeHtml(b.text)}</h1>`
-        : `<h2 style="margin:8px 0 12px;font-family:${FONT};font-size:22px;line-height:1.3;font-weight:700;color:${INK};">${escapeHtml(b.text)}</h2>`;
+        ? `<h1 class="nl-h1 nl-ink" style="margin:0 0 16px;font-family:${FONT};font-size:30px;line-height:1.2;font-weight:700;letter-spacing:-0.3px;color:${INK};">${escapeHtml(b.text)}</h1>`
+        : `<h2 class="nl-ink" style="margin:8px 0 12px;font-family:${FONT};font-size:22px;line-height:1.3;font-weight:700;color:${INK};">${escapeHtml(b.text)}</h2>`;
     case "text":
       return paragraphs(b.text, c.color, `margin:0 0 16px;font-family:${FONT};font-size:16px;line-height:1.65;color:${TEXT_COLOR};`);
     case "image": {
@@ -238,7 +264,7 @@ function blockHtml(b: NewsletterBlock, c: { color: string; onColor: string }, h1
         `</td></tr></table>`
       );
     case "divider":
-      return `<hr style="margin:8px 0 24px;border:0;border-top:1px solid ${LINE};">`;
+      return `<hr class="nl-line" style="margin:8px 0 24px;border:0;border-top:1px solid ${LINE};">`;
   }
 }
 
@@ -261,9 +287,9 @@ function blockText(b: NewsletterBlock): string {
 function headerLogo(brand: NewsletterBrand): string {
   const name = escapeHtml(brand.accountName);
   if (brand.logoUrl && isHttpsUrl(brand.logoUrl)) {
-    return `<img src="${escapeHtml(brand.logoUrl)}" alt="${name}" height="36" style="display:block;height:36px;width:auto;max-width:260px;border:0;">`;
+    return `<img src="${escapeHtml(brand.logoUrl)}" alt="${name}" height="44" style="display:block;height:44px;width:auto;max-width:280px;border:0;">`;
   }
-  return `<div style="font-family:${FONT};font-size:18px;line-height:1.3;font-weight:700;color:${INK};">${name}</div>`;
+  return `<div class="nl-ink" style="font-family:${FONT};font-size:18px;line-height:1.3;font-weight:700;color:${INK};">${name}</div>`;
 }
 
 /**
@@ -301,9 +327,27 @@ export function renderNewsletterHtml(blocks: NewsletterBlock[], ctx: RenderConte
   const heroHtml = hero
     ? (() => {
         const img = `<img src="${escapeHtml(hero.url)}" alt="${escapeHtml(hero.alt ?? "")}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;">`;
-        return `<tr><td style="background:#ffffff;padding:0;line-height:0;font-size:0;">${hero.link ? `<a href="${escapeHtml(hero.link)}">${img}</a>` : img}</td></tr>`;
+        return `<tr><td class="nl-card" style="background:#ffffff;padding:0;line-height:0;font-size:0;">${hero.link ? `<a href="${escapeHtml(hero.link)}">${img}</a>` : img}</td></tr>`;
       })()
     : "";
+  const darkLink = mixWhite(c.color, 0.45);
+  const darkCss =
+    `${DARK_MEDIA}{` +
+    `body.nl-page,.nl-page{background:${DARK_PAGE}!important}` +
+    `.nl-card{background:${DARK_CARD}!important}` +
+    `.nl-foot{background:${DARK_FOOT}!important}` +
+    `.nl-ink{color:${DARK_INK}!important}` +
+    `.nl-text{color:${DARK_TEXT}!important}` +
+    `.nl-text a{color:${darkLink}!important}` +
+    `.nl-line{border-top-color:${DARK_LINE}!important}` +
+    `}\n` +
+    // Outlook.com im Dunkelmodus setzt diese Attribute an geänderte Elemente.
+    `[data-ogsb] .nl-page{background:${DARK_PAGE}!important}` +
+    `[data-ogsb] .nl-card{background:${DARK_CARD}!important}` +
+    `[data-ogsb] .nl-foot{background:${DARK_FOOT}!important}` +
+    `[data-ogsc] .nl-ink{color:${DARK_INK}!important}` +
+    `[data-ogsc] .nl-text{color:${DARK_TEXT}!important}` +
+    `[data-ogsc] .nl-text a{color:${darkLink}!important}`;
   // Füllzeichen nach der Vorschauzeile, damit das Postfach keinen Text aus der Mail anhängt.
   const preheader = ctx.preheader
     ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">${escapeHtml(ctx.preheader)}${"&#847;&zwnj;&nbsp;".repeat(40)}</div>`
@@ -313,10 +357,11 @@ export function renderNewsletterHtml(blocks: NewsletterBlock[], ctx: RenderConte
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="x-apple-disable-message-reformatting">
-<meta name="color-scheme" content="light">
-<meta name="supported-color-schemes" content="light">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
 <title>${name}</title>
 <style>
+:root{color-scheme:light dark;supported-color-schemes:light dark}
 body{margin:0;padding:0;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 table{border-collapse:collapse}
 img{-ms-interpolation-mode:bicubic}
@@ -328,21 +373,30 @@ img{-ms-interpolation-mode:bicubic}
 .nl-btn{width:100%!important}
 .nl-btn a{display:block!important}
 }
+${darkCss}
 </style>
 </head>
-<body style="margin:0;padding:0;background:${PAGE_BG};font-family:${FONT};color:${TEXT_COLOR};">
+<body class="nl-page" style="margin:0;padding:0;background:${PAGE_BG};font-family:${FONT};color:${TEXT_COLOR};">
 ${preheader}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${PAGE_BG};"><tr><td align="center" class="nl-outer" style="padding:24px 12px;">
+<table role="presentation" class="nl-page" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${PAGE_BG};"><tr><td align="center" class="nl-outer" style="padding:24px 12px;">
 <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;">
-<tr><td class="nl-top nl-pad" style="background:#ffffff;border-radius:16px 16px 0 0;border-bottom:4px solid ${c.accent};padding:20px 32px;">${headerLogo(ctx.brand)}</td></tr>
+<tr><td class="nl-top nl-pad nl-card" style="background:#ffffff;border-radius:16px 16px 0 0;border-bottom:4px solid ${c.accent};padding:16px 32px;">${headerLogo(ctx.brand)}</td></tr>
 ${heroHtml}
-<tr><td class="nl-pad" style="background:#ffffff;padding:32px 32px 12px;">
+<tr><td class="nl-pad nl-card" style="background:#ffffff;padding:32px 32px 12px;">
 ${body.map((b, i) => blockHtml(b, c, i === firstHeading)).join("\n")}
 </td></tr>
-<tr><td class="nl-bottom nl-pad" style="background:${INK};border-radius:0 0 16px 16px;padding:28px 32px 32px;font-family:${FONT};font-size:13px;line-height:1.6;color:${FOOT_TEXT};">${footer.join("<br><br>")}</td></tr>
+<tr><td class="nl-bottom nl-pad nl-foot" style="background:${INK};border-radius:0 0 16px 16px;padding:28px 32px 32px;font-family:${FONT};font-size:13px;line-height:1.6;color:${FOOT_TEXT};">${footer.join("<br><br>")}</td></tr>
 </table>
 </td></tr></table>
 </body></html>`;
+}
+
+/**
+ * Für die Vorschau im Editor: zeigt die Mail fest hell oder dunkel, egal
+ * welche Ansicht das Gerät gerade hat.
+ */
+export function forceColorScheme(html: string, scheme: "light" | "dark"): string {
+  return html.replace(DARK_MEDIA, scheme === "dark" ? "@media all" : "@media not all");
 }
 
 /** Die ganze Mail als reiner Text. */
