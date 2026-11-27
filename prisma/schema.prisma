@@ -223,6 +223,8 @@ model Account {
   newsletterConfig       NewsletterConfig?
   newsletterSubscribers  NewsletterSubscriber[]
   newsletterCampaigns    NewsletterCampaign[]
+  newsletterGroups       NewsletterGroup[]
+  newsletterGroupMembers NewsletterGroupMember[]
   newsletterSends        NewsletterSend[]
   chips                  Chip[]
   chipEvents             ChipEvent[]
@@ -4928,6 +4930,11 @@ model NewsletterConfig {
   linkBaseUrl      String?
   /// Wortlaut der Einwilligung; wird mit jeder Anmeldung gespeichert.
   consentText      String?
+  /// Gruppe „Abos aus anny“: Inhaber laufender anny-Abos automatisch als
+  /// angemeldet aufnehmen (Bestandskunden, § 7 Abs. 3 UWG). Ab Werk aus.
+  annyAutoSubscribe Boolean  @default(false)
+  /// Letzter Abgleich der Gruppe „Abos aus anny“ mit den Tickets.
+  annySyncedAt     DateTime?
   /// Schlüssel für Bestätigungs- und Abmeldelinks, zufällig je Mandant.
   /// Nie ändern: Abmeldelinks in alten Mails müssen gültig bleiben.
   tokenSecret      String
@@ -4946,7 +4953,9 @@ model NewsletterSubscriber {
   name              String?
   /// "PENDING" (Bestätigung offen) | "ACTIVE" | "UNSUBSCRIBED" | "BOUNCED" | "COMPLAINED"
   status            String           @default("PENDING")
-  /// Woher die Anmeldung kam: "website", "app", "verwaltung", "import".
+  /// Woher die Anmeldung kam: "website", "app", "verwaltung", "import"
+  /// (alte Website-Liste), "wakesys" (Mailchimp-Liste aus Wakesys), "anny"
+  /// (Abo-Kunde aus anny, Bestandskunde).
   source            String           @default("website")
   customerId        Int?
   customer          Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -4968,12 +4977,45 @@ model NewsletterSubscriber {
   complainedAt      DateTime?
   lastSentAt        DateTime?
   sends             NewsletterSend[]
+  groups            NewsletterGroupMember[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
   @@unique([accountId, email])
   @@index([accountId, status])
   @@index([customerId])
+}
+
+/// Gruppe von Abonnenten, z. B. „Website“, „Wakesys“, „Abos aus anny“.
+/// Eine Aussendung geht an ausgewählte Gruppen oder an alle.
+model NewsletterGroup {
+  id        Int                     @id @default(autoincrement())
+  accountId Int
+  account   Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name      String
+  /// Feste Gruppen, die emp-access selbst füllt: "website" (Anmeldungen von
+  /// der Website), "anny-abos" (laufende anny-Abos). Leer: eigene Gruppe.
+  key       String?
+  members   NewsletterGroupMember[]
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@unique([accountId, name])
+  @@unique([accountId, key])
+}
+
+model NewsletterGroupMember {
+  accountId    Int
+  account      Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  groupId      Int
+  group        NewsletterGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  subscriberId Int
+  subscriber   NewsletterSubscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  addedAt      DateTime             @default(now())
+
+  @@id([groupId, subscriberId])
+  @@index([subscriberId])
+  @@index([accountId])
 }
 
 /// Eine Aussendung. Der Inhalt steht als Bausteine in `blocks`
@@ -4986,6 +5028,8 @@ model NewsletterCampaign {
   /// Vorschauzeile im Postfach.
   preheader   String?
   blocks      Json             @default("[]")
+  /// Empfänger-Gruppen (NewsletterGroup.id). Leer: alle angemeldeten.
+  groupIds    Int[]            @default([])
   /// "DRAFT" | "QUEUED" | "SENDING" | "SENT" | "CANCELLED"
   status      String           @default("DRAFT")
   /// Empfänger beim Start des Versands.

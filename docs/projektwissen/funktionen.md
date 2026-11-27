@@ -90,6 +90,50 @@ Anzeige „Alte Website-Liste“, `consentAt` = Datum der Eintragung,
 Einwilligungstext nennt die Übernahme ohne Bestätigung). Weggelassen ist eine
 Adresse mit Tippfehler-Domain (googlemai.com).
 
+### AWS-Region (27.11.2026)
+
+Das AWS-Konto erlaubt per Organisationsrichtlinie nur Stockholm: SES, SNS und
+IAM liegen in `eu-north-1`, Vercel hat `SES_REGION=eu-north-1`. Frankfurt
+(`eu-central-1`, Standard im Code) ist gesperrt.
+
+## Newsletter, Teil 3: Gruppen (27.11.2026)
+
+- **Daten**: `NewsletterGroup` (Name je Mandant eindeutig, `key` für feste
+  Gruppen) und `NewsletterGroupMember` (mit `accountId`, eine Adresse kann in
+  mehreren Gruppen sein). `NewsletterCampaign.groupIds`: leer heißt an alle
+  angemeldeten, sonst an die angemeldeten Mitglieder dieser Gruppen (jede
+  Adresse einmal, `recipientsWhere` in `src/lib/newsletter/groups.ts`).
+- **Feste Gruppen**: „Website“ (`key = "website"`): jede Anmeldung über
+  `/api/newsletter/subscribe` mit Quelle `website` kommt hinein; die Migration
+  hat die bisherigen Website-Anmeldungen und die alte Website-Liste
+  zugeordnet. „Abos aus anny“ (`key = "anny-abos"`): Inhaber laufender
+  anny-Abos (Ticket mit `source = ANNY`, `subscriptionId`, Status
+  VALID/REDEEMED/PAUSED, ohne oder mit künftigem Enddatum, mit E-Mail).
+- **Abos aus anny** (Schalter `annyAutoSubscribe`, ab Werk aus, in der Karte
+  „Gruppen“): Aarons Entscheidung 27.11.2026, Abo-Kunden als Bestandskunden
+  (§ 7 Abs. 3 UWG) ohne Double-Opt-in aufzunehmen. `syncAnnyAboGroup` legt
+  neue Adressen als angemeldet an (`source = "anny"`, Nachweis
+  `ANNY_CONSENT_TEXT`), ordnet vorhandene nur zu (Status bleibt, wer
+  abgemeldet ist, bleibt abgemeldet) und nimmt Personen ohne laufendes Abo
+  aus der Gruppe (sie bleiben Abonnent). Läuft beim Einschalten, stündlich im
+  Cron und vor jedem Versand. Jede Mail an sie trägt unten den Hinweis auf
+  das Widerspruchsrecht (`reasonLine(…, "anny")`). Inhaltlich nur Werbung für
+  eigene ähnliche Angebote.
+- **Fußzeile je Herkunft**: `reasonLine(accountName, source)` – Website und
+  Verwaltung „bestellt und bestätigt“, alte Website-Liste „auf der Website
+  angemeldet“, Wakesys „zugestimmt“, anny mit Widerspruchshinweis.
+- **Verwaltung**: Abonnenten › Karte „Gruppen“ (Zahl angemeldet und
+  insgesamt, Name filtert die Liste, eigene Gruppen anlegen, umbenennen,
+  löschen; feste Gruppen nicht). Löschen geht nicht, solange ein Entwurf an
+  die Gruppe gehen soll. Filter „Gruppe“ neben der Suche, Spalte „Gruppen“,
+  im Fenster je Adresse die Gruppen zum Abhaken (ohne „Abos aus anny“).
+  Editor: Chips „Empfänger“ mit Zählung (`GET /api/newsletter/recipients`).
+  CSV mit Spalte „Gruppen“.
+- **APIs**: `GET/POST /api/newsletter/groups`, `PATCH/DELETE
+  /api/newsletter/groups/[id]`, `PATCH /api/newsletter/subscribers/[id]` mit
+  `{ action: "groups", groupIds }`, `groupIds` in den Aussendungen,
+  `annyAutoSubscribe` in `PUT /api/newsletter/config`.
+
 ## Dashboard der Verwaltung (22.11.2026)
 
 - Reihenfolge bleibt: 1. „Jetzt“, 2. Tracking, 3. Statistik mit Tag-Wahl und

@@ -10,6 +10,7 @@ import {
   confirmLink, defaultConsentText, linkBase, nextConfirmMailCount, readinessGaps, reasonLine, subscribeAction,
   unsubscribeLink,
 } from "./rules";
+import { addGroupMembers, ensureSystemGroup, recipientsWhere, syncAnnyAboGroup, syncDueAnnyGroups } from "./groups";
 import { SesError, sesEnv, sesErrorText, sesGetAccount, sesSendRaw, type SesEnv, type SesTag } from "./ses";
 import type { SesEvent } from "./sns";
 import { createLinkToken, newTokenSecret, verifyLinkToken } from "./tokens";
@@ -134,6 +135,7 @@ export async function subscribe(accountId: number, input: SubscribeInput, now: D
   if (!email) return "invalid";
   const existing = await prisma.newsletterSubscriber.findUnique({ where: { accountId_email: { accountId, email } } });
   const action = subscribeAction(existing, now);
+  if (existing && input.source === "website") await joinWebsiteGroup(accountId, existing.id);
   if (action === "active") return "active";
   if (action === "throttled") return "throttled";
 
@@ -162,11 +164,21 @@ export async function subscribe(accountId: number, input: SubscribeInput, now: D
     : await prisma.newsletterSubscriber.create({
         data: { ...consent, accountId, email, name, source: input.source, status: "PENDING", customerId: input.customerId ?? null },
       });
+  if (!existing && input.source === "website") await joinWebsiteGroup(accountId, subscriber.id);
 
   await sendConfirmMail(ctx, subscriber, now).catch((err) => {
     console.error("[newsletter] Bestätigungsmail fehlgeschlagen:", err instanceof Error ? err.message : err);
   });
   return "pending";
+}
+
+/** Anmeldung über die Website: in die feste Gruppe „Website“. Fehler halten die Anmeldung nicht auf. */
+async function joinWebsiteGroup(accountId: number, subscriberId: number): Promise<void> {
+  try {
+    await addGroupMembers(accountId, await ensureSystemGroup(accountId, "website"), [subscriberId]);
+  } catch (err) {
+    console.error("[newsletter] Gruppe Website:", err instanceof Error ? err.message : err);
+  }
 }
 
 /**
@@ -268,6 +280,7 @@ function renderFor(
   ctx: SendContext,
   campaign: { id: number; preheader: string | null; blocks: unknown },
   subscriberId: number,
+  source: string | null = null,
 ): { html: string; text: string; unsubscribeUrl: string } {
   const token = createLinkToken(ctx.config.tokenSecret, {
     purpose: "u",
@@ -280,7 +293,7 @@ function renderFor(
     brand: ctx.brand,
     preheader: campaign.preheader,
     unsubscribeUrl,
-    reason: reasonLine(ctx.accountName),
+    reason: reasonLine(ctx.accountName, source),
   };
   const blocks = campaignBlocks(campaign.blocks);
   return { html: renderNewsletterHtml(blocks, render), text: renderNewsletterText(blocks, render), unsubscribeUrl };
@@ -319,8 +332,9 @@ export async function sendTestMail(
 }
 
 /**
- * Aussendung starten: alle angemeldeten Abonnenten in die Warteschlange.
- * Der Cron (/api/cron/newsletter) verschickt sie in Raten.
+ * Aussendung starten: alle angemeldeten Abonnenten der gewählten Gruppen
+ * (ohne Gruppen: alle angemeldeten) in die Warteschlange. Der Cron
+ * (/api/cron/newsletter) verschickt sie in Raten.
  */
 export async function queueCampaign(
   accountId: number,
@@ -333,6 +347,11 @@ export async function queueCampaign(
   if (!campaign) return { error: "Aussendung nicht gefunden", status: 404 };
   if (campaign.status !== "DRAFT") return { error: "Diese Aussendung wurde schon gestartet", status: 409 };
   if (campaignBlocks(campaign.blocks).length === 0) return { error: "Die Aussendung hat keinen Inhalt", status: 400 };
+  const groupIds = campaign.groupIds ?? [];
+  if (groupIds.length) {
+    const known = await prisma.newsletterGroup.count({ where: { accountId, id: { in: groupIds } } });
+    if (known !== groupIds.length) return { error: "Eine gewählte Gruppe gibt es nicht mehr. Bitte die Empfänger neu wählen.", status: 409 };
+  }
 
   if (ctx.env) {
     const account = await sesGetAccount(ctx.env).catch(() => null);
@@ -351,8 +370,12 @@ export async function queueCampaign(
   });
   if (claimed.count === 0) return { error: "Diese Aussendung wurde schon gestartet", status: 409 };
 
+  // Abo-Kunden aus anny auf den neuesten Stand bringen (nur wenn eingeschaltet).
+  await syncAnnyAboGroup(accountId, now).catch((err) => {
+    console.error("[newsletter] Abgleich anny-Abos vor dem Versand:", err instanceof Error ? err.message : err);
+  });
   const subscribers = await prisma.newsletterSubscriber.findMany({
-    where: { accountId, status: "ACTIVE" },
+    where: recipientsWhere(accountId, groupIds),
     select: { id: true, email: true },
     orderBy: { id: "asc" },
   });
@@ -402,10 +425,17 @@ export interface TickSummary {
   retried: number;
   finished: number[];
   stopped: Array<{ campaignId: number; error: string }>;
+  /** Mandanten, deren Gruppe „Abos aus anny“ abgeglichen wurde. */
+  annySynced: number;
 }
 
 export async function runNewsletterTick(budgetMs = 45_000, now: Date = new Date()): Promise<TickSummary> {
-  const summary: TickSummary = { confirmMails: 0, sent: 0, failed: 0, retried: 0, finished: [], stopped: [] };
+  const summary: TickSummary = { confirmMails: 0, sent: 0, failed: 0, retried: 0, finished: [], stopped: [], annySynced: 0 };
+  // 0) Gruppe „Abos aus anny“ stündlich abgleichen, auch ohne SES.
+  summary.annySynced = await syncDueAnnyGroups(now).catch((err) => {
+    console.error("[newsletter] Abgleich anny-Abos:", err instanceof Error ? err.message : err);
+    return 0;
+  });
   const env = sesEnv();
   if (!env) return { ...summary, skipped: "SES nicht eingerichtet" };
   const deadline = Date.now() + budgetMs;
@@ -482,13 +512,13 @@ export async function runNewsletterTick(budgetMs = 45_000, now: Date = new Date(
       if (batch.length === 0) break;
 
       const started = Date.now();
-      const active = new Set(
+      const active = new Map(
         (
           await prisma.newsletterSubscriber.findMany({
             where: { id: { in: batch.map((b) => b.subscriberId) }, accountId: campaign.accountId, status: "ACTIVE" },
-            select: { id: true },
+            select: { id: true, source: true },
           })
-        ).map((s) => s.id),
+        ).map((s) => [s.id, s.source]),
       );
 
       const results = await Promise.all(
@@ -501,7 +531,7 @@ export async function runNewsletterTick(budgetMs = 45_000, now: Date = new Date(
             return "skipped" as const;
           }
           try {
-            const { html, text, unsubscribeUrl } = renderFor(ctx, campaign, row.subscriberId);
+            const { html, text, unsubscribeUrl } = renderFor(ctx, campaign, row.subscriberId, active.get(row.subscriberId));
             const messageId = await sendOne(ctx, {
               to: row.email,
               subject: campaign.subject,

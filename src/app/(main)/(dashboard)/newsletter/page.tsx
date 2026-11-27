@@ -18,6 +18,8 @@ import {
 import { ReadinessNotice } from "@/components/newsletter/readiness-notice";
 import { CampaignsCard, type CampaignRow } from "@/components/newsletter/campaigns-card";
 import { SubscribersCard, type SubscriberRow } from "@/components/newsletter/subscribers-card";
+import { GroupsCard } from "@/components/newsletter/groups-card";
+import { loadGroupRows } from "@/lib/newsletter/groups";
 import { NewsletterSettingsCard } from "@/components/newsletter/settings-card";
 import { SesStatusCard } from "@/components/newsletter/ses-status-card";
 
@@ -30,7 +32,7 @@ const LIST_LIMIT = 200;
 export default async function NewsletterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; status?: string; q?: string }>;
+  searchParams: Promise<{ tab?: string; status?: string; q?: string; gruppe?: string }>;
 }) {
   const session = await safeAuth();
   if (!session?.user) redirect("/login");
@@ -109,8 +111,12 @@ export default async function NewsletterPage({
   } else if (tab === "abonnenten") {
     const status = SUBSCRIBER_STATUSES.includes(sp.status as SubscriberStatus) ? (sp.status as SubscriberStatus) : null;
     const q = (sp.q ?? "").trim().slice(0, 100);
+    const groups = await loadGroupRows(db, accountId);
+    const groupParam = Number(sp.gruppe);
+    const groupId = groups.some((g) => g.id === groupParam) ? groupParam : null;
     const where = {
       accountId,
+      ...(groupId && { groups: { some: { groupId, accountId } } }),
       ...(status === "BOUNCED"
         ? { status: { in: ["BOUNCED", "COMPLAINED"] } }
         : status
@@ -124,7 +130,12 @@ export default async function NewsletterPage({
       }),
     };
     const [subscribers, matching] = await Promise.all([
-      db.newsletterSubscriber.findMany({ where, orderBy: { createdAt: "desc" }, take: LIST_LIMIT }),
+      db.newsletterSubscriber.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: LIST_LIMIT,
+        include: { groups: { select: { groupId: true } } },
+      }),
       db.newsletterSubscriber.count({ where }),
     ]);
     const rows: SubscriberRow[] = subscribers.map((s) => ({
@@ -145,8 +156,10 @@ export default async function NewsletterPage({
       unsubscribeReason: s.unsubscribeReason,
       bouncedLabel: berlinDateTime(s.bouncedAt ?? s.complainedAt),
       lastSentLabel: berlinDateTime(s.lastSentAt),
+      groupIds: s.groups.map((g) => g.groupId),
     }));
-    const filterHref = (s: string | null) => `/newsletter?tab=abonnenten${s ? `&status=${s}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+    const filterHref = (s: string | null) =>
+      `/newsletter?tab=abonnenten${s ? `&status=${s}` : ""}${groupId ? `&gruppe=${groupId}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
     const problemCount = countOf("BOUNCED") + countOf("COMPLAINED");
     content = (
       <>
@@ -188,6 +201,12 @@ export default async function NewsletterPage({
             size="sm"
           />
         </div>
+        <GroupsCard
+          groups={groups}
+          selectedId={groupId}
+          annyAutoSubscribe={ctx.config.annyAutoSubscribe}
+          annySyncedLabel={berlinDateTime(ctx.config.annySyncedAt)}
+        />
         <SubscribersCard
           subscribers={rows}
           matching={matching}
@@ -195,6 +214,8 @@ export default async function NewsletterPage({
           limit={LIST_LIMIT}
           query={q}
           status={status}
+          groupId={groupId}
+          groups={groups}
           canSend={ctx.gaps.length === 0}
         />
       </>
@@ -235,4 +256,5 @@ export default async function NewsletterPage({
     </>
   );
 }
+
 

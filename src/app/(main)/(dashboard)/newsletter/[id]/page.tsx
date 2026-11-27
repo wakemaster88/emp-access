@@ -13,6 +13,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { AutoRefresh } from "@/components/rider/auto-refresh";
 import { renderNewsletterHtml } from "@/lib/newsletter/blocks";
 import { campaignBlocks, loadSendContext } from "@/lib/newsletter/service";
+import { loadGroupRows, recipientsWhere } from "@/lib/newsletter/groups";
 import { campaignStats, percent } from "@/lib/newsletter/stats";
 import { berlinDateTime } from "@/lib/newsletter/format";
 import { CAMPAIGN_STATUS_LABEL, reasonLine, type CampaignStatus } from "@/lib/newsletter/rules";
@@ -35,14 +36,13 @@ export default async function NewsletterCampaignPage({ params }: { params: Promi
   const campaign = await db.newsletterCampaign.findFirst({ where: { id, accountId } });
   if (!campaign) notFound();
 
-  const [ctx, activeCount] = await Promise.all([
-    loadSendContext(accountId),
-    db.newsletterSubscriber.count({ where: { accountId, status: "ACTIVE" } }),
-  ]);
+  const [ctx, groupRows] = await Promise.all([loadSendContext(accountId), loadGroupRows(db, accountId)]);
+  const groupIds = campaign.groupIds ?? [];
+  const groupNames = groupIds.map((g) => groupRows.find((x) => x.id === g)?.name ?? "gelöschte Gruppe");
   const status = campaign.status as CampaignStatus;
   const blocks = campaignBlocks(campaign.blocks);
   const reason = reasonLine(ctx.accountName);
-  const editorCampaign = { id: campaign.id, subject: campaign.subject, preheader: campaign.preheader ?? "", blocks };
+  const editorCampaign = { id: campaign.id, subject: campaign.subject, preheader: campaign.preheader ?? "", blocks, groupIds };
 
   const back = (
     <Button asChild variant="ghost" size="sm" className="-ml-2 max-sm:h-11">
@@ -55,6 +55,8 @@ export default async function NewsletterCampaignPage({ params }: { params: Promi
 
   if (status === "DRAFT") {
     const blockingForTest = ctx.gaps.filter((g) => !g.startsWith("Versand ist ausgeschaltet"));
+    const knownIds = groupIds.filter((g) => groupRows.some((x) => x.id === g));
+    const recipientCount = await db.newsletterSubscriber.count({ where: recipientsWhere(accountId, knownIds) });
     return (
       <>
         <Header title="Newsletter" accountName={session.user.accountName} />
@@ -65,7 +67,8 @@ export default async function NewsletterCampaignPage({ params }: { params: Promi
             campaign={editorCampaign}
             brand={ctx.brand}
             reason={reason}
-            activeCount={activeCount}
+            groups={groupRows.map((g) => ({ id: g.id, name: g.name, active: g.active }))}
+            recipientCount={recipientCount}
             canSend={ctx.gaps.length === 0}
             canTest={blockingForTest.length === 0}
             testTo={session.user.email ?? ""}
@@ -106,6 +109,7 @@ export default async function NewsletterCampaignPage({ params }: { params: Promi
             </CardTitle>
             <CardDescription>
               {when}
+              {` · an ${groupNames.length ? groupNames.join(", ") : "alle angemeldeten"}`}
               {campaign.createdBy ? ` · angelegt von ${campaign.createdBy}` : ""}
             </CardDescription>
           </CardHeader>
