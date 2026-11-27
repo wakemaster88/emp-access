@@ -263,6 +263,8 @@ export interface PostInput {
   interactions: number | null;
   clicks: number | null;
   notes: string | null;
+  /** Zum Termin automatisch über Meta posten (nur Instagram/Facebook, Stand „Fertig“, mit Termin). */
+  autoPublish: boolean;
 }
 
 export function parsePostInput(body: Record<string, unknown> | null): PostInput | { error: string } {
@@ -296,6 +298,12 @@ export function parsePostInput(body: Record<string, unknown> | null): PostInput 
   if (reach === "invalid" || interactions === "invalid" || clicks === "invalid") return { error: "Zahlen: bitte ganze Zahlen ab 0" };
   const notes = text(body.notes, 2000);
   if (notes === null) return { error: "Notiz: höchstens 2000 Zeichen" };
+  const autoPublish = body.autoPublish === true;
+  if (autoPublish) {
+    if (body.channel !== "INSTAGRAM" && body.channel !== "FACEBOOK") return { error: "Automatisch posten geht nur auf Instagram und Facebook" };
+    if (status !== "READY") return { error: "Automatisch posten: Stand auf „Fertig“ stellen" };
+    if (!plannedAt) return { error: "Automatisch posten: bitte einen Termin setzen" };
+  }
   return {
     channel: body.channel,
     format,
@@ -309,6 +317,7 @@ export function parsePostInput(body: Record<string, unknown> | null): PostInput 
     interactions,
     clicks,
     notes: notes || null,
+    autoPublish,
   };
 }
 

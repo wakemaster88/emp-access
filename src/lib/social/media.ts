@@ -9,6 +9,7 @@
  * Newsletter stehen, der sonst ein kaputtes Bild zeigte.
  */
 import { randomBytes } from "node:crypto";
+import { publicBlobToken } from "@/lib/blob-token";
 
 /** Größte Datei, die der Browser schicken darf (Vercel nimmt 4,5 MB). */
 export const SOCIAL_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
@@ -45,10 +46,9 @@ export function socialMediaPath(accountId: number, now: Date = new Date()): stri
   return `social/${accountId}/${stamp}-${randomBytes(6).toString("hex")}.jpg`;
 }
 
-/** Öffentlicher Speicher konfiguriert? */
+/** Öffentlicher Speicher konfiguriert? Token immer ausdrücklich, sonst nimmt @vercel/blob per OIDC den privaten Speicher. */
 export function socialMediaToken(): string | undefined {
-  const t = process.env.BLOB_READ_WRITE_TOKEN;
-  return t && t.trim() ? t : undefined;
+  return publicBlobToken();
 }
 
 /** Bild ablegen; liefert die öffentliche Adresse. */

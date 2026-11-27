@@ -98,3 +98,14 @@ test("isOverdue und nextPublishedAt", () => {
   assert.equal(nextPublishedAt({ status: "PUBLISHED", publishedAt: before }, { status: "PUBLISHED", plannedAt: planned }, now), before);
   assert.equal(nextPublishedAt({ status: "PUBLISHED", publishedAt: before }, { status: "READY", plannedAt: planned }, now), null);
 });
+
+test("parsePostInput: automatisch posten nur Instagram/Facebook, Stand Fertig, mit Termin", () => {
+  const base = { channel: "INSTAGRAM", status: "READY", plannedAt: "2026-12-06T12:00", autoPublish: true };
+  const ok = parsePostInput(base);
+  assert.ok(!("error" in ok) && ok.autoPublish === true);
+  assert.match((parsePostInput({ ...base, channel: "TIKTOK" }) as { error: string }).error, /Instagram und Facebook/);
+  assert.match((parsePostInput({ ...base, status: "DRAFT" }) as { error: string }).error, /Fertig/);
+  assert.match((parsePostInput({ ...base, plannedAt: null }) as { error: string }).error, /Termin/);
+  const off = parsePostInput({ channel: "TIKTOK", autoPublish: "ja" });
+  assert.ok(!("error" in off) && off.autoPublish === false);
+});

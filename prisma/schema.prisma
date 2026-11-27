@@ -228,6 +228,7 @@ model Account {
   newsletterSends        NewsletterSend[]
   socialCampaigns        SocialCampaign[]
   socialPosts            SocialPost[]
+  socialMetaConnection   SocialMetaConnection?
   chips                  Chip[]
   chipEvents             ChipEvent[]
   riderPasskeys          RiderPasskey[]
@@ -5153,16 +5154,53 @@ model SocialPost {
   /// ID des Beitrags beim Kanal (z. B. Instagram-Media-ID). Für einen späteren
   /// Abgleich über die Meta Graph API; leer, solange von Hand gepostet wird.
   externalId   String?
-  /// Zahlen nach dem Veröffentlichen, von Hand eingetragen.
+  /// Zahlen nach dem Veröffentlichen, von Hand eingetragen oder über die Meta-Schnittstelle abgerufen.
   reach        Int?
   interactions Int?
   clicks       Int?
+  /// Aufrufe (Instagram „views“); nur über die Meta-Schnittstelle.
+  views        Int?
   statsAt      DateTime?
   notes        String?
+  /// Zum Termin automatisch über die Meta-Schnittstelle posten (nur Instagram/Facebook, Stand „Fertig“).
+  autoPublish     Boolean   @default(false)
+  /// Sperre während eines Veröffentlichungsversuchs (gegen doppeltes Posten).
+  publishLockedAt DateTime?
+  publishAttempts Int       @default(0)
+  /// Letzte Fehlermeldung der Schnittstelle, leer nach Erfolg.
+  publishError    String?
+  /// Instagram-Container, der noch verarbeitet wird (Videos).
+  containerId     String?
   createdBy    String?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
   @@index([accountId, plannedAt])
   @@index([campaignId])
+}
+
+/// Verbindung zu einer Facebook-Seite und dem damit verknüpften Instagram-Konto
+/// (Meta Graph API). Höchstens eine je Mandant. Tokens nur verschlüsselt (secret-box).
+model SocialMetaConnection {
+  id          Int       @id @default(autoincrement())
+  accountId   Int       @unique
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Langlebiges Nutzer-Token, nur bis die Seite gewählt ist (danach leer).
+  userToken   String?
+  /// Seiten zur Auswahl nach dem Anmelden: [{ id, name, igUsername }] (ohne Tokens).
+  pageChoices Json?
+  pageId      String?
+  pageName    String?
+  /// Seiten-Token (läuft nicht ab, solange die Rechte bestehen).
+  pageToken   String?
+  igUserId    String?
+  igUsername  String?
+  scopes      String[]  @default([])
+  connectedBy String?
+  connectedAt DateTime  @default(now())
+  /// Letzter Fehler der Schnittstelle (z. B. Token ungültig).
+  lastError   String?
+  lastErrorAt DateTime?
+  statsSyncAt DateTime?
+  updatedAt   DateTime  @updatedAt
 }

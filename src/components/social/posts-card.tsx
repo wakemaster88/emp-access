@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Check, Copy, CopyPlus, Film, ImagePlus, Link2, Loader2, Plus, Share2, Trash2, X,
+  BarChart3, Check, Copy, CopyPlus, Film, ImagePlus, Link2, Loader2, Plus, Send, Share2, Trash2, X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,8 +19,10 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { SocialPostRow } from "@/lib/social/load";
+import { META_CHANNELS, metaCaption, publishProblem } from "@/lib/social/meta-rules";
 import {
   CHANNEL_LABEL, CHANNEL_TEXT_LIMIT, FORMAT_LABEL, POST_STATUSES, POST_STATUS_LABEL, SOCIAL_CHANNELS, SOCIAL_FORMATS,
   isHttpsUrl, postCopyText, toBerlinLocalInput,
@@ -29,6 +31,13 @@ import {
 import { socialLink } from "@/lib/social/utm";
 import { CHANNEL_ICON, excerpt, nf, postBadge, whenLabel } from "./social-ui";
 import { canShareFiles, copyText, sharePost } from "./share";
+
+/** Stand der Meta-Verbindung für den Dialog. */
+export interface PostsMeta {
+  connected: boolean;
+  /** Instagram-Profil mit der Seite verknüpft. */
+  instagram: boolean;
+}
 
 export interface PostsCampaign {
   id: number;
@@ -51,6 +60,12 @@ interface EditPost {
   interactions: string;
   clicks: string;
   notes: string;
+  autoPublish: boolean;
+  /** Nur Anzeige: über Meta gepostet, Video in Verarbeitung, letzter Fehler, Aufrufe. */
+  viaMeta: boolean;
+  processing: boolean;
+  publishError: string | null;
+  views: number | null;
 }
 
 const UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
@@ -71,6 +86,11 @@ function toEdit(p: SocialPostRow): EditPost {
     interactions: p.interactions?.toString() ?? "",
     clicks: p.clicks?.toString() ?? "",
     notes: p.notes ?? "",
+    autoPublish: p.autoPublish,
+    viaMeta: p.viaMeta,
+    processing: p.processing,
+    publishError: p.publishError,
+    views: p.views,
   };
 }
 
@@ -78,12 +98,15 @@ function emptyPost(channel: SocialChannel = "INSTAGRAM"): EditPost {
   return {
     id: null, channel, format: "POST", status: "IDEA", text: "", media: [], link: "", plannedAt: "",
     postUrl: "", reach: "", interactions: "", clicks: "", notes: "",
+    autoPublish: false, viaMeta: false, processing: false, publishError: null, views: null,
   };
 }
 
 function isVideo(url: string): boolean {
   return /\.(mp4|mov|m4v|webm)(\?|$)/i.test(url);
 }
+
+const CHANNEL_NAME: Record<string, string> = { INSTAGRAM: "Instagram", FACEBOOK: "Facebook" };
 
 /** Große Dateien und Formate wie HEIC im Browser auf JPEG verkleinern. */
 async function uploadBody(file: File): Promise<Blob> {
@@ -141,10 +164,12 @@ export function PostsCard({
   campaign,
   posts,
   openPostId,
+  meta,
 }: {
   campaign: PostsCampaign;
   posts: SocialPostRow[];
   openPostId: number | null;
+  meta: PostsMeta;
 }) {
   const router = useRouter();
   const [edit, setEdit] = useState<EditPost | null>(() => {
@@ -155,6 +180,9 @@ export function PostsCard({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmPublish, setConfirmPublish] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [notice, setNotice] = useState("");
   const [newMedia, setNewMedia] = useState("");
   // Nur im Browser prüfbar; beim Öffnen eines Beitrags neu gesetzt.
   const [canShare, setCanShare] = useState(false);
@@ -164,20 +192,22 @@ export function PostsCard({
     setCanShare(canShareFiles());
     setEdit(p);
     setError("");
+    setNotice("");
     setConfirmDelete(false);
+    setConfirmPublish(false);
     setNewMedia("");
   };
   const close = () => {
-    if (busy || uploading) return;
+    if (busy || uploading || publishing) return;
     setEdit(null);
     // Der Beitrag aus dem Link (?beitrag=…) soll nach dem Schließen nicht wieder aufgehen.
     if (openPostId) router.replace(`/newsletter/social/${campaign.id}`, { scroll: false });
   };
   const set = (patch: Partial<EditPost>) => setEdit((e) => (e ? { ...e, ...patch } : e));
 
-  async function save() {
-    if (!edit) return;
-    setBusy(true);
+  /** Dialog speichern; liefert die ID oder null bei Fehler. */
+  async function persist(): Promise<number | null> {
+    if (!edit) return null;
     setError("");
     try {
       const body = {
@@ -193,6 +223,7 @@ export function PostsCard({
         interactions: edit.interactions.trim() || null,
         clicks: edit.clicks.trim() || null,
         notes: edit.notes,
+        autoPublish: edit.autoPublish,
       };
       const res = await fetch(edit.id ? `/api/social/posts/${edit.id}` : `/api/social/campaigns/${campaign.id}/posts`, {
         method: edit.id ? "PUT" : "POST",
@@ -202,10 +233,73 @@ export function PostsCard({
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(typeof json.error === "string" ? json.error : "Speichern fehlgeschlagen");
+        return null;
+      }
+      const id = edit.id ?? (typeof json.id === "number" ? json.id : null);
+      if (id && !edit.id) set({ id });
+      return id;
+    } catch {
+      setError("Netzwerkfehler");
+      return null;
+    }
+  }
+
+  async function save() {
+    if (!edit) return;
+    setBusy(true);
+    const id = await persist();
+    setBusy(false);
+    if (!id) return;
+    setEdit(null);
+    if (openPostId) router.replace(`/newsletter/social/${campaign.id}`, { scroll: false });
+    router.refresh();
+  }
+
+  /** Speichern und sofort über Meta veröffentlichen. */
+  async function publishNow() {
+    if (!edit) return;
+    setPublishing(true);
+    setNotice("");
+    try {
+      const id = await persist();
+      if (!id) return;
+      const res = await fetch(`/api/social/posts/${id}/publish`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      setConfirmPublish(false);
+      if (!res.ok) {
+        setError(typeof json.error === "string" ? json.error : "Posten fehlgeschlagen");
+        router.refresh();
+        return;
+      }
+      if (json.state === "PROCESSING") {
+        set({ processing: true, publishError: null });
+        setNotice("Instagram verarbeitet das Video noch. emp-access postet es, sobald es fertig ist (meist wenige Minuten).");
+        router.refresh();
         return;
       }
       setEdit(null);
       if (openPostId) router.replace(`/newsletter/social/${campaign.id}`, { scroll: false });
+      router.refresh();
+    } catch {
+      setError("Netzwerkfehler");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function refreshStats() {
+    if (!edit?.id) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetch(`/api/social/posts/${edit.id}/stats`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof json.error === "string" ? json.error : "Abruf fehlgeschlagen");
+        return;
+      }
+      setEdit(null);
       router.refresh();
     } catch {
       setError("Netzwerkfehler");
@@ -260,6 +354,14 @@ export function PostsCard({
   const limit = edit ? CHANNEL_TEXT_LIMIT[edit.channel] : 0;
   const copy = edit ? postCopyText(edit.text, campaign.hashtags) : "";
   const campaignUrl = edit && campaign.landingUrl ? socialLink(campaign.landingUrl, campaign.slug, edit.channel) : null;
+  const metaChannel = !!edit && META_CHANNELS.includes(edit.channel);
+  const metaProblem =
+    edit && metaChannel
+      ? publishProblem(
+          { channel: edit.channel, format: edit.format, text: metaCaption(edit, campaign.hashtags), media: edit.media, link: edit.link.trim() || null, containerId: null },
+          meta.connected ? { igUserId: meta.instagram ? "verbunden" : null } : null,
+        )
+      : null;
   const published = posts.filter((p) => p.status === "PUBLISHED").length;
 
   return (
@@ -307,7 +409,12 @@ export function PostsCard({
                           ? `gepostet ${whenLabel(p.publishedAt) ?? ""}${p.reach !== null ? ` · ${nf.format(p.reach)} erreicht` : ""}`
                           : (whenLabel(p.plannedAt) ?? "ohne Termin")}
                         {p.media.length ? ` · ${p.media.length} ${p.media.length === 1 ? "Bild" : "Bilder"}` : ""}
+                        {p.status !== "PUBLISHED" && p.processing ? " · wird verarbeitet" : ""}
+                        {p.status !== "PUBLISHED" && !p.processing && p.autoPublish ? " · automatisch" : ""}
                       </span>
+                      {p.publishError && !p.viaMeta && (
+                        <span className="block truncate text-xs text-destructive">Posten fehlgeschlagen: {p.publishError}</span>
+                      )}
                     </span>
                     <Badge variant={postBadge(p.status, p.overdue)} className="shrink-0 font-normal max-sm:hidden">
                       {p.overdue ? "Überfällig" : POST_STATUS_LABEL[p.status]}
@@ -328,7 +435,9 @@ export function PostsCard({
               <DialogHeader>
                 <DialogTitle>{edit.id ? "Beitrag bearbeiten" : "Beitrag anlegen"}</DialogTitle>
                 <DialogDescription>
-                  Gepostet wird von Hand im Kanal. Hier stehen Text, Bilder, Termin und danach die Zahlen.
+                  {meta.connected && metaChannel
+                    ? "Von Hand posten oder über emp-access: sofort oder zum Termin."
+                    : "Gepostet wird von Hand im Kanal. Hier stehen Text, Bilder, Termin und danach die Zahlen."}
                 </DialogDescription>
               </DialogHeader>
 
@@ -512,9 +621,68 @@ export function PostsCard({
                   )}
                 </div>
 
+                {meta.connected && metaChannel && !edit.viaMeta && (
+                  <div className="glass-tile space-y-3 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <Label htmlFor="sp-auto" className="text-[13px] font-medium text-foreground">
+                          Zum Termin automatisch posten
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Mit Stand „Fertig“ und Termin postet emp-access selbst auf {CHANNEL_NAME[edit.channel]}.
+                        </p>
+                      </div>
+                      <Switch
+                        id="sp-auto"
+                        checked={edit.autoPublish}
+                        disabled={!!metaProblem && !edit.autoPublish}
+                        onCheckedChange={(on) => set({ autoPublish: on, ...(on && edit.status !== "READY" ? { status: "READY" } : {}) })}
+                      />
+                    </div>
+                    {metaProblem && <p className="text-xs text-muted-foreground">Automatisch posten geht noch nicht: {metaProblem}.</p>}
+                    {edit.processing && (
+                      <Notice tone="info" compact title="Instagram verarbeitet das Video">
+                        emp-access postet es, sobald es fertig ist.
+                      </Notice>
+                    )}
+                    {edit.publishError && <Notice tone="warning" compact title={`Letzter Versuch: ${edit.publishError}`} />}
+                    {confirmPublish ? (
+                      <ConfirmStep
+                        title={`Jetzt auf ${CHANNEL_NAME[edit.channel]} veröffentlichen?`}
+                        description="Der Beitrag geht sofort öffentlich raus. Ändern oder löschen geht danach nur im Kanal selbst."
+                        confirmLabel="Jetzt posten"
+                        destructive={false}
+                        icon={Send}
+                        pending={publishing}
+                        onConfirm={() => void publishNow()}
+                        onCancel={() => setConfirmPublish(false)}
+                      />
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="max-sm:h-11 max-sm:w-full"
+                        disabled={!!metaProblem || edit.processing || busy || uploading || publishing || edit.text.length > limit}
+                        onClick={() => setConfirmPublish(true)}
+                      >
+                        <Send className="h-4 w-4" />
+                        Jetzt posten
+                      </Button>
+                    )}
+                  </div>
+                )}
+
                 {edit.status === "PUBLISHED" && (
                   <div className="glass-tile space-y-3 p-3">
-                    <p className="text-[13px] font-medium text-foreground">Nach dem Posten</p>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[13px] font-medium text-foreground">Nach dem Posten</p>
+                      {edit.viaMeta && meta.connected && edit.id && (
+                        <Button type="button" variant="outline" size="sm" className="max-sm:h-11" disabled={busy} onClick={() => void refreshStats()}>
+                          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BarChart3 className="h-3.5 w-3.5" />}
+                          Zahlen abrufen
+                        </Button>
+                      )}
+                    </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="sp-url">Link zum Beitrag</Label>
                       <Input id="sp-url" value={edit.postUrl} inputMode="url" spellCheck={false} placeholder="https://www.instagram.com/p/…" onChange={(e) => set({ postUrl: e.target.value })} className="max-sm:h-11" />
@@ -538,7 +706,11 @@ export function PostsCard({
                         </div>
                       ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">Zahlen aus der Statistik des Kanals (z. B. Meta Business Suite). Interaktionen: Likes, Kommentare, Teilen, Speichern.</p>
+                    <p className="text-xs text-muted-foreground">
+                      {edit.viaMeta
+                        ? `Über emp-access gepostet. Zahlen kommen von Meta, alle 6 Stunden für 30 Tage${edit.views !== null ? `; Aufrufe: ${nf.format(edit.views)}` : ""}.`
+                        : "Zahlen aus der Statistik des Kanals (z. B. Meta Business Suite). Interaktionen: Likes, Kommentare, Teilen, Speichern."}
+                    </p>
                   </div>
                 )}
 
@@ -560,7 +732,22 @@ export function PostsCard({
                       type="button"
                       variant="outline"
                       className="max-sm:h-11"
-                      onClick={() => open({ ...edit, id: null, status: edit.status === "PUBLISHED" ? "DRAFT" : edit.status, postUrl: "", reach: "", interactions: "", clicks: "" })}
+                      onClick={() =>
+                        open({
+                          ...edit,
+                          id: null,
+                          status: edit.status === "PUBLISHED" ? "DRAFT" : edit.status,
+                          postUrl: "",
+                          reach: "",
+                          interactions: "",
+                          clicks: "",
+                          autoPublish: false,
+                          viaMeta: false,
+                          processing: false,
+                          publishError: null,
+                          views: null,
+                        })
+                      }
                     >
                       <CopyPlus className="h-4 w-4" />
                       Als neuen Beitrag kopieren
@@ -569,6 +756,7 @@ export function PostsCard({
                 </div>
 
                 {error && <Notice tone="danger" compact title={error} />}
+                {notice && <Notice tone="info" compact title={notice} />}
 
                 {confirmDelete ? (
                   <ConfirmStep
@@ -592,7 +780,7 @@ export function PostsCard({
                     <Button type="button" variant="outline" onClick={close} disabled={busy} className="max-sm:h-11">
                       Abbrechen
                     </Button>
-                    <Button type="submit" disabled={busy || uploading || edit.text.length > limit} className="min-w-24 max-sm:h-11">
+                    <Button type="submit" disabled={busy || uploading || publishing || edit.text.length > limit} className="min-w-24 max-sm:h-11">
                       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Speichern"}
                     </Button>
                   </DialogFooter>

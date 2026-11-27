@@ -198,7 +198,8 @@ IAM liegen in `eu-north-1`, Vercel hat `SES_REGION=eu-north-1`. Frankfurt
 Reiter „Social Media“ unter Gäste › Newsletter (`/newsletter?tab=social`, nur
 Admins). Eine **Kampagne** (z. B. „Nikolausfahren 2026“) bündelt die Beiträge
 auf den Kanälen und die Newsletter-Aussendungen zu einem Anlass. Gepostet wird
-von Hand; emp-access spricht noch mit keinem Kanal.
+von Hand oder, für Instagram und Facebook, über die Meta-Schnittstelle (siehe
+nächster Abschnitt).
 
 - **Daten**: `SocialCampaign` (Name, Kürzel `slug` = utm_campaign, Zeitraum
   `startsOn`/`endsOn` als Kalendertage, Ziel-Link, Hashtags, Beschreibung) und
@@ -206,8 +207,8 @@ von Hand; emp-access spricht noch mit keinem Kanal.
   Google-Profil, Format Beitrag/Story/Reel/Karussell, Text, Bilder als
   https-Adressen, Termin, Stand Idee → In Arbeit → Fertig → Veröffentlicht,
   danach Link zum Beitrag und Zahlen von Hand: Erreicht, Interaktionen,
-  Link-Klicks). `externalId` ist für einen späteren Abgleich über die Meta
-  Graph API vorgesehen und bleibt bis dahin leer.
+  Link-Klicks). `externalId` ist die ID beim Kanal, wenn über Meta gepostet
+  wurde.
 - **Kopplung an den Newsletter**: `NewsletterCampaign.socialCampaignId`. Auf
   der Kampagnen-Seite: Aussendung für die Kampagne anlegen, vorhandene
   zuordnen oder lösen. Beim Versand (`renderFor` in
@@ -235,6 +236,57 @@ von Hand; emp-access spricht noch mit keinem Kanal.
 - **Code**: `src/lib/social/` (Regeln, Links, Laden, Bilder, Tests),
   `src/components/social/`, Seiten `newsletter/social/[id]`, APIs unter
   `/api/social/…`.
+
+## Newsletter › Social Media: Meta-Schnittstelle (27.11.2026)
+
+Posten auf Instagram und auf der Facebook-Seite sowie Zahlen abrufen über die
+Meta Graph API (kostenlos, eigene Meta-App im Entwicklungsmodus; ohne App
+Review, solange nur Personen mit einer Rolle in der App sich verbinden).
+
+- **Einrichten**: Meta-App mit Facebook Login (Rechte `pages_show_list`,
+  `pages_read_engagement`, `pages_manage_posts`, `read_insights`,
+  `instagram_basic`, `instagram_content_publish`, `instagram_manage_insights`,
+  `business_management`). Rücksprungadresse
+  `https://www.emp-access.de/api/social/meta/callback` (zeigt auch die Karte
+  „Instagram und Facebook“, solange nichts eingerichtet ist). In Vercel:
+  `META_APP_ID`, `META_APP_SECRET`, optional `META_CONFIG_ID` (Facebook Login
+  for Business statt `scope`) und `META_GRAPH_VERSION` (Standard v25.0).
+  Voraussetzung: Instagram ist ein Business- oder Creator-Konto und mit der
+  Facebook-Seite verknüpft.
+- **Verbinden**: Karte „Instagram und Facebook“ im Reiter Social Media →
+  „Mit Facebook verbinden“ (`/api/social/meta/connect`, `state` im
+  httpOnly-Cookie, Rücksprung `/api/social/meta/callback`). Code → langlebiges
+  Nutzer-Token → Seiten (`/me/accounts` mit `instagram_business_account`).
+  Eine Seite: sofort verbunden; mehrere: Auswahl in der Karte (das Nutzer-Token
+  liegt bis dahin verschlüsselt in `SocialMetaConnection.userToken`).
+  Gespeichert wird danach nur das Seiten-Token, verschlüsselt mit
+  `sealSecret` (`src/lib/secret-box.ts`); es läuft nicht ab, solange die
+  Rechte bestehen. Jeder Aufruf schickt `appsecret_proof` mit. „Trennen“
+  löscht die Tokens und schaltet automatisches Posten aus.
+- **Posten**: Im Beitrag (Kanal Instagram oder Facebook) „Jetzt posten“ (mit
+  Rückfrage) oder Schalter „Zum Termin automatisch posten“ (nur Stand
+  „Fertig“ mit Termin; ab Werk aus). Instagram: Bild, Karussell (2–10),
+  Reel (ein Video), Story (ohne Text); höchstens 2.200 Zeichen und 30
+  Hashtags, Hashtags der Kampagne kommen dazu. Facebook: Text mit Link,
+  ein Bild, mehrere Bilder oder ein Video; Storys nur von Hand. Bilder müssen
+  öffentlich erreichbar sein (hochgeladene liegen im öffentlichen Blob als
+  JPEG). Videos verarbeitet Instagram einige Minuten: der Beitrag merkt sich
+  den Container (`containerId`) und der Cron postet, sobald er fertig ist.
+- **Cron** (`socialMeta` in `/api/cron/tick-5min`, höchstens 60 s je Lauf):
+  fällige Beiträge mit „automatisch“ posten (höchstens 5 je Lauf, Sperre
+  `publishLockedAt` gegen Doppelposts, bis zu 3 Versuche bei Netz- oder
+  vorübergehenden Meta-Fehlern, bleibende Fehler schalten „automatisch“ aus
+  und stehen am Beitrag). Termine, die mehr als 24 Stunden vorbei sind, werden
+  nicht mehr gepostet. Zahlen: über Meta gepostete Beiträge der letzten 30 Tage
+  alle 6 Stunden (Instagram `reach`, `views`, `total_interactions`, bei Storys
+  `link_clicks`; Facebook Reaktionen + Kommentare + Teilen, Reichweite und
+  Klicks, soweit Meta sie noch liefert). Fehlt eine Zahl, bleibt der von Hand
+  eingetragene Wert.
+- **Code**: `src/lib/social/meta.ts` (Graph-Client, Anmelden, Posten, Zahlen;
+  ohne Datenbank, Tests mit Fake-fetch), `meta-rules.ts` (Regeln, auch im
+  Browser), `meta-store.ts` (Verbindung, Sperre, Cron), `meta-state.ts`,
+  `src/components/social/meta-card.tsx`, APIs unter `/api/social/meta/…` und
+  `/api/social/posts/[id]/publish|stats`.
 
 ## Dashboard der Verwaltung (22.11.2026)
 
