@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readRequestBody } from "@/lib/api-body";
 import { idParam, newsletterAdmin } from "@/lib/newsletter/admin-auth";
-import { parseCampaignInput } from "@/lib/newsletter/campaign-input";
+import { knownGroupIds, parseCampaignInput } from "@/lib/newsletter/campaign-input";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -13,9 +13,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
   if (!id) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
   const parsed = parseCampaignInput(await readRequestBody(request));
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const groupIds = await knownGroupIds(auth.db, auth.accountId, parsed.groupIds);
+  if (groupIds.length !== parsed.groupIds.length) {
+    return NextResponse.json({ error: "Eine gewählte Gruppe gibt es nicht mehr. Bitte die Seite neu laden." }, { status: 409 });
+  }
   const r = await auth.db.newsletterCampaign.updateMany({
     where: { id, accountId: auth.accountId, status: "DRAFT" },
-    data: { subject: parsed.subject, preheader: parsed.preheader, blocks: parsed.blocks },
+    data: { subject: parsed.subject, preheader: parsed.preheader, blocks: parsed.blocks, groupIds },
   });
   if (r.count === 0) return NextResponse.json({ error: "Nur Entwürfe lassen sich ändern" }, { status: 409 });
   return NextResponse.json({ ok: true });

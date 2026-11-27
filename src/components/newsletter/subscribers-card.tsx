@@ -2,21 +2,23 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Loader2, MailPlus, Send, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
+import { Download, Loader2, MailPlus, Save, Send, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { SearchInput } from "@/components/ui/search-input";
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import type { SubscriberStatus } from "@/lib/newsletter/rules";
+import { SOURCE_LABEL, type SubscriberStatus } from "@/lib/newsletter/rules";
 import { subscriberBadge } from "./campaign-ui";
 
 export interface SubscriberRow {
@@ -37,14 +39,15 @@ export interface SubscriberRow {
   unsubscribeReason: string | null;
   bouncedLabel: string | null;
   lastSentLabel: string | null;
+  groupIds: number[];
 }
 
-const SOURCE_LABEL: Record<string, string> = {
-  website: "Website",
-  verwaltung: "Verwaltung",
-  app: "Kunden-App",
-  import: "Alte Website-Liste",
-};
+export interface SubscriberGroup {
+  id: number;
+  name: string;
+  key: string | null;
+  active: number;
+}
 
 const REASON_LABEL: Record<string, string> = {
   link: "über den Link",
@@ -62,6 +65,8 @@ export function SubscribersCard({
   limit,
   query,
   status,
+  groupId,
+  groups,
   canSend,
 }: {
   subscribers: SubscriberRow[];
@@ -70,6 +75,9 @@ export function SubscribersCard({
   limit: number;
   query: string;
   status: SubscriberStatus | null;
+  /** Gewählte Gruppe (Filter). */
+  groupId: number | null;
+  groups: SubscriberGroup[];
   /** Versand bereit: Bestätigungsmails gehen raus. */
   canSend: boolean;
 }) {
@@ -81,20 +89,63 @@ export function SubscribersCard({
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [invite, setInvite] = useState<{ email: string; name: string } | null>(null);
+  const [memberOf, setMemberOf] = useState<number[]>([]);
 
-  const search = (value: string) => {
+  const groupName = new Map(groups.map((g) => [g.id, g.name]));
+  const groupsOf = (s: SubscriberRow) => s.groupIds.map((id) => groupName.get(id)).filter(Boolean).join(", ");
+  // Die Gruppe „Abos aus anny“ füllt emp-access selbst.
+  const editableGroups = groups.filter((g) => g.key !== "anny-abos");
+  const annyGroup = groups.find((g) => g.key === "anny-abos");
+
+  const navigate = (next: { q?: string; group?: number | null }) => {
     const params = new URLSearchParams({ tab: "abonnenten" });
     if (status) params.set("status", status);
+    const g = next.group === undefined ? groupId : next.group;
+    if (g) params.set("gruppe", String(g));
+    const value = next.q ?? query;
     if (value.trim()) params.set("q", value.trim());
     router.push(`/newsletter?${params.toString()}`);
   };
+  const search = (value: string) => navigate({ q: value });
 
   const openRow = (s: SubscriberRow) => {
     setSelected(s);
+    setMemberOf(s.groupIds.filter((id) => editableGroups.some((g) => g.id === id)));
     setPending(null);
     setError("");
     setInfo("");
   };
+  const groupsDirty =
+    !!selected &&
+    JSON.stringify([...memberOf].sort((a, b) => a - b)) !==
+      JSON.stringify(selected.groupIds.filter((id) => editableGroups.some((g) => g.id === id)).sort((a, b) => a - b));
+
+  async function saveGroups() {
+    if (!selected) return;
+    setBusy(true);
+    setError("");
+    setInfo("");
+    try {
+      const res = await fetch(`/api/newsletter/subscribers/${selected.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "groups", groupIds: memberOf }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof json.error === "string" ? json.error : "Speichern fehlgeschlagen");
+        return;
+      }
+      const kept = selected.groupIds.filter((id) => !editableGroups.some((g) => g.id === id));
+      setSelected({ ...selected, groupIds: [...kept, ...memberOf] });
+      setInfo("Gruppen gespeichert.");
+      router.refresh();
+    } catch {
+      setError("Netzwerkfehler");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function act(action: "unsubscribe" | "resend" | "delete") {
     if (!selected) return;
@@ -152,7 +203,7 @@ export function SubscribersCard({
     }
   }
 
-  const filtered = !!query || !!status;
+  const filtered = !!query || !!status || !!groupId;
 
   return (
     <>
@@ -202,12 +253,28 @@ export function SubscribersCard({
               className="max-sm:h-11"
             />
           </form>
-          <Button asChild variant="outline" className="max-sm:h-11" disabled={total === 0}>
-            <a href="/api/newsletter/subscribers/export" download>
-              <Download className="h-4 w-4" />
-              CSV mit Einwilligungen
-            </a>
-          </Button>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <NativeSelect
+              aria-label="Gruppe"
+              value={groupId ? String(groupId) : ""}
+              onChange={(e) => navigate({ group: e.target.value ? Number(e.target.value) : null })}
+              containerClassName="sm:w-52"
+              className="max-sm:h-11"
+            >
+              <option value="">Alle Gruppen</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.active.toLocaleString("de-DE")})
+                </option>
+              ))}
+            </NativeSelect>
+            <Button asChild variant="outline" className="max-sm:h-11" disabled={total === 0}>
+              <a href="/api/newsletter/subscribers/export" download aria-label="CSV mit Einwilligungen herunterladen">
+                <Download className="h-4 w-4" />
+                <span>CSV<span className="max-sm:sr-only"> mit Einwilligungen</span></span>
+              </a>
+            </Button>
+          </div>
         </div>
         {info && !selected && (
           <div className="px-4 pb-3 sm:px-[18px]">
@@ -218,7 +285,7 @@ export function SubscribersCard({
           <TableHeader>
             <TableRow>
               <TableHead>E-Mail</TableHead>
-              <TableHead className="hidden sm:table-cell">Quelle</TableHead>
+              <TableHead className="hidden sm:table-cell">Gruppen</TableHead>
               <TableHead className="hidden sm:table-cell">Seit</TableHead>
               <TableHead className="text-right">Status</TableHead>
             </TableRow>
@@ -248,10 +315,12 @@ export function SubscribersCard({
                   </button>
                   {s.name && <div className="text-xs text-muted-foreground">{s.name}</div>}
                   <div className="text-xs text-muted-foreground sm:hidden">
-                    {SOURCE_LABEL[s.source] ?? s.source} · {s.createdLabel}
+                    {groupsOf(s) || SOURCE_LABEL[s.source] || s.source} · {s.createdLabel}
                   </div>
                 </TableCell>
-                <TableCell className="hidden sm:table-cell">{SOURCE_LABEL[s.source] ?? s.source}</TableCell>
+                <TableCell className="hidden whitespace-normal sm:table-cell">
+                  {groupsOf(s) || <span className="text-muted-foreground">–</span>}
+                </TableCell>
                 <TableCell className="hidden whitespace-nowrap tabular-nums sm:table-cell">{s.createdLabel}</TableCell>
                 <TableCell className="text-right">
                   <Badge variant={subscriberBadge(s.status)} className="font-normal">{s.statusLabel}</Badge>
@@ -293,8 +362,44 @@ export function SubscribersCard({
                 </dl>
                 {selected.consentText && (
                   <div className="space-y-1">
-                    <p className="text-label">Einwilligungstext</p>
+                    <p className="text-label">{selected.source === "anny" ? "Grundlage" : "Einwilligungstext"}</p>
                     <p className="glass-tile px-3 py-2 text-[13px] text-muted-foreground">{selected.consentText}</p>
+                  </div>
+                )}
+
+                {(editableGroups.length > 0 || annyGroup) && (
+                  <div className="space-y-1.5">
+                    <p id="nl-sub-groups" className="text-label">Gruppen</p>
+                    {editableGroups.length > 0 && (
+                      <Checklist aria-labelledby="nl-sub-groups" maxHeight="14rem">
+                        {editableGroups.map((g) => (
+                          <ChecklistItem
+                            key={g.id}
+                            title={g.name}
+                            checked={memberOf.includes(g.id)}
+                            disabled={busy}
+                            onCheckedChange={(on) =>
+                              setMemberOf((list) => (on ? [...list, g.id] : list.filter((id) => id !== g.id)))
+                            }
+                          />
+                        ))}
+                      </Checklist>
+                    )}
+                    {annyGroup && (
+                      <p className="text-xs text-muted-foreground">
+                        {selected.groupIds.includes(annyGroup.id)
+                          ? `In „${annyGroup.name}“: hat ein laufendes Abo aus anny.`
+                          : `Nicht in „${annyGroup.name}“: kein laufendes Abo aus anny mit dieser Adresse.`}
+                      </p>
+                    )}
+                    {groupsDirty && (
+                      <div className="flex justify-end">
+                        <Button type="button" size="sm" onClick={() => void saveGroups()} disabled={busy} className="max-sm:h-11 max-sm:w-full">
+                          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                          Gruppen speichern
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
 

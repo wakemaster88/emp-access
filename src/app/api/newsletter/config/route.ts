@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readRequestBody } from "@/lib/api-body";
 import { newsletterAdmin } from "@/lib/newsletter/admin-auth";
 import { loadNewsletterConfig } from "@/lib/newsletter/service";
+import { syncAnnyAboGroup } from "@/lib/newsletter/groups";
 import { isConfigurationSetName, isPlainEmail, isSnsTopicArn } from "@/lib/newsletter/rules";
 import { prisma } from "@/lib/prisma";
 
@@ -27,6 +28,10 @@ export async function PUT(request: NextRequest) {
     if ("enabled" in body) {
       if (typeof body.enabled !== "boolean") throw new Error("enabled ist ungültig");
       data.enabled = body.enabled;
+    }
+    if ("annyAutoSubscribe" in body) {
+      if (typeof body.annyAutoSubscribe !== "boolean") throw new Error("annyAutoSubscribe ist ungültig");
+      data.annyAutoSubscribe = body.annyAutoSubscribe;
     }
     const fromEmail = text("fromEmail", 180);
     if (fromEmail !== undefined) {
@@ -71,7 +76,9 @@ export async function PUT(request: NextRequest) {
 
   await loadNewsletterConfig(auth.accountId);
   const updated = await auth.db.newsletterConfig.update({ where: { accountId: auth.accountId }, data });
+  // Eingeschaltet: Gruppe „Abos aus anny“ gleich füllen, nicht erst in einer Stunde.
+  const annySync = data.annyAutoSubscribe === true ? await syncAnnyAboGroup(auth.accountId) : null;
   const { tokenSecret: _secret, ...safe } = updated;
   void _secret;
-  return NextResponse.json(safe);
+  return NextResponse.json({ ...safe, annySync });
 }

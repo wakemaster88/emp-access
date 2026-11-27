@@ -72,6 +72,8 @@ export const TENANT_MODELS = new Set<string>([
   "NetworkVlan",
   "NewsletterCampaign",
   "NewsletterConfig",
+  "NewsletterGroup",
+  "NewsletterGroupMember",
   "NewsletterSend",
   "NewsletterSubscriber",
   "OperatingSchedule",

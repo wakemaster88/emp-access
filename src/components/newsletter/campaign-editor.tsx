@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowDown, ArrowUp, Copy, Eye, Heading, Image as ImageIcon, Loader2, Minus, MousePointerClick,
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import {
   BLOCK_LABEL, BLOCK_TYPES, isHttpsUrl, isLinkUrl, parseBlocks, renderNewsletterHtml,
   type NewsletterBlock, type NewsletterBlockType, type NewsletterBrand,
@@ -93,14 +94,28 @@ export interface EditorCampaign {
   subject: string;
   preheader: string;
   blocks: NewsletterBlock[];
+  /** Empfänger-Gruppen; leer: alle angemeldeten. */
+  groupIds: number[];
 }
+
+export interface EditorGroup {
+  id: number;
+  name: string;
+  /** Angemeldete Mitglieder. */
+  active: number;
+}
+
+const sortIds = (ids: number[]) => [...ids].sort((a, b) => a - b);
+const snapshot = (p: { subject: string; preheader: string; blocks: unknown; groupIds: number[] }) =>
+  JSON.stringify({ s: p.subject, p: p.preheader, b: p.blocks, g: sortIds(p.groupIds) });
 
 /** Entwurf bearbeiten: Bausteine links, Vorschau rechts, Testmail und Senden. */
 export function CampaignEditor({
   campaign,
   brand,
   reason,
-  activeCount,
+  groups,
+  recipientCount,
   canSend,
   canTest,
   testTo,
@@ -108,7 +123,9 @@ export function CampaignEditor({
   campaign: EditorCampaign;
   brand: NewsletterBrand;
   reason: string;
-  activeCount: number;
+  groups: EditorGroup[];
+  /** Angemeldete Empfänger der gespeicherten Auswahl. */
+  recipientCount: number;
   /** Alles bereit für den Versand an alle. */
   canSend: boolean;
   /** Zugangsdaten und Absender da: Testmails gehen. */
@@ -119,8 +136,11 @@ export function CampaignEditor({
   const [subject, setSubject] = useState(campaign.subject);
   const [preheader, setPreheader] = useState(campaign.preheader);
   const [blocks, setBlocks] = useState<EditBlock[]>(() => campaign.blocks.map(toEdit));
+  const [groupIds, setGroupIds] = useState<number[]>(() => campaign.groupIds.filter((id) => groups.some((g) => g.id === id)));
+  const [activeCount, setActiveCount] = useState(recipientCount);
+  const [counting, setCounting] = useState(false);
   const [savedJson, setSavedJson] = useState(() =>
-    JSON.stringify({ s: campaign.subject, p: campaign.preheader, b: campaign.blocks.map(toEdit).map(fromEdit) }),
+    snapshot({ subject: campaign.subject, preheader: campaign.preheader, blocks: campaign.blocks.map(toEdit).map(fromEdit), groupIds: campaign.groupIds }),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -132,10 +152,38 @@ export function CampaignEditor({
   const [sendOpen, setSendOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const payload = { subject: subject.trim(), preheader: preheader.trim(), blocks: blocks.map(fromEdit) };
-  const dirty = JSON.stringify({ s: payload.subject, p: payload.preheader, b: payload.blocks }) !== savedJson;
+  const payload = { subject: subject.trim(), preheader: preheader.trim(), blocks: blocks.map(fromEdit), groupIds: sortIds(groupIds) };
+  const dirty = snapshot(payload) !== savedJson;
   const check = parseBlocks(payload.blocks);
   const problem = !payload.subject ? "Betreff fehlt" : "error" in check ? check.error : null;
+  const groupKey = payload.groupIds.join(",");
+  const audience = groupIds.length
+    ? groups.filter((g) => groupIds.includes(g.id)).map((g) => g.name).join(", ")
+    : "alle angemeldeten Abonnenten";
+
+  // Empfänger der Auswahl zählen (eine Adresse in zwei Gruppen zählt einmal).
+  useEffect(() => {
+    let stop = false;
+    const t = setTimeout(async () => {
+      setCounting(true);
+      try {
+        const res = await fetch(`/api/newsletter/recipients?groups=${groupKey}`);
+        const json = await res.json().catch(() => ({}));
+        if (!stop && res.ok && typeof json.count === "number") setActiveCount(json.count);
+      } catch {
+        // Zahl bleibt stehen; der Versand zählt selbst noch einmal.
+      } finally {
+        if (!stop) setCounting(false);
+      }
+    }, 250);
+    return () => {
+      stop = true;
+      clearTimeout(t);
+    };
+  }, [groupKey]);
+
+  const toggleGroup = (id: number, on: boolean) =>
+    setGroupIds((list) => (on ? [...list.filter((x) => x !== id), id] : list.filter((x) => x !== id)));
 
   const html = useMemo(
     () =>
@@ -173,7 +221,7 @@ export function CampaignEditor({
       const json = await res.json().catch(() => ({}));
       throw new Error(typeof json.error === "string" ? json.error : "Speichern fehlgeschlagen");
     }
-    setSavedJson(JSON.stringify({ s: payload.subject, p: payload.preheader, b: payload.blocks }));
+    setSavedJson(snapshot(payload));
   }
 
   async function save() {
@@ -239,10 +287,29 @@ export function CampaignEditor({
         <CardHeader>
           <CardTitle>Entwurf</CardTitle>
           <CardDescription>
-            Geht an {activeCount} angemeldete Abonnenten. Schick ihn dir vorher als Testmail.
+            Geht an {activeCount.toLocaleString("de-DE")} angemeldete Abonnenten ({audience}). Schick ihn dir vorher als Testmail.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {groups.length > 0 && (
+            <div className="space-y-1.5">
+              <p id="nl-audience" className="text-label">Empfänger</p>
+              <ToggleChipGroup aria-labelledby="nl-audience">
+                <ToggleChip pressed={groupIds.length === 0} onPressedChange={() => setGroupIds([])}>
+                  Alle angemeldeten
+                </ToggleChip>
+                {groups.map((g) => (
+                  <ToggleChip key={g.id} pressed={groupIds.includes(g.id)} onPressedChange={(on) => toggleGroup(g.id, on)}>
+                    {g.name}
+                    <span className="tabular-nums opacity-70">{g.active.toLocaleString("de-DE")}</span>
+                  </ToggleChip>
+                ))}
+              </ToggleChipGroup>
+              <p className="text-xs text-muted-foreground" aria-live="polite">
+                {counting ? "Zähle …" : `${activeCount.toLocaleString("de-DE")} Empfänger. Wer in mehreren gewählten Gruppen ist, bekommt die Mail einmal.`}
+              </p>
+            </div>
+          )}
           {error && <Notice tone="danger" compact title={error} />}
           {notice && !dirty && !error && <Notice tone="success" compact title={notice} />}
           {problem && !error && <Notice tone="warning" compact title={problem} />}
@@ -277,12 +344,12 @@ export function CampaignEditor({
             <Button
               type="button"
               onClick={() => setSendOpen(true)}
-              disabled={!canSend || !!problem || activeCount === 0}
+              disabled={!canSend || !!problem || activeCount === 0 || counting}
               title={canSend ? undefined : "Erst den Versand in den Einstellungen bereit machen"}
               className="max-sm:h-11"
             >
               <Send className="h-4 w-4" />
-              An {activeCount} senden
+              An {activeCount.toLocaleString("de-DE")} senden
             </Button>
           </div>
         </CardContent>
@@ -441,8 +508,8 @@ export function CampaignEditor({
       <ConfirmDialog
         open={sendOpen}
         onOpenChange={setSendOpen}
-        title={`„${subject.trim()}“ an ${activeCount} Abonnenten senden?`}
-        description="Der Versand startet innerhalb einer Minute und läuft in Raten. Anhalten geht, schon verschickte Mails bleiben verschickt."
+        title={`„${subject.trim()}“ an ${activeCount.toLocaleString("de-DE")} Abonnenten senden?`}
+        description={`An ${audience}. Der Versand startet innerhalb einer Minute und läuft in Raten. Anhalten geht, schon verschickte Mails bleiben verschickt.`}
         confirmLabel="Jetzt senden"
         destructive={false}
         onConfirm={sendAll}
@@ -503,7 +570,12 @@ export function CopyCampaignButton({ campaign }: { campaign: EditorCampaign }) {
             const res = await fetch("/api/newsletter/campaigns", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ subject: campaign.subject, preheader: campaign.preheader, blocks: campaign.blocks }),
+              body: JSON.stringify({
+                subject: campaign.subject,
+                preheader: campaign.preheader,
+                blocks: campaign.blocks,
+                groupIds: campaign.groupIds,
+              }),
             });
             const json = await res.json().catch(() => ({}));
             if (!res.ok || typeof json.id !== "number") throw new Error(typeof json.error === "string" ? json.error : "Kopieren fehlgeschlagen");

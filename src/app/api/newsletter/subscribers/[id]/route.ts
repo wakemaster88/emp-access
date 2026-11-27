@@ -3,12 +3,15 @@ import { readRequestBody } from "@/lib/api-body";
 import { idParam, newsletterAdmin } from "@/lib/newsletter/admin-auth";
 import { loadSendContext, sendConfirmMail } from "@/lib/newsletter/service";
 import { sesErrorText } from "@/lib/newsletter/ses";
+import { parseGroupIds } from "@/lib/newsletter/rules";
 
 type Params = { params: Promise<{ id: string }> };
 
 /**
  * { action: "unsubscribe" } meldet ab (z. B. auf Wunsch per Telefon),
- * { action: "resend" } schickt die Bestätigungsmail erneut.
+ * { action: "resend" } schickt die Bestätigungsmail erneut,
+ * { action: "groups", groupIds } legt die Gruppen fest. Die Gruppe
+ * „Abos aus anny“ füllt emp-access selbst und bleibt dabei unberührt.
  */
 export async function PATCH(request: NextRequest, { params }: Params) {
   const auth = await newsletterAdmin();
@@ -39,6 +42,26 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       await sendConfirmMail(ctx, subscriber);
     } catch (err) {
       return NextResponse.json({ error: sesErrorText(err) }, { status: 502 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+  if (body?.action === "groups") {
+    const wanted = parseGroupIds(body.groupIds);
+    if (!wanted) return NextResponse.json({ error: "Ungültige Gruppen" }, { status: 400 });
+    const editable = await auth.db.newsletterGroup.findMany({
+      where: { accountId: auth.accountId, OR: [{ key: null }, { key: { not: "anny-abos" } }] },
+      select: { id: true },
+    });
+    const editableIds = editable.map((g) => g.id);
+    const add = wanted.filter((g) => editableIds.includes(g));
+    await auth.db.newsletterGroupMember.deleteMany({
+      where: { accountId: auth.accountId, subscriberId: id, groupId: { in: editableIds.filter((g) => !add.includes(g)) } },
+    });
+    if (add.length) {
+      await auth.db.newsletterGroupMember.createMany({
+        data: add.map((groupId) => ({ accountId: auth.accountId, groupId, subscriberId: id })),
+        skipDuplicates: true,
+      });
     }
     return NextResponse.json({ ok: true });
   }

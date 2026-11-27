@@ -13,15 +13,17 @@ export async function GET() {
   const rows = await auth.db.newsletterSubscriber.findMany({
     where: { accountId: auth.accountId },
     orderBy: { id: "asc" },
+    include: { groups: { select: { group: { select: { name: true } } } } },
   });
   const iso = (d: Date | null) => (d ? d.toISOString() : "");
-  const head = ["E-Mail", "Name", "Status", "Quelle", "Angemeldet am", "IP Anmeldung", "Bestätigt am", "IP Bestätigung", "Abgemeldet am", "Grund", "Einwilligungstext"];
+  const head = ["E-Mail", "Name", "Status", "Quelle", "Gruppen", "Angemeldet am", "IP Anmeldung", "Bestätigt am", "IP Bestätigung", "Abgemeldet am", "Grund", "Einwilligungstext"];
   const lines = rows.map((r) =>
     [
       r.email,
       r.name ?? "",
       SUBSCRIBER_STATUS_LABEL[r.status as SubscriberStatus] ?? r.status,
       r.source,
+      r.groups.map((g) => g.group.name).sort().join(", "),
       iso(r.consentAt),
       r.consentIp ?? "",
       iso(r.confirmedAt),
