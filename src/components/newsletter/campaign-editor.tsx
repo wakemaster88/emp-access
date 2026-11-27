@@ -7,7 +7,7 @@ import {
   Plus, Save, Send, Trash2, Type, Upload, X, type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -19,7 +19,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleChip, ToggleChipGroup } from "@/components/ui/toggle-chip";
 import {
-  BLOCK_LABEL, BLOCK_TYPES, isHttpsUrl, isLinkUrl, parseBlocks, renderNewsletterHtml,
+  BLOCK_LABEL, BLOCK_TYPES, forceColorScheme, isHttpsUrl, isLinkUrl, parseBlocks, renderNewsletterHtml,
   type NewsletterBlock, type NewsletterBlockType, type NewsletterBrand,
 } from "@/lib/newsletter/blocks";
 
@@ -528,10 +528,13 @@ export function CampaignEditor({
 
 /**
  * Mail-Vorschau in einem abgeschotteten Rahmen (keine Skripte, keine Links).
- * „Handy“ zeigt sie 375 px breit, so greift die Handy-Ansicht der Mail.
+ * „Handy“ zeigt sie 375 px breit, so greift die Handy-Ansicht der Mail;
+ * „Dunkel“ zeigt die dunkle Ansicht, unabhängig von der des Geräts.
  */
 export function PreviewCard({ html, subject, preheader }: { html: string; subject: string; preheader: string }) {
   const [view, setView] = useState<"computer" | "handy">("computer");
+  const [scheme, setScheme] = useState<"light" | "dark">("light");
+  const shown = useMemo(() => forceColorScheme(html, scheme), [html, scheme]);
   return (
     <Card className="lg:sticky lg:top-20">
       <CardHeader>
@@ -543,9 +546,11 @@ export function PreviewCard({ html, subject, preheader }: { html: string; subjec
           <span className="font-medium text-foreground">{subject.trim() || "Ohne Betreff"}</span>
           {preheader.trim() && <> · {preheader.trim()}</>}
         </CardDescription>
-        <CardAction>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-3 flex flex-wrap gap-2">
           <Segmented
-            aria-label="Ansicht der Vorschau"
+            aria-label="Gerät der Vorschau"
             size="sm"
             value={view}
             onValueChange={setView}
@@ -554,12 +559,20 @@ export function PreviewCard({ html, subject, preheader }: { html: string; subjec
               { value: "handy", label: "Handy" },
             ]}
           />
-        </CardAction>
-      </CardHeader>
-      <CardContent>
+          <Segmented
+            aria-label="Hell oder dunkel"
+            size="sm"
+            value={scheme}
+            onValueChange={setScheme}
+            options={[
+              { value: "light", label: "Hell" },
+              { value: "dark", label: "Dunkel" },
+            ]}
+          />
+        </div>
         <iframe
-          title={view === "handy" ? "Vorschau der Mail auf dem Handy" : "Vorschau der Mail"}
-          srcDoc={html}
+          title={`Vorschau der Mail${view === "handy" ? " auf dem Handy" : ""}${scheme === "dark" ? ", dunkel" : ""}`}
+          srcDoc={shown}
           sandbox=""
           className={
             view === "handy"
