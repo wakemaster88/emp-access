@@ -3,6 +3,7 @@ import { ChartLine, Mail, MailCheck, Send, Tag, UserCheck, UserMinus } from "luc
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
@@ -161,7 +162,11 @@ export function OverviewSection({
           </TableHeader>
           <TableBody>
             {recent.length === 0 && (
-              <TableEmpty colSpan={5} icon={Send} title="Noch nichts versendet." description="Gestartete Aussendungen erscheinen hier mit ihren Zahlen." />
+              // Symbol nicht an TableEmpty geben: table.tsx ist eine Client-Komponente,
+              // Funktionen (Lucide-Icons) dürfen von hier aus nicht hinüber.
+              <TableEmpty colSpan={5}>
+                <EmptyState icon={Send} title="Noch nichts versendet." description="Gestartete Aussendungen erscheinen hier mit ihren Zahlen." compact />
+              </TableEmpty>
             )}
             {recent.map((c) => (
               <TableRow key={c.id} className="max-sm:h-11">
