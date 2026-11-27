@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowDown, ArrowUp, Copy, Eye, Heading, Image as ImageIcon, Loader2, Minus, MousePointerClick,
-  Plus, Save, Send, Trash2, Type, X, type LucideIcon,
+  Plus, Save, Send, Trash2, Type, Upload, X, type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -417,7 +417,7 @@ export function CampaignEditor({
                       <div className="space-y-2">
                         <div className="space-y-1">
                           <Label htmlFor={`${id}-url`} className="text-xs">Bild-Adresse (https)</Label>
-                          <Input id={`${id}-url`} value={b.url} placeholder="https://…/bild.jpg" spellCheck={false} onChange={(e) => update(b.key, { url: e.target.value })} className="max-sm:h-11" />
+                          <ImageUrlField id={`${id}-url`} index={i + 1} value={b.url} onChange={(url) => update(b.key, { url })} />
                         </div>
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <div className="space-y-1">
@@ -569,6 +569,96 @@ export function PreviewCard({ html, subject, preheader }: { html: string; subjec
         />
       </CardContent>
     </Card>
+  );
+}
+
+/** Formate, die der Server selbst lesen kann; alles andere wandelt der Browser vorher in JPEG. */
+const SERVER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"]);
+const UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Große Fotos oder Formate wie HEIC im Browser auf höchstens 2400 px
+ * verkleinern und als JPEG schicken. Der Server kodiert danach ohnehin neu.
+ */
+async function uploadBody(file: File): Promise<Blob> {
+  if (SERVER_IMAGE_TYPES.has(file.type) && file.size <= UPLOAD_MAX_BYTES) return file;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error("Dieses Bildformat kann der Browser nicht lesen. Bitte als JPEG oder PNG speichern.");
+  }
+  const scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Das Bild ließ sich nicht verkleinern");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.88));
+  if (!blob) throw new Error("Das Bild ließ sich nicht verkleinern");
+  if (blob.size > UPLOAD_MAX_BYTES) throw new Error("Das Bild ist auch verkleinert größer als 4 MB");
+  return blob;
+}
+
+/**
+ * Adresse eines Bildes, eingetippt oder hochgeladen. Der Server speichert
+ * hochgeladene Bilder als JPEG (oder PNG mit Transparenz) und liefert die Adresse.
+ */
+function ImageUrlField({ id, index, value, onChange }: { id: string; index: number; value: string; onChange: (url: string) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const upload = async (file: File) => {
+    setBusy(true);
+    setError("");
+    try {
+      const body = await uploadBody(file);
+      const res = await fetch("/api/newsletter/images", {
+        method: "POST",
+        headers: { "Content-Type": body.type || "application/octet-stream" },
+        body,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || typeof json.url !== "string") {
+        throw new Error(typeof json.error === "string" ? json.error : "Hochladen fehlgeschlagen");
+      }
+      onChange(json.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Hochladen fehlgeschlagen");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input id={id} value={value} placeholder="https://…/bild.jpg" spellCheck={false} onChange={(e) => onChange(e.target.value)} className="max-sm:h-11 sm:flex-1" />
+        <input
+          ref={input}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void upload(file);
+          }}
+        />
+        <Button type="button" variant="outline" aria-label={`Bild ${index} hochladen`} disabled={busy} onClick={() => input.current?.click()} className="max-sm:h-11 sm:shrink-0">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          {busy ? "Lädt hoch…" : "Hochladen"}
+        </Button>
+      </div>
+      {error && <Notice tone="danger" compact title={error} />}
+    </div>
   );
 }
 
