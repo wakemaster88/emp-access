@@ -5,7 +5,7 @@
  * erfolgreichem Upload umgehaengt (Pfad gesetzt, Bytes auf NULL). Ein
  * erneuter Aufruf macht dort weiter, wo noch Bytes liegen.
  *
- * Aufruf: DATABASE_URL=... BLOB_READ_WRITE_TOKEN=... npx tsx scripts/migrate-images-to-blob.ts [--limit 500]
+ * Aufruf: DATABASE_URL=... BLOB_PRIVATE_READ_WRITE_TOKEN=... npx tsx scripts/migrate-images-to-blob.ts [--limit 500]
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
@@ -118,7 +118,7 @@ async function migrateKeyPdfs() {
 }
 
 async function main() {
-  if (!blobConfigured()) throw new Error("BLOB_READ_WRITE_TOKEN fehlt");
+  if (!blobConfigured()) throw new Error("BLOB_PRIVATE_READ_WRITE_TOKEN fehlt");
   await migrateScanSnapshots();
   await migratePersonSightings();
   await migrateVehicleSightings();
