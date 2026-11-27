@@ -129,6 +129,10 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
 
 - `BLOB_READ_WRITE_TOKEN` – Vercel Blob. Ohne den Token schlagen Uploads und
   das Rendern von Sprachansagen fehl (die API antwortet dann mit 501).
+- `BLOB_PRIVATE_READ_WRITE_TOKEN` – zweiter, privater Vercel-Blob-Speicher für
+  Scan-, Personen- und Fahrzeugbilder, Alarmbilder, PDFs und Challenge-Fotos
+  (`src/lib/blob-store.ts`). Der Audio-Speicher ist öffentlich und nimmt diese
+  Dateien nicht an. Ohne den Token bleiben sie als Bytes in der Datenbank.
 - `XAI_API_KEY` – Text-zu-Sprache für Durchsagen (xAI, `POST /v1/tts`, deutsch).
   Gleicher Text mit gleicher Stimme wird gecacht, es fällt also nur beim ersten
   Mal ein Aufruf an. Die Stimmenauswahl im Dialog kommt aus
