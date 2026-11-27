@@ -31,10 +31,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Die Datei lässt sich nicht als Bild lesen" }, { status: 400 });
   }
 
+  // Token ausdrücklich: Mit angebundenem privatem Speicher (BLOB_STORE_ID,
+  // OIDC) nähme @vercel/blob sonst diesen und lehnte öffentliche Dateien ab.
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
   const path = `newsletter/${auth.accountId}/${Date.now()}-${randomBytes(9).toString("base64url")}.${image.ext}`;
   try {
     const blob = await put(path, Buffer.from(image.bytes), {
       access: "public",
+      token,
       contentType: image.contentType,
       addRandomSuffix: false,
       cacheControlMaxAge: 60 * 60 * 24 * 365,
