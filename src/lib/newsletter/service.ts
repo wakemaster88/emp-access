@@ -14,6 +14,7 @@ import { addGroupMembers, ensureSystemGroup, recipientsWhere, syncAnnyAboGroup, 
 import { SesError, sesEnv, sesErrorText, sesGetAccount, sesSendRaw, type SesEnv, type SesTag } from "./ses";
 import type { SesEvent } from "./sns";
 import { createLinkToken, newTokenSecret, verifyLinkToken } from "./tokens";
+import { hostKey, tagNewsletterBlocks } from "@/lib/social/utm";
 
 /**
  * Newsletter mit Datenbank: Einstellungen, Anmelden (Double-Opt-in),
@@ -326,9 +327,12 @@ export function campaignBlocks(raw: unknown): NewsletterBlock[] {
   return "blocks" in parsed ? parsed.blocks : [];
 }
 
+/** Kampagne aus Newsletter › Social Media, zu der eine Aussendung gehört. */
+type LinkedSocialCampaign = { slug: string; landingUrl: string | null } | null;
+
 function renderFor(
   ctx: SendContext,
-  campaign: { id: number; preheader: string | null; blocks: unknown },
+  campaign: { id: number; preheader: string | null; blocks: unknown; socialCampaign?: LinkedSocialCampaign },
   subscriberId: number,
   source: string | null = null,
 ): { html: string; text: string; unsubscribeUrl: string } {
@@ -345,7 +349,12 @@ function renderFor(
     unsubscribeUrl,
     reason: reasonLine(ctx.accountName, source),
   };
-  const blocks = campaignBlocks(campaign.blocks);
+  // Gehört die Aussendung zu einer Kampagne, bekommen Links zur eigenen
+  // Website den Kampagnen-Zusatz (utm_…) für die Statistik der Website.
+  const social = campaign.socialCampaign;
+  const blocks = social
+    ? tagNewsletterBlocks(campaignBlocks(campaign.blocks), social.slug, [hostKey(ctx.brand.websiteUrl), hostKey(social.landingUrl)])
+    : campaignBlocks(campaign.blocks);
   return { html: renderNewsletterHtml(blocks, render), text: renderNewsletterText(blocks, render), unsubscribeUrl };
 }
 
@@ -356,7 +365,7 @@ function renderFor(
  */
 export async function sendTestMail(
   accountId: number,
-  campaign: { id: number; subject: string; preheader: string | null; blocks: unknown },
+  campaign: { id: number; subject: string; preheader: string | null; blocks: unknown; socialCampaign?: LinkedSocialCampaign },
   recipients: string[],
 ): Promise<{ sent: string[]; failed: Array<{ to: string; error: string }> }> {
   const ctx = await loadSendContext(accountId);
@@ -519,7 +528,10 @@ export async function runNewsletterTick(budgetMs = 45_000, now: Date = new Date(
   // 2) Aussendungen.
   const campaigns = await prisma.newsletterCampaign.findMany({
     where: { status: { in: ["QUEUED", "SENDING"] } },
-    select: { id: true, accountId: true, status: true, subject: true, preheader: true, blocks: true, lastErrorAt: true },
+    select: {
+      id: true, accountId: true, status: true, subject: true, preheader: true, blocks: true, lastErrorAt: true,
+      socialCampaign: { select: { slug: true, landingUrl: true } },
+    },
     orderBy: { queuedAt: "asc" },
     take: 5,
   });

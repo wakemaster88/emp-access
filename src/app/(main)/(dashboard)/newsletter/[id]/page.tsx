@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, MailCheck, MailX, Send, UserMinus, Users } from "lucide-react";
+import { ArrowLeft, MailCheck, MailX, Megaphone, Send, UserMinus, Users } from "lucide-react";
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { isTenantAdminRole } from "@/lib/api-auth";
@@ -33,7 +33,10 @@ export default async function NewsletterCampaignPage({ params }: { params: Promi
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const db = tenantClient(accountId);
-  const campaign = await db.newsletterCampaign.findFirst({ where: { id, accountId } });
+  const campaign = await db.newsletterCampaign.findFirst({
+    where: { id, accountId },
+    include: { socialCampaign: { select: { id: true, name: true } } },
+  });
   if (!campaign) notFound();
 
   const [ctx, groupRows] = await Promise.all([loadSendContext(accountId), loadGroupRows(db, accountId)]);
@@ -44,13 +47,25 @@ export default async function NewsletterCampaignPage({ params }: { params: Promi
   const reason = reasonLine(ctx.accountName);
   const editorCampaign = { id: campaign.id, subject: campaign.subject, preheader: campaign.preheader ?? "", blocks, groupIds };
 
+  const social = campaign.socialCampaign;
   const back = (
-    <Button asChild variant="ghost" size="sm" className="-ml-2 max-sm:h-11">
-      <Link href="/newsletter?tab=aussendungen">
-        <ArrowLeft className="h-4 w-4" />
-        Aussendungen
-      </Link>
-    </Button>
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <Button asChild variant="ghost" size="sm" className="-ml-2 max-sm:h-11">
+        <Link href="/newsletter?tab=aussendungen">
+          <ArrowLeft className="h-4 w-4" />
+          Aussendungen
+        </Link>
+      </Button>
+      {social && (
+        <Link
+          href={`/newsletter/social/${social.id}`}
+          className="inline-flex min-h-11 min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground hover:underline sm:min-h-0"
+        >
+          <Megaphone className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 truncate">Kampagne „{social.name}“</span>
+        </Link>
+      )}
+    </div>
   );
 
   if (status === "DRAFT") {

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { LayoutDashboard, MailCheck, MailX, Send, Settings, UserCheck, UserMinus, Users, UserX } from "lucide-react";
+import { LayoutDashboard, MailCheck, MailX, Megaphone, Send, Settings, UserCheck, UserMinus, Users, UserX } from "lucide-react";
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { isTenantAdminRole } from "@/lib/api-auth";
@@ -24,11 +24,13 @@ import { NewsletterSettingsCard } from "@/components/newsletter/settings-card";
 import { SesStatusCard } from "@/components/newsletter/ses-status-card";
 import { OverviewSection } from "@/components/newsletter/overview-section";
 import { loadNewsletterOverview } from "@/lib/newsletter/overview";
+import { loadSocialOverview } from "@/lib/social/load";
+import { SocialOverview } from "@/components/social/social-overview";
 
 export const dynamic = "force-dynamic";
 
-type Tab = "uebersicht" | "aussendungen" | "abonnenten" | "einstellungen";
-const TABS: Tab[] = ["uebersicht", "aussendungen", "abonnenten", "einstellungen"];
+type Tab = "uebersicht" | "aussendungen" | "social" | "abonnenten" | "einstellungen";
+const TABS: Tab[] = ["uebersicht", "aussendungen", "social", "abonnenten", "einstellungen"];
 const LIST_LIMIT = 200;
 
 export default async function NewsletterPage({
@@ -60,6 +62,7 @@ export default async function NewsletterPage({
       options={[
         { value: "uebersicht", label: "Übersicht", icon: LayoutDashboard, href: "/newsletter" },
         { value: "aussendungen", label: "Aussendungen", icon: Send, href: "/newsletter?tab=aussendungen" },
+        { value: "social", label: "Social Media", icon: Megaphone, href: "/newsletter?tab=social" },
         { value: "abonnenten", label: "Abonnenten", icon: Users, href: "/newsletter?tab=abonnenten", count: activeCount },
         { value: "einstellungen", label: "Einstellungen", icon: Settings, href: "/newsletter?tab=einstellungen" },
       ]}
@@ -121,6 +124,8 @@ export default async function NewsletterPage({
       };
     });
     content = <CampaignsCard campaigns={rows} activeCount={activeCount} websiteUrl={ctx.brand.websiteUrl ?? null} />;
+  } else if (tab === "social") {
+    content = <SocialOverview overview={await loadSocialOverview(db, accountId)} websiteUrl={ctx.brand.websiteUrl ?? null} />;
   } else if (tab === "abonnenten") {
     const status = SUBSCRIBER_STATUSES.includes(sp.status as SubscriberStatus) ? (sp.status as SubscriberStatus) : null;
     const q = (sp.q ?? "").trim().slice(0, 100);
@@ -266,7 +271,7 @@ export default async function NewsletterPage({
       <Header title="Newsletter" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         {tabs}
-        <ReadinessNotice gaps={ctx.gaps} onSettings={tab === "einstellungen"} />
+        {tab !== "social" && <ReadinessNotice gaps={ctx.gaps} onSettings={tab === "einstellungen"} />}
         {content}
       </div>
     </>
