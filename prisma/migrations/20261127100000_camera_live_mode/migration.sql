@@ -1,0 +1,1 @@
+ALTER TABLE "Camera" ADD COLUMN "liveMode" TEXT;

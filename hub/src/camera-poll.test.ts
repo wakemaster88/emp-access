@@ -168,12 +168,16 @@ function release(cam: CameraDummy): void {
 }
 
 const cams = ["A", "B", "C", "D", "E", "F", "G", "H"].map((name, i) => cameraDummy(i + 1, name));
-const [A, B, C] = cams;
+const [A, B, C, D, E] = cams;
+/** Livebild und Vorschau laut Cloud: D nur auf Tippen, E aus, die anderen automatisch. */
+const LIVE_MODE: Record<string, string> = { D: "CLICK", E: "OFF" };
 
 const cloud = {
   server: http.createServer(),
   /** Status, mit dem die Cloud ein Anzeige-Bild beantwortet. */
   snapshotStatus: 200,
+  /** Kamera-IDs der Anzeige-Bilder, die in der Cloud ankamen. */
+  snapshotPosts: [] as number[],
 };
 cloud.server.on("request", (req, res) => {
   res.setHeader("Connection", "close");
@@ -194,10 +198,13 @@ cloud.server.on("request", (req, res) => {
         password: "attrappe",
         channel: 0,
         vehicleDetection: false,
+        ...(LIVE_MODE[cam.name] ? { liveMode: LIVE_MODE[cam.name] } : {}),
       }));
       res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(list));
       return;
     }
+    const posted = req.method === "POST" ? url.pathname.match(/^\/api\/hub\/cameras\/(\d+)\/snapshot$/) : null;
+    if (posted) cloud.snapshotPosts.push(Number(posted[1]));
     const status = /\/snapshot$/.test(url.pathname) ? cloud.snapshotStatus : 200;
     res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: status === 200 }));
   });
@@ -206,6 +213,7 @@ cloud.server.on("request", (req, res) => {
 /* ----------------------------------------------------------- der Hub */
 
 let hub: typeof import("./cameras.js");
+let tasks: typeof import("./tasks.js");
 let STATE: (typeof import("./state.js"))["STATE"];
 let improveLog: typeof import("./improve-log.js");
 let marksFile = "";
@@ -291,6 +299,7 @@ before(async () => {
   process.env.HUB_API_TOKEN = "attrappe";
 
   hub = await import(pathToFileURL(path.join(hubDir, "src", "cameras.ts")).href);
+  tasks = await import(pathToFileURL(path.join(hubDir, "src", "tasks.ts")).href);
   ({ STATE } = await import(pathToFileURL(path.join(hubDir, "src", "state.ts")).href));
   improveLog = await import(pathToFileURL(path.join(hubDir, "src", "improve-log.ts")).href);
 
@@ -503,6 +512,60 @@ test("Vorschaubild bei reiner Bewegung: auch ein kleines Kamerabild geht verklei
   assert.deepEqual([calls[0][0], calls[0][1], calls[0][6], calls[0][7]], ["-Z", "960", "formatOptions", "70"]);
   assert.equal(count("preview_upload") - uploadsBefore, 1);
   assert.equal(count("preview_bytes") - bytesBefore, SMALLER.length);
+});
+
+test("Vorschaubild bei reiner Bewegung: keins bei Livebild und Vorschau nur auf Tippen oder aus", async () => {
+  const count = (key: string) => improveLog.improveSnapshot().counts[`camera.${key}`] ?? 0;
+  const [dSnaps, eSnaps, skipped, uploads] = [D.snaps, E.snaps, count("preview_live_mode"), count("preview_upload")];
+  /** Takte, bis D und E je einmal mit `motion` abgefragt wurden. */
+  const pollBoth = async (motion: boolean) => {
+    const [dPolls, ePolls] = [D.polls, E.polls];
+    D.motion = motion;
+    E.motion = motion;
+    while (D.polls === dPolls || E.polls === ePolls) {
+      await tick();
+      await quiet();
+    }
+  };
+  await pollBoth(true);
+  await pollBoth(false);
+  // Weder ein Bild von der Kamera noch ein Upload; gezaehlt wird es trotzdem.
+  assert.equal(D.snaps - dSnaps, 0);
+  assert.equal(E.snaps - eSnaps, 0);
+  assert.equal(count("preview_upload") - uploads, 0);
+  assert.equal(count("preview_live_mode") - skipped, 2);
+  // Die Kameras bleiben in der Liste, mit ihrer Einstellung.
+  const status = new Map(hub.listCameraStatus().map((c) => [c.name, c.liveMode]));
+  assert.deepEqual([status.get("A"), status.get("D"), status.get("E")], ["auto", "click", "off"]);
+});
+
+test("Schnappschuss auf Anfrage der Cloud (CAMERA_SNAPSHOT): keiner bei nur auf Tippen oder aus", async () => {
+  const [aSnaps, dSnaps, eSnaps, posts] = [A.snaps, D.snaps, E.snaps, cloud.snapshotPosts.length];
+  const task = (cameraId: number) => ({ id: cameraId, type: "CAMERA_SNAPSHOT", payload: { cameraId } });
+  // Direkt und ueber den Auftrag der Cloud: uebersprungen, ohne Bild von der Kamera.
+  for (const cam of [D, E]) {
+    assert.deepEqual(await hub.uploadSnapshot(cam.id), { bytes: 0, skipped: "liveMode" }, cam.name);
+    assert.deepEqual(
+      await tasks.executeTask(task(cam.id)),
+      { success: true, result: { cameraId: cam.id, bytes: 0, skipped: "liveMode" } },
+      cam.name,
+    );
+  }
+  assert.equal(D.snaps - dSnaps, 0);
+  assert.equal(E.snaps - eSnaps, 0);
+  assert.deepEqual(cloud.snapshotPosts.slice(posts), []);
+  // Gegenprobe: A (automatisch) holt ein Bild und laedt es hoch.
+  const statusBefore = cloud.snapshotStatus;
+  cloud.snapshotStatus = 200;
+  try {
+    const r = await tasks.executeTask(task(A.id));
+    assert.equal(r.success, true, JSON.stringify(r));
+    assert.equal((r.result as { skipped?: string }).skipped, undefined);
+    assert.equal(A.snaps - aSnaps, 1);
+    assert.deepEqual(cloud.snapshotPosts.slice(posts), [A.id]);
+  } finally {
+    cloud.snapshotStatus = statusBefore;
+  }
 });
 
 test("Ausfallbeginn auf der Platte: beim Start gelesen, bei Beginn und Ende eines Ausfalls je einmal geschrieben", async () => {

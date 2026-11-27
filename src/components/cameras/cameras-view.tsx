@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ZoneEditor, type ZonePoint } from "@/components/cameras/zone-editor";
 import { DoorHoldBadge, DoorHoldButton, useNow } from "@/components/cameras/door-hold";
+import { LIVE_MODE_CLICK_TEXT, liveModeHint, readLiveMode } from "@/lib/camera-live-mode";
 
 export interface CameraRow {
   id: number;
@@ -60,6 +61,8 @@ export interface CameraRow {
   deliveryTo: string | null;
   /** Wächter des Hubs: null = wie der Raum, "NIGHT" = nur nachts, "OFF" = aus. */
   sentinelMode: string | null;
+  /** Livebild und Vorschau: null = automatisch, "CLICK" = nur auf Tippen, "OFF" = aus. */
+  liveMode: string | null;
   notes: string | null;
   snapshotAt: string | null;
   lastSeenAt: string | null;
@@ -115,6 +118,8 @@ const EMPTY = {
   deliveryTo: "",
   /** "" = wie der Raum, "NIGHT", "OFF". */
   sentinelMode: "",
+  /** "" = automatisch, "CLICK", "OFF". */
+  liveMode: "",
   notes: "",
 };
 
@@ -211,6 +216,8 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
       deliveryFrom: c.deliveryFrom ?? "",
       deliveryTo: c.deliveryTo ?? "",
       sentinelMode: c.sentinelMode ?? "",
+      // Unbekannte Werte zeigt die Auswahl wie die API sie behandelt: nur auf Tippen.
+      liveMode: readLiveMode(c.liveMode) === "AUTO" ? "" : readLiveMode(c.liveMode),
       notes: c.notes ?? "",
     });
     setError("");
@@ -248,6 +255,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
           deliveryFrom: form.deliveryFrom || null,
           deliveryTo: form.deliveryTo || null,
           sentinelMode: form.sentinelMode || null,
+          liveMode: form.liveMode || null,
           notes: form.notes,
         }),
       });
@@ -355,56 +363,74 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {cameras.map((c) => {
                 const online = c.lastSeenAt ? new Date(c.lastSeenAt).getTime() > fiveMinAgo : null;
+                // Livebild und Vorschau: „aus“ ohne Bildfläche, „nur auf Tippen“ ohne Vorschaubild.
+                const liveMode = readLiveMode(c.liveMode);
+                const onImage = liveMode !== "OFF";
+                const badgeVariant = onImage ? "media" : "neutral";
+                const statusBadges = (
+                  <>
+                    {online === true && (
+                      <Badge variant={badgeVariant} className="gap-1 text-xs h-5">
+                        <StatusDot tone="success" size="xs" /> Online
+                      </Badge>
+                    )}
+                    {/* Rot nur, wenn eine aktive Kamera nicht antwortet; eine deaktivierte
+                        meldet sich gewollt nicht mehr (Aus = gedämpft). */}
+                    {online === false && (
+                      <Badge variant={badgeVariant} className="gap-1 text-xs h-5">
+                        <StatusDot tone={c.enabled ? "danger" : "neutral"} size="xs" /> Offline
+                      </Badge>
+                    )}
+                    {!c.enabled && (
+                      <Badge variant={badgeVariant} className="text-xs h-5">
+                        Deaktiviert
+                      </Badge>
+                    )}
+                    {c.kind === "DOORBIRD" && (
+                      <DoorHoldBadge
+                        hold={{ until: c.doorHoldUntil, pulseAt: c.doorHoldPulseAt, error: c.doorHoldError }}
+                        now={now}
+                        showPulse={!!c.doorHoldError}
+                        className="h-5"
+                      />
+                    )}
+                  </>
+                );
                 return (
                   <div
                     key={c.id}
                     className="glass-tile overflow-hidden"
                   >
-                    <div className="relative aspect-video bg-black flex items-center justify-center">
-                      {c.snapshotAt ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={`/api/cameras/${c.id}/snapshot?t=${encodeURIComponent(c.snapshotAt)}`}
-                          alt={`Schnappschuss ${c.name}`}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <Cctv className="h-10 w-10 text-white/25" />
-                      )}
-                      {/* Über dem Kamerabild als dunkle Glaspille (Badge `media`); den Zustand trägt der Punkt. */}
-                      <div className="absolute top-2 left-2 flex items-center gap-1.5">
-                        {online === true && (
-                          <Badge variant="media" className="gap-1 text-xs h-5">
-                            <StatusDot tone="success" size="xs" /> Online
-                          </Badge>
-                        )}
-                        {/* Rot nur, wenn eine aktive Kamera nicht antwortet; eine deaktivierte
-                            meldet sich gewollt nicht mehr (Aus = gedämpft). */}
-                        {online === false && (
-                          <Badge variant="media" className="gap-1 text-xs h-5">
-                            <StatusDot tone={c.enabled ? "danger" : "neutral"} size="xs" /> Offline
-                          </Badge>
-                        )}
-                        {!c.enabled && (
-                          <Badge variant="media" className="text-xs h-5">
-                            Deaktiviert
-                          </Badge>
-                        )}
-                        {c.kind === "DOORBIRD" && (
-                          <DoorHoldBadge
-                            hold={{ until: c.doorHoldUntil, pulseAt: c.doorHoldPulseAt, error: c.doorHoldError }}
-                            now={now}
-                            showPulse={!!c.doorHoldError}
-                            className="h-5"
+                    {onImage ? (
+                      <div className="relative aspect-video bg-black flex items-center justify-center">
+                        {c.snapshotAt && liveMode === "AUTO" ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`/api/cameras/${c.id}/snapshot?t=${encodeURIComponent(c.snapshotAt)}`}
+                            alt={`Schnappschuss ${c.name}`}
+                            className="h-full w-full object-cover"
                           />
+                        ) : liveMode === "CLICK" ? (
+                          <p className="px-4 text-center text-xs text-white/70">{LIVE_MODE_CLICK_TEXT}</p>
+                        ) : (
+                          <Cctv className="h-10 w-10 text-white/25" />
+                        )}
+                        {/* Über dem Kamerabild als dunkle Glaspille (Badge `media`); den Zustand trägt der Punkt. */}
+                        <div className="absolute top-2 left-2 flex items-center gap-1.5">
+                          {statusBadges}
+                        </div>
+                        {c.snapshotAt && liveMode === "AUTO" && (
+                          <Badge variant="media" className="absolute bottom-2 right-2 text-[10px] font-normal font-mono tabular-nums">
+                            {fmtTime(c.snapshotAt)}
+                          </Badge>
                         )}
                       </div>
-                      {c.snapshotAt && (
-                        <Badge variant="media" className="absolute bottom-2 right-2 text-[10px] font-normal font-mono tabular-nums">
-                          {fmtTime(c.snapshotAt)}
-                        </Badge>
-                      )}
-                    </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
+                        {statusBadges}
+                        <Badge variant="neutral" className="text-xs h-5">Livebild und Vorschau aus</Badge>
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center justify-between gap-2 p-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
@@ -456,16 +482,18 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                             activeClassName="text-success hover:text-destructive"
                           />
                         )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-11 text-muted-foreground hover:text-primary sm:size-8"
-                          title="Neuen Schnappschuss anfordern"
-                          onClick={() => requestSnapshot(c)}
-                          disabled={snappingId === c.id || !hubOnline}
-                        >
-                          <RefreshCw className={cn("h-4 w-4", snappingId === c.id && "animate-spin")} />
-                        </Button>
+                        {liveMode === "AUTO" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-11 text-muted-foreground hover:text-primary sm:size-8"
+                            title="Neuen Schnappschuss anfordern"
+                            onClick={() => requestSnapshot(c)}
+                            disabled={snappingId === c.id || !hubOnline}
+                          >
+                            <RefreshCw className={cn("h-4 w-4", snappingId === c.id && "animate-spin")} />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -852,6 +880,20 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                     ? "Der Wächter des Hubs bewertet diese Kamera nicht und meldet hier nichts. Gesichts- und Kennzeichenerkennung laufen weiter."
                     : "Der Wächter des Hubs meldet Personen und Fahrzeuge, solange der Raum der Kamera geschlossen ist. Ohne Betriebszeit im Nachtfenster (Standard 22 bis 6 Uhr)."}
               </p>
+            </div>
+
+            <div className="glass-tile space-y-1.5 p-3">
+              <Label htmlFor="camera-live-mode">Livebild und Vorschau</Label>
+              <NativeSelect
+                id="camera-live-mode"
+                value={form.liveMode}
+                onChange={(e) => set("liveMode", e.target.value)}
+              >
+                <option value="">Automatisch</option>
+                <option value="CLICK">Nur auf Tippen</option>
+                <option value="OFF">Aus</option>
+              </NativeSelect>
+              <p className="text-xs text-muted-foreground">{liveModeHint(form.liveMode)}</p>
             </div>
 
             <div className="space-y-1.5">

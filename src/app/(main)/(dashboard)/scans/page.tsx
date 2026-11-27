@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ScanGroupCard } from "@/components/scans/scan-group-card";
+import { previewAllowed } from "@/lib/camera-live-mode";
 
 interface Props {
   searchParams: Promise<{ device?: string; result?: string }>;
@@ -33,7 +34,7 @@ export default async function ScansPage({ searchParams }: Props) {
     },
     // Nur die Felder, die die Karten zeigen: ohne Foto und Zugangsdaten.
     include: {
-      device: { select: { name: true, camera: { select: { id: true, name: true } } } },
+      device: { select: { name: true, camera: { select: { id: true, name: true, liveMode: true } } } },
       ticket: { select: { name: true, ticketTypeName: true } },
       snapshot: { select: { capturedAt: true } },
     },
@@ -91,7 +92,12 @@ export default async function ScansPage({ searchParams }: Props) {
                     id: s.id,
                     scanTime: s.scanTime.toISOString(),
                     deviceName: s.device?.name ?? "Web-Scanner",
-                    cameraId: s.device?.camera?.id ?? null,
+                    // Ohne Aufnahme vom Scan zeigt die Karte das aktuelle Vorschaubild;
+                    // bei Livebild und Vorschau „nur auf Tippen“ oder „aus“ gibt es keins.
+                    cameraId:
+                      s.device?.camera && (s.snapshot || previewAllowed(s.device.camera.liveMode))
+                        ? s.device.camera.id
+                        : null,
                     cameraName: s.device?.camera?.name ?? null,
                     snapshotCapturedAt: s.snapshot?.capturedAt.toISOString() ?? null,
                     result: s.result,

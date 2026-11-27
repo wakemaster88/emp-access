@@ -10,9 +10,21 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, log } from "../config.js";
 import { shrinkJpeg } from "../image.js";
-import { classifyText, clipText, isDuplicate, type ActivityEntry, type ActivityKind } from "./activity-rules.js";
+import {
+  activityImageView,
+  classifyText,
+  clipText,
+  isDuplicate,
+  type ActivityEntry,
+  type ActivityKind,
+  type ImageCameraMode,
+} from "./activity-rules.js";
 
-export type { ActivityEntry, ActivityKind } from "./activity-rules.js";
+export type { ActivityEntry, ActivityKind, ImageCameraMode } from "./activity-rules.js";
+
+/** Einstellung „Livebild und Vorschau“ je Kameraname; null = unbekannt (Bild wie bisher). */
+export type ImageModeOf = (camera: string) => ImageCameraMode | null;
+const NO_MODES: ImageModeOf = () => null;
 
 const MAX_ENTRIES = 200;
 const MAX_IMAGES = 40;
@@ -85,6 +97,8 @@ export interface RecordInput {
   where?: string;
   telegram?: boolean;
   jpeg?: Buffer | null;
+  /** Kamera des Bildes, wenn `where` sie nicht nennt (Telegram-Bilder). */
+  camera?: string;
 }
 
 /** Eintrag anlegen. Doppelte (gleicher Text an mehrere Chats) werden zusammengefasst. */
@@ -100,6 +114,7 @@ async function recordNow(input: RecordInput): Promise<void> {
   const e: ActivityEntry = { id: nextId++, at: new Date(now).toISOString(), kind: input.kind, text };
   if (input.where) e.where = input.where;
   if (input.telegram) e.telegram = true;
+  if (input.camera) e.camera = input.camera;
   entries.push(e);
   if (input.jpeg?.length) {
     const id = nextImg++;
@@ -122,8 +137,8 @@ async function recordNow(input: RecordInput): Promise<void> {
 }
 
 /** Ausgehende Telegram-Nachricht (aus telegram.ts). */
-export function recordTelegramOut(text: string, opts: { buttons?: boolean; jpeg?: Buffer } = {}): void {
-  recordActivity({ kind: classifyText(text, opts.buttons), text, telegram: true, jpeg: opts.jpeg });
+export function recordTelegramOut(text: string, opts: { buttons?: boolean; jpeg?: Buffer; camera?: string } = {}): void {
+  recordActivity({ kind: classifyText(text, opts.buttons), text, telegram: true, jpeg: opts.jpeg, camera: opts.camera });
 }
 
 /** Laufende Arbeit an- und abmelden. */
@@ -135,7 +150,12 @@ export function endWork(key: string): void {
   working.delete(key);
 }
 
-export async function activityPayload(since = 0): Promise<{
+/**
+ * Eintraege fuer die Kachel „KI“. Bilder von Kameras mit Livebild und
+ * Vorschau „aus“ fallen weg, bei „nur auf Tippen“ kommen sie mit `imgTap`
+ * (die Zentrale zeigt sie erst auf Tippen). Der Text bleibt.
+ */
+export async function activityPayload(since = 0, modeOf: ImageModeOf = NO_MODES): Promise<{
   entries: ActivityEntry[];
   working: Array<{ text: string; since: string }>;
   last: number;
@@ -145,15 +165,22 @@ export async function activityPayload(since = 0): Promise<{
   // Haengengebliebenes nach 5 Minuten verwerfen.
   for (const [k, w] of working) if (now - w.since > 5 * 60_000) working.delete(k);
   return {
-    entries: (since > 0 ? entries.filter((e) => e.id > since) : entries.slice(-80)).map((e) =>
-      e.img && !images.has(e.img) ? { ...e, img: undefined } : e
-    ),
+    entries: (since > 0 ? entries.filter((e) => e.id > since) : entries.slice(-80)).map((e) => {
+      if (!e.img) return e;
+      if (!images.has(e.img)) return { ...e, img: undefined };
+      const view = activityImageView(e, modeOf);
+      if (view === "hide") return { ...e, img: undefined };
+      return view === "tap" ? { ...e, imgTap: true } : e;
+    }),
     working: [...working.values()].map((w) => ({ text: w.text, since: new Date(w.since).toISOString() })),
     last: entries.length ? entries[entries.length - 1].id : 0,
   };
 }
 
-export async function activityImage(id: number): Promise<Buffer | null> {
+/** Bild eines Eintrags; keins, wenn seine Kamera Livebild und Vorschau „aus“ hat. */
+export async function activityImage(id: number, modeOf: ImageModeOf = NO_MODES): Promise<Buffer | null> {
   await load();
+  const entry = entries.find((e) => e.img === id);
+  if (entry && activityImageView(entry, modeOf) === "hide") return null;
   return images.get(id) ?? null;
 }

@@ -30,6 +30,7 @@ import { LATEST_PI_VERSION } from "@/lib/pi-version";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 import { isTenantAdminRole } from "@/lib/api-auth";
+import { LIVE_MODE_CLICK_TEXT, previewAllowed, readLiveMode } from "@/lib/camera-live-mode";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -56,7 +57,7 @@ export default async function DeviceDetailPage({ params }: Props) {
       where: { id: deviceId, accountId: session.user.accountId },
       include: {
         _count: { select: { scans: true } },
-        camera: { select: { id: true, name: true, snapshotAt: true, lastSeenAt: true } },
+        camera: { select: { id: true, name: true, snapshotAt: true, lastSeenAt: true, liveMode: true } },
         audioZone: { select: { name: true } },
         keyRoom: {
           select: {
@@ -322,23 +323,29 @@ export default async function DeviceDetailPage({ params }: Props) {
           <Card className="overflow-hidden">
             <CardContent>
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link href="/cameras" className="shrink-0 block group">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/cameras/${device.camera.id}/snapshot?t=${device.camera.snapshotAt ? new Date(device.camera.snapshotAt).getTime() : ""}`}
-                    alt={`Schnappschuss ${device.camera.name}`}
-                    className="w-full sm:w-64 rounded-xl border border-border group-hover:opacity-90 transition-opacity"
-                  />
-                </Link>
+                {/* Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild. */}
+                {previewAllowed(device.camera.liveMode) && (
+                  <Link href="/cameras" className="shrink-0 block group">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/cameras/${device.camera.id}/snapshot?t=${device.camera.snapshotAt ? new Date(device.camera.snapshotAt).getTime() : ""}`}
+                      alt={`Schnappschuss ${device.camera.name}`}
+                      className="w-full sm:w-64 rounded-xl border border-border group-hover:opacity-90 transition-opacity"
+                    />
+                  </Link>
+                )}
                 <div className="space-y-1.5">
                   <p className="text-label flex items-center gap-1.5">
                     <Cctv className="h-3.5 w-3.5" /> Verknüpfte Kamera
                   </p>
                   <p className="text-base font-semibold text-foreground">{device.camera.name}</p>
-                  {device.camera.snapshotAt && (
+                  {device.camera.snapshotAt && previewAllowed(device.camera.liveMode) && (
                     <p className="text-xs text-muted-foreground tabular-nums">
                       Schnappschuss: {fmtDateTime(device.camera.snapshotAt)}
                     </p>
+                  )}
+                  {readLiveMode(device.camera.liveMode) === "CLICK" && (
+                    <p className="text-xs text-muted-foreground">{LIVE_MODE_CLICK_TEXT}</p>
                   )}
                   <Link href="/cameras" className="inline-flex items-center text-xs font-medium text-primary hover:underline max-sm:min-h-11">
                     Zu den Kameras →

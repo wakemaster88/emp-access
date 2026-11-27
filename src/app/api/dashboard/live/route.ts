@@ -4,6 +4,7 @@ import { isPlayerOnline } from "@/lib/audio-constants";
 import { berlinDayStart } from "@/lib/berlin-day";
 import { buildLiveWarnings, summarizeCameraActivity, type LiveAreaOccupancy } from "@/lib/dashboard-live";
 import { activityAt, recentActivityWhere } from "@/lib/camera-events";
+import { readLiveMode, shownSnapshotAt } from "@/lib/camera-live-mode";
 import { BEACH_LABEL, loadBeachOccupancy } from "@/lib/beach-occupancy";
 import { loadRiderOccupancy, OCCUPANCY_LABEL } from "@/lib/rider-occupancy";
 import { parseParkingSnapshot } from "@/lib/parking";
@@ -103,6 +104,7 @@ export async function GET() {
         lastSeenAt: true,
         doorHoldUntil: true,
         doorHoldError: true,
+        liveMode: true,
       },
       orderBy: { name: "asc" },
     }),
@@ -260,7 +262,9 @@ export async function GET() {
       id: c.id,
       name: c.name,
       host: c.host,
-      snapshotAt: c.snapshotAt,
+      // Livebild und Vorschau: „nur auf Tippen“ oder „aus“ ohne Bild im Dialog.
+      liveMode: readLiveMode(c.liveMode),
+      snapshotAt: shownSnapshotAt(c.liveMode, c.snapshotAt),
       online: anyHubOnline && !!c.lastSeenAt && c.lastSeenAt.getTime() >= cameraCutoff,
       holdUntil: c.doorHoldUntil && c.doorHoldUntil.getTime() > now.getTime() ? c.doorHoldUntil : null,
       holdError: c.doorHoldError,
@@ -365,6 +369,7 @@ export async function GET() {
         id: g.id,
         name: g.name,
         host: g.host,
+        liveMode: g.liveMode,
         snapshotAt: g.snapshotAt?.toISOString() ?? null,
         online: g.online,
         holdUntil: g.holdUntil?.toISOString() ?? null,

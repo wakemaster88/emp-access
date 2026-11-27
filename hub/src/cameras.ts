@@ -142,6 +142,7 @@ import { isExiting, onShutdown } from "./shutdown.js";
 import { CameraMarks } from "./camera-marks.js";
 import { BurstLights } from "./vehicle-light.js";
 import { DISPLAY_SNAPSHOT, DISPLAY_SNAPSHOT_MAX_PX, MOTION_PREVIEW, PERSON_SNAPSHOT, shrinkJpeg } from "./image.js";
+import { previewUploadAllowed, readLiveMode, type LiveMode, type LiveModeCamera } from "./live-mode-rules.js";
 
 export interface CameraConfig {
   id: number;
@@ -180,6 +181,12 @@ export interface CameraConfig {
    * "OFF" = aus. Fehlt bei einer älteren Cloud (sentinel-mode-rules.ts).
    */
   sentinelMode?: string | null;
+  /**
+   * Einstellung „Livebild und Vorschau“ (Cloud): null = automatisch,
+   * "CLICK" = nur auf Tippen, "OFF" = aus. Fehlt bei einer älteren Cloud
+   * (live-mode-rules.ts).
+   */
+  liveMode?: string | null;
 }
 
 /** Letzte Personen-Sichtung an einer Kamera (Dashboard „wer war wo“). */
@@ -267,6 +274,8 @@ export interface CameraStatus {
   caps: CameraCaps | null;
   /** Uhr der Kamera gegen den Hub (null = noch nicht gelesen). */
   clock: CameraClock | null;
+  /** Livebild und Vorschau (live-mode-rules.ts): Kachel und Livebild in der Zentrale. */
+  liveMode: LiveMode;
 }
 
 export interface CameraClock {
@@ -299,6 +308,8 @@ const configFailLog = new ChangeLog(10 * 60_000);
 const CAMERA_CACHE_FILE = path.join(CONFIG.hubDir, ".cache", "cameras.json");
 /** In diesem Lauf hat die Cloud die Kamera-Liste schon geliefert. */
 let cloudListLoaded = false;
+/** Kameras der zuletzt übernommenen Liste für die Stream-Freigabe (listLiveModeCameras). */
+let liveModeCameras: Array<LiveModeCamera & { id: number }> = [];
 /** Die lokale Kopie wurde in diesem Lauf schon versucht (geladen oder verworfen). */
 let cameraCacheTried = false;
 /** Stand der Datei fuer cacheWriteDue; undefined = noch nicht gelesen. */
@@ -703,9 +714,12 @@ export async function captureSnapshot(cameraId: number): Promise<Buffer> {
 export async function uploadSnapshot(
   cameraId: number,
   opts: { maxPx?: number; quality?: number; minBytes?: number } = {}
-): Promise<{ bytes: number }> {
+): Promise<{ bytes: number; skipped?: "liveMode" }> {
   const cam = cameras.get(cameraId);
   if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+  // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild in
+  // die Cloud, auch nicht auf Anfrage (die Cloud nimmt es dann ohnehin nicht).
+  if (!previewUploadAllowed(cam.config.liveMode)) return { bytes: 0, skipped: "liveMode" };
 
   const raw = await captureSnap(cam);
   // Nur Anzeige: drosselt weitere Anzeige-Bilder, nicht die Gesichtserkennung.
@@ -2559,6 +2573,7 @@ async function refreshConfigs(): Promise<void> {
  * wenn beim Start der erste Abruf scheitert, aus der lokalen Kopie.
  */
 function applyCameraList(all: CameraConfig[]): void {
+  liveModeCameras = all.map((c) => ({ id: c.id, name: c.name, host: c.host, kind: c.kind ?? "REOLINK", liveMode: c.liveMode ?? null }));
   // DoorBirds laufen über ihr eigenes Modul (Event-Push statt Polling).
   syncDoorbirds(all.filter((c) => c.kind === "DOORBIRD"));
   const configs = all.filter((c) => c.kind !== "DOORBIRD");
@@ -2789,8 +2804,24 @@ export function listCameraStatus(): CameraStatus[] {
       lastPlate: cam.lastPlate,
       caps: capsCache.get(cam.config.id)?.caps ?? null,
       clock: clockCache.get(cam.config.id) ?? null,
+      liveMode: readLiveMode(cam.config.liveMode),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
+/**
+ * Alle Kameras der letzten Kamera-Liste (Reolink und DoorBird) mit Host und
+ * Einstellung „Livebild und Vorschau“: für die Freigabe der go2rtc-Streams
+ * im Dashboard (allowedStreams in live-mode-rules.ts). Leer, solange weder
+ * die Cloud noch die lokale Kopie eine Liste geliefert hat.
+ */
+export function listLiveModeCameras(): LiveModeCamera[] {
+  return liveModeCameras;
+}
+
+/** Einstellung „Livebild und Vorschau“ einer Kamera (Reolink oder DoorBird); unbekannte Kamera = automatisch. */
+export function cameraLiveMode(cameraId: number): LiveMode {
+  return readLiveMode(liveModeCameras.find((c) => c.id === cameraId)?.liveMode ?? null);
 }
 
 /* ---------------------------------------------------------------------------
@@ -3967,6 +3998,9 @@ async function pollOne(cam: CameraRuntime): Promise<void> {
     uploadPersonSnapshot(cameraId).catch((e) =>
       log(`Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
     );
+  } else if (auto && !previewUploadAllowed(cam.config.liveMode)) {
+    // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild.
+    improveCount("camera", "preview_live_mode");
   } else if (auto) {
     // Reine Bewegung: kleines Vorschaubild (MOTION_PREVIEW), sonst das
     // bisherige Anzeige-Bild (snapshotPlan). Nur gezaehlt, keine Zeile je Bild.

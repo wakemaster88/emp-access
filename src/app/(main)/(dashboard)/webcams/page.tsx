@@ -3,6 +3,7 @@ import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { WebcamControlCenter } from "@/components/webcams/control-center";
+import { shownSnapshotAt } from "@/lib/camera-live-mode";
 
 /**
  * Webcam-Kontrollzentrum: Live-Steuerung der Reolink-Kameras
@@ -27,6 +28,7 @@ export default async function WebcamsPage() {
         channel: true,
         snapshotAt: true,
         lastSeenAt: true,
+        liveMode: true,
       },
       orderBy: { name: "asc" },
     }),
@@ -45,14 +47,17 @@ export default async function WebcamsPage() {
       <Header title="Kontrollzentrum" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         <WebcamControlCenter
+          // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Bild, die
+          // Steuerung bleibt (bei „aus“ ohne Bildflaeche, siehe CameraPanel).
           cameras={cameras.map((c) => ({
             id: c.id,
             name: c.name,
             kind: c.kind,
             host: c.host,
             channel: c.channel,
-            snapshotAt: c.snapshotAt?.toISOString() ?? null,
+            snapshotAt: shownSnapshotAt(c.liveMode, c.snapshotAt?.toISOString() ?? null),
             lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
+            liveMode: c.liveMode,
           }))}
           hubOnline={hubOnline}
         />

@@ -132,6 +132,23 @@ test("Inhalt ohne Offenhalten: Start oder Ende eines Offenhaltens aendert die Ko
   assert.notEqual(cacheContentKey(a), cacheContentKey([door({ host: "192.0.2.23" })]));
 });
 
+test("Livebild und Vorschau bleibt in der Kopie, eine Änderung schreibt sie neu", () => {
+  const list = [cam({ liveMode: "OFF" }), cam({ id: 3, liveMode: "CLICK" }), cam({ id: 4 }), door({ liveMode: "OFF" })];
+  const r = usableCache(fileAt(list, NOW - DAY), NOW, 14);
+  assert.equal(r.ok, true);
+  if (!r.ok) return;
+  assert.deepEqual(
+    r.cameras.map((c) => [c.id, c.liveMode ?? null]),
+    [
+      [1, "OFF"],
+      [3, "CLICK"],
+      [4, null],
+      [2, "OFF"],
+    ]
+  );
+  assert.notEqual(cacheContentKey([cam()]), cacheContentKey([cam({ liveMode: "OFF" })]));
+});
+
 test("Neu geschrieben wird bei geaendertem Inhalt und sonst einmal am Tag", () => {
   const list = [cam(), door()];
   const content = cacheContentKey(list);

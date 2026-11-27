@@ -245,8 +245,10 @@ export function RoomPanel({
     ? `${eventTypeLabel(room.lastEvent.type)} ${shownAsRunning(room.lastEvent, nowMs) ? "läuft" : fmtAgo(room.lastEvent.at, nowMs)}`
     : null;
   // Die Kamera mit dem juengsten Ereignis steht vorn und wird gross.
-  const eventCamera = room.cameras.find((c) => c.id === room.lastEvent?.cameraId) ?? null;
-  const cameras = eventCamera ? [eventCamera, ...room.cameras.filter((c) => c.id !== eventCamera.id)] : room.cameras;
+  // Livebild und Vorschau „aus“: keine Kachel (die Kamera bleibt dem Raum zugeordnet).
+  const tileCameras = room.cameras.filter((c) => c.liveMode !== "OFF");
+  const eventCamera = tileCameras.find((c) => c.id === room.lastEvent?.cameraId) ?? null;
+  const cameras = eventCamera ? [eventCamera, ...tileCameras.filter((c) => c.id !== eventCamera.id)] : tileCameras;
 
   const tiles = (list: RoomDevice[]) =>
     list.length > 0 && (

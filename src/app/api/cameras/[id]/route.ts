@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { detectionUpdateData, mergeDetectionSettings } from "@/lib/camera-detection";
+import { LIVE_MODE_ERROR, liveModeUpdateData, parseLiveMode, previewAllowed } from "@/lib/camera-live-mode";
 import {
   INVALID_HOST_ERROR,
   PASSWORD_REQUIRED_ERROR,
@@ -44,6 +45,7 @@ export async function PUT(
       deliveryFrom: true,
       deliveryTo: true,
       sentinelMode: true,
+      liveMode: true,
       notes: true,
     },
   });
@@ -53,6 +55,17 @@ export async function PUT(
 
   const merged = mergeDetectionSettings(existing, body);
   if ("error" in merged) return NextResponse.json({ error: merged.error }, { status: 400 });
+
+  // Livebild und Vorschau: fehlt das Feld, bleibt der bisherige Wert.
+  const liveMode = body.liveMode === undefined ? undefined : parseLiveMode(body.liveMode);
+  if (liveMode === "invalid") return NextResponse.json({ error: LIVE_MODE_ERROR }, { status: 400 });
+  // Nur auf Tippen oder aus: das gespeicherte Vorschaubild faellt im selben Update weg.
+  const liveModeData =
+    liveMode !== undefined
+      ? liveModeUpdateData(liveMode)
+      : previewAllowed(existing.liveMode)
+        ? {}
+        : { snapshot: null, snapshotAt: null };
 
   const name = body.name !== undefined ? String(body.name).trim() : existing.name;
   if (!name) return NextResponse.json({ error: "Name darf nicht leer sein" }, { status: 400 });
@@ -92,6 +105,7 @@ export async function PUT(
       channel: body.channel !== undefined ? (Number(body.channel) || 0) : existing.channel,
       enabled: typeof body.enabled === "boolean" ? body.enabled : existing.enabled,
       ...detectionUpdateData(merged.settings),
+      ...liveModeData,
       notes: body.notes !== undefined ? (body.notes?.trim() || null) : existing.notes,
     },
     select: { id: true, name: true, host: true, enabled: true },

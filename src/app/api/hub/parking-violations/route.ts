@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
+import { previewAllowed } from "@/lib/camera-live-mode";
 import { processParkingViolation } from "@/lib/parking-violations";
 import {
   cameraUpdateForReport,
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
 
   const camera = await db.camera.findFirst({
     where: { id: cameraId, accountId: account.id },
-    select: { id: true, name: true },
+    select: { id: true, name: true, liveMode: true },
   });
   if (!camera) return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 404 });
 
@@ -60,7 +61,10 @@ export async function POST(request: NextRequest) {
   // select {id}: sonst gibt RETURNING die JPEG-Bytes wieder mit zurück.
   await db.camera.update({
     where: { id: cameraId },
-    data: cameraUpdateForReport(buf, now, repeatsFirstImage(q)),
+    // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild, nur „zuletzt gesehen“.
+    data: previewAllowed(camera.liveMode)
+      ? cameraUpdateForReport(buf, now, repeatsFirstImage(q))
+      : { lastSeenAt: now },
     select: { id: true },
   });
 

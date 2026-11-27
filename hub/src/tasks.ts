@@ -16,6 +16,7 @@ import {
   getMotionDiagnostics,
   noteCameraHand,
   ensureCameraConfigs,
+  cameraLiveMode,
 } from "./cameras.js";
 import { analyzeSightings, enrollFromSighting } from "./face.js";
 import { readHubLog } from "./hublog.js";
@@ -172,6 +173,11 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       // ausfuehren: Ein Bild Minuten nach dem Scan zeigt die falsche Person.
       if (at && Date.now() - new Date(at).getTime() > 30_000) {
         return { success: true, result: { skipped: "stale", at } };
+      }
+      // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Bild zum Scan
+      // (eine neuere Cloud legt den Auftrag dann gar nicht erst an).
+      if (cameraLiveMode(cameraId) !== "auto") {
+        return { success: true, result: { skipped: "liveMode" } };
       }
       try {
         const raw = isDoorbird(cameraId)

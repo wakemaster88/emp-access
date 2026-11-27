@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-token-auth";
+import { previewWriteData } from "@/lib/camera-live-mode";
 import { parseEmbeddingHeader, processCameraPersonEvent } from "@/lib/persons";
 import { sentinelVouched } from "@/lib/hub-sentinel";
 import { parseFaceQuality } from "@/lib/face-quality";
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
 
   const camera = await db.camera.findFirst({
     where: { id: cameraId, accountId: account.id },
-    select: { id: true },
+    select: { id: true, liveMode: true },
   });
   if (!camera) return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 404 });
 
@@ -64,7 +65,8 @@ export async function POST(request: NextRequest) {
   // select {id}: verhindert, dass RETURNING die JPEG-Bytes zurueckueberraegt.
   await db.camera.update({
     where: { id: cameraId },
-    data: { snapshot: buf, snapshotAt: now, lastSeenAt: now },
+    // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild, nur „zuletzt gesehen“.
+    data: previewWriteData(camera.liveMode, buf, now, true),
     select: { id: true },
   });
 

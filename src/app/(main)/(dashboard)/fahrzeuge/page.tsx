@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { VehiclesClient } from "@/components/vehicles/vehicles-client";
 import { parseParkingSnapshot } from "@/lib/parking";
+import { shownSnapshotAt } from "@/lib/camera-live-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,7 @@ export default async function FahrzeugePage() {
         snapshotAt: true,
         lastSeenAt: true,
         createdAt: true,
+        liveMode: true,
       },
       orderBy: { name: "asc" },
     }),
@@ -135,7 +137,8 @@ export default async function FahrzeugePage() {
             name: c.name,
             kind: c.kind,
             host: c.host,
-            snapshotAt: c.snapshotAt?.toISOString() ?? null,
+            // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild.
+            snapshotAt: shownSnapshotAt(c.liveMode, c.snapshotAt?.toISOString() ?? null),
             lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
             createdAt: c.createdAt.toISOString(),
           }))}

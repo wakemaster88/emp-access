@@ -30,7 +30,7 @@ import {
   recordTask,
 } from "./state.js";
 import { executeTask } from "./tasks.js";
-import { listCameraStatus, refreshCameraClocks } from "./cameras.js";
+import { listCameraStatus, listLiveModeCameras, refreshCameraClocks } from "./cameras.js";
 import { listDoorbirdStatus } from "./doorbird.js";
 import { lastParkingSnapshot } from "./parking.js";
 import { lastScanResult } from "./scanner.js";
@@ -59,8 +59,11 @@ import { maskUrlAuth } from "./go2rtc-status-rules.js";
 import { assetEtag, uiHtmlEtag, uiStampFromEtags, withUiStamp } from "./ui-stamp.js";
 import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
 import { isMowerStream } from "./mower-streams.js";
+import { readLiveMode } from "./live-mode-rules.js";
+import { createStreamGate, LIVE_OFF_ERROR } from "./stream-gate.js";
 import { assistantHealth } from "./agent/agent.js";
 import { activityImage, activityPayload } from "./agent/activity.js";
+import { imageModeByName } from "./agent/activity-rules.js";
 
 let actionCounter = 0;
 
@@ -162,7 +165,19 @@ async function readRaw(req: http.IncomingMessage, limit = 256 * 1024): Promise<s
  * Der Browser spricht nur mit dem Dashboard (gleicher Origin, gleiche
  * Anmeldung). Nur Signalisierung und Standbilder laufen hier durch; das
  * Video selbst kommt per WebRTC direkt von go2rtc.
+ *
+ * Einstellung „Livebild und Vorschau“ je Kamera (stream-gate.ts):
+ * Livebild, Standbild und Personen-Boxen gibt es nur fuer freigegebene
+ * Streams, sonst 403. Gesperrt ist der Stream einer Kamera mit „aus“ und,
+ * sobald die Kamera-Liste bekannt ist, ein Stream ohne Kamera.
  * ------------------------------------------------------------------------- */
+
+const streamGate = createStreamGate({ cameras: listLiveModeCameras, fetchStreams: fetchGo2rtcStreams });
+
+/** Einstellung je Kameraname fuer die Bilder der Kachel „KI“ (activity-rules.ts). */
+function activityModes() {
+  return imageModeByName(listLiveModeCameras().map((c) => ({ name: c.name, mode: readLiveMode(c.liveMode) })));
+}
 
 
 async function proxyGo2rtc(
@@ -175,6 +190,7 @@ async function proxyGo2rtc(
     if (req.method === "GET" && sub === "/streams") {
       // Nur Name, Kamera-Host und Zustand weitergeben – die RTSP-URLs enthalten Passwoerter.
       const st = await fetchGo2rtcStreams();
+      streamGate.note(st);
       if (!st.reachable) return json(res, 200, { reachable: false, streams: [] });
       const streams = st.streams.map((x) => ({
         name: x.name,
@@ -193,6 +209,7 @@ async function proxyGo2rtc(
     }
     const src = url.searchParams.get("src") ?? "";
     if (!/^[^\s/?#&]{1,80}$/.test(src)) return json(res, 400, { error: "src ungueltig" });
+    if ((await streamGate.proxyStatus(sub, src)) === 403) return json(res, 403, { error: LIVE_OFF_ERROR });
     if (req.method === "POST" && sub === "/webrtc") {
       const offer = await readRaw(req);
       const r = await fetch(`${GO2RTC_URL}/api/webrtc?src=${encodeURIComponent(src)}`, {
@@ -842,11 +859,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
 
     // Zentrale, Kachel „KI“: was der Hub-Assistent tut und getan hat.
     if (req.method === "GET" && url.pathname === "/api/agent/activity") {
-      return json(res, 200, await activityPayload(Number(url.searchParams.get("since")) || 0));
+      return json(res, 200, await activityPayload(Number(url.searchParams.get("since")) || 0, activityModes()));
     }
     const actImg = url.pathname.match(/^\/api\/agent\/activity\/img\/(\d{1,9})$/);
     if (req.method === "GET" && actImg) {
-      const jpeg = await activityImage(Number(actImg[1]));
+      const jpeg = await activityImage(Number(actImg[1]), activityModes());
       if (!jpeg) return json(res, 404, { error: "Bild nicht mehr vorhanden" });
       res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
       return void res.end(jpeg);
@@ -863,6 +880,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       const src = url.searchParams.get("src") ?? "";
       const cam = [...listCameraStatus(), ...listDoorbirdStatus()].find((c) => c.id === cameraId);
       if (!cam || !src || !/^[^\s/?#&]{1,80}$/.test(src)) return json(res, 400, { error: "cameraId oder src fehlt" });
+      // Livebild und Vorschau „aus“: keine Boxen (sie kommen aus dem Bild der Kamera).
+      if ((await streamGate.boxesStatus(cam.liveMode, src)) === 403) return json(res, 403, { error: LIVE_OFF_ERROR });
       return json(res, 200, await personBoxes(GO2RTC_URL, cam.id, cam.name, src));
     }
 

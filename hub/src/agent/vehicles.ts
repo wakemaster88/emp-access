@@ -111,7 +111,7 @@ async function ask(key: string, chatIds: string[]): Promise<void> {
     jpeg = await (isDoorbird(cam.id) ? captureDoorbirdSnapshot(cam.id) : captureSnapshot(cam.id)).catch(() => null);
   }
   for (const id of chatIds) {
-    if (jpeg) await sendPhoto(id, jpeg, caption, buttons).catch(() => sendText(id, caption, buttons));
+    if (jpeg) await sendPhoto(id, jpeg, caption, buttons, { camera: cam?.name }).catch(() => sendText(id, caption, buttons));
     else await sendText(id, caption, buttons).catch(() => undefined);
   }
   log(`Assistent: frage nach Kennzeichen ${rec.plate} (${rec.visits} Besuche)`);

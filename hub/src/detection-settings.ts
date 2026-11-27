@@ -10,6 +10,7 @@
 import type http from "node:http";
 import { api, log } from "./config.js";
 import { captureSnapshot, listCameraConfigs, type CameraConfig } from "./cameras.js";
+import { readLiveMode } from "./live-mode-rules.js";
 import { refreshVehicleWhitelist } from "./plate.js";
 
 type Json = (res: http.ServerResponse, status: number, body: unknown) => void;
@@ -70,6 +71,8 @@ function cameraSettings(c: CameraConfig) {
     deliveryTo: c.deliveryTo ?? null,
     // Einstellung „Wächter“: null = wie der Raum (auch bei einer älteren Cloud ohne das Feld).
     sentinelMode: c.sentinelMode ?? null,
+    // Livebild und Vorschau: nur Anzeige (eingestellt wird in der Cloud). Bei „aus“ kein Bild für die Zonen.
+    liveMode: readLiveMode(c.liveMode),
   };
 }
 
@@ -115,6 +118,12 @@ export async function handleDetectionApi(
 
   let m = p.match(/^\/api\/detection\/cameras\/(\d+)\/snapshot\.jpg$/);
   if (req.method === "GET" && m) {
+    const id = Number(m[1]);
+    const config = listCameraConfigs().find((c) => c.id === id);
+    if (config && readLiveMode(config.liveMode) === "off") {
+      json(res, 403, { error: "Livebild und Vorschau für diese Kamera aus" });
+      return true;
+    }
     try {
       const jpeg = await captureSnapshot(Number(m[1]));
       res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "no-store" });

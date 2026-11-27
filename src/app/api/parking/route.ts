@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { parseParkingSnapshot } from "@/lib/parking";
+import { shownSnapshotAt } from "@/lib/camera-live-mode";
 
 /** GET (Session): Hub-Parkplatzstatus + Kameras zum Zuordnen der Zonen. */
 export async function GET() {
@@ -19,6 +20,7 @@ export async function GET() {
         snapshotAt: true,
         lastSeenAt: true,
         createdAt: true,
+        liveMode: true,
       },
       orderBy: { name: "asc" },
     }),
@@ -43,7 +45,8 @@ export async function GET() {
       name: c.name,
       kind: c.kind,
       host: c.host,
-      snapshotAt: c.snapshotAt?.toISOString() ?? null,
+      // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild.
+      snapshotAt: shownSnapshotAt(c.liveMode, c.snapshotAt?.toISOString() ?? null),
       lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
       createdAt: c.createdAt.toISOString(),
     })),

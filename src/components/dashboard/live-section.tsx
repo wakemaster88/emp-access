@@ -56,6 +56,8 @@ export interface DashboardLive {
       name: string;
       /** IP der Sprechstelle – darüber findet der Browser den Live-Stream in go2rtc. */
       host: string;
+      /** Livebild und Vorschau: "AUTO", "CLICK" (nur auf Tippen) oder "OFF" (aus). */
+      liveMode: "AUTO" | "CLICK" | "OFF";
       snapshotAt: string | null;
       online: boolean;
       holdUntil: string | null;

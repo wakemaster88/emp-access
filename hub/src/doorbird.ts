@@ -25,6 +25,7 @@ import { RELOCATE_MIN_GAP_MS, httpAnswerOutcome, shouldRelocate, type ConnectFai
 import { PERSON_SNAPSHOT, shrinkJpeg } from "./image.js";
 import { authAlertSource, authOutcome, credentialFingerprint, type LatchGate } from "./auth-latch.js";
 import { authLatches } from "./auth-latch-store.js";
+import { previewUploadAllowed, readLiveMode, type LiveMode } from "./live-mode-rules.js";
 
 const RECONNECT_MIN_MS = 3_000;
 const RECONNECT_MAX_MS = 60_000;
@@ -130,6 +131,8 @@ export interface DoorbirdStatus {
   lastEventAt: string | null;
   lastPerson: LastPerson | null;
   hold: DoorbirdHoldState | null;
+  /** Livebild und Vorschau (live-mode-rules.ts): Kachel und Livebild in der Zentrale. */
+  liveMode: LiveMode;
 }
 
 const doorbirds = new Map<number, DoorbirdRuntime>();
@@ -696,6 +699,7 @@ export function listDoorbirdStatus(): DoorbirdStatus[] {
       lastEventAt: rt.lastEventAt,
       lastPerson: rt.lastPerson,
       hold: rt.hold ? holdState(rt) : null,
+      liveMode: readLiveMode(rt.config.liveMode),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
@@ -708,9 +712,11 @@ export async function captureDoorbirdSnapshot(cameraId: number): Promise<Buffer>
 }
 
 /** Schnappschuss holen und als Kamera-Snapshot in die Cloud laden (Task CAMERA_SNAPSHOT). */
-export async function uploadDoorbirdSnapshot(cameraId: number): Promise<{ bytes: number }> {
+export async function uploadDoorbirdSnapshot(cameraId: number): Promise<{ bytes: number; skipped?: "liveMode" }> {
   const rt = doorbirds.get(cameraId);
   if (!rt) throw new Error(`DoorBird ${cameraId} nicht konfiguriert`);
+  // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Vorschaubild in die Cloud.
+  if (!previewUploadAllowed(rt.config.liveMode)) return { bytes: 0, skipped: "liveMode" };
   const buf = await captureSnap(rt.config);
   const upload = await api(`/api/hub/cameras/${cameraId}/snapshot`, {
     method: "POST",
@@ -846,8 +852,9 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
   // Öffnungswunsch parallel zur Gesichts-Pipeline (blockiert sie nicht).
   void maybeSendGateAlert(rt, trigger, buf);
 
-  // Klingeln: Schnappschuss immer in die Cloud (UI-Kachel), auch ohne Gesicht.
-  if (trigger === "DOORBELL") {
+  // Klingeln: Schnappschuss immer in die Cloud (UI-Kachel), auch ohne Gesicht;
+  // nicht bei Livebild und Vorschau „nur auf Tippen“ oder „aus“.
+  if (trigger === "DOORBELL" && previewUploadAllowed(c.liveMode)) {
     try {
       await api(`/api/hub/cameras/${c.id}/snapshot`, {
         method: "POST",

@@ -50,6 +50,8 @@ export interface RoomCamera {
   enabled: boolean;
   snapshotAt: string | null;
   lastSeenAt: string | null;
+  /** Livebild und Vorschau: "AUTO", "CLICK" (nur auf Tippen, kein Bild) oder "OFF" (keine Kachel). */
+  liveMode: "AUTO" | "CLICK" | "OFF";
 }
 
 export interface RoomLock {

@@ -30,6 +30,7 @@ import { DEFAULT_TIMEZONE, addDaysToYmd, tzYmd } from "@/lib/tz-time";
 import { McpToolError, type McpLevel, type McpTool } from "./protocol";
 import { equalsInsensitive } from "@/lib/like-escape";
 import { activityAt, isRunning, recentActivityWhere, withOpenEvents } from "@/lib/camera-events";
+import { PREVIEW_BLOCKED_ERROR, previewAllowed } from "@/lib/camera-live-mode";
 
 export interface McpCtx {
   db: TenantDb;
@@ -185,7 +186,7 @@ async function findCamera(ctx: McpCtx, ref: string) {
   const id = Number(ref);
   const cams = await ctx.db.camera.findMany({
     where: { accountId: ctx.accountId },
-    select: { id: true, name: true, kind: true, enabled: true },
+    select: { id: true, name: true, kind: true, enabled: true, liveMode: true },
     orderBy: { name: "asc" },
   });
   const cam =
@@ -644,12 +645,15 @@ const cloudTools: Tool[] = [
     level: "read",
     run: async (args, ctx) => {
       const cam = await findCamera(ctx, argStr(args, "camera", { required: true })!);
+      // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Bild über diese Schnittstelle.
+      if (!previewAllowed(cam.liveMode)) throw new McpToolError(`${cam.name}: ${PREVIEW_BLOCKED_ERROR}.`);
       const before = Date.now();
       await runHubTask(ctx, "CAMERA_SNAPSHOT", { cameraId: cam.id, maxPx: 1600 });
       const row = await ctx.db.camera.findFirst({
         where: { id: cam.id, accountId: ctx.accountId },
-        select: { snapshot: true, snapshotAt: true },
+        select: { snapshot: true, snapshotAt: true, liveMode: true },
       });
+      if (row && !previewAllowed(row.liveMode)) throw new McpToolError(`${cam.name}: ${PREVIEW_BLOCKED_ERROR}.`);
       if (!row?.snapshot) throw new McpToolError("Der Hub hat kein Bild geliefert.");
       const fresh = row.snapshotAt && row.snapshotAt.getTime() >= before - 5_000;
       return {

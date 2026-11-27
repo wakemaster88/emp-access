@@ -2,7 +2,7 @@
  * Regeln der Livebild-Kacheln (ohne DOM, ohne Netz): Zeitlimits und
  * Neuversuche der WebRTC-Verbindung, Staffelung beim Verbindungsaufbau,
  * Kandidat aus getStats, Stream fuer die Personen-Boxen, Neu laden nach
- * einem Hub-Update.
+ * einem Hub-Update, Einstellung „Livebild und Vorschau“ je Kamera.
  *
  * Klassisches Skript wie dashboard.js (vor ihm geladen): legt nur das
  * Objekt `RtcRules` an. Die Tests laden die Datei mit node:vm
@@ -114,6 +114,87 @@ const RtcRules = (() => {
     return names.find((n) => /_sub$/.test(n)) || names.find((n) => !/_(main|sub)$/.test(n)) || names.find((n) => /_main$/.test(n)) || null;
   }
 
+  /*
+   * Einstellung „Livebild und Vorschau“ je Kamera (liveMode aus
+   * /api/overview, live-mode-rules.ts im Hub): "auto" startet das Livebild
+   * von selbst, "click" erst nach einem Tippen, "off" zeigt die Kamera in
+   * der Zentrale gar nicht. Fehlt der Wert (Maeher, aelterer Hub), gilt
+   * "auto" wie bisher; ein unbekannter Wert gilt wie "click".
+   */
+  const CLICK_LIVE_MAX_MS = 5 * 60 * 1000;
+
+  function liveModeOf(cam) {
+    const raw = cam ? cam.liveMode : null;
+    if (raw === null || raw === undefined) return "auto";
+    const v = String(raw).trim().toLowerCase();
+    if (v === "" || v === "auto") return "auto";
+    if (v === "off") return "off";
+    return "click";
+  }
+
+  /* Kachel und Grossansicht: nicht bei „aus“. */
+  function tileShown(cam) {
+    return liveModeOf(cam) !== "off";
+  }
+
+  /* Kameras der Zentrale (Kacheln, Grossansicht, Durchblaettern): ohne die mit „aus“. */
+  function zentraleCams(cams) {
+    return (Array.isArray(cams) ? cams : []).filter(tileShown);
+  }
+
+  /*
+   * Ist ein Tippen (Zeitpunkt in ms) abgelaufen? Nach 5 Minuten endet ein
+   * getipptes Livebild von selbst; ohne Tippen gibt es nichts, das laeuft.
+   */
+  function tapExpired(tappedAt, now) {
+    return !(typeof tappedAt === "number" && now >= tappedAt && now - tappedAt < CLICK_LIVE_MAX_MS);
+  }
+
+  /*
+   * Darf das Livebild dieser Kamera jetzt laufen (WebRTC, Personen-Boxen)?
+   * „automatisch“: ja. „nur auf Tippen“: nur nach einem Tippen, hoechstens
+   * 5 Minuten lang und nur bei sichtbarer Seite. „aus“: nie.
+   */
+  function liveAllowed(cam, tappedAt, now, hidden) {
+    const mode = liveModeOf(cam);
+    if (mode === "off") return false;
+    if (mode === "auto") return true;
+    return !hidden && !tapExpired(tappedAt, now);
+  }
+
+  /*
+   * Abgelaufene Tippen aus einer Liste [id, Zeitpunkt]: diese Livebilder
+   * enden jetzt. nextMs = Wartezeit bis zum naechsten Ablauf, null = keins mehr offen.
+   */
+  function tapExpiry(taps, now) {
+    const expired = [];
+    let nextMs = null;
+    for (const [id, at] of Array.isArray(taps) ? taps : []) {
+      if (tapExpired(at, now)) expired.push(id);
+      else {
+        const left = at + CLICK_LIVE_MAX_MS - now;
+        nextMs = nextMs === null ? left : Math.min(nextMs, left);
+      }
+    }
+    return { expired, nextMs };
+  }
+
+  /*
+   * Kameras, deren Einstellung „Livebild und Vorschau“ sich seit dem letzten
+   * Zeichnen geaendert hat, in beide Richtungen. `prev`: Map id → Modus
+   * (liveModeOf). Eine Kamera, die neu dazukommt, zaehlt nicht. Bei einer
+   * Aenderung verfallen ihre Tippen; Kachel und Grossansicht zeichnet die
+   * Zentrale neu.
+   */
+  function modeChanges(prev, cams) {
+    const changed = [];
+    for (const c of cams) {
+      const was = prev.get(c.id);
+      if (was !== undefined && was !== liveModeOf(c)) changed.push(c.id);
+    }
+    return changed;
+  }
+
   /* Bereiche mit Eingabefeldern auf der Seite: dort nie von selbst neu laden. */
   const FORM_VIEWS = new Set(["aktionen"]);
 
@@ -143,5 +224,13 @@ const RtcRules = (() => {
     pickCandidate,
     boxStream,
     shouldReload,
+    CLICK_LIVE_MAX_MS,
+    liveModeOf,
+    tileShown,
+    zentraleCams,
+    tapExpired,
+    liveAllowed,
+    tapExpiry,
+    modeChanges,
   };
 })();

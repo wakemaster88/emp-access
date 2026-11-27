@@ -219,12 +219,19 @@ function renderSeen() {
   const box = $("liveSeen");
   if (!box) return;
   const rows = live.seen.slice(0, 12);
+  // Kamera mit Livebild und Vorschau „aus“: keine Grossansicht, die Kapsel ist nur Text.
+  const off = new Set(
+    state.overview ? liveCams(state.overview).filter((c) => RtcRules.liveModeOf(c) === "off").map((c) => c.id) : []
+  );
   const html = rows
-    .map(
-      (p) => `<button type="button" class="seen-chip k-${esc(p.kind)}${p.active ? " is-active" : ""}" data-seen="${p.cameraId}" title="${esc(`${p.label} · ${p.camera}`)}">
-        <span class="seen-dot" aria-hidden="true"></span><span class="seen-name">${esc(p.label)}</span><span class="seen-meta">${esc(p.camera)} · ${esc(seenWhen(p))}</span>
-      </button>`
-    )
+    .map((p) => {
+      const cls = `seen-chip k-${esc(p.kind)}${p.active ? " is-active" : ""}`;
+      const title = esc(`${p.label} · ${p.camera}`);
+      const inner = `<span class="seen-dot" aria-hidden="true"></span><span class="seen-name">${esc(p.label)}</span><span class="seen-meta">${esc(p.camera)} · ${esc(seenWhen(p))}</span>`;
+      return off.has(p.cameraId)
+        ? `<span class="${cls} is-static" title="${title}">${inner}</span>`
+        : `<button type="button" class="${cls}" data-seen="${p.cameraId}" title="${title}">${inner}</button>`;
+    })
     .join("");
   const full = rows.length ? `<span class="seen-title">${icon("user")}Gerade erkannt</span>${html}` : "";
   if (box.dataset.h !== full) {
@@ -253,6 +260,8 @@ const ai = {
   sig: "",
   /** Unten festhalten, solange niemand nach oben gescrollt hat. */
   stick: true,
+  /** Einstellung „Livebild und Vorschau“ der Kameras beim letzten Laden (aiModeSig). */
+  modes: "",
 };
 
 const AI_KIND = {
@@ -270,8 +279,29 @@ const AI_KIND = {
 };
 const AI_ROUTINE = new Set(["watch", "tool"]);
 
+/*
+ * Bilder in der Kachel richten sich nach „Livebild und Vorschau“ ihrer
+ * Kamera (der Hub entscheidet: bei „aus“ keins, bei „nur auf Tippen“ erst
+ * auf Tippen). Aendert sich eine Einstellung, laedt die Kachel alles neu,
+ * damit auch schon gezeigte Eintraege der neuen Einstellung folgen.
+ */
+function aiModeSig() {
+  if (!state.overview) return "";
+  return liveCams(state.overview)
+    .filter((c) => c.kind !== "MOWER")
+    .map((c) => `${c.id}:${RtcRules.liveModeOf(c)}`)
+    .join(",");
+}
+
 async function loadAi(force = false) {
   if (!ai.shown || ai.busy || (!force && Date.now() - ai.at < 3000)) return;
+  const modes = aiModeSig();
+  if (ai.modes && modes && modes !== ai.modes) {
+    ai.last = 0;
+    ai.entries = [];
+    ai.sig = "";
+  }
+  if (modes) ai.modes = modes;
   ai.busy = true;
   ai.at = Date.now();
   try {
@@ -307,9 +337,12 @@ function aiEntryHtml(e) {
   // Das Symbol links zeigt die Art schon: Telegram-Emoji am Anfang weglassen.
   const text = e.kind === "user" ? e.text : String(e.text).replace(/^(‼️|⚠️|✅|💡)\s*/u, "");
   const time = clock(e.at).slice(0, 5);
-  const img = e.img
-    ? `<button type="button" class="ai-img" data-ai-img="${e.img}" aria-label="Bild groß anzeigen"><img src="/api/agent/activity/img/${e.img}" alt="" loading="lazy" decoding="async"></button>`
-    : "";
+  // Kamera mit Livebild und Vorschau „nur auf Tippen“: das Bild erst nach einem Tippen auf den Eintrag.
+  const img = !e.img
+    ? ""
+    : e.imgTap
+      ? `<button type="button" class="btn small ai-img-tap" data-ai-img="${e.img}">${icon("camera")}Bild zeigen</button>`
+      : `<button type="button" class="ai-img" data-ai-img="${e.img}" aria-label="Bild groß anzeigen"><img src="/api/agent/activity/img/${e.img}" alt="" loading="lazy" decoding="async"></button>`;
   const meta = `<span class="ai-meta">${e.telegram ? `<span class="ai-tg" title="Telegram">TG</span>` : ""}${esc(e.kind === "user" ? e.where || k.label : k.label)} · ${esc(time)}</span>`;
   if (e.kind === "user") {
     return `<div class="ai-row is-user" data-id="${e.id}"><div class="ai-bubble">${img}<p>${esc(e.text)}</p>${meta}</div></div>`;
@@ -444,7 +477,8 @@ setAiShown(ai.shown);
 function startBoxes() {
   stopBoxes();
   const c = focusCam();
-  if (!c || c.kind === "MOWER" || !c.reachable) return;
+  // Nur auf Tippen: Boxen kommen aus dem Bild, also erst nach dem Tippen.
+  if (!c || c.kind === "MOWER" || !c.reachable || !focusLiveOn(c)) return;
   pollBoxes();
   live.boxTimer = setInterval(pollBoxes, 1200);
 }
@@ -452,6 +486,8 @@ function startBoxes() {
 function stopBoxes() {
   if (live.boxTimer) clearInterval(live.boxTimer);
   live.boxTimer = null;
+  // Eine noch laufende Abfrage zeichnet danach nichts mehr (pollBoxes).
+  live.boxGen++;
   live.boxes = null;
   const el = $("camDlgBoxes");
   if (el) el.innerHTML = "";
@@ -459,15 +495,18 @@ function stopBoxes() {
 
 async function pollBoxes() {
   const c = focusCam();
-  if (!c || !$("camDlg").open || document.hidden || live.boxBusy) return;
+  if (!c || !$("camDlg").open || document.hidden || live.boxBusy || !focusLiveOn(c)) return;
   // Boxen aus dem Sub-Stream (640 px reichen dem Tracker, kein 4K-Bild je
   // Sekunde); sie sind normiert und passen auch ueber den Hauptstream.
   const src = RtcRules.boxStream(c, live.streams);
   if (!src) return;
   live.boxBusy = true;
+  const gen = live.boxGen;
   try {
     const r = await getJson(`/api/live/boxes?cameraId=${c.id}&src=${encodeURIComponent(src)}`);
-    if (live.focusId !== c.id) return;
+    // Livebild inzwischen beendet, andere Kamera oder Ansicht zu: keine Boxen mehr zeichnen.
+    const now = focusCam();
+    if (gen !== live.boxGen || live.focusId !== c.id || !now || !$("camDlg").open || !focusLiveOn(now)) return;
     live.boxes = r;
     renderBoxes();
     renderFocusState(state.overview);
@@ -880,6 +919,16 @@ const live = {
   pendingFocus: null,
   /** Kamera-ID -> zuletzt gesehene Erreichbarkeit (wieder erreichbar = sofort neu verbinden). */
   reach: new Map(),
+  /** Livebild „nur auf Tippen“: Kamera-ID -> Zeitpunkt des Tippens in der Kachel (nur im Speicher). */
+  tapped: new Map(),
+  /** Dasselbe fuer die Grossansicht (gilt fuer live.focusId). */
+  focusTapAt: null,
+  /** Naechster Blick auf abgelaufene Tippen (5 Minuten, RtcRules.tapExpiry). */
+  tapTimer: null,
+  /** Kamera-ID -> Einstellung „Livebild und Vorschau“ beim letzten Zeichnen (RtcRules.modeChanges). */
+  modes: new Map(),
+  /** Zaehlt jedes Ende der Personen-Boxen (stopBoxes); alte Antworten zeichnen dann nichts. */
+  boxGen: 0,
 };
 
 /** Finger statt Maus: andere Hinweise, Gesten in der Grossansicht. */
@@ -900,7 +949,7 @@ const tileObserver =
             const tile = e.target;
             tile.dataset.vis = e.isIntersecting ? "1" : "0";
             const id = Number(tile.dataset.live);
-            const c = state.overview ? liveCams(state.overview).find((x) => x.id === id) : null;
+            const c = state.overview ? zentraleCams(state.overview).find((x) => x.id === id) : null;
             if (c) ensureTileStream(tile, c);
           }
         },
@@ -987,6 +1036,7 @@ function liveCams(d) {
       lastEventAt: c.lastEventAt,
       caps: c.caps || null,
       clock: c.clock || null,
+      liveMode: c.liveMode,
     }))
     .concat(
       d.doorbirds.map((b) => ({
@@ -999,9 +1049,93 @@ function liveCams(d) {
         lastEventAt: b.lastEventAt,
         hold: b.hold,
         caps: null,
+        liveMode: b.liveMode,
       }))
     )
     .concat(mowerLiveCams());
+}
+
+/** Kameras der Zentrale: ohne die mit Livebild und Vorschau „aus“ (keine Kachel, keine Grossansicht). */
+function zentraleCams(d) {
+  return RtcRules.zentraleCams(liveCams(d));
+}
+
+/*
+ * Livebild und Vorschau „nur auf Tippen“: Kachel und Grossansicht verbinden
+ * erst nach „Livebild zeigen“. Das Livebild endet mit „Livebild beenden“,
+ * beim Verlassen der Zentrale oder verdeckter Seite (stopLive), nach
+ * 5 Minuten und beim Neuladen (gemerkt wird nur im Speicher). Die Regeln
+ * stehen in rtc-rules.js (liveAllowed, tapExpiry).
+ */
+const CLICK_TEXT = "Livebild nur auf Tippen";
+
+function isClickCam(c) {
+  return RtcRules.liveModeOf(c) === "click";
+}
+
+function tileLiveOn(c) {
+  return RtcRules.liveAllowed(c, live.tapped.get(c.id), Date.now(), document.hidden);
+}
+
+function focusLiveOn(c) {
+  return RtcRules.liveAllowed(c, live.focusTapAt, Date.now(), document.hidden);
+}
+
+/** Abgelaufene Tippen beenden und den naechsten Ablauf planen. */
+function scheduleTapCheck() {
+  clearTimeout(live.tapTimer);
+  live.tapTimer = null;
+  const taps = [...live.tapped.entries()];
+  if (live.focusId != null && live.focusTapAt != null) taps.push(["focus", live.focusTapAt]);
+  const { expired, nextMs } = RtcRules.tapExpiry(taps, Date.now());
+  for (const id of expired) {
+    if (id === "focus") endFocusLive();
+    else endTileLive(id);
+  }
+  if (nextMs !== null) live.tapTimer = setTimeout(scheduleTapCheck, nextMs + 50);
+}
+
+function liveTileEl(id) {
+  return document.querySelector(`#liveGrid [data-live="${id}"]`);
+}
+
+/** Kachel nach einem Tippen oder dessen Ende neu bewerten (Verbindung, Hinweis, Tasten). */
+function refreshTile(id) {
+  const tile = liveTileEl(id);
+  const c = state.overview ? zentraleCams(state.overview).find((x) => x.id === id) : null;
+  if (!tile || !c) return;
+  ensureTileStream(tile, c);
+  updateTileHint(tile, c);
+}
+
+function showTileLive(id) {
+  live.tapped.set(id, Date.now());
+  scheduleTapCheck();
+  refreshTile(id);
+}
+
+function endTileLive(id) {
+  live.tapped.delete(id);
+  const tile = liveTileEl(id);
+  if (tile) stopTile(tile, id);
+  refreshTile(id);
+}
+
+/*
+ * Einstellung einer Kamera geaendert (in beide Richtungen): Ihre Tippen in
+ * Kachel und Grossansicht verfallen. Die Kachel baut renderZentrale neu
+ * (der Modus steht in tileKey), die Grossansicht danach ebenfalls.
+ * Ergebnis: die geaenderten Kamera-IDs.
+ */
+function noteModeChanges(d) {
+  const cams = liveCams(d);
+  const changed = new Set(RtcRules.modeChanges(live.modes, cams));
+  for (const c of cams) live.modes.set(c.id, RtcRules.liveModeOf(c));
+  if (!changed.size) return changed;
+  for (const id of changed) live.tapped.delete(id);
+  if (changed.has(live.focusId)) live.focusTapAt = null;
+  scheduleTapCheck();
+  return changed;
 }
 
 /*
@@ -1522,10 +1656,13 @@ function capIcons(c) {
 
 function tileHtml(c) {
   const src = streamFor(c, "sub");
-  return `<article class="live-tile${live.wide.has(c.id) ? " is-wide" : ""}" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
+  const click = isClickCam(c);
+  return `<article class="live-tile${live.wide.has(c.id) ? " is-wide" : ""}${click ? " is-click" : ""}" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
     <video autoplay muted playsinline></video>
     <div class="live-empty">${icon(c.kind === "DOORBIRD" ? "door" : c.kind === "MOWER" ? "leaf" : "camera")}<span>${
-      c.kind === "MOWER" && src
+      click
+        ? CLICK_TEXT
+        : c.kind === "MOWER" && src
         ? c.reachable
           ? "Antippen für Livebild"
           : "Mäher offline"
@@ -1538,7 +1675,7 @@ function tileHtml(c) {
               : c.kind === "MOWER"
                 ? "Kamera wird in go2rtc eingetragen …"
                 : "Kein Stream in go2rtc"
-    }</span></div>
+    }</span>${click ? '<button type="button" class="btn small live-show" data-live-show>Livebild zeigen</button>' : ""}</div>
     <div class="live-top">
       <span class="live-tag mode" hidden></span>
       <span class="live-name">${esc(c.name)}</span>
@@ -1547,7 +1684,7 @@ function tileHtml(c) {
     <div class="live-bottom">
       <span class="live-tag off" hidden>OFFLINE</span>
       <span class="live-caps"></span>
-      <span class="grow live-ago"></span>
+      <span class="grow live-ago"></span>${click ? '<button type="button" class="btn small live-stop" data-live-stop hidden>Livebild beenden</button>' : ""}
     </div>
   </article>`;
 }
@@ -1582,6 +1719,7 @@ function streamInfo(name) {
  * nicht mit Fehlertext beginnt.
  */
 function tileWaitText(c, rtc) {
+  if (isClickCam(c) && !tileLiveOn(c)) return CLICK_TEXT;
   const src = streamFor(c, "sub");
   if (!src || c.kind === "MOWER") return null;
   const info = streamInfo(src);
@@ -1596,6 +1734,12 @@ function updateTileHint(tile, c) {
   const text = tileWaitText(c, tile.dataset.rtc || "");
   const el = tile.querySelector(".live-empty span");
   if (text && el && el.textContent !== text) el.textContent = text;
+  // Nur auf Tippen: „Livebild zeigen“ bis zum Tippen, danach „Livebild beenden“.
+  const on = isClickCam(c) && tileLiveOn(c);
+  const show = tile.querySelector("[data-live-show]");
+  const stop = tile.querySelector("[data-live-stop]");
+  if (show) show.hidden = on;
+  if (stop) stop.hidden = !on;
 }
 
 /** Erreichbarkeit laut Hub-Ueberblick; null = unbekannt. */
@@ -1613,6 +1757,11 @@ function ensureTileStream(tile, c) {
   if (c.kind === "MOWER") return;
   const src = streamFor(c, "sub");
   if (!src) return;
+  // Nur auf Tippen: ohne (gueltiges) Tippen keine Verbindung.
+  if (!tileLiveOn(c)) {
+    stopTile(tile, c.id);
+    return;
+  }
   const wasReachable = live.reach.get(c.id);
   live.reach.set(c.id, c.reachable);
   const visible = tile.dataset.vis !== "0";
@@ -1645,6 +1794,11 @@ function stopTiles() {
 
 function stopLive() {
   stopTiles();
+  // Nur auf Tippen: Verlassen der Zentrale oder verdeckte Seite beendet jedes getippte Livebild.
+  live.tapped.clear();
+  live.focusTapAt = null;
+  clearTimeout(live.tapTimer);
+  live.tapTimer = null;
   live.signature = "";
   if ($("liveGrid")) $("liveGrid").innerHTML = "";
   if ($("camDlg") && $("camDlg").open) $("camDlg").close();
@@ -1714,7 +1868,8 @@ function setKiosk(on) {
 
 function renderZentrale(d) {
   loadStreams();
-  const cams = liveCams(d);
+  const modeChanged = noteModeChanges(d);
+  const cams = zentraleCams(d);
   loadCaps(cams);
   for (const c of cams) if (c.caps && c.caps.wide) live.wide.add(c.id);
   const grid = $("liveGrid");
@@ -1723,7 +1878,8 @@ function renderZentrale(d) {
   }
 
   const withStaff = !!(state.staff && state.staff.configured);
-  const tileKey = (c) => `${c.id}:${c.host}:${streamFor(c, "sub")}:${streamFor(c, "sub") ? "" : live.go2rtc}`;
+  const tileKey = (c) =>
+    `${c.id}:${c.host}:${streamFor(c, "sub")}:${streamFor(c, "sub") ? "" : live.go2rtc}:${RtcRules.liveModeOf(c)}`;
   const sig = cams.map(tileKey).join("|");
   if (sig !== live.signature) {
     live.signature = sig;
@@ -1806,6 +1962,15 @@ function renderZentrale(d) {
   }
 
   if ($("camDlg").open) {
+    // Grossansicht einer Kamera, die jetzt „aus“ ist: schliessen. Andere
+    // Einstellung (in beide Richtungen): neu aufbauen, mit Livebild nur bei
+    // „automatisch“. Sonst „nur auf Tippen“ ohne Tippen: Livebild beenden.
+    const fc = focusCam();
+    if (!fc && liveCams(d).some((c) => c.id === live.focusId)) $("camDlg").close();
+    else if (fc && modeChanged.has(fc.id)) openFocus(fc.id);
+    else if (fc && live.focusStop && !focusLiveOn(fc)) endFocusLive();
+  }
+  if ($("camDlg").open) {
     renderFocusState(d);
     // Faehigkeiten kamen nach dem Oeffnen an: Steuerung nachziehen.
     const c = focusCam();
@@ -1823,7 +1988,7 @@ function renderZentrale(d) {
 /* Grossansicht */
 
 function focusCam() {
-  return state.overview ? liveCams(state.overview).find((c) => c.id === live.focusId) : null;
+  return state.overview ? zentraleCams(state.overview).find((c) => c.id === live.focusId) : null;
 }
 
 function capsKey(c) {
@@ -1872,9 +2037,15 @@ function watchMainStream(c, video) {
 }
 
 function openFocus(id) {
+  // Andere Kamera oder neu geoeffnet: Ein Tippen in ihrer Kachel gilt mit (dieselben 5 Minuten).
+  if (live.focusId !== id || !$("camDlg").open) live.focusTapAt = live.tapped.get(id) ?? null;
   live.focusId = id;
   const c = focusCam();
-  if (!c) return;
+  if (!c) {
+    // Kamera ohne Grossansicht (Livebild und Vorschau „aus“) oder unbekannt.
+    if (!$("camDlg").open) live.focusId = null;
+    return;
+  }
   const dlg = $("camDlg");
   $("camDlgTitle").textContent = c.name;
   $("camDlgHost").textContent = focusSubtitle(c);
@@ -1882,7 +2053,8 @@ function openFocus(id) {
   const box = $("camDlgControls");
   box.innerHTML = controlsHtml(c);
   box.dataset.caps = capsKey(c);
-  $("camDlgSnap").hidden = c.kind === "MOWER";
+  // Schnappschuss in die Cloud nur bei Livebild und Vorschau „automatisch“ (die Cloud nimmt sonst keins).
+  $("camDlgSnap").hidden = c.kind === "MOWER" || RtcRules.liveModeOf(c) !== "auto";
   setZoom(1, 50, 50);
   if (c.caps && c.caps.zoom && !c.caps.pan) camZoom(c);
   startBoxes();
@@ -1892,6 +2064,24 @@ function openFocus(id) {
   video.style.opacity = "0";
   stopFocusStream();
   delete dlg.dataset.rtc;
+  startFocusStream(c);
+  renderFocusLive(c);
+  if (!dlg.open) {
+    dlg.showModal();
+    // showModal fokussiert den ersten Knopf und scrollt dorthin – auf dem
+    // Telefon soll die Ansicht oben mit Name und Schliessen beginnen.
+    dlg.querySelector(".cam-dlg-body").scrollTop = 0;
+  }
+  renderFocusState(state.overview);
+  if (c.kind === "REOLINK" && !c.caps && c.reachable) {
+    shellyAction("CAMERA_CAPS", { cameraId: c.id }).then(() => refresh());
+  }
+}
+
+/** Livebild der Grossansicht starten (nur auf Tippen: erst nach dem Tippen). */
+function startFocusStream(c) {
+  if (!focusLiveOn(c)) return;
+  const video = $("camDlgVideo");
   const isMower = c.kind === "MOWER";
   const src = isMower || !live.mainBroken.has(c.id) ? streamFor(c, "main") : streamFor(c, "sub");
   if (src) {
@@ -1909,23 +2099,54 @@ function openFocus(id) {
     );
     if (!isMower && src.endsWith("_main")) watchMainStream(c, video);
   }
-  if (!dlg.open) {
-    dlg.showModal();
-    // showModal fokussiert den ersten Knopf und scrollt dorthin – auf dem
-    // Telefon soll die Ansicht oben mit Name und Schliessen beginnen.
-    dlg.querySelector(".cam-dlg-body").scrollTop = 0;
-  }
+}
+
+/** Taste „Livebild zeigen“ / „Livebild beenden“ der Grossansicht (nur auf Tippen). */
+function renderFocusLive(c) {
+  const btn = $("camDlgLive");
+  const click = !!c && isClickCam(c);
+  btn.hidden = !click;
+  if (!click) return;
+  const on = focusLiveOn(c);
+  const text = on ? "Livebild beenden" : "Livebild zeigen";
+  if (btn.textContent !== text) btn.textContent = text;
+  btn.setAttribute("aria-pressed", String(on));
+}
+
+function showFocusLive() {
+  const c = focusCam();
+  if (!c) return;
+  live.focusTapAt = Date.now();
+  scheduleTapCheck();
+  stopFocusStream();
+  startFocusStream(c);
+  startBoxes();
+  renderFocusLive(c);
   renderFocusState(state.overview);
-  if (c.kind === "REOLINK" && !c.caps && c.reachable) {
-    shellyAction("CAMERA_CAPS", { cameraId: c.id }).then(() => refresh());
-  }
+}
+
+/**
+ * Livebild der Grossansicht beenden (Taste, 5 Minuten, Wechsel auf „nur auf
+ * Tippen“). Das Tippen in der Kachel derselben Kamera endet mit.
+ */
+function endFocusLive() {
+  live.focusTapAt = null;
+  if (live.focusId != null && live.tapped.has(live.focusId)) endTileLive(live.focusId);
+  stopBoxes();
+  stopFocusStream();
+  const dlg = $("camDlg");
+  delete dlg.dataset.rtc;
+  $("camDlgVideo").style.opacity = "0";
+  if (!dlg.open) return;
+  renderFocusLive(focusCam());
+  renderFocusState(state.overview);
 }
 
 /** Naechste/vorige Kamera in der Grossansicht. */
 function stepFocus(dir) {
   if (!state.overview) return;
   // Maeher-Kameras nicht beim Durchblaettern starten (schaltet die Kamera am Maeher ein).
-  const cams = liveCams(state.overview).filter((c) => c.kind !== "MOWER" || c.id === live.focusId);
+  const cams = zentraleCams(state.overview).filter((c) => c.kind !== "MOWER" || c.id === live.focusId);
   const i = cams.findIndex((c) => c.id === live.focusId);
   if (i < 0) return;
   openFocus(cams[(i + dir + cams.length) % cams.length].id);
@@ -1936,8 +2157,11 @@ function renderFocusState(d) {
   if (!c) return;
   const rtc = $("camDlg").dataset.rtc;
   const mower = c.kind === "MOWER";
-  const tag =
-    rtc === "live"
+  // Nur auf Tippen, noch nicht getippt: kein Aufbau, nur der Hinweis.
+  const waiting = isClickCam(c) && !focusLiveOn(c);
+  const tag = waiting
+    ? ""
+    : rtc === "live"
       ? '<span class="live-tag live">LIVE</span>'
       : !streamFor(c, "main")
         ? '<span class="live-tag warn">KEIN STREAM</span>'
@@ -1946,7 +2170,9 @@ function renderFocusState(d) {
           : rtc === "error"
             ? '<span class="live-tag snap">NEUER VERSUCH …</span>'
             : `<span class="live-tag snap">${mower ? "VERBINDE ÜBER MAMMOTION …" : "VERBINDE …"}</span>`;
-  const waitText = !streamFor(c, "main")
+  const waitText = waiting
+    ? CLICK_TEXT
+    : !streamFor(c, "main")
     ? "Kein Stream in go2rtc"
     : rtc === "failed"
       ? "Kein Livebild"
@@ -1954,7 +2180,7 @@ function renderFocusState(d) {
         ? "Verbindung über Mammotion wird aufgebaut …"
         : "Verbindung wird aufgebaut …";
   if ($("camDlgWaitText").textContent !== waitText) $("camDlgWaitText").textContent = waitText;
-  $("camDlgWait").classList.toggle("is-static", !streamFor(c, "main") || rtc === "failed");
+  $("camDlgWait").classList.toggle("is-static", waiting || !streamFor(c, "main") || rtc === "failed");
   const why = mower && rtc !== "live" && c.cam.error ? `<span class="badge warn">${esc(c.cam.error)}</span>` : "";
   const b = live.boxes && live.boxes.cameraId === c.id ? live.boxes : null;
   const stale = !!(b && b.stale);
@@ -2210,9 +2436,14 @@ $("liveGrid").addEventListener("click", (ev) => {
     return;
   }
   const tile = ev.target.closest("[data-live]");
+  // Nur auf Tippen: die Tasten in der Kachel schalten das Livebild, sie oeffnen keine Grossansicht.
+  if (tile && ev.target.closest("[data-live-show]")) return showTileLive(Number(tile.dataset.live));
+  if (tile && ev.target.closest("[data-live-stop]")) return endTileLive(Number(tile.dataset.live));
   if (tile) openFocus(Number(tile.dataset.live));
 });
 $("liveGrid").addEventListener("keydown", (ev) => {
+  // Tasten in der Kachel bedienen sich selbst (Enter und Leertaste loesen ihren Klick aus).
+  if (ev.target.closest("[data-live-show], [data-live-stop]")) return;
   if (ev.target.closest("[data-staff-tile]") && (ev.key === "Enter" || ev.key === " ")) {
     ev.preventDefault();
     location.hash = "mitarbeiter";
@@ -2329,6 +2560,8 @@ function gestureSnapshot() {
 const stageEl = document.querySelector(".cam-stage");
 stageEl.addEventListener("pointerdown", (ev) => {
   if (ev.pointerType === "mouse" && ev.button > 0) return;
+  // Tasten auf dem Bild („Livebild zeigen“): kein Ziehen, sonst kaeme ihr Klick nicht an.
+  if (ev.target.closest("button")) return;
   gesture.type = ev.pointerType;
   stageEl.setPointerCapture?.(ev.pointerId);
   stageEl.classList.add("is-gesture");
@@ -2392,6 +2625,7 @@ stageEl.addEventListener("pointerup", endGesture);
 stageEl.addEventListener("pointercancel", endGesture);
 stageEl.addEventListener("dblclick", (ev) => {
   if (gesture.type !== "mouse") return; // Finger: Doppeltipp oben erledigt
+  if (ev.target.closest("button")) return;
   const p = stagePoint(stageEl, ev);
   if (live.zoom.scale > 1) setZoom(1, 50, 50);
   else setZoom(2.5, p.x, p.y);
@@ -2401,9 +2635,16 @@ stageEl.addEventListener("contextmenu", (ev) => ev.preventDefault());
 $("camDlgPrev").addEventListener("click", () => stepFocus(-1));
 $("camDlgNext").addEventListener("click", () => stepFocus(1));
 $("camDlgClose").addEventListener("click", () => $("camDlg").close());
+$("camDlgLive").addEventListener("click", () => {
+  const c = focusCam();
+  if (!c) return;
+  if (focusLiveOn(c)) endFocusLive();
+  else showFocusLive();
+});
 $("camDlg").addEventListener("close", () => {
   stopBoxes();
   stopFocusStream();
+  live.focusTapAt = null;
   live.focusId = null;
   delete $("camDlg").dataset.rtc;
   $("camDlgVideo").style.opacity = "0";
@@ -2897,6 +3138,22 @@ async function loadShelly(ip) {
 
 /* ---------------------------------------------------------------- Kameras */
 
+/**
+ * Schnappschuss in die Cloud nur bei Livebild und Vorschau „automatisch“
+ * (die Cloud nimmt sonst keins); sonst sagt ein Hinweis, warum er fehlt.
+ */
+function snapshotFoot(c) {
+  if (RtcRules.liveModeOf(c) !== "auto") return "";
+  return `<div class="card-foot"><button type="button" class="btn small" data-snapshot="${c.id}">${icon("snap")}Schnappschuss</button></div>`;
+}
+
+function liveModeBadge(c) {
+  const mode = RtcRules.liveModeOf(c);
+  if (mode === "click") return badge("off", "Livebild nur auf Tippen");
+  if (mode === "off") return badge("off", "Livebild und Vorschau aus");
+  return "";
+}
+
 function renderKameras(d) {
   const cams = d.cameras;
   const birds = d.doorbirds;
@@ -2911,12 +3168,13 @@ function renderKameras(d) {
       <div class="chips">
         ${c.reachable ? badge("ok", "erreichbar") : badge("alert", "offline")}
         ${c.vehicleDetection ? badge("idle", "Fahrzeuge an") : badge("off", "Fahrzeuge aus")}
+        ${liveModeBadge(c)}
         ${chips}
       </div>
       ${c.lastError ? `<div class="line"><span class="k">Fehler</span><span class="v">${esc(c.lastError)}</span></div>` : ""}
       <div class="line"><span class="k">Letztes Bild</span><span class="v muted">${esc(ago(c.lastSnapshotAt))}</span></div>
       <div class="line"><span class="k">Letztes Signal</span><span class="v muted">${esc(ago(c.lastEventAt))}</span></div>
-      <div class="card-foot"><button type="button" class="btn small" data-snapshot="${c.id}">${icon("snap")}Schnappschuss</button></div>
+      ${snapshotFoot(c)}
     </article>`;
   });
 
@@ -2927,11 +3185,12 @@ function renderKameras(d) {
         ${badge("idle", "DoorBird")}
         ${b.connected ? badge("ok", "Monitor verbunden") : badge("alert", "getrennt")}
         ${b.hold ? badge(b.hold.lastError ? "warn" : "ok", `Offen bis ${clock(b.hold.until)}`) : ""}
+        ${liveModeBadge(b)}
         ${b.activeStates.map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`).join("")}
       </div>
       ${b.hold ? `<div class="line"><span class="k">Offen halten</span><span class="v${b.hold.lastError ? "" : " muted"}">${b.hold.pulses} Impulse · letzter ${esc(ago(b.hold.lastPulseAt))}${b.hold.lastError ? ` · Fehler: ${esc(b.hold.lastError)}` : ""}</span></div>` : ""}
       <div class="line"><span class="k">Letztes Signal</span><span class="v muted">${esc(ago(b.lastEventAt))}</span></div>
-      <div class="card-foot"><button type="button" class="btn small" data-snapshot="${b.id}">${icon("snap")}Schnappschuss</button></div>
+      ${snapshotFoot(b)}
     </article>`
   );
 
@@ -3453,7 +3712,12 @@ function openZone(camId, field) {
     if (veh.zone) veh.zone.imgError = "Kamera antwortet nicht";
     drawZone();
   };
-  img.src = `/api/detection/cameras/${camId}/snapshot.jpg?t=${Date.now()}`;
+  // Livebild und Vorschau „aus“: kein Kamerabild, die Punkte lassen sich trotzdem setzen.
+  if (RtcRules.liveModeOf(cam) === "off") {
+    img.onload = img.onerror = null;
+    img.removeAttribute("src");
+    veh.zone.imgError = "Livebild und Vorschau aus";
+  } else img.src = `/api/detection/cameras/${camId}/snapshot.jpg?t=${Date.now()}`;
   drawZone();
   $("zoneDlg").showModal();
 }
@@ -3911,7 +4175,8 @@ function renderRaeume(d) {
     setHTML("roomFilter", "");
   }
 
-  const camIds = new Set(d ? liveCams(d).map((c) => c.id) : []);
+  // Livebild und Vorschau „aus“: kein Sprung in die Grossansicht.
+  const camIds = new Set(d ? zentraleCams(d).map((c) => c.id) : []);
   const list = r.rooms.filter((x) => state.roomBuilding === "alle" || (x.building || "Ohne Gebäude") === state.roomBuilding);
   const cards = list.map((room) => roomCard(room, r.live, camIds));
   if (r.unassigned.length && state.roomBuilding === "alle") {

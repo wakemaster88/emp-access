@@ -195,7 +195,7 @@ function parseArgs(raw: Record<string, unknown> | string | undefined): Record<st
 }
 
 function ctxFor(chatId: string): ToolContext {
-  return { sendPhoto: (jpeg, caption) => sendPhoto(chatId, jpeg, caption) };
+  return { sendPhoto: (jpeg, caption, camera) => sendPhoto(chatId, jpeg, caption, undefined, camera ? { camera } : {}) };
 }
 
 /**

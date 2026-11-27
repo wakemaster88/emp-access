@@ -51,6 +51,8 @@ export interface OutMessage<M = unknown> {
    * danach, ob der Alarm davor den Chat erreicht hat (dispatch.ts).
    */
   silent?: boolean | (() => boolean);
+  /** Kamera des Bildes (Name), geht an sendPhoto fuers KI-Protokoll der Zentrale. */
+  camera?: string;
   /** Angaben des Aufrufers fuer Log und Zaehler. */
   meta: M;
 }
@@ -71,11 +73,12 @@ export interface OutboxDeps<M = unknown> {
 
 /** Sendeoptionen fuer den naechsten Versuch einer Nachricht. Scheitert die Frage nach `silent`, geht sie mit Ton hinaus. */
 function sendOptions(msg: OutMessage<unknown>): SendOptions {
-  if (typeof msg.silent !== "function") return { silent: msg.silent === true };
+  const camera = msg.camera ? { camera: msg.camera } : {};
+  if (typeof msg.silent !== "function") return { silent: msg.silent === true, ...camera };
   try {
-    return { silent: msg.silent() === true };
+    return { silent: msg.silent() === true, ...camera };
   } catch {
-    return { silent: false };
+    return { silent: false, ...camera };
   }
 }
 

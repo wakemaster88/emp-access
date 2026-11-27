@@ -11,6 +11,7 @@ import {
 } from "@/lib/hub-task-rules";
 import { recordDeviceAction } from "@/lib/device-action-log";
 import { doorHoldTaskPayload, doorHoldTaskPlan, type DoorHoldTaskPlan } from "@/lib/door-hold";
+import { PREVIEW_BLOCKED_ERROR, previewAllowed } from "@/lib/camera-live-mode";
 
 /** Tuer-Auftraege an Kamera-Tueren, die im Geraete-Protokoll stehen. */
 const LOGGED_DOOR_TASKS: Record<string, string> = {
@@ -147,9 +148,13 @@ export async function POST(request: NextRequest) {
   if (check.cameraId != null) {
     const camera = await db.camera.findFirst({
       where: { id: check.cameraId, accountId },
-      select: { id: true, name: true, kind: true, enabled: true, doorHoldUntil: true },
+      select: { id: true, name: true, kind: true, enabled: true, doorHoldUntil: true, liveMode: true },
     });
     if (!camera) return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 400 });
+    // Livebild und Vorschau „nur auf Tippen“ oder „aus“: kein Bild beim Hub anfordern.
+    if (body.type === "CAMERA_SNAPSHOT" && !previewAllowed(camera.liveMode)) {
+      return NextResponse.json({ error: PREVIEW_BLOCKED_ERROR }, { status: 400 });
+    }
     cameraName = camera.name;
     if (body.type === "DOORBIRD_HOLD") holdPlan = doorHoldTaskPlan(camera, body.payload);
   }

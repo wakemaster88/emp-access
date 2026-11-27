@@ -1799,6 +1799,18 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
 @keyframes cam-wait-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .cam-wait-spin { animation: none; } }
 .cam-badge { position: absolute; top: 0.75rem; left: 0.75rem; display: flex; gap: 0.375rem; z-index: 1; }
+/* Livebild „nur auf Tippen“: Tasten auf dem dunklen Bild (Kachel und Grossansicht). */
+.live-show, .live-stop, .cam-live-btn {
+  --btn-bg: rgb(255 255 255 / 0.16);
+  --btn-bg-hover: rgb(255 255 255 / 0.26);
+  --btn-border: rgb(255 255 255 / 0.32);
+  color: #fff;
+  text-shadow: none;
+  white-space: nowrap;
+}
+.live-stop { flex: 0 0 auto; margin-left: 0.25rem; }
+.cam-live-btn { position: absolute; left: 50%; bottom: 0.875rem; z-index: 2; transform: translateX(-50%); }
+.cam-live-btn:active { transform: translateX(-50%) scale(0.97); }
 .cam-side { padding: 1rem 1.125rem 1.125rem; display: grid; gap: 0.875rem; align-content: start; }
 .cam-side-head { display: flex; align-items: flex-start; gap: 0.75rem; }
 .cam-side-head h2 { font-size: 1.125rem; }
@@ -1915,6 +1927,10 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
   .live-tag { font-size: 0.56rem; padding: 0.04rem 0.35rem; }
   .live-states .badge { font-size: 0.6rem; padding: 0.05rem 0.35rem; min-height: 0; }
   .live-caps, .live-ago { display: none; }
+  /* Nur auf Tippen: in der kleinen Kachel nur die Taste, damit sie zwischen Kopf und Fuss passt. */
+  .live-tile.is-click .live-empty { padding: 0.25rem; }
+  .live-tile.is-click .live-empty .ico, .live-tile.is-click .live-empty span { display: none; }
+  .live-stop { margin-left: auto; }
 }
 
 /* PTZ: gedrueckt halten ohne Lupe, Textauswahl oder Kontextmenue; groesser fuer Daumen. */
@@ -2442,6 +2458,9 @@ tr.is-off td:not(:last-child) { opacity: 0.55; }
   font: inherit; font-size: 0.8125rem; cursor: pointer;
 }
 .seen-chip:hover { background: var(--glass-pill); }
+/* Kamera mit Livebild und Vorschau „aus“: nur Text, keine Grossansicht. */
+.seen-chip.is-static { cursor: default; }
+.seen-chip.is-static:hover { background: var(--glass-bg-strong); }
 .seen-chip.k-face, .seen-chip.k-staff, .seen-chip.k-cleared { --tone: var(--ok); }
 .seen-chip.k-suspicious { --tone: var(--warn); }
 .seen-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--tone); flex: none; }
@@ -2570,6 +2589,8 @@ tr.is-off td:not(:last-child) { opacity: 0.55; }
   background: #05070d; width: 100%; max-width: 13rem;
 }
 .ai-img img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+/* Kamera mit Livebild und Vorschau „nur auf Tippen“: Bild erst auf Tippen. */
+.ai-img-tap { margin: 0.1rem 0 0.35rem; }
 .ai-empty { margin: auto; display: grid; justify-items: center; gap: 0.4rem; text-align: center; color: var(--muted); font-size: 0.8125rem; padding: 1rem; }
 .ai-empty .ico { width: 1.6rem; height: 1.6rem; opacity: 0.6; }
 .ai-empty p { margin: 0; max-width: 18rem; }

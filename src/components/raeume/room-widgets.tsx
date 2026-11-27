@@ -31,6 +31,7 @@ import type { RoomActivity } from "@/lib/room-activity";
 import type { DeviceStatus } from "@/components/raeume/status";
 import type { RoomCamera, RoomClimateView, RoomDevice, RoomZone } from "@/components/raeume/types";
 import { SNAPSHOT_FRESH_MS, fmtAgo, shortDeviceName } from "@/components/raeume/shared";
+import { LIVE_MODE_CLICK_TEXT } from "@/lib/camera-live-mode";
 import type { ZoneAction } from "@/components/raeume/zone-row";
 
 // ─── Temperatur-Ring ─────────────────────────────────────────────────────────
@@ -495,6 +496,8 @@ export function CameraTile({
   wide: boolean;
 }) {
   const fresh = camera.snapshotAt && nowMs - new Date(camera.snapshotAt).getTime() < SNAPSHOT_FRESH_MS;
+  // Livebild und Vorschau „nur auf Tippen“: kein Bild, ein kurzer Satz.
+  const clickOnly = camera.liveMode !== "AUTO";
   return (
     <a
       href="/kameras"
@@ -503,7 +506,7 @@ export function CameraTile({
         wide ? "col-span-2 aspect-[16/8]" : "aspect-video",
       )}
     >
-      {camera.snapshotAt ? (
+      {camera.snapshotAt && !clickOnly ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={`/api/cameras/${camera.id}/snapshot?t=${encodeURIComponent(camera.snapshotAt)}`}
@@ -512,6 +515,10 @@ export function CameraTile({
           decoding="async"
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
         />
+      ) : clickOnly ? (
+        <div className="flex h-full w-full items-center justify-center px-4 pb-5">
+          <p className="text-center text-xs text-white/70">{LIVE_MODE_CLICK_TEXT}</p>
+        </div>
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
           <Cctv className="h-8 w-8 text-slate-500" />
@@ -519,7 +526,7 @@ export function CameraTile({
       )}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
       <div className="absolute left-2 top-2 flex items-center gap-1">
-        {camera.enabled ? (
+        {camera.enabled && clickOnly ? null : camera.enabled ? (
           <span
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide backdrop-blur",
