@@ -13,11 +13,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
   if (!id) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
   const previous = await auth.db.socialPost.findFirst({
     where: { id, accountId: auth.accountId },
-    select: { status: true, publishedAt: true, reach: true, interactions: true, clicks: true, statsAt: true },
+    select: { status: true, publishedAt: true, reach: true, interactions: true, clicks: true, statsAt: true, autoPublish: true, externalId: true, containerId: true, text: true, media: true, format: true, channel: true },
   });
   if (!previous) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   const parsed = parsePostInput(await readRequestBody(request));
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  if (parsed.autoPublish && previous.externalId) {
+    return NextResponse.json({ error: "Dieser Beitrag ist schon über Meta gepostet" }, { status: 409 });
+  }
   const statsChanged =
     parsed.reach !== previous.reach || parsed.interactions !== previous.interactions || parsed.clicks !== previous.clicks;
   await auth.db.socialPost.updateMany({
@@ -26,6 +29,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
       ...parsed,
       publishedAt: nextPublishedAt(previous, parsed),
       statsAt: statsChanged ? new Date() : previous.statsAt,
+      // Inhalt geändert, während Instagram ein Video verarbeitet: alten Container verwerfen.
+      ...(previous.containerId &&
+      (parsed.text !== previous.text || parsed.format !== previous.format || parsed.channel !== previous.channel || parsed.media.join("\n") !== previous.media.join("\n"))
+        ? { containerId: null }
+        : {}),
+      // Neu eingeschaltet: Fehlversuche und alte Meldung vergessen.
+      ...(parsed.autoPublish && !previous.autoPublish ? { publishAttempts: 0, publishError: null } : {}),
     },
   });
   return NextResponse.json({ ok: true });

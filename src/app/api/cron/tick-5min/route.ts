@@ -13,6 +13,7 @@ import { runCustomerTick } from "@/lib/customers";
 import { runInviteTick } from "@/lib/rider-invite";
 import { runAnnouncementTick } from "@/lib/rider-announce";
 import { runFamilyJoinNoticeTick } from "@/lib/rider-push";
+import { runSocialMetaTick } from "@/lib/social/meta-store";
 
 export const maxDuration = 120;
 
@@ -21,7 +22,8 @@ export const maxDuration = 120;
  * fortschreiben (Kunden-App), Bewegungsmelder, Bewaesserung,
  * Geraete-Offline-Check, der Telegram-Tagesbericht, die Bildsuche fuer Artikel ohne Foto und Kundenkonten fuer Abos mit
  * Adresse ohne Konto, Einladungen zur App an Bestandskunden sowie geplante Pushes zu neuen Angeboten und Challenges der
- * Kunden-App und nachts vorgemerkte Beitritte zu einer Familie. Jeder Job laeuft in
+ * Kunden-App, nachts vorgemerkte Beitritte zu einer Familie sowie Social-Media-Beitraege, die zum Termin ueber Meta
+ * gepostet werden sollen (samt Zahlen). Jeder Job laeuft in
  * seinem eigenen try/catch; ein Fehler bremst die anderen nicht.
  */
 export async function GET(request: NextRequest) {
@@ -45,6 +47,7 @@ export async function GET(request: NextRequest) {
     riderInvites: () => runInviteTick(),
     riderAnnouncements: () => runAnnouncementTick(),
     riderFamilyJoins: () => runFamilyJoinNoticeTick(),
+    socialMeta: () => runSocialMetaTick(),
   } as const;
 
   const entries = Object.entries(jobs) as [keyof typeof jobs, () => Promise<unknown>][];

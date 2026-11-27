@@ -46,9 +46,18 @@ export interface SocialPostRow {
   reach: number | null;
   interactions: number | null;
   clicks: number | null;
+  /** Aufrufe (nur über die Meta-Schnittstelle). */
+  views: number | null;
   statsAt: string | null;
   notes: string | null;
   overdue: boolean;
+  /** Zum Termin automatisch über Meta posten. */
+  autoPublish: boolean;
+  /** Über die Meta-Schnittstelle gepostet (Zahlen abrufbar). */
+  viaMeta: boolean;
+  /** Instagram verarbeitet das Video noch. */
+  processing: boolean;
+  publishError: string | null;
 }
 
 export interface SocialOverview {
@@ -76,8 +85,13 @@ type PostRecord = {
   reach: number | null;
   interactions: number | null;
   clicks: number | null;
+  views?: number | null;
   statsAt: Date | null;
   notes: string | null;
+  autoPublish?: boolean;
+  externalId?: string | null;
+  containerId?: string | null;
+  publishError?: string | null;
 };
 
 export function toPostRow(p: PostRecord, campaignName: string, now: Date = new Date()): SocialPostRow {
@@ -97,9 +111,14 @@ export function toPostRow(p: PostRecord, campaignName: string, now: Date = new D
     reach: p.reach,
     interactions: p.interactions,
     clicks: p.clicks,
+    views: p.views ?? null,
     statsAt: p.statsAt?.toISOString() ?? null,
     notes: p.notes,
     overdue: isOverdue(p, now),
+    autoPublish: p.autoPublish ?? false,
+    viaMeta: !!p.externalId,
+    processing: !!p.containerId && !p.externalId,
+    publishError: p.publishError ?? null,
   };
 }
 

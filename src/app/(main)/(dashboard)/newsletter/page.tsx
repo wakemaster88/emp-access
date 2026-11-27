@@ -25,6 +25,7 @@ import { SesStatusCard } from "@/components/newsletter/ses-status-card";
 import { OverviewSection } from "@/components/newsletter/overview-section";
 import { loadNewsletterOverview } from "@/lib/newsletter/overview";
 import { loadSocialOverview } from "@/lib/social/load";
+import { loadMetaStatus } from "@/lib/social/meta-store";
 import { SocialOverview } from "@/components/social/social-overview";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ const LIST_LIMIT = 200;
 export default async function NewsletterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; status?: string; q?: string; gruppe?: string }>;
+  searchParams: Promise<{ tab?: string; status?: string; q?: string; gruppe?: string; meta?: string }>;
 }) {
   const session = await safeAuth();
   if (!session?.user) redirect("/login");
@@ -125,7 +126,15 @@ export default async function NewsletterPage({
     });
     content = <CampaignsCard campaigns={rows} activeCount={activeCount} websiteUrl={ctx.brand.websiteUrl ?? null} />;
   } else if (tab === "social") {
-    content = <SocialOverview overview={await loadSocialOverview(db, accountId)} websiteUrl={ctx.brand.websiteUrl ?? null} />;
+    const [overview, meta] = await Promise.all([loadSocialOverview(db, accountId), loadMetaStatus(accountId)]);
+    content = (
+      <SocialOverview
+        overview={overview}
+        websiteUrl={ctx.brand.websiteUrl ?? null}
+        meta={meta}
+        metaResult={typeof sp.meta === "string" ? sp.meta.slice(0, 40) : null}
+      />
+    );
   } else if (tab === "abonnenten") {
     const status = SUBSCRIBER_STATUSES.includes(sp.status as SubscriberStatus) ? (sp.status as SubscriberStatus) : null;
     const q = (sp.q ?? "").trim().slice(0, 100);

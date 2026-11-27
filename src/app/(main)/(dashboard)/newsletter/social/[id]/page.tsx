@@ -7,6 +7,7 @@ import { isTenantAdminRole } from "@/lib/api-auth";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
+import { loadMetaStatus } from "@/lib/social/meta-store";
 import { loadSocialCampaign } from "@/lib/social/load";
 import type { SocialChannel } from "@/lib/social/rules";
 import { CampaignCard } from "@/components/social/campaign-card";
@@ -31,7 +32,7 @@ export default async function SocialCampaignPage({
 
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
-  const detail = await loadSocialCampaign(tenantClient(accountId), accountId, id);
+  const [detail, meta] = await Promise.all([loadSocialCampaign(tenantClient(accountId), accountId, id), loadMetaStatus(accountId)]);
   if (!detail) notFound();
   const { campaign, posts, newsletters, unlinked } = detail;
   const openPost = Number((await searchParams).beitrag);
@@ -95,6 +96,7 @@ export default async function SocialCampaignPage({
               campaign={{ id: campaign.id, slug: campaign.slug, landingUrl: campaign.landingUrl, hashtags: campaign.hashtags }}
               posts={posts}
               openPostId={Number.isInteger(openPost) && openPost > 0 ? openPost : null}
+              meta={{ connected: meta.connected, instagram: meta.instagram }}
             />
           </div>
           <div className="min-w-0 space-y-4 sm:space-y-5">
