@@ -174,6 +174,14 @@ IAM liegen in `eu-north-1`, Vercel hat `SES_REGION=eu-north-1`. Frankfurt
   (aus dem WebP der Website, Hintergrund transparent): Webp zeigt Outlook nicht.
 - Seiten Bestätigen/Abmelden (`public-page.ts`) im selben Stil, nur hell.
 - Editor-Vorschau mit Umschalter „Computer“/„Handy“ (375 px).
+- Bilder hochladen (Bild-Baustein, Taste „Hochladen“): `POST /api/newsletter/images`
+  mit der Datei als Body (höchstens 4 MB). Der Server kodiert mit sharp neu
+  (`src/lib/newsletter/image.ts`): höchstens 1200 px breit, nach EXIF gedreht,
+  ohne Metadaten, JPEG (bei Transparenz PNG). So werden auch AVIF/WebP von der
+  Website brauchbar, die Gmail und Outlook sonst nicht zeigen. Ablage im
+  öffentlichen Blob-Speicher (`BLOB_READ_WRITE_TOKEN`) unter
+  `newsletter/<accountId>/…`, weil Mailprogramme Bilder ohne Anmeldung laden.
+  Größere Dateien oder HEIC verkleinert der Browser vorher auf 2400 px.
 
 ## Dashboard der Verwaltung (22.11.2026)
 
