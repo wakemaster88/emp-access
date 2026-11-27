@@ -220,6 +220,10 @@ model Account {
   riderProfiles          RiderProfile[]
   riderFamilies          RiderFamily[]
   customers              Customer[]
+  newsletterConfig       NewsletterConfig?
+  newsletterSubscribers  NewsletterSubscriber[]
+  newsletterCampaigns    NewsletterCampaign[]
+  newsletterSends        NewsletterSend[]
   chips                  Chip[]
   chipEvents             ChipEvent[]
   riderPasskeys          RiderPasskey[]
@@ -4371,6 +4375,7 @@ model Customer {
   aliasEmails     String[]       @default([])
   tickets         Ticket[]
   persons         RiderProfile[]
+  newsletterSubscribers NewsletterSubscriber[]
   accountId       Int
   account         Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt       DateTime       @default(now())
@@ -4894,4 +4899,140 @@ model VenueEventChange {
   summary String
 
   @@index([eventId, at])
+}
+
+/// Newsletter je Mandant (Gäste › Newsletter). Versand über Amazon SES
+/// (src/lib/newsletter/ses.ts). Die SES-Zugangsdaten stehen nur in der
+/// Vercel-Umgebung (SES_ACCESS_KEY_ID, SES_SECRET_ACCESS_KEY, SES_REGION).
+model NewsletterConfig {
+  id               Int      @id @default(autoincrement())
+  accountId        Int      @unique
+  account          Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Versand an/aus. Ab Werk aus; eingeschaltet wird in der Verwaltung.
+  enabled          Boolean  @default(false)
+  /// Absender, z. B. "newsletter@tuttenbrocksee.com". Die Domain muss in SES
+  /// bestätigt sein.
+  fromEmail        String?
+  fromName         String?
+  replyTo          String?
+  /// SES-Konfigurationssatz, der Zustellung, Rückläufer und Beschwerden an
+  /// SNS meldet. Leer: keine Rückmeldungen.
+  configurationSet String?
+  /// ARN des SNS-Themas, dessen Meldungen /api/newsletter/ses-events annimmt.
+  /// Andere Themen weist die Route ab.
+  snsTopicArn      String?
+  /// Basis für Bestätigen und Abmelden, z. B.
+  /// "https://www.tuttenbrocksee.com/newsletter" (die Website leitet
+  /// /newsletter/bestaetigen und /newsletter/abmelden hierher weiter).
+  /// Leer: diese App unter /nl.
+  linkBaseUrl      String?
+  /// Wortlaut der Einwilligung; wird mit jeder Anmeldung gespeichert.
+  consentText      String?
+  /// Schlüssel für Bestätigungs- und Abmeldelinks, zufällig je Mandant.
+  /// Nie ändern: Abmeldelinks in alten Mails müssen gültig bleiben.
+  tokenSecret      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+/// Abonnent des Newsletters. Eine Adresse je Mandant. Die Felder consent*
+/// und confirm* sind der Nachweis der Einwilligung (Double-Opt-in).
+model NewsletterSubscriber {
+  id                Int              @id @default(autoincrement())
+  accountId         Int
+  account           Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Klein geschrieben, ohne Leerraum.
+  email             String
+  name              String?
+  /// "PENDING" (Bestätigung offen) | "ACTIVE" | "UNSUBSCRIBED" | "BOUNCED" | "COMPLAINED"
+  status            String           @default("PENDING")
+  /// Woher die Anmeldung kam: "website", "app", "verwaltung", "import".
+  source            String           @default("website")
+  customerId        Int?
+  customer          Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  /// Wortlaut, Zeitpunkt, IP und Browser der Anmeldung.
+  consentText       String?
+  consentAt         DateTime?
+  consentIp         String?
+  consentUserAgent  String?
+  /// Bestätigungsmail: zuletzt gesendet und wie oft.
+  confirmMailSentAt DateTime?
+  confirmMailCount  Int              @default(0)
+  /// Klick auf „Anmeldung bestätigen“.
+  confirmedAt       DateTime?
+  confirmIp         String?
+  unsubscribedAt    DateTime?
+  /// "link" | "one-click" | "verwaltung" | "bounce" | "complaint"
+  unsubscribeReason String?
+  bouncedAt         DateTime?
+  complainedAt      DateTime?
+  lastSentAt        DateTime?
+  sends             NewsletterSend[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([accountId, email])
+  @@index([accountId, status])
+  @@index([customerId])
+}
+
+/// Eine Aussendung. Der Inhalt steht als Bausteine in `blocks`
+/// (src/lib/newsletter/blocks.ts) und wird je Empfänger zu HTML gerendert.
+model NewsletterCampaign {
+  id          Int              @id @default(autoincrement())
+  accountId   Int
+  account     Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  subject     String
+  /// Vorschauzeile im Postfach.
+  preheader   String?
+  blocks      Json             @default("[]")
+  /// "DRAFT" | "QUEUED" | "SENDING" | "SENT" | "CANCELLED"
+  status      String           @default("DRAFT")
+  /// Empfänger beim Start des Versands.
+  recipients  Int              @default(0)
+  queuedAt    DateTime?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  /// Letzter Fehler, der den Versand angehalten hat (Konto, Domain, Rechte).
+  lastError   String?
+  lastErrorAt DateTime?
+  createdBy   String?
+  sends       NewsletterSend[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([accountId, createdAt])
+  @@index([status])
+}
+
+/// Versand einer Aussendung an einen Abonnenten (Warteschlange und Protokoll).
+model NewsletterSend {
+  id             Int                  @id @default(autoincrement())
+  accountId      Int
+  account        Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  campaignId     Int
+  campaign       NewsletterCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  subscriberId   Int
+  subscriber     NewsletterSubscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  /// Empfänger zum Zeitpunkt des Versands.
+  email          String
+  /// "QUEUED" | "SENDING" | "SENT" | "DELIVERED" | "FAILED" | "SKIPPED" | "BOUNCED" | "COMPLAINED"
+  status         String               @default("QUEUED")
+  attempts       Int                  @default(0)
+  sesMessageId   String?
+  error          String?
+  /// Von einem Cron-Lauf übernommen (gegen doppelten Versand).
+  claimedAt      DateTime?
+  sentAt         DateTime?
+  /// Letzte Rückmeldung von SES (Zustellung, Rückläufer, Beschwerde).
+  eventAt        DateTime?
+  /// Abgemeldet über den Link dieser Aussendung.
+  unsubscribedAt DateTime?
+  createdAt      DateTime             @default(now())
+
+  @@unique([campaignId, subscriberId])
+  @@index([campaignId, status])
+  @@index([sesMessageId])
+  @@index([accountId])
+  @@index([subscriberId])
 }

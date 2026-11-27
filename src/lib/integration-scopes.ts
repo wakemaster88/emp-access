@@ -11,7 +11,8 @@ export type IntegrationRoute =
   | "/api/webhook/utilization"
   | "/api/lost-items"
   | "/api/lost-items/[id]"
-  | "/api/lost-items/[id]/image";
+  | "/api/lost-items/[id]/image"
+  | "/api/newsletter/subscribe";
 
 type Grant = { method: string; route: IntegrationRoute };
 
@@ -31,6 +32,8 @@ export const INTEGRATION_SCOPES = {
     { method: "DELETE", route: "/api/lost-items/[id]" },
     { method: "GET", route: "/api/lost-items/[id]/image" },
   ],
+  /** Anmeldeformular der Website: nur neue Anmeldungen (Double-Opt-in). */
+  newsletter: [{ method: "POST", route: "/api/newsletter/subscribe" }],
 } as const satisfies Record<string, readonly Grant[]>;
 
 export type IntegrationScope = keyof typeof INTEGRATION_SCOPES;
@@ -42,6 +45,7 @@ export const INTEGRATION_SCOPE_LABEL: Record<IntegrationScope, string> = {
   "employees:read": "Mitarbeiter lesen",
   "utilization:read": "Auslastung lesen",
   "lost-items": "Fundsachen",
+  newsletter: "Newsletter-Anmeldungen",
 };
 
 export function isIntegrationScope(s: unknown): s is IntegrationScope {
