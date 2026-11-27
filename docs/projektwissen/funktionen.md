@@ -134,6 +134,25 @@ IAM liegen in `eu-north-1`, Vercel hat `SES_REGION=eu-north-1`. Frankfurt
   `{ action: "groups", groupIds }`, `groupIds` in den Aussendungen,
   `annyAutoSubscribe` in `PUT /api/newsletter/config`.
 
+## Newsletter, Teil 4: Übersicht und Abmelden ohne Link (27.11.2026)
+
+- **Übersicht** ist der erste Reiter (`/newsletter`, Aussendungen jetzt unter
+  `?tab=aussendungen`): Kennzahlen Angemeldet (+neu/−gegangen in 30 Tagen),
+  Aussendungen, Zugestellt und Abgemeldet über alle Mails; Linie
+  „Entwicklung“ (Angemeldete je Woche, 26 Wochen, `subscriberTimeline` in
+  `src/lib/newsletter/stats.ts`: Double-Opt-in ab Bestätigung, übernommene
+  Adressen ab Eintrag); Gruppen mit Anteil; letzte 8 Aussendungen mit
+  Empfängern, Zugestellt, Unzustellbar, Abgemeldet. Daten aus
+  `loadNewsletterOverview` (`src/lib/newsletter/overview.ts`). Öffnungen und
+  Klicks zählt emp-access nicht (bräuchte Tracking-Pixel und Einwilligung).
+- **Abmelden ohne Link**: `/nl/abmelden` ohne Token (oder mit ungültigem)
+  zeigt ein Feld für die Adresse. Ist sie angemeldet oder offen, kommt eine
+  Mail mit dem Abmeldelink (`sendUnsubscribeLink`, auch bei ausgeschaltetem
+  Versand). Die Seite antwortet immer gleich. Grenzen: je IP 5 in 10 Minuten,
+  je Adresse 2 je Stunde (im Speicher der Instanz). Mandant über `a` im
+  Formular oder, wenn nur einer einen Absender hat, dieser. Zum Verlinken auf
+  der Website: `<Link-Basis>/abmelden` (steht in den Einstellungen).
+
 ## Dashboard der Verwaltung (22.11.2026)
 
 - Reihenfolge bleibt: 1. „Jetzt“, 2. Tracking, 3. Statistik mit Tag-Wahl und

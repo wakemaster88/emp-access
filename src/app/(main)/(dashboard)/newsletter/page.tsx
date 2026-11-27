@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { MailCheck, MailX, Send, Settings, UserCheck, UserMinus, Users, UserX } from "lucide-react";
+import { LayoutDashboard, MailCheck, MailX, Send, Settings, UserCheck, UserMinus, Users, UserX } from "lucide-react";
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { isTenantAdminRole } from "@/lib/api-auth";
@@ -22,11 +22,13 @@ import { GroupsCard } from "@/components/newsletter/groups-card";
 import { loadGroupRows } from "@/lib/newsletter/groups";
 import { NewsletterSettingsCard } from "@/components/newsletter/settings-card";
 import { SesStatusCard } from "@/components/newsletter/ses-status-card";
+import { OverviewSection } from "@/components/newsletter/overview-section";
+import { loadNewsletterOverview } from "@/lib/newsletter/overview";
 
 export const dynamic = "force-dynamic";
 
-type Tab = "aussendungen" | "abonnenten" | "einstellungen";
-const TABS: Tab[] = ["aussendungen", "abonnenten", "einstellungen"];
+type Tab = "uebersicht" | "aussendungen" | "abonnenten" | "einstellungen";
+const TABS: Tab[] = ["uebersicht", "aussendungen", "abonnenten", "einstellungen"];
 const LIST_LIMIT = 200;
 
 export default async function NewsletterPage({
@@ -40,7 +42,7 @@ export default async function NewsletterPage({
   if (!accountId || !isTenantAdminRole(session.user.role)) redirect("/");
 
   const sp = await searchParams;
-  const tab: Tab = TABS.includes(sp.tab as Tab) ? (sp.tab as Tab) : "aussendungen";
+  const tab: Tab = TABS.includes(sp.tab as Tab) ? (sp.tab as Tab) : "uebersicht";
   const db = tenantClient(accountId);
   const [ctx, statusGroups] = await Promise.all([
     loadSendContext(accountId),
@@ -56,7 +58,8 @@ export default async function NewsletterPage({
       className="max-sm:[&_svg]:hidden"
       value={tab}
       options={[
-        { value: "aussendungen", label: "Aussendungen", icon: Send, href: "/newsletter" },
+        { value: "uebersicht", label: "Übersicht", icon: LayoutDashboard, href: "/newsletter" },
+        { value: "aussendungen", label: "Aussendungen", icon: Send, href: "/newsletter?tab=aussendungen" },
         { value: "abonnenten", label: "Abonnenten", icon: Users, href: "/newsletter?tab=abonnenten", count: activeCount },
         { value: "einstellungen", label: "Einstellungen", icon: Settings, href: "/newsletter?tab=einstellungen" },
       ]}
@@ -65,7 +68,17 @@ export default async function NewsletterPage({
 
   let content: React.ReactNode = null;
 
-  if (tab === "aussendungen") {
+  if (tab === "uebersicht") {
+    content = (
+      <OverviewSection
+        overview={await loadNewsletterOverview(db, accountId)}
+        activeCount={activeCount}
+        pendingCount={countOf("PENDING")}
+        unsubscribedCount={countOf("UNSUBSCRIBED")}
+        problemCount={countOf("BOUNCED") + countOf("COMPLAINED")}
+      />
+    );
+  } else if (tab === "aussendungen") {
     const campaigns = await db.newsletterCampaign.findMany({
       where: { accountId },
       orderBy: { createdAt: "desc" },

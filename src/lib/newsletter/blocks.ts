@@ -291,3 +291,18 @@ export function confirmMailBlocks(accountName: string, confirmUrl: string): News
     },
   ];
 }
+
+/** Mail mit dem Abmeldelink, angefordert auf der Abmeldeseite ohne Link. */
+export function unsubscribeMailBlocks(accountName: string, unsubscribeUrl: string): NewsletterBlock[] {
+  return [
+    { type: "heading", text: "Newsletter abbestellen" },
+    {
+      type: "text",
+      text:
+        `Jemand, hoffentlich du, möchte diese Adresse vom Newsletter von ${accountName} abmelden. ` +
+        "Mit einem Klick auf die Taste und der Bestätigung auf der Seite bist du abgemeldet.",
+    },
+    { type: "button", label: "Newsletter abbestellen", url: unsubscribeUrl },
+    { type: "text", text: "Warst du das nicht? Dann ignoriere diese Mail einfach. Es ändert sich nichts." },
+  ];
+}

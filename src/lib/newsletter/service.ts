@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/day-guest";
 import { appOrigin } from "@/lib/rider-invite";
 import {
-  confirmMailBlocks, parseBlocks, renderNewsletterHtml, renderNewsletterText,
+  confirmMailBlocks, parseBlocks, renderNewsletterHtml, renderNewsletterText, unsubscribeMailBlocks,
   type NewsletterBlock, type NewsletterBrand,
 } from "./blocks";
 import { buildRawMail } from "./mime";
@@ -73,7 +73,7 @@ export async function loadSendContext(accountId: number): Promise<SendContext> {
   };
 }
 
-function tags(ctx: SendContext, kind: "campaign" | "confirm" | "test", extra: Record<string, string | number> = {}): SesTag[] {
+function tags(ctx: SendContext, kind: "campaign" | "confirm" | "test" | "unsub", extra: Record<string, string | number> = {}): SesTag[] {
   return [
     { Name: "acc", Value: String(ctx.accountId) },
     { Name: "kind", Value: kind },
@@ -246,6 +246,53 @@ export async function confirmSubscriber(target: LinkTarget, ip: string | null, n
     data: { status: "ACTIVE", confirmedAt: now, confirmIp: ip ? ip.slice(0, 64) : null },
   });
   return r.count > 0 ? "confirmed" : "already";
+}
+
+/**
+ * Abmeldeseite ohne Link: Mandant aus dem Formular (`a`) oder, wenn nur einer
+ * den Newsletter eingerichtet hat, dieser. Sonst null.
+ */
+export async function publicNewsletterAccount(raw: unknown): Promise<number | null> {
+  const n = typeof raw === "string" ? Number(raw) : NaN;
+  if (Number.isInteger(n) && n > 0) {
+    const c = await prisma.newsletterConfig.findUnique({ where: { accountId: n }, select: { accountId: true } });
+    return c?.accountId ?? null;
+  }
+  const configs = await prisma.newsletterConfig.findMany({ where: { fromEmail: { not: null } }, select: { accountId: true }, take: 2 });
+  return configs.length === 1 ? configs[0].accountId : null;
+}
+
+/**
+ * Abmeldelink per Mail schicken, wenn die Adresse angemeldet ist. Nach außen
+ * antwortet die Seite immer gleich, damit niemand prüfen kann, wer angemeldet
+ * ist. Ergebnis nur für Protokoll und Tests.
+ */
+export async function sendUnsubscribeLink(
+  accountId: number,
+  rawEmail: unknown,
+  now: Date = new Date(),
+): Promise<"sent" | "unknown" | "invalid" | "not-ready"> {
+  const email = normalizeEmail(rawEmail);
+  if (!email) return "invalid";
+  const s = await prisma.newsletterSubscriber.findUnique({
+    where: { accountId_email: { accountId, email } },
+    select: { id: true, email: true, status: true },
+  });
+  if (!s || (s.status !== "ACTIVE" && s.status !== "PENDING")) return "unknown";
+  const ctx = await loadSendContext(accountId);
+  if (!ctx.env || !ctx.config.fromEmail) return "not-ready";
+  const token = createLinkToken(ctx.config.tokenSecret, { purpose: "u", accountId, subscriberId: s.id, campaignId: 0 }, now);
+  const blocks = unsubscribeMailBlocks(ctx.accountName, unsubscribeLink(ctx.base, token));
+  const render = { brand: ctx.brand };
+  await sendOne(ctx, {
+    to: s.email,
+    subject: `Newsletter von ${ctx.accountName} abbestellen`,
+    html: renderNewsletterHtml(blocks, render),
+    text: renderNewsletterText(blocks, render),
+    unsubscribeUrl: null,
+    tags: tags(ctx, "unsub", { sub: s.id }),
+  });
+  return "sent";
 }
 
 export async function unsubscribeSubscriber(

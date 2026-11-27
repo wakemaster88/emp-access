@@ -154,7 +154,12 @@ export function NewsletterSettingsCard({
               />
               <p className="text-xs text-muted-foreground">
                 {f.hint}
-                {f.key === "linkBaseUrl" && <span className="block break-all">Jetzt: {linkBase}/bestaetigen</span>}
+                {f.key === "linkBaseUrl" && (
+                  <>
+                    <span className="block break-all">Jetzt: {linkBase}/bestaetigen</span>
+                    <span className="block break-all">Abmelden ohne Mail, zum Verlinken auf der Website: {linkBase}/abmelden</span>
+                  </>
+                )}
               </p>
             </div>
           ))}
