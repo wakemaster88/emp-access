@@ -11,6 +11,7 @@ import {
   resolveOwnedStream,
   resolveZoneMonitor,
 } from "@/lib/audio";
+import { resolveFollowZone } from "@/lib/audio-follow";
 import { parseStreamUrl } from "@/lib/audio-integration";
 import { MAX_ZONE_NAME, cleanReceiverName } from "@/lib/net-address";
 
@@ -84,6 +85,13 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+
+  // Folgt der Wiedergabe einer anderen Zone (keine Ketten).
+  const follow = await resolveFollowZone(db, accountId!, body.followZoneId, null);
+  if (follow && "error" in follow) {
+    return NextResponse.json({ error: follow.error }, { status: follow.status });
+  }
+  const followZoneId = follow?.followZoneId ?? null;
 
   // Playlist ist optional; sie muss aber demselben Mandanten gehoeren.
   let playlistId: number | null = null;
@@ -168,6 +176,7 @@ export async function POST(request: NextRequest) {
       name,
       deviceId,
       monitorId,
+      followZoneId,
       keyRoomId,
       playlistId,
       streamId,

@@ -4,6 +4,30 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Audio-Zone folgt einer anderen (28.11.2026)
+
+Aaron: „Hier auch Folge möglich, z. B. Shop folgt der Wiedergabe von Insel.“
+
+- Zone › *Folgt Zone* (`AudioZone.followZoneId`, ab Werk leer). Die Zone spielt
+  dieselbe Quelle wie die gefolgte und startet und stoppt mit ihr. Lautstärke,
+  Durchsagen und Live-Durchsagen bleiben je Zone; eigene Quelle, Musik-Automatik
+  und Sync-Gruppe ruhen (der Dialog blendet sie aus).
+- Abgleich beim Abruf des Abspielers (`syncFollower` in
+  `src/lib/audio-follow.ts`, aufgerufen in `playerStateBody`, für Pi und
+  Monitor): Stand der gefolgten Zone = gemeldetes `isPlaying` (online, keine
+  AirPlay-/Bluetooth-Übernahme) plus `sourceKind`/Sender/Playlist. Weicht er von
+  `followState` ab, bekommt die Zone einen PLAY- oder STOP-Befehl
+  (Verlauf: „Folgt Zone“). Musik gilt für die folgende Zone als immer erlaubt,
+  damit ihr Abspieler nicht selbst nach seinem Fenster schaltet. Kein neuer
+  Code am Pi nötig.
+- Playlist: Die folgende Zone beginnt beim Titel, den die gefolgte meldet, und
+  läuft dann eigenständig (nicht taktgleich). Webradio: derselbe Sender.
+- Direkter Start/Stopp an der folgenden Zone (Dashboard, Raum, Zeitplan, Regel,
+  Abstimmung) setzt `followState` auf `HOLD:<Stand>`: gilt, bis sich die
+  gefolgte Zone ändert. „Start“ ohne eigene Quelle heißt wieder folgen; spielt
+  die gefolgte nichts, kommt „Folgt „Insel“ – dort läuft gerade keine Musik“.
+- Keine Ketten: Wem andere folgen, der folgt selbst nicht (`resolveFollowZone`).
+
 ## Monitor als Abspieler einer Audio-Zone (28.11.2026)
 
 Aaron: „Kann der Monitor-Screen auch eine Audio-Ausgabe sein? Z. B. Shop, wo

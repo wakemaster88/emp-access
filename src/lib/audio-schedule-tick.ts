@@ -278,7 +278,15 @@ async function runAccountSchedules(
         // Ohne Playlist: Vorgabe der Zone (Webradio/Playlist, wie im Raum eingestellt).
         const zones = await db.audioZone.findMany({
           where: { accountId: account.id, id: { in: due.map((z) => z.id) } },
-          select: { id: true, volume: true, defaultSource: true, streamId: true, streamUrl: true, playlistId: true },
+          select: {
+            id: true,
+            volume: true,
+            defaultSource: true,
+            streamId: true,
+            streamUrl: true,
+            playlistId: true,
+            followZoneId: true,
+          },
         });
         for (const zone of zones) {
           await controlAudioZone(db, account.id, zone, {

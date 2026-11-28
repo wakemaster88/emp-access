@@ -23,6 +23,7 @@ import {
 import { hasPlaceholders, resolveAnnouncementText, type AnnouncementContext } from "./announcement-text";
 import { ttsBlobPath } from "./audio-blob-path";
 import { publicBlobToken } from "./blob-token";
+import { holdFollowers } from "./audio-follow";
 import { scheduleSpecInclude, toScheduleSpec } from "./operating-queries";
 
 type Db = TenantDb;
@@ -216,6 +217,11 @@ export async function queueZoneCommand(
   triggerKind: string
 ): Promise<number> {
   if (zones.length === 0) return 0;
+  // Direkt gesteuerte Zonen, die einer anderen folgen, behalten diesen Stand,
+  // bis sich die gefolgte Zone ändert (lib/audio-follow).
+  if (kind === "PLAY" || kind === "STOP") {
+    await holdFollowers(db, zones.map((zone) => zone.id));
+  }
   const result = await db.audioJob.createMany({
     data: zones.map((zone) => ({
       accountId,

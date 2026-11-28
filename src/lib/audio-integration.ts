@@ -11,6 +11,7 @@
 import type { Prisma } from "@prisma/client";
 import type { TenantDb } from "@/lib/prisma";
 import { clampVolume, manualMusicOverrideUntil, playlistPayload, queueZoneCommand } from "@/lib/audio";
+import { resumeFollowing } from "@/lib/audio-follow";
 import { scheduleSpecInclude } from "@/lib/operating-queries";
 import { zoneMusicSpec } from "@/lib/operating-extent-queries";
 import { isAudioDevice, withDeviceControlInfo, type ControllableDevice } from "@/lib/device-controls";
@@ -140,6 +141,8 @@ type ZoneForControl = {
   streamId: number | null;
   streamUrl: string | null;
   playlistId: number | null;
+  /** Folgt einer anderen Zone: Start ohne eigene Quelle heißt wieder folgen. */
+  followZoneId?: number | null;
 };
 
 export function toAudioSnapshot(zone: AudioZoneSnapshotSource): AudioSnapshot | null {
@@ -285,6 +288,15 @@ export async function controlAudioZone(
   }
 
   const trackId = input.trackId != null ? Number(input.trackId) : null;
+  const playlistGiven = input.playlistId != null && input.playlistId !== "";
+  const streamGiven = input.streamUrl != null && input.streamUrl !== "";
+
+  // Start an einer Zone, die einer anderen folgt: ohne eigene Quelle heißt
+  // das, wieder zu folgen. Der nächste Abruf des Abspielers holt den Stand.
+  if (zone.followZoneId && trackId == null && !playlistGiven && !streamGiven) {
+    return resumeFollowing(db, { id: zone.id, followZoneId: zone.followZoneId });
+  }
+
   // Manuell geht vor Automatik. Der Vorrang muss stehen, bevor der Befehl in
   // der Warteschlange liegt: holt der Abspieler beides in derselben Runde ab,
   // sähe er sonst noch das geschlossene Fenster. `manual` im Befehl lässt ihn
@@ -294,9 +306,6 @@ export async function controlAudioZone(
   if (trackId != null && Number.isInteger(trackId) && trackId > 0) {
     return playTrack(db, accountId, zone, trackId, manual, triggerKind);
   }
-
-  const playlistGiven = input.playlistId != null && input.playlistId !== "";
-  const streamGiven = input.streamUrl != null && input.streamUrl !== "";
 
   const source = streamGiven
     ? "STREAM"
@@ -425,6 +434,7 @@ export async function controlAudioDevice(
       streamId: true,
       streamUrl: true,
       playlistId: true,
+      followZoneId: true,
     },
   });
   if (!zone) {
