@@ -10,16 +10,23 @@ Aaron: „Hier auch Folge möglich, z. B. Shop folgt der Wiedergabe von Insel.�
 
 - Zone › *Folgt Zone* (`AudioZone.followZoneId`, ab Werk leer). Die Zone spielt
   dieselbe Quelle wie die gefolgte und startet und stoppt mit ihr. Lautstärke,
-  Durchsagen und Live-Durchsagen bleiben je Zone; eigene Quelle, Musik-Automatik
-  und Sync-Gruppe ruhen (der Dialog blendet sie aus).
+  Durchsagen und Live-Durchsagen bleiben je Zone; eigene Quelle und Sync-Gruppe
+  ruhen (der Dialog blendet sie aus).
 - Abgleich beim Abruf des Abspielers (`syncFollower` in
   `src/lib/audio-follow.ts`, aufgerufen in `playerStateBody`, für Pi und
   Monitor): Stand der gefolgten Zone = gemeldetes `isPlaying` (online, keine
   AirPlay-/Bluetooth-Übernahme) plus `sourceKind`/Sender/Playlist. Weicht er von
   `followState` ab, bekommt die Zone einen PLAY- oder STOP-Befehl
-  (Verlauf: „Folgt Zone“). Musik gilt für die folgende Zone als immer erlaubt,
-  damit ihr Abspieler nicht selbst nach seinem Fenster schaltet. Kein neuer
-  Code am Pi nötig.
+  (Verlauf: „Folgt Zone“). Kein neuer Code am Pi nötig.
+- Nur in der eigenen Musikzeit (28.11.2026, Aaron: „Soll der Shop die
+  Insel-Musik nur zu den Shop-Zeiten spielen?“ → „ja“): Hat die folgende Zone
+  eine Musik-Automatik (Musikzeiten oder Betriebszeit ihres Raums), folgt sie
+  nur in diesem Fenster (`followTarget`), außerhalb gilt „Stopp“. Der Abspieler
+  bekommt ihr eigenes Fenster (`music`), stoppt also am Fensterende auch ohne
+  Verbindung. Start von Hand außerhalb setzt wie sonst `musicOverrideUntil`
+  (`resumeFollowing` mit Vorrang), der Folge-Befehl trägt dann `manual: true`.
+  Ohne Automatik (MANUAL) wie bisher immer. Beispiel: Shop folgt der Insel
+  (Wasserski-Zeiten mit Bahnmieten), spielt aber nur zu Shop-Zeiten.
 - Playlist: Die folgende Zone beginnt beim Titel, den die gefolgte meldet, und
   läuft dann eigenständig (nicht taktgleich). Webradio: derselbe Sender.
 - Direkter Start/Stopp an der folgenden Zone (Dashboard, Raum, Zeitplan, Regel,
@@ -1733,6 +1740,7 @@ Aaron: „geburtstagsgrüße in die kunden app, im backend geschenk hinterlegen,
 - Durchsage: Audio › Zeitpläne › Karte „Geburtstags-Ansage“ (Zonen, Text, Vorname ja/nein, Stimme, Gong, Probe nur im Browser). Beim ersten GRANTED-Scan am Gerät mit `countsAsStart` (Start-Drehkreuz) am Geburtstag rendert `announceBirthdayOnScan` den Text über xAI (gleicher Text aus dem Cache) und legt ANNOUNCE-Jobs mit `triggerKind = "BIRTHDAY"` an; läuft per `after()` hinter der Scan-Antwort. Einmal am Tag; schlägt die Sprachausgabe fehl, versucht es der nächste Scan erneut.
 - Musik unter der Durchsage (22.11.2026, Aaron: „geht die geburtstagsansage auch mit geburtstagsmusik?“ → „Musik unter der Ansage“): Feld „Musik unter der Ansage“ in der Karte, `RiderBirthday.announceMusicTrackId` (Mediathek-Titel). Mitgeliefert ist `public/audio/geburtstag/happy-birthday.mp3` (Instrumental, Melodie gemeinfrei, selbst erzeugt, 20 s); beim ersten Wählen wird es ein normaler Mediathek-Titel. Der Job bekommt `payload.bed = {url, untilSec, level}`; `untilSec` = 1,5 s Vorlauf + Länge der Ansage (aus der Dateigröße, MP3 128 kbit/s) + 10 s, höchstens Länge des Titels (`birthdayBedUntil`). Der Audio-Pi mischt in einem mpv-Lauf (`bed_filter` in `player.py`: Sidechain-Kompressor senkt die Musik unter der Sprache ab, Ausblenden 2,5 s); klappt das nicht (altes ffmpeg), läuft die Ansage ohne Musik. Ältere Pis ignorieren `bed`. Die Probe im Browser mischt grob über die Lautstärke nach.
 - Datenschutz: nur Vorname, nie Nachname, im Verlauf „Geburtstag Mia“. Die Person kann die Durchsage auf ihrer Geburtstagskarte abschalten (`RiderProfile.birthdayAnnounce`, PATCH `/api/rider/<token>/birthday`). Alles ab Werk aus.
+- Geburtstagssong im Shop (28.11.2026, Aaron: „Geburtstagssong im shop abspielen wenn im shop am monitor ein geburtstagskind einscannt“): Audio › Zeitpläne › Karte „Geburtstagssong im Shop“ (Schalter, Song aus der Mediathek oder das mitgelieferte Happy Birthday, Zonen; ab Werk die Zone des Monitors). `RiderBirthday.monitorSongActive`/`monitorSongZoneIds`/`monitorSongTrackId`, PUT `/api/audio/birthday/song`. Beim Scan am Check-in-Monitor (`/api/checkin/public/<token>/scan`, Ticket mit App-Profil) spielt `playBirthdaySongOnMonitorScan` per `after()` den Song als Durchsage (Quelle FILE, ohne Gong, Verlauf „Geburtstagssong Mia“, `triggerKind = "BIRTHDAY"`). Einmal je Person und Jahr (`RiderBirthdayGift.monitorSongAt`), unabhängig von der Durchsage am Drehkreuz; wer die Durchsage in der App abschaltet, bekommt auch keinen Song (`birthdaySongZones`).
 
 ## Beach Pass für Strandbad-Kunden, Etappe 1 (22.11.2026)
 

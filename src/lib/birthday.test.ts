@@ -13,8 +13,9 @@ import {
   fillName,
   isBirthdayOn,
   parseBirthdayZoneIds,
+  birthdaySongZones,
 } from "./birthday";
-import { birthdayAnnounceSchema, normalizeBirthday } from "./gamification-input";
+import { birthdayAnnounceSchema, birthdaySongSchema, normalizeBirthday } from "./gamification-input";
 
 const d = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`);
 
@@ -129,4 +130,32 @@ test("birthdayAnnounceText: Name nur gereinigt in der Durchsage", async () => {
     "Alles Gute, Mia!",
   );
   assert.equal(birthdayAnnounceText({ announceText: "Alles Gute, {vorname}!", announceName: true }, "123"), "Alles Gute!");
+});
+
+test("birthdaySongZones: Song im Shop nur am Geburtstag, einmal eingestellt", () => {
+  // Aaron, geboren 28.11.1988, scannt am 28.11.2026 am Shop-Monitor; Zone 5 = Shop.
+  const settings = { monitorSongActive: true, monitorSongZoneIds: [5], monitorSongTrackId: 46 };
+  const aaron = { birthDate: d("1988-11-28"), birthdayAnnounce: true };
+  assert.deepEqual(birthdaySongZones(settings, aaron, "2026-11-28"), [5]);
+  // Am Tag davor und danach nicht.
+  assert.deepEqual(birthdaySongZones(settings, aaron, "2026-11-27"), []);
+  assert.deepEqual(birthdaySongZones(settings, aaron, "2026-11-29"), []);
+  // Durchsage in der App abgeschaltet: auch kein Song.
+  assert.deepEqual(birthdaySongZones(settings, { ...aaron, birthdayAnnounce: false }, "2026-11-28"), []);
+  // Aus, ohne Song oder ohne Zone: nichts.
+  assert.deepEqual(birthdaySongZones({ ...settings, monitorSongActive: false }, aaron, "2026-11-28"), []);
+  assert.deepEqual(birthdaySongZones({ ...settings, monitorSongTrackId: null }, aaron, "2026-11-28"), []);
+  assert.deepEqual(birthdaySongZones({ ...settings, monitorSongZoneIds: [] }, aaron, "2026-11-28"), []);
+  // Ohne Geburtsdatum oder ohne Einstellung: nichts.
+  assert.deepEqual(birthdaySongZones(settings, { birthDate: null, birthdayAnnounce: true }, "2026-11-28"), []);
+  assert.deepEqual(birthdaySongZones(null, aaron, "2026-11-28"), []);
+});
+
+test("birthdaySongSchema: an nur mit Zone und Song", () => {
+  assert.equal(birthdaySongSchema.safeParse({ monitorSongActive: true, monitorSongZoneIds: [5], monitorSong: "builtin" }).success, true);
+  assert.equal(birthdaySongSchema.safeParse({ monitorSongActive: true, monitorSongZoneIds: [5], monitorSong: 46 }).success, true);
+  assert.equal(birthdaySongSchema.safeParse({ monitorSongActive: true, monitorSongZoneIds: [], monitorSong: 46 }).success, false);
+  assert.equal(birthdaySongSchema.safeParse({ monitorSongActive: true, monitorSongZoneIds: [5], monitorSong: null }).success, false);
+  // Aus darf leer sein.
+  assert.equal(birthdaySongSchema.safeParse({ monitorSongActive: false, monitorSongZoneIds: [], monitorSong: null }).success, true);
 });

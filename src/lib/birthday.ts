@@ -175,3 +175,25 @@ export function parseBirthdayZoneIds(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((v): v is number => Number.isInteger(v) && v > 0))];
 }
+
+/** Einstellung „Geburtstagssong beim Scan am Shop-Monitor“ (`RiderBirthday`). */
+export interface BirthdaySongSettings {
+  monitorSongActive: boolean;
+  monitorSongZoneIds: unknown;
+  monitorSongTrackId: number | null;
+}
+
+/**
+ * Zonen, in denen beim Scan am Shop-Monitor der Geburtstagssong läuft; leer =
+ * keiner. Nur am Geburtstag selbst und nicht, wenn die Person die Durchsage in
+ * der App auf ihrer Geburtstagskarte abgeschaltet hat.
+ */
+export function birthdaySongZones(
+  settings: BirthdaySongSettings | null | undefined,
+  profile: { birthDate: Date | null; birthdayAnnounce: boolean } | null | undefined,
+  ymd: string,
+): number[] {
+  if (!settings?.monitorSongActive || settings.monitorSongTrackId == null) return [];
+  if (!profile?.birthdayAnnounce || !isBirthdayOn(profile.birthDate, ymd)) return [];
+  return parseBirthdayZoneIds(settings.monitorSongZoneIds);
+}
