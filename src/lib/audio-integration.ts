@@ -291,17 +291,22 @@ export async function controlAudioZone(
   const playlistGiven = input.playlistId != null && input.playlistId !== "";
   const streamGiven = input.streamUrl != null && input.streamUrl !== "";
 
-  // Start an einer Zone, die einer anderen folgt: ohne eigene Quelle heißt
-  // das, wieder zu folgen. Der nächste Abruf des Abspielers holt den Stand.
-  if (zone.followZoneId && trackId == null && !playlistGiven && !streamGiven) {
-    return resumeFollowing(db, { id: zone.id, followZoneId: zone.followZoneId });
-  }
-
   // Manuell geht vor Automatik. Der Vorrang muss stehen, bevor der Befehl in
   // der Warteschlange liegt: holt der Abspieler beides in derselben Runde ab,
   // sähe er sonst noch das geschlossene Fenster. `manual` im Befehl lässt ihn
   // auch dann starten, wenn sein Zonenstand noch älter ist.
   const manual = !input.fromSchedule;
+
+  // Start an einer Zone, die einer anderen folgt: ohne eigene Quelle heißt
+  // das, wieder zu folgen. Der nächste Abruf des Abspielers holt den Stand.
+  // Von Hand auch außerhalb des eigenen Musikfensters (lib/audio-follow).
+  if (zone.followZoneId && trackId == null && !playlistGiven && !streamGiven) {
+    return resumeFollowing(
+      db,
+      { id: zone.id, followZoneId: zone.followZoneId },
+      manual ? () => setManualMusicOverride(db, zone.id, true) : undefined
+    );
+  }
 
   if (trackId != null && Number.isInteger(trackId) && trackId > 0) {
     return playTrack(db, accountId, zone, trackId, manual, triggerKind);

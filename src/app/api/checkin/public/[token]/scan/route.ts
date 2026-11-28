@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { publicRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { berlinOffset } from "@/lib/anny-availability";
@@ -10,6 +10,7 @@ import { riderView } from "@/lib/customer-person";
 import { appLinkInfo, readAppCode } from "@/lib/rider-kasse-link";
 import { ensureAnnyBooker, loadAnnyOrder, loadChipView } from "@/lib/chips";
 import type { ChipView } from "@/lib/chip-rules";
+import { playBirthdaySongOnMonitorScan } from "@/lib/rider-birthday";
 
 /** Kundenfenster: Fehler hier dürfen den Scan nicht kaputt machen. */
 async function customerView(
@@ -204,6 +205,19 @@ export async function POST(
     personId: annyPerson ?? ticket.riderProfileId ?? null,
     annyTicketId: isAnnyDay ? ticket.id : null,
   });
+
+  // Geburtstag: einmal der Geburtstagssong (z. B. im Shop), wenn das
+  // Geburtstagskind hier gescannt wird (Audio › Zeitpläne › Geburtstagssong).
+  // `after`: die Antwort an den Monitor wartet nicht darauf.
+  if (ticket.riderProfileId != null) {
+    const profileId = ticket.riderProfileId;
+    const accountId = monitor.accountId;
+    after(() =>
+      playBirthdaySongOnMonitorScan(accountId, profileId).catch((err) => {
+        console.error("[checkin/scan] Geburtstagssong", err);
+      }),
+    );
+  }
 
   // Abo: Name der Person, die damit fährt (lib/customer-person).
   const rider = riderView(ticket);

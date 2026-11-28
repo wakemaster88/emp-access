@@ -66,19 +66,30 @@ export async function playerStateBody(db: TenantDb, zone: PlayerZone, options: P
     });
   }
 
-  // Folgt die Zone einer anderen, kommt ein Wechsel dort jetzt als Befehl in
-  // die Warteschlange – vor dem Lesen der Jobs, damit er gleich mitgeht.
-  const follow = deliverJobs ? await syncFollower(db, zone) : null;
-
   // Musikfenster aus den Musikzeiten der Zone bzw. der Betriebszeit des Raums
   // – hier gerechnet, weil der Abspieler weder Saison noch Ausnahmetage kennt.
   // `until` nennt den nächsten Wechsel, damit der Pi ihn auch ohne Verbindung
   // einhält.
   // Mit `musicExtent` zählen gebuchte Bahnmieten und Kurse mit.
+  const musicSpecRead = zoneMusicSpec(db, zone.accountId, zone, now, zone.account.timezone);
+
+  // Folgt die Zone einer anderen, kommt ein Wechsel dort jetzt als Befehl in
+  // die Warteschlange – vor dem Lesen der Jobs, damit er gleich mitgeht. Sie
+  // folgt nur in ihrem eigenen Musikfenster (lib/audio-follow), deshalb wartet
+  // nur dieser Weg auf das Fenster.
+  const follow =
+    deliverJobs && zone.followZone
+      ? await syncFollower(
+          db,
+          zone,
+          musicWindowState(zone, await musicSpecRead, now, zone.account.timezone)
+        )
+      : null;
+
   // Offene Jobs und Musikfenster sind unabhaengig voneinander und werden
   // gleichzeitig gelesen; Jobs kommen bei jedem Abruf mit.
   const [musicSpec, jobs] = await Promise.all([
-    zoneMusicSpec(db, zone.accountId, zone, now, zone.account.timezone),
+    musicSpecRead,
     deliverJobs
       ? db.audioJob.findMany({
           where: { zoneId: zone.id, status: "PENDING" },
@@ -111,10 +122,10 @@ export async function playerStateBody(db: TenantDb, zone: PlayerZone, options: P
     });
   }
 
-  // Solange die Zone folgt, gilt der Stand der gefolgten statt des eigenen:
-  // ihre Quelle, und Musik ist immer erlaubt – Start und Stopp kommen als
-  // Befehl. Nach einem Neustart setzt der Abspieler so dort fort, wo die
-  // gefolgte Zone gerade ist.
+  // Solange die Zone folgt, gilt die Quelle der gefolgten statt der eigenen –
+  // Start und Stopp kommen als Befehl. Nach einem Neustart setzt der Abspieler
+  // so dort fort, wo die gefolgte Zone gerade ist. Das Musikfenster bleibt das
+  // eigene: Am Fensterende stoppt der Abspieler auch ohne Verbindung.
   const ownPlaylist = zone.playlist
     ? {
         id: zone.playlist.id,
@@ -140,9 +151,7 @@ export async function playerStateBody(db: TenantDb, zone: PlayerZone, options: P
       duckVolume: zone.duckVolume,
       sourceKind: follow ? follow.sourceKind : sourceKind,
       streamUrl: follow ? follow.streamUrl : (zone.stream?.url ?? zone.streamUrl),
-      music: follow
-        ? { allowed: true, until: null }
-        : { allowed: music.allowed, until: music.until?.toISOString() ?? null },
+      music: { allowed: music.allowed, until: music.until?.toISOString() ?? null },
       // Empfänger, die diese Zone übernehmen dürfen. null = abgeschaltet, der
       // Abspieler hält den Dienst dann gestoppt. Ältere Abspieler kennen die
       // Felder nicht und übergehen sie.

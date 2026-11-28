@@ -23,6 +23,7 @@ import {
   isBirthdayOn,
   ttsSeconds,
   parseBirthdayZoneIds,
+  birthdaySongZones,
 } from "./birthday";
 import { queueAnnouncement, renderTtsTrack, resolveTargetZones } from "./audio";
 
@@ -267,6 +268,72 @@ export async function announceBirthdayOnScan(accountId: number, profileId: numbe
   } catch (e) {
     // Ohne Durchsage wieder freigeben: der nächste Scan heute versucht es erneut.
     await prisma.riderBirthdayGift.update({ where: { id: row.id }, data: { announcedAt: null } }).catch(() => {});
+    throw e;
+  }
+}
+
+/**
+ * Scan am Shop-Monitor (Check-in): Hat die Person heute Geburtstag, läuft
+ * einmal der Geburtstagssong in den eingestellten Zonen, z. B. im Shop – wie
+ * eine Durchsage: die Musik wird leiser und spielt danach weiter. Einmal je
+ * Person und Jahr (`monitorSongAt`), unabhängig von der Durchsage am
+ * Drehkreuz. Läuft ohne den Scan aufzuhalten.
+ */
+export async function playBirthdaySongOnMonitorScan(
+  accountId: number,
+  profileId: number,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const settings = await prisma.riderBirthday.findUnique({
+    where: { accountId },
+    select: {
+      monitorSongActive: true,
+      monitorSongZoneIds: true,
+      monitorSongTrackId: true,
+      monitorSongTrack: { select: { id: true, url: true, durationSec: true, title: true } },
+    },
+  });
+  if (!settings?.monitorSongActive || !settings.monitorSongTrack) return false;
+  const profile = await prisma.riderProfile.findFirst({
+    where: { id: profileId, accountId },
+    select: { birthDate: true, firstName: true, birthdayAnnounce: true },
+  });
+  const today = berlinYmd(now);
+  const zoneIds = birthdaySongZones(settings, profile, today);
+  if (zoneIds.length === 0) return false;
+
+  const db = tenantClient(accountId);
+  const zones = await resolveTargetZones(db, accountId, zoneIds);
+  if (zones.length === 0) return false;
+  const row = await giftRow(accountId, profileId, Number(today.slice(0, 4)));
+  const claimed = await prisma.riderBirthdayGift.updateMany({
+    where: { id: row.id, monitorSongAt: null },
+    data: { monitorSongAt: now },
+  });
+  if (claimed.count !== 1) return false;
+
+  const track = settings.monitorSongTrack;
+  const firstName = profile?.firstName?.trim() || null;
+  try {
+    const announcement = await db.audioAnnouncement.create({
+      data: {
+        accountId,
+        // Im Verlauf ohne Nachnamen: nur, wessen Geburtstag es war.
+        name: firstName ? `Geburtstagssong ${firstName}` : "Geburtstagssong",
+        source: "FILE",
+        trackId: track.id,
+        chime: false,
+        repeatCount: 1,
+        priority: 0,
+        zoneIds: zones.map((z) => z.id),
+        isTemplate: false,
+      },
+    });
+    await queueAnnouncement(db, accountId, { ...announcement, track }, zones, "BIRTHDAY");
+    return true;
+  } catch (e) {
+    // Ohne Song wieder freigeben: der nächste Scan heute versucht es erneut.
+    await prisma.riderBirthdayGift.update({ where: { id: row.id }, data: { monitorSongAt: null } }).catch(() => {});
     throw e;
   }
 }

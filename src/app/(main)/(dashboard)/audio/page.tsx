@@ -304,6 +304,15 @@ export default async function AudioPage({
                 }
               : null
           }
+          birthdaySong={
+            birthday
+              ? {
+                  monitorSongActive: birthday.monitorSongActive,
+                  monitorSongZoneIds: parseBirthdayZoneIds(birthday.monitorSongZoneIds),
+                  monitorSongTrackId: birthday.monitorSongTrackId,
+                }
+              : null
+          }
           riderAppEnabled={gamiConfig?.enabled ?? false}
         />
       </div>

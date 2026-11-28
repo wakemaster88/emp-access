@@ -293,6 +293,17 @@ export const birthdayAnnounceSchema = z
   })
   .refine((a) => !a.announceActive || a.announceZoneIds.length > 0, { message: "Bitte mindestens eine Zone wählen" });
 
+/** Geburtstagssong beim Scan am Shop-Monitor (Audio › Zeitpläne). */
+export const birthdaySongSchema = z
+  .object({
+    monitorSongActive: z.boolean(),
+    monitorSongZoneIds: z.array(z.number().int().positive()).max(50),
+    /** Der Song: Mediathek-Titel, „builtin“ = mitgeliefertes Happy Birthday, null = keiner. */
+    monitorSong: z.union([z.literal("builtin"), z.number().int().positive(), z.null()]),
+  })
+  .refine((a) => !a.monitorSongActive || a.monitorSongZoneIds.length > 0, { message: "Bitte mindestens eine Zone wählen" })
+  .refine((a) => !a.monitorSongActive || a.monitorSong !== null, { message: "Bitte einen Song wählen" });
+
 export function normalizeBirthdayAnnounce(input: z.infer<typeof birthdayAnnounceSchema>) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { announceMusic, ...rest } = input;

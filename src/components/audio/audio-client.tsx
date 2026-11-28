@@ -89,6 +89,7 @@ import { useZoneMonitor, zoneSource } from "./use-zone-monitor";
 import { useZoneCommands, type ZoneCommandState } from "./use-zone-commands";
 import { ZoneDialog } from "./zone-dialog";
 import { BirthdayAnnounceCard, type BirthdayAnnounceSetting } from "./birthday-announce-card";
+import { BirthdaySongCard, type BirthdaySongSetting } from "./birthday-song-card";
 import { ZoneStatusBar } from "./zone-status-bar";
 import type {
   AnnouncementRow,
@@ -131,6 +132,8 @@ interface Props {
   hubOnline: boolean;
   /** Geburtstags-Ansage am Start-Drehkreuz (Reiter Zeitpläne). */
   birthdayAnnounce: BirthdayAnnounceSetting | null;
+  /** Geburtstagssong beim Scan am Shop-Monitor (Reiter Zeitpläne). */
+  birthdaySong: BirthdaySongSetting | null;
   /** Kunden-App eingeschaltet (Geburtsdaten kommen aus ihrem Profil). */
   riderAppEnabled: boolean;
   /** Reiter aus der Adresse (`?tab=zonen`), sonst „Durchsage“. */
@@ -231,6 +234,7 @@ export function AudioClient({
   soundwebDevices,
   hubOnline,
   birthdayAnnounce,
+  birthdaySong,
   riderAppEnabled,
   initialTab,
   initialContentTab,
@@ -1021,6 +1025,13 @@ export function AudioClient({
             tracks={tracks}
             appEnabled={riderAppEnabled}
           />
+
+          <BirthdaySongCard
+            setting={birthdaySong}
+            zones={zones}
+            tracks={tracks}
+            appEnabled={riderAppEnabled}
+          />
         </TabsContent>
 
         {/* ── VERLAUF ──────────────────────────────────────────────────────── */}
@@ -1255,13 +1266,17 @@ function ZoneCard({
   }, [highlight]);
 
   const lastSeen = formatRelativeTime(live?.lastStateAt ?? zone.lastStateAt);
-  // Folgt die Zone einer anderen, ruhen ihre eigene Quelle und Musik-Automatik.
+  // Folgt die Zone einer anderen, ruht ihre eigene Quelle; ihre Musik-Automatik
+  // ist dann das Fenster, in dem sie folgt (lib/audio-follow).
   const following = zone.followZoneId !== null;
   const leaderName = zone.followZoneName ?? "der Zone";
-  const musicWindow = following ? null : describeMusicWindow(zone);
+  const musicWindow = describeMusicWindow(zone);
+  const ownMusicState = describeMusicState({ ...zone, musicOverrideUntil }, roomSchedule, new Date(now), timeZone);
   const musicState = following
-    ? { text: `Startet und stoppt mit „${leaderName}“, gleiche Musik`, warn: false }
-    : describeMusicState({ ...zone, musicOverrideUntil }, roomSchedule, new Date(now), timeZone);
+    ? ownMusicState
+      ? { text: `Folgt „${leaderName}“ in der Musikzeit · ${ownMusicState.text}`, warn: ownMusicState.warn }
+      : { text: `Startet und stoppt mit „${leaderName}“, gleiche Musik`, warn: false }
+    : ownMusicState;
 
   const pending = command && command.phase !== "failed" ? command : null;
   const waitedSec = pending ? Math.max(0, Math.round((now - pending.since) / 1000)) : 0;

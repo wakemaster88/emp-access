@@ -16,6 +16,11 @@
  * Steuert jemand die folgende Zone direkt (Stopp im Shop, Zeitplan, Regel),
  * gilt das, bis sich die gefolgte Zone ändert oder hier jemand Start drückt
  * (`followState` = "HOLD:<Stand>").
+ *
+ * Hat die folgende Zone eine eigene Musik-Automatik (Musikzeiten oder
+ * Betriebszeit ihres Raums), folgt sie nur in diesem Fenster: Shop folgt der
+ * Insel, aber nur zu den Öffnungszeiten des Shops. Außerhalb gilt „Stopp“, ein
+ * Start von Hand geht wie sonst vor (`musicOverrideUntil`).
  */
 import type { Prisma } from "@prisma/client";
 import type { TenantDb } from "@/lib/prisma";
@@ -89,6 +94,23 @@ export function leaderTarget(leader: LeaderState): FollowTarget {
     return { kind: "PLAYLIST", playlistId: leader.playlistId };
   }
   return { kind: "STOP" };
+}
+
+/** Musikfenster der folgenden Zone, wie `musicWindowState` es liefert. */
+export interface FollowWindow {
+  /** Darf die folgende Zone jetzt Musik spielen? Ohne Automatik immer. */
+  allowed: boolean;
+  /** Nur erlaubt, weil jemand außerhalb des Fensters Start gedrückt hat. */
+  manual?: boolean;
+}
+
+/**
+ * Was die folgende Zone spielen soll: den Stand der gefolgten Zone, aber nur
+ * in ihrem eigenen Musikfenster. Außerhalb ist es „Stopp“.
+ */
+export function followTarget(leader: LeaderState, window: FollowWindow = { allowed: true }): FollowTarget {
+  if (!window.allowed) return { kind: "STOP" };
+  return leaderTarget(leader);
 }
 
 export function followSignature(target: FollowTarget): string {
@@ -205,12 +227,17 @@ export interface FollowerZone {
  * Bedarf den Befehl an – vor dem Lesen der offenen Jobs, damit er im selben
  * Abruf mitgeht. Gibt den Zonenstand zurück, den der Abspieler statt des
  * eigenen bekommt, oder null (folgt nicht oder ist direkt gesteuert).
+ * `window` ist das eigene Musikfenster der folgenden Zone (`followTarget`).
  */
-export async function syncFollower(db: TenantDb, zone: FollowerZone): Promise<FollowView | null> {
+export async function syncFollower(
+  db: TenantDb,
+  zone: FollowerZone,
+  window: FollowWindow = { allowed: true }
+): Promise<FollowView | null> {
   const leader = zone.followZone;
   if (!leader) return null;
 
-  const target = leaderTarget(toLeaderState(leader));
+  const target = followTarget(toLeaderState(leader), window);
   const step = followStep(zone.followState, target);
   if (step.hold) return null;
 
@@ -235,7 +262,7 @@ export async function syncFollower(db: TenantDb, zone: FollowerZone): Promise<Fo
     if (claimed.count === 1) {
       const payload: Prisma.InputJsonValue | undefined =
         target.kind === "STREAM"
-          ? { kind: "STREAM", url: target.url, volume: zone.volume, manual: false }
+          ? { kind: "STREAM", url: target.url, volume: zone.volume, manual: window.manual === true }
           : target.kind === "PLAYLIST" && playlist && tracks.length > 0
             ? {
                 kind: "PLAYLIST",
@@ -250,7 +277,9 @@ export async function syncFollower(db: TenantDb, zone: FollowerZone): Promise<Fo
                   url: track.url,
                 })),
                 volume: zone.volume,
-                manual: false,
+                // Außerhalb des Fensters nur nach Start von Hand: der Abspieler
+                // verwirft ein Play sonst, solange er das Fenster zu sieht.
+                manual: window.manual === true,
               }
             : undefined;
       await db.audioJob.create({
@@ -309,7 +338,9 @@ export async function holdFollowers(db: TenantDb, zoneIds: number[]): Promise<vo
  */
 export async function resumeFollowing(
   db: TenantDb,
-  zone: { id: number; followZoneId: number }
+  zone: { id: number; followZoneId: number },
+  /** Läuft erst, wenn feststeht, dass es etwas zu starten gibt (Vorrang von Hand). */
+  beforeResume?: () => Promise<void>
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const leader = await db.audioZone.findFirst({
     where: { id: zone.followZoneId },
@@ -323,6 +354,7 @@ export async function resumeFollowing(
       status: 409,
     };
   }
+  if (beforeResume) await beforeResume();
   await db.audioZone.update({ where: { id: zone.id }, data: { followState: null } });
   return { ok: true };
 }

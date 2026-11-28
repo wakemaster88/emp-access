@@ -484,7 +484,7 @@ export function ZoneDialog({
             </Select>
             <p className="text-xs text-muted-foreground mt-1">
               {following
-                ? `Spielt dieselbe Musik wie „${leaderName}“ und startet und stoppt mit ihr. Quelle und Musik-Automatik dieser Zone ruhen so lange; Lautstärke und Durchsagen bleiben eigen. Ein Stopp hier gilt, bis sich „${leaderName}“ ändert oder hier jemand Start drückt.`
+                ? `Spielt dieselbe Musik wie „${leaderName}“ und startet und stoppt mit ihr, mit Musik-Automatik nur in deren Fenster (unten). Die Quelle dieser Zone ruht so lange; Lautstärke und Durchsagen bleiben eigen. Ein Stopp hier gilt, bis sich „${leaderName}“ ändert oder hier jemand Start drückt.`
                 : followerNames.length > 0
                   ? `${followerNames.map((n) => `„${n}“`).join(", ")} folgt dieser Zone. Eine Zone, der andere folgen, folgt selbst niemandem.`
                   : "Optional: dieselbe Musik wie eine andere Zone, z. B. Shop folgt Insel."}
@@ -586,8 +586,8 @@ export function ZoneDialog({
             <VolumeField label="Ducking" value={duckVolume} onChange={setDuckVolume} />
           </div>
 
-          {/* Abschnitte als Kacheln: das Glas tönt sich im deckenden Dialog von selbst (Abschnitt 18). */}
-          {!following && (
+          {/* Abschnitte als Kacheln: das Glas tönt sich im deckenden Dialog von selbst (Abschnitt 18).
+              Auch beim Folgen: dann ist es das Fenster, in dem die Zone folgt. */}
           <div className="glass-tile space-y-2 p-3">
             <div>
               <Label>Musik automatisch an und aus</Label>
@@ -694,7 +694,14 @@ export function ZoneDialog({
               </p>
             )}
 
-            {musicMode !== "MANUAL" && (
+            {musicMode !== "MANUAL" && following && (
+              <p className="text-xs text-muted-foreground">
+                Die Zone folgt „{leaderName}“ nur in diesem Fenster. Außerhalb bleibt sie
+                still, auch wenn dort Musik läuft; Start per Hand geht vor. Durchsagen
+                laufen immer.
+              </p>
+            )}
+            {musicMode !== "MANUAL" && !following && (
               <>
                 {defaultSource === "SILENCE" && (
                   <p className="text-xs text-warning">
@@ -709,7 +716,6 @@ export function ZoneDialog({
               </>
             )}
           </div>
-          )}
 
           {!monitorId && (
           <div className="glass-tile space-y-2 p-3">
