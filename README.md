@@ -259,6 +259,17 @@ Monitor-Token: `GET/POST /api/monitor-audio/<token>` und
 `GET /api/monitor-audio/<token>/live`. Nicht am Monitor: Sync-Gruppe, AirPlay,
 Bluetooth.
 
+**Zone folgt einer anderen:** In der Zone unter *Folgt Zone* eine andere wählen
+(z. B. Shop folgt Insel). Die Zone spielt dann dieselbe Quelle und startet und
+stoppt mit ihr; Lautstärke und Durchsagen bleiben je Zone, eigene Quelle und
+Musik-Automatik ruhen. Maßgeblich ist, was die gefolgte Zone meldet: Startet
+ihr Pi zum Fensterbeginn von selbst, folgt die Zone nach gut einer Minute
+(Heartbeat des Pi).
+Webradio klingt gleich, eine Playlist beginnt beim selben Titel, läuft aber
+nicht taktgleich (dafür Sync-Gruppe). Stopp an der folgenden Zone gilt, bis sich
+die gefolgte ändert oder dort jemand Start drückt. Keine Ketten: Wem andere
+folgen, der folgt selbst niemandem. Abgleich in `src/lib/audio-follow.ts`.
+
 ## Soundweb London (BSS) steuern
 
 DSP-Prozessoren der BLU-Serie lassen sich im Dashboard unter **Audio →

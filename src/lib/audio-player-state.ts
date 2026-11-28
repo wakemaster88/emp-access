@@ -12,6 +12,7 @@ import type { TenantDb } from "@/lib/prisma";
 import { clampVolume, musicWindowState, pairableSeconds, parseExternalKind } from "@/lib/audio";
 import { scheduleSpecInclude } from "@/lib/operating-queries";
 import { zoneMusicSpec } from "@/lib/operating-extent-queries";
+import { followLeaderSelect, syncFollower } from "@/lib/audio-follow";
 
 const JOB_BATCH_SIZE = 20;
 
@@ -28,6 +29,7 @@ export const playerZoneInclude = {
   },
   account: { select: { timezone: true } },
   keyRoom: { select: { operatingScheduleId: true, operatingSchedule: { include: scheduleSpecInclude } } },
+  followZone: { select: followLeaderSelect },
 } satisfies Prisma.AudioZoneInclude;
 
 export type PlayerZone = Prisma.AudioZoneGetPayload<{ include: typeof playerZoneInclude }>;
@@ -64,6 +66,10 @@ export async function playerStateBody(db: TenantDb, zone: PlayerZone, options: P
     });
   }
 
+  // Folgt die Zone einer anderen, kommt ein Wechsel dort jetzt als Befehl in
+  // die Warteschlange – vor dem Lesen der Jobs, damit er gleich mitgeht.
+  const follow = deliverJobs ? await syncFollower(db, zone) : null;
+
   // Musikfenster aus den Musikzeiten der Zone bzw. der Betriebszeit des Raums
   // – hier gerechnet, weil der Abspieler weder Saison noch Ausnahmetage kennt.
   // `until` nennt den nächsten Wechsel, damit der Pi ihn auch ohne Verbindung
@@ -89,6 +95,7 @@ export async function playerStateBody(db: TenantDb, zone: PlayerZone, options: P
   // die Vorgabe.
   let sourceKind = zone.sourceKind;
   if (
+    !follow &&
     !music.allowed &&
     sourceKind === "SILENCE" &&
     zone.defaultSource !== "SILENCE"
@@ -104,6 +111,24 @@ export async function playerStateBody(db: TenantDb, zone: PlayerZone, options: P
     });
   }
 
+  // Solange die Zone folgt, gilt der Stand der gefolgten statt des eigenen:
+  // ihre Quelle, und Musik ist immer erlaubt – Start und Stopp kommen als
+  // Befehl. Nach einem Neustart setzt der Abspieler so dort fort, wo die
+  // gefolgte Zone gerade ist.
+  const ownPlaylist = zone.playlist
+    ? {
+        id: zone.playlist.id,
+        name: zone.playlist.name,
+        shuffle: zone.playlist.shuffle,
+        crossfadeSec: zone.playlist.crossfadeSec,
+        tracks: zone.playlist.items.map((item) => ({
+          id: item.track.id,
+          title: item.track.title,
+          url: item.track.url,
+        })),
+      }
+    : null;
+
   return {
     zone: {
       id: zone.id,
@@ -113,9 +138,11 @@ export async function playerStateBody(db: TenantDb, zone: PlayerZone, options: P
       volume: zone.volume,
       announcementVolume: zone.announcementVolume,
       duckVolume: zone.duckVolume,
-      sourceKind,
-      streamUrl: zone.stream?.url ?? zone.streamUrl,
-      music: { allowed: music.allowed, until: music.until?.toISOString() ?? null },
+      sourceKind: follow ? follow.sourceKind : sourceKind,
+      streamUrl: follow ? follow.streamUrl : (zone.stream?.url ?? zone.streamUrl),
+      music: follow
+        ? { allowed: true, until: null }
+        : { allowed: music.allowed, until: music.until?.toISOString() ?? null },
       // Empfänger, die diese Zone übernehmen dürfen. null = abgeschaltet, der
       // Abspieler hält den Dienst dann gestoppt. Ältere Abspieler kennen die
       // Felder nicht und übergehen sie.
@@ -126,19 +153,7 @@ export async function playerStateBody(db: TenantDb, zone: PlayerZone, options: P
             pairableFor: pairableSeconds(zone.pairableUntil),
           }
         : null,
-      playlist: zone.playlist
-        ? {
-            id: zone.playlist.id,
-            name: zone.playlist.name,
-            shuffle: zone.playlist.shuffle,
-            crossfadeSec: zone.playlist.crossfadeSec,
-            tracks: zone.playlist.items.map((item) => ({
-              id: item.track.id,
-              title: item.track.title,
-              url: item.track.url,
-            })),
-          }
-        : null,
+      playlist: follow ? follow.playlist : ownPlaylist,
     },
     jobs: jobs.map((job) => ({
       id: job.id,

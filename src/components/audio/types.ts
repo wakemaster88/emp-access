@@ -27,6 +27,12 @@ export interface ZoneRow {
    */
   monitorId: number | null;
   monitorName: string | null;
+  /**
+   * Folgt der Wiedergabe dieser Zone: gleiche Quelle, Start und Stopp mit ihr.
+   * Eigene Quelle und Musik-Automatik ruhen so lange.
+   */
+  followZoneId: number | null;
+  followZoneName: string | null;
   /** Serverseitig aus dem letzten Heartbeat abgeleitet (Pi oder Monitor). */
   deviceOnline: boolean;
   /** Raum, den die Zone beschallt. Über ihn erbt sie die Betriebszeit. */

@@ -30,6 +30,7 @@ import {
   FolderOpen,
   Headphones,
   History,
+  Link2,
   ListMusic,
   Loader2,
   Megaphone,
@@ -1042,6 +1043,7 @@ export function AudioClient({
           zone={zoneDialog.zone}
           devices={audioDevices}
           monitors={audioMonitors}
+          zones={zones}
           playlists={playlists}
           streams={streams}
           rooms={rooms}
@@ -1253,13 +1255,13 @@ function ZoneCard({
   }, [highlight]);
 
   const lastSeen = formatRelativeTime(live?.lastStateAt ?? zone.lastStateAt);
-  const musicWindow = describeMusicWindow(zone);
-  const musicState = describeMusicState(
-    { ...zone, musicOverrideUntil },
-    roomSchedule,
-    new Date(now),
-    timeZone
-  );
+  // Folgt die Zone einer anderen, ruhen ihre eigene Quelle und Musik-Automatik.
+  const following = zone.followZoneId !== null;
+  const leaderName = zone.followZoneName ?? "der Zone";
+  const musicWindow = following ? null : describeMusicWindow(zone);
+  const musicState = following
+    ? { text: `Startet und stoppt mit „${leaderName}“, gleiche Musik`, warn: false }
+    : describeMusicState({ ...zone, musicOverrideUntil }, roomSchedule, new Date(now), timeZone);
 
   const pending = command && command.phase !== "failed" ? command : null;
   const waitedSec = pending ? Math.max(0, Math.round((now - pending.since) / 1000)) : 0;
@@ -1274,7 +1276,7 @@ function ZoneCard({
     ? "Kein Abspieler zugeordnet · in den Einstellungen der Zone wählen"
     : !isActive
       ? "Zone ist deaktiviert · in den Einstellungen einschalten"
-      : zone.defaultSource === "SILENCE"
+      : zone.defaultSource === "SILENCE" && !following
         ? "Keine Quelle eingestellt · Playlist oder Webradio in den Einstellungen wählen"
         : null;
 
@@ -1304,7 +1306,7 @@ function ZoneCard({
         : isPlaying
           ? {
               label: "Läuft",
-              detail: currentTitle ?? sourceName ?? "Wiedergabe",
+              detail: currentTitle ?? (following ? `wie „${leaderName}“` : sourceName) ?? "Wiedergabe",
               tone: "music",
             }
           : hasPlayer && !deviceOnline
@@ -1321,7 +1323,11 @@ function ZoneCard({
               }
             : {
                 label: "Aus",
-                detail: sourceName ? `Start spielt ${sourceName}` : "Keine Quelle eingestellt",
+                detail: following
+                  ? `Start folgt wieder „${leaderName}“`
+                  : sourceName
+                    ? `Start spielt ${sourceName}`
+                    : "Keine Quelle eingestellt",
                 tone: "neutral",
               };
 
@@ -1348,6 +1354,12 @@ function ZoneCard({
               <Badge variant="outline" className="text-xs" title="Spielt über die Lautsprecher des Rechners, auf dem dieser Monitor läuft">
                 <MonitorSpeaker className="h-3 w-3" />
                 Monitor {zone.monitorName}
+              </Badge>
+            )}
+            {following && (
+              <Badge variant="outline" className="text-xs" title="Spielt dieselbe Musik und startet und stoppt mit dieser Zone">
+                <Link2 className="h-3 w-3" />
+                Folgt {leaderName}
               </Badge>
             )}
             {zone.roomName && (

@@ -12,6 +12,7 @@ import {
   resolveZoneMonitor,
 } from "@/lib/audio";
 import { parseStreamUrl } from "@/lib/audio-integration";
+import { resolveFollowZone } from "@/lib/audio-follow";
 import { MAX_ZONE_NAME, cleanReceiverName } from "@/lib/net-address";
 
 export async function PUT(
@@ -76,6 +77,15 @@ export async function PUT(
   }
   if (monitorId != null && deviceId === undefined && existing.deviceId !== null) deviceId = null;
   if (deviceId != null && monitorId === undefined && existing.monitorId !== null) monitorId = null;
+
+  // Folgt der Wiedergabe einer anderen Zone (keine Ketten). Ein Wechsel
+  // beginnt den Abgleich von vorn.
+  const follow = await resolveFollowZone(db, accountId!, body.followZoneId, zoneId);
+  if (follow && "error" in follow) {
+    return NextResponse.json({ error: follow.error }, { status: follow.status });
+  }
+  const followZoneId = follow?.followZoneId;
+  const followChanged = followZoneId !== undefined && followZoneId !== existing.followZoneId;
 
   // Raum-Zuordnung analog.
   let keyRoomId: number | null | undefined = undefined;
@@ -188,6 +198,7 @@ export async function PUT(
       name: name || undefined,
       ...(deviceId !== undefined ? { deviceId } : {}),
       ...(monitorId !== undefined ? { monitorId } : {}),
+      ...(followChanged ? { followZoneId, followState: null } : {}),
       ...(keyRoomId !== undefined ? { keyRoomId } : {}),
       ...(playlistId !== undefined ? { playlistId } : {}),
       ...(sourceKind ? { sourceKind } : {}),

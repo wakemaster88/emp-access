@@ -2529,6 +2529,18 @@ model AudioZone {
   /// ein Geraet, auf dem jemand am Monitor „Hier abspielen“ getippt hat.
   monitorId          Int?               @unique
   monitor            MonitorConfig?     @relation("AudioZoneMonitor", fields: [monitorId], references: [id], onDelete: SetNull)
+  /// Folgt der Wiedergabe dieser Zone: spielt dieselbe Quelle und startet und
+  /// stoppt mit ihr (lib/audio-follow). Eigene Musik-Automatik und Quelle ruhen
+  /// so lange; Durchsagen und Lautstaerke bleiben je Zone. null = eigenstaendig
+  /// (ab Werk). Keine Ketten: eine Zone, der andere folgen, folgt selbst nicht.
+  followZoneId       Int?
+  followZone         AudioZone?         @relation("AudioZoneFollow", fields: [followZoneId], references: [id], onDelete: SetNull)
+  followers          AudioZone[]        @relation("AudioZoneFollow")
+  /// Zuletzt an diese Zone weitergegebener Stand der gefolgten Zone
+  /// ("STOP", "STREAM:<url>", "PLAYLIST:<id>"). "HOLD:<Stand>": Personal,
+  /// Zeitplan oder Regel haben diese Zone direkt gesteuert; das gilt, bis sich
+  /// die gefolgte Zone aendert oder hier jemand Start drueckt.
+  followState        String?
   sortOrder          Int                @default(0)
   isActive           Boolean            @default(true)
   /// Snapcast-Gruppe: Zonen mit demselben Namen spielen synchron. Noetig, wenn
@@ -2616,6 +2628,7 @@ model AudioZone {
   @@index([playlistId])
   @@index([streamId])
   @@index([keyRoomId])
+  @@index([followZoneId])
 }
 
 /// Audiodatei in der Mediathek. Die Datei liegt im Blob-Storage; die Zonen-Pis

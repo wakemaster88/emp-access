@@ -142,6 +142,8 @@ interface Props {
   devices: AudioDeviceOption[];
   /** Monitor-Seiten, die die Zone im Browser abspielen können. */
   monitors: AudioMonitorOption[];
+  /** Alle Zonen – für „Folgt Zone“. */
+  zones: ZoneRow[];
   playlists: PlaylistRow[];
   streams: StreamRow[];
   rooms: RoomOption[];
@@ -177,6 +179,7 @@ export function ZoneDialog({
   zone,
   devices,
   monitors,
+  zones,
   playlists,
   streams,
   rooms,
@@ -189,6 +192,9 @@ export function ZoneDialog({
   const deviceId = playerId(player, DEVICE_PREFIX);
   const monitorId = playerId(player, MONITOR_PREFIX);
   const [roomId, setRoomId] = useState<string>(zone?.roomId ? String(zone.roomId) : NONE);
+  const [followId, setFollowId] = useState<string>(
+    zone?.followZoneId ? String(zone.followZoneId) : NONE
+  );
   const [playlistId, setPlaylistId] = useState<string>(
     zone?.playlistId ? String(zone.playlistId) : NONE
   );
@@ -227,6 +233,12 @@ export function ZoneDialog({
   // Bereits belegte Abspieler ausblenden – außer dem eigenen.
   const availableDevices = devices.filter((d) => !d.taken || d.id === zone?.deviceId);
   const availableMonitors = monitors.filter((m) => !m.taken || m.id === zone?.monitorId);
+  // Folgen ohne Ketten: nur Zonen, die selbst niemandem folgen; wem andere
+  // folgen, der folgt selbst nicht.
+  const leaderOptions = zones.filter((z) => z.id !== zone?.id && z.followZoneId === null);
+  const followerNames = zone ? zones.filter((z) => z.followZoneId === zone.id).map((z) => z.name) : [];
+  const following = followId !== NONE;
+  const leaderName = zones.find((z) => String(z.id) === followId)?.name ?? "";
   const selectedMonitor = monitors.find((m) => m.id === monitorId);
 
   // Welcher Empfang möglich ist, entscheidet der Abspieler: er meldet im
@@ -335,8 +347,10 @@ export function ZoneDialog({
         playlistId: playlistId === NONE ? null : Number(playlistId),
         streamId: streamId === NONE ? null : Number(streamId),
         defaultSource,
-        // Ein Monitor spielt für sich allein, ohne Snapcast.
-        syncGroup: monitorId ? null : syncGroup.trim() || null,
+        followZoneId: following ? Number(followId) : null,
+        // Ein Monitor spielt für sich allein, ohne Snapcast; eine folgende Zone
+        // bekommt ihre Musik über Befehle, nicht über Snapcast.
+        syncGroup: monitorId || following ? null : syncGroup.trim() || null,
         volume,
         announcementVolume,
         duckVolume,
@@ -454,6 +468,32 @@ export function ZoneDialog({
           </div>
 
           <div>
+            <Label className="mb-1.5 block">Folgt Zone</Label>
+            <Select value={followId} onValueChange={setFollowId} disabled={followerNames.length > 0}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Keine" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Keine – eigene Musik</SelectItem>
+                {leaderOptions.map((z) => (
+                  <SelectItem key={z.id} value={String(z.id)}>
+                    {z.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">
+              {following
+                ? `Spielt dieselbe Musik wie „${leaderName}“ und startet und stoppt mit ihr. Quelle und Musik-Automatik dieser Zone ruhen so lange; Lautstärke und Durchsagen bleiben eigen. Ein Stopp hier gilt, bis sich „${leaderName}“ ändert oder hier jemand Start drückt.`
+                : followerNames.length > 0
+                  ? `${followerNames.map((n) => `„${n}“`).join(", ")} folgt dieser Zone. Eine Zone, der andere folgen, folgt selbst niemandem.`
+                  : "Optional: dieselbe Musik wie eine andere Zone, z. B. Shop folgt Insel."}
+            </p>
+          </div>
+
+          {!following && (
+          <>
+          <div>
             <Label className="mb-1.5 block">Quelle</Label>
             <Select
               value={defaultSource}
@@ -531,6 +571,9 @@ export function ZoneDialog({
           </div>
           )}
 
+          </>
+          )}
+
           {/* Am Telefon untereinander: nebeneinander blieben je 90 px, in denen
               die Beschriftung „Durchsage · 85 %" umbrach. */}
           <div className="grid gap-1 sm:grid-cols-3 sm:gap-3">
@@ -544,6 +587,7 @@ export function ZoneDialog({
           </div>
 
           {/* Abschnitte als Kacheln: das Glas tönt sich im deckenden Dialog von selbst (Abschnitt 18). */}
+          {!following && (
           <div className="glass-tile space-y-2 p-3">
             <div>
               <Label>Musik automatisch an und aus</Label>
@@ -665,6 +709,7 @@ export function ZoneDialog({
               </>
             )}
           </div>
+          )}
 
           {!monitorId && (
           <div className="glass-tile space-y-2 p-3">

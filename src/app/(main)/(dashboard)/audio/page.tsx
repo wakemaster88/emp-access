@@ -57,6 +57,7 @@ export default async function AudioPage({
         include: {
           device: { select: { id: true, name: true, lastUpdate: true } },
           monitor: { select: { id: true, name: true } },
+          followZone: { select: { id: true, name: true } },
           playlist: { select: { id: true, name: true } },
           stream: { select: { id: true, name: true, url: true } },
           keyRoom: { select: { id: true, name: true, operatingScheduleId: true } },
@@ -154,6 +155,8 @@ export default async function AudioPage({
             deviceName: z.device?.name ?? null,
             monitorId: z.monitorId,
             monitorName: z.monitor?.name ?? null,
+            followZoneId: z.followZoneId,
+            followZoneName: z.followZone?.name ?? null,
             deviceOnline: zonePlayerOnline(z),
             roomId: z.keyRoom?.id ?? null,
             roomName: z.keyRoom?.name ?? null,
