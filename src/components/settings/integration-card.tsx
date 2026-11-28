@@ -20,6 +20,7 @@ import {
 import { CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, Copy, Search, XCircle } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 import { isMaskedSecret, typedOverMask } from "@/lib/secret-mask";
+import { EmpShopCostPin } from "./emp-shop-cost-pin";
 
 export interface ApiConfigData {
   id?: number;
@@ -144,7 +145,7 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
     label: "EMP-Shop",
     description: "Shop-Scan im Shop-Monitor – Preisetiketten scannen, Artikel und Preise kommen aus dem EMP-Shop",
     fields: {
-      token: "API-Schlüssel (EMP-Shop › Einstellungen › API, Berechtigung „Artikel und Preise lesen“)",
+      token: "API-Schlüssel (EMP-Shop › Einstellungen › API, Berechtigung „Artikel und Preise lesen“, für EK und Marge dazu „Einkaufspreise lesen (Ø-EK)“)",
       baseUrl: "Adresse des Backoffice (optional, Standard: https://emp-shop-backoffice.vercel.app)",
     },
   },
@@ -541,7 +542,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               )}
               {provider === "EMP_SHOP" && isConfigured && (
                 <div className="mt-2 text-[11px] text-muted-foreground">
-                  <p><strong>Shop-Monitor:</strong> Taste „Shop“ – Etiketten scannen, Artikel erscheinen als Angebot.</p>
+                  <p><strong>Shop-Monitor:</strong> Taste „Shop“ – Etiketten scannen, Artikel erscheinen als Angebot. EK und Marge mit PIN.</p>
                 </div>
               )}
               {provider === "LOQED" && isConfigured && (
@@ -724,6 +725,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 )}
               </div>
             )}
+
+            {provider === "EMP_SHOP" && isConfigured && <EmpShopCostPin />}
 
             {provider === "WAKESYS" && isConfigured && (
               <div className="glass-tile p-3 space-y-3">

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   addToOffer,
+  amountE4,
   applyOfferDiscount,
   CAMERA_SAME_CODE_GAP_MS,
   cameraCodeGate,
@@ -10,7 +11,11 @@ import {
   formatEuro,
   formatPercent,
   isShopLabelScan,
+  isValidShopCostPin,
+  isWeakShopCostPin,
+  lineCostView,
   mirrorCameraPreview,
+  offerMargin,
   offerTotals,
   parseDiscountInput,
   parseStoredDiscount,
@@ -19,8 +24,16 @@ import {
   shopLabelCode,
   shopScanCode,
   type ShopArticle,
+  type ShopCost,
 } from "./shop-scan";
-import { articlesFromLookup, empShopBaseUrl, lookupEmpShopArticles } from "./emp-shop-client";
+import {
+  articlesFromLookup,
+  costsFromResponse,
+  EMP_SHOP_COSTS_SCOPE_MESSAGE,
+  empShopBaseUrl,
+  fetchEmpShopCosts,
+  lookupEmpShopArticles,
+} from "./emp-shop-client";
 
 /** 2024 Ronix One 142 cm wie auf dem Preisetikett im Laden: 529 €, UVP 659,99 €. */
 const utopia: ShopArticle = {
@@ -274,4 +287,131 @@ test("formatPercent und parseStoredDiscount", () => {
   assert.equal(parseStoredDiscount(JSON.stringify({ kind: "percent", basisPoints: 20000 })), null);
   assert.equal(parseStoredDiscount("{kaputt"), null);
   assert.equal(parseStoredDiscount(null), null);
+});
+
+/**
+ * EK und Marge: Angebot 3 × Ronix One 142 cm (529 €) und 3 × Lamzac (49,90 €)
+ * wie im Laden. Ø-EK Ronix One 296,15 €, Lieferantenpreis Lamzac 24,95 €
+ * (Beispielwerte), beide 19 %.
+ */
+const einstand = new Map<string, ShopCost>([
+  [utopia.variantId, { unitCostE4: 2_961_500, basis: "AVERAGE_COST", taxBasisPoints: 1900 }],
+  [lamzac.variantId, { unitCostE4: 249_500, basis: "SUPPLIER_PRICE", taxBasisPoints: 1900 }],
+]);
+const angebot = [{ article: utopia, quantity: 3 }, { article: lamzac, quantity: 3 }];
+
+test("amountE4: Beträge mit vier Nachkommastellen ohne Gleitkomma", () => {
+  assert.equal(amountE4("214.5000"), 2_145_000);
+  assert.equal(amountE4("24.95"), 249_500);
+  assert.equal(amountE4("0.0001"), 1);
+  assert.equal(amountE4("12"), 120_000);
+  assert.equal(amountE4("-3.00"), null);
+  assert.equal(amountE4("1.23456"), null);
+  assert.equal(amountE4(null), null);
+});
+
+test("lineCostView: EK und Marge je Stück zum Etikettenpreis", () => {
+  // 529 € brutto = 444,54 € netto, minus 296,15 € EK = 148,39 € (33,4 %)
+  const one = lineCostView(52900, einstand.get(utopia.variantId));
+  assert.deepEqual(one, { unitCostCents: 29615, marginCents: 14839, netCents: 44454 });
+  assert.equal(formatPercent(one!.marginCents!, one!.netCents!), "33,4 %");
+  // 49,90 € brutto = 41,93 € netto, minus 24,95 € = 16,98 €
+  assert.deepEqual(lineCostView(4990, einstand.get(lamzac.variantId)), { unitCostCents: 2495, marginCents: 1698, netCents: 4193 });
+  assert.equal(lineCostView(4990, { unitCostE4: null, basis: null, taxBasisPoints: 1900 }), null);
+  assert.equal(lineCostView(4990, undefined), null);
+  assert.deepEqual(lineCostView(null, einstand.get(lamzac.variantId)), { unitCostCents: 2495, marginCents: null, netCents: null });
+});
+
+test("offerMargin: Marge und Spielraum ohne Rabatt", () => {
+  const m = offerMargin(angebot, einstand, 0);
+  // Netto 1.459,41 €, EK 3 × 296,15 € + 3 × 24,95 € = 963,30 €
+  // Untergrenze: 963,30 € × 1,19 = 1.146,327 € → 1.146,33 €; Spielraum 1.736,70 € − 1.146,33 €
+  assert.deepEqual(m, { pending: 0, withoutCost: 0, costCents: 96330, netCents: 145941, marginCents: 49611, breakEvenCents: 114633, roomCents: 59037 });
+  assert.equal(formatPercent(m.marginCents, m.netCents), "34 %");
+  // EK netto + Marge = Netto
+  assert.equal(m.costCents + m.marginCents, m.netCents);
+});
+
+test("offerMargin: Rabatt senkt Marge und Spielraum, unter EK wird es negativ", () => {
+  const summe = offerTotals(angebot).totalCents;
+  assert.equal(summe, 173670);
+  // 10 %: 173,67 € Rabatt, Netto 1.313,47 €, Marge 350,17 € (26,7 %), noch 416,70 € Spielraum
+  const zehn = applyOfferDiscount(summe, { kind: "percent", basisPoints: 1000 });
+  const m10 = offerMargin(angebot, einstand, zehn.discountCents);
+  assert.deepEqual(m10, { pending: 0, withoutCost: 0, costCents: 96330, netCents: 131347, marginCents: 35017, breakEvenCents: 114633, roomCents: 41670 });
+  assert.equal(formatPercent(m10.marginCents, m10.netCents), "26,7 %");
+  // Der Spielraum zusätzlich als Rabatt führt genau auf den Einstand
+  const amLimit = offerMargin(angebot, einstand, zehn.discountCents + m10.roomCents!);
+  assert.ok(amLimit.marginCents >= 0 && amLimit.marginCents <= 1, `Marge am Limit: ${amLimit.marginCents}`);
+  assert.equal(amLimit.roomCents, 0);
+  // Endpreis 1.100 €: 38,93 € unter Einstand
+  const endpreis = applyOfferDiscount(summe, { kind: "total", cents: 110000 });
+  const mEnd = offerMargin(angebot, einstand, endpreis.discountCents);
+  assert.deepEqual(mEnd, { pending: 0, withoutCost: 0, costCents: 96330, netCents: 92437, marginCents: -3893, breakEvenCents: 114633, roomCents: 0 });
+});
+
+test("offerMargin: ohne EK und noch ladend zählt nicht mit, Spielraum offen", () => {
+  const ohneEk = new Map(einstand);
+  ohneEk.set(lamzac.variantId, { unitCostE4: null, basis: null, taxBasisPoints: 1900 });
+  const m = offerMargin(angebot, ohneEk, 0);
+  // Nur der Ronix One: Netto 3 × 444,537… = 1.333,61 €, EK 888,45 €
+  assert.deepEqual(m, { pending: 0, withoutCost: 1, costCents: 88845, netCents: 133361, marginCents: 44516, breakEvenCents: null, roomCents: null });
+  const laedt = offerMargin(angebot, new Map([[utopia.variantId, einstand.get(utopia.variantId)!]]), 0);
+  assert.equal(laedt.pending, 1);
+  assert.equal(laedt.roomCents, null);
+  // Positionen ohne Preis bleiben draußen
+  const ohnePreis = offerMargin([{ article: { ...lamzac, priceCents: null }, quantity: 2 }], einstand, 0);
+  assert.deepEqual(ohnePreis, { pending: 0, withoutCost: 0, costCents: 0, netCents: 0, marginCents: 0, breakEvenCents: null, roomCents: null });
+  // 7 % (Buch) rechnet mit dem eigenen Satz: 21,40 € brutto = 20,00 € netto
+  const buch = offerMargin([{ article: { ...lamzac, variantId: "buch", priceCents: 2140 }, quantity: 1 }], new Map([["buch", { unitCostE4: 150_000, basis: "SUPPLIER_PRICE", taxBasisPoints: 700 }]]), 0);
+  assert.equal(buch.netCents, 2000);
+  assert.equal(buch.marginCents, 500);
+});
+
+test("isValidShopCostPin und isWeakShopCostPin", () => {
+  assert.equal(isValidShopCostPin("482915"), true);
+  assert.equal(isValidShopCostPin("48291537"), true);
+  assert.equal(isValidShopCostPin("48291"), false);
+  assert.equal(isValidShopCostPin("482915370"), false);
+  assert.equal(isValidShopCostPin("48291a"), false);
+  assert.equal(isWeakShopCostPin("111111"), true);
+  assert.equal(isWeakShopCostPin("123456"), true);
+  assert.equal(isWeakShopCostPin("87654321"), true);
+  assert.equal(isWeakShopCostPin("890123"), false);
+  assert.equal(isWeakShopCostPin("482915"), false);
+});
+
+test("costsFromResponse und fetchEmpShopCosts: Einstand aus dem EMP-Shop", async () => {
+  const antwort = {
+    data: [
+      { variantId: utopia.variantId, unitCost: "296.1500", costBasis: "AVERAGE_COST", currency: "EUR", taxRate: "19.00" },
+      { variantId: lamzac.variantId, unitCost: null, costBasis: null, currency: "EUR", taxRate: "19.00" },
+    ],
+  };
+  assert.deepEqual(costsFromResponse(antwort), [
+    { variantId: utopia.variantId, unitCostE4: 2_961_500, basis: "AVERAGE_COST", taxBasisPoints: 1900 },
+    { variantId: lamzac.variantId, unitCostE4: null, basis: null, taxBasisPoints: 1900 },
+  ]);
+  assert.equal(costsFromResponse({ data: [{ ...antwort.data[0], taxRate: "neunzehn" }] }), null);
+  assert.equal(costsFromResponse({ nichts: true }), null);
+
+  const calls: Array<{ url: string; auth: string | null }> = [];
+  const ok: typeof fetch = async (input, init) => {
+    calls.push({ url: String(input), auth: new Headers(init?.headers).get("authorization") });
+    return new Response(JSON.stringify(antwort), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const r = await fetchEmpShopCosts({ token: "emp_test_geheim", baseUrl: null }, [utopia.variantId, lamzac.variantId], ok);
+  assert.equal(r.ok, true);
+  assert.equal(calls[0]!.url, `https://emp-shop-backoffice.vercel.app/api/v1/products/costs?variantIds=${utopia.variantId}%2C${lamzac.variantId}`);
+  assert.equal(calls[0]!.auth, "Bearer emp_test_geheim");
+
+  // Ohne Positionen kein Aufruf
+  assert.deepEqual(await fetchEmpShopCosts({ token: "x", baseUrl: null }, [], async () => { throw new Error("nicht aufrufen"); }), { ok: true, costs: [] });
+  // Schlüssel ohne „Einkaufspreise lesen“
+  const ohneRecht: typeof fetch = async () => new Response("{}", { status: 403 });
+  const r403 = await fetchEmpShopCosts({ token: "x", baseUrl: null }, ["a"], ohneRecht);
+  assert.deepEqual(r403, { ok: false, status: 409, message: EMP_SHOP_COSTS_SCOPE_MESSAGE });
+  assert.match(EMP_SHOP_COSTS_SCOPE_MESSAGE, /Einkaufspreise lesen \(Ø-EK\)/);
+  const weg: typeof fetch = async () => { throw new Error("offline"); };
+  assert.equal((await fetchEmpShopCosts({ token: "x", baseUrl: null }, ["a"], weg)).ok, false);
 });

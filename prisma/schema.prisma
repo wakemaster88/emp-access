@@ -182,6 +182,7 @@ model Account {
   scanSnapshots          ScanSnapshot[]
   areas                  AccessArea[]
   apiConfigs             ApiConfig[]
+  shopCostPin            ShopCostPin?
   monitors               MonitorConfig[]
   subscriptions          Subscription[]
   services               Service[]
@@ -1473,6 +1474,23 @@ model ApiConfig {
 
   @@index([provider])
   @@index([accountId, provider])
+}
+
+/// PIN fuer EK und Marge im Shop-Monitor (28.11.2026, Aaron: „EK mit PIN am
+/// Monitor“), je Mandant. Nur als bcrypt-Hash. Fehlversuche zaehlen hier, damit
+/// die Sperre ueber alle Vercel-Instanzen greift (wie AdminLoginLock).
+model ShopCostPin {
+  id            Int       @id @default(autoincrement())
+  accountId     Int       @unique
+  account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  pinHash       String
+  /// Zeitpunkt der PIN; Freischaltungen einer frueheren PIN gelten nicht mehr.
+  pinSetAt      DateTime  @default(now())
+  failures      Int       @default(0)
+  lockedUntil   DateTime?
+  lastAttemptAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 // ── Shelly-Automationen ──────────────────────────────────────────────────────
