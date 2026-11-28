@@ -151,6 +151,9 @@ enum ApiProvider {
   NUKI
   GARDENA
   LOQED
+  /// EMP-Shop (Shop-Scan im Shop-Monitor): API-Schluessel mit products.read,
+  /// baseUrl = Backoffice des Shops (src/lib/emp-shop-client.ts).
+  EMP_SHOP
 }
 
 model Account {

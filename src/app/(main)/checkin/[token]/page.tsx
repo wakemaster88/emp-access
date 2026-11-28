@@ -31,7 +31,7 @@ import { LockerOverlay } from "@/components/checkin/locker-overlay";
 import { LostItemsOverlay } from "@/components/checkin/lost-items-overlay";
 import { PaymentOpenOverlay } from "@/components/checkin/payment-open-overlay";
 import { BulkOverlay } from "@/components/checkin/bulk-overlay";
-import { Cake, Lock, PackageSearch, Layers, Wallet } from "lucide-react";
+import { Cake, Lock, PackageSearch, Layers, ShoppingBag, Wallet } from "lucide-react";
 import { bundleAnnyTickets, type TicketBundle } from "@/lib/anny-ticket-bundle";
 import { AddTicketOverlay, toDateInput } from "@/components/checkin/add-ticket-overlay";
 import { CustomerOverlay } from "@/components/checkin/customer-overlay";
@@ -43,6 +43,8 @@ import { classifyInfoLabel, compareSetups, isYes, toDateStr } from "@/components
 import { checkinOpeningText } from "@/lib/checkin-opening";
 import { ageOn, isBirthdayOn } from "@/lib/birthday";
 import { CameraOverlay, ScanOverlay } from "@/components/checkin/scan-overlay";
+import { ShopOverlay } from "@/components/checkin/shop-overlay";
+import { isShopLabelScan } from "@/lib/shop-scan";
 import { AppLinkDialog, type AppLinkState } from "@/components/checkin/app-link-dialog";
 import { SlotOverviewSection } from "@/components/checkin/slot-overview";
 import { TicketCard } from "@/components/checkin/ticket-card";
@@ -113,6 +115,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
   const [lostItemsOverlayOpen, setLostItemsOverlayOpen] = useState(false);
   const [paymentOpenOverlayOpen, setPaymentOpenOverlayOpen] = useState(false);
+  // Shop-Scan: Preisetiketten scannen, Artikel als Angebot (components/checkin/shop-overlay).
+  const [shopOpen, setShopOpen] = useState(false);
+  const [shopPendingScan, setShopPendingScan] = useState<{ code: string; seq: number } | null>(null);
+  const shopScanSeq = useRef(0);
   // Anzahl Abos mit „Zahlung offen“ für die Kopfzeile; leise, Fehler egal.
   const [paymentOpenCount, setPaymentOpenCount] = useState(0);
   useEffect(() => {
@@ -463,6 +469,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       // diese Sperre wuerde ein Baendchen, das gescannt wird waehrend der
       // Fokus gerade nicht im Scanfeld liegt, hier als Ticket-Suche landen.
       if (bulkOverlayOpen) return;
+      // Im Shop-Modus liest das Shop-Fenster selbst mit.
+      if (shopOpen) return;
 
       if (e.key === "Enter") {
         const code = scanBufferRef.current.trim();
@@ -487,7 +495,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bulkOverlayOpen]);
+  }, [bulkOverlayOpen, shopOpen]);
 
   /** Alle Nicht-Abo-Tickets des Tages, zu Gaesten gebuendelt. Kombi-Services
    *  (z.B. Aquapark Tageskarte = Aquapark + Strandbad) erzeugen in ANNY eine
@@ -607,6 +615,14 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
   const handleScan = useCallback(async (code: string) => {
     if (!code.trim()) return;
+    // Preisetikett aus dem Shop (QR mit 4wake.eu/A/…): kein Ticket, sondern Shop-Modus mit diesem Artikel.
+    if (isShopLabelScan(code)) {
+      setScanMode(false);
+      setScanInput("");
+      setShopPendingScan({ code, seq: ++shopScanSeq.current });
+      setShopOpen(true);
+      return;
+    }
     setScanLoading(true);
     try {
       const res = await fetch(`/api/checkin/public/${token}/scan`, {
@@ -1369,6 +1385,15 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           )}
           <Button
             variant="outline"
+            onClick={() => { setShopPendingScan(null); setShopOpen(true); }}
+            title="Shop: Preisetiketten scannen, Artikel als Angebot"
+            className={headerButtonClass}
+          >
+            <ShoppingBag className="size-5 shrink-0" />
+            <span className={headerLabelMain}>Shop</span>
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setScanMode(true)}
             title="Scan-Modus aktivieren"
             className={headerButtonClass}
@@ -2008,6 +2033,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
       {paymentOpenOverlayOpen && (
         <PaymentOpenOverlay token={token} onClose={() => setPaymentOpenOverlayOpen(false)} />
+      )}
+
+      {/* Shop-Scan */}
+      {shopOpen && (
+        <ShopOverlay token={token} pendingScan={shopPendingScan} onClose={() => { setShopOpen(false); setShopPendingScan(null); }} />
       )}
 
       {/* Fundsachen overlay */}

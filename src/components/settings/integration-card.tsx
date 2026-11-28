@@ -140,6 +140,14 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
       token: "Nuki Web API Token (Nuki Web → Account → API)",
     },
   },
+  EMP_SHOP: {
+    label: "EMP-Shop",
+    description: "Shop-Scan im Shop-Monitor – Preisetiketten scannen, Artikel und Preise kommen aus dem EMP-Shop",
+    fields: {
+      token: "API-Schlüssel (EMP-Shop › Einstellungen › API, Berechtigung „Artikel und Preise lesen“)",
+      baseUrl: "Adresse des Backoffice (optional, Standard: https://emp-shop-backoffice.vercel.app)",
+    },
+  },
   LOQED: {
     label: "LOQED",
     description: "Türschlösser – Öffnen, Entriegeln, Abschließen über die LOQED Integrations-API",
@@ -189,6 +197,13 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     message?: string;
     matchingTickets?: { id: number; name: string; firstName: string | null; lastName: string | null; ticketTypeName: string | null; rfidCode: string | null; status: string; subscriptionId: number | null }[];
   } | null>(null);
+
+  // Shop-Scan: Code mit dem gespeicherten Schlüssel im EMP-Shop nachschlagen.
+  const [shopTest, setShopTest] = useState<
+    | { ok: true; articles: { variantId: string; name: string; options: string[]; sku: string; priceDisplay: string | null }[] }
+    | { ok: false; message: string }
+    | null
+  >(null);
 
   const isConfigured =
     provider === "WAKESYS" ? !!initialData?.baseUrl?.trim()
@@ -447,6 +462,25 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     }
   }
 
+  async function handleShopTest() {
+    if (!testCode.trim()) return;
+    setTesting(true);
+    setShopTest(null);
+    try {
+      const res = await fetch("/api/integrations/emp-shop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: testCode.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      setShopTest(res.ok ? { ok: true, articles: json.articles ?? [] } : { ok: false, message: json.error || "Fehler" });
+    } catch {
+      setShopTest({ ok: false, message: "Netzwerkfehler" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
   async function handleDelete() {
     setDeleting(true);
     try {
@@ -503,6 +537,11 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               {provider === "NUKI" && isConfigured && (
                 <div className="mt-2 text-[11px] text-muted-foreground">
                   <p><strong>Sync:</strong> Smart Locks → Geräte. <strong>Webhook:</strong> Tür-Events → Scans. Details beim Öffnen.</p>
+                </div>
+              )}
+              {provider === "EMP_SHOP" && isConfigured && (
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  <p><strong>Shop-Monitor:</strong> Taste „Shop“ – Etiketten scannen, Artikel erscheinen als Angebot.</p>
                 </div>
               )}
               {provider === "LOQED" && isConfigured && (
@@ -563,7 +602,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <Label htmlFor={`${provider}-baseUrl`}>{meta.fields.baseUrl}</Label>
                 <Input
                   id={`${provider}-baseUrl`}
-                  placeholder={provider === "ANNY" ? "https://b.anny.co" : "https://api.example.com"}
+                  placeholder={provider === "ANNY" ? "https://b.anny.co" : provider === "EMP_SHOP" ? "https://emp-shop-backoffice.vercel.app" : "https://api.example.com"}
                   value={data.baseUrl ?? ""}
                   onChange={(e) => setData({ ...data, baseUrl: e.target.value })}
                 />
@@ -635,6 +674,54 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <p className="text-[11px] text-muted-foreground mt-1">
                   Zusatz z. B.: <code className="bg-muted px-1 rounded">{`{"interfaceIds": [2, 3, 4]}`}</code> (Reihenfolge = Fallback)
                 </p>
+              </div>
+            )}
+
+            {provider === "EMP_SHOP" && isConfigured && (
+              <div className="glass-tile p-3 space-y-3">
+                <p className="text-label">Etikett oder Artikelnummer testen</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Etikett scannen oder Artikelnummer eingeben…"
+                    value={testCode}
+                    onChange={(e) => setTestCode(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleShopTest()}
+                    className="font-mono max-sm:h-11"
+                    autoComplete="off"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleShopTest}
+                    disabled={testing || !testCode.trim()}
+                    className="shrink-0 h-9 max-sm:h-11"
+                  >
+                    {testing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    {testing ? "" : "Prüfen"}
+                  </Button>
+                </div>
+                {shopTest && (
+                  <Notice
+                    tone={shopTest.ok && shopTest.articles.length > 0 ? "success" : "danger"}
+                    icon={shopTest.ok && shopTest.articles.length > 0 ? CheckCircle2 : XCircle}
+                    compact
+                    title={!shopTest.ok ? "Fehler" : shopTest.articles.length > 0 ? "Verbunden" : "Verbunden, aber kein Artikel zu diesem Code"}
+                  >
+                    {!shopTest.ok ? (
+                      <p>{shopTest.message}</p>
+                    ) : (
+                      shopTest.articles.map((a) => (
+                        <p key={a.variantId}>
+                          <strong>{a.name}</strong>
+                          {a.options.length > 0 && <> · {a.options.join(" · ")}</>}
+                          {" · "}<span className="tabular-nums">{a.priceDisplay ?? "ohne Preis"}</span>
+                          {" · "}<code className="bg-muted px-1 rounded">{a.sku}</code>
+                        </p>
+                      ))
+                    )}
+                  </Notice>
+                )}
               </div>
             )}
 

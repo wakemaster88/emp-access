@@ -16,7 +16,7 @@ import {
 /** Anbieter, bei denen das Token optional ist; ein leeres Feld entfernt es dort wie bisher. */
 const TOKEN_OPTIONAL = new Set(["WAKESYS", "EMP_CONTROL"]);
 
-const providerSchema = z.enum(["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED"]);
+const providerSchema = z.enum(["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED", "EMP_SHOP"]);
 
 const schema = z
   .object({
