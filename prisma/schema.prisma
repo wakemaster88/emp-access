@@ -2586,6 +2586,11 @@ model AudioZone {
   /// als "Musik erlaubt" (naechster Fensterbeginn, laengstens Tagesende).
   /// Ein manueller Stopp loescht den Wert. Manuell geht vor Automatik.
   musicOverrideUntil DateTime?
+  /// Musik stumm bis hierhin (Taste „Audio“ am Monitor): die Musik laeuft
+  /// lautlos weiter, Durchsagen klingen wie immer. Laengstens bis Mitternacht,
+  /// damit sie am naechsten Tag nicht still bleibt. null = nicht stumm.
+  /// Nur der Monitor als Abspieler setzt es um, der Pi kennt das Feld nicht.
+  musicMutedUntil    DateTime?
   /// Letzte Quellenwahl des Personals (Start/Stopp von Hand, auch ueber
   /// emp-control). Die Playlist-Abstimmung der Fahrer pausiert danach fuer
   /// `GamificationConfig.musicVoteHoldMinutes`: Personal geht vor.

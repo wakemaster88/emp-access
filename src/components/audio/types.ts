@@ -65,6 +65,8 @@ export interface ZoneRow {
   musicExtent: OperatingExtentKind;
   /** Manuelles Play außerhalb des Fensters gilt bis hierhin (ISO), sonst null. */
   musicOverrideUntil: string | null;
+  /** Musik stumm (Monitor als Abspieler) bis hierhin (ISO), sonst null. */
+  musicMutedUntil: string | null;
   /** Empfänger, über die ein Sender die Zone übernehmen darf. */
   airplayEnabled: boolean;
   bluetoothEnabled: boolean;
@@ -175,6 +177,8 @@ export interface ZoneStatus {
   lastStateAt: string | null;
   /** Manueller Vorrang vor der Musik-Automatik bis hierhin (ISO), sonst null. */
   musicOverrideUntil: string | null;
+  /** Musik stumm (Monitor als Abspieler) bis hierhin (ISO), sonst null. */
+  musicMutedUntil: string | null;
   /** Befehle, die der Abspieler noch nicht bestätigt hat. */
   pendingJobs: number;
 }

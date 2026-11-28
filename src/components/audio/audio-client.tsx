@@ -87,6 +87,7 @@ import { ScheduleDialog, ACTION_LABELS } from "./schedule-dialog";
 import { useAudioStatus } from "./use-audio-status";
 import { useZoneMonitor, zoneSource } from "./use-zone-monitor";
 import { useZoneCommands, type ZoneCommandState } from "./use-zone-commands";
+import { mutedUntilText } from "@/lib/monitor-audio";
 import { ZoneDialog } from "./zone-dialog";
 import { BirthdayAnnounceCard, type BirthdayAnnounceSetting } from "./birthday-announce-card";
 import { ZoneStatusBar } from "./zone-status-bar";
@@ -358,7 +359,7 @@ export function AudioClient({
    */
   async function control(
     zoneId: number,
-    body: { action: "VOLUME"; volume: number } | { action: "SYNC_LIBRARY" },
+    body: { action: "VOLUME"; volume: number } | { action: "SYNC_LIBRARY" } | { action: "MUTE" | "UNMUTE" },
     success?: string
   ) {
     setBusyZone(zoneId);
@@ -628,6 +629,15 @@ export function AudioClient({
                       zone.id,
                       { action: "SYNC_LIBRARY" },
                       "Abgleich gesendet · der Abspieler lädt fehlende Titel im Hintergrund"
+                    )
+                  }
+                  onMute={(muted) =>
+                    control(
+                      zone.id,
+                      { action: muted ? "MUTE" : "UNMUTE" },
+                      muted
+                        ? "Musik stumm bis heute Nacht · Durchsagen klingen weiter"
+                        : "Musik wieder hörbar"
                     )
                   }
                   onDismiss={() => commands.dismiss(zone.id)}
@@ -1191,6 +1201,7 @@ function ZoneCard({
   onStop,
   onVolume,
   onSync,
+  onMute,
   onPairing,
   onEdit,
   onDelete,
@@ -1221,6 +1232,8 @@ function ZoneCard({
   onStop: () => void;
   onVolume: (volume: number) => void;
   onSync: () => void;
+  /** Musik stumm (nur mit Monitor als Abspieler), Durchsagen klingen weiter. */
+  onMute: (muted: boolean) => void;
   onPairing: (open: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -1238,6 +1251,8 @@ function ZoneCard({
   const externalSender = live ? live.externalSender : zone.externalSender;
   const pairableFor = live?.pairableFor ?? zone.pairableFor;
   const musicOverrideUntil = live ? live.musicOverrideUntil : zone.musicOverrideUntil;
+  // Stumm am Monitor: Musik läuft lautlos, Durchsagen klingen (Taste „Audio“ dort).
+  const mutedUntil = (live ? live.musicMutedUntil : zone.musicMutedUntil) ?? null;
 
   const cardRef = useRef<HTMLDivElement>(null);
   const volume = useCommittedVolume(serverVolume, onVolume);
@@ -1356,6 +1371,12 @@ function ZoneCard({
                 Monitor {zone.monitorName}
               </Badge>
             )}
+            {mutedUntil && (
+              <Badge variant="warning" className="gap-1 text-xs" title={`Musik lautlos, Durchsagen klingen weiter · ${mutedUntilText(mutedUntil, timeZone) ?? ""}`}>
+                <VolumeX className="h-3 w-3" />
+                Musik stumm
+              </Badge>
+            )}
             {following && (
               <Badge variant="outline" className="text-xs" title="Spielt dieselbe Musik und startet und stoppt mit dieser Zone">
                 <Link2 className="h-3 w-3" />
@@ -1424,6 +1445,13 @@ function ZoneCard({
                   <RefreshCw />
                   Titel auf Abspieler laden
                 </DropdownMenuItem>
+                {/* Stumm setzt nur der Monitor im Browser um, der Pi nicht. */}
+                {zone.monitorId && (
+                  <DropdownMenuItem onSelect={() => onMute(!mutedUntil)}>
+                    {mutedUntil ? <Volume2 /> : <VolumeX />}
+                    {mutedUntil ? "Musik wieder an" : "Musik stumm schalten"}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onSelect={onDelete}>
                   <Trash2 />

@@ -259,6 +259,15 @@ Monitor-Token: `GET/POST /api/monitor-audio/<token>` und
 `GET /api/monitor-audio/<token>/live`. Nicht am Monitor: Sync-Gruppe, AirPlay,
 Bluetooth.
 
+**Taste „Audio“ am Check-in-Monitor:** Spielt der Monitor eine Zone, steht im
+Kopf die Taste *Audio* (sonst unsichtbar): Start/Stopp, Lautstärke und *Musik
+stumm*. Stumm lässt die Musik lautlos weiterlaufen, Durchsagen klingen wie
+immer; es gilt bis Mitternacht (`AudioZone.musicMutedUntil`), die Taste zeigt
+dann „Stumm“ in Gelb. Gesteuert wird über den Server, also von jedem Gerät mit
+dem Link (`GET/POST /api/monitor-audio/<token>/control`). Stumm setzt nur der
+Monitor um, der Pi nicht; in *Audio › Zonen* steht „Musik stumm“ an der Karte
+und unter *Mehr*.
+
 **Zone folgt einer anderen:** In der Zone unter *Folgt Zone* eine andere wählen
 (z. B. Shop folgt Insel). Die Zone spielt dann dieselbe Quelle und startet und
 stoppt mit ihr; Lautstärke und Durchsagen bleiben je Zone, eigene Quelle und

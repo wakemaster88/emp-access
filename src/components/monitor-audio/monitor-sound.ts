@@ -74,6 +74,8 @@ export class MonitorSound {
   private volume = 50;
   private duckLevel = 15;
   private ducked = false;
+  /** Musik lautlos (Taste „Audio“); Durchsagen, Gong und Live-Ton laufen über eigene Wege. */
+  private musicMuted = false;
   private speechAbort: AbortController | null = null;
 
   /** Darf der Browser hier Ton abspielen? */
@@ -150,6 +152,20 @@ export class MonitorSound {
     return this.volume;
   }
 
+  get isMusicMuted(): boolean {
+    return this.musicMuted;
+  }
+
+  /**
+   * Musik stumm: sie läuft lautlos weiter (Titelfolge, Stream, gemeldeter
+   * Zustand bleiben), Durchsagen klingen über ihre eigenen Elemente wie immer.
+   */
+  setMusicMuted(muted: boolean): void {
+    if (this.musicMuted === muted) return;
+    this.musicMuted = muted;
+    this.applyMusicVolume();
+  }
+
   setVolume(volume: number): void {
     this.volume = Math.max(0, Math.min(100, Math.round(volume)));
     this.applyMusicVolume();
@@ -157,6 +173,8 @@ export class MonitorSound {
 
   private applyMusicVolume(): void {
     this.music.volume = elementVolume(this.ducked ? this.duckLevel : this.volume);
+    // `muted` statt Pegel 0: Safari auf iPad/iPhone übergeht `volume`, nicht aber `muted`.
+    this.music.muted = this.musicMuted;
   }
 
   private duck(level: number): void {

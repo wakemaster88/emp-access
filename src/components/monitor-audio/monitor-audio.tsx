@@ -5,6 +5,7 @@ import { Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { MonitorAudioPlayer, type MonitorAudioView } from "./monitor-audio-player";
+import { registerMonitorPlayer } from "./monitor-audio-registry";
 
 /** Ereignisse, die der Browser als Nutzeraktion wertet (Autoplay-Freigabe). */
 const UNLOCK_EVENTS = ["pointerdown", "pointerup", "touchend", "click", "keydown"] as const;
@@ -24,8 +25,10 @@ export function MonitorAudio({ token }: { token: string }) {
   useEffect(() => {
     const player = new MonitorAudioPlayer(token, setView);
     playerRef.current = player;
+    const unregister = registerMonitorPlayer(token, player);
     player.start();
     return () => {
+      unregister();
       player.dispose();
       playerRef.current = null;
     };

@@ -6,6 +6,7 @@ import { AudioClient } from "@/components/audio/audio-client";
 import {
   MONITOR_AUDIO_TYPES,
   audioBackends,
+  isMusicMuted,
   listTtsVoices,
   pairableSeconds,
   parseMusicTimes,
@@ -179,6 +180,7 @@ export default async function AudioPage({
             musicCloseOffset: z.musicCloseOffset,
             musicExtent: z.musicExtent,
             musicOverrideUntil: z.musicOverrideUntil?.toISOString() ?? null,
+            musicMutedUntil: isMusicMuted(z.musicMutedUntil) ? z.musicMutedUntil!.toISOString() : null,
             airplayEnabled: z.airplayEnabled,
             bluetoothEnabled: z.bluetoothEnabled,
             externalName: z.externalName,

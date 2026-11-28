@@ -33,6 +33,9 @@ import { MonitorSound, type LiveChunk } from "./monitor-sound";
 
 export type MonitorAudioMode = "hidden" | "ask" | "locked" | "playing";
 
+/** So lange gilt ein eben getipptes Stumm vor dem Serverstand. */
+const MUTE_OVERRIDE_MS = 15_000;
+
 export interface MonitorAudioView {
   mode: MonitorAudioMode;
   zoneName: string | null;
@@ -79,6 +82,14 @@ export class MonitorAudioPlayer {
   private flushAgain = false;
   private disposed = false;
   private lastView = "";
+  /** Ein Abruf läuft; ein weiterer (refresh) kommt gleich danach. */
+  private polling = false;
+  private pollQueued = false;
+  /**
+   * Stumm, eben am Monitor getippt: gilt kurz vor dem Serverstand, damit ein
+   * Abruf, der vor dem Tippen losging, die Musik nicht kurz wieder aufdreht.
+   */
+  private muteOverride: { muted: boolean; until: number } | null = null;
 
   constructor(
     private readonly token: string,
@@ -129,6 +140,43 @@ export class MonitorAudioPlayer {
     this.clearTimers();
     this.sound?.dispose();
     this.sound = null;
+  }
+
+  // ── Taste „Audio“ am Monitor ─────────────────────────────────────────
+
+  /** Spielt dieses Gerät die Zone gerade hörbar ab? */
+  get playsHere(): boolean {
+    return this.decision === "on" && !!this.zone && !!this.sound?.unlocked;
+  }
+
+  /** Stumm sofort hier umsetzen; der Server bekommt es parallel über die Taste. */
+  setMusicMuted(muted: boolean): void {
+    this.muteOverride = { muted, until: Date.now() + MUTE_OVERRIDE_MS };
+    this.sound?.setMusicMuted(muted);
+  }
+
+  /** Lautstärke sofort hier; der Befehl dazu kommt mit dem nächsten Abruf. */
+  previewVolume(volume: number): void {
+    if (this.decision === "on") this.sound?.setVolume(volume);
+  }
+
+  /** Gleich abrufen statt bis zu 8 s zu warten – nach Start/Stopp an der Taste. */
+  refresh(): void {
+    if (this.disposed || this.decision !== "on") return;
+    if (this.polling) {
+      this.pollQueued = true;
+      return;
+    }
+    if (this.pollTimer !== null) window.clearTimeout(this.pollTimer);
+    this.pollTimer = null;
+    void this.poll();
+  }
+
+  private musicMutedFor(zone: MonitorZoneState): boolean {
+    const override = this.muteOverride;
+    if (override && Date.now() < override.until) return override.muted;
+    this.muteOverride = null;
+    return zone.musicMuted === true;
   }
 
   // ── Zustand für die Anzeige ───────────────────────────────────────────
@@ -208,6 +256,7 @@ export class MonitorAudioPlayer {
 
   private async poll(): Promise<void> {
     if (this.disposed || this.decision !== "on") return;
+    this.polling = true;
     try {
       const res = await fetch(`${this.base}?spielen=1`, {
         cache: "no-store",
@@ -234,8 +283,15 @@ export class MonitorAudioPlayer {
     } catch {
       // Netz weg: Musik läuft weiter, Fenster hält `music.until` ein.
       if (this.zone) this.applyZone(this.zone);
+    } finally {
+      this.polling = false;
     }
     if (this.disposed || this.decision !== "on") return;
+    if (this.pollQueued) {
+      this.pollQueued = false;
+      void this.poll();
+      return;
+    }
     this.pollTimer = window.setTimeout(
       () => void this.poll(),
       this.zone ? MONITOR_AUDIO_POLL_MS : MONITOR_AUDIO_IDLE_POLL_MS
@@ -257,6 +313,8 @@ export class MonitorAudioPlayer {
     this.emit();
     const sound = this.sound;
     if (!sound) return;
+    // Stumm betrifft nur die Musik; Durchsagen laufen über eigene Elemente.
+    sound.setMusicMuted(this.musicMutedFor(zone));
 
     if (!zone.isActive) {
       if (sound.isPlaying) sound.stopMusic();
