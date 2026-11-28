@@ -29,7 +29,8 @@ const securityHeaders = [
       "media-src 'self' data: blob: https: http:",
       "font-src 'self' data: https://cdn.anny.co",
       // Das anny-Widget legt ein iframe von embed.anny.co an; sonst nur eigene Frames.
-      "frame-src 'self' https://embed.anny.co https://anny.co",
+      // blob: für den Druck des Angebots-PDFs im Shop-Monitor (shop-quote-panel.tsx).
+      "frame-src 'self' blob: https://embed.anny.co https://anny.co",
       "connect-src 'self' https: wss: http: ws:",
       "worker-src 'self' blob:",
       "frame-ancestors 'none'",

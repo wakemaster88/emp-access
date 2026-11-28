@@ -90,7 +90,8 @@ ein Angebot.“
   (−/+), Zeilensumme, Einzelpreis und UVP, unten die Summe inkl. MwSt.
   Derselbe Artikel noch einmal zählt hoch; passen mehrere (doppelte EAN),
   wählt das Personal. Das Angebot bleibt im Browser des Geräts
-  (`localStorage`, je Monitor) bis „Leeren“. Nur Anzeige, keine Zahlung.
+  (`localStorage`, je Monitor) bis „Leeren“. Keine Zahlung; ein echtes
+  Angebot entsteht erst über die Taste **Angebot**.
 - Taste **Rabatt** (28.11.2026) unter der Liste: Rabatt aufs ganze Angebot in
   Prozent (Schnellwahl 5/10/15/20 %), als Betrag oder als Endpreis. Unten
   stehen dann Zwischensumme, Rabatt mit Prozent und Euro und die neue Summe.
@@ -121,6 +122,36 @@ ein Angebot.“
     „Einkaufspreise lesen (Ø-EK)“ (`GET /api/v1/products/costs`, EMP-Shop
     PR #68): Ø-EK, sonst Einkaufspreis des Lieferanten. Fehlt die
     Berechtigung, sagt der Monitor das.
+- Taste **Angebot** (28.11.2026, Aaron: „die Angebot erstellen Funktion. Es
+  wird im System erstellt, und PDF wird gedruckt“) unter der Liste: Name und
+  E-Mail freiwillig, dann „Erstellen und drucken“
+  (`src/components/checkin/shop-quote-panel.tsx`).
+  - Der Kiosk schickt `POST /api/checkin/public/[token]/shop-quote` mit
+    Varianten, Mengen, Rabatt wie am Monitor, Name, E-Mail und der Summe vom
+    Bildschirm (`src/lib/shop-quote.ts`). Der Server ruft im EMP-Shop
+    `POST /api/v1/quotes` (Berechtigung „Angebote anlegen und drucken“,
+    EMP-Shop PR #69) mit Idempotency-Key aus Monitor und Versuch: eine
+    Wiederholung nach Netzfehler legt kein zweites Angebot an.
+  - Preise rechnet der EMP-Shop (Etikettenpreis, brutto), der Rabatt wird dort
+    auf die Positionen verteilt. Weicht seine Summe ab, entsteht nichts; der
+    Monitor nennt die Summe des Shops und bietet „Mit … € erstellen“ an.
+  - Kunde (Aaron: „Laufkunde, Name optional“): Gehört die E-Mail im Shop genau
+    einem Kunden, läuft das Angebot auf ihn, sonst auf den Laufkunden mit dem
+    Namen im Adressfeld. Angelegt wird nie ein Kunde. Angebote werden sofort
+    „gesendet“ (Nummer AN-…, 30 Tage gültig), aber nicht per E-Mail
+    verschickt.
+  - Mit Rabatt fragt der Monitor dieselbe PIN wie für EK und Marge (außer EK
+    ist gerade an); ohne festgelegte PIN gibt es kein Angebot mit Rabatt. Die
+    Freischaltung aus dieser PIN gilt nur, solange die Ansicht offen ist.
+  - Druck: Hat der EMP-Shop einen aktiven PrintNode-Dokumentdrucker
+    (Einstellungen › Packplätze & Drucker, Art „Dokument“), druckt er dort.
+    Sonst holt der Monitor das PDF über
+    `POST /api/checkin/public/[token]/shop-quote/pdf` mit einem
+    verschlüsselten Beleg (30 Minuten, an Mandant und Monitor gebunden, nie in
+    der Adresse) und öffnet den Druckdialog über einen unsichtbaren Rahmen
+    (`frame-src blob:` in `next.config.ts`); „PDF öffnen“ als Rückfall.
+  - B-Ware, Muster und Artikel ohne Preis gehen hier nicht, die bleiben im
+    Backoffice.
 - Artikel und Preise kommen aus dem EMP-Shop über dessen Public API
   (`GET /api/v1/products/lookup`, Berechtigung `products.read`): Preis und
   UVP wie auf dem Etikett. Der Kiosk fragt `POST
@@ -128,7 +159,8 @@ ein Angebot.“
   Server (`src/lib/emp-shop-client.ts`).
 - Einrichtung: Einstellungen › Integrationen › **EMP-Shop**: API-Schlüssel aus
   EMP-Shop › Einstellungen › API („Artikel und Preise lesen“, für EK und
-  Marge dazu „Einkaufspreise lesen (Ø-EK)“; vorhandene Schlüssel lassen sich
+  Marge dazu „Einkaufspreise lesen (Ø-EK)“, für die Taste Angebot „Angebote
+  anlegen und drucken“; vorhandene Schlüssel lassen sich
   dort nicht ändern, also neu anlegen), Adresse leer lassen für
   `https://emp-shop-backoffice.vercel.app`. Dort lässt sich mit einem Etikett
   oder einer Artikelnummer prüfen, ob die Verbindung steht, und die PIN für EK
