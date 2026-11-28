@@ -12,8 +12,11 @@
  * nachschlägt; Preis und UVP sind die des Preisetiketts. Derselbe Artikel noch
  * einmal zählt die Menge hoch, passen mehrere (doppelte EAN), wählt das
  * Personal. Ein Rabatt aufs Ganze (Prozent, Betrag oder Endpreis) senkt die
- * Summe. Nur Anzeige: keine Zahlung, keine Buchung im Shop. Angebot und Rabatt
+ * Summe. Zahlung oder Buchung gibt es hier nicht. Positionen und Rabatt
  * bleiben auf diesem Gerät gespeichert, bis jemand „Leeren“ tippt.
+ *
+ * Taste „Angebot“ (28.11.2026): legt das Angebot über `ShopQuotePanel` im
+ * EMP-Shop an (Nummer AN-…, Laufkunde oder Kunde zur E-Mail) und druckt es.
  *
  * Taste „EK“ (28.11.2026): Einkaufspreis und Marge je Position und fürs Ganze
  * nach Rabatt, dazu der Spielraum bis zum Einstand. Jedes Einschalten fragt die
@@ -23,7 +26,7 @@
  * beim Schließen.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BadgePercent, Camera, CameraOff, CheckCircle2, Delete, Eye, EyeOff, KeyRound, Loader2, Minus, Plus, ScanLine, Search, ShoppingBag, Trash2, X, XCircle } from "lucide-react";
+import { BadgePercent, Camera, CameraOff, CheckCircle2, Eye, EyeOff, FileText, Loader2, Minus, Plus, ScanLine, Search, ShoppingBag, Trash2, X, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,6 +56,8 @@ import {
 } from "@/lib/shop-scan";
 import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
 import { ShopCamera } from "./shop-camera";
+import { ShopPinPad } from "./shop-pin-pad";
+import { ShopQuotePanel } from "./shop-quote-panel";
 
 /** Frühere Fassung merkte „Kamera an“ je Gerät; die Kamera startet jetzt immer aus. */
 const legacyCameraPrefKey = "emp.shop-scan.kamera";
@@ -65,7 +70,6 @@ const DISCOUNT_KINDS: Array<{ kind: OfferDiscount["kind"]; label: string; placeh
   { kind: "total", label: "Endpreis", placeholder: "Preis für alles" },
 ];
 const QUICK_PERCENTS = [5, 10, 15, 20];
-const PIN_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "del", "0", "ok"] as const;
 
 type CostsReply = { unlock?: string; expiresAt?: string; costs?: ShopCostEntry[]; error?: string; pin?: boolean };
 
@@ -128,6 +132,7 @@ export function ShopOverlay({
   const [discountKind, setDiscountKind] = useState<OfferDiscount["kind"]>("percent");
   const [discountInput, setDiscountInput] = useState("");
   const [discountError, setDiscountError] = useState(false);
+  const [quoteOpen, setQuoteOpen] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraNote, setCameraNote] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
   // EK und Marge: nur im Speicher, nie im localStorage.
@@ -142,6 +147,7 @@ export function ShopOverlay({
   const inflightRef = useRef(new Set<string>());
   const lastActivityRef = useRef(0);
   const pinOpenRef = useRef(false);
+  const quotePinRef = useRef(false);
   const pinInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -224,8 +230,8 @@ export function ShopOverlay({
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-      // PIN-Eingabe offen: Ziffern gehören nicht in den Scan.
-      if (pinOpenRef.current) return;
+      // PIN-Eingabe offen (EK oder Angebot): Ziffern gehören nicht in den Scan.
+      if (pinOpenRef.current || quotePinRef.current) return;
       if (e.key === "Escape") { onCloseRef.current(); return; }
       if (e.key === "Enter") {
         const code = buffer.trim();
@@ -264,6 +270,7 @@ export function ShopOverlay({
 
   // ── EK und Marge ──────────────────────────────────────────────────────────
   useEffect(() => { pinOpenRef.current = pinOpen; }, [pinOpen]);
+  const onQuotePinActive = useCallback((active: boolean) => { quotePinRef.current = active; }, []);
 
   const requestCosts = useCallback(
     async (body: { pin?: string; unlock?: string; variantIds: string[] }): Promise<{ ok: boolean; status: number; json: CostsReply }> => {
@@ -293,6 +300,7 @@ export function ShopOverlay({
 
   const openPin = () => {
     setDiscountOpen(false);
+    setQuoteOpen(false);
     setConfirmClear(false);
     setPin("");
     setPinError(null);
@@ -326,13 +334,6 @@ export function ShopOverlay({
     } finally {
       setPinBusy(false);
     }
-  };
-
-  const pressPinKey = (key: (typeof PIN_KEYS)[number]) => {
-    setPinError(null);
-    if (key === "ok") void submitPin();
-    else if (key === "del") setPin((p) => p.slice(0, -1));
-    else setPin((p) => (p.length < SHOP_COST_PIN_MAX_LENGTH ? p + key : p));
   };
 
   // Am Rechner gleich ins PIN-Feld; auf dem Tablet die Tasten (sonst klappt die Tastatur auf).
@@ -409,6 +410,7 @@ export function ShopOverlay({
   const openDiscount = () => {
     setConfirmClear(false);
     setPinOpen(false);
+    setQuoteOpen(false);
     setDiscountError(false);
     setDiscountKind(discount?.kind ?? "percent");
     setDiscountInput(
@@ -488,51 +490,17 @@ export function ShopOverlay({
         {/* PIN für EK und Marge: Ziffernfeld für den Touch-Monitor, Tastatur geht auch. */}
         {pinOpen && (
           <div className="shrink-0 border-b border-border px-4 sm:px-5 py-3">
-            <div className="mx-auto max-w-sm space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <KeyRound className="size-4 text-primary" />
-                  PIN für EK und Marge
-                </p>
-                <Button variant="ghost" onClick={() => { setPinOpen(false); setPin(""); setPinError(null); }} className="h-11 text-muted-foreground">
-                  Abbrechen
-                </Button>
-              </div>
-              <Input
-                ref={pinInputRef}
-                type="password"
-                inputMode="numeric"
-                autoComplete="off"
-                maxLength={SHOP_COST_PIN_MAX_LENGTH}
-                value={pin}
-                onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, SHOP_COST_PIN_MAX_LENGTH)); setPinError(null); }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); void submitPin(); }
-                  if (e.key === "Escape") { e.stopPropagation(); setPinOpen(false); setPin(""); }
-                }}
-                aria-label="PIN"
-                aria-invalid={!!pinError}
-                placeholder="PIN"
-                className="h-14 text-center text-2xl tracking-[0.5em] tabular-nums md:text-2xl"
-              />
-              <div className="grid grid-cols-3 gap-2" role="group" aria-label="Ziffern">
-                {PIN_KEYS.map((key) => (
-                  <Button
-                    key={key}
-                    variant={key === "ok" ? "default" : "outline"}
-                    onClick={() => pressPinKey(key)}
-                    disabled={pinBusy || (key === "ok" && pin.length === 0)}
-                    aria-label={key === "del" ? "Ziffer löschen" : key === "ok" ? "PIN bestätigen" : key}
-                    className="h-12 text-lg font-semibold tabular-nums sm:h-14"
-                  >
-                    {key === "del" ? <Delete className="size-5" /> : key === "ok" ? (pinBusy ? <Loader2 className="size-5 animate-spin" /> : "OK") : key}
-                  </Button>
-                ))}
-              </div>
-              <p role={pinError ? "alert" : undefined} className={cn("min-h-4 text-xs", pinError ? "text-destructive" : "text-muted-foreground")}>
-                {pinError ?? `EK und Marge gehen mit „EK“ wieder aus, von selbst nach ${Math.round(SHOP_COSTS_IDLE_OFF_MS / 60_000)} Minuten ohne Bedienung.`}
-              </p>
-            </div>
+            <ShopPinPad
+              title="PIN für EK und Marge"
+              value={pin}
+              onChange={(v) => { setPin(v); setPinError(null); }}
+              onSubmit={() => void submitPin()}
+              onCancel={() => { setPinOpen(false); setPin(""); setPinError(null); }}
+              busy={pinBusy}
+              error={pinError}
+              hint={`EK und Marge gehen mit „EK“ wieder aus, von selbst nach ${Math.round(SHOP_COSTS_IDLE_OFF_MS / 60_000)} Minuten ohne Bedienung.`}
+              inputRef={pinInputRef}
+            />
           </div>
         )}
 
@@ -764,13 +732,27 @@ export function ShopOverlay({
           </div>
         )}
 
-        {/* Summe: groß, links Leeren mit Rückfrage und Rabatt. */}
+        {/* Angebot im EMP-Shop anlegen und drucken. */}
+        {lines.length > 0 && quoteOpen && (
+          <ShopQuotePanel
+            token={token}
+            lines={lines}
+            discount={discountCents > 0 ? activeDiscount : null}
+            finalCents={finalCents}
+            unlockRef={unlockRef}
+            onPinActive={onQuotePinActive}
+            onClose={() => setQuoteOpen(false)}
+            onNewOffer={() => { setLines([]); setDiscount(null); setQuoteOpen(false); setStatus(null); setChoice(null); }}
+          />
+        )}
+
+        {/* Summe: groß, links Leeren mit Rückfrage, Rabatt und Angebot. */}
         {lines.length > 0 && (
           <div className="shrink-0 border-t border-border px-4 sm:px-5 py-3 flex flex-wrap items-center gap-3">
             {margin && <OfferMarginPanel margin={margin} discounted={discountCents > 0} error={costsError} />}
             {confirmClear ? (
               <div className="flex items-center gap-2">
-                <Button variant="destructive" onClick={() => { setLines([]); setDiscount(null); setDiscountOpen(false); setConfirmClear(false); setStatus(null); setChoice(null); }} className="h-11 sm:h-14 font-semibold">
+                <Button variant="destructive" onClick={() => { setLines([]); setDiscount(null); setDiscountOpen(false); setQuoteOpen(false); setConfirmClear(false); setStatus(null); setChoice(null); }} className="h-11 sm:h-14 font-semibold">
                   Alles leeren
                 </Button>
                 <Button variant="ghost" onClick={() => setConfirmClear(false)} className="h-11 sm:h-14 text-muted-foreground">
@@ -779,7 +761,7 @@ export function ShopOverlay({
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={() => { setDiscountOpen(false); setConfirmClear(true); }} className="h-11 sm:h-14 font-semibold">
+                <Button variant="outline" onClick={() => { setDiscountOpen(false); setQuoteOpen(false); setConfirmClear(true); }} className="h-11 sm:h-14 font-semibold">
                   <Trash2 className="size-5" />
                   Leeren
                 </Button>
@@ -791,6 +773,15 @@ export function ShopOverlay({
                 >
                   <BadgePercent className="size-5" />
                   Rabatt
+                </Button>
+                <Button
+                  variant={quoteOpen ? "default" : "outline"}
+                  onClick={() => { setDiscountOpen(false); setPinOpen(false); setQuoteOpen((o) => !o); }}
+                  aria-expanded={quoteOpen}
+                  className="h-11 sm:h-14 font-semibold"
+                >
+                  <FileText className="size-5" />
+                  Angebot
                 </Button>
               </div>
             )}

@@ -7,12 +7,16 @@ import { amountE4, centsFromAmount, SHOP_COSTS_MAX_VARIANTS, type ShopArticle, t
  * lesen“ (`products.read`) aus EMP-Shop › Einstellungen › API, dazu die
  * Adresse des Backoffice, unter der die Public API liegt.
  *
- * Nur lesend. Der Schlüssel bleibt auf dem Server; der Kiosk fragt über
+ * Der Schlüssel bleibt auf dem Server; der Kiosk fragt über
  * POST /api/checkin/public/[token]/shop-scan.
  *
  * EK und Marge (28.11.2026): Für den Einstand braucht der Schlüssel zusätzlich
  * „Einkaufspreise lesen (Ø-EK)“ (`products.costs`). Der Kiosk fragt über
  * POST /api/checkin/public/[token]/shop-costs, erst nach der PIN.
+ *
+ * Angebot erstellen (28.11.2026): Mit „Angebote anlegen und drucken“
+ * (`quotes.write`) legt der Kiosk über POST /api/checkin/public/[token]/shop-quote
+ * ein Angebot im Shop an; das ist der einzige schreibende Aufruf.
  */
 
 /** Backoffice des EMP-Shops, wenn in der Integration keine Adresse steht. */
@@ -179,4 +183,107 @@ export async function fetchEmpShopCosts(
   const costs = costsFromResponse(await res.json().catch(() => null));
   if (!costs) return { ok: false, status: 502, message: "Der EMP-Shop hat unerwartet geantwortet." };
   return { ok: true, costs };
+}
+
+// ── Angebot erstellen (28.11.2026) ─────────────────────────────────────────
+
+const quoteSchema = z.object({
+  id: z.string(),
+  number: z.string(),
+  validUntil: z.string(),
+  grossTotal: z.string(),
+  customer: z.object({ number: z.string(), name: z.string(), matched: z.boolean() }),
+  print: z.object({ route: z.enum(["PRINTNODE", "BROWSER", "NONE"]), printerName: z.string().nullable(), message: z.string().nullable() }),
+});
+
+const problemSchema = z.object({
+  detail: z.string().optional(),
+  title: z.string().optional(),
+  grossTotal: z.string().optional(),
+  errors: z.array(z.object({ field: z.string().optional(), message: z.string() })).optional(),
+});
+
+export type EmpShopQuote = z.infer<typeof quoteSchema>;
+
+export type EmpShopQuoteResult =
+  | { ok: true; quote: EmpShopQuote }
+  | { ok: false; status: number; message: string; grossTotalCents?: number };
+
+/** Hinweis, wenn dem Schlüssel die Berechtigung für Angebote fehlt. */
+export const EMP_SHOP_QUOTES_SCOPE_MESSAGE =
+  "Der API-Schlüssel darf keine Angebote anlegen. Bitte im EMP-Shop unter Einstellungen › API einen neuen Schlüssel mit „Angebote anlegen und drucken“ anlegen und hier eintragen.";
+
+/** Meldung des Shops (problem+json) lesbar machen, höchstens drei Feldfehler. */
+function problemText(json: unknown, fallback: string): string {
+  const p = problemSchema.safeParse(json);
+  if (!p.success) return fallback;
+  const fields = (p.data.errors ?? []).slice(0, 3).map((e) => e.message);
+  return [p.data.detail ?? p.data.title ?? fallback, ...fields].join(" · ");
+}
+
+/** Angebot im EMP-Shop anlegen (`POST /api/v1/quotes`), mit Idempotency-Key gegen Doppelklicks. */
+export async function createEmpShopQuote(
+  config: { token: string; baseUrl: string | null },
+  body: Record<string, unknown>,
+  idempotencyKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<EmpShopQuoteResult> {
+  const base = empShopBaseUrl(config.baseUrl);
+  if (!base) return { ok: false, status: 409, message: "Die Adresse des EMP-Shops in den Einstellungen ist ungültig." };
+  let res: Response;
+  try {
+    res = await fetchImpl(`${base}/api/v1/quotes`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${config.token}`, accept: "application/json", "content-type": "application/json", "idempotency-key": idempotencyKey },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      redirect: "error",
+      // Anlegen und Drucken rendert ein PDF; etwas mehr Zeit als beim Nachschlagen
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    return { ok: false, status: 502, message: "Der EMP-Shop antwortet nicht. Bitte noch einmal tippen, es entsteht kein zweites Angebot." };
+  }
+  const json = await res.json().catch(() => null);
+  if (res.status === 401) return { ok: false, status: 409, message: "Der EMP-Shop lehnt den API-Schlüssel ab. Bitte in den Einstellungen einen gültigen Schlüssel eintragen." };
+  if (res.status === 403) return { ok: false, status: 409, message: EMP_SHOP_QUOTES_SCOPE_MESSAGE };
+  if (res.status === 404) return { ok: false, status: 502, message: "Der EMP-Shop kann noch keine Angebote anlegen (ältere Version)." };
+  if (res.status === 429) return { ok: false, status: 429, message: "Zu viele Anfragen auf einmal. Bitte kurz warten." };
+  if (res.status === 409) {
+    const p = problemSchema.safeParse(json);
+    const cents = p.success ? centsFromAmount(p.data.grossTotal) : null;
+    if (cents !== null) return { ok: false, status: 409, message: "Im Shop ergibt das Angebot eine andere Summe. Es wurde nichts angelegt.", grossTotalCents: cents };
+    return { ok: false, status: 409, message: problemText(json, "Das Angebot ließ sich nicht anlegen.") };
+  }
+  if (res.status === 422) return { ok: false, status: 422, message: problemText(json, "Der EMP-Shop hat das Angebot abgelehnt.") };
+  if (!res.ok) return { ok: false, status: 502, message: "Der EMP-Shop konnte das Angebot gerade nicht anlegen." };
+  const parsed = quoteSchema.safeParse(json);
+  if (!parsed.success) return { ok: false, status: 502, message: "Der EMP-Shop hat unerwartet geantwortet." };
+  return { ok: true, quote: parsed.data };
+}
+
+/** PDF eines Angebots aus dem EMP-Shop (`GET /api/v1/quotes/{id}/pdf`). */
+export async function fetchEmpShopQuotePdf(
+  config: { token: string; baseUrl: string | null },
+  quoteId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true; pdf: ArrayBuffer; fileName: string } | { ok: false; status: number; message: string }> {
+  const base = empShopBaseUrl(config.baseUrl);
+  if (!base) return { ok: false, status: 409, message: "Die Adresse des EMP-Shops in den Einstellungen ist ungültig." };
+  let res: Response;
+  try {
+    res = await fetchImpl(`${base}/api/v1/quotes/${encodeURIComponent(quoteId)}/pdf`, {
+      headers: { authorization: `Bearer ${config.token}`, accept: "application/pdf" },
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    return { ok: false, status: 502, message: "Der EMP-Shop antwortet nicht." };
+  }
+  if (res.status === 401 || res.status === 403) return { ok: false, status: 409, message: EMP_SHOP_QUOTES_SCOPE_MESSAGE };
+  if (!res.ok || !(res.headers.get("content-type") ?? "").includes("application/pdf")) return { ok: false, status: 502, message: "Das PDF ließ sich nicht laden." };
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "Angebot.pdf";
+  return { ok: true, pdf: await res.arrayBuffer(), fileName };
 }
