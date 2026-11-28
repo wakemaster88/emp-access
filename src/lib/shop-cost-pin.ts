@@ -1,11 +1,11 @@
 import { compare, hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { openSecret, sealSecret } from "@/lib/secret-box";
-import { isValidShopCostPin } from "@/lib/shop-scan";
+import { isValidShopCostPin, SHOP_COST_PIN_MAX_LENGTH, SHOP_COST_PIN_MIN_LENGTH } from "@/lib/shop-scan";
 
 /**
  * PIN für EK und Marge im Shop-Monitor (28.11.2026, Aaron: „EK mit PIN am
- * Monitor“). Je Mandant eine PIN aus 6 bis 8 Ziffern, gespeichert nur als
+ * Monitor“). Je Mandant eine PIN aus 4 bis 8 Ziffern, gespeichert nur als
  * bcrypt-Hash in `ShopCostPin`; gesetzt und entfernt nur von Admins unter
  * Einstellungen › Integrationen › EMP-Shop.
  *
@@ -18,7 +18,8 @@ import { isValidShopCostPin } from "@/lib/shop-scan";
  * reserviert (bedingtes UPDATE wie in login-lockout.ts), nach
  * `SHOP_COST_PIN_MAX_FAILURES` Fehlversuchen ist die PIN für
  * `SHOP_COST_PIN_LOCK_MINUTES` gesperrt, über alle Geräte und Instanzen.
- * Bei 6 Ziffern sind das höchstens 480 Versuche am Tag.
+ * Das sind höchstens 480 Versuche am Tag; bei 4 Ziffern (10.000 Möglichkeiten)
+ * im Mittel gut 10 Tage Dauerprobieren am Monitor, bei 6 Ziffern Jahre.
  */
 
 export const SHOP_COST_PIN_MAX_FAILURES = 5;
@@ -61,7 +62,7 @@ function lockUntil(now: Date): Date {
 
 /** PIN setzen oder ersetzen; Fehlversuche und Sperre entfallen. */
 export async function setShopCostPin(accountId: number, pin: string, now = new Date(), db: ShopCostPinDb = defaultDb): Promise<void> {
-  if (!isValidShopCostPin(pin)) throw new Error("Die PIN muss aus 6 bis 8 Ziffern bestehen.");
+  if (!isValidShopCostPin(pin)) throw new Error(`Die PIN muss aus ${SHOP_COST_PIN_MIN_LENGTH} bis ${SHOP_COST_PIN_MAX_LENGTH} Ziffern bestehen.`);
   const pinHash = await hash(pin, BCRYPT_ROUNDS);
   const data = { pinHash, pinSetAt: now, failures: 0, lockedUntil: null, lastAttemptAt: null };
   await db.shopCostPin.upsert({ where: { accountId }, create: { accountId, ...data }, update: data });

@@ -278,15 +278,15 @@ export function parseStoredDiscount(raw: string | null): OfferDiscount | null {
  * nicht mit und werden genannt.
  */
 
-/** PIN: nur Ziffern, 6 bis 8 Stellen. */
-export const SHOP_COST_PIN_MIN_LENGTH = 6;
+/** PIN: nur Ziffern, 4 bis 8 Stellen (Aaron 28.11.2026: „4 stelliger pin ermöglichen“). */
+export const SHOP_COST_PIN_MIN_LENGTH = 4;
 export const SHOP_COST_PIN_MAX_LENGTH = 8;
 
 export function isValidShopCostPin(pin: string): boolean {
   return new RegExp(`^\\d{${SHOP_COST_PIN_MIN_LENGTH},${SHOP_COST_PIN_MAX_LENGTH}}$`).test(pin);
 }
 
-/** Zu leicht zu erraten: nur gleiche oder fortlaufende Ziffern (111111, 123456, 876543). */
+/** Zu leicht zu erraten: nur gleiche oder fortlaufende Ziffern (1111, 1234, 876543). */
 export function isWeakShopCostPin(pin: string): boolean {
   return /^(\d)\1+$/.test(pin) || "01234567890".includes(pin) || "09876543210".includes(pin);
 }

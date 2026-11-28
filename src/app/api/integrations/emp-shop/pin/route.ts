@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { removeShopCostPin, setShopCostPin, shopCostPinRow, type ShopCostPinDb } from "@/lib/shop-cost-pin";
-import { isValidShopCostPin, isWeakShopCostPin } from "@/lib/shop-scan";
+import { isValidShopCostPin, isWeakShopCostPin, SHOP_COST_PIN_MAX_LENGTH, SHOP_COST_PIN_MIN_LENGTH } from "@/lib/shop-scan";
 
 /**
  * PIN für EK und Marge im Shop-Monitor (28.11.2026): festlegen, ersetzen oder
@@ -33,7 +33,7 @@ export async function PUT(request: NextRequest) {
   if ("error" in s) return s.error;
   const body = (await request.json().catch(() => null)) as { pin?: unknown } | null;
   const pin = typeof body?.pin === "string" ? body.pin.trim() : "";
-  if (!isValidShopCostPin(pin)) return NextResponse.json({ error: "Die PIN muss aus 6 bis 8 Ziffern bestehen." }, { status: 400 });
+  if (!isValidShopCostPin(pin)) return NextResponse.json({ error: `Die PIN muss aus ${SHOP_COST_PIN_MIN_LENGTH} bis ${SHOP_COST_PIN_MAX_LENGTH} Ziffern bestehen.` }, { status: 400 });
   if (isWeakShopCostPin(pin)) {
     return NextResponse.json({ error: "Bitte keine PIN aus gleichen oder fortlaufenden Ziffern." }, { status: 400 });
   }

@@ -82,7 +82,8 @@ ein Angebot.“
   Positionen ohne EK zählen nicht mit und werden genannt, dann gibt es keinen
   Spielraum (`offerMargin`, `lineCostView` in `src/lib/shop-scan.ts`).
   - Jedes Einschalten fragt die **PIN** (Ziffernfeld, Tastatur geht auch). Die
-    PIN (6 bis 8 Ziffern, keine Reihen wie 123456) legt ein Admin unter
+    PIN (4 bis 8 Ziffern, seit Aarons Wunsch vom 28.11.2026 auch 4; keine
+    Reihen wie 1234 oder 1111) legt ein Admin unter
     Einstellungen › Integrationen › EMP-Shop fest; gespeichert nur als
     bcrypt-Hash in `ShopCostPin`. Nach 5 falschen PINs ist die Anzeige für den
     Mandanten 15 Minuten gesperrt, gezählt in der Datenbank
