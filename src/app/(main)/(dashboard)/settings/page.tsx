@@ -26,7 +26,7 @@ import { isTenantAdminRole } from "@/lib/api-auth";
 import { maskApiConfig, maskSecret } from "@/lib/secret-mask";
 import { RepoAccessCard, type RepoAccessEntry } from "@/components/settings/repo-access-card";
 
-const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED"] as const;
+const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED", "EMP_SHOP"] as const;
 
 export const dynamic = "force-dynamic";
 

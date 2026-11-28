@@ -4,6 +4,36 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Shop-Scan im Shop-Monitor (28.11.2026)
+
+Aaron: „Im Shop-Monitor brauch ich oben einen Button ‚Shop‘, da kann ich
+automatisch die QR-Codes scannen und darunter tauchen die Produkte auf, wie
+ein Angebot.“
+
+- Taste **Shop** im Kopf des Shop-Monitors (`/checkin/<token>`) öffnet ein
+  Blatt mit Scanfeld, Kamera-Schalter und der Liste. Der Handscanner liest
+  auch ohne Fokus im Feld; die Kamera (html5-qrcode) liest fortlaufend und
+  zählt denselben Code erst nach 2,5 Sekunden wieder.
+- Wird ein Preisetikett im normalen Monitor gescannt (QR mit
+  `HTTPS://4WAKE.EU/A/<Artikelnummer>`), öffnet sich der Shop gleich mit
+  diesem Artikel statt der Ticket-Suche. Ein Handscanner, der US-Tastatur
+  sendet, während der Rechner auf Deutsch steht (`Ö` statt `:`, `-` statt
+  `/`), wird erkannt und zurückübersetzt (`src/lib/shop-scan.ts`).
+- Je Artikel eine Zeile mit Bild, Name, Ausprägung, Artikelnummer, Menge
+  (−/+), Zeilensumme, Einzelpreis und UVP, unten die Summe inkl. MwSt.
+  Derselbe Artikel noch einmal zählt hoch; passen mehrere (doppelte EAN),
+  wählt das Personal. Das Angebot bleibt im Browser des Geräts
+  (`localStorage`, je Monitor) bis „Leeren“. Nur Anzeige, keine Zahlung.
+- Artikel und Preise kommen aus dem EMP-Shop über dessen Public API
+  (`GET /api/v1/products/lookup`, Berechtigung `products.read`): Preis und
+  UVP wie auf dem Etikett. Der Kiosk fragt `POST
+  /api/checkin/public/[token]/shop-scan`, der API-Schlüssel bleibt auf dem
+  Server (`src/lib/emp-shop-client.ts`).
+- Einrichtung: Einstellungen › Integrationen › **EMP-Shop**: API-Schlüssel aus
+  EMP-Shop › Einstellungen › API (nur „Artikel und Preise lesen“), Adresse
+  leer lassen für `https://emp-shop-backoffice.vercel.app`. Dort lässt sich
+  mit einem Etikett oder einer Artikelnummer prüfen, ob die Verbindung steht.
+
 ## Newsletter mit Amazon SES, Teil 1 (27.11.2026)
 
 Aaron hat am 27.11.2026 Amazon SES als Versand gewählt (statt Gmail-SMTP).
