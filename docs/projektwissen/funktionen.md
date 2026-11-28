@@ -39,15 +39,41 @@ ein Angebot.“
   Gerechnet in Cent, kaufmännisch gerundet, nie mehr als die Summe und nie
   ein Aufschlag (`applyOfferDiscount`). Der Rabatt bleibt mit dem Angebot
   gespeichert und geht mit „Leeren“.
+- Taste **EK** (28.11.2026, Aaron: „toggle für ek und marge, dass man sieht
+  wieviel spielraum man noch hat“) im Kopf: Einkaufspreis netto und Marge in
+  Prozent je Position zum Etikettenpreis, unten EK netto, Marge nach Rabatt
+  (Euro und Prozent vom Netto) und **Spielraum bis EK** mit der Untergrenze
+  („Endpreis ab …“). Gerechnet wie der Deckungsbeitrag im EMP-Shop (ADR 0034):
+  Netto je Steuersatz der Variante, der Rabatt anteilig auf alle Positionen,
+  Positionen ohne EK zählen nicht mit und werden genannt, dann gibt es keinen
+  Spielraum (`offerMargin`, `lineCostView` in `src/lib/shop-scan.ts`).
+  - Jedes Einschalten fragt die **PIN** (Ziffernfeld, Tastatur geht auch). Die
+    PIN (6 bis 8 Ziffern, keine Reihen wie 123456) legt ein Admin unter
+    Einstellungen › Integrationen › EMP-Shop fest; gespeichert nur als
+    bcrypt-Hash in `ShopCostPin`. Nach 5 falschen PINs ist die Anzeige für den
+    Mandanten 15 Minuten gesperrt, gezählt in der Datenbank
+    (`src/lib/shop-cost-pin.ts`).
+  - Der Kiosk fragt `POST /api/checkin/public/[token]/shop-costs` zuerst mit
+    der PIN, danach mit der Freischaltung aus der Antwort (verschlüsselt, an
+    Mandant, Monitor und PIN gebunden, 30 Minuten). EK und Freischaltung stehen
+    nur im Speicher der Ansicht, nie im `localStorage`; sie gehen mit „EK“,
+    nach 3 Minuten ohne Bedienung, im Hintergrund und beim Schließen.
+  - EMP-Shop liefert den Einstand nur mit der eigenen Berechtigung
+    „Einkaufspreise lesen (Ø-EK)“ (`GET /api/v1/products/costs`, EMP-Shop
+    PR #68): Ø-EK, sonst Einkaufspreis des Lieferanten. Fehlt die
+    Berechtigung, sagt der Monitor das.
 - Artikel und Preise kommen aus dem EMP-Shop über dessen Public API
   (`GET /api/v1/products/lookup`, Berechtigung `products.read`): Preis und
   UVP wie auf dem Etikett. Der Kiosk fragt `POST
   /api/checkin/public/[token]/shop-scan`, der API-Schlüssel bleibt auf dem
   Server (`src/lib/emp-shop-client.ts`).
 - Einrichtung: Einstellungen › Integrationen › **EMP-Shop**: API-Schlüssel aus
-  EMP-Shop › Einstellungen › API (nur „Artikel und Preise lesen“), Adresse
-  leer lassen für `https://emp-shop-backoffice.vercel.app`. Dort lässt sich
-  mit einem Etikett oder einer Artikelnummer prüfen, ob die Verbindung steht.
+  EMP-Shop › Einstellungen › API („Artikel und Preise lesen“, für EK und
+  Marge dazu „Einkaufspreise lesen (Ø-EK)“; vorhandene Schlüssel lassen sich
+  dort nicht ändern, also neu anlegen), Adresse leer lassen für
+  `https://emp-shop-backoffice.vercel.app`. Dort lässt sich mit einem Etikett
+  oder einer Artikelnummer prüfen, ob die Verbindung steht, und die PIN für EK
+  und Marge festlegen.
 
 ## Newsletter mit Amazon SES, Teil 1 (27.11.2026)
 

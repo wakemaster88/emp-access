@@ -14,25 +14,40 @@
  * Personal. Ein Rabatt aufs Ganze (Prozent, Betrag oder Endpreis) senkt die
  * Summe. Nur Anzeige: keine Zahlung, keine Buchung im Shop. Angebot und Rabatt
  * bleiben auf diesem Gerät gespeichert, bis jemand „Leeren“ tippt.
+ *
+ * Taste „EK“ (28.11.2026): Einkaufspreis und Marge je Position und fürs Ganze
+ * nach Rabatt, dazu der Spielraum bis zum Einstand. Jedes Einschalten fragt die
+ * PIN aus Einstellungen › Integrationen › EMP-Shop. EK und Freischaltung stehen
+ * nur im Speicher dieser Ansicht (nie im localStorage) und verschwinden mit
+ * „EK aus“, nach `SHOP_COSTS_IDLE_OFF_MS` ohne Bedienung, im Hintergrund und
+ * beim Schließen.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BadgePercent, Camera, CameraOff, CheckCircle2, Loader2, Minus, Plus, ScanLine, Search, ShoppingBag, Trash2, X, XCircle } from "lucide-react";
+import { BadgePercent, Camera, CameraOff, CheckCircle2, Delete, Eye, EyeOff, KeyRound, Loader2, Minus, Plus, ScanLine, Search, ShoppingBag, Trash2, X, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { ShopCostEntry } from "@/lib/emp-shop-client";
 import {
   addToOffer,
   applyOfferDiscount,
   formatEuro,
   formatPercent,
+  isValidShopCostPin,
+  lineCostView,
+  offerMargin,
   offerTotals,
   parseDiscountInput,
   parseStoredDiscount,
   parseStoredOffer,
   setOfferQuantity,
+  SHOP_COST_PIN_MAX_LENGTH,
+  SHOP_COSTS_IDLE_OFF_MS,
+  SHOP_COSTS_MAX_VARIANTS,
   type OfferDiscount,
   type ShopArticle,
+  type ShopCost,
   type ShopOfferLine,
 } from "@/lib/shop-scan";
 import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
@@ -49,6 +64,20 @@ const DISCOUNT_KINDS: Array<{ kind: OfferDiscount["kind"]; label: string; placeh
   { kind: "total", label: "Endpreis", placeholder: "Preis für alles" },
 ];
 const QUICK_PERCENTS = [5, 10, 15, 20];
+const PIN_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "del", "0", "ok"] as const;
+
+type CostsReply = { unlock?: string; expiresAt?: string; costs?: ShopCostEntry[]; error?: string; pin?: boolean };
+
+/** Einstand aus der Antwort übernehmen; angefragte Varianten ohne Antwort gelten als ohne EK. */
+function mergeCosts(prev: ReadonlyMap<string, ShopCost>, requested: readonly string[], entries: readonly ShopCostEntry[]): Map<string, ShopCost> {
+  const next = new Map(prev);
+  const byId = new Map(entries.map((e) => [e.variantId, e]));
+  for (const id of requested) {
+    const e = byId.get(id);
+    next.set(id, e ? { unitCostE4: e.unitCostE4, basis: e.basis, taxBasisPoints: e.taxBasisPoints } : { unitCostE4: null, basis: null, taxBasisPoints: 0 });
+  }
+  return next;
+}
 
 type ScanStatus =
   | { tone: "success"; text: string }
@@ -100,6 +129,19 @@ export function ShopOverlay({
   const [discountError, setDiscountError] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraNote, setCameraNote] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
+  // EK und Marge: nur im Speicher, nie im localStorage.
+  const [costsOn, setCostsOn] = useState(false);
+  const [costs, setCosts] = useState<Map<string, ShopCost>>(() => new Map());
+  const [costsError, setCostsError] = useState<string | null>(null);
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
+  const unlockRef = useRef<{ token: string; expiresAt: number } | null>(null);
+  const inflightRef = useRef(new Set<string>());
+  const lastActivityRef = useRef(0);
+  const pinOpenRef = useRef(false);
+  const pinInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Der Monitor rendert oft neu (Abfragen im Takt); der Tastenpuffer darf dabei nicht verloren gehen.
@@ -181,6 +223,8 @@ export function ShopOverlay({
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // PIN-Eingabe offen: Ziffern gehören nicht in den Scan.
+      if (pinOpenRef.current) return;
       if (e.key === "Escape") { onCloseRef.current(); return; }
       if (e.key === "Enter") {
         const code = buffer.trim();
@@ -217,6 +261,137 @@ export function ShopOverlay({
     setCameraOn((on) => !on);
   };
 
+  // ── EK und Marge ──────────────────────────────────────────────────────────
+  useEffect(() => { pinOpenRef.current = pinOpen; }, [pinOpen]);
+
+  const requestCosts = useCallback(
+    async (body: { pin?: string; unlock?: string; variantIds: string[] }): Promise<{ ok: boolean; status: number; json: CostsReply }> => {
+      const res = await fetch(`/api/checkin/public/${token}/shop-costs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+      return { ok: res.ok, status: res.status, json: (await res.json().catch(() => ({}))) as CostsReply };
+    },
+    [token],
+  );
+
+  /** EK ausblenden und alles vergessen; mit `askPin` gleich wieder nach der PIN fragen. */
+  const hideCosts = useCallback((note?: string, askPin = false) => {
+    unlockRef.current = null;
+    inflightRef.current.clear();
+    setCostsOn(false);
+    setCosts(new Map());
+    setCostsError(null);
+    setPin("");
+    setPinOpen(askPin);
+    setPinError(askPin ? note ?? null : null);
+    if (note && !askPin) setStatus({ tone: "busy", text: note });
+  }, []);
+
+  const openPin = () => {
+    setDiscountOpen(false);
+    setConfirmClear(false);
+    setPin("");
+    setPinError(null);
+    setPinOpen(true);
+  };
+
+  const submitPin = async () => {
+    if (pinBusy) return;
+    if (!isValidShopCostPin(pin)) {
+      setPinError("Die PIN hat 6 bis 8 Ziffern.");
+      return;
+    }
+    setPinBusy(true);
+    setPinError(null);
+    const ids = [...new Set(lines.map((l) => l.article.variantId))].slice(0, SHOP_COSTS_MAX_VARIANTS);
+    try {
+      const r = await requestCosts({ pin, variantIds: ids });
+      setPin("");
+      if (!r.json.unlock || !r.json.expiresAt) {
+        setPinError(r.json.error ?? "Die PIN ließ sich nicht prüfen.");
+        pinInputRef.current?.focus();
+        return;
+      }
+      unlockRef.current = { token: r.json.unlock, expiresAt: Date.parse(r.json.expiresAt) };
+      setCosts(r.ok ? mergeCosts(new Map(), ids, r.json.costs ?? []) : new Map());
+      setCostsError(r.ok ? null : r.json.error ?? "Die Einkaufspreise ließen sich nicht laden.");
+      setCostsOn(true);
+      setPinOpen(false);
+    } catch {
+      setPinError("Netzwerkfehler. Bitte noch einmal versuchen.");
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
+  const pressPinKey = (key: (typeof PIN_KEYS)[number]) => {
+    setPinError(null);
+    if (key === "ok") void submitPin();
+    else if (key === "del") setPin((p) => p.slice(0, -1));
+    else setPin((p) => (p.length < SHOP_COST_PIN_MAX_LENGTH ? p + key : p));
+  };
+
+  // Am Rechner gleich ins PIN-Feld; auf dem Tablet die Tasten (sonst klappt die Tastatur auf).
+  useEffect(() => {
+    if (pinOpen && window.matchMedia?.("(pointer: fine)").matches) pinInputRef.current?.focus();
+  }, [pinOpen]);
+
+  // Neue Positionen: Einstand nachladen, solange EK an ist.
+  useEffect(() => {
+    if (!costsOn) return;
+    const missing = [...new Set(lines.map((l) => l.article.variantId))].filter((id) => !costs.has(id) && !inflightRef.current.has(id));
+    if (missing.length === 0) return;
+    const unlock = unlockRef.current;
+    if (!unlock || unlock.expiresAt <= Date.now()) {
+      hideCosts("Bitte die PIN erneut eingeben.", true);
+      return;
+    }
+    for (let i = 0; i < missing.length; i += SHOP_COSTS_MAX_VARIANTS) {
+      const chunk = missing.slice(i, i + SHOP_COSTS_MAX_VARIANTS);
+      chunk.forEach((id) => inflightRef.current.add(id));
+      void requestCosts({ unlock: unlock.token, variantIds: chunk })
+        .then((r) => {
+          if (unlockRef.current?.token !== unlock.token) return;
+          if (r.status === 401) hideCosts(r.json.error ?? "Bitte die PIN erneut eingeben.", true);
+          else if (!r.ok) setCostsError(r.json.error ?? "Die Einkaufspreise ließen sich nicht laden.");
+          else {
+            setCostsError(null);
+            setCosts((prev) => mergeCosts(prev, chunk, r.json.costs ?? []));
+          }
+        })
+        .catch(() => setCostsError("Netzwerkfehler beim Laden der Einkaufspreise."))
+        .finally(() => chunk.forEach((id) => inflightRef.current.delete(id)));
+    }
+  }, [costsOn, lines, costs, requestCosts, hideCosts]);
+
+  // EK geht von selbst aus: ohne Bedienung, im Hintergrund.
+  useEffect(() => { lastActivityRef.current = Date.now(); }, [lines]);
+  useEffect(() => {
+    if (!costsOn) return;
+    lastActivityRef.current = Date.now();
+    const bump = () => { lastActivityRef.current = Date.now(); };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") hideCosts("EK und Marge ausgeblendet, weil die Seite im Hintergrund war.");
+    };
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivityRef.current >= SHOP_COSTS_IDLE_OFF_MS) {
+        hideCosts(`EK und Marge nach ${Math.round(SHOP_COSTS_IDLE_OFF_MS / 60_000)} Minuten ohne Bedienung ausgeblendet.`);
+      }
+    }, 5_000);
+    window.addEventListener("pointerdown", bump);
+    window.addEventListener("keydown", bump);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("pointerdown", bump);
+      window.removeEventListener("keydown", bump);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [costsOn, hideCosts]);
+
   const submitInput = () => {
     const code = input.trim();
     if (!code) return;
@@ -228,9 +403,11 @@ export function ShopOverlay({
   // Ohne Positionen gilt auch kein Rabatt mehr.
   const activeDiscount = lines.length > 0 ? discount : null;
   const { discountCents, finalCents } = applyOfferDiscount(totals.totalCents, activeDiscount);
+  const margin = costsOn ? offerMargin(lines, costs, discountCents) : null;
 
   const openDiscount = () => {
     setConfirmClear(false);
+    setPinOpen(false);
     setDiscountError(false);
     setDiscountKind(discount?.kind ?? "percent");
     setDiscountInput(
@@ -276,6 +453,17 @@ export function ShopOverlay({
           </h2>
           <div className="flex items-center gap-1.5 shrink-0">
             <Button
+              variant={costsOn ? "default" : "outline"}
+              onClick={() => (costsOn ? hideCosts() : pinOpen ? setPinOpen(false) : openPin())}
+              aria-pressed={costsOn}
+              aria-expanded={pinOpen}
+              className="h-11 min-w-11 font-semibold sm:h-14 sm:min-w-14"
+              title={costsOn ? "EK und Marge ausblenden" : "EK und Marge anzeigen (PIN)"}
+            >
+              {costsOn ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+              EK
+            </Button>
+            <Button
               variant={cameraOn ? "default" : "outline"}
               onClick={toggleCamera}
               className="h-11 min-w-11 font-semibold sm:h-14 sm:min-w-14"
@@ -295,6 +483,57 @@ export function ShopOverlay({
             </Button>
           </div>
         </div>
+
+        {/* PIN für EK und Marge: Ziffernfeld für den Touch-Monitor, Tastatur geht auch. */}
+        {pinOpen && (
+          <div className="shrink-0 border-b border-border px-4 sm:px-5 py-3">
+            <div className="mx-auto max-w-sm space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <KeyRound className="size-4 text-primary" />
+                  PIN für EK und Marge
+                </p>
+                <Button variant="ghost" onClick={() => { setPinOpen(false); setPin(""); setPinError(null); }} className="h-11 text-muted-foreground">
+                  Abbrechen
+                </Button>
+              </div>
+              <Input
+                ref={pinInputRef}
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={SHOP_COST_PIN_MAX_LENGTH}
+                value={pin}
+                onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, SHOP_COST_PIN_MAX_LENGTH)); setPinError(null); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); void submitPin(); }
+                  if (e.key === "Escape") { e.stopPropagation(); setPinOpen(false); setPin(""); }
+                }}
+                aria-label="PIN"
+                aria-invalid={!!pinError}
+                placeholder="PIN"
+                className="h-14 text-center text-2xl tracking-[0.5em] tabular-nums md:text-2xl"
+              />
+              <div className="grid grid-cols-3 gap-2" role="group" aria-label="Ziffern">
+                {PIN_KEYS.map((key) => (
+                  <Button
+                    key={key}
+                    variant={key === "ok" ? "default" : "outline"}
+                    onClick={() => pressPinKey(key)}
+                    disabled={pinBusy || (key === "ok" && pin.length === 0)}
+                    aria-label={key === "del" ? "Ziffer löschen" : key === "ok" ? "PIN bestätigen" : key}
+                    className="h-12 text-lg font-semibold tabular-nums sm:h-14"
+                  >
+                    {key === "del" ? <Delete className="size-5" /> : key === "ok" ? (pinBusy ? <Loader2 className="size-5 animate-spin" /> : "OK") : key}
+                  </Button>
+                ))}
+              </div>
+              <p role={pinError ? "alert" : undefined} className={cn("min-h-4 text-xs", pinError ? "text-destructive" : "text-muted-foreground")}>
+                {pinError ?? `EK und Marge gehen mit „EK“ wieder aus, von selbst nach ${Math.round(SHOP_COSTS_IDLE_OFF_MS / 60_000)} Minuten ohne Bedienung.`}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Scannen: Feld für Handscanner und Eingabe, darunter das Ergebnis als Fläche. */}
         <div className="px-4 sm:px-5 pt-4 space-y-3 shrink-0">
@@ -459,6 +698,7 @@ export function ShopOverlay({
                         UVP <span className="line-through">{a.msrpDisplay}</span>
                       </p>
                     )}
+                    {costsOn && <LineCost priceCents={a.priceCents} cost={costs.get(a.variantId)} />}
                   </div>
                 </li>
               ))}
@@ -526,6 +766,7 @@ export function ShopOverlay({
         {/* Summe: groß, links Leeren mit Rückfrage und Rabatt. */}
         {lines.length > 0 && (
           <div className="shrink-0 border-t border-border px-4 sm:px-5 py-3 flex flex-wrap items-center gap-3">
+            {margin && <OfferMarginPanel margin={margin} discounted={discountCents > 0} error={costsError} />}
             {confirmClear ? (
               <div className="flex items-center gap-2">
                 <Button variant="destructive" onClick={() => { setLines([]); setDiscount(null); setDiscountOpen(false); setConfirmClear(false); setStatus(null); setChoice(null); }} className="h-11 sm:h-14 font-semibold">
@@ -574,6 +815,84 @@ export function ShopOverlay({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** EK und Marge je Stück zum Etikettenpreis, unter dem Preis der Position. */
+function LineCost({ priceCents, cost }: { priceCents: number | null; cost: ShopCost | undefined }) {
+  if (!cost) {
+    return <p className="mt-0.5 text-[11px] text-muted-foreground">EK …</p>;
+  }
+  const view = lineCostView(priceCents, cost);
+  if (!view) return <p className="mt-0.5 text-[11px] font-medium text-warning">EK unbekannt</p>;
+  return (
+    <p className="mt-0.5 whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
+      EK {formatEuro(view.unitCostCents)}
+      {view.marginCents !== null && view.netCents !== null && (
+        <>
+          {" · "}
+          <span className={cn("font-semibold", view.marginCents < 0 ? "text-destructive" : "text-success")}>
+            {formatPercent(view.marginCents, view.netCents)}
+          </span>
+        </>
+      )}
+    </p>
+  );
+}
+
+/** EK netto, Marge nach Rabatt und Spielraum bis zum Einstand fürs ganze Angebot. */
+function OfferMarginPanel({
+  margin,
+  discounted,
+  error,
+}: {
+  margin: ReturnType<typeof offerMargin>;
+  discounted: boolean;
+  error: string | null;
+}) {
+  const loading = margin.pending > 0;
+  const under = margin.marginCents < 0;
+  let room: React.ReactNode;
+  if (loading) room = "…";
+  else if (margin.roomCents === null) room = "–";
+  else if (margin.roomCents > 0) room = <>noch {formatEuro(margin.roomCents)}</>;
+  else room = under ? "unter EK" : "keiner";
+  return (
+    <div className="basis-full rounded-tile border border-glass-border bg-glass-tile p-2.5 space-y-1.5" aria-label="EK und Marge">
+      <div className="grid grid-cols-3 gap-2 tabular-nums">
+        <div className="min-w-0">
+          <p className="text-[11px] text-muted-foreground">EK netto</p>
+          <p className="text-sm font-semibold text-foreground">{loading ? "…" : formatEuro(margin.costCents)}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] text-muted-foreground">{discounted ? "Marge nach Rabatt" : "Marge"}</p>
+          <p className={cn("text-sm font-semibold", under ? "text-destructive" : "text-success")}>
+            {loading ? "…" : (
+              <>
+                {formatEuro(margin.marginCents)}{" "}
+                <span className="whitespace-nowrap max-sm:block">
+                  <span className="max-sm:hidden">· </span>
+                  {formatPercent(margin.marginCents, margin.netCents)}
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] text-muted-foreground">Spielraum bis EK</p>
+          <p className={cn("text-sm font-semibold", under && margin.roomCents !== null ? "text-destructive" : "text-foreground")}>{room}</p>
+          {margin.breakEvenCents !== null && (
+            <p className="text-[11px] text-muted-foreground">Endpreis ab {formatEuro(margin.breakEvenCents)}</p>
+          )}
+        </div>
+      </div>
+      {(error || margin.withoutCost > 0) && (
+        <p className={cn("text-[11px]", error ? "text-destructive" : "text-warning")}>
+          {error ??
+            `${margin.withoutCost} ${margin.withoutCost === 1 ? "Position" : "Positionen"} ohne EK, nicht in Marge und Spielraum.`}
+        </p>
+      )}
     </div>
   );
 }

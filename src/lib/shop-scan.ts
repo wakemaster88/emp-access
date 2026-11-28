@@ -264,3 +264,132 @@ export function parseStoredDiscount(raw: string | null): OfferDiscount | null {
     return null;
   }
 }
+
+/**
+ * EK und Marge im Shop-Monitor (28.11.2026, Aaron: „toggle für ek und marge,
+ * dass man sieht wieviel spielraum man noch hat“). Den Einstand je Variante
+ * liefert der EMP-Shop nur mit der Berechtigung „Einkaufspreise lesen“
+ * (`GET /api/v1/products/costs`), der Kiosk zeigt ihn erst nach der PIN aus
+ * Einstellungen › Integrationen › EMP-Shop. EK und Marge stehen nur im Speicher
+ * der Seite, nie im localStorage.
+ *
+ * Gerechnet wird wie beim Deckungsbeitrag im EMP-Shop (ADR 0034): Marge =
+ * Netto nach Rabatt minus Menge mal Einstand; Positionen ohne Einstand zählen
+ * nicht mit und werden genannt.
+ */
+
+/** PIN: nur Ziffern, 6 bis 8 Stellen. */
+export const SHOP_COST_PIN_MIN_LENGTH = 6;
+export const SHOP_COST_PIN_MAX_LENGTH = 8;
+
+export function isValidShopCostPin(pin: string): boolean {
+  return new RegExp(`^\\d{${SHOP_COST_PIN_MIN_LENGTH},${SHOP_COST_PIN_MAX_LENGTH}}$`).test(pin);
+}
+
+/** Zu leicht zu erraten: nur gleiche oder fortlaufende Ziffern (111111, 123456, 876543). */
+export function isWeakShopCostPin(pin: string): boolean {
+  return /^(\d)\1+$/.test(pin) || "01234567890".includes(pin) || "09876543210".includes(pin);
+}
+
+/** EK und Marge gehen nach so langer Zeit ohne Bedienung von selbst aus. */
+export const SHOP_COSTS_IDLE_OFF_MS = 3 * 60_000;
+
+/** Höchstens so viele Varianten je Anfrage an den EMP-Shop. */
+export const SHOP_COSTS_MAX_VARIANTS = 50;
+
+/** Einstand einer Variante, wie der Kiosk ihn rechnet. */
+export interface ShopCost {
+  /** Einstand je Stück netto in Euro mal 10.000 (vier Nachkommastellen wie im Shop); null = unbekannt. */
+  unitCostE4: number | null;
+  /** AVERAGE_COST = Ø-EK, SUPPLIER_PRICE = Einkaufspreis des Lieferanten */
+  basis: "AVERAGE_COST" | "SUPPLIER_PRICE" | null;
+  /** Umsatzsteuer in Hundertstel Prozent, 1900 = 19 % */
+  taxBasisPoints: number;
+}
+
+/** Betrag mit bis zu vier Nachkommastellen („214.5000“) in Euro mal 10.000; Unlesbares ist null. */
+export function amountE4(amount: string | null | undefined): number | null {
+  if (typeof amount !== "string") return null;
+  const m = /^(\d+)(?:\.(\d{1,4}))?$/.exec(amount.trim());
+  if (!m) return null;
+  return Number(m[1]) * 10_000 + Number((m[2] ?? "").padEnd(4, "0"));
+}
+
+/** Netto zu einem Bruttobetrag in Cent (ungerundet). */
+function netFromGross(grossCents: number, taxBasisPoints: number): number {
+  return (grossCents * 10_000) / (10_000 + taxBasisPoints);
+}
+
+/** EK und Marge je Stück zum Preis auf dem Etikett (vor dem Rabatt aufs Angebot). */
+export function lineCostView(
+  priceCents: number | null,
+  cost: ShopCost | undefined,
+): { unitCostCents: number; marginCents: number | null; netCents: number | null } | null {
+  if (!cost || cost.unitCostE4 === null) return null;
+  const unitCostCents = Math.round(cost.unitCostE4 / 100);
+  if (priceCents === null) return { unitCostCents, marginCents: null, netCents: null };
+  const netCents = Math.round(netFromGross(priceCents, cost.taxBasisPoints));
+  return { unitCostCents, marginCents: netCents - unitCostCents, netCents };
+}
+
+export interface OfferMargin {
+  /** Positionen mit Preis, deren EK noch geladen wird */
+  pending: number;
+  /** Positionen mit Preis ohne bekannten EK; sie zählen nicht mit */
+  withoutCost: number;
+  /** EK netto der Positionen mit EK */
+  costCents: number;
+  /** Netto nach Rabatt der Positionen mit EK */
+  netCents: number;
+  /** Netto minus EK; negativ = unter Einstand */
+  marginCents: number;
+  /**
+   * Endpreis (brutto), bei dem das Netto genau den Einstand deckt, auf Cent
+   * aufgerundet; null, solange eine Position ohne EK dabei ist oder etwas lädt.
+   */
+  breakEvenCents: number | null;
+  /** Wie viel Rabatt noch geht, bis die Marge null ist (Endpreis minus Untergrenze, nie negativ). */
+  roomCents: number | null;
+}
+
+/**
+ * Marge des Angebots nach Rabatt. Der Rabatt verteilt sich anteilig auf alle
+ * Positionen mit Preis (wie auf einer Rechnung), Netto je Steuersatz der
+ * Variante. Gerundet wird erst am Ende auf Cent.
+ */
+export function offerMargin(
+  lines: readonly ShopOfferLine[],
+  costs: ReadonlyMap<string, ShopCost>,
+  discountCents: number,
+): OfferMargin {
+  const { totalCents } = offerTotals(lines);
+  const finalCents = totalCents - discountCents;
+  const factor = totalCents > 0 ? finalCents / totalCents : 0;
+  let pending = 0;
+  let withoutCost = 0;
+  let netBefore = 0;
+  let costE2 = 0;
+  for (const l of lines) {
+    if (l.article.priceCents === null) continue;
+    const cost = costs.get(l.article.variantId);
+    if (!cost) {
+      pending += 1;
+      continue;
+    }
+    if (cost.unitCostE4 === null) {
+      withoutCost += 1;
+      continue;
+    }
+    netBefore += netFromGross(l.article.priceCents * l.quantity, cost.taxBasisPoints);
+    costE2 += (cost.unitCostE4 * l.quantity) / 100;
+  }
+  const netCents = Math.round(netBefore * factor);
+  const costCents = Math.round(costE2);
+  let breakEvenCents: number | null = null;
+  let roomCents: number | null = null;
+  if (pending === 0 && withoutCost === 0 && netBefore > 0) {
+    breakEvenCents = Math.ceil((costE2 / netBefore) * totalCents - 1e-9);
+    roomCents = Math.max(0, finalCents - breakEvenCents);
+  }
+  return { pending, withoutCost, costCents, netCents, marginCents: netCents - costCents, breakEvenCents, roomCents };
+}
