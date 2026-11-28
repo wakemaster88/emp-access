@@ -21,6 +21,8 @@ import { personDataKey } from "./customer-person";
 import { newRiderToken } from "./rider-app";
 import { maskEmail } from "./rider-reset-key";
 import { cleanEmail } from "./abo-email";
+import { toScheduleSpec } from "./operating-queries";
+import { closedServiceIds, type OpeningProfile } from "./service-opening";
 import {
   ageAt,
   chipHolder,
@@ -259,6 +261,27 @@ async function hourSales(accountId: number): Promise<HourSales[]> {
   return out;
 }
 
+const OPENING_CACHE_MS = 10 * 60_000;
+const openingCache = new Map<number, { at: number; ymd: string; profiles: OpeningProfile[] }>();
+
+/** Betriebszeit-Profile mit den Ausnahmen des Tages (zwischengespeichert). */
+async function openingProfiles(accountId: number, ymd: string): Promise<OpeningProfile[]> {
+  const hit = openingCache.get(accountId);
+  if (hit && hit.ymd === ymd && Date.now() - hit.at < OPENING_CACHE_MS) return hit.profiles;
+  const rows = await prisma.operatingSchedule.findMany({
+    where: { accountId },
+    select: {
+      name: true,
+      facilities: true,
+      seasons: { select: { name: true, startMmDd: true, endMmDd: true, sortOrder: true, periods: { select: { weekday: true, opensAt: true, closesAt: true } } } },
+      exceptions: { where: { date: ymd }, select: { date: true, closed: true, opensAt: true, closesAt: true, note: true } },
+    },
+  });
+  const profiles = rows.map((r) => ({ name: r.name, facilities: r.facilities, spec: toScheduleSpec(r) }));
+  openingCache.set(accountId, { at: Date.now(), ymd, profiles });
+  return profiles;
+}
+
 function ticketLabel(t: ViewTicketRow): string {
   return t.ticketTypeName || t.service?.name || t.subscription?.name || t.name || "Ticket";
 }
@@ -434,8 +457,21 @@ export async function loadChipView(
   const views = sorted.map(toView);
   const active = views.filter((v) => v.inUse);
 
-  const services = await prisma.service.findMany({ where: { accountId }, select: { id: true } });
-  const sellable = new Set(services.map((s) => s.id));
+  const [services, profiles] = await Promise.all([
+    prisma.service.findMany({
+      where: { accountId },
+      select: { id: true, mainAccessArea: { select: { name: true } }, serviceAreas: { select: { area: { select: { name: true } } } } },
+    }),
+    openingProfiles(accountId, today),
+  ]);
+  // Nur vorschlagen, was heute laut Betriebszeiten geöffnet hat: im Winter
+  // keine Aquapark-Tageskarte, nur weil sie im Sommer um diese Zeit lief.
+  const closedToday = closedServiceIds(
+    services.map((s) => ({ id: s.id, mainAreaName: s.mainAccessArea?.name ?? null, areaNames: s.serviceAreas.map((a) => a.area.name) })),
+    profiles,
+    today,
+  );
+  const sellable = new Set(services.filter((s) => !closedToday.has(s.id)).map((s) => s.id));
   let suggestion: Suggestion = suggestFromHistory(
     sorted.map((t) => ({ serviceId: t.serviceId, subscriptionId: t.subscriptionId, at: t.startDate ?? t.createdAt })),
     sellable,
