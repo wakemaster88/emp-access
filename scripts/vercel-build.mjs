@@ -26,4 +26,5 @@ if (migrate) {
   console.log(`\n[build] VERCEL_ENV=${env}: prisma migrate deploy uebersprungen (PREVIEW_MIGRATE=1 setzt es fuer Preview-Branches frei).`);
 }
 run("npx prisma generate");
+run("node scripts/scanner-wasm.mjs");
 run("next build");
