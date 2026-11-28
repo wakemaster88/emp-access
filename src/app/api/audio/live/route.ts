@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { endLiveSession, isPlayerOnline, parseZoneIds } from "@/lib/audio";
+import { endLiveSession, parseZoneIds, zonePlayerOnline } from "@/lib/audio";
 import { LIVE_SAMPLE_RATE, isLiveSessionOpen } from "@/lib/audio-live";
 
 export async function POST(request: NextRequest) {
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
   const zones = await db.audioZone.findMany({
     where: { accountId, isActive: true, ...(zoneIds.length > 0 ? { id: { in: zoneIds } } : {}) },
-    select: { id: true, name: true, device: { select: { lastUpdate: true } } },
+    select: { id: true, name: true, monitorId: true, lastStateAt: true, device: { select: { lastUpdate: true } } },
     orderBy: { sortOrder: "asc" },
   });
   if (zones.length === 0) {
@@ -77,8 +77,8 @@ export async function POST(request: NextRequest) {
       zones: zones.map((zone) => ({
         id: zone.id,
         name: zone.name,
-        hasDevice: zone.device !== null,
-        deviceOnline: isPlayerOnline(zone.device?.lastUpdate),
+        hasDevice: zone.device !== null || zone.monitorId !== null,
+        deviceOnline: zonePlayerOnline(zone),
       })),
     },
     { status: 201 }

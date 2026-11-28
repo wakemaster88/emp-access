@@ -4,16 +4,14 @@
  * GET  – Zonenkonfiguration + offene Jobs abholen (werden auf SENT gesetzt).
  * POST – Heartbeat mit Ist-Zustand und Statusmeldungen zu erledigten Jobs.
  *
- * Auth läuft wie bei den Scanner-Pis über das Account-API-Token.
+ * Auth läuft wie bei den Scanner-Pis über das Account-API-Token. Antwort und
+ * Heartbeat teilt sich der Pi mit dem Monitor im Browser
+ * (`src/lib/audio-player-state.ts`).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { deviceTokenMismatch, validateApiToken } from "@/lib/api-token-auth";
-import { clampVolume, musicWindowState, pairableSeconds, parseExternalKind } from "@/lib/audio";
-import { scheduleSpecInclude } from "@/lib/operating-queries";
-import { zoneMusicSpec } from "@/lib/operating-extent-queries";
+import { playerStateBody, playerZoneInclude, recordPlayerReport } from "@/lib/audio-player-state";
 import { ifNoneMatchMatches, jsonEtag } from "@/lib/http-etag";
-
-const JOB_BATCH_SIZE = 20;
 
 export async function GET(request: NextRequest) {
   const auth = await validateApiToken(request, { allowDevice: true });
@@ -29,112 +27,19 @@ export async function GET(request: NextRequest) {
   const { db } = auth;
   const zone = await db.audioZone.findFirst({
     where: { deviceId, device: { type: "AUDIO_PLAYER" } },
-    include: {
-      stream: { select: { url: true } },
-      playlist: {
-        include: {
-          items: {
-            orderBy: { sortOrder: "asc" },
-            include: { track: { select: { id: true, title: true, url: true } } },
-          },
-        },
-      },
-      account: { select: { timezone: true } },
-      keyRoom: { select: { operatingScheduleId: true, operatingSchedule: { include: scheduleSpecInclude } } },
-    },
+    include: playerZoneInclude,
   });
 
   if (!zone) {
     return NextResponse.json({ error: "Zone not found" }, { status: 404 });
   }
 
-  // Musikfenster aus den Musikzeiten der Zone bzw. der Betriebszeit des Raums
-  // – hier gerechnet, weil der Abspieler weder Saison noch Ausnahmetage kennt.
-  // `until` nennt den nächsten Wechsel, damit der Pi ihn auch ohne Verbindung
-  // einhält.
-  // Mit `musicExtent` zählen gebuchte Bahnmieten und Kurse mit.
-  // Offene Jobs und Musikfenster sind unabhaengig voneinander und werden
-  // gleichzeitig gelesen; Jobs kommen bei jedem Abruf mit.
-  const now = new Date();
-  const [musicSpec, jobs] = await Promise.all([
-    zoneMusicSpec(db, zone.accountId, zone, now, zone.account.timezone),
-    db.audioJob.findMany({
-      where: { zoneId: zone.id, status: "PENDING" },
-      orderBy: { createdAt: "asc" },
-      take: JOB_BATCH_SIZE,
-    }),
-  ]);
-  const music = musicWindowState(zone, musicSpec, now, zone.account.timezone);
-
-  // Der Abspieler setzt zum Fensterbeginn `sourceKind` fort. Nach einem Stopp
-  // steht dort SILENCE, und die Musik bliebe am nächsten Tag aus. Deshalb gilt
-  // ein Stopp nur bis zum Fensterende: danach ist die Quelle der Zone wieder
-  // die Vorgabe.
-  let sourceKind = zone.sourceKind;
-  if (
-    !music.allowed &&
-    sourceKind === "SILENCE" &&
-    zone.defaultSource !== "SILENCE"
-  ) {
-    sourceKind = zone.defaultSource;
-    await db.audioZone.update({ where: { id: zone.id }, data: { sourceKind } });
-  }
-
-  if (jobs.length > 0) {
-    await db.audioJob.updateMany({
-      where: { id: { in: jobs.map((j) => j.id) } },
-      data: { status: "SENT", sentAt: new Date() },
-    });
-  }
-
-  const body = {
-    zone: {
-      id: zone.id,
-      name: zone.name,
-      isActive: zone.isActive,
-      syncGroup: zone.syncGroup,
-      volume: zone.volume,
-      announcementVolume: zone.announcementVolume,
-      duckVolume: zone.duckVolume,
-      sourceKind,
-      streamUrl: zone.stream?.url ?? zone.streamUrl,
-      music: { allowed: music.allowed, until: music.until?.toISOString() ?? null },
-      // Empfänger, die diese Zone übernehmen dürfen. null = abgeschaltet, der
-      // Abspieler hält den Dienst dann gestoppt. Ältere Abspieler kennen die
-      // Felder nicht und übergehen sie.
-      airplay: zone.airplayEnabled ? { name: zone.externalName || zone.name } : null,
-      bluetooth: zone.bluetoothEnabled
-        ? {
-            name: zone.externalName || zone.name,
-            pairableFor: pairableSeconds(zone.pairableUntil),
-          }
-        : null,
-      playlist: zone.playlist
-        ? {
-            id: zone.playlist.id,
-            name: zone.playlist.name,
-            shuffle: zone.playlist.shuffle,
-            crossfadeSec: zone.playlist.crossfadeSec,
-            tracks: zone.playlist.items.map((item) => ({
-              id: item.track.id,
-              title: item.track.title,
-              url: item.track.url,
-            })),
-          }
-        : null,
-    },
-    jobs: jobs.map((job) => ({
-      id: job.id,
-      kind: job.kind,
-      payload: job.payload,
-      createdAt: job.createdAt,
-    })),
-  };
+  const body = await playerStateBody(db, zone);
 
   // ETag ueber die ganze Antwort. 304 nur ohne offene Jobs: Jobs gehen immer
   // mit vollem Body raus. Abspieler ohne If-None-Match bekommen wie bisher 200.
   const etag = jsonEtag(body);
-  if (jobs.length === 0 && ifNoneMatchMatches(request.headers.get("if-none-match"), etag)) {
+  if (body.jobs.length === 0 && ifNoneMatchMatches(request.headers.get("if-none-match"), etag)) {
     return new NextResponse(null, { status: 304, headers: { ETag: etag } });
   }
   return NextResponse.json(body, { headers: { ETag: etag } });
@@ -165,23 +70,6 @@ export async function POST(request: NextRequest) {
 
   const now = new Date();
 
-  // Übernahme durch AirPlay/Bluetooth. `null` heißt: der Sender hat wieder
-  // freigegeben. Fehlt das Feld ganz, stammt der Heartbeat von einem älteren
-  // Abspieler – dann bleibt der Zustand unverändert, statt eine laufende
-  // Übernahme wegzuräumen.
-  const external =
-    body.externalSource === undefined
-      ? undefined
-      : (parseExternalKind(body.externalSource?.kind) ?? null);
-  const externalSender =
-    external === undefined
-      ? undefined
-      : external === null
-        ? null
-        : typeof body.externalSource.sender === "string" && body.externalSource.sender.trim()
-          ? body.externalSource.sender.trim().slice(0, 120)
-          : null;
-
   await db.device.updateMany({
     where: { id: deviceId, type: "AUDIO_PLAYER" },
     data: {
@@ -192,47 +80,6 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  await db.audioZone.update({
-    where: { id: zone.id },
-    data: {
-      isPlaying: typeof body.isPlaying === "boolean" ? body.isPlaying : undefined,
-      currentTitle:
-        body.currentTitle === undefined
-          ? undefined
-          : typeof body.currentTitle === "string" && body.currentTitle.trim()
-            ? body.currentTitle.trim().slice(0, 200)
-            : null,
-      reportedVolume:
-        body.volume === undefined ? undefined : clampVolume(body.volume, zone.volume),
-      externalActive: external,
-      externalSender,
-      lastStateAt: now,
-    },
-  });
-
-  // Statusmeldungen zu Jobs: [{ id, status, errorMessage? }]
-  const reports = Array.isArray(body.jobs) ? body.jobs : [];
-  for (const report of reports) {
-    const jobId = Number(report?.id);
-    if (!Number.isInteger(jobId)) continue;
-
-    const status = report.status;
-    if (!["PLAYING", "DONE", "FAILED"].includes(status)) continue;
-
-    await db.audioJob.updateMany({
-      where: { id: jobId, zoneId: zone.id },
-      data: {
-        status,
-        ...(status === "PLAYING" ? { startedAt: now } : { finishedAt: now }),
-        errorMessage:
-          typeof report.errorMessage === "string" ? report.errorMessage.slice(0, 500) : null,
-      },
-    });
-  }
-
-  const pending = await db.audioJob.count({
-    where: { zoneId: zone.id, status: "PENDING" },
-  });
-
+  const pending = await recordPlayerReport(db, zone, body, now);
   return NextResponse.json({ ok: true, pendingJobs: pending });
 }

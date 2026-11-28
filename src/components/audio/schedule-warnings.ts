@@ -174,14 +174,16 @@ export function scheduleWarnings(
     }
   }
 
-  const withoutPlayer = targets.filter((zone) => zone.deviceId === null);
+  const withoutPlayer = targets.filter((zone) => zone.deviceId === null && zone.monitorId === null);
   if (withoutPlayer.length > 0) {
     warnings.push(
       `Ohne Abspieler: ${joinNames(withoutPlayer.map((z) => z.name))}. Der Befehl bleibt im Verlauf für immer auf „wartet“ stehen.`
     );
   }
 
-  const offline = targets.filter((zone) => zone.deviceId !== null && !zone.deviceOnline);
+  const offline = targets.filter(
+    (zone) => (zone.deviceId !== null || zone.monitorId !== null) && !zone.deviceOnline
+  );
   if (offline.length > 0) {
     warnings.push(
       `Abspieler meldet sich nicht: ${joinNames(offline.map((z) => z.name))}. Bis zum Termin muss er wieder online sein.`

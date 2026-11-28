@@ -28,7 +28,7 @@ export function ZoneStatusBar({ zones, status, commands, onSelect }: Props) {
 
   const playing = zones.filter((zone) => merge(zone, status).isPlaying).length;
   const offline = zones.filter(
-    (zone) => zone.deviceId && !merge(zone, status).deviceOnline
+    (zone) => (zone.deviceId || zone.monitorId) && !merge(zone, status).deviceOnline
   ).length;
 
   return (
@@ -90,7 +90,7 @@ function ZoneTile({
   command: ZoneCommandState | undefined;
   onSelect: () => void;
 }) {
-  const noPlayer = !zone.deviceId;
+  const noPlayer = !zone.deviceId && !zone.monitorId;
   const offline = !noPlayer && !status.deviceOnline;
   const pending = command && command.phase !== "failed" ? command.action : null;
   const failed = command?.phase === "failed";

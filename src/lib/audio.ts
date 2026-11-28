@@ -11,6 +11,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma, type TenantDb } from "@/lib/prisma";
 import {
   DEFAULT_TTS_VOICE,
+  isMonitorAudioType,
   MAX_ANNOUNCEMENT_CHARS,
   TTS_FALLBACK_VOICES,
   TTS_LANGUAGE,
@@ -91,6 +92,38 @@ export async function checkExternalReceivers(
     return `Bluetooth-Empfang ${missing}`;
   }
   return null;
+}
+
+/**
+ * Monitor-Seite als Abspieler einer Zone (`AudioZone.monitorId`). undefined =
+ * nicht angegeben, null = lösen. Der Monitor muss zum Mandanten gehören, eine
+ * Seite sein, die Ton abspielen kann, und darf keine andere Zone spielen.
+ */
+export async function resolveZoneMonitor(
+  db: Db,
+  accountId: number,
+  value: unknown,
+  zoneId: number | null
+): Promise<{ monitorId: number | null } | { error: string; status: number } | undefined> {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return { monitorId: null };
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) return { error: "Ungültige Monitor-ID", status: 400 };
+  const monitor = await db.monitorConfig.findFirst({
+    where: { id, accountId },
+    select: { id: true, type: true, audioZone: { select: { id: true } } },
+  });
+  if (!monitor) return { error: "Monitor nicht gefunden", status: 404 };
+  if (!isMonitorAudioType(monitor.type)) {
+    return {
+      error: "Nur Check-in, Scan-Monitor und Auslastung können eine Zone abspielen",
+      status: 400,
+    };
+  }
+  if (monitor.audioZone && monitor.audioZone.id !== zoneId) {
+    return { error: "Dieser Monitor spielt bereits eine andere Zone", status: 409 };
+  }
+  return { monitorId: monitor.id };
 }
 
 export type OwnedAudioStream = { id: number; name: string; url: string };

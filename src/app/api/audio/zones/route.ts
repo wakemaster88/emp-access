@@ -9,6 +9,7 @@ import {
   parseOffsetMinutes,
   parseSourceKind,
   resolveOwnedStream,
+  resolveZoneMonitor,
 } from "@/lib/audio";
 import { parseStreamUrl } from "@/lib/audio-integration";
 import { MAX_ZONE_NAME, cleanReceiverName } from "@/lib/net-address";
@@ -69,6 +70,19 @@ export async function POST(request: NextRequest) {
       );
     }
     deviceId = candidate;
+  }
+
+  // Oder eine Monitor-Seite, die die Zone im Browser abspielt – nie beides.
+  const monitor = await resolveZoneMonitor(db, accountId!, body.monitorId, null);
+  if (monitor && "error" in monitor) {
+    return NextResponse.json({ error: monitor.error }, { status: monitor.status });
+  }
+  const monitorId = monitor?.monitorId ?? null;
+  if (monitorId !== null && deviceId !== null) {
+    return NextResponse.json(
+      { error: "Eine Zone spielt entweder über einen Audio-Pi oder über einen Monitor" },
+      { status: 400 }
+    );
   }
 
   // Playlist ist optional; sie muss aber demselben Mandanten gehoeren.
@@ -153,6 +167,7 @@ export async function POST(request: NextRequest) {
       accountId: accountId!,
       name,
       deviceId,
+      monitorId,
       keyRoomId,
       playlistId,
       streamId,

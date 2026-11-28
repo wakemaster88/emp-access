@@ -4,6 +4,40 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Monitor als Abspieler einer Audio-Zone (28.11.2026)
+
+Aaron: „Kann der Monitor-Screen auch eine Audio-Ausgabe sein? Z. B. Shop, wo
+der Monitor-Screen immer läuft.“ und „Der Monitor soll beim Start des iMacs
+beim Benutzer Tuttenbrocksee automatisch im Vollbild öffnen.“
+
+- Zone › *Abspieler*: entweder ein Audio-Pi oder ein Monitor (Typ Check-in,
+  Scan-Monitor oder Auslastung, `AudioZone.monitorId`, je Monitor höchstens
+  eine Zone). Ab Werk hat keine Zone einen Monitor, es ändert sich also nichts,
+  bis jemand ihn wählt.
+- Die Monitor-Seite fragt einmal je Gerät „Hier abspielen?“ (gemerkt im
+  Browser, `?ton=an` / `?ton=aus` im Link überspringt die Frage). Danach holt
+  sie alle 8 s die Befehle (`GET /api/monitor-audio/<token>?spielen=1`) und
+  meldet alle 60 s den Zustand, wie der Pi. Musik, Playlist, Webradio,
+  Durchsage mit Gong, Wiederholung und Musik darunter, Ducking, Live-Durchsage,
+  Lautstärke, Musik-Automatik und manueller Vorrang verhalten sich wie am Pi
+  (gemeinsamer Code in `src/lib/audio-player-state.ts`).
+- Browser geben Ton erst nach einem Tippen frei. Nach dem Neuladen zeigt der
+  Monitor unten links „Ton gesperrt“; jedes Tippen oder ein Scan gibt ihn frei.
+  Befehle, die währenddessen kommen, schlagen mit „Ton am Monitor gesperrt“
+  fehl, statt still verloren zu gehen. Was der Monitor länger als 2 Minuten
+  nicht abholt (Seite zu), gilt als verworfen.
+- Online heißt beim Monitor: Zustand in den letzten 5 Minuten gemeldet
+  (`zonePlayerOnline`). Sync-Gruppe, AirPlay und Bluetooth gibt es am Monitor
+  nicht.
+- Shop-iMac: `scripts/kiosk/monitor-autostart.sh` einmal als der angemeldete
+  Benutzer ausführen. Es legt den LaunchAgent `de.emp-access.monitor` an, der
+  beim Anmelden Chrome im Kiosk-Modus mit
+  `--autoplay-policy=no-user-gesture-required` und eigenem Profil öffnet; der
+  Mac schläft nicht ein, solange der Monitor läuft (Bildschirm darf aus).
+  Der Link liegt nur auf dem Mac. Nötig: Google Chrome und automatische
+  Anmeldung (nicht mit FileVault). Beenden mit Cmd+Q, Ausbau mit
+  `--entfernen`.
+
 ## Shop-Scan im Shop-Monitor (28.11.2026)
 
 Aaron: „Im Shop-Monitor brauch ich oben einen Button ‚Shop‘, da kann ich

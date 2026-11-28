@@ -33,6 +33,7 @@ import {
   ListMusic,
   Loader2,
   Megaphone,
+  MonitorSpeaker,
   MoreHorizontal,
   Music,
   Pencil,
@@ -91,6 +92,7 @@ import { ZoneStatusBar } from "./zone-status-bar";
 import type {
   AnnouncementRow,
   AudioDeviceOption,
+  AudioMonitorOption,
   JobRow,
   OperatingScheduleOption,
   PlaylistRow,
@@ -114,6 +116,7 @@ interface Props {
   schedules: ScheduleRow[];
   jobs: JobRow[];
   audioDevices: AudioDeviceOption[];
+  audioMonitors: AudioMonitorOption[];
   ttsVoices: TtsVoice[];
   /** Räume zur Zuordnung einer Zone. */
   rooms: RoomOption[];
@@ -219,6 +222,7 @@ export function AudioClient({
   schedules,
   jobs,
   audioDevices,
+  audioMonitors,
   ttsVoices,
   rooms,
   operatingSchedules,
@@ -1037,6 +1041,7 @@ export function AudioClient({
           open
           zone={zoneDialog.zone}
           devices={audioDevices}
+          monitors={audioMonitors}
           playlists={playlists}
           streams={streams}
           rooms={rooms}
@@ -1262,8 +1267,10 @@ function ZoneCard({
   // ist, dem gewünschten, damit sie nicht zwischendurch zurückspringt.
   const showStop = pending ? pending.action === "PLAY" : isPlaying;
 
+  // Pi oder Monitor-Seite im Browser.
+  const hasPlayer = zone.deviceId !== null || zone.monitorId !== null;
   // Warum Start gerade nichts bewirken kann – statt die Taste stumm zu sperren.
-  const blockedReason = !zone.deviceId
+  const blockedReason = !hasPlayer
     ? "Kein Abspieler zugeordnet · in den Einstellungen der Zone wählen"
     : !isActive
       ? "Zone ist deaktiviert · in den Einstellungen einschalten"
@@ -1300,10 +1307,16 @@ function ZoneCard({
               detail: currentTitle ?? sourceName ?? "Wiedergabe",
               tone: "music",
             }
-          : zone.deviceId && !deviceOnline
+          : hasPlayer && !deviceOnline
             ? {
                 label: "Offline",
-                detail: lastSeen ? `zuletzt gemeldet ${lastSeen}` : "Abspieler hat sich nie gemeldet",
+                detail: zone.monitorId
+                  ? lastSeen
+                    ? `Monitor zuletzt gemeldet ${lastSeen} · Seite offen und Ton dort eingeschaltet?`
+                    : "Monitor hat sich nie gemeldet · dort „Hier abspielen“ tippen"
+                  : lastSeen
+                    ? `zuletzt gemeldet ${lastSeen}`
+                    : "Abspieler hat sich nie gemeldet",
                 tone: "danger",
               }
             : {
@@ -1326,9 +1339,15 @@ function ZoneCard({
             <h3 className="text-sm font-semibold text-foreground">{zone.name}</h3>
             {/* Inaktiv: Text bleibt lesbar, den Zustand sagt das Badge (docs/design-regeln.md, Abschnitt 17). */}
             {!isActive && <Badge variant="neutral">Deaktiviert</Badge>}
-            {!zone.deviceId && (
+            {!hasPlayer && (
               <Badge variant="outline" className="text-xs">
                 Kein Abspieler
+              </Badge>
+            )}
+            {zone.monitorId && (
+              <Badge variant="outline" className="text-xs" title="Spielt über die Lautsprecher des Rechners, auf dem dieser Monitor läuft">
+                <MonitorSpeaker className="h-3 w-3" />
+                Monitor {zone.monitorName}
               </Badge>
             )}
             {zone.roomName && (

@@ -21,7 +21,13 @@ export interface ZoneRow {
   name: string;
   deviceId: number | null;
   deviceName: string | null;
-  /** Serverseitig aus dem letzten Heartbeat abgeleitet. */
+  /**
+   * Monitor-Seite, die die Zone im Browser abspielt (statt eines Pis). Schließt
+   * `deviceId` aus.
+   */
+  monitorId: number | null;
+  monitorName: string | null;
+  /** Serverseitig aus dem letzten Heartbeat abgeleitet (Pi oder Monitor). */
   deviceOnline: boolean;
   /** Raum, den die Zone beschallt. Über ihn erbt sie die Betriebszeit. */
   roomId: number | null;
@@ -178,6 +184,17 @@ export interface AudioDeviceOption {
    * sonst still übergehen.
    */
   backends: string[];
+}
+
+/** Monitor-Seite, die als Abspieler einer Zone dienen kann. */
+export interface AudioMonitorOption {
+  id: number;
+  name: string;
+  /** CHECKIN, MONITOR oder RESOURCE_MONITOR. */
+  type: string;
+  isActive: boolean;
+  /** true, wenn der Monitor bereits eine andere Zone abspielt. */
+  taken: boolean;
 }
 
 /** Raum zur Auswahl im Zonen-Dialog. */

@@ -12,7 +12,7 @@ import type {
 } from "@/components/raeume/types";
 import { safeAuth } from "@/lib/auth";
 import { superAdminClient, tenantClient, type TenantDb } from "@/lib/prisma";
-import { isPlayerOnline } from "@/lib/audio-constants";
+import { zonePlayerOnline } from "@/lib/audio-constants";
 import { scheduleInclude, scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { extendedSpecCache } from "@/lib/operating-extent-queries";
 import type { ScheduleSpec } from "@/lib/operating-hours";
@@ -58,6 +58,7 @@ const zoneSelect = {
   name: true,
   isActive: true,
   deviceId: true,
+  monitorId: true,
   isPlaying: true,
   currentTitle: true,
   lastStateAt: true,
@@ -116,6 +117,7 @@ type ZoneRecord = {
   name: string;
   isActive: boolean;
   deviceId: number | null;
+  monitorId: number | null;
   isPlaying: boolean;
   currentTitle: string | null;
   lastStateAt: Date | null;
@@ -125,12 +127,12 @@ type ZoneRecord = {
 function toZone(z: ZoneRecord): RoomZone {
   // Ein Pi, der sich nicht mehr meldet, spielt auch nichts – sonst stuende
   // "spielt" fuer immer an einer stummen Zone.
-  const online = isPlayerOnline(z.device?.lastUpdate);
+  const online = zonePlayerOnline(z);
   return {
     id: z.id,
     name: z.name,
     isActive: z.isActive,
-    hasPlayer: z.deviceId !== null,
+    hasPlayer: z.deviceId !== null || z.monitorId !== null,
     isPlaying: online && z.isPlaying,
     currentTitle: online ? z.currentTitle : null,
     lastStateAt: z.lastStateAt ? z.lastStateAt.toISOString() : null,
