@@ -371,10 +371,15 @@ test("offerMargin: ohne EK und noch ladend zählt nicht mit, Spielraum offen", (
 test("isValidShopCostPin und isWeakShopCostPin", () => {
   assert.equal(isValidShopCostPin("482915"), true);
   assert.equal(isValidShopCostPin("48291537"), true);
-  assert.equal(isValidShopCostPin("48291"), false);
+  assert.equal(isValidShopCostPin("4829"), true);
+  assert.equal(isValidShopCostPin("482"), false);
   assert.equal(isValidShopCostPin("482915370"), false);
   assert.equal(isValidShopCostPin("48291a"), false);
   assert.equal(isWeakShopCostPin("111111"), true);
+  assert.equal(isWeakShopCostPin("1111"), true);
+  assert.equal(isWeakShopCostPin("1234"), true);
+  assert.equal(isWeakShopCostPin("4321"), true);
+  assert.equal(isWeakShopCostPin("4829"), false);
   assert.equal(isWeakShopCostPin("123456"), true);
   assert.equal(isWeakShopCostPin("87654321"), true);
   assert.equal(isWeakShopCostPin("890123"), false);

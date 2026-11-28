@@ -105,7 +105,7 @@ export function EmpShopCostPin() {
           inputMode="numeric"
           autoComplete="new-password"
           maxLength={SHOP_COST_PIN_MAX_LENGTH}
-          placeholder={status?.pinSet ? "Neue PIN (6 bis 8 Ziffern)" : "PIN (6 bis 8 Ziffern)"}
+          placeholder={`${status?.pinSet ? "Neue PIN" : "PIN"} (${SHOP_COST_PIN_MIN_LENGTH} bis ${SHOP_COST_PIN_MAX_LENGTH} Ziffern)`}
           value={pin}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
           onKeyDown={(e) => e.key === "Enter" && void save()}

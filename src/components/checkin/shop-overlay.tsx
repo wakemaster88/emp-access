@@ -43,6 +43,7 @@ import {
   parseStoredOffer,
   setOfferQuantity,
   SHOP_COST_PIN_MAX_LENGTH,
+  SHOP_COST_PIN_MIN_LENGTH,
   SHOP_COSTS_IDLE_OFF_MS,
   SHOP_COSTS_MAX_VARIANTS,
   type OfferDiscount,
@@ -301,7 +302,7 @@ export function ShopOverlay({
   const submitPin = async () => {
     if (pinBusy) return;
     if (!isValidShopCostPin(pin)) {
-      setPinError("Die PIN hat 6 bis 8 Ziffern.");
+      setPinError(`Die PIN hat ${SHOP_COST_PIN_MIN_LENGTH} bis ${SHOP_COST_PIN_MAX_LENGTH} Ziffern.`);
       return;
     }
     setPinBusy(true);

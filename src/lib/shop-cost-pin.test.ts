@@ -116,7 +116,7 @@ test("checkShopCostPin: sperrt nach 5 Fehlversuchen, auch die richtige PIN", asy
   assert.equal(rows[0]!.lockedUntil, null);
 });
 
-test("setShopCostPin: neue PIN hebt die Sperre auf, nur 6 bis 8 Ziffern", async () => {
+test("setShopCostPin: neue PIN hebt die Sperre auf, nur 4 bis 8 Ziffern", async () => {
   const { db, rows } = fakeDb();
   await pins.setShopCostPin(ACCOUNT, "482915", NOW, db);
   rows[0]!.failures = SHOP_COST_PIN_MAX_FAILURES;
@@ -127,7 +127,9 @@ test("setShopCostPin: neue PIN hebt die Sperre auf, nur 6 bis 8 Ziffern", async 
   assert.equal(rows[0]!.failures, 0);
   assert.equal(rows[0]!.lockedUntil, null);
   assert.deepEqual(await pins.checkShopCostPin(ACCOUNT, "7305281", later, db), { ok: true, pinSetAt: later });
-  await assert.rejects(pins.setShopCostPin(ACCOUNT, "12345", NOW, db));
+  await assert.rejects(pins.setShopCostPin(ACCOUNT, "123", NOW, db));
+  await pins.setShopCostPin(ACCOUNT, "4829", NOW, db);
+  assert.deepEqual(await pins.checkShopCostPin(ACCOUNT, "4829", NOW, db), { ok: true, pinSetAt: NOW });
   await assert.rejects(pins.setShopCostPin(ACCOUNT, "123456789", NOW, db));
   await pins.removeShopCostPin(ACCOUNT, db);
   assert.equal(rows.length, 0);
