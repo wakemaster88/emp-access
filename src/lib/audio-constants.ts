@@ -524,6 +524,26 @@ export function manualMusicOverrideUntil(
   return new Date(Math.min(...candidates.map((d) => d.getTime())));
 }
 
+/**
+ * Musik stumm (Taste „Audio“ am Monitor): gilt bis Mitternacht in der Zeitzone
+ * des Kontos. So bleibt die Musik am nächsten Tag nicht still, weil jemand das
+ * Wiedereinschalten vergessen hat.
+ */
+export function musicMuteUntil(now: Date, timeZone: string | null | undefined): Date {
+  // Ungültiges Datum ist hier nicht möglich; ohne Ergebnis gilt Stumm 12 Stunden.
+  return (
+    tzInstant(addDaysToYmd(tzYmd(now, timeZone), 1), "00:00", timeZone) ??
+    new Date(now.getTime() + 12 * 60 * 60_000)
+  );
+}
+
+/** Ist die Musik der Zone gerade stumm geschaltet? */
+export function isMusicMuted(until: Date | string | null | undefined, now: Date | number = Date.now()): boolean {
+  const date = toDate(until);
+  if (!date) return false;
+  return date.getTime() > (typeof now === "number" ? now : now.getTime());
+}
+
 /** Wochentage als "Di–Fr", "Sa, So" oder "täglich". */
 function formatWeekdays(weekdays: number[]): string {
   if (weekdays.length === 7) return "täglich";

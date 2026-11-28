@@ -1,11 +1,13 @@
 /**
  * Direktsteuerung einer Zone aus dem Dashboard: Musik starten, stoppen,
- * Lautstärke ändern oder den lokalen Dateicache des Pi abgleichen.
+ * Lautstärke ändern, den lokalen Dateicache des Pi abgleichen oder – bei einem
+ * Monitor als Abspieler – die Musik stumm schalten (Durchsagen klingen weiter).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { queueZoneCommand } from "@/lib/audio";
 import { controlAudioZone } from "@/lib/audio-integration";
+import { setZoneMusicMuted } from "@/lib/monitor-audio-control";
 
 export async function POST(
   request: NextRequest,
@@ -30,6 +32,15 @@ export async function POST(
   if (action === "SYNC_LIBRARY") {
     await queueZoneCommand(db, accountId!, [zone], "SYNC_LIBRARY", null, "MANUAL");
     return NextResponse.json({ ok: true });
+  }
+
+  if (action === "MUTE" || action === "UNMUTE") {
+    // Nur der Monitor im Browser setzt Stumm um; der Pi kennt das Feld nicht.
+    if (!zone.monitorId) {
+      return NextResponse.json({ error: "Stumm geht nur mit einem Monitor als Abspieler" }, { status: 400 });
+    }
+    const until = await setZoneMusicMuted(db, zone.id, action === "MUTE");
+    return NextResponse.json({ ok: true, musicMutedUntil: until?.toISOString() ?? null });
   }
 
   if (action === "STOP" || action === "VOLUME" || action === "PLAY") {

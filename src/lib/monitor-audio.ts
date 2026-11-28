@@ -70,6 +70,8 @@ export interface MonitorZoneState {
   sourceKind: "SILENCE" | "PLAYLIST" | "STREAM";
   streamUrl: string | null;
   music?: { allowed?: boolean; until?: string | null } | null;
+  /** Musik lautlos (Taste „Audio“ am Monitor); Durchsagen klingen weiter. */
+  musicMuted?: boolean | null;
   playlist: { id: number; name: string; shuffle: boolean; tracks: MonitorTrack[] } | null;
 }
 
@@ -78,6 +80,63 @@ export interface MonitorJob {
   kind: string;
   payload: unknown;
   createdAt?: string;
+}
+
+// ── Taste „Audio“ am Check-in-Monitor ──────────────────────────────────────
+
+/** Was die Taste „Audio“ am Monitor zeigt: die Zone, die dieser Monitor abspielt. */
+export interface MonitorAudioControlView {
+  name: string;
+  isActive: boolean;
+  /** Vom Abspieler gemeldet. */
+  isPlaying: boolean;
+  /** Meldet sich ein Gerät, das die Zone hier abspielt? */
+  online: boolean;
+  currentTitle: string | null;
+  volume: number;
+  /** Musik stumm bis (ISO); null = nicht stumm. */
+  mutedUntil: string | null;
+  /** Name der Zone, der diese folgt; null = eigenständig. */
+  following: string | null;
+  /** Was „Start“ spielt (Sender oder Playlist); null = keine Quelle. */
+  sourceName: string | null;
+  /** Warum Start gerade nichts bewirken kann; null = Start geht. */
+  startBlocked: string | null;
+}
+
+export type MonitorControlAction =
+  | { action: "PLAY" }
+  | { action: "STOP" }
+  | { action: "VOLUME"; volume: number }
+  | { action: "MUTE" }
+  | { action: "UNMUTE" };
+
+/** Befehl aus dem Body der Taste „Audio“; null = ungültig. */
+export function parseControlAction(body: unknown): MonitorControlAction | null {
+  const p = record(body);
+  switch (p.action) {
+    case "PLAY":
+    case "STOP":
+    case "MUTE":
+    case "UNMUTE":
+      return { action: p.action };
+    case "VOLUME": {
+      const volume = typeof p.volume === "number" && Number.isFinite(p.volume) ? Math.round(p.volume) : null;
+      if (volume === null || volume < 0 || volume > 100) return null;
+      return { action: "VOLUME", volume };
+    }
+    default:
+      return null;
+  }
+}
+
+/** „bis 23:59“-Text für die Stummschaltung; Mitternacht heißt „bis heute Nacht“. */
+export function mutedUntilText(until: string | null, timeZone = "Europe/Berlin"): string | null {
+  if (!until) return null;
+  const date = new Date(until);
+  if (Number.isNaN(date.getTime())) return null;
+  const time = date.toLocaleTimeString("de-DE", { timeZone, hour: "2-digit", minute: "2-digit" });
+  return time === "00:00" ? "bis heute Nacht" : `bis ${time} Uhr`;
 }
 
 /**

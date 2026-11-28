@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isMonitorAudioType, zonePlayerOnline } from "./audio-constants";
+import { isMonitorAudioType, isMusicMuted, musicMuteUntil, zonePlayerOnline } from "./audio-constants";
 import {
   MonitorJobQueue,
   chimeWav,
@@ -9,7 +9,9 @@ import {
   interruptsSpeech,
   jobNeedsSound,
   musicBlocked,
+  mutedUntilText,
   parseAnnounce,
+  parseControlAction,
   parseDecision,
   parsePlay,
   pcm16ToFloat32,
@@ -194,4 +196,40 @@ test("Nur dauerhaft laufende Monitore können eine Zone spielen", () => {
   assert.equal(isMonitorAudioType("RESOURCE_MONITOR"), true);
   assert.equal(isMonitorAudioType("SCANNER"), false);
   assert.equal(isMonitorAudioType("VOUCHER"), false);
+});
+
+test("Musik stumm: bis Mitternacht in der Zeitzone des Kontos", () => {
+  // 28.11.2026 15:49 Berlin (Winterzeit, UTC+1) → bis 29.11. 00:00 Berlin = 28.11. 23:00 UTC.
+  const now = new Date("2026-11-28T14:49:00Z");
+  const until = musicMuteUntil(now, "Europe/Berlin");
+  assert.equal(until.toISOString(), "2026-11-28T23:00:00.000Z");
+  // Kurz vor Mitternacht: bis zur nächsten, nicht schon vorbei.
+  assert.equal(musicMuteUntil(new Date("2026-11-28T22:59:00Z"), "Europe/Berlin").toISOString(), "2026-11-28T23:00:00.000Z");
+  assert.equal(musicMuteUntil(new Date("2026-11-28T23:00:00Z"), "Europe/Berlin").toISOString(), "2026-11-29T23:00:00.000Z");
+
+  assert.equal(isMusicMuted(until, now), true);
+  assert.equal(isMusicMuted(until.toISOString(), until.getTime()), false);
+  assert.equal(isMusicMuted(null, now), false);
+  assert.equal(isMusicMuted("kaputt", now), false);
+});
+
+test("mutedUntilText: Mitternacht heißt „bis heute Nacht“", () => {
+  assert.equal(mutedUntilText("2026-11-28T23:00:00.000Z"), "bis heute Nacht");
+  assert.equal(mutedUntilText("2026-11-28T17:30:00.000Z"), "bis 18:30 Uhr");
+  assert.equal(mutedUntilText(null), null);
+  assert.equal(mutedUntilText("kaputt"), null);
+});
+
+test("parseControlAction: nur bekannte Befehle, Lautstärke 0–100", () => {
+  assert.deepEqual(parseControlAction({ action: "MUTE" }), { action: "MUTE" });
+  assert.deepEqual(parseControlAction({ action: "UNMUTE" }), { action: "UNMUTE" });
+  assert.deepEqual(parseControlAction({ action: "PLAY", playlistId: 3 }), { action: "PLAY" });
+  assert.deepEqual(parseControlAction({ action: "STOP" }), { action: "STOP" });
+  assert.deepEqual(parseControlAction({ action: "VOLUME", volume: 42.4 }), { action: "VOLUME", volume: 42 });
+  assert.equal(parseControlAction({ action: "VOLUME", volume: 101 }), null);
+  assert.equal(parseControlAction({ action: "VOLUME", volume: "50" }), null);
+  assert.equal(parseControlAction({ action: "VOLUME" }), null);
+  assert.equal(parseControlAction({ action: "SYNC_LIBRARY" }), null);
+  assert.equal(parseControlAction(null), null);
+  assert.equal(parseControlAction([]), null);
 });

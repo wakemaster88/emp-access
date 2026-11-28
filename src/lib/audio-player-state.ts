@@ -9,7 +9,7 @@
  */
 import type { Prisma } from "@prisma/client";
 import type { TenantDb } from "@/lib/prisma";
-import { clampVolume, musicWindowState, pairableSeconds, parseExternalKind } from "@/lib/audio";
+import { clampVolume, isMusicMuted, musicWindowState, pairableSeconds, parseExternalKind } from "@/lib/audio";
 import { scheduleSpecInclude } from "@/lib/operating-queries";
 import { zoneMusicSpec } from "@/lib/operating-extent-queries";
 import { followLeaderSelect, syncFollower } from "@/lib/audio-follow";
@@ -149,6 +149,9 @@ export async function playerStateBody(db: TenantDb, zone: PlayerZone, options: P
       volume: zone.volume,
       announcementVolume: zone.announcementVolume,
       duckVolume: zone.duckVolume,
+      // Musik lautlos, Durchsagen normal (Taste „Audio“ am Monitor). Nur der
+      // Monitor setzt das um; ältere Abspieler und der Pi übergehen das Feld.
+      musicMuted: isMusicMuted(zone.musicMutedUntil, now),
       sourceKind: follow ? follow.sourceKind : sourceKind,
       streamUrl: follow ? follow.streamUrl : (zone.stream?.url ?? zone.streamUrl),
       music: { allowed: music.allowed, until: music.until?.toISOString() ?? null },

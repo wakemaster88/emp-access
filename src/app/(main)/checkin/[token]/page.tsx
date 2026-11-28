@@ -44,6 +44,7 @@ import { checkinOpeningText } from "@/lib/checkin-opening";
 import { ageOn, isBirthdayOn } from "@/lib/birthday";
 import { CameraOverlay, ScanOverlay } from "@/components/checkin/scan-overlay";
 import { ShopOverlay } from "@/components/checkin/shop-overlay";
+import { MonitorAudioButton, MonitorAudioSheet, useMonitorAudioControl } from "@/components/checkin/audio-overlay";
 import { isShopLabelScan } from "@/lib/shop-scan";
 import { AppLinkDialog, type AppLinkState } from "@/components/checkin/app-link-dialog";
 import { SlotOverviewSection } from "@/components/checkin/slot-overview";
@@ -77,6 +78,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const { token } = use(params);
   // Bildschirm wach halten, solange die Seite sichtbar ist.
   useWakeLock(true);
+  // Taste „Audio“: Zone, die dieser Monitor abspielt (ab Werk keine – dann unsichtbar).
+  const audioControl = useMonitorAudioControl(token);
   const [data, setData] = useState<CheckinData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1371,6 +1374,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             <PackageSearch className="size-5 shrink-0" />
             <span className={headerLabelMore}>Fundsachen</span>
           </Button>
+          {/* Nur, wenn dieser Monitor eine Audio-Zone abspielt (Audio › Zonen › Abspieler). */}
+          <MonitorAudioButton
+            control={audioControl}
+            className={headerButtonClass}
+            labelClassName={headerLabelMore}
+            mutedLabelClassName={headerLabelMain}
+          />
           {paymentOpenCount > 0 && (
             <Button
               variant="outline"
@@ -2060,6 +2070,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           onCreated={() => { refreshRef.current?.(); }}
         />
       )}
+
+      {/* Audio der Zone dieses Monitors: Start/Stopp, Lautstärke, Musik stumm */}
+      {audioControl.open && <MonitorAudioSheet control={audioControl} />}
 
       {/* Hinweis-an-Monitore Dialog */}
       {announcementOpen && (

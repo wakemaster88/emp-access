@@ -4,6 +4,30 @@ Kurzbeschreibungen der Funktionen, die weder im Haupt-README noch in
 `hub/README.md` stehen. Die Hub-Assistent-Funktionen (Wächter,
 Früherkennung, Belegung, Energie, Mäher) beschreibt `hub/README.md`.
 
+## Audio am Check-in-Monitor steuern, Musik stumm (28.11.2026)
+
+Aaron: „Audio noch steuern hier mit Mute-Option für Musik, Durchsagen sollen
+weiter gehen.“
+
+- Kopftaste *Audio* im Check-in-Monitor (`src/components/checkin/audio-overlay.tsx`),
+  nur wenn der Monitor Abspieler einer Zone ist. Blatt mit Zustand,
+  Start/Stopp, *Musik stumm* und Lautstärke. Start/Stopp/Lautstärke gehen als
+  Befehl wie im Dashboard (`AudioJob.triggerKind` „MONITOR“, im Verlauf „Am
+  Monitor“); Start an einer folgenden Zone heißt wieder folgen.
+- Stumm: `AudioZone.musicMutedUntil` (bis Mitternacht Kontozeit,
+  `musicMuteUntil`), im Abruf als `zone.musicMuted`. Der Monitor setzt
+  `muted` am Musik-Element; Gong, Durchsage, Musik unter der Geburtstagsansage
+  und Live-Durchsage laufen über eigene Wege und bleiben hörbar. Musik läuft
+  weiter (Titel, Folgen, gemeldeter Zustand bleiben). Der Pi kennt das Feld
+  nicht, Stumm gibt es deshalb nur für Zonen mit Monitor.
+- Steuerung über den Server (`/api/monitor-audio/<token>/control`): auch ein
+  Gerät, das nicht spielt (iPad mit „Nicht hier“), kann stumm schalten; das
+  spielende Gerät übernimmt es beim nächsten Abruf (≤ 8 s). Am spielenden Gerät
+  wirken Stumm und Lautstärke sofort (`monitor-audio-registry.ts`), Start/Stopp
+  holt es gleich ab.
+- In *Audio › Zonen*: Badge „Musik stumm“ und unter *Mehr* „Musik stumm
+  schalten“/„Musik wieder an“ (nur Monitor-Zonen).
+
 ## Audio-Zone folgt einer anderen (28.11.2026)
 
 Aaron: „Hier auch Folge möglich, z. B. Shop folgt der Wiedergabe von Insel.“

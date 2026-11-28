@@ -7,7 +7,7 @@
  */
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { pairableSeconds, zonePlayerOnline } from "@/lib/audio";
+import { isMusicMuted, pairableSeconds, zonePlayerOnline } from "@/lib/audio";
 
 /** So viele Einträge braucht die Verlaufsliste, um „gerade passiert" zu zeigen. */
 const RECENT_JOBS = 50;
@@ -32,6 +32,7 @@ export async function GET() {
         externalSender: true,
         pairableUntil: true,
         musicOverrideUntil: true,
+        musicMutedUntil: true,
         lastStateAt: true,
         monitorId: true,
         device: { select: { lastUpdate: true } },
@@ -82,6 +83,7 @@ export async function GET() {
       deviceOnline: zonePlayerOnline(zone),
       lastStateAt: zone.lastStateAt?.toISOString() ?? null,
       musicOverrideUntil: zone.musicOverrideUntil?.toISOString() ?? null,
+      musicMutedUntil: isMusicMuted(zone.musicMutedUntil) ? zone.musicMutedUntil!.toISOString() : null,
       pendingJobs: pendingByZone.get(zone.id) ?? 0,
     })),
     jobs: jobs.map((job) => ({
