@@ -24,6 +24,9 @@
 # production
 /build
 
+# ZXing-WebAssembly fuer den Kamera-Scan, kopiert von scripts/scanner-wasm.mjs
+/public/scanner/
+
 # misc
 .DS_Store
 *.pem

@@ -12,8 +12,17 @@ ein Angebot.“
 
 - Taste **Shop** im Kopf des Shop-Monitors (`/checkin/<token>`) öffnet ein
   Blatt mit Scanfeld, Kamera-Schalter und der Liste. Der Handscanner liest
-  auch ohne Fokus im Feld; die Kamera (html5-qrcode) liest fortlaufend und
-  zählt denselben Code erst nach 2,5 Sekunden wieder.
+  auch ohne Fokus im Feld. Die Kamera (`shop-camera.tsx`) startet nur auf
+  Tipp, liest jedes Bild in voller Auflösung (bis 1920 × 1080) über die
+  BarcodeDetector-Schnittstelle des Browsers, sonst über den ZXing-Nachbau aus
+  `barcode-detector` (WebAssembly vom eigenen Server unter `/scanner`, kopiert
+  von `scripts/scanner-wasm.mjs` vor `dev` und `build`). html5-qrcode las nur
+  einen auf Bildschirmgröße verkleinerten Ausschnitt; der kleine Etikett-QR
+  wurde darin nicht erkannt (Aaron, 28.11.2026). Ein Etikett, das vor der
+  Kamera liegen bleibt, zählt einmal; erst nach 1,5 Sekunden aus dem Bild
+  wieder (`cameraCodeGate`). Nach einer Minute ohne Code und wenn die Seite in
+  den Hintergrund geht, schaltet sie sich aus. Laptop- und Frontkamera zeigen
+  das Bild gespiegelt.
 - Wird ein Preisetikett im normalen Monitor gescannt (QR mit
   `HTTPS://4WAKE.EU/A/<Artikelnummer>`), öffnet sich der Shop gleich mit
   diesem Artikel statt der Ticket-Suche. Ein Handscanner, der US-Tastatur

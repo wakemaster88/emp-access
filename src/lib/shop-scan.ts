@@ -172,3 +172,34 @@ export function parseStoredOffer(raw: string | null): ShopOfferLine[] {
     return [];
   }
 }
+
+/** Kamera: Derselbe Code zählt erst wieder, wenn er so lange nicht mehr im Bild war. */
+export const CAMERA_SAME_CODE_GAP_MS = 1500;
+
+/** Kamera geht nach so langer Zeit ohne erkannten Code von selbst aus. */
+export const CAMERA_IDLE_OFF_MS = 60_000;
+
+/**
+ * Soll ein Code, den die Kamera gerade sieht, als Scan zählen? Ein Etikett, das
+ * vor der Kamera liegen bleibt, zählt nur einmal: Jeder Treffer verlängert die
+ * Sperre, erst nach `CAMERA_SAME_CODE_GAP_MS` ohne diesen Code zählt er wieder.
+ */
+export function cameraCodeGate(
+  last: { code: string; at: number } | null,
+  code: string,
+  now: number,
+): { report: boolean; last: { code: string; at: number } } {
+  const report = !last || last.code !== code || now - last.at >= CAMERA_SAME_CODE_GAP_MS;
+  return { report, last: { code, at: now } };
+}
+
+/**
+ * Kamerabild spiegeln wie ein Spiegel, wenn die Kamera zum Personal schaut
+ * (Frontkamera, Laptop-Kamera ohne Angabe): Dann führt man das Etikett in die
+ * richtige Richtung. Die Rückkamera bleibt ungespiegelt.
+ */
+export function mirrorCameraPreview(facingMode: string | undefined, finePointer: boolean): boolean {
+  if (facingMode === "environment") return false;
+  if (facingMode === "user") return true;
+  return finePointer;
+}

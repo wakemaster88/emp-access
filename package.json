@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/scanner-wasm.mjs && next dev",
     "build": "node scripts/vercel-build.mjs",
     "start": "next start",
     "lint": "eslint",
@@ -30,6 +30,7 @@
     "@simplewebauthn/server": "14.0.3",
     "@vercel/blob": "^2.9.0",
     "@vercel/oidc": "^3.8.10",
+    "barcode-detector": "3.2.2",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

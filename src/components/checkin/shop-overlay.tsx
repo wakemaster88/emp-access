@@ -6,7 +6,8 @@
  * wie ein Angebot“).
  *
  * Gescannt wird mit dem Handscanner (Tastatureingabe, auch ohne Fokus im Feld)
- * oder mit der Kamera des Geräts. Jeder Scan geht an
+ * oder mit der Kamera des Geräts (`ShopCamera`: nur auf Tipp, geht nach einer
+ * Minute ohne Scan von selbst aus). Jeder Scan geht an
  * POST /api/checkin/public/[token]/shop-scan, das den Artikel im EMP-Shop
  * nachschlägt; Preis und UVP sind die des Preisetiketts. Derselbe Artikel noch
  * einmal zählt die Menge hoch, passen mehrere (doppelte EAN), wählt das
@@ -14,7 +15,6 @@
  * bleibt auf diesem Gerät gespeichert, bis jemand „Leeren“ tippt.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Html5Qrcode } from "html5-qrcode";
 import { Camera, CameraOff, CheckCircle2, Loader2, Minus, Plus, ScanLine, Search, ShoppingBag, Trash2, X, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -30,11 +30,10 @@ import {
   type ShopOfferLine,
 } from "@/lib/shop-scan";
 import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
+import { ShopCamera } from "./shop-camera";
 
-const CAMERA_ID = "shop-scan-camera";
-/** Denselben Code hält die Kamera oft mehrere Bilder lang: erst nach dieser Pause zählt er neu. */
-const CAMERA_REPEAT_MS = 2500;
-const cameraPrefKey = "emp.shop-scan.kamera";
+/** Frühere Fassung merkte „Kamera an“ je Gerät; die Kamera startet jetzt immer aus. */
+const legacyCameraPrefKey = "emp.shop-scan.kamera";
 const offerKey = (token: string) => `emp.shop-angebot.${token}`;
 
 type ScanStatus =
@@ -80,11 +79,9 @@ export function ShopOverlay({
   const [choice, setChoice] = useState<{ code: string; articles: ShopArticle[] } | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  const [cameraOn, setCameraOn] = useState(() => typeof window !== "undefined" && readStorage(cameraPrefKey) === "an");
-  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraNote, setCameraNote] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const scannerRef = useRef<Html5Qrcode | null>(null);
-  const lastCameraRef = useRef<{ text: string; at: number } | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Der Monitor rendert oft neu (Abfragen im Takt); der Tastenpuffer darf dabei nicht verloren gehen.
   const onCloseRef = useRef(onClose);
@@ -180,64 +177,19 @@ export function ShopOverlay({
     };
   }, []);
 
-  // Kamera: liest fortlaufend, bis sie jemand ausschaltet.
-  const stopCamera = useCallback(async () => {
-    const scanner = scannerRef.current;
-    scannerRef.current = null;
-    if (!scanner) return;
-    try {
-      if (scanner.isScanning) await scanner.stop();
-    } catch {
-      /* schon gestoppt */
-    }
-    try {
-      scanner.clear();
-    } catch {
-      /* egal */
-    }
+  // Gemerktes „Kamera an“ der ersten Fassung entfernen.
+  useEffect(() => { writeStorage(legacyCameraPrefKey, null); }, []);
+
+  // Kamera: nur auf Tipp; geht nach einer Minute ohne Scan oder im Hintergrund von selbst aus.
+  const onCameraCode = useCallback((raw: string) => { void scanRef.current(raw); }, []);
+  const onCameraStop = useCallback((reason: { kind: "idle" | "hidden" | "error"; text: string }) => {
+    setCameraOn(false);
+    setCameraNote({ tone: reason.kind === "error" ? "danger" : "info", text: reason.text });
   }, []);
 
-  useEffect(() => {
-    if (!cameraOn) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const mod = await import("html5-qrcode");
-        if (cancelled) return;
-        const scanner = new mod.Html5Qrcode(CAMERA_ID);
-        scannerRef.current = scanner;
-        await scanner.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: (w: number, h: number) => { const n = Math.floor(Math.min(w, h) * 0.7); return { width: n, height: n }; } },
-          (decoded) => {
-            const now = Date.now();
-            const last = lastCameraRef.current;
-            if (last && last.text === decoded && now - last.at < CAMERA_REPEAT_MS) return;
-            lastCameraRef.current = { text: decoded, at: now };
-            navigator.vibrate?.(40);
-            void scanRef.current(decoded);
-          },
-          () => {},
-        );
-      } catch (err) {
-        if (!cancelled) {
-          setCameraError(err instanceof Error && err.message ? err.message : "Die Kamera ließ sich nicht starten.");
-          setCameraOn(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-      void stopCamera();
-    };
-  }, [cameraOn, stopCamera]);
-
   const toggleCamera = () => {
-    setCameraError(null);
-    setCameraOn((on) => {
-      writeStorage(cameraPrefKey, on ? null : "an");
-      return !on;
-    });
+    setCameraNote(null);
+    setCameraOn((on) => !on);
   };
 
   const submitInput = () => {
@@ -311,12 +263,23 @@ export function ShopOverlay({
             </Button>
           </div>
 
-          {cameraOn && (
-            <div id={CAMERA_ID} className="mx-auto w-full max-w-sm overflow-hidden rounded-tile bg-black [&_video]:max-h-64 [&_video]:object-cover" />
-          )}
-          {cameraError && (
-            <div role="alert" className="rounded-tile border border-destructive/60 bg-destructive/20 p-3 text-sm font-medium text-foreground">
-              Kamera: {cameraError}
+          {cameraOn && <ShopCamera onCode={onCameraCode} onStop={onCameraStop} />}
+          {cameraNote && (
+            <div
+              role={cameraNote.tone === "danger" ? "alert" : "status"}
+              className={cn(
+                "rounded-tile border p-3 flex items-center gap-3 text-sm font-medium text-foreground",
+                cameraNote.tone === "danger" ? "border-destructive/60 bg-destructive/20" : "border-glass-border bg-glass-tile",
+              )}
+            >
+              <CameraOff className="size-5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1">{cameraNote.text}</span>
+              {cameraNote.tone === "info" && (
+                <Button variant="outline" onClick={toggleCamera} className="h-11 shrink-0 font-semibold">
+                  <Camera className="size-5" />
+                  Wieder an
+                </Button>
+              )}
             </div>
           )}
 

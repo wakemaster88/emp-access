@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   addToOffer,
+  CAMERA_SAME_CODE_GAP_MS,
+  cameraCodeGate,
   centsFromAmount,
   formatEuro,
   isShopLabelScan,
+  mirrorCameraPreview,
   offerTotals,
   parseStoredOffer,
   setOfferQuantity,
@@ -187,4 +190,31 @@ test("lookupEmpShopArticles: fragt mit Schlüssel und übersetzt Fehler", async 
   const weg: typeof fetch = async () => { throw new Error("offline"); };
   const r502 = await lookupEmpShopArticles({ token: "x", baseUrl: null }, "242022", weg);
   assert.deepEqual(r502.ok ? null : r502.status, 502);
+});
+
+test("cameraCodeGate: liegt das Etikett vor der Kamera, zählt es nur einmal", () => {
+  let last: { code: string; at: number } | null = null;
+  const sieht = (code: string, at: number) => {
+    const r = cameraCodeGate(last, code, at);
+    last = r.last;
+    return r.report;
+  };
+  // Ronix One: erster Treffer zählt, dieselben Bilder danach nicht, auch nach 10 Sekunden im Bild nicht
+  assert.equal(sieht("HTTPS://4WAKE.EU/A/242022", 0), true);
+  for (let t = 150; t <= 10_000; t += 150) assert.equal(sieht("HTTPS://4WAKE.EU/A/242022", t), false);
+  // Lamzac dazwischen zählt sofort
+  assert.equal(sieht("HTTPS://4WAKE.EU/A/DIV08", 10_100), true);
+  // Ronix One wieder: anderer Code davor, also zählt er
+  assert.equal(sieht("HTTPS://4WAKE.EU/A/242022", 10_200), true);
+  // 1,5 s aus dem Bild: zweites Stück zählt
+  assert.equal(sieht("HTTPS://4WAKE.EU/A/242022", 10_200 + CAMERA_SAME_CODE_GAP_MS), true);
+});
+
+test("mirrorCameraPreview: Front- und Laptop-Kamera gespiegelt, Rückkamera nicht", () => {
+  assert.equal(mirrorCameraPreview("environment", false), false);
+  assert.equal(mirrorCameraPreview("environment", true), false);
+  assert.equal(mirrorCameraPreview("user", false), true);
+  // FaceTime-Kamera am Mac meldet oft keine Richtung
+  assert.equal(mirrorCameraPreview(undefined, true), true);
+  assert.equal(mirrorCameraPreview(undefined, false), false);
 });
