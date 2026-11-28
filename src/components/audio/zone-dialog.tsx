@@ -14,7 +14,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -41,6 +43,7 @@ import { OperatingExtentSelect } from "@/components/betriebszeiten/operating-ext
 import { Chip, sliderFill } from "./ui";
 import type {
   AudioDeviceOption,
+  AudioMonitorOption,
   AudioMusicMode,
   AudioSourceKind,
   MusicTimeSpan,
@@ -52,6 +55,26 @@ import type {
 } from "./types";
 
 const NONE = "__none__";
+
+/** Abspieler-Auswahl: Pi (`device:<id>`) oder Monitor-Seite (`monitor:<id>`). */
+const DEVICE_PREFIX = "device:";
+const MONITOR_PREFIX = "monitor:";
+
+const MONITOR_TYPE_LABELS: Record<string, string> = {
+  CHECKIN: "Check-in",
+  MONITOR: "Scan-Monitor",
+  RESOURCE_MONITOR: "Auslastung",
+};
+
+function initialPlayer(zone: ZoneRow | null): string {
+  if (zone?.deviceId) return `${DEVICE_PREFIX}${zone.deviceId}`;
+  if (zone?.monitorId) return `${MONITOR_PREFIX}${zone.monitorId}`;
+  return NONE;
+}
+
+function playerId(value: string, prefix: string): number | null {
+  return value.startsWith(prefix) ? Number(value.slice(prefix.length)) : null;
+}
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
@@ -117,6 +140,8 @@ interface Props {
   onSaved: () => void;
   zone: ZoneRow | null;
   devices: AudioDeviceOption[];
+  /** Monitor-Seiten, die die Zone im Browser abspielen können. */
+  monitors: AudioMonitorOption[];
   playlists: PlaylistRow[];
   streams: StreamRow[];
   rooms: RoomOption[];
@@ -151,6 +176,7 @@ export function ZoneDialog({
   onSaved,
   zone,
   devices,
+  monitors,
   playlists,
   streams,
   rooms,
@@ -159,7 +185,9 @@ export function ZoneDialog({
 }: Props) {
   const isEdit = !!zone;
   const [name, setName] = useState(zone?.name ?? "");
-  const [deviceId, setDeviceId] = useState<string>(zone?.deviceId ? String(zone.deviceId) : NONE);
+  const [player, setPlayer] = useState<string>(() => initialPlayer(zone));
+  const deviceId = playerId(player, DEVICE_PREFIX);
+  const monitorId = playerId(player, MONITOR_PREFIX);
   const [roomId, setRoomId] = useState<string>(zone?.roomId ? String(zone.roomId) : NONE);
   const [playlistId, setPlaylistId] = useState<string>(
     zone?.playlistId ? String(zone.playlistId) : NONE
@@ -198,12 +226,14 @@ export function ZoneDialog({
 
   // Bereits belegte Abspieler ausblenden – außer dem eigenen.
   const availableDevices = devices.filter((d) => !d.taken || d.id === zone?.deviceId);
+  const availableMonitors = monitors.filter((m) => !m.taken || m.id === zone?.monitorId);
+  const selectedMonitor = monitors.find((m) => m.id === monitorId);
 
   // Welcher Empfang möglich ist, entscheidet der Abspieler: er meldet im
   // Heartbeat, welche Dienste auf ihm eingerichtet sind. Ohne Meldung bleibt der
   // Schalter gesperrt, sonst stünde im Dashboard eine Einstellung, die der Pi
   // nicht umsetzt.
-  const selected = devices.find((d) => String(d.id) === deviceId);
+  const selected = devices.find((d) => d.id === deviceId);
   const backends = selected?.backends ?? [];
   const canAirplay = hasAudioBackend(backends, "AIRPLAY");
   const canBluetooth = hasAudioBackend(backends, "BLUETOOTH");
@@ -271,11 +301,12 @@ export function ZoneDialog({
     }
     // Bei einem Wechsel auf einen anderen Abspieler kann ein Empfänger übrig
     // bleiben, den der neue nicht bedient.
-    if (airplayEnabled && !canAirplay) {
+    // Ein Monitor hat keine Empfänger; die Schalter werden beim Speichern aus.
+    if (airplayEnabled && !canAirplay && !monitorId) {
       setError("Der gewählte Abspieler hat den AirPlay-Empfang nicht eingerichtet");
       return;
     }
-    if (bluetoothEnabled && !canBluetooth) {
+    if (bluetoothEnabled && !canBluetooth && !monitorId) {
       setError("Der gewählte Abspieler hat den Bluetooth-Empfang nicht eingerichtet");
       return;
     }
@@ -298,12 +329,14 @@ export function ZoneDialog({
     try {
       const payload = {
         name: name.trim(),
-        deviceId: deviceId === NONE ? null : Number(deviceId),
+        deviceId,
+        monitorId,
         keyRoomId: roomId === NONE ? null : Number(roomId),
         playlistId: playlistId === NONE ? null : Number(playlistId),
         streamId: streamId === NONE ? null : Number(streamId),
         defaultSource,
-        syncGroup: syncGroup.trim() || null,
+        // Ein Monitor spielt für sich allein, ohne Snapcast.
+        syncGroup: monitorId ? null : syncGroup.trim() || null,
         volume,
         announcementVolume,
         duckVolume,
@@ -312,8 +345,8 @@ export function ZoneDialog({
         musicOpenOffset: musicMode === "OPERATING" ? musicOpenOffset : 0,
         musicCloseOffset: musicMode === "OPERATING" ? musicCloseOffset : 0,
         musicExtent: musicMode === "OPERATING" ? musicExtent : "SELF",
-        airplayEnabled,
-        bluetoothEnabled,
+        airplayEnabled: monitorId ? false : airplayEnabled,
+        bluetoothEnabled: monitorId ? false : bluetoothEnabled,
         externalName: externalName.trim() || null,
         isActive,
       };
@@ -353,24 +386,49 @@ export function ZoneDialog({
 
           <div>
             <Label className="mb-1.5 block">Abspieler</Label>
-            <Select value={deviceId} onValueChange={setDeviceId}>
+            <Select value={player} onValueChange={setPlayer}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Kein Gerät" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>Kein Gerät (nur geplant)</SelectItem>
-                {availableDevices.map((d) => (
-                  <SelectItem key={d.id} value={String(d.id)}>
-                    {d.name}
-                  </SelectItem>
-                ))}
+                {availableDevices.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Audio-Pi</SelectLabel>
+                    {availableDevices.map((d) => (
+                      <SelectItem key={d.id} value={`${DEVICE_PREFIX}${d.id}`}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {availableMonitors.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Monitor im Browser</SelectLabel>
+                    {availableMonitors.map((m) => (
+                      <SelectItem key={m.id} value={`${MONITOR_PREFIX}${m.id}`}>
+                        {m.name} · {MONITOR_TYPE_LABELS[m.type] ?? m.type}
+                        {!m.isActive ? " · inaktiv" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
               </SelectContent>
             </Select>
-            {availableDevices.length === 0 && (
+            {monitorId ? (
               <p className="text-xs text-muted-foreground mt-1">
-                Noch kein freies Audio-Gerät. Unter „Geräte&quot; einen Abspieler vom Typ
-                AUDIO_PLAYER anlegen.
+                Ton kommt aus den Lautsprechern des Rechners, auf dem der Monitor
+                {selectedMonitor ? ` „${selectedMonitor.name}“` : ""} läuft. Dort einmal
+                „Hier abspielen“ tippen; nur dieses Gerät spielt. Nach jedem Neuladen gibt
+                ein Tippen auf den Bildschirm den Ton wieder frei.
               </p>
+            ) : (
+              availableDevices.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Noch kein freies Audio-Gerät. Unter „Geräte&quot; einen Abspieler vom Typ
+                  AUDIO_PLAYER anlegen oder einen Monitor wählen.
+                </p>
+              )
             )}
           </div>
 
@@ -457,6 +515,7 @@ export function ZoneDialog({
             )}
           </div>
 
+          {!monitorId && (
           <div>
             <Label htmlFor="az-sync" className="mb-1.5 block">Sync-Gruppe (optional)</Label>
             <Input
@@ -470,6 +529,7 @@ export function ZoneDialog({
               gleichzeitig hört.
             </p>
           </div>
+          )}
 
           {/* Am Telefon untereinander: nebeneinander blieben je 90 px, in denen
               die Beschriftung „Durchsage · 85 %" umbrach. */}
@@ -606,6 +666,7 @@ export function ZoneDialog({
             )}
           </div>
 
+          {!monitorId && (
           <div className="glass-tile space-y-2 p-3">
             <div>
               <Label>Senden vom Handy</Label>
@@ -645,12 +706,13 @@ export function ZoneDialog({
               </div>
             )}
 
-            {deviceId === NONE && (
+            {deviceId === null && (
               <p className="text-xs text-muted-foreground">
                 Erst mit einem zugeordneten Abspieler möglich.
               </p>
             )}
           </div>
+          )}
 
           <label className="flex min-h-11 items-center gap-2 text-sm text-foreground sm:min-h-0">
             <Switch checked={isActive} onCheckedChange={setIsActive} />

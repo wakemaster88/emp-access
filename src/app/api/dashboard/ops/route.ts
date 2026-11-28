@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { isPlayerOnline, musicWindowState } from "@/lib/audio-constants";
+import { isPlayerOnline, musicWindowState, zonePlayerOnline } from "@/lib/audio-constants";
 import { scheduleSpecInclude } from "@/lib/operating-queries";
 import { zoneMusicSpec } from "@/lib/operating-extent-queries";
 import {
@@ -81,6 +81,8 @@ export async function GET() {
           musicExtent: true,
           accountId: true,
           externalSender: true,
+          monitorId: true,
+          lastStateAt: true,
           device: { select: { lastUpdate: true } },
           account: { select: { timezone: true } },
           keyRoom: { select: { operatingScheduleId: true, operatingSchedule: { include: scheduleSpecInclude } } },
@@ -212,7 +214,7 @@ export async function GET() {
           now,
           z.account.timezone
         ).allowed,
-        deviceOnline: isPlayerOnline(z.device?.lastUpdate),
+        deviceOnline: zonePlayerOnline(z),
       })),
     },
     irrigation: {

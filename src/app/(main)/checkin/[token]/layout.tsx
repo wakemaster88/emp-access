@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { findPublicMonitor } from "@/lib/monitor-token";
 import { PUBLIC_APP_MONITOR_TYPE, darkViewport, publicAppMetadata } from "@/lib/pwa-manifest";
+import { MonitorAudio } from "@/components/monitor-audio/monitor-audio";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -26,10 +27,13 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
  * Der Kiosk ist fest dunkel: `dark` schaltet die Tokens um, `page-ambient`
  * liefert den Liquid-Glass-Hintergrund.
  */
-export default function TokenLayout({ children }: LayoutProps) {
+export default async function TokenLayout({ children, params }: LayoutProps) {
+  const { token } = await params;
   return (
     <div className="dark page-ambient text-foreground [color-scheme:dark] min-h-[100dvh] mt-[calc(env(safe-area-inset-top)*-1)] pt-[env(safe-area-inset-top)] mb-[calc(env(safe-area-inset-bottom)*-1)] pb-[env(safe-area-inset-bottom)] ml-[calc(env(safe-area-inset-left)*-1)] pl-[env(safe-area-inset-left)] mr-[calc(env(safe-area-inset-right)*-1)] pr-[env(safe-area-inset-right)]">
       {children}
+      {/* Spielt eine Audio-Zone, wenn der Monitor ihr Abspieler ist (ab Werk keiner). */}
+      <MonitorAudio token={token} />
     </div>
   );
 }

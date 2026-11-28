@@ -9,6 +9,7 @@ import {
   parseOffsetMinutes,
   parseSourceKind,
   resolveOwnedStream,
+  resolveZoneMonitor,
 } from "@/lib/audio";
 import { parseStreamUrl } from "@/lib/audio-integration";
 import { MAX_ZONE_NAME, cleanReceiverName } from "@/lib/net-address";
@@ -59,6 +60,22 @@ export async function PUT(
       deviceId = candidate;
     }
   }
+
+  // Monitor-Seite als Abspieler: schließt den Pi aus. Wer eine Seite wählt,
+  // löst damit den Pi und umgekehrt; beides zugleich geht nicht.
+  const monitor = await resolveZoneMonitor(db, accountId!, body.monitorId, zoneId);
+  if (monitor && "error" in monitor) {
+    return NextResponse.json({ error: monitor.error }, { status: monitor.status });
+  }
+  let monitorId = monitor?.monitorId;
+  if (monitorId != null && deviceId != null) {
+    return NextResponse.json(
+      { error: "Eine Zone spielt entweder über einen Audio-Pi oder über einen Monitor" },
+      { status: 400 }
+    );
+  }
+  if (monitorId != null && deviceId === undefined && existing.deviceId !== null) deviceId = null;
+  if (deviceId != null && monitorId === undefined && existing.monitorId !== null) monitorId = null;
 
   // Raum-Zuordnung analog.
   let keyRoomId: number | null | undefined = undefined;
@@ -170,6 +187,7 @@ export async function PUT(
     data: {
       name: name || undefined,
       ...(deviceId !== undefined ? { deviceId } : {}),
+      ...(monitorId !== undefined ? { monitorId } : {}),
       ...(keyRoomId !== undefined ? { keyRoomId } : {}),
       ...(playlistId !== undefined ? { playlistId } : {}),
       ...(sourceKind ? { sourceKind } : {}),

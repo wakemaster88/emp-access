@@ -247,6 +247,18 @@ Probleme".
 **Pi-Client:** `raspberry-pi/emp_audio` spricht diese Schnittstelle. Installation
 und Fehlerbehebung stehen in [raspberry-pi/README-audio.md](raspberry-pi/README-audio.md).
 
+**Monitor als Abspieler:** Statt eines Pi kann ein dauerhaft laufender Monitor
+(Check-in, Scan-Monitor, Auslastung) die Zone über die Lautsprecher seines
+Geräts spielen: in der Zone unter *Abspieler* „Monitor im Browser“ wählen, am
+Gerät einmal „Hier abspielen“ tippen (oder den Link mit `?ton=an` öffnen).
+Browser geben Ton erst nach einem Tippen frei; nach jedem Neuladen zeigt der
+Monitor „Ton gesperrt“, bis jemand tippt oder scannt. Ein Mac, der den Monitor
+dauerhaft zeigt, startet ihn mit `scripts/kiosk/monitor-autostart.sh` beim
+Anmelden in Chrome im Vollbild mit freigegebenem Ton. Schnittstelle über das
+Monitor-Token: `GET/POST /api/monitor-audio/<token>` und
+`GET /api/monitor-audio/<token>/live`. Nicht am Monitor: Sync-Gruppe, AirPlay,
+Bluetooth.
+
 ## Soundweb London (BSS) steuern
 
 DSP-Prozessoren der BLU-Serie lassen sich im Dashboard unter **Audio →

@@ -59,6 +59,31 @@ export function isPlayerOnline(lastUpdate: Date | null | undefined): boolean {
   return Date.now() - lastUpdate.getTime() < AUDIO_PLAYER_OFFLINE_AFTER_MS;
 }
 
+/**
+ * Monitor-Arten, deren Seite eine Audio-Zone im Browser abspielen kann: die
+ * Bildschirme, die dauerhaft laufen (Shop/Check-in, Scan-Monitor, Auslastung).
+ */
+export const MONITOR_AUDIO_TYPES = ["CHECKIN", "MONITOR", "RESOURCE_MONITOR"] as const;
+
+export function isMonitorAudioType(type: string): boolean {
+  return (MONITOR_AUDIO_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * Hat die Zone einen Abspieler und meldet er sich? Ein Pi meldet sich über das
+ * Gerät (`Device.lastUpdate`), ein Monitor im Browser über den Heartbeat der
+ * Zone (`AudioZone.lastStateAt`) – er hat kein eigenes Gerät.
+ */
+export function zonePlayerOnline(zone: {
+  device?: { lastUpdate: Date | null } | null;
+  monitorId?: number | null;
+  lastStateAt?: Date | null;
+}): boolean {
+  if (zone.device) return isPlayerOnline(zone.device.lastUpdate);
+  if (zone.monitorId) return isPlayerOnline(zone.lastStateAt);
+  return false;
+}
+
 export function clampVolume(value: unknown, fallback: number): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;

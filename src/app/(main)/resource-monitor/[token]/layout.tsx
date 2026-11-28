@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { findPublicMonitor } from "@/lib/monitor-token";
 import { PUBLIC_APP_MONITOR_TYPE, darkViewport, publicAppMetadata } from "@/lib/pwa-manifest";
+import { MonitorAudio } from "@/components/monitor-audio/monitor-audio";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -32,10 +33,13 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
  * genau so hoch wie der Bildschirm – die Anzeige scrollt auch als App mit
  * Statusleiste und Home-Leiste nicht, und der Farbgrund reicht bis unten.
  */
-export default function TokenLayout({ children }: LayoutProps) {
+export default async function TokenLayout({ children, params }: LayoutProps) {
+  const { token } = await params;
   return (
     <div className="dark scheme-dark page-ambient text-foreground flex h-dvh flex-col mt-[calc(env(safe-area-inset-top)*-1)] mb-[calc(env(safe-area-inset-bottom)*-1)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       {children}
+      {/* Spielt eine Audio-Zone, wenn der Monitor ihr Abspieler ist (ab Werk keiner). */}
+      <MonitorAudio token={token} />
     </div>
   );
 }

@@ -1094,6 +1094,8 @@ model MonitorConfig {
   isActive         Boolean  @default(true)
   accountId        Int
   account          Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Audio-Zone, die dieser Monitor im Browser abspielt (AudioZone.monitorId).
+  audioZone        AudioZone? @relation("AudioZoneMonitor")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -2503,6 +2505,12 @@ model AudioZone {
   /// Hardware angelegt werden (Planung) – sie spielen dann nichts ab.
   deviceId           Int?               @unique
   device             Device?            @relation("AudioZoneDevice", fields: [deviceId], references: [id], onDelete: SetNull)
+  /// Abspieler im Browser: Diese Monitor-Seite (Check-in, Scan-Monitor,
+  /// Auslastung) spielt die Zone ueber die Lautsprecher ihres Rechners ab.
+  /// Schliesst `deviceId` aus. null = kein Monitor (ab Werk). Es spielt nur
+  /// ein Geraet, auf dem jemand am Monitor „Hier abspielen“ getippt hat.
+  monitorId          Int?               @unique
+  monitor            MonitorConfig?     @relation("AudioZoneMonitor", fields: [monitorId], references: [id], onDelete: SetNull)
   sortOrder          Int                @default(0)
   isActive           Boolean            @default(true)
   /// Snapcast-Gruppe: Zonen mit demselben Namen spielen synchron. Noetig, wenn

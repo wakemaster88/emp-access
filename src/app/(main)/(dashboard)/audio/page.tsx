@@ -4,12 +4,13 @@ import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { AudioClient } from "@/components/audio/audio-client";
 import {
+  MONITOR_AUDIO_TYPES,
   audioBackends,
-  isPlayerOnline,
   listTtsVoices,
   pairableSeconds,
   parseMusicTimes,
   parseZoneIds,
+  zonePlayerOnline,
 } from "@/lib/audio";
 import { parseBirthdayZoneIds } from "@/lib/birthday";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
@@ -40,6 +41,7 @@ export default async function AudioPage({
     schedules,
     jobs,
     audioDevices,
+    audioMonitors,
     ttsVoices,
     rooms,
     operatingSchedules,
@@ -54,6 +56,7 @@ export default async function AudioPage({
         where: { accountId },
         include: {
           device: { select: { id: true, name: true, lastUpdate: true } },
+          monitor: { select: { id: true, name: true } },
           playlist: { select: { id: true, name: true } },
           stream: { select: { id: true, name: true, url: true } },
           keyRoom: { select: { id: true, name: true, operatingScheduleId: true } },
@@ -110,6 +113,11 @@ export default async function AudioPage({
         },
         orderBy: { name: "asc" },
       }),
+      db.monitorConfig.findMany({
+        where: { accountId, type: { in: [...MONITOR_AUDIO_TYPES] } },
+        select: { id: true, name: true, type: true, isActive: true, audioZone: { select: { id: true } } },
+        orderBy: { name: "asc" },
+      }),
       listTtsVoices(),
       db.keyRoom.findMany({
         where: { accountId },
@@ -144,7 +152,9 @@ export default async function AudioPage({
             name: z.name,
             deviceId: z.deviceId,
             deviceName: z.device?.name ?? null,
-            deviceOnline: isPlayerOnline(z.device?.lastUpdate),
+            monitorId: z.monitorId,
+            monitorName: z.monitor?.name ?? null,
+            deviceOnline: zonePlayerOnline(z),
             roomId: z.keyRoom?.id ?? null,
             roomName: z.keyRoom?.name ?? null,
             operatingScheduleId: z.keyRoom?.operatingScheduleId ?? null,
@@ -250,6 +260,13 @@ export default async function AudioPage({
             name: d.name,
             taken: !!d.audioZone,
             backends: audioBackends(d.systemInfo),
+          }))}
+          audioMonitors={audioMonitors.map((m) => ({
+            id: m.id,
+            name: m.name,
+            type: m.type,
+            isActive: m.isActive,
+            taken: !!m.audioZone,
           }))}
           ttsVoices={ttsVoices}
           rooms={rooms.map((room) => ({

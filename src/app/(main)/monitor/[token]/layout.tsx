@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { findPublicMonitor } from "@/lib/monitor-token";
 import { PUBLIC_APP_MONITOR_TYPE, darkViewport, publicAppMetadata } from "@/lib/pwa-manifest";
+import { MonitorAudio } from "@/components/monitor-audio/monitor-audio";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -27,11 +28,14 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
  * deshalb ist hier nur der Streifen unter der Statusleiste fest dunkel: Die
  * Statusleiste schreibt weiß, auch wenn der Monitor hell läuft.
  */
-export default function TokenLayout({ children }: LayoutProps) {
+export default async function TokenLayout({ children, params }: LayoutProps) {
+  const { token } = await params;
   return (
     <div className="relative min-h-[100dvh] mt-[calc(env(safe-area-inset-top)*-1)] pt-[env(safe-area-inset-top)]">
       <div aria-hidden className="dark absolute inset-x-0 top-0 h-[env(safe-area-inset-top)] bg-background" />
       {children}
+      {/* Spielt eine Audio-Zone, wenn der Monitor ihr Abspieler ist (ab Werk keiner). */}
+      <MonitorAudio token={token} />
     </div>
   );
 }
