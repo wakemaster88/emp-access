@@ -33,6 +33,12 @@ ein Angebot.“
   Derselbe Artikel noch einmal zählt hoch; passen mehrere (doppelte EAN),
   wählt das Personal. Das Angebot bleibt im Browser des Geräts
   (`localStorage`, je Monitor) bis „Leeren“. Nur Anzeige, keine Zahlung.
+- Taste **Rabatt** (28.11.2026) unter der Liste: Rabatt aufs ganze Angebot in
+  Prozent (Schnellwahl 5/10/15/20 %), als Betrag oder als Endpreis. Unten
+  stehen dann Zwischensumme, Rabatt mit Prozent und Euro und die neue Summe.
+  Gerechnet in Cent, kaufmännisch gerundet, nie mehr als die Summe und nie
+  ein Aufschlag (`applyOfferDiscount`). Der Rabatt bleibt mit dem Angebot
+  gespeichert und geht mit „Leeren“.
 - Artikel und Preise kommen aus dem EMP-Shop über dessen Public API
   (`GET /api/v1/products/lookup`, Berechtigung `products.read`): Preis und
   UVP wie auf dem Etikett. Der Kiosk fragt `POST

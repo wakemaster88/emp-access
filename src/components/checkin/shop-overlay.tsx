@@ -11,21 +11,27 @@
  * POST /api/checkin/public/[token]/shop-scan, das den Artikel im EMP-Shop
  * nachschlägt; Preis und UVP sind die des Preisetiketts. Derselbe Artikel noch
  * einmal zählt die Menge hoch, passen mehrere (doppelte EAN), wählt das
- * Personal. Nur Anzeige: keine Zahlung, keine Buchung im Shop. Das Angebot
- * bleibt auf diesem Gerät gespeichert, bis jemand „Leeren“ tippt.
+ * Personal. Ein Rabatt aufs Ganze (Prozent, Betrag oder Endpreis) senkt die
+ * Summe. Nur Anzeige: keine Zahlung, keine Buchung im Shop. Angebot und Rabatt
+ * bleiben auf diesem Gerät gespeichert, bis jemand „Leeren“ tippt.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, CameraOff, CheckCircle2, Loader2, Minus, Plus, ScanLine, Search, ShoppingBag, Trash2, X, XCircle } from "lucide-react";
+import { BadgePercent, Camera, CameraOff, CheckCircle2, Loader2, Minus, Plus, ScanLine, Search, ShoppingBag, Trash2, X, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   addToOffer,
+  applyOfferDiscount,
   formatEuro,
+  formatPercent,
   offerTotals,
+  parseDiscountInput,
+  parseStoredDiscount,
   parseStoredOffer,
   setOfferQuantity,
+  type OfferDiscount,
   type ShopArticle,
   type ShopOfferLine,
 } from "@/lib/shop-scan";
@@ -35,6 +41,14 @@ import { ShopCamera } from "./shop-camera";
 /** Frühere Fassung merkte „Kamera an“ je Gerät; die Kamera startet jetzt immer aus. */
 const legacyCameraPrefKey = "emp.shop-scan.kamera";
 const offerKey = (token: string) => `emp.shop-angebot.${token}`;
+const discountKey = (token: string) => `emp.shop-rabatt.${token}`;
+
+const DISCOUNT_KINDS: Array<{ kind: OfferDiscount["kind"]; label: string; placeholder: string }> = [
+  { kind: "percent", label: "Prozent", placeholder: "z. B. 10" },
+  { kind: "amount", label: "Betrag", placeholder: "Euro weniger" },
+  { kind: "total", label: "Endpreis", placeholder: "Preis für alles" },
+];
+const QUICK_PERCENTS = [5, 10, 15, 20];
 
 type ScanStatus =
   | { tone: "success"; text: string }
@@ -79,6 +93,11 @@ export function ShopOverlay({
   const [choice, setChoice] = useState<{ code: string; articles: ShopArticle[] } | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [discount, setDiscount] = useState<OfferDiscount | null>(() => parseStoredDiscount(typeof window === "undefined" ? null : readStorage(discountKey(token))));
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [discountKind, setDiscountKind] = useState<OfferDiscount["kind"]>("percent");
+  const [discountInput, setDiscountInput] = useState("");
+  const [discountError, setDiscountError] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraNote, setCameraNote] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -87,10 +106,13 @@ export function ShopOverlay({
   const onCloseRef = useRef(onClose);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
-  // Angebot auf dem Gerät merken (übersteht Neuladen und Schließen).
+  // Angebot und Rabatt auf dem Gerät merken (übersteht Neuladen und Schließen).
   useEffect(() => {
     writeStorage(offerKey(token), lines.length > 0 ? JSON.stringify(lines) : null);
   }, [token, lines]);
+  useEffect(() => {
+    writeStorage(discountKey(token), discount && lines.length > 0 ? JSON.stringify(discount) : null);
+  }, [token, discount, lines.length]);
 
   const add = useCallback((article: ShopArticle) => {
     setLines((prev) => addToOffer(prev, article));
@@ -137,11 +159,14 @@ export function ShopOverlay({
   const scanRef = useRef(scan);
   useEffect(() => { scanRef.current = scan; }, [scan]);
 
-  // Etikett aus dem normalen Monitor-Modus übernehmen.
+  // Etikett aus dem normalen Monitor-Modus übernehmen, jedes genau einmal.
   const pendingSeq = pendingScan?.seq;
   const pendingCode = pendingScan?.code;
+  const handledSeqRef = useRef<number | null>(null);
   useEffect(() => {
-    if (pendingSeq !== undefined && pendingCode) void scanRef.current(pendingCode);
+    if (pendingSeq === undefined || !pendingCode || handledSeqRef.current === pendingSeq) return;
+    handledSeqRef.current = pendingSeq;
+    void scanRef.current(pendingCode);
   }, [pendingSeq, pendingCode]);
 
   // Am Rechner gleich ins Feld; auf Tablet und Handy nicht, sonst klappt die Tastatur auf.
@@ -200,6 +225,33 @@ export function ShopOverlay({
   };
 
   const totals = offerTotals(lines);
+  // Ohne Positionen gilt auch kein Rabatt mehr.
+  const activeDiscount = lines.length > 0 ? discount : null;
+  const { discountCents, finalCents } = applyOfferDiscount(totals.totalCents, activeDiscount);
+
+  const openDiscount = () => {
+    setConfirmClear(false);
+    setDiscountError(false);
+    setDiscountKind(discount?.kind ?? "percent");
+    setDiscountInput(
+      discount?.kind === "percent"
+        ? String(discount.basisPoints / 100).replace(".", ",")
+        : discount
+          ? (discount.cents / 100).toFixed(2).replace(".", ",")
+          : "",
+    );
+    setDiscountOpen(true);
+  };
+  const applyDiscount = (next: OfferDiscount | null) => {
+    setDiscount(next);
+    setDiscountOpen(false);
+    setDiscountError(false);
+  };
+  const submitDiscount = () => {
+    const parsed = parseDiscountInput(discountKind, discountInput);
+    if (!parsed) { setDiscountError(true); return; }
+    applyDiscount(parsed);
+  };
 
   return (
     <div className={cn("fixed inset-0 z-50 flex items-end sm:items-center justify-center", overlayScrimClass)} onClick={onClose}>
@@ -218,7 +270,7 @@ export function ShopOverlay({
             Shop
             {lines.length > 0 && (
               <span className="text-muted-foreground text-sm font-normal tabular-nums truncate">
-                · {totals.pieces} Stück · {formatEuro(totals.totalCents)}
+                · {totals.pieces} Stück · {formatEuro(finalCents)}
               </span>
             )}
           </h2>
@@ -414,12 +466,69 @@ export function ShopOverlay({
           )}
         </div>
 
-        {/* Summe: groß, darunter Leeren mit Rückfrage. */}
+        {/* Rabatt aufs Ganze: Prozent, Betrag oder Endpreis. */}
+        {lines.length > 0 && discountOpen && (
+          <div className="shrink-0 border-t border-border px-4 sm:px-5 py-3 space-y-2.5">
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Rabatt als">
+              {DISCOUNT_KINDS.map((k) => (
+                <Button
+                  key={k.kind}
+                  variant={discountKind === k.kind ? "default" : "outline"}
+                  onClick={() => { setDiscountKind(k.kind); setDiscountError(false); }}
+                  aria-pressed={discountKind === k.kind}
+                  className="h-11 font-semibold sm:h-14"
+                >
+                  {k.label}
+                </Button>
+              ))}
+              {discountKind === "percent" && QUICK_PERCENTS.map((p) => (
+                <Button key={p} variant="secondary" onClick={() => applyDiscount({ kind: "percent", basisPoints: p * 100 })} className="h-11 tabular-nums sm:h-14">
+                  {p} %
+                </Button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  autoFocus
+                  value={discountInput}
+                  onChange={(e) => { setDiscountInput(e.target.value); setDiscountError(false); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitDiscount(); } if (e.key === "Escape") { e.stopPropagation(); setDiscountOpen(false); } }}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder={DISCOUNT_KINDS.find((k) => k.kind === discountKind)?.placeholder}
+                  aria-label={`Rabatt: ${DISCOUNT_KINDS.find((k) => k.kind === discountKind)?.label}`}
+                  aria-invalid={discountError}
+                  className="h-14 pr-10 px-4 md:text-base tabular-nums"
+                />
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground">
+                  {discountKind === "percent" ? "%" : "€"}
+                </span>
+              </div>
+              <Button onClick={submitDiscount} className="h-14 px-5 font-semibold">Übernehmen</Button>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <p className={cn("text-xs", discountError ? "text-destructive" : "text-muted-foreground")}>
+                {discountError
+                  ? discountKind === "percent" ? "Bitte eine Zahl über 0 bis 100 eingeben." : "Bitte einen Betrag in Euro eingeben, z. B. 49,90."
+                  : `Summe ohne Rabatt ${formatEuro(totals.totalCents)}`}
+              </p>
+              <div className="flex gap-1.5">
+                {discount && (
+                  <Button variant="ghost" onClick={() => applyDiscount(null)} className="h-11 text-muted-foreground sm:h-14">Kein Rabatt</Button>
+                )}
+                <Button variant="ghost" onClick={() => setDiscountOpen(false)} className="h-11 text-muted-foreground sm:h-14">Abbrechen</Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Summe: groß, links Leeren mit Rückfrage und Rabatt. */}
         {lines.length > 0 && (
-          <div className="shrink-0 border-t border-border px-4 sm:px-5 py-3 flex items-center gap-3">
+          <div className="shrink-0 border-t border-border px-4 sm:px-5 py-3 flex flex-wrap items-center gap-3">
             {confirmClear ? (
               <div className="flex items-center gap-2">
-                <Button variant="destructive" onClick={() => { setLines([]); setConfirmClear(false); setStatus(null); setChoice(null); }} className="h-11 sm:h-14 font-semibold">
+                <Button variant="destructive" onClick={() => { setLines([]); setDiscount(null); setDiscountOpen(false); setConfirmClear(false); setStatus(null); setChoice(null); }} className="h-11 sm:h-14 font-semibold">
                   Alles leeren
                 </Button>
                 <Button variant="ghost" onClick={() => setConfirmClear(false)} className="h-11 sm:h-14 text-muted-foreground">
@@ -427,14 +536,35 @@ export function ShopOverlay({
                 </Button>
               </div>
             ) : (
-              <Button variant="outline" onClick={() => setConfirmClear(true)} className="h-11 sm:h-14 font-semibold">
-                <Trash2 className="size-5" />
-                Leeren
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => { setDiscountOpen(false); setConfirmClear(true); }} className="h-11 sm:h-14 font-semibold">
+                  <Trash2 className="size-5" />
+                  Leeren
+                </Button>
+                <Button
+                  variant={activeDiscount ? "default" : "outline"}
+                  onClick={() => (discountOpen ? setDiscountOpen(false) : openDiscount())}
+                  aria-expanded={discountOpen}
+                  className="h-11 sm:h-14 font-semibold"
+                >
+                  <BadgePercent className="size-5" />
+                  Rabatt
+                </Button>
+              </div>
             )}
             <div className="ml-auto text-right">
+              {discountCents > 0 && (
+                <div className="mb-1 space-y-0.5 text-sm tabular-nums">
+                  <p className="text-muted-foreground">
+                    Zwischensumme <span className="text-foreground">{formatEuro(totals.totalCents)}</span>
+                  </p>
+                  <p className="font-semibold text-success">
+                    Rabatt {formatPercent(discountCents, totals.totalCents)} −{formatEuro(discountCents)}
+                  </p>
+                </div>
+              )}
               <p className="text-label">Summe inkl. MwSt.</p>
-              <p className="text-3xl font-bold tabular-nums text-foreground sm:text-4xl">{formatEuro(totals.totalCents)}</p>
+              <p className="text-3xl font-bold tabular-nums text-foreground sm:text-4xl">{formatEuro(finalCents)}</p>
               {totals.withoutPrice > 0 && (
                 <p className="text-[11px] text-destructive">
                   {totals.withoutPrice} Artikel ohne Preis nicht eingerechnet

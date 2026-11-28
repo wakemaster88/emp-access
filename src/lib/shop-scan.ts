@@ -203,3 +203,64 @@ export function mirrorCameraPreview(facingMode: string | undefined, finePointer:
   if (facingMode === "user") return true;
   return finePointer;
 }
+
+/**
+ * Rabatt auf das ganze Angebot (28.11.2026, Aaron: „noch einen Rabatt eingeben
+ * können“): in Prozent, als Betrag oder als gewünschter Endpreis. Gerechnet
+ * wird in Cent auf die Summe der Positionen mit Preis.
+ */
+export type OfferDiscount =
+  /** 1000 = 10 % */
+  | { kind: "percent"; basisPoints: number }
+  /** Betrag, der abgezogen wird */
+  | { kind: "amount"; cents: number }
+  /** Endpreis, den der Kunde zahlt */
+  | { kind: "total"; cents: number };
+
+/** Eingabe wie „12,5“ oder „1.086,90 €“ in Cent; Unlesbares ist null. */
+export function centsFromInput(text: string): number | null {
+  let t = text.replace(/[\s€]/g, "");
+  if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(t)) t = t.replace(/\./g, "");
+  return centsFromAmount(t.replace(",", "."));
+}
+
+/** Eingabe aus dem Rabattfeld prüfen: Prozent über 0 bis 100, Beträge ab 0,01 €. */
+export function parseDiscountInput(kind: OfferDiscount["kind"], text: string): OfferDiscount | null {
+  const cents = centsFromInput(text.replace(/%/g, ""));
+  if (cents === null || cents <= 0) return null;
+  if (kind === "percent") return cents <= 10_000 ? { kind, basisPoints: cents } : null;
+  return { kind, cents };
+}
+
+/**
+ * Rabatt auf die Summe: kaufmännisch gerundet, nie mehr als die Summe und nie
+ * ein Aufschlag (ein Endpreis über der Summe gibt keinen Rabatt).
+ */
+export function applyOfferDiscount(totalCents: number, discount: OfferDiscount | null): { discountCents: number; finalCents: number } {
+  let discountCents = 0;
+  if (discount?.kind === "percent") discountCents = Math.round((totalCents * discount.basisPoints) / 10_000);
+  else if (discount?.kind === "amount") discountCents = discount.cents;
+  else if (discount?.kind === "total") discountCents = totalCents - discount.cents;
+  discountCents = Math.min(Math.max(0, discountCents), Math.max(0, totalCents));
+  return { discountCents, finalCents: totalCents - discountCents };
+}
+
+/** Prozent mit höchstens einer Nachkommastelle, wie „10 %“ oder „12,5 %“. */
+export function formatPercent(part: number, whole: number): string {
+  if (whole <= 0) return "0 %";
+  const tenth = Math.round((part * 1000) / whole) / 10;
+  return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(tenth)} %`;
+}
+
+/** Gespeicherten Rabatt (localStorage) prüfen; Unlesbares ist kein Rabatt. */
+export function parseStoredDiscount(raw: string | null): OfferDiscount | null {
+  if (!raw) return null;
+  try {
+    const d = JSON.parse(raw) as Partial<{ kind: string; basisPoints: number; cents: number }>;
+    if (d.kind === "percent" && Number.isInteger(d.basisPoints) && d.basisPoints! > 0 && d.basisPoints! <= 10_000) return { kind: "percent", basisPoints: d.basisPoints! };
+    if ((d.kind === "amount" || d.kind === "total") && Number.isInteger(d.cents) && d.cents! > 0) return { kind: d.kind, cents: d.cents! };
+    return null;
+  } catch {
+    return null;
+  }
+}

@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   addToOffer,
+  applyOfferDiscount,
   CAMERA_SAME_CODE_GAP_MS,
   cameraCodeGate,
   centsFromAmount,
+  centsFromInput,
   formatEuro,
+  formatPercent,
   isShopLabelScan,
   mirrorCameraPreview,
   offerTotals,
+  parseDiscountInput,
+  parseStoredDiscount,
   parseStoredOffer,
   setOfferQuantity,
   shopLabelCode,
@@ -217,4 +222,56 @@ test("mirrorCameraPreview: Front- und Laptop-Kamera gespiegelt, Rückkamera nich
   // FaceTime-Kamera am Mac meldet oft keine Richtung
   assert.equal(mirrorCameraPreview(undefined, true), true);
   assert.equal(mirrorCameraPreview(undefined, false), false);
+});
+
+test("centsFromInput und parseDiscountInput: deutsche Eingaben", () => {
+  assert.equal(centsFromInput("12,5"), 1250);
+  assert.equal(centsFromInput("1.086,90 €"), 108690);
+  assert.equal(centsFromInput("1086"), 108600);
+  assert.equal(centsFromInput("49.9"), 4990);
+  assert.equal(centsFromInput("zehn"), null);
+  assert.deepEqual(parseDiscountInput("percent", "10"), { kind: "percent", basisPoints: 1000 });
+  assert.deepEqual(parseDiscountInput("percent", "12,5 %"), { kind: "percent", basisPoints: 1250 });
+  assert.equal(parseDiscountInput("percent", "120"), null);
+  assert.equal(parseDiscountInput("percent", "0"), null);
+  assert.deepEqual(parseDiscountInput("amount", "50"), { kind: "amount", cents: 5000 });
+  assert.deepEqual(parseDiscountInput("total", "1.000"), { kind: "total", cents: 100000 });
+  assert.equal(parseDiscountInput("total", "-5"), null);
+});
+
+test("applyOfferDiscount: Rabatt auf 2 × Ronix One und 3 × Lamzac", () => {
+  // 2 × 529,00 € + 3 × 49,90 € = 1.207,70 €
+  const summe = offerTotals([{ article: utopia, quantity: 2 }, { article: lamzac, quantity: 3 }]).totalCents;
+  assert.equal(summe, 120770);
+  // 10 %: 120,77 € runter, 1.086,93 € bleiben
+  assert.deepEqual(applyOfferDiscount(summe, { kind: "percent", basisPoints: 1000 }), { discountCents: 12077, finalCents: 108693 });
+  // 12,5 %: 150,9625 € wird kaufmännisch 150,96 €
+  assert.deepEqual(applyOfferDiscount(summe, { kind: "percent", basisPoints: 1250 }), { discountCents: 15096, finalCents: 105674 });
+  // 7,5 % von 49,90 € = 3,7425 € → 3,74 €; 15 % von 49,90 € = 7,485 € → 7,49 €
+  assert.equal(applyOfferDiscount(4990, { kind: "percent", basisPoints: 750 }).discountCents, 374);
+  assert.equal(applyOfferDiscount(4990, { kind: "percent", basisPoints: 1500 }).discountCents, 749);
+  // Endpreis 1.100 €: 107,70 € Rabatt
+  assert.deepEqual(applyOfferDiscount(summe, { kind: "total", cents: 110000 }), { discountCents: 10770, finalCents: 110000 });
+  // Betrag 50 €
+  assert.deepEqual(applyOfferDiscount(summe, { kind: "amount", cents: 5000 }), { discountCents: 5000, finalCents: 115770 });
+  // Nie mehr als die Summe, nie ein Aufschlag
+  assert.deepEqual(applyOfferDiscount(4990, { kind: "amount", cents: 10000 }), { discountCents: 4990, finalCents: 0 });
+  assert.deepEqual(applyOfferDiscount(4990, { kind: "total", cents: 6000 }), { discountCents: 0, finalCents: 4990 });
+  assert.deepEqual(applyOfferDiscount(summe, null), { discountCents: 0, finalCents: summe });
+  // Rabatt und Endpreis ergeben zusammen immer die Summe
+  for (const d of [{ kind: "percent", basisPoints: 333 }, { kind: "amount", cents: 12345 }, { kind: "total", cents: 99999 }] as const) {
+    const r = applyOfferDiscount(summe, d);
+    assert.equal(r.discountCents + r.finalCents, summe);
+  }
+});
+
+test("formatPercent und parseStoredDiscount", () => {
+  assert.equal(formatPercent(12077, 120770), "10 %");
+  assert.equal(formatPercent(10770, 120770), "8,9 %");
+  assert.equal(formatPercent(0, 0), "0 %");
+  assert.deepEqual(parseStoredDiscount(JSON.stringify({ kind: "percent", basisPoints: 1000 })), { kind: "percent", basisPoints: 1000 });
+  assert.deepEqual(parseStoredDiscount(JSON.stringify({ kind: "total", cents: 110000 })), { kind: "total", cents: 110000 });
+  assert.equal(parseStoredDiscount(JSON.stringify({ kind: "percent", basisPoints: 20000 })), null);
+  assert.equal(parseStoredDiscount("{kaputt"), null);
+  assert.equal(parseStoredDiscount(null), null);
 });
